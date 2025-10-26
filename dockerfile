@@ -1,40 +1,20 @@
-# 1. Build stage
-FROM node:18 AS build
-
-# Ensure corepack is available and pnpm is enabled
-RUN corepack enable pnpm
-
-# Create app dir
+# ---- Base stage ----
+FROM node:22-alpine AS base
 WORKDIR /app
+COPY . .
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
-# Copy the whole monorepo for build
-COPY . /app
-
-# Install deps for all workspaces
+# ---- Install & Build ----
+FROM base AS build
+WORKDIR /app
 RUN pnpm install --no-frozen-lockfile
-
-# Build frontend (client) and backend (server)
 RUN pnpm --filter ./client... run build
-RUN pnpm --filter ./server... run build
+RUN pnpm --filter @realenhance/server run build
 
-# 2. Runtime stage
-FROM node:18 AS runtime
-
-# Enable pnpm in the runtime container too (for pnpm start)
-RUN corepack enable pnpm
-
-# Create app dir
+# ---- Runtime stage ----
+FROM node:22-alpine AS runtime
 WORKDIR /app
-
-# Copy only what we need from build stage, not node_modules bloat from every workspace
-COPY --from=build /app /app
-
-# Expose port for Railway
-ENV PORT=8080
+COPY --from=build /app .
 EXPOSE 8080
+CMD ["pnpm", "--filter", "@realenhance/server", "run", "start"]
 
-# Required env for production mode
-ENV NODE_ENV=production
-
-# Start server workspace
-CMD pnpm --filter ./server... run start
