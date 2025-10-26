@@ -2,12 +2,12 @@
   "name": "@realenhance/server",
   "version": "1.0.0",
   "private": true,
-  "main": "dist/server.js",
+  "main": "dist/index.js",
   "types": "dist/server.d.ts",
   "scripts": {
-    "dev": "tsx src/server.ts"
+    "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "NODE_ENV=production node dist/server.js"
+    "start": "NODE_ENV=production node dist/index.js"
   },
   "dependencies": {
     "@realenhance/shared": "workspace:*",
