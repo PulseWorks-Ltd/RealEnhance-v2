@@ -3,6 +3,10 @@ dist
 .env
 *.log
 .DS_Store
+
 server/node_modules
 server/dist
 server/.env
+
+package-lock.json
+server/package-lock.json

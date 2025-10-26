@@ -9,8 +9,8 @@ cmds = [
 [phases.build]
 cmds = [
   "pnpm --filter ./client... run build",
-  "pnpm --filter ./server... run build"
+  "pnpm --filter @realenhance/server run build"
 ]
 
 [start]
-cmd = "pnpm --filter ./server... run start"
+cmd = "pnpm --filter @realenhance/server run start"
