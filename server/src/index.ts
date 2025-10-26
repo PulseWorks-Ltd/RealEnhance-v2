@@ -1,94 +1,115 @@
-import express from "express";
-import path from "node:path";
-import fs from "node:fs";
-import morgan from "morgan";
-import helmet from "helmet";
-import cors from "cors";
-import cookieParser from "cookie-parser";
+import express, { Request, Response } from "express";
 import session from "express-session";
-import { createClient } from "redis";
-const connectRedis = require("connect-redis");
-const RedisStore = connectRedis(session);
+import RedisStoreFactory from "connect-redis";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
+import path from "path";
+import { createClient as createRedisClient } from "redis";
+import dotenv from "dotenv";
 
-import { initAuth } from "./auth/google";
-import { registerAuthUserRoutes } from "./routes.auth-user";
+import { attachGoogleAuth } from "./auth/google";
+// adjust this path if your file is named slightly differently:
+// e.g. "./routes/auth-user.routes" or "./routes/authUser"
+import authUserRouter from "./routes/authUser";
 
-const {
-  NODE_ENV = "production",
-  PORT = "8080",
-  PUBLIC_ORIGIN = "",
-  REDIS_URL,
-  SESSION_SECRET,
-} = process.env;
+dotenv.config();
 
-const app = express();
-app.set("trust proxy", 1);
+/**
+ * ENV + config
+ */
+const PORT = process.env.PORT || "8080";
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
-// ---------------- Middleware ----------------
-app.use(morgan("dev"));
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      useDefaults: true,
-      directives: {
-        "script-src": ["'self'", "https://js.stripe.com", "'unsafe-inline'"],
+async function main() {
+  /**
+   * Redis client for session store
+   */
+  const redisClient = createRedisClient({
+    url: REDIS_URL,
+  });
+  await redisClient.connect();
+
+  const RedisStore = RedisStoreFactory(session);
+
+  /**
+   * Express app
+   */
+  const app = express();
+
+  // security / middleware
+  app.use(
+    cors({
+      origin: PUBLIC_ORIGIN,
+      credentials: true,
+    })
+  );
+  app.use(helmet());
+  app.use(morgan("dev"));
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // sessions
+  app.use(
+    session({
+      secret: SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
       },
-    },
-  })
-);
-app.use(
-  cors({
-    origin: PUBLIC_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean),
-    credentials: true,
-  })
-);
-app.use(cookieParser());
+      store: new RedisStore({
+        client: redisClient as any,
+        prefix: "sess:",
+      }),
+    })
+  );
 
-// ---------------- Redis & Session ----------------
-const redisClient = createClient({ url: REDIS_URL });
-redisClient.on("error", (err) => console.error("[redis] error", err));
-redisClient.connect().then(() => console.log("[redis] connected"));
+  /**
+   * Routes
+   */
+  // healthcheck for Railway
+  app.get("/health", (_req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
+    });
+  });
 
-app.use(
-  session({
-    name: "realsess",
-    store: new RedisStore({
-      client: redisClient,
-      prefix: "realsess:",
-    }),
-    secret: SESSION_SECRET!,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      sameSite: "lax",
-      httpOnly: true,
-      secure: true,
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    },
-  })
-);
+  // auth-related (google oauth, logout, etc.)
+  attachGoogleAuth(app);
 
-// ---------------- Auth Routes ----------------
-initAuth(app);
-registerAuthUserRoutes(app);
+  // user-related /api routes (login status, profile, etc.)
+  app.use("/api/auth-user", authUserRouter());
 
-// ---------------- Health Check ----------------
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true, env: NODE_ENV, time: new Date().toISOString() });
-});
+  /**
+   * Optionally serve built client (if client build output ends up in /client/dist or /client/build)
+   * Adjust this if your client output directory is different.
+   */
+  const clientBuildDir = path.join(__dirname, "..", "client", "dist", "public");
+  app.use(express.static(clientBuildDir));
 
-// ---------------- Static Frontend ----------------
-const clientDist = path.resolve(__dirname, "../../client/dist");
-app.use(express.static(clientDist));
+  // catch-all -> send index.html for frontend routing
+  app.get("*", (_req: Request, res: Response) => {
+    res.sendFile(path.join(clientBuildDir, "index.html"));
+  });
 
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith("/api")) return next();
-  const indexFile = path.join(clientDist, "index.html");
-  if (fs.existsSync(indexFile)) res.sendFile(indexFile);
-  else res.status(500).send("Frontend build missing");
-});
+  /**
+   * Start server
+   */
+  app.listen(Number(PORT), () => {
+    console.log(`[server] listening on ${PORT}`);
+  });
+}
 
-// ---------------- Start Server ----------------
-app.listen(Number(PORT), () => {
-  console.log(`[RealEnhance] listening on port ${PORT}`);
+main().catch((err) => {
+  console.error("[server] fatal startup error:", err);
+  process.exit(1);
 });
