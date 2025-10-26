@@ -1,0 +1,39 @@
+{
+  "name": "@realenhance/server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "scripts": {
+    "dev": "tsx src/server.ts"
+    "build": "tsc -p tsconfig.json",
+    "start": "NODE_ENV=production node dist/server.js"
+  },
+  "dependencies": {
+    "@realenhance/shared": "workspace:*",
+    "bullmq": "^5.9.0",
+    "connect-redis": "6",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-session": "^1.17.3",
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.2",
+    "redis": "^4.6.13"
+  },
+  "devDependencies": {
+    "@types/connect-redis": "^0.0.23",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/dotenv": "^8.2.3",
+    "@types/express": "^5.0.4",
+    "@types/express-session": "^1.18.2",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.9.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.3"
+  }
+}
