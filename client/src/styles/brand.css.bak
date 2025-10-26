@@ -1,0 +1,22 @@
+:root {
+  --brand-primary: 210 60% 48%;  /* #2E7CC4 */
+  --brand-accent: 143 38% 48%;   /* #4FA86C vibrant green */
+  --brand-light: 210 60% 96%;    /* light blue background */
+  --brand-highlight: 45 93% 49%; /* #F7B500 */
+}
+
+.dark {
+  --brand-primary: 210 55% 60%;
+  --brand-accent: 143 35% 55%;
+  --brand-light: 210 30% 20%;
+}
+
+body{ background:var(--brand-light); }
+.brand { color:var(--brand-primary); }
+.btn-brand {
+  background:var(--brand-primary);
+  color:#fff;
+  border-radius:12px;
+  padding:10px 16px;
+}
+.btn-brand:hover{ opacity:.9; }
