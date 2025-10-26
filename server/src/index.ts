@@ -91,7 +91,7 @@ async function main() {
   /**
    * Serve built client (adjust path if your client build output differs)
    */
-  const clientBuildDir = path.join(__dirname, "..", "client", "dist", "public");
+  const clientBuildDir = path.join(__dirname, "..", "..", "client", "dist");
   app.use(express.static(clientBuildDir));
 
   // Single Page App fallback
