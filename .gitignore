@@ -3,4 +3,6 @@ dist
 .env
 *.log
 .DS_Store
-node_modules\ndist\n.env\n*.log\n.DS_Store\n
+server/node_modules
+server/dist
+server/.env

@@ -3,8 +3,8 @@
   "private": true,
   "scripts": {
     "install-all": "pnpm install --no-frozen-lockfile",
-    "build": "pnpm --filter ./client... run build && pnpm --filter ./server... run build",
-    "start": "pnpm --filter ./server... run start"
+    "build": "pnpm --filter ./client... run build && pnpm --filter @realenhance/server run build",
+    "start": "pnpm --filter @realenhance/server run start"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
