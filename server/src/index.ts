@@ -10,9 +10,7 @@ import { createClient as createRedisClient } from "redis";
 import dotenv from "dotenv";
 
 import { attachGoogleAuth } from "./auth/google";
-// adjust this path if your file is named slightly differently:
-// e.g. "./routes/auth-user.routes" or "./routes/authUser"
-import authUserRouter from "./routes/authUser";
+import { authUserRouter } from "./routes/authUser"; // <-- named import ✅
 
 dotenv.config();
 
@@ -74,6 +72,7 @@ async function main() {
   /**
    * Routes
    */
+
   // healthcheck for Railway
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
@@ -83,20 +82,19 @@ async function main() {
     });
   });
 
-  // auth-related (google oauth, logout, etc.)
+  // google auth / logout endpoints
   attachGoogleAuth(app);
 
-  // user-related /api routes (login status, profile, etc.)
-  app.use("/api/auth-user", authUserRouter());
+  // authenticated user info, credits, history, etc.
+  app.use("/api/auth-user", authUserRouter()); // <-- call the factory ✅
 
   /**
-   * Optionally serve built client (if client build output ends up in /client/dist or /client/build)
-   * Adjust this if your client output directory is different.
+   * Serve built client (adjust path if your client build output differs)
    */
   const clientBuildDir = path.join(__dirname, "..", "client", "dist", "public");
   app.use(express.static(clientBuildDir));
 
-  // catch-all -> send index.html for frontend routing
+  // Single Page App fallback
   app.get("*", (_req: Request, res: Response) => {
     res.sendFile(path.join(clientBuildDir, "index.html"));
   });
