@@ -1,24 +1,20 @@
-# 1. Make sure we have Node and pnpm available in the image
 [phases.setup]
-nixPkgs = ["nodejs_18", "pnpm"]
+nixPkgs = ["nodejs_22", "pnpm"]
 
-# 2. Install all workspace deps cleanly inside this container
-#    We explicitly tell pnpm NOT to use frozen lockfile to avoid mismatch issues
 [phases.install]
 cmds = [
   "pnpm install --no-frozen-lockfile"
 ]
 
-# 3. Build step
-#    - build client first (static assets)
-#    - then tsc build for the server
 [phases.build]
 cmds = [
-  "pnpm --filter ./client... run build",
+  "pnpm --filter client... run build",
   "pnpm --filter @realenhance/server run build"
 ]
 
-# 4. Runtime command
-#    This will run the compiled server (dist/index.js) through the package.json start script
 [start]
 cmd = "pnpm --filter @realenhance/server run start"
+
+# Prevent Nixpacks from copying node_modules from the host
+[variables]
+NIXPACKS_SKIP_NODE_MODULES_COPY = "true"
