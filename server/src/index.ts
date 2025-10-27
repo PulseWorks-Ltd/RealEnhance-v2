@@ -88,16 +88,21 @@ async function main() {
   // authenticated user info, credits, history, etc.
   app.use("/api/auth-user", authUserRouter()); // <-- call the factory ✅
 
-  /**
-   * Serve built client (adjust path if your client build output differs)
-   */
-  const clientBuildDir = path.join(__dirname, "..", "..", "client", "dist");
-  app.use(express.static(clientBuildDir));
+  // ✅ Correct for production build served from /app/client/dist
+import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
-  // Single Page App fallback
-  app.get("*", (_req: Request, res: Response) => {
-    res.sendFile(path.join(clientBuildDir, "index.html"));
-  });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const clientBuildDir = path.resolve(__dirname, "../../client/dist");
+
+app.use(express.static(clientBuildDir));
+
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(clientBuildDir, "index.html"));
+});
 
   /**
    * Start server
