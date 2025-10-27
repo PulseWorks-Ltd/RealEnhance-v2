@@ -17,6 +17,8 @@
         "build": {
           "cmds": [
             "pnpm --filter ./client... run build",
+            "rm -rf server/static && mkdir -p server/static",
+            "cp -r client/dist/* server/static/",
             "pnpm --filter @realenhance/server run build"
           ]
         }
