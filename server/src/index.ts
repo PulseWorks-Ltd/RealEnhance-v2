@@ -22,6 +22,10 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const clientBuildDir = path.resolve(__dirname, "./static");
+const allowedOrigins = [
+  "http://localhost:5173", // local dev: Vite
+  "https://client-production-3021.up.railway.app", // your deployed frontend
+];
 
 /**
  * ENV + config
@@ -38,12 +42,11 @@ async function main() {
   const RedisStore = RedisStoreFactory(session);
   const app = express();
 
+  app.set("trust proxy", 1);
+
   app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://client-production-3021.up.railway.app",
-    ],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
