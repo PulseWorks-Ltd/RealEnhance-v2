@@ -2,9 +2,9 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
-import { createImageRecord } from "../services/images";
-import { addImageToUser, chargeForImages } from "../services/users";
-import { enqueueEnhanceJob } from "../services/jobs";
+import { createImageRecord } from "../services/images.js";
+import { addImageToUser, chargeForImages } from "../services/users.js";
+import { enqueueEnhanceJob } from "../services/jobs.js";
 
 // --- define a local file type so TS stops yelling ---
 type UploadedFile = {

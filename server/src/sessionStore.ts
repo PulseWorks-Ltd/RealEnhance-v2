@@ -1,7 +1,7 @@
 import session from "express-session";
 import { createClient as createRedisClient } from "redis";
 import connectRedisPkg from "connect-redis";
-import { REDIS_URL, SESSION_SECRET, NODE_ENV } from "./config";
+import { REDIS_URL, SESSION_SECRET, NODE_ENV } from "./config.js";
 
 const RedisStore = connectRedisPkg(session);
 

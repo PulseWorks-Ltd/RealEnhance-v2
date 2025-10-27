@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { listImagesForUser } from "../services/images";
+import { listImagesForUser } from "../services/images.js";
 
 export function galleryRouter() {
   const r = Router();
@@ -13,12 +13,12 @@ export function galleryRouter() {
     const imgs = listImagesForUser(sessUser.id);
 
     res.json({
-      images: imgs.map(img => ({
+      images: imgs.map((img: any) => ({
         imageId: img.imageId,
         currentVersionId: img.currentVersionId,
         roomType: img.roomType,
         sceneType: img.sceneType,
-        history: img.history.map(v => ({
+        history: img.history.map((v: any) => ({
           versionId: v.versionId,
           stageLabel: v.stageLabel,
           filePath: v.filePath,

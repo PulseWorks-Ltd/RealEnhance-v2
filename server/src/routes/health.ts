@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { NODE_ENV } from "../config";
+import { NODE_ENV } from "../config.js";
 
 export function healthRouter() {
   const r = Router();

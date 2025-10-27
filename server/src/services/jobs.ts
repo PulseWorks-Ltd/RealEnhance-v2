@@ -6,10 +6,10 @@ import {
   JobId,
   UserId,
   ImageId
-} from "@realenhance/shared/dist/types";
-import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants";
-import { REDIS_URL } from "../config";
-import { readJsonFile, writeJsonFile } from "./jsonStore";
+} from "@realenhance/shared/dist/types.js";
+import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants.js";
+import { REDIS_URL } from "../config.js";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 type JobsState = Record<JobId, JobRecord>;
 

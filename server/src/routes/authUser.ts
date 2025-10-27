@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { getUserById } from "../services/users";
-import { listImagesForUser } from "../services/images";
+import { getUserById } from "../services/users.js";
+import { listImagesForUser } from "../services/images.js";
 
 export function authUserRouter() {
   const r = Router();
@@ -19,12 +19,12 @@ export function authUserRouter() {
       name: full.name,
       email: full.email,
       credits: full.credits,
-      images: imgs.map(img => ({
+      images: imgs.map((img: any) => ({
         imageId: img.imageId,
         currentVersionId: img.currentVersionId,
         roomType: img.roomType,
         sceneType: img.sceneType,
-        history: img.history.map(v => ({
+        history: img.history.map((v: any) => ({
           versionId: v.versionId,
           stageLabel: v.stageLabel,
           filePath: v.filePath,

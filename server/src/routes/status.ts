@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { getJob } from "../services/jobs";
+import { getJob } from "../services/jobs.js";
 
 export function statusRouter() {
   const r = Router();

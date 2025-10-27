@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
-import { getImageRecord } from "../services/images";
-import { enqueueEditJob } from "../services/jobs";
+import { getImageRecord } from "../services/images.js";
+import { enqueueEditJob } from "../services/jobs.js";
 
 export function editRouter() {
   const r = Router();
@@ -35,7 +35,7 @@ export function editRouter() {
       return res.status(403).json({ error: "forbidden" });
     }
 
-    const baseOk = rec.history.find(v => v.versionId === baseVersionId);
+    const baseOk = rec.history.find((v: any) => v.versionId === baseVersionId);
     if (!baseOk) {
       return res.status(400).json({ error: "invalid_base_version" });
     }
