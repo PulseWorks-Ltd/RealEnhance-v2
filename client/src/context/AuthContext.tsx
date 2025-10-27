@@ -63,8 +63,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const width = 520, height = 640;
       const left = window.screenX + (window.outerWidth - width) / 2;
       const top = window.screenY + (window.outerHeight - height) / 2;
+      const OAUTH_BASE =
+        import.meta.env.VITE_API_BASE_URL || window.location.origin;
+
       const w = window.open(
-        "/api/auth/google",
+        `${OAUTH_BASE}/api/auth/google`,
         "google_oauth_popup",
         `width=${width},height=${height},left=${left},top=${top}`
       );

@@ -1,30 +1,40 @@
-import { Route, Switch } from "wouter";
-import Landing from "@/pages/landing";
-import Home from "@/pages/home";
-import Editor from "@/pages/Editor";
-import Results from "@/pages/Results";
-import { Header } from "@/components/header";
-import { RequireAuth } from "@/components/RequireAuth";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
-export default function App() {
-  return (
-    <>
-      <Header />
-      <Switch>
-        <Route path="/" component={Landing} />
-        <Route path="/app">
-          <RequireAuth>
-            <Home />
-          </RequireAuth>
-        </Route>
-        <Route path="/editor">
-          <RequireAuth>
-            <Editor />
-          </RequireAuth>
-        </Route>
-        <Route path="/results" component={Results} />
-        <Route>404 – Not Found</Route>
-      </Switch>
-    </>
-  );
+export function api(path: string) {
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
+
+export async function apiFetch(path: string, opts: RequestInit = {}) {
+  const res = await fetch(api(path), {
+    ...opts,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  return res;
+}
+
+export async function apiGet<T = any>(path: string): Promise<T> {
+  const res = await apiFetch(path);
+  if (!res.ok) {
+    throw new Error(`GET ${path} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export const clientApi = {
+  request: async <T>(path: string, opts: RequestInit = {}) => {
+    const res = await apiFetch(path, opts);
+    if (!res.ok) {
+      throw Object.assign(new Error(await res.text()), {
+        code: res.status
+      });
+    }
+    return res.json() as Promise<T>;
+  }
+};
+
+export default clientApi;
