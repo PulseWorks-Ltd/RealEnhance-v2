@@ -6,13 +6,22 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 import { createClient as createRedisClient } from "redis";
 import dotenv from "dotenv";
 
 import { attachGoogleAuth } from "./auth/google";
-import { authUserRouter } from "./routes/authUser"; // <-- named import ✅
+import { authUserRouter } from "./routes/authUser"; // named import ✅
 
 dotenv.config();
+
+/**
+ * Path helpers for serving client files
+ */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const clientBuildDir = path.resolve(__dirname, "../../client/dist");
 
 /**
  * ENV + config
@@ -23,22 +32,12 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
 async function main() {
-  /**
-   * Redis client for session store
-   */
-  const redisClient = createRedisClient({
-    url: REDIS_URL,
-  });
+  const redisClient = createRedisClient({ url: REDIS_URL });
   await redisClient.connect();
 
   const RedisStore = RedisStoreFactory(session);
-
-  /**
-   * Express app
-   */
   const app = express();
 
-  // security / middleware
   app.use(
     cors({
       origin: PUBLIC_ORIGIN,
@@ -51,7 +50,6 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // sessions
   app.use(
     session({
       secret: SESSION_SECRET,
@@ -69,11 +67,7 @@ async function main() {
     })
   );
 
-  /**
-   * Routes
-   */
-
-  // healthcheck for Railway
+  // Health check
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
       ok: true,
@@ -82,31 +76,16 @@ async function main() {
     });
   });
 
-  // google auth / logout endpoints
+  // Google Auth + user routes
   attachGoogleAuth(app);
+  app.use("/api/auth-user", authUserRouter());
 
-  // authenticated user info, credits, history, etc.
-  app.use("/api/auth-user", authUserRouter()); // <-- call the factory ✅
+  // ✅ Serve React frontend
+  app.use(express.static(clientBuildDir));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(clientBuildDir, "index.html"));
+  });
 
-  // ✅ Correct for production build served from /app/client/dist
-import path from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const clientBuildDir = path.resolve(__dirname, "../../client/dist");
-
-app.use(express.static(clientBuildDir));
-
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(clientBuildDir, "index.html"));
-});
-
-  /**
-   * Start server
-   */
   app.listen(Number(PORT), () => {
     console.log(`[server] listening on ${PORT}`);
   });
