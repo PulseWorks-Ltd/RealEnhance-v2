@@ -39,10 +39,14 @@ async function main() {
   const app = express();
 
   app.use(
-    cors({
-      origin: PUBLIC_ORIGIN,
-      credentials: true,
-    })
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://client-production-3021.up.railway.app",
+    ],
+    credentials: true,
+  })
+);
   );
   app.use(helmet());
   app.use(morgan("dev"));
