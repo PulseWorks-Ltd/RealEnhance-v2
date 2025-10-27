@@ -16,9 +16,19 @@
         },
         "build": {
           "cmds": [
+            // 1. build the client
             "pnpm --filter ./client... run build",
+
+            // 2. make sure server/static exists
             "rm -rf server/static && mkdir -p server/static",
-            "cp -r client/dist/* server/static/",
+
+            // 3. try to copy Vite-style output (dist). don't fail if it's missing
+            "cp -r client/dist/* server/static/ || true",
+
+            // 4. try to copy CRA/Next export-style output (build). don't fail if it's missing
+            "cp -r client/build/* server/static/ || true",
+
+            // 5. build the server
             "pnpm --filter @realenhance/server run build"
           ]
         }
