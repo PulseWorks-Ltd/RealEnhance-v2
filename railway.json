@@ -1,11 +1,15 @@
 {
-  "$schema": "https://railway.com/railway.schema.json",
+  "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
     "nixpacksPlan": {
+      "providers": ["node"],
       "phases": {
         "setup": {
-          "nixPkgs": ["nodejs_22", "pnpm"]
+          "nixPkgs": [],
+          "cmds": [
+            "corepack enable pnpm"
+          ]
         },
         "install": {
           "cmds": [
@@ -18,16 +22,12 @@
             "pnpm --filter @realenhance/server run build"
           ]
         }
-      },
-      "start": {
-        "cmd": "pnpm --filter @realenhance/server run start"
       }
     }
   },
   "deploy": {
     "startCommand": "pnpm --filter @realenhance/server run start",
-    "numReplicas": 1,
-    "sleepApplication": false,
+    "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
