@@ -21,7 +21,7 @@ dotenv.config();
  */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const clientBuildDir = path.resolve(__dirname, "../../client/dist");
+const staticDir = path.resolve(__dirname, "./static");
 
 /**
  * ENV + config
@@ -81,9 +81,9 @@ async function main() {
   app.use("/api/auth-user", authUserRouter());
 
   // ✅ Serve React frontend
-  app.use(express.static(clientBuildDir));
+  app.use(express.static(staticDir));
   app.get("*", (_req, res) => {
-    res.sendFile(path.join(clientBuildDir, "index.html"));
+  res.sendFile(path.join(staticDir, "index.html"));
   });
 
   app.listen(Number(PORT), () => {
