@@ -1,5 +1,5 @@
 import { Express, Request, Response } from "express";
-import { upsertUserFromGoogle } from "../services/users";
+import { upsertUserFromGoogle } from "../services/users.js";
 
 /**
  * TODO: Replace this stub with your actual Google OAuth flow.

@@ -3,10 +3,10 @@ import {
   UserRecord,
   UserId,
   ImageId
-} from "@realenhance/shared/dist/types";
-import { CREDITS_PER_IMAGE } from "@realenhance/shared/dist/constants";
-import { CREDITS_ENABLED } from "../config";
-import { readJsonFile, writeJsonFile } from "./jsonStore";
+} from "@realenhance/shared/dist/types.js";
+import { CREDITS_PER_IMAGE } from "@realenhance/shared/dist/constants.js";
+import { CREDITS_ENABLED } from "../config.js";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 type UsersState = Record<UserId, UserRecord>;
 

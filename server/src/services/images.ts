@@ -4,8 +4,8 @@ import {
   ImageVersion,
   ImageId,
   UserId
-} from "@realenhance/shared/dist/types";
-import { readJsonFile, writeJsonFile } from "./jsonStore";
+} from "@realenhance/shared/dist/types.js";
+import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 type ImagesState = Record<ImageId, ImageRecord>;
 

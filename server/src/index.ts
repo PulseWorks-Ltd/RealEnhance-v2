@@ -11,8 +11,8 @@ import { dirname } from "path";
 import { createClient as createRedisClient } from "redis";
 import dotenv from "dotenv";
 
-import { attachGoogleAuth } from "./auth/google";
-import { authUserRouter } from "./routes/authUser"; // named import ✅
+import { attachGoogleAuth } from "./auth/google.js";
+import { authUserRouter } from "./routes/authUser.js"; // named import ✅
 
 dotenv.config();
 
