@@ -87,12 +87,6 @@ async function main() {
   attachGoogleAuth(app);
   app.use("/api/auth-user", authUserRouter());
 
-  // ✅ Serve React frontend
-  app.use(express.static(clientBuildDir));
-  app.get("*", (_req: Request, res: Response) => {
-  res.sendFile(path.join(clientBuildDir, "index.html"));
-  });
-
   app.listen(Number(PORT), () => {
     console.log(`[server] listening on ${PORT}`);
   });
