@@ -14,7 +14,7 @@
             },
             "install": {
               "cmds": [
-                "pnpm install --no-frozen-lockfile"
+                "pnpm install --no-frozen-lockfile --force --prefer-offline"
               ]
             },
             "build": {
@@ -41,25 +41,25 @@
       "rootDir": "client",
       "build": {
         "builder": "NIXPACKS",
-        "nixpacksPlan": {
-          "providers": ["node"],
-          "phases": {
-            "setup": {
-              "nixPkgs": ["nodejs_22", "pnpm"],
-              "cmds": []
-            },
-            "install": {
-              "cmds": [
-                "pnpm install --no-frozen-lockfile"
-              ]
-            },
-            "build": {
-              "cmds": [
-                "pnpm --filter ./client run build"
-              ]
+          "nixpacksPlan": {
+            "providers": ["node"],
+            "phases": {
+              "setup": {
+                "nixPkgs": ["nodejs_22", "pnpm"],
+                "cmds": []
+              },
+              "install": {
+                "cmds": [
+                  "pnpm install --no-frozen-lockfile --force --prefer-offline"
+                ]
+              },
+              "build": {
+                "cmds": [
+                  "pnpm --filter ./client run build"
+                ]
+              }
             }
           }
-        }
       },
       "deploy": {
         "startCommand": "pnpm --filter ./client run preview -- --host 0.0.0.0 --port 8080",
@@ -86,7 +86,7 @@
             },
             "install": {
               "cmds": [
-                "pnpm install --no-frozen-lockfile"
+                "pnpm install --no-frozen-lockfile --force --prefer-offline"
               ]
             },
             "build": {
