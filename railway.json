@@ -1,37 +1,110 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
-  "build": {
-    "builder": "NIXPACKS",
-    "installCommand": "pnpm install --no-frozen-lockfile --force",
-    "buildCommand": "pnpm install --no-frozen-lockfile --force && pnpm run build",
-    "nixpacksPlan": {
-      "providers": ["node"],
-      "phases": {
-        "setup": {
-          "nixPkgs": ["nodejs_22", "pnpm"],
-          "cmds": []
-        },
-        "install": {
-          "cmds": [
-            "pnpm install --no-frozen-lockfile --force"
-          ]
-        },
-        "build": {
-          "cmds": [
-            "pnpm run build"
-          ]
+  "services": {
+    "server": {
+      "rootDir": "server",
+      "build": {
+        "builder": "NIXPACKS",
+        "nixpacksPlan": {
+          "providers": ["node"],
+          "phases": {
+            "setup": {
+              "nixPkgs": ["nodejs_22", "pnpm"],
+              "cmds": []
+            },
+            "install": {
+              "cmds": [
+                "pnpm install --no-frozen-lockfile --force"
+              ]
+            },
+            "build": {
+              "cmds": [
+                "pnpm run build"
+              ]
+            }
+          }
         }
+      },
+      "deploy": {
+        "startCommand": "pnpm run start",
+        "healthcheckPath": "/health",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      },
+      "envVars": {
+        "PORT": "8080",
+        "NODE_ENV": "production"
+      }
+    },
+
+    "client": {
+      "rootDir": "client",
+      "build": {
+        "builder": "NIXPACKS",
+        "nixpacksPlan": {
+          "providers": ["node"],
+          "phases": {
+            "setup": {
+              "nixPkgs": ["nodejs_22", "pnpm"],
+              "cmds": []
+            },
+            "install": {
+              "cmds": [
+                "pnpm install --no-frozen-lockfile --force"
+              ]
+            },
+            "build": {
+              "cmds": [
+                "pnpm run build"
+              ]
+            }
+          }
+        }
+      },
+      "deploy": {
+        "startCommand": "pnpm run preview -- --host 0.0.0.0 --port 8080",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      },
+      "envVars": {
+        "PORT": "8080",
+        "NODE_ENV": "production",
+        "VITE_API_BASE_URL": "https://server-production-96f7.up.railway.app"
+      }
+    },
+
+    "worker": {
+      "rootDir": "worker",
+      "build": {
+        "builder": "NIXPACKS",
+        "nixpacksPlan": {
+          "providers": ["node"],
+          "phases": {
+            "setup": {
+              "nixPkgs": ["nodejs_22", "pnpm"],
+              "cmds": []
+            },
+            "install": {
+              "cmds": [
+                "pnpm install --no-frozen-lockfile --force"
+              ]
+            },
+            "build": {
+              "cmds": [
+                "pnpm run build"
+              ]
+            }
+          }
+        }
+      },
+      "deploy": {
+        "startCommand": "pnpm run start",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      },
+      "envVars": {
+        "NODE_ENV": "production"
       }
     }
-  },
-  "deploy": {
-    "startCommand": "pnpm run start",
-    "healthcheckPath": "/health",
-    "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
-  },
-  "envVars": {
-    "PORT": "8080",
-    "NODE_ENV": "production"
   }
 }
