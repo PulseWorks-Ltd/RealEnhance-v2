@@ -25,16 +25,19 @@ export async function apiGet<T = any>(path: string): Promise<T> {
   return res.json();
 }
 
-export const clientApi = {
-  request: async <T>(path: string, opts: RequestInit = {}) => {
-    const res = await apiFetch(path, opts);
-    if (!res.ok) {
-      throw Object.assign(new Error(await res.text()), {
-        code: res.status
-      });
-    }
-    return res.json() as Promise<T>;
+async function request<T>(path: string, opts: RequestInit = {}) {
+  const res = await apiFetch(path, opts);
+  if (!res.ok) {
+    throw Object.assign(new Error(await res.text()), {
+      code: res.status
+    });
   }
+  return res.json() as Promise<T>;
+}
+
+export const clientApi = {
+  request
 };
+
 
 export default clientApi;
