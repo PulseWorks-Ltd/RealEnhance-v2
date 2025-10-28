@@ -6,8 +6,7 @@
       "providers": ["node"],
       "phases": {
         "setup": {
-          "nixPkgs": ["nodejs_22", "pnpm"],
-          "cmds": []
+          "nixPkgs": ["nodejs_22", "pnpm"]
         },
         "install": {
           "cmds": [
@@ -33,3 +32,4 @@
     "NODE_ENV": "production"
   }
 }
+
