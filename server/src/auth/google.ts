@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import passport, { Profile } from "passport";
+import passport, { Profile, VerifyCallback } from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { upsertUserFromGoogle } from "../services/users.js";
 
@@ -29,52 +29,44 @@ function initPassport() {
   }
 
   passport.use(
-    new GoogleStrategy(
-      {
-        clientID: GOOGLE_CLIENT_ID || "",
-        clientSecret: GOOGLE_CLIENT_SECRET || "",
-        callbackURL: `${getBaseUrl()}/auth/google/callback`,
-      },
-      async (
-        accessToken: string,
-        refreshToken: string,
-        profile: Profile,
-        done
-      ) => {
-        try {
-          // Extract basic fields from Google profile
-          const email =
-            profile.emails && profile.emails[0]
-              ? profile.emails[0].value
-              : undefined;
-          const name = profile.displayName || "Unnamed User";
+  new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+      callbackURL: `${getBaseUrl()}/auth/google/callback`,
+    },
+    async (
+      accessToken: string,
+      refreshToken: string,
+      profile: Profile,
+      done: VerifyCallback       // ✅ Type added here
+    ) => {
+      try {
+        const email =
+          profile.emails && profile.emails[0]
+            ? profile.emails[0].value
+            : undefined;
+        const name = profile.displayName || "Unnamed User";
 
-          if (!email) {
-            return done(
-              new Error("No email returned from Google profile"),
-              undefined
-            );
-          }
-
-          // upsert user in DB and get normalized user object back
-          const user = await upsertUserFromGoogle({
-            email,
-            name,
-          });
-
-          // done(null, user) passes the user to serializeUser below
-          return done(null, {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            credits: user.credits,
-          });
-        } catch (err) {
-          return done(err as Error, undefined);
+        if (!email) {
+          return done(new Error("No email returned from Google profile"));
         }
+
+        const user = await upsertUserFromGoogle({ email, name });
+
+        return done(null, {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          credits: user.credits,
+        });
+      } catch (err) {
+        return done(err as Error);
       }
-    )
-  );
+    }
+  )
+);
+
 
   // Put minimal info into the session
   passport.serializeUser((user: any, done) => {
