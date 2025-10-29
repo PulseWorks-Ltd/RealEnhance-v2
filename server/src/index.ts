@@ -1,4 +1,4 @@
-import express, { Request, Response } from "express";
+import express from "express";
 import session from "express-session";
 import RedisStoreFactory from "connect-redis";
 import cors from "cors";
@@ -10,9 +10,8 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { createClient as createRedisClient } from "redis";
 import dotenv from "dotenv";
-
 import { attachGoogleAuth } from "./auth/google.js";
-import { authUserRouter } from "./routes/authUser.js"; // named import ✅
+import { authUserRouter } from "./routes/authUser.js";
 
 dotenv.config();
 
@@ -21,42 +20,51 @@ dotenv.config();
  */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const clientBuildDir = path.resolve(__dirname, "./static");
-const allowedOrigins = [
-  "http://localhost:5173", // local dev: Vite
-  "https://client-production-3021.up.railway.app", // your deployed frontend
-];
+const clientBuildDir = path.resolve(__dirname, "../../client/dist");
 
 /**
  * ENV + config
+ * These MUST be set in Railway:
+ *  - PORT (Railway injects this, fallback 8080 is fine)
+ *  - SESSION_SECRET
+ *  - REDIS_URL
+ *  - NODE_ENV=production
+ *  - PUBLIC_ORIGIN (your deployed https://...railway.app)
+ *  - OAUTH_BASE_URL (same https://...railway.app)
+ *  - GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
  */
 const PORT = process.env.PORT || "8080";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
+const PUBLIC_ORIGIN =
+  process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
 async function main() {
+  // --- Redis session store ---
   const redisClient = createRedisClient({ url: REDIS_URL });
   await redisClient.connect();
-
   const RedisStore = RedisStoreFactory(session);
+
+  // --- Express app ---
   const app = express();
 
+  // Trust Railway reverse proxy so secure cookies work
   app.set("trust proxy", 1);
 
+  // Security / infra middlewares
   app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-  })
-);
-
+    cors({
+      origin: PUBLIC_ORIGIN,
+      credentials: true,
+    })
+  );
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // Sessions (backed by Redis)
   app.use(
     session({
       secret: SESSION_SECRET,
@@ -68,14 +76,14 @@ async function main() {
         secure: process.env.NODE_ENV === "production",
       },
       store: new RedisStore({
-        client: redisClient as any,
+        client: redisClient,
         prefix: "sess:",
       }),
     })
   );
 
   // Health check
-  app.get("/health", (_req: Request, res: Response) => {
+  app.get("/health", (_req, res) => {
     res.json({
       ok: true,
       env: process.env.NODE_ENV || "dev",
@@ -83,10 +91,19 @@ async function main() {
     });
   });
 
-  // Google Auth + user routes
-  attachGoogleAuth(app);
+  // Auth (Google OAuth) + user routes
+  attachGoogleAuth(app); // requires OAUTH_BASE_URL etc. to be correct in prod
   app.use("/api/auth-user", authUserRouter());
 
+  // Serve React build
+  app.use(express.static(clientBuildDir));
+
+  // SPA fallback
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(clientBuildDir, "index.html"));
+  });
+
+  // Listen
   app.listen(Number(PORT), () => {
     console.log(`[server] listening on ${PORT}`);
   });

@@ -1,0 +1,28 @@
+# .nixpacks.toml
+
+# 1. Tell Nixpacks what language/runtime to use
+[phases.setup]
+# Force the Node version you want in prod (Railway saw nodejs_18 before, but you said 22.21.1)
+nixPkgs = ["nodejs_22", "pnpm"]
+
+# 2. Install phase (this replaces the default `pnpm i --frozen-lockfile`)
+[phases.install]
+cmds = [
+  "pnpm install --no-frozen-lockfile"
+]
+
+# 3. Build phase – build client first, then server
+[phases.build]
+cmds = [
+  "pnpm --filter client build",
+  "pnpm --filter @realenhance/server build"
+]
+
+# 4. Start phase – boot the server service
+[start]
+cmd = "pnpm --filter @realenhance/server start"
+
+# 5. Set the port env so Express can pick it up
+[variables]
+PORT = "8080"
+NODE_ENV = "production"
