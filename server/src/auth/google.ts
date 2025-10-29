@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import passport, { Profile, VerifyCallback } from "passport";
+import passport, { Profile } from "passport";
+import type { VerifyCallback } from "passport-oauth2";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { upsertUserFromGoogle } from "../services/users.js";
 
@@ -69,13 +70,12 @@ function initPassport() {
 
 
   // Put minimal info into the session
-  passport.serializeUser((user: any, done) => {
-    done(null, user);
+  passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
+  done(null, user);
   });
-
-  // Read minimal info back out of the session
-  passport.deserializeUser((obj: any, done) => {
-    done(null, obj);
+ 
+  passport.deserializeUser((obj: any, done: (err: any, user?: any) => void) => {
+  done(null, obj);
   });
 }
 

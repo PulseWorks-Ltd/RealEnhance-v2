@@ -178,6 +178,9 @@ importers:
       '@types/passport-google-oauth20':
         specifier: ^2.0.17
         version: 2.0.17
+      '@types/passport-oauth2':
+        specifier: ^1.8.0
+        version: 1.8.0
       tsx:
         specifier: ^4.20.0
         version: 4.20.6
