@@ -5,7 +5,11 @@ nixPkgs = ["nodejs_20", "pnpm"]
 cmds = ["pnpm install --no-frozen-lockfile"]
 
 [phases.build]
-cmds = ["pnpm run build"]
+cmds = ["pnpm run build"]       # tsc -p tsconfig.json
 
 [start]
-cmd = "npx serve -s dist -l $PORT"
+cmd = "pnpm run start"          # node dist/index.js
+
+[variables]
+PORT = "8080"
+NODE_ENV = "production"

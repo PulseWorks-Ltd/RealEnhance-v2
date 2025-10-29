@@ -1,6 +1,5 @@
 packages:
-  - "client"
   - "server"
+  - "client"
   - "worker"
   - "shared"
- 
