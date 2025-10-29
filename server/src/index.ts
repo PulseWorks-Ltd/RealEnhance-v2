@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
-import RedisStoreFactory from "connect-redis";
+import RedisStore from "connect-redis";
+import { createClient as createRedisClient } from "redis";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -8,50 +9,44 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { createClient as createRedisClient } from "redis";
 import dotenv from "dotenv";
+
 import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
 
 dotenv.config();
 
-/**
- * Path helpers for serving client files
- */
+/* -------------------------------------------------------------------------- */
+/*                               Path + Constants                             */
+/* -------------------------------------------------------------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const clientBuildDir = path.resolve(__dirname, "../../client/dist");
 
-/**
- * ENV + config
- * These MUST be set in Railway:
- *  - PORT (Railway injects this, fallback 8080 is fine)
- *  - SESSION_SECRET
- *  - REDIS_URL
- *  - NODE_ENV=production
- *  - PUBLIC_ORIGIN (your deployed https://...railway.app)
- *  - OAUTH_BASE_URL (same https://...railway.app)
- *  - GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
- */
 const PORT = process.env.PORT || "8080";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const PUBLIC_ORIGIN =
-  process.env.PUBLIC_ORIGIN || "http://localhost:3000";
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
+/* -------------------------------------------------------------------------- */
+/*                                Main Startup                                */
+/* -------------------------------------------------------------------------- */
 async function main() {
-  // --- Redis session store ---
+  /* --------------------------- Redis + Store Setup --------------------------- */
   const redisClient = createRedisClient({ url: REDIS_URL });
   await redisClient.connect();
-  const RedisStore = RedisStoreFactory(session);
 
-  // --- Express app ---
+  // connect-redis v7 -> class, not a function
+  const store = new RedisStore({
+    client: redisClient,
+    prefix: "sess:",
+  });
+
+  /* ------------------------------- Express App ------------------------------- */
   const app = express();
+  app.set("trust proxy", 1); // important for secure cookies behind Railway proxy
 
-  // Trust Railway reverse proxy so secure cookies work
-  app.set("trust proxy", 1);
-
-  // Security / infra middlewares
+  // Core middleware
   app.use(
     cors({
       origin: PUBLIC_ORIGIN,
@@ -64,25 +59,25 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Sessions (backed by Redis)
+  /* --------------------------- Session Middleware --------------------------- */
   app.use(
     session({
+      store,
       secret: SESSION_SECRET,
+      name: "realsess",
       resave: false,
       saveUninitialized: false,
+      rolling: true,
       cookie: {
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
+        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
       },
-      store: new RedisStore({
-        client: redisClient,
-        prefix: "sess:",
-      }),
     })
   );
 
-  // Health check
+  /* ----------------------------- Health Endpoint ----------------------------- */
   app.get("/health", (_req, res) => {
     res.json({
       ok: true,
@@ -91,21 +86,26 @@ async function main() {
     });
   });
 
-  // Auth (Google OAuth) + user routes
-  attachGoogleAuth(app); // requires OAUTH_BASE_URL etc. to be correct in prod
+  /* ------------------------- Auth + API Endpoints ---------------------------- */
+  attachGoogleAuth(app);
   app.use("/api/auth-user", authUserRouter());
 
-  // Serve React build
+  /* --------------------------- Static File Serving --------------------------- */
   app.use(express.static(clientBuildDir));
-
-  // SPA fallback
   app.get("*", (_req, res) => {
     res.sendFile(path.join(clientBuildDir, "index.html"));
   });
 
-  // Listen
+  /* ------------------------------- Start Server ------------------------------ */
   app.listen(Number(PORT), () => {
-    console.log(`[server] listening on ${PORT}`);
+    console.log(`[server] listening on port ${PORT}`);
+  });
+
+  /* ------------------------------ Graceful Exit ------------------------------ */
+  process.on("SIGTERM", async () => {
+    console.log("Shutting down server...");
+    await redisClient.quit();
+    process.exit(0);
   });
 }
 
