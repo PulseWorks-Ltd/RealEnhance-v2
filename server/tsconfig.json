@@ -4,18 +4,13 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
-    "rootDir": ".",                           // ⬅️ cover src + shared
+    "rootDir": "./src",
     "baseUrl": ".",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "strict": true,
-    "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true,
-    "paths": {
-      "@realenhance/shared/*": ["shared/src/*"]  // optional alias if you import from shared
-    }
+    "skipLibCheck": true
   },
-  "include": ["src/**/*", "shared/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["dist", "node_modules"]
 }
-

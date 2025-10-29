@@ -3,8 +3,8 @@ import {
   UserRecord,
   UserId,
   ImageId
-} from "@realenhance/shared/dist/types.js";
-import { CREDITS_PER_IMAGE } from "@realenhance/shared/dist/constants.js";
+} from "./shared/types.js";
+import { CREDITS_PER_IMAGE } from "./shared/constants.js";
 import { CREDITS_ENABLED } from "../config.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 

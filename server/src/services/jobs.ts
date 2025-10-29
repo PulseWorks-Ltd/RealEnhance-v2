@@ -6,8 +6,8 @@ import {
   JobId,
   UserId,
   ImageId
-} from "@realenhance/shared/dist/types.js";
-import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants.js";
+} from "./shared/types.js";
+import { JOB_QUEUE_NAME } from "./shared/constants.js";
 import { REDIS_URL } from "../config.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
