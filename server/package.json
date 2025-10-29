@@ -11,7 +11,7 @@
     "start": "NODE_ENV=production node dist/index.js"
   },
   "dependencies": {
-    "@realenhance/shared": "file:./shared",
+    "@realenhance/shared": "workspace:*",
     "bullmq": "^5.9.0",
     "connect-redis": "6",
     "cookie-parser": "^1.4.6",
