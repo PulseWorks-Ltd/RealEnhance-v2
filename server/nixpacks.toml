@@ -1,0 +1,16 @@
+# server/nixpacks.toml
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+cmds = ["pnpm install --no-frozen-lockfile"]
+
+[phases.build]
+cmds = ["pnpm run build"]
+
+[start]
+cmd = "pnpm run start"
+
+[variables]
+PORT = "8080"
+NODE_ENV = "production"
