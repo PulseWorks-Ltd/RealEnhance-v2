@@ -2,7 +2,7 @@
 
 import session from "express-session";
 import RedisStore from "connect-redis";
-import { createClient as createRedisClient, type RedisClientType } from "redis";
+import { createClient } from "redis";
 import { REDIS_URL, SESSION_SECRET, NODE_ENV } from "./config.js";
 
 export type SessionBuildResult = {
@@ -10,10 +10,9 @@ export type SessionBuildResult = {
   redisClient: RedisClientType;
 };
 
-export async function buildSessionMiddleware(): Promise<SessionBuildResult> {
-  // 1) Create and connect the Redis client (redis@^4)
-  const redisClient = createRedisClient({ url: REDIS_URL });
-  await redisClient.connect();
+export async function createSessionStore() {
+  const client = createClient({ url: process.env.REDIS_URL! });
+  await client.connect();
 
   // 2) Create the store (connect-redis@^7 uses 'new RedisStore({...})')
   const store = new RedisStore({
@@ -37,5 +36,5 @@ export async function buildSessionMiddleware(): Promise<SessionBuildResult> {
     },
   });
 
-  return { middleware, redisClient };
+  return new RedisStore({ client: client as any, prefix: "sess:" });
 }
