@@ -103,8 +103,8 @@ importers:
   server:
     dependencies:
       '@realenhance/shared':
-        specifier: workspace:*
-        version: link:../shared
+        specifier: file:./shared
+        version: file:server/shared
       bullmq:
         specifier: ^5.9.0
         version: 5.61.2
@@ -956,6 +956,9 @@ packages:
 
   '@radix-ui/rect@1.1.1':
     resolution: {integrity: sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==}
+
+  '@realenhance/shared@file:server/shared':
+    resolution: {directory: server/shared, type: directory}
 
   '@redis/bloom@1.2.0':
     resolution: {integrity: sha512-HG2DFjYKbpNmVXsa0keLHp/3leGJz1mjh09f2RLGGLQZzSHpkmZWuwJbAvo3QcRY8p80m5+ZdXZdYOSBLlp7Cg==}
@@ -2856,6 +2859,8 @@ snapshots:
       react-dom: 18.3.1(react@18.3.1)
 
   '@radix-ui/rect@1.1.1': {}
+
+  '@realenhance/shared@file:server/shared': {}
 
   '@redis/bloom@1.2.0(@redis/client@1.6.1)':
     dependencies:
