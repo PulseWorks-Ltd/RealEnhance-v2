@@ -83,11 +83,11 @@ export function uploadRouter() {
         sceneType: opts.sceneType,
       });
 
-      addImageToUser(sessUser.id, rec.imageId);
+      addImageToUser(sessUser.id, rec.imageId ?? rec.id);
 
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
-        imageId: rec.imageId,
+        imageId: rec.imageId ?? rec.id,
         options: {
           declutter: !!opts.declutter,
           virtualStage: !!opts.virtualStage,
@@ -96,7 +96,7 @@ export function uploadRouter() {
         },
       });
 
-      jobRefs.push({ jobId, imageId: rec.imageId });
+      jobRefs.push({ jobId, imageId: rec.imageId ?? rec.id });
     }
 
     res.json({ jobs: jobRefs });

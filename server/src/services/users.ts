@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
-import {
+import type {
   UserRecord,
   UserId,
   ImageId
-} from "./shared/types.js";
-import { CREDITS_PER_IMAGE } from "./shared/constants.js";
+} from "../shared/types.js";
+import { CREDITS_PER_IMAGE } from "../shared/constants.js";
 import { CREDITS_ENABLED } from "../config.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
@@ -14,9 +14,11 @@ function loadAll(): UsersState {
   return readJsonFile<UsersState>("users.json", {});
 }
 
-function saveAll(state: UsersState) {
+function saveAll(state: UsersState): void {
   writeJsonFile("users.json", state);
 }
+
+type UpsertGoogleParams = Readonly<{ email: string; name: string }>;
 
 export function upsertUserFromGoogle(params: {
   email: string;
@@ -37,7 +39,7 @@ export function upsertUserFromGoogle(params: {
       imageIds: [],
       createdAt: now,
       updatedAt: now
-    };
+  } as const as UserRecord;
     state[id] = found;
   } else {
     found.name = params.name || found.name;
@@ -48,15 +50,16 @@ export function upsertUserFromGoogle(params: {
   return found;
 }
 
-export function getUserById(userId: string): UserRecord | undefined {
+export function getUserById(userId: UserId): UserRecord | undefined {
   const state = loadAll();
   return state[userId];
 }
 
-export function addImageToUser(userId: string, imageId: ImageId) {
+export function addImageToUser(userId: UserId, imageId: ImageId): void {
   const state = loadAll();
   const u = state[userId];
   if (!u) return;
+
   if (!u.imageIds.includes(imageId)) {
     u.imageIds.push(imageId);
     u.updatedAt = new Date().toISOString();
@@ -69,9 +72,8 @@ export function getUserGallery(userId: string): ImageId[] {
   return u?.imageIds ?? [];
 }
 
-export function getCredits(userId: string): number {
-  const u = getUserById(userId);
-  return u?.credits ?? 0;
+export function getCredits(userId: UserId): number {
+  return getUserById(userId)?.credits ?? 0;
 }
 
 export function consumeCredits(userId: string, count: number) {

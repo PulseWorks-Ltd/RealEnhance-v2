@@ -1,19 +1,21 @@
+// server/src/services/images.ts
 import crypto from "node:crypto";
-import {
+import type {
   ImageRecord,
+  ImageVersionEntry,
   ImageVersion,
   ImageId,
-  UserId
-} from "./shared/types.js";
+  UserId,
+} from "../shared/types.js";
 import { readJsonFile, writeJsonFile } from "./jsonStore.js";
 
 type ImagesState = Record<ImageId, ImageRecord>;
 
-function loadAll(): ImagesState {
+function loadAllImages(): ImagesState {
   return readJsonFile<ImagesState>("images.json", {});
 }
 
-function saveAll(state: ImagesState) {
+function saveAllImages(state: ImagesState): void {
   writeJsonFile("images.json", state);
 }
 
@@ -23,24 +25,38 @@ export function createImageRecord(params: {
   roomType?: string;
   sceneType?: string;
 }): ImageRecord {
-  const state = loadAll();
-  const imageId = "img_" + crypto.randomUUID();
+  const state = loadAllImages();
+
+  const imageId: ImageId = "img_" + crypto.randomUUID();
+  const versionId = "ver_" + crypto.randomUUID();
   const now = new Date().toISOString();
 
-  const record: ImageRecord = {
-    imageId,
-    ownerUserId: params.userId,
-    originalPath: params.originalPath,
-    roomType: params.roomType,
-    sceneType: params.sceneType,
-    history: [],
-    currentVersionId: "",
+  const version: ImageVersionEntry = {
+    versionId,
+    stageLabel: "uploaded",
+    filePath: params.originalPath,
     createdAt: now,
-    updatedAt: now
+    note: undefined,
+  };
+
+  const record: ImageRecord = {
+    id: imageId,
+    imageId, // mirror id for legacy callers
+    ownerUserId: params.userId,
+    currentVersionId: versionId,
+    history: [version],
+    originalPath: params.originalPath,
+    versions: { original: params.originalPath },
+    meta: {
+      roomType: params.roomType,
+      sceneType: params.sceneType,
+    },
+    createdAt: now,
+    updatedAt: now,
   };
 
   state[imageId] = record;
-  saveAll(state);
+  saveAllImages(state);
 
   return record;
 }
@@ -49,11 +65,11 @@ export function addImageVersion(
   imageId: ImageId,
   data: { stageLabel: string; filePath: string; note?: string }
 ): { versionId: string; record: ImageRecord } {
-  const state = loadAll();
+  const state = loadAllImages();
   const rec = state[imageId];
   if (!rec) throw new Error("Image not found");
 
-  const versionId = "v_" + crypto.randomUUID();
+  const versionId = "ver_" + crypto.randomUUID();
   const now = new Date().toISOString();
 
   const version: ImageVersion = {
@@ -61,7 +77,7 @@ export function addImageVersion(
     stageLabel: data.stageLabel,
     filePath: data.filePath,
     createdAt: now,
-    note: data.note
+    note: data.note,
   };
 
   rec.history.push(version);
@@ -69,24 +85,23 @@ export function addImageVersion(
   rec.updatedAt = now;
 
   state[imageId] = rec;
-  saveAll(state);
+  saveAllImages(state);
 
   return { versionId, record: rec };
 }
 
 export function getImageRecord(imageId: ImageId): ImageRecord | undefined {
-  const state = loadAll();
+  const state = loadAllImages();
   return state[imageId];
 }
 
 export function listImagesForUser(userId: UserId): ImageRecord[] {
-  const state = loadAll();
-  return Object.values(state).filter(img => img.ownerUserId === userId);
+  const state = loadAllImages();
+  return Object.values(state).filter((img) => img.ownerUserId === userId);
 }
 
-// Optional: undo route can call this
 export function undoLastEdit(imageId: ImageId): ImageRecord | undefined {
-  const state = loadAll();
+  const state = loadAllImages();
   const rec = state[imageId];
   if (!rec) return;
 
@@ -96,12 +111,12 @@ export function undoLastEdit(imageId: ImageId): ImageRecord | undefined {
   }
 
   rec.history.pop();
-  const newLast = rec.history[rec.history.length - 1];
+  const newLast = rec.history[rec.history.length - 1]!;
   rec.currentVersionId = newLast.versionId;
   rec.updatedAt = new Date().toISOString();
 
   state[imageId] = rec;
-  saveAll(state);
+  saveAllImages(state);
 
   return rec;
 }

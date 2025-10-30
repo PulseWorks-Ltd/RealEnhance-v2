@@ -1,8 +1,11 @@
 // server/src/shared/types.ts
 
+/* ---------- Core IDs ---------- */
 export type UserId = string;
-export type JobId = string;
+export type JobId  = string;
+export type ImageId = string;
 
+/* ---------- Users ---------- */
 export interface AuthUser {
   id: UserId;
   name: string;
@@ -12,6 +15,60 @@ export interface AuthUser {
   updatedAt?: string;
 }
 
+export interface UserRecord extends AuthUser {
+  /** images owned by this user */
+  imageIds: ImageId[];
+}
+
+/* ---------- Images / Library ---------- */
+
+export interface ImageVersionEntry {
+  /** stable id for this version (not the image id) */
+  versionId: string;
+  /** human-facing stage label (e.g., "uploaded", "enhanced x2") */
+  stageLabel: string;
+  /** storage path or URL to this version’s file */
+  filePath: string;
+  /** ISO timestamp */
+  createdAt: string;
+  /** optional note */
+  note?: string;
+}
+export type ImageVersion = ImageVersionEntry;
+
+export interface ImageRecord {
+  /** main image identifier (primary key) */
+  id: ImageId;
+
+  /** legacy alias; always equals id */
+  imageId: ImageId;
+
+  /** owner relationship used by filters and guards */
+  ownerUserId: UserId;
+
+  /** current active version id (points to an entry in `history`) */
+  currentVersionId: string;
+
+  /** full timeline of created versions */
+  history: ImageVersionEntry[];
+
+  /** optional storage path for the original upload */
+  originalPath?: string;
+
+  /** optional convenience map of version -> URL/path */
+  versions?: Partial<Record<"original"|"preview"|"processed"|"thumb"|"web", string>>;
+
+  /** original source info if tracked */
+  sourceUrl?: string;
+  fileKey?: string;
+
+  meta?: Record<string, unknown>;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+}
+
+/* ---------- Jobs / Processing ---------- */
+
 export type JobStatus =
   | "queued"
   | "processing"
@@ -19,31 +76,39 @@ export type JobStatus =
   | "failed"
   | "cancelled";
 
-export type ImageOperation =
-  | "enhance"
-  | "denoise"
-  | "sharpen"
-  | "resize"
-  | "upscale"
-  | "watermark";
+export type JobKind = "enhance" | "edit" | "ingest" | "cleanup";
 
-/** What the client/API sends when enqueuing a job */
-export interface ImageJobPayload {
+/** Strongly-typed payloads you enqueue */
+export interface EnhanceJobPayload {
+  jobId: JobId;
   userId: UserId;
-  /** If file was uploaded to storage, a key/path you can fetch */
-  fileKey?: string;
-  /** If processing a remote URL directly */
-  sourceUrl?: string;
-  /** List of operations to apply in order */
-  operations: ImageOperation[];
-  /** Optional extra settings */
-  options?: Record<string, unknown>;
-  requestedAt: string; // ISO string
+  imageId: ImageId;
+  type: "enhance";
+  options: {
+    declutter: boolean;
+    virtualStage: boolean;
+    roomType: string;
+    sceneType: string;
+  };
+  createdAt: string; // ISO
 }
 
-/** Result info saved after processing succeeds */
+export interface EditJobPayload {
+  jobId: JobId;
+  userId: UserId;
+  imageId: ImageId;
+  type: "edit";
+  baseVersionId: string;
+  mode: "Add" | "Remove" | "Replace" | "Restore";
+  instruction: string;
+  mask: unknown;
+  createdAt: string; // ISO
+}
+
+export type AnyJobPayload = EnhanceJobPayload | EditJobPayload;
+
 export interface ImageJobResult {
-  outputUrl: string;        // public URL (or signed)
+  outputUrl: string;
   width: number;
   height: number;
   sizeBytes: number;
@@ -51,27 +116,33 @@ export interface ImageJobResult {
   meta?: Record<string, unknown>;
 }
 
-/** Queue item + persisted model */
-export interface ImageJob {
+/** Persisted job record */
+export interface JobRecord {
+  /** keep id = jobId for simplicity */
   id: JobId;
+  jobId?: JobId;
+
+  /** link job to an image when applicable */
+  imageId?: ImageId;
+
+  /** used by routes/status.ts to assert ownership */
+  userId: UserId;
+
+  /** kind of job */
+  type?: JobKind;
+
   status: JobStatus;
-  payload: ImageJobPayload;
+
+  /** what you enqueued */
+  payload: AnyJobPayload;
+
   result?: ImageJobResult;
   error?: string;
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }
 
-/** Optional: credit ledger entry if your code records these */
-export interface CreditLedgerEntry {
-  id: string;
-  userId: UserId;
-  delta: number; // negative for spends, positive for purchases/grants
-  reason: "job" | "purchase" | "admin";
-  jobId?: JobId;
-  createdAt: string;
-}
-
+/* ---------- API helpers ---------- */
 export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
