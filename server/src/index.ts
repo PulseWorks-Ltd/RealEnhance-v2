@@ -1,3 +1,4 @@
+// server/src/index.ts
 import express from "express";
 import session from "express-session";
 import RedisStore from "connect-redis";
@@ -16,37 +17,31 @@ import { authUserRouter } from "./routes/authUser.js";
 
 dotenv.config();
 
-/* -------------------------------------------------------------------------- */
-/*                               Path + Constants                             */
-/* -------------------------------------------------------------------------- */
+/* Paths */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const clientBuildDir = path.resolve(__dirname, "../../client/dist");
 
+/* Env */
 const PORT = process.env.PORT || "8080";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
-/* -------------------------------------------------------------------------- */
-/*                                Main Startup                                */
-/* -------------------------------------------------------------------------- */
 async function main() {
-  /* --------------------------- Redis + Store Setup --------------------------- */
+  // Redis client + store (connect-redis v7)
   const redisClient = createRedisClient({ url: REDIS_URL });
   await redisClient.connect();
 
-  // connect-redis v7 -> class, not a function
   const store = new RedisStore({
     client: redisClient,
     prefix: "sess:",
   });
 
-  /* ------------------------------- Express App ------------------------------- */
+  // App
   const app = express();
-  app.set("trust proxy", 1); // important for secure cookies behind Railway proxy
+  app.set("trust proxy", 1);
 
-  // Core middleware
   app.use(
     cors({
       origin: PUBLIC_ORIGIN,
@@ -59,7 +54,7 @@ async function main() {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  /* --------------------------- Session Middleware --------------------------- */
+  // Sessions
   app.use(
     session({
       store,
@@ -77,7 +72,7 @@ async function main() {
     })
   );
 
-  /* ----------------------------- Health Endpoint ----------------------------- */
+  // Health
   app.get("/health", (_req, res) => {
     res.json({
       ok: true,
@@ -86,24 +81,23 @@ async function main() {
     });
   });
 
-  /* ------------------------- Auth + API Endpoints ---------------------------- */
+  // Auth + API
   attachGoogleAuth(app);
   app.use("/api/auth-user", authUserRouter());
 
-  /* --------------------------- Static File Serving --------------------------- */
+  // Static SPA (remove if client is a separate service/URL)
   app.use(express.static(clientBuildDir));
   app.get("*", (_req, res) => {
     res.sendFile(path.join(clientBuildDir, "index.html"));
   });
 
-  /* ------------------------------- Start Server ------------------------------ */
+  // Start
   app.listen(Number(PORT), () => {
     console.log(`[server] listening on port ${PORT}`);
   });
 
-  /* ------------------------------ Graceful Exit ------------------------------ */
+  // Graceful shutdown
   process.on("SIGTERM", async () => {
-    console.log("Shutting down server...");
     await redisClient.quit();
     process.exit(0);
   });
