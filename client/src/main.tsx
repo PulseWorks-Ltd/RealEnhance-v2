@@ -23,3 +23,8 @@ createRoot(rootEl).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+// Surface any unhandled promise rejections in the console instead of killing the render
+  window.addEventListener("unhandledrejection", (e) => {
+  console.error("Unhandled promise rejection:", e.reason);
+});
