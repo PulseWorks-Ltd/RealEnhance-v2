@@ -1,5 +1,5 @@
 // server/src/services/images.ts
-import crypto from "node:crypto";
+import * as crypto from "node:crypto";
 import type {
   ImageRecord,
   ImageVersionEntry,
