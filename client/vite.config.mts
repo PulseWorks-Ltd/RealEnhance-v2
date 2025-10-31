@@ -25,8 +25,10 @@ export default defineConfig({
     strictPort: true
   },
   preview: {
+    /** allow any host when running `vite preview` on Railway */
+    allowedHosts: true,
     host: "0.0.0.0",
-    port: Number(process.env.PORT ?? 4173) // ✅ binds to Railway $PORT
-  }
+    port: Number(process.env.PORT) || 8080,
+  },
 });
 
