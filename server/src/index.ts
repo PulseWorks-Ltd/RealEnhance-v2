@@ -11,9 +11,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import dotenv from "dotenv";
+import cors from "cors";
+import session from "express-session";
+import { createSessionStore } from "./sessionStore.js"; // your Redis store factory
 
+const CLIENT_ORIGIN = process.env.PUBLIC_ORIGIN!; // e.g. https://client-production-3021.up.railway.app
+const IS_PROD = process.env.NODE_ENV === "production";
 import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
+
+app.set("trust proxy", 1);
 
 dotenv.config();
 
@@ -42,9 +49,12 @@ async function main() {
   const app = express();
   app.set("trust proxy", 1);
 
-  app.use(cors({
-    origin: process.env.PUBLIC_ORIGIN, // exact client URL
-    credentials: true,
+  app.use(
+    cors({
+      origin: CLIENT_ORIGIN,     // or (origin, cb) => cb(null, true) if you need wider
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
 
@@ -55,17 +65,23 @@ async function main() {
   app.use(express.urlencoded({ extended: true }));
 
   // Sessions
-  app.use(session({
-  secret: process.env.SESSION_SECRET!,
-  resave: false,
-  saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: "none",
-      secure: true,
-    },
-    store: new RedisStore({ client: redisClient, prefix: "sess:" }),
-  }));
+  const store = await createSessionStore(); // returns a connect-redis store
+  app.use(
+    session({
+      store,
+      name: "realsess",
+      secret: process.env.SESSION_SECRET!,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        // 🔴 CRITICAL for cross-site fetches:
+        sameSite: IS_PROD ? "none" : "lax",
+        secure: IS_PROD,             // Railway is HTTPS, so this is fine
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+      },
+    })
+  );
 
   // Health
   app.get("/health", (_req, res) => {
