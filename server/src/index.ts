@@ -3,111 +3,94 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import morgan from "morgan";
-import helmet from "helmet";
-import cors from "cors";
-import cookieParser from "cookie-parser";
 import session from "express-session";
-import { createClient as createRedisClient } from "redis";
-import connectRedis from "connect-redis";
-import { createSessionStore } from "./sessionStore.js";
+import RedisStore from "connect-redis";
+import { createClient as createRedisClient, type RedisClientType } from "redis";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
 
 import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
 
-const {
-  NODE_ENV,
-  PORT = "8080",
-  SESSION_SECRET = "dev-secret",
-  REDIS_URL = "redis://localhost:6379",
-  PUBLIC_ORIGIN = "http://localhost:3000",
-} = process.env;
-
-const IS_PROD = NODE_ENV === "production";
-const CLIENT_ORIGIN = process.env.PUBLIC_ORIGIN!;
-
-app.set("trust proxy", 1);
+// -------- ENV --------
+const PORT = Number(process.env.PORT || 8080);
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
+const PUBLIC_ORIGIN =
+  process.env.PUBLIC_ORIGIN || "http://localhost:3000"; // your client URL
+const IS_PROD = process.env.NODE_ENV === "production";
 
 async function main() {
-  // --- Express app
+  // -------- Redis + connect-redis v7 --------
+  const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL });
+  await redisClient.connect();
+
+  const store = new RedisStore({
+  client: redisClient,
+  prefix: "sess:",
+  });
+ 
+  // -------- Express --------
   const app = express();
-  app.set("trust proxy", 1);
+  app.set("trust proxy", 1); // behind Railway proxy
 
-  // --- Infra middleware
-  app.use(morgan("dev"));
-  app.use(helmet());
-  app.use(cookieParser());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-
-  // --- CORS (allow client origin + cookies)
   app.use(
     cors({
-      origin: CLIENT_ORIGIN,     // or (origin, cb) => cb(null, true) if you need wider
+      origin: PUBLIC_ORIGIN,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
+  app.use(helmet());
+  app.use(morgan("dev"));
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
-  // --- Redis sessions (connect-redis v7)
-  const redisClient = createRedisClient({ url: REDIS_URL });
-  await redisClient.connect();
-
-  // create class and instantiate
-  const RedisStore = connectRedis(session);
-  const store = await createSessionStore(); // returns a connect-redis store
+  // Sessions (SameSite=None for cross-site cookies in prod)
   app.use(
     session({
-      store,
-      name: "realsess",
-      secret: process.env.SESSION_SECRET!,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        // 🔴 CRITICAL for cross-site fetches:
-        sameSite: IS_PROD ? "none" : "lax",
-        secure: IS_PROD,             // Railway is HTTPS, so this is fine
-        maxAge: 1000 * 60 * 60 * 24 * 7,
-      },
-    })
-  );
-
-
-  app.use(
-    session({
-      store,
       name: "realsess",
       secret: SESSION_SECRET,
+      store,
       resave: false,
       saveUninitialized: false,
       cookie: {
         httpOnly: true,
         sameSite: IS_PROD ? "none" : "lax",
-        secure: IS_PROD,
+        secure: IS_PROD, // Railway uses HTTPS
         maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
       },
     })
   );
 
-  // --- Health
+  // Health
   app.get("/health", (_req, res) => {
-    res.json({ ok: true, env: NODE_ENV ?? "dev", time: new Date().toISOString() });
+    res.json({
+      ok: true,
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
+    });
   });
 
-  // --- Auth + API
+  // Auth + routes
   attachGoogleAuth(app);
   app.use("/api/auth-user", authUserRouter());
 
-  // --- Start
-  app.listen(Number(PORT), () => {
+  app.listen(PORT, () => {
     console.log(`[server] listening on port ${PORT}`);
   });
 
-  // --- Graceful shutdown
+  // Graceful shutdown
   process.on("SIGTERM", async () => {
-    try { await redisClient.quit(); } finally { process.exit(0); }
+    try {
+      await redisClient.quit();
+    } finally {
+      process.exit(0);
+    }
   });
 }
 
@@ -115,4 +98,3 @@ main().catch((err) => {
   console.error("[server] fatal startup error:", err);
   process.exit(1);
 });
-
