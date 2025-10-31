@@ -85,12 +85,6 @@ async function main() {
   attachGoogleAuth(app);
   app.use("/api/auth-user", authUserRouter());
 
-  // Static SPA (remove if client is a separate service/URL)
-  app.use(express.static(clientBuildDir));
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(clientBuildDir, "index.html"));
-  });
-
   // Start
   app.listen(Number(PORT), () => {
     console.log(`[server] listening on port ${PORT}`);
