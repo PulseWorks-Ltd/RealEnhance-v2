@@ -42,12 +42,12 @@ async function main() {
   const app = express();
   app.set("trust proxy", 1);
 
-  app.use(
-    cors({
-      origin: PUBLIC_ORIGIN,
-      credentials: true,
+  app.use(cors({
+    origin: process.env.PUBLIC_ORIGIN, // exact client URL
+    credentials: true,
     })
   );
+
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
@@ -55,22 +55,17 @@ async function main() {
   app.use(express.urlencoded({ extended: true }));
 
   // Sessions
-  app.use(
-    session({
-      store,
-      secret: SESSION_SECRET,
-      name: "realsess",
-      resave: false,
-      saveUninitialized: false,
-      rolling: true,
-      cookie: {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      },
-    })
-  );
+  app.use(session({
+  secret: process.env.SESSION_SECRET!,
+  resave: false,
+  saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+    },
+    store: new RedisStore({ client: redisClient, prefix: "sess:" }),
+  }));
 
   // Health
   app.get("/health", (_req, res) => {
