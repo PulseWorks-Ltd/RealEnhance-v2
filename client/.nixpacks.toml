@@ -1,13 +1,11 @@
-# Tell Railway how to build the client service
-
 [phases.setup]
-nixPkgs = ["nodejs_22", "pnpm"]
+nixPkgs = ["nodejs_20", "pnpm"]
 
 [phases.install]
-cmd = "pnpm install --no-frozen-lockfile --force"
+cmds = ["pnpm install --frozen-lockfile"]
 
 [phases.build]
-cmd = "pnpm run build"
+cmds = ["pnpm run build"]
 
 [start]
-cmd = "pnpm run preview -- --host 0.0.0.0 --port 8080"
+cmd = "pnpm run start"
