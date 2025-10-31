@@ -10,17 +10,47 @@ function joinUrl(base: string, path: string) {
   return `${base}${p}`;
 }
 
+function withTimeout(ms: number) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  return { signal: ctrl.signal, done: () => clearTimeout(id) };
+}
+
+class ApiError extends Error {
+  status: number; path: string; body?: string;
+  constructor(msg: string, status: number, path: string, body?: string) {
+    super(msg); this.status = status; this.path = path; this.body = body;
+  }
+}
+
 export function api(path: string) {
   return joinUrl(API_BASE, path);
 }
 
-export async function apiFetch(path: string, opts: RequestInit = {}) {
-  const res = await fetch(api(path), {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    ...opts,
-  });
-  return res;
+export async function apiFetch(path: string, opts: RequestInit = {}, timeoutMs = 30_000) {
+  const t = withTimeout(timeoutMs);
+  try {
+    const res = await fetch(api(path), {
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      signal: t.signal,
+      ...opts,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`API ${res.status} ${path}:`, body);
+      throw new ApiError(body || `Request failed`, res.status, path, body);
+    }
+    return res;
+  } finally {
+    t.done();
+  }
+}
+
+export async function apiJson<T = unknown>(path: string, opts: RequestInit = {}) {
+  const res = await apiFetch(path, opts);
+  const ct = res.headers.get("content-type") || "";
+  return (ct.includes("application/json") ? res.json() : res.text()) as Promise<T>;
 }
 
 export async function apiGet<T = unknown>(path: string): Promise<T> {
@@ -33,12 +63,13 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
 export const clientApi = {
   request: async <T>(path: string, opts: RequestInit = {}) => {
     const res = await apiFetch(path, opts);
+    // Log the body on error so it doesn’t crash the render path silently
     if (!res.ok) {
-      const msg = await res.text().catch(() => `${res.status} ${res.statusText}`);
-      throw Object.assign(new Error(msg), { code: res.status });
+      const body = await res.text().catch(() => "");
+      console.error(`API ${res.status} ${path}:`, body);
+      throw new Error(body || `Request failed: ${res.status}`);
     }
-    const ct = res.headers.get("content-type") || "";
-    return (ct.includes("application/json") ? res.json() : res.text()) as Promise<T>;
+    return res.json() as Promise<T>;
   },
 };
 
