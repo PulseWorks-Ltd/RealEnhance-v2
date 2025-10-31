@@ -1,22 +1,40 @@
 // client/src/App.tsx
-import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-// import your pages/components here, e.g.:
-// import Home from "@/pages/Home";
-// import Dashboard from "@/pages/Dashboard";
+import React, { Suspense, lazy } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Header } from "./components/Header"; // or "@/components/Header" if file is Header.tsx
 
-const App: React.FC = () => {
+// lazy imports must match file names exactly
+const Landing        = lazy(() => import("@/pages/landing"));         // landing.tsx
+const Home           = lazy(() => import("@/pages/home"));            // home.tsx
+const Editor         = lazy(() => import("@/pages/Editor"));          // Editor.tsx
+const Results        = lazy(() => import("@/pages/Results"));         // Results.tsx
+const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));        // MyPhotos.tsx
+const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));  // RegionEditPage.tsx
+const NotFound       = lazy(() => import("@/pages/not-found"));       // not-found.tsx
+
+export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Replace with your actual routes */}
-        {/* <Route path="/" element={<Home />} /> */}
-        {/* <Route path="/dashboard" element={<Dashboard />} /> */}
-        <Route path="*" element={<div className="p-6">RealEnhance is live ✅</div>} />
-      </Routes>
-    </BrowserRouter>
-  );
-};
+    <>
+      <Header />
+      <Suspense fallback={<div className="p-6">Loading…</div>}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/home" element={<Home />} />
 
-export default App;
+          {/* Core app flows */}
+          <Route path="/editor" element={<Editor />} />
+          <Route path="/results" element={<Results />} />
+          <Route path="/my-photos" element={<MyPhotos />} />
+          <Route path="/region-edit" element={<RegionEditPage />} />
+
+          {/* Aliases */}
+          <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+
+          {/* 404 */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </>
+  );
+}
 

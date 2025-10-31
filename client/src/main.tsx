@@ -1,30 +1,35 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot } from "react-dom/client";  // ✅ Import createRoot directly
+import { BrowserRouter } from "react-router-dom";
 import App from "./App";
-import "./index.css";
-import { AuthProvider } from "@/context/AuthContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AuthProvider } from "@/context/AuthContext";
+import "@/index.css";
 import { Toaster } from "@/components/ui/toaster";
 
-const rootEl = document.getElementById("root");
-if (!rootEl) {
-  throw new Error('Root element "#root" not found');
-}
+// ✅ Setup query client
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { refetchOnWindowFocus: false } },
+});
 
-const queryClient = new QueryClient();
+// ✅ Find root element and render once
+const rootEl = document.getElementById("root");
+if (!rootEl) throw new Error('Root element "#root" not found');
 
 createRoot(rootEl).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <App />
-        <Toaster />
+        <BrowserRouter>
+          <App />
+          <Toaster />
+        </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );
 
-// Surface any unhandled promise rejections in the console instead of killing the render
-  window.addEventListener("unhandledrejection", (e) => {
+// ✅ Surface any unhandled promise rejections
+window.addEventListener("unhandledrejection", (e) => {
   console.error("Unhandled promise rejection:", e.reason);
 });
