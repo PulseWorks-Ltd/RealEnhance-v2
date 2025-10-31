@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
-import fs from "node:fs";
-import path from "node:path";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, chargeForImages } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
