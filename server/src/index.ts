@@ -10,6 +10,7 @@ import cookieParser from "cookie-parser";
 import session from "express-session";
 import { createClient as createRedisClient } from "redis";
 import connectRedis from "connect-redis";
+import { createSessionStore } from "./sessionStore.js";
 
 import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
@@ -23,6 +24,9 @@ const {
 } = process.env;
 
 const IS_PROD = NODE_ENV === "production";
+const CLIENT_ORIGIN = process.env.PUBLIC_ORIGIN!;
+
+app.set("trust proxy", 1);
 
 async function main() {
   // --- Express app
@@ -39,7 +43,7 @@ async function main() {
   // --- CORS (allow client origin + cookies)
   app.use(
     cors({
-      origin: PUBLIC_ORIGIN,
+      origin: CLIENT_ORIGIN,     // or (origin, cb) => cb(null, true) if you need wider
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
@@ -50,11 +54,26 @@ async function main() {
   const redisClient = createRedisClient({ url: REDIS_URL });
   await redisClient.connect();
 
+  // create class and instantiate
   const RedisStore = connectRedis(session);
-  const store = new RedisStore({
-    client: redisClient,
-    prefix: "sess:",
-  });
+  const store = await createSessionStore(); // returns a connect-redis store
+  app.use(
+    session({
+      store,
+      name: "realsess",
+      secret: process.env.SESSION_SECRET!,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        // 🔴 CRITICAL for cross-site fetches:
+        sameSite: IS_PROD ? "none" : "lax",
+        secure: IS_PROD,             // Railway is HTTPS, so this is fine
+        maxAge: 1000 * 60 * 60 * 24 * 7,
+      },
+    })
+  );
+
 
   app.use(
     session({
