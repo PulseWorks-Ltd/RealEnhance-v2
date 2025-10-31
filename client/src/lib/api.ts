@@ -47,6 +47,21 @@ export async function apiFetch(path: string, opts: RequestInit = {}, timeoutMs =
   }
 }
 
+export async function apiFetchSoft(path: string, opts: RequestInit = {}, timeoutMs = 30_000) {
+  const t = withTimeout(timeoutMs);
+  try {
+    // identical to apiFetch but no throw on !ok
+    return await fetch(api(path), {
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      signal: t.signal,
+      ...opts,
+    });
+  } finally {
+    t.done();
+  }
+}
+
 export async function apiJson<T = unknown>(path: string, opts: RequestInit = {}) {
   const res = await apiFetch(path, opts);
   const ct = res.headers.get("content-type") || "";
