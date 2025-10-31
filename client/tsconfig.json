@@ -1,15 +1,16 @@
 {
-  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-      "@shared/*": ["../shared/*"],
-      "@assets/*": ["../attached_assets/*"]
-    },
-    "types": ["vite/client"]   // ⬅️ no "node" here
-  },
-  "include": ["src", "vite-env.d.ts"],
-  "exclude": ["dist", "node_modules"]
-}
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
 
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] },
+
+    "types": ["vite/client"],          // no "node" here
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "vite-env.d.ts"]
+}
