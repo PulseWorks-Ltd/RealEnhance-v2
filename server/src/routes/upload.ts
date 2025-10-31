@@ -1,80 +1,86 @@
-import { Router, Request, Response } from "express";
+// server/src/routes/upload.ts
+import { Router, type Request, type Response, type RequestHandler } from "express";
 import multer from "multer";
-import * as fs from "node:fs";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, chargeForImages } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
 
-// --- define a local file type so TS stops yelling ---
-type UploadedFile = {
-  fieldname: string;
-  originalname: string;
-  mimetype: string;
-  size: number;
-  filename?: string;
-  path?: string;
-  buffer?: Buffer;
-};
+const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
-// configure Multer storage
 const upload = multer({
   storage: multer.diskStorage({
-    destination: path.join(process.cwd(), "server", "uploads"),
+    destination: async (_req, _file, cb) => {
+      try {
+        await fs.mkdir(uploadRoot, { recursive: true });
+        cb(null, uploadRoot);
+      } catch (e) {
+        cb(e as Error, uploadRoot);
+      }
+    },
     filename(_req, file, cb) {
-      // keep original name or generate unique one, whichever you were doing before
       cb(null, file.originalname);
     },
   }),
-  limits: {
-    fileSize: 25 * 1024 * 1024, // 25MB per image, adjust if you had a different limit
-  },
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
 });
+
+function safeParseOptions(raw: unknown): any[] {
+  if (typeof raw !== "string") return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
 
 export function uploadRouter() {
   const r = Router();
 
-  r.post("/upload", upload.array("images", 20), async (req: Request, res: Response) => {
+  // If your editor still shows overload errors, this cast silences them safely.
+  const uploadMw: RequestHandler = upload.array("images", 20) as unknown as RequestHandler;
+
+  r.post("/upload", uploadMw, async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
-    if (!sessUser) {
-      return res.status(401).json({ error: "not_authenticated" });
-    }
+    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
 
-    const files = (req.files as unknown as UploadedFile[]) || [];
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (!files.length) return res.status(400).json({ error: "no_files" });
 
-    // Frontend should send `options` as a JSON string with per-file options:
-    // [
-    //   { declutter:true, virtualStage:true, roomType:"bedroom", sceneType:"interior" },
-    //   ...
-    // ]
-    const raw = req.body?.options;
-    const optionsList = raw ? JSON.parse(raw) : [];
+    const optionsList = safeParseOptions((req.body as any)?.options);
 
-    if (!files.length) {
-      return res.status(400).json({ error: "no_files" });
-    }
-
-    // Optional credit charge
+    // charge credits (throws on insufficient)
     await chargeForImages(sessUser.id, files.length);
 
-    const jobRefs: Array<{ jobId: string; imageId: string }> = [];
+    const userDir = path.join(uploadRoot, sessUser.id);
+    await fs.mkdir(userDir, { recursive: true });
 
-    // Ensure subfolder by user
-    const userDir = path.join(process.cwd(), "server", "uploads", sessUser.id);
-    if (!fs.existsSync(userDir)) fs.mkdirSync(userDir, { recursive: true });
+    const jobs: Array<{ jobId: string; imageId: string }> = [];
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const opts = optionsList[i] || {
+      const opts = optionsList[i] ?? {
         declutter: false,
         virtualStage: false,
         roomType: "unknown",
         sceneType: "interior",
       };
 
-      const ext = path.extname(f.originalname) || ".jpg";
-      const finalPath = path.join(userDir, f.filename || f.originalname + ext);
-      if (f.path) fs.renameSync(f.path, finalPath);
+      const finalPath = path.join(userDir, f.filename || f.originalname);
+
+      // move file into user's folder
+      if ((f as any).path) {
+        const src = path.join((f as any).destination ?? uploadRoot, f.filename);
+        await fs
+          .rename(src, finalPath)
+          .catch(async () => {
+            const buf = await fs.readFile((f as any).path);
+            await fs.writeFile(finalPath, buf);
+            await fs.unlink((f as any).path).catch(() => {});
+          });
+      }
 
       const rec = createImageRecord({
         userId: sessUser.id,
@@ -83,11 +89,12 @@ export function uploadRouter() {
         sceneType: opts.sceneType,
       });
 
-      addImageToUser(sessUser.id, rec.imageId ?? rec.id);
+      const imageId = (rec as any).imageId ?? (rec as any).id;
+      addImageToUser(sessUser.id, imageId);
 
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
-        imageId: rec.imageId ?? rec.id,
+        imageId,
         options: {
           declutter: !!opts.declutter,
           virtualStage: !!opts.virtualStage,
@@ -96,12 +103,11 @@ export function uploadRouter() {
         },
       });
 
-      jobRefs.push({ jobId, imageId: rec.imageId ?? rec.id });
+      jobs.push({ jobId, imageId });
     }
 
-    res.json({ jobs: jobRefs });
+    return res.json({ ok: true, jobs });
   });
 
   return r;
 }
-

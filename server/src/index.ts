@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import session from "express-session";
+import session, { type SessionOptions } from "express-session";
 import RedisStore from "connect-redis";
 import { createClient as createRedisClient, type RedisClientType } from "redis";
 import cors from "cors";
@@ -13,84 +13,82 @@ import cookieParser from "cookie-parser";
 
 import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
+import { registerMeRoutes } from "./routes.me.js";
+import { uploadRouter } from "./routes/upload.js"; // optional if you have upload.ts
+
+import type { RequestHandler } from "express";
 
 // -------- ENV --------
 const PORT = Number(process.env.PORT || 8080);
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
-const PUBLIC_ORIGIN =
-  process.env.PUBLIC_ORIGIN || "http://localhost:3000"; // your client URL
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 const IS_PROD = process.env.NODE_ENV === "production";
 
 async function main() {
-  // -------- Redis + connect-redis v7 --------
+  // -------- Redis --------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL });
+  redisClient.on("error", (err) => console.error("[redis] error", err));
   await redisClient.connect();
 
   const store = new RedisStore({
-  client: redisClient,
-  prefix: "sess:",
+    client: redisClient,
+    prefix: "sess:",
   });
- 
+
   // -------- Express --------
   const app = express();
-  app.set("trust proxy", 1); // behind Railway proxy
+  app.set("trust proxy", 1);
 
   app.use(
     cors({
-      origin: PUBLIC_ORIGIN,
+      origin: PUBLIC_ORIGIN.split(",").map((o) => o.trim()),
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
+
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use("/api", uploadRouter());
 
-  // Sessions (SameSite=None for cross-site cookies in prod)
-  app.use(
-    session({
-      name: "realsess",
-      secret: SESSION_SECRET,
-      store,
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        httpOnly: true,
-        sameSite: IS_PROD ? "none" : "lax",
-        secure: IS_PROD, // Railway uses HTTPS
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-      },
-    })
-  );
+  // -------- Sessions --------
+  const sessionOptions: SessionOptions = {
+    name: "realsess",
+    secret: SESSION_SECRET,
+    store, // ✅ 'store' exists in this scope
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: IS_PROD ? "none" : "lax",
+      secure: IS_PROD,
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    },
+  };
+  
+  app.use(session(sessionOptions) as unknown as RequestHandler);
 
-  // Health
+  // -------- Routes --------
   app.get("/health", (_req, res) => {
-    res.json({
-      ok: true,
-      env: process.env.NODE_ENV || "dev",
-      time: new Date().toISOString(),
-    });
+    res.json({ ok: true, env: process.env.NODE_ENV || "dev", time: new Date().toISOString() });
   });
 
-  // Auth + routes
   attachGoogleAuth(app);
-  app.use("/api/auth-user", authUserRouter());
+  app.use("/api/auth-user", typeof authUserRouter === "function" ? authUserRouter() : authUserRouter);
+  registerMeRoutes(app);
+  app.use("/api", uploadRouter()); // optional
 
-  app.listen(PORT, () => {
-    console.log(`[server] listening on port ${PORT}`);
-  });
+  // -------- Start --------
+  app.listen(PORT, () => console.log(`[server] listening on port ${PORT}`));
 
-  // Graceful shutdown
   process.on("SIGTERM", async () => {
-    try {
-      await redisClient.quit();
-    } finally {
-      process.exit(0);
-    }
+    await redisClient.quit();
+    process.exit(0);
   });
 }
 

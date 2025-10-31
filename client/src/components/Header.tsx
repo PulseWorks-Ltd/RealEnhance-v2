@@ -5,6 +5,18 @@ import { useAuth } from "@/context/AuthContext";
 import { ProfileDropdown } from "@/components/profile-dropdown";
 import { withDevice } from "@/lib/withDevice";
 import { apiFetch } from "@/lib/api";
+import { apiFetchSoft } from "@/lib/api";
+
+const { data, isLoading } = useQuery<MeUnified>({
+  queryKey: ["/api/me"],
+  queryFn: async () => {
+    const res = await apiFetchSoft("/api/me", { ...withDevice() });
+    if (!res.ok) return { credits: 0, isAuthenticated: false }; // tolerate 404/401
+    return normalizeMe(await res.json());
+  },
+  staleTime: 30_000,
+  retry: 1,
+});
 
 type MeUnified = { credits: number; isAuthenticated: boolean };
 
