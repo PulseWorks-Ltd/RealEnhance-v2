@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Header } from "@/components/Header"; // ← named import, lowercase file
+import { Header } from "@/components/header"; // filename is header.tsx (lowercase)
 
 const Landing        = lazy(() => import("@/pages/landing"));
 const Home           = lazy(() => import("@/pages/home"));
@@ -10,7 +10,7 @@ const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
-export default function App() {
+const App: React.FC = () => {
   return (
     <>
       <Header />
@@ -28,4 +28,7 @@ export default function App() {
       </Suspense>
     </>
   );
-}
+};
+
+export default App;
+
