@@ -1,7 +1,8 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Header } from "@/components/Header"; // filename is header.tsx (lowercase)
+import { Header } from "@/components/Header";
 
+// Match the filenames exactly (case sensitive on Linux)
 const Landing        = lazy(() => import("@/pages/landing"));
 const Home           = lazy(() => import("@/pages/home"));
 const Editor         = lazy(() => import("@/pages/Editor"));
@@ -10,7 +11,7 @@ const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
-const App: React.FC = () => {
+export default function App() {
   return (
     <>
       <Header />
@@ -28,7 +29,4 @@ const App: React.FC = () => {
       </Suspense>
     </>
   );
-};
-
-export default App;
-
+}
