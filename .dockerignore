@@ -1,8 +1,27 @@
-# Ignore everything the server doesn’t need
-client/
-worker/
-node_modules/
-.git/
+# ---- ignore everything by default
+**
+
+# ---- allow the server project
+!server/**
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!package.json
+
+# ---- re-ignore bulky stuff inside server
+server/node_modules
+server/uploads
+server/.turbo
+server/.next
+server/.cache
+server/.pnpm-store
+server/*.log
+
+# ---- you do NOT need the client/worker for server image
+client
+worker
+
+# ---- git & tooling
+.git
 .gitignore
-pnpm-lock.yaml
-*.log
+.vscode
+.DS_Store
