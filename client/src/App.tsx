@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Header } from "@/components/header"; // filename is header.tsx (lowercase)
+import { Header } from "@/components/Header"; // filename is header.tsx (lowercase)
 
 const Landing        = lazy(() => import("@/pages/landing"));
 const Home           = lazy(() => import("@/pages/home"));
