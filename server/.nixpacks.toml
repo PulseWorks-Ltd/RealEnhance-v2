@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+# Use a non-frozen install to avoid lockfile mismatch stalls
+cmd = "pnpm install --filter @realenhance/server... --no-frozen-lockfile --prefer-offline"
+
+[phases.build]
+cmd = "pnpm --filter @realenhance/server build"
+
+[start]
+cmd = "pnpm --filter @realenhance/server start"

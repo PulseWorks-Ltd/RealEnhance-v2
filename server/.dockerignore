@@ -1,0 +1,26 @@
+# general
+.git
+.gitignore
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+
+# monorepo stuff we don't need for server image
+client/
+worker/
+attached_assets/
+shared/                       # if not used at runtime
+*.md
+
+# node
+node_modules/
+pnpm-lock.yaml                # (we copy it only if you really need frozen installs)
+npm-debug.log
+dist/
+coverage/
+
+# local/dev
+.env.local
+.env.development
+.vscode/
+.idea/
