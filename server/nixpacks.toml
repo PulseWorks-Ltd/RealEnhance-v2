@@ -2,12 +2,13 @@
 nixPkgs = ["nodejs_22", "pnpm"]
 
 [phases.install]
-# Allow lockfile refresh on Railway to match current deps
+# <- override the default frozen install
 cmds = ["pnpm install --no-frozen-lockfile --prefer-offline"]
 
 [phases.build]
-# If you have a workspace, this is fine; otherwise just "pnpm run build"
+# If you don’t use a workspace filter, change this to:  pnpm run build
 cmds = ["pnpm --filter @realenhance/server build"]
 
 [start]
+# If not using workspace filter, change to: pnpm run start
 cmd = "pnpm --filter @realenhance/server start"
