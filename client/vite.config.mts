@@ -11,24 +11,22 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "src")
+      "@": path.resolve(__dirname, "src"),
       // Avoid aliasing to parent folders (../shared, ../attached_assets)
       // because the client service container won't include them.
-    }
+    },
   },
   build: {
-    outDir: "dist",       // ✅ build stays inside client/
-    emptyOutDir: true
+    outDir: "dist", // ✅ build stays inside client/
+    emptyOutDir: true,
   },
   server: {
     port: 5173,
-    strictPort: true
+    strictPort: true,
   },
   preview: {
-    /** allow any host when running `vite preview` on Railway */
     allowedHosts: true,
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 8080,
   },
 });
-
