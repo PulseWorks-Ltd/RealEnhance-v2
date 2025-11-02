@@ -2,7 +2,7 @@ import React from "react";
 
 type Props = { children: React.ReactNode };
 
-type State = { hasError: boolean; message?: string };
+type State = { hasError: boolean; message?: string; stack?: string };
 
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false };
@@ -11,9 +11,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, message: err instanceof Error ? err.message : String(err) };
   }
 
-  componentDidCatch(error: unknown, info: unknown) {
+  componentDidCatch(error: unknown, info: { componentStack: string }) {
     // Keep logs visible in production to avoid blank screens without context
     console.error("[ErrorBoundary]", error, info);
+    this.setState({ stack: info?.componentStack });
   }
 
   render() {
@@ -23,6 +24,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
           <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>Something went wrong.</h2>
           {this.state.message && (
             <p style={{ opacity: 0.8, fontFamily: "monospace" }}>{this.state.message}</p>
+          )}
+          {this.state.stack && (
+            <pre style={{ whiteSpace: "pre-wrap", marginTop: 16, color: "#334155" }}>
+              {this.state.stack}
+            </pre>
           )}
         </div>
       );
