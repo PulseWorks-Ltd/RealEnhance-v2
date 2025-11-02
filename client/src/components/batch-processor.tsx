@@ -492,7 +492,7 @@ export default function BatchProcessor() {
           return;
         }
         
-        const resp = await fetch(`/api/batch/status/${encodeURIComponent(currentJobId)}`, {
+        const resp = await fetch(api(`/api/batch/status/${encodeURIComponent(currentJobId)}`), {
           method: "GET",
           credentials: "include",
           headers: {
@@ -647,7 +647,7 @@ export default function BatchProcessor() {
     
     try {
       // Phase 1: Start batch processing with files
-      const uploadResp = await fetch("/api/batch/start", {
+      const uploadResp = await fetch(api("/api/batch/start"), {
         method: "POST",
         body: fd,
         credentials: "include",
@@ -849,9 +849,10 @@ export default function BatchProcessor() {
     fd.append("metaJson", metaJson);
 
     try {
-      const res = await apiFetch("/api/batch/start", withDevice({
+      const res = await fetch(api("/api/batch/start"), withDevice({
         method: "POST",
-        body: fd
+        body: fd,
+        credentials: "include"
       }));
       
       if (!res.ok) {
@@ -1061,9 +1062,10 @@ export default function BatchProcessor() {
         console.log("[RETRY] Passing quality-enhanced baseline for staging retry:", qualityEnhancedUrl);
       }
       
-      const response = await apiFetch("/api/batch/retry-single", withDevice({
+      const response = await fetch(api("/api/batch/retry-single"), withDevice({
         method: "POST",
-        body: fd
+        body: fd,
+        credentials: "include"
       }));
       
       if (!response.ok) {
@@ -1214,7 +1216,7 @@ export default function BatchProcessor() {
       // Batch refine is a free Sharp-based enhancement - only ensure user is signed in
       await ensureLoggedInAndCredits(0); // 0 credits needed, just validates authentication
       
-      const response = await fetch("/api/batch/refine", {
+      const response = await fetch(api("/api/batch/refine"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
