@@ -1,0 +1,13 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "pnpm"]
+
+[phases.install]
+# Allow lockfile refresh on Railway to match current deps
+cmds = ["pnpm install --no-frozen-lockfile --prefer-offline"]
+
+[phases.build]
+# If you have a workspace, this is fine; otherwise just "pnpm run build"
+cmds = ["pnpm --filter @realenhance/server build"]
+
+[start]
+cmd = "pnpm --filter @realenhance/server start"
