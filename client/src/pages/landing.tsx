@@ -29,9 +29,8 @@ export default function Landing() {
              Get Started — Sign In
             </Button>
 
-            <Button variant="outline" size="lg" asChild>
-              <a href="/app">Open App</a>
-            </Button>
+            {/* Radix Slot requires exactly one element child with no surrounding whitespace */}
+            <Button variant="outline" size="lg" asChild><a href="/app">Open App</a></Button>
           </div>
 
           <Button className="bg-brand-highlight text-white hover:brightness-110">
