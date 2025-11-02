@@ -106,21 +106,35 @@ FormLabel.displayName = "FormLabel"
 const FormControl = React.forwardRef<
   React.ElementRef<typeof Slot>,
   React.ComponentPropsWithoutRef<typeof Slot>
->(({ ...props }, ref) => {
+>(({ children, ...props }, ref) => {
   const { error, formItemId, formDescriptionId, formMessageId } = useFormField()
 
+  const a11yProps = {
+    id: formItemId,
+    "aria-describedby": !error
+      ? `${formDescriptionId}`
+      : `${formDescriptionId} ${formMessageId}`,
+    "aria-invalid": !!error,
+  } as const
+
+  // Guard against multiple or non-element children which would trigger React.Children.only inside Slot
+  const childrenArray = React.Children.toArray(children)
+  const singleValidChild =
+    childrenArray.length === 1 && React.isValidElement(childrenArray[0])
+
+  if (singleValidChild) {
+    return (
+      <Slot ref={ref} {...a11yProps} {...props}>
+        {childrenArray[0] as React.ReactElement}
+      </Slot>
+    )
+  }
+
+  // Fallback: wrap in a div and apply control props to avoid runtime crash
   return (
-    <Slot
-      ref={ref}
-      id={formItemId}
-      aria-describedby={
-        !error
-          ? `${formDescriptionId}`
-          : `${formDescriptionId} ${formMessageId}`
-      }
-      aria-invalid={!!error}
-      {...props}
-    />
+    <div ref={ref as unknown as React.Ref<HTMLDivElement>} {...a11yProps} {...props}>
+      {children}
+    </div>
   )
 })
 FormControl.displayName = "FormControl"
