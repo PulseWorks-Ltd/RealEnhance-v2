@@ -492,7 +492,7 @@ export default function BatchProcessor() {
           return;
         }
         
-        const resp = await fetch(api(`/api/batch/status/${encodeURIComponent(currentJobId)}`), {
+        const resp = await fetch(api(`/api/status/${encodeURIComponent(currentJobId)}`), {
           method: "GET",
           credentials: "include",
           headers: {
@@ -647,7 +647,7 @@ export default function BatchProcessor() {
     
     try {
       // Phase 1: Start batch processing with files
-      const uploadResp = await fetch(api("/api/batch/start"), {
+      const uploadResp = await fetch(api("/api/upload"), {
         method: "POST",
         body: fd,
         credentials: "include",
@@ -849,7 +849,7 @@ export default function BatchProcessor() {
     fd.append("metaJson", metaJson);
 
     try {
-      const res = await fetch(api("/api/batch/start"), withDevice({
+      const res = await fetch(api("/api/upload"), withDevice({
         method: "POST",
         body: fd,
         credentials: "include"

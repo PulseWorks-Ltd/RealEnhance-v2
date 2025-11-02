@@ -15,6 +15,8 @@ import { attachGoogleAuth } from "./auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
 import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
+import { statusRouter } from "./routes/status.js";
+import { editRouter } from "./routes/edit.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -87,6 +89,8 @@ async function main() {
   app.use("/api/auth-user", authUserRouter());
   registerMeRoutes(app);
   app.use("/api", uploadRouter());
+  app.use("/api", statusRouter());
+  app.use("/api", editRouter());
 
   app.listen(PORT, () => {
     console.log(`[server] listening on ${PORT}`);
