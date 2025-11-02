@@ -88,10 +88,7 @@ export function attachGoogleAuth(app: Express) {
       session: true,
     }) as unknown as (req: any, res: any, next: NextFunction) => void,
     (req: Request, res: Response) => {
-      // `req.user` is the SessionUser we set in `done(null, sessionUser)`
       const authed: any = (req as any).user;
-
-      // Mirror to req.session.user for your existing frontend calls
       (req.session as any).user = {
         id: authed.id,
         name: authed.name ?? null,
@@ -99,7 +96,11 @@ export function attachGoogleAuth(app: Express) {
         credits: authed.credits,
       };
 
-      res.redirect("/");
+      const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
+      const client = clientOrigins[0] || "http://localhost:3000";
+      const to = new URL("/auth/complete", `${req.protocol}://${req.get("host")}`).toString() +
+        `?to=${encodeURIComponent(client)}`;
+      res.redirect(to);
     }
   );
 
@@ -116,5 +117,29 @@ export function attachGoogleAuth(app: Express) {
         res.json({ ok: true });
       });
     });
+  });
+
+  // Finalization page: posts a message back to opener then redirects to client
+  app.get("/auth/complete", (_req: Request, res: Response) => {
+    const client = (typeof _req.query.to === "string" && _req.query.to) || (process.env.PUBLIC_ORIGIN || "http://localhost:3000").split(",")[0];
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Signing you in…</title>
+  <body>
+    <script>
+      (function(){
+        try {
+          if (window.opener && typeof window.opener.postMessage === 'function') {
+            window.opener.postMessage({ type: 'auth:success' }, ${JSON.stringify(client)});
+          }
+        } catch (e) { /* ignore */ }
+        setTimeout(function(){ window.location.replace(${JSON.stringify(client)}); }, 50);
+      })();
+    </script>
+    <p>Signing you in…</p>
+  </body>
+ </html>`);
   });
 }
