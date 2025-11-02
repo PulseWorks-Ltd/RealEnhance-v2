@@ -11,7 +11,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 
-import { attachGoogleAuth } from "server/src/autcfcc lttth/google.js";
+import { attachGoogleAuth } from "server/src/auth/google.js";
 import { authUserRouter } from "./routes/authUser.js";
 import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
