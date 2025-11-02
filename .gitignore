@@ -1,16 +1,12 @@
-node_modules
-**/node_modules
-**/.pnpm
-**/dist
-**/.cache
-dist
-.env
+# Node
+node_modules/
+dist/
+.build/
+.cache/
+
+# Vite
+client/dist/
+
+# Logs, env
 *.log
-.DS_Store
-
-server/node_modules
-server/dist
-server/.env
-
-package-lock.json
-server/package-lock.json
+.env*
