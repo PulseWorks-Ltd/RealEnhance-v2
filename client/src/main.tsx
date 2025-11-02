@@ -19,8 +19,10 @@ createRoot(rootEl).render(
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <BrowserRouter>
-          <App />
-          <Toaster />
+          <>
+            <App />
+            <Toaster />
+          </>
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
