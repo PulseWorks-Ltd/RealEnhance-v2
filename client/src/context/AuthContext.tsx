@@ -48,7 +48,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     try {
-      await apiFetch("/api/logout", { method: "POST" });
+  // Server exposes /auth/logout
+  await apiFetch("/auth/logout", { method: "POST" });
     } catch (e) {
       console.warn("logout:", e);
     } finally {
@@ -68,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (import.meta as any).env?.VITE_API_BASE_URL || window.location.origin;
 
       const popup = window.open(
-        `${OAUTH_BASE}/api/login`, // 🔁 use /api/auth/google if that's your route
+        `${OAUTH_BASE}/auth/google`,
         "google_oauth_popup",
         `width=${width},height=${height},left=${left},top=${top}`
       );

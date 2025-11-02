@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getDeviceUserId } from "@/lib/user-storage";
 import { loadStripe } from "@stripe/stripe-js";
 import { withDevice } from "@/lib/withDevice";
+import { apiFetch } from "@/lib/api";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || '');
 
@@ -44,7 +45,7 @@ export function CreditPacks() {
       const deviceId = getDeviceUserId();
       
       // First get user to ensure they exist
-      const userResponse = await fetch('/api/me', { ...withDevice(), credentials: "include" });
+  const userResponse = await apiFetch('/api/me', { ...withDevice(), credentials: "include" });
       
       if (!userResponse.ok) {
         throw new Error('Failed to get user information');
@@ -53,7 +54,7 @@ export function CreditPacks() {
       const userData = await userResponse.json();
       
       // Create checkout session
-      const response = await fetch('/api/checkout/session', withDevice({
+      const response = await apiFetch('/api/checkout/session', withDevice({
         method: 'POST',
         credentials: 'include',
         headers: {

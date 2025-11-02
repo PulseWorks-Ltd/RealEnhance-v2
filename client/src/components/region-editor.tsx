@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -447,7 +448,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   // Region edit mutation
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      const response = await fetch("/api/region-edit", {
+      const response = await fetch(api("/api/region-edit"), {
         method: "POST",
         body: data,
         credentials: "include"
