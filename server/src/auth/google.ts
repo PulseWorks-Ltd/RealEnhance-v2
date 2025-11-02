@@ -1,163 +1,119 @@
-import type { Express, Request, Response, NextFunction } from "express";
-import passport, { Profile } from "passport";
-import type { VerifyCallback } from "passport-oauth2";
-import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { upsertUserFromGoogle } from "../services/users.js";
+// server/src/index.ts
+import dotenv from "dotenv";
+dotenv.config();
 
-/**
- * Resolve base URL safely (prod vs local)
- */
-function getBaseUrl() {
-  const base =
-    process.env.OAUTH_BASE_URL ||
-    process.env.BASE_URL ||
-    "http://localhost:5000";
+import express, { type RequestHandler } from "express";
+import session, { type SessionOptions } from "express-session";
+import connectRedis from "connect-redis";
+import { createClient as createRedisClient, type RedisClientType } from "redis";
+import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
 
-  return base.replace(/\/+$/, ""); // strip trailing slash
-}
+import { attachGoogleAuth } from "server/src/autcfcc lttth/google.js";
+import { authUserRouter } from "./routes/authUser.js";
+import { registerMeRoutes } from "./routes.me.js";
+import { uploadRouter } from "./routes/upload.js";
 
-// Configure Passport's Google Strategy
-function initPassport() {
-  const {
-    GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET,
-  } = process.env;
+const PORT = Number(process.env.PORT || 8080);
+const IS_PROD = process.env.NODE_ENV === "production";
+const REDIS_URL = process.env.REDIS_URL || (IS_PROD ? "" : "redis://localhost:6379");
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || "http://localhost:3000";
 
-  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-    console.warn(
-      "[auth] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Google login will fail."
-    );
+/** Entrypoint */
+async function main() {
+  // ---------------------- Redis ----------------------
+  if (IS_PROD && !REDIS_URL) {
+    throw new Error("REDIS_URL must be set in production");
   }
 
-  passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID || "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-      callbackURL: `${getBaseUrl()}/auth/google/callback`,
+  const redisClient: RedisClientType = createRedisClient({
+    url: REDIS_URL,
+    socket: {
+      tls: REDIS_URL.startsWith("rediss://"),
+      reconnectStrategy: (retries) => Math.min(retries * 1000, 15_000),
     },
-    async (
-      accessToken: string,
-      refreshToken: string,
-      profile: Profile,
-      done: VerifyCallback       // ✅ Type added here
-    ) => {
-      try {
-        const email =
-          profile.emails && profile.emails[0]
-            ? profile.emails[0].value
-            : undefined;
-        const name = profile.displayName || "Unnamed User";
-
-        if (!email) {
-          return done(new Error("No email returned from Google profile"));
-        }
-
-        const user = await upsertUserFromGoogle({ email, name });
-
-        return done(null, {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          credits: user.credits,
-        });
-      } catch (err) {
-        return done(err as Error);
-      }
-    }
-  )
-);
-
-
-  // Put minimal info into the session
-  passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
-  done(null, user);
   });
- 
-  passport.deserializeUser((obj: any, done: (err: any, user?: any) => void) => {
-  done(null, obj);
-  });
-}
 
-// Middleware wrapper to make sure passport is initialized before use
-function ensurePassportInit(app: Express) {
-  // Important: express-session MUST already be mounted before this point
-  app.use(passport.initialize());
-  app.use(passport.session());
-}
+  redisClient.on("error", (err) => console.error("[redis] error:", err));
+  redisClient.on("reconnecting", () => console.warn("[redis] reconnecting…"));
 
-export function attachGoogleAuth(app: Express) {
-  // 1. Configure passport strategy once
-  initPassport();
+  await redisClient.connect();
+  console.log("[redis] connected");
 
-  // 2. Hook passport into the express app
-  ensurePassportInit(app);
+  const RedisStore = connectRedis(session);
+  const store = new RedisStore({ client: redisClient as any, prefix: "sess:" });
 
-  /**
-   * Step 1: Kick off Google OAuth
-   * Frontend should redirect user to /auth/google
-   */
-  app.get(
-    "/auth/google",
-    passport.authenticate("google", {
-      scope: ["profile", "email"],
-      prompt: "select_account",
+  // ---------------------- Express ----------------------
+  const app = express();
+  app.set("trust proxy", 1);
+
+  app.use(
+    cors({
+      origin: PUBLIC_ORIGIN.split(",").map((o) => o.trim()),
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
 
-  /**
-   * Step 2: Google callback
-   * Google calls this URL with ?code=...
-   * We authenticate, then stuff the user into req.session for our app.
-   */
-  app.get(
-    "/auth/google/callback",
-    passport.authenticate("google", {
-      failureRedirect: "/login?error=google_oauth_failed",
-      session: true,
-    }),
-    (req: Request, res: Response) => {
-      // By this point:
-      // - `passport.authenticate` ran our GoogleStrategy verify fn
-      // - `done(null, userInfo)` was called
-      // - passport.serializeUser stored it in the session
-      //
-      // We ALSO mirror into req.session.user for your frontend code.
-      // (Some frontend code is probably doing /api/auth-user after login.)
-      //
-      // Types: req.user is set by Passport
-      const authedUser = req.user as any;
+  app.use(helmet());
+  app.use(morgan("dev"));
+  app.use(cookieParser());
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
-      // Put the user in session in the shape your UI expects
-      (req.session as any).user = {
-        id: authedUser.id,
-        name: authedUser.name,
-        email: authedUser.email,
-        credits: authedUser.credits,
-      };
+  // ---------------------- Session ----------------------
+  const sessionOptions: SessionOptions = {
+    name: "realsess",
+    secret: SESSION_SECRET,
+    store,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: IS_PROD ? "none" : "lax",
+      secure: IS_PROD,
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    },
+  };
 
-      // Redirect somewhere nice ("/" or "/dashboard")
-      res.redirect("/");
-    }
-  );
+  app.use(session(sessionOptions) as unknown as RequestHandler);
 
-  /**
-   * Logout: destroy session and clear cookie
-   */
-  app.post("/auth/logout", (req: Request, res: Response, next: NextFunction) => {
-    req.logout?.((err) => {
-      if (err) return next(err);
-
-      req.session.destroy(() => {
-        // Tell browser to drop cookie
-        res.clearCookie("connect.sid", {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-        });
-
-        res.json({ ok: true });
-      });
+  // ---------------------- Routes ----------------------
+  app.get("/health", (_req, res) => {
+    res.json({
+      ok: true,
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
     });
   });
+
+  attachGoogleAuth(app);
+  app.use("/api/auth-user", typeof authUserRouter === "function" ? authUserRouter() : authUserRouter);
+  registerMeRoutes(app);
+  app.use("/api", uploadRouter());
+
+  // ---------------------- Start ----------------------
+  app.listen(PORT, () => console.log(`[server] listening on port ${PORT}`));
+
+  // Graceful shutdown
+  process.on("SIGTERM", async () => {
+    console.log("[server] shutting down gracefully…");
+    try {
+      await redisClient.quit();
+    } catch (err) {
+      console.error("[redis] quit error:", err);
+    } finally {
+      process.exit(0);
+    }
+  });
 }
+
+// Start the server
+main().catch((err) => {
+  console.error("[server] fatal startup error:", err);
+  process.exit(1);
+});
