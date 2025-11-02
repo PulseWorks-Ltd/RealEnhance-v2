@@ -59,7 +59,10 @@ const Spinner = () => (
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, loading, asChild = false, children, disabled, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
+    // Guard against invalid asChild usage that would trigger React.Children.only
+    const childCount = React.Children.count(children);
+    const useSlot = asChild && childCount === 1 && React.isValidElement(children);
+    const Comp = useSlot ? Slot : "button";
     return (
       <Comp
         ref={ref}
