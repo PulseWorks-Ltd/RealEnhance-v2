@@ -92,9 +92,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       window.addEventListener("message", onMessage);
 
-      // Fallback: if COOP nulls window.opener and postMessage doesn't arrive,
-      // detect when popup navigates back to our origin and complete the flow.
-      const poll = window.setInterval(async () => {
+      // Fallback A: detect when popup reaches same-origin (client) and then finish
+      const pollSameOrigin = window.setInterval(async () => {
         if (finished) { window.clearInterval(poll); return; }
         try {
           // Will throw while cross-origin; succeeds once popup is on our origin
@@ -102,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const sameOrigin = popup.location.origin === clientOrigin;
           if (sameOrigin) {
             finished = true;
-            window.clearInterval(poll);
+            window.clearInterval(pollSameOrigin);
             try { popup.close(); } catch {}
             const u = await refreshUser();
             if (u) resolve(u);
@@ -111,10 +110,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch {}
       }, 300);
 
+      // Fallback B: independent session polling (works even if popup closes before
+      // we detect same-origin or message)
+      let pollCount = 0;
+      const pollMax = 30; // ~30s
+      const pollSession = window.setInterval(async () => {
+        if (finished) { window.clearInterval(pollSession); return; }
+        try {
+          const u = await refreshUser();
+          if (u) {
+            finished = true;
+            window.clearInterval(pollSession);
+            try { window.clearInterval(pollSameOrigin); } catch {}
+            try { popup.close(); } catch {}
+            resolve(u);
+          }
+        } catch {
+          // ignore
+        } finally {
+          pollCount++;
+          if (pollCount >= pollMax && !finished) {
+            window.clearInterval(pollSession);
+          }
+        }
+      }, 1000);
+
       setTimeout(() => {
         if (!finished) {
           window.removeEventListener("message", onMessage);
-          try { window.clearInterval(poll); } catch {}
+          try { window.clearInterval(pollSameOrigin); } catch {}
+          try { window.clearInterval(pollSession); } catch {}
           try { popup.close(); } catch {}
           reject(new Error("Login timed out. Please try again."));
         }
