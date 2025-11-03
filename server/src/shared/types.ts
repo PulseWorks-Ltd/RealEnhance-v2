@@ -88,7 +88,7 @@ export interface EnhanceJobPayload {
     declutter: boolean;
     virtualStage: boolean;
     roomType: string;
-    sceneType: string;
+    sceneType: string | "auto";
   };
   createdAt: string; // ISO
 }
@@ -138,6 +138,10 @@ export interface JobRecord {
 
   result?: ImageJobResult;
   error?: string;
+  meta?: {
+    scene?: { label: string; confidence: number };
+    [k: string]: any;
+  };
   createdAt: string; // ISO
   updatedAt: string; // ISO
 }

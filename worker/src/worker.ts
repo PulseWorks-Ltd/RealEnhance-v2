@@ -13,6 +13,7 @@ import { applyEdit } from "./pipeline/editApply";
 
 import { validateStructure } from "./validators/structural";
 import { validateRealism } from "./validators/realism";
+import { classifyScene } from "./validators/scene-classifier";
 
 import {
   updateJob,
@@ -35,12 +36,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  // Auto scene detection if requested
+  let sceneLabel = (payload.options.sceneType as any) || "auto";
+  if (sceneLabel === "auto" || !sceneLabel) {
+    try {
+      const r = await classifyScene(getOriginalPath(rec));
+      sceneLabel = r.label;
+      updateJob(payload.jobId, { meta: { ...(rec as any).meta, scene: r } });
+    } catch {
+      sceneLabel = "other" as any;
+    }
+  }
+
   // STAGE 1A
   const path1A = await runStage1A(getOriginalPath(rec));
 
   // STAGE 1B
   const path1B = payload.options.declutter
-    ? await runStage1B(path1A, { sceneType: payload.options.sceneType })
+    ? await runStage1B(path1A, { sceneType: String(sceneLabel) })
     : path1A;
 
   // STAGE 2
@@ -94,7 +107,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "1B": payload.options.declutter ? path1B : undefined,
       "2": payload.options.virtualStage ? path2 : undefined
     },
-    resultVersionId: finalPathVersion.versionId
+    resultVersionId: finalPathVersion.versionId,
+    meta: { scene: { label: sceneLabel as any, confidence: 0.5 } }
   });
 }
 
@@ -157,7 +171,7 @@ const worker = new Worker(
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
 
-    updateJob(payload.jobId, { status: "processing" });
+  updateJob((payload as any).jobId, { status: "processing" });
 
     try {
       if (payload.type === "enhance") {
@@ -165,14 +179,14 @@ const worker = new Worker(
       } else if (payload.type === "edit") {
         await handleEditJob(payload as any);
       } else {
-        updateJob(payload.jobId, {
+        updateJob((payload as any).jobId, {
           status: "error",
           errorMessage: "unknown job type"
         });
       }
     } catch (err: any) {
       console.error("[worker] job failed", err);
-      updateJob(payload.jobId, {
+      updateJob((payload as any).jobId, {
         status: "error",
         errorMessage: err?.message || "unhandled worker error"
       });
