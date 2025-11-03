@@ -3,6 +3,12 @@
   "services": {
     "server": { "rootDir": "server" },
     "client": { "rootDir": "client" },
-    "worker": { "rootDir": "worker" }
+    "worker": {
+      "rootDir": ".",
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "worker/Dockerfile"
+      }
+    }
   }
 }
