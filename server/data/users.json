@@ -7,5 +7,23 @@
 		"imageIds": [],
 		"createdAt": "2025-11-03T00:00:00.000Z",
 		"updatedAt": "2025-11-03T00:00:00.000Z"
+	},
+	"user_pulseworkslimited": {
+		"id": "user_pulseworkslimited",
+		"name": "PulseWorks Limited",
+		"email": "pulseworkslimited@gmail.com",
+		"credits": 10000,
+		"imageIds": [],
+		"createdAt": "2025-11-03T00:00:00.000Z",
+		"updatedAt": "2025-11-03T00:00:00.000Z"
+	},
+	"user_propertybrokershaun": {
+		"id": "user_propertybrokershaun",
+		"name": "Shaun (Property Brokers)",
+		"email": "propertybrokershaun@gmail.com",
+		"credits": 10000,
+		"imageIds": [],
+		"createdAt": "2025-11-03T00:00:00.000Z",
+		"updatedAt": "2025-11-03T00:00:00.000Z"
 	}
 }

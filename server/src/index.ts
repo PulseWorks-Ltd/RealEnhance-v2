@@ -12,6 +12,7 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 
 import { attachGoogleAuth } from "./auth/google.js";
+import { setCreditsForEmail } from "./services/users.js";
 import { authUserRouter } from "./routes/authUser.js";
 import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
@@ -91,6 +92,15 @@ async function main() {
   app.use("/api", uploadRouter());
   app.use("/api", statusRouter());
   app.use("/api", editRouter());
+
+  // One-time admin seeding to guarantee partner accounts have 10k credits
+  try {
+    const seededA = setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
+    const seededB = setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
+    console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
+  } catch (e) {
+    console.warn("[seed] failed to ensure credits:", e);
+  }
 
   app.listen(PORT, () => {
     console.log(`[server] listening on ${PORT}`);
