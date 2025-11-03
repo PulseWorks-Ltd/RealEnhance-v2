@@ -54,6 +54,7 @@
   --brand-accent: 143 38% 48%;    /* #4FA86C */
   --brand-light: 210 60% 96%;     /* #E8F2FA */
   --brand-highlight: 45 93% 49%;  /* #F7B500 */
+  --brand-surface: 215 35% 15%;   /* Deep brand navy surface */
 }
 
 .dark {
@@ -98,6 +99,7 @@
   --brand-accent: 143 35% 55%;
   --brand-light: 210 30% 20%;
   --brand-highlight: 45 93% 60%;
+  --brand-surface: 215 35% 10%;
 }
 
 @layer base {
