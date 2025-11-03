@@ -50,6 +50,32 @@ export function upsertUserFromGoogle(params: {
   return found;
 }
 
+/** Admin utility: set or create a user by email with a fixed credit balance */
+export function setCreditsForEmail(email: string, credits: number, name?: string): UserRecord {
+  const state = loadAll();
+  let found = Object.values(state).find(u => u.email === email);
+  const now = new Date().toISOString();
+  if (!found) {
+    const id = "user_" + (email.split("@")[0].replace(/[^a-z0-9_\-]/ig, "") || "anon");
+    found = {
+      id,
+      email,
+      name: name || email.split("@")[0],
+      credits,
+      imageIds: [],
+      createdAt: now,
+      updatedAt: now
+    } as const as UserRecord;
+    (state as any)[id] = found;
+  } else {
+    found.credits = credits;
+    if (name) found.name = name;
+    found.updatedAt = now;
+  }
+  saveAll(state);
+  return found;
+}
+
 export function getUserById(userId: UserId): UserRecord | undefined {
   const state = loadAll();
   return state[userId];

@@ -92,9 +92,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       window.addEventListener("message", onMessage);
 
+      // Fallback: if COOP nulls window.opener and postMessage doesn't arrive,
+      // detect when popup navigates back to our origin and complete the flow.
+      const poll = window.setInterval(async () => {
+        if (finished) { window.clearInterval(poll); return; }
+        try {
+          // Will throw while cross-origin; succeeds once popup is on our origin
+          if (popup.closed) { window.clearInterval(poll); return; }
+          const sameOrigin = popup.location.origin === clientOrigin;
+          if (sameOrigin) {
+            finished = true;
+            window.clearInterval(poll);
+            try { popup.close(); } catch {}
+            const u = await refreshUser();
+            if (u) resolve(u);
+            else reject(new Error("Failed to get user after login (poll)"));
+          }
+        } catch {}
+      }, 300);
+
       setTimeout(() => {
         if (!finished) {
           window.removeEventListener("message", onMessage);
+          try { window.clearInterval(poll); } catch {}
           try { popup.close(); } catch {}
           reject(new Error("Login timed out. Please try again."));
         }

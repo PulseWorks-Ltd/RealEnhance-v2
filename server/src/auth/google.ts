@@ -131,25 +131,50 @@ export function attachGoogleAuth(app: Express) {
 
   // Finalization page: posts a message back to opener then redirects to client
   app.get("/auth/complete", (_req: Request, res: Response) => {
-    const client = (typeof _req.query.to === "string" && _req.query.to) || (process.env.PUBLIC_ORIGIN || "http://localhost:3000").split(",")[0];
+    // Allow opener access from a different origin for this one-off page
+    res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+    // No inline scripts here to satisfy strict CSP. We'll load an external script from same origin.
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(`<!DOCTYPE html>
 <html lang="en">
-  <meta charset="utf-8" />
-  <title>Signing you in…</title>
+  <head>
+    <meta charset="utf-8" />
+    <title>Signing you in…</title>
+  </head>
   <body>
-    <script>
-      (function(){
-        try {
-          if (window.opener && typeof window.opener.postMessage === 'function') {
-            window.opener.postMessage({ type: 'auth:success' }, ${JSON.stringify(client)});
-          }
-        } catch (e) { /* ignore */ }
-        setTimeout(function(){ window.location.replace(${JSON.stringify(client)}); }, 50);
-      })();
-    </script>
     <p>Signing you in…</p>
+    <script src="/auth/complete.js" defer></script>
+    <noscript>
+      <p><a id="redir" href="#">Continue</a></p>
+      <script>
+        // This <noscript> is decorative – if JS is disabled there's nothing we can do.
+      </script>
+    </noscript>
   </body>
  </html>`);
+  });
+
+  // External JS used by /auth/complete to avoid inline-script CSP issues
+  app.get("/auth/complete.js", (req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    // Allow cross-origin opener so we can access window.opener for postMessage
+    res.setHeader("Cross-Origin-Opener-Policy", "unsafe-none");
+    const fallbackClient = (process.env.PUBLIC_ORIGIN || "http://localhost:3000").split(",")[0];
+    // Small JS bundle (string-literal) – safe and simple
+    res.send(`(function(){
+  try {
+    var url = new URL(window.location.href);
+    var client = url.searchParams.get('to') || ${JSON.stringify(fallbackClient)};
+    try {
+      if (window.opener && typeof window.opener.postMessage === 'function') {
+        window.opener.postMessage({ type: 'auth:success' }, client);
+      }
+    } catch (e) { /* ignore */ }
+    setTimeout(function(){ try { window.location.replace(client); } catch(_) { window.location.href = client; } }, 50);
+  } catch (e) {
+    // As a last resort, navigate to fallback client
+    try { window.location.replace(${JSON.stringify(fallbackClient)}); } catch(_) {}
+  }
+})();`);
   });
 }
