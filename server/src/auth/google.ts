@@ -23,6 +23,16 @@ function initPassport() {
     callbackURL: `${getBaseUrl()}/auth/google/callback`,
   };
 
+  // Helpful startup log to verify redirect URI configuration in prod
+  try {
+    console.log("[auth] Google OAuth callbackURL:", (opts as any).callbackURL);
+    if (process.env.PUBLIC_ORIGIN) {
+      console.log("[auth] PUBLIC_ORIGIN:", process.env.PUBLIC_ORIGIN);
+    }
+  } catch {
+    /* noop */
+  }
+
   passport.use(
     new GoogleStrategy(
       opts,
