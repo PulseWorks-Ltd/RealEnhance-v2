@@ -1,5 +1,4 @@
 import sharp from "sharp";
-import fs from "node:fs/promises";
 
 export type SceneLabel =
   | "exterior"
