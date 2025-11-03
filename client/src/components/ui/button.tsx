@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
+import { SafeSlot } from "@/components/ui/safe-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +39,7 @@ const buttonVariants = cva(
     defaultVariants: {
       variant: "default",
       size: "default",
-      loading: "false",
+  loading: false,
     },
   }
 );
@@ -59,14 +60,12 @@ const Spinner = () => (
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, loading, asChild = false, children, disabled, ...props }, ref) => {
-    // Guard against invalid asChild usage that would trigger React.Children.only
-    const childCount = React.Children.count(children);
-    const useSlot = asChild && childCount === 1 && React.isValidElement(children);
-    const Comp = useSlot ? Slot : "button";
+    // Use SafeSlot to avoid React.Children.only at runtime when asChild is misused
+    const Comp: any = asChild ? SafeSlot : "button";
     return (
       <Comp
         ref={ref}
-        className={cn(buttonVariants({ variant, size, loading: loading ? "true" : "false", className }))}
+  className={cn(buttonVariants({ variant, size, loading: !!loading, className }))}
         disabled={disabled || loading}
         aria-busy={!!loading}
         {...props}

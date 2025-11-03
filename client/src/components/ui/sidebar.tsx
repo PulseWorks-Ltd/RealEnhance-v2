@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
+import { SafeSlot } from "@/components/ui/safe-slot"
 import { VariantProps, cva } from "class-variance-authority"
 import { PanelLeft } from "lucide-react"
 
@@ -440,8 +441,7 @@ const SidebarGroupLabel = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & { asChild?: boolean }
 >(({ className, asChild = false, children, ...props }, ref) => {
-  const useSlot = asChild && React.isValidElement(children) && React.Children.count(children) === 1
-  const Comp = useSlot ? Slot : "div"
+  const Comp: any = asChild ? SafeSlot : "div"
 
   return (
     <Comp
@@ -464,8 +464,7 @@ const SidebarGroupAction = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> & { asChild?: boolean }
 >(({ className, asChild = false, children, ...props }, ref) => {
-  const useSlot = asChild && React.isValidElement(children) && React.Children.count(children) === 1
-  const Comp = useSlot ? Slot : "button"
+  const Comp: any = asChild ? SafeSlot : "button"
 
   return (
     <Comp
@@ -567,8 +566,7 @@ const SidebarMenuButton = React.forwardRef<
     },
     ref
   ) => {
-    const useSlot = asChild && React.isValidElement((props as any)?.children) && React.Children.count((props as any)?.children) === 1
-    const Comp = useSlot ? Slot : "button"
+  const Comp: any = asChild ? SafeSlot : "button"
     const { isMobile, state } = useSidebar()
 
     const button = (
@@ -616,8 +614,7 @@ const SidebarMenuAction = React.forwardRef<
     showOnHover?: boolean
   }
 >(({ className, asChild = false, showOnHover = false, children, ...props }, ref) => {
-  const useSlot = asChild && React.isValidElement(children) && React.Children.count(children) === 1
-  const Comp = useSlot ? Slot : "button"
+  const Comp: any = asChild ? SafeSlot : "button"
 
   return (
     <Comp
@@ -733,8 +730,7 @@ const SidebarMenuSubButton = React.forwardRef<
     isActive?: boolean
   }
 >(({ asChild = false, size = "md", isActive, className, children, ...props }, ref) => {
-  const useSlot = asChild && React.isValidElement(children) && React.Children.count(children) === 1
-  const Comp = useSlot ? Slot : "a"
+  const Comp: any = asChild ? SafeSlot : "a"
 
   return (
     <Comp

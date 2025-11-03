@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
+import { SafeSlot } from "@/components/ui/safe-slot"
 import { ChevronRight, MoreHorizontal } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -45,9 +46,7 @@ const BreadcrumbLink = React.forwardRef<
     asChild?: boolean
   }
 >(({ asChild, className, children, ...props }, ref) => {
-  const childCount = React.Children.count(children)
-  const useSlot = !!asChild && childCount === 1 && React.isValidElement(children)
-  const Comp = useSlot ? Slot : "a"
+  const Comp: any = asChild ? SafeSlot : "a"
 
   return (
     <Comp
