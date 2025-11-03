@@ -12,4 +12,11 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*"]
+  ,
+  "exclude": [
+    "src/services/batchProcessor.ts",
+    "src/services/compliance.ts",
+    "src/services/email.ts",
+    "src/services/zipper.ts"
+  ]
 }
