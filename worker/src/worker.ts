@@ -27,6 +27,9 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
+  const t0 = Date.now();
+  const timings: Record<string, number> = {};
+
   const rec = readImageRecord(payload.imageId);
   if (!rec) {
     updateJob(payload.jobId, {
@@ -38,6 +41,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Auto scene detection if requested
   let sceneLabel = (payload.options.sceneType as any) || "auto";
+  const tSceneStart = Date.now();
   if (sceneLabel === "auto" || !sceneLabel) {
     try {
       const r = await classifyScene(getOriginalPath(rec));
@@ -47,23 +51,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sceneLabel = "other" as any;
     }
   }
+  timings.sceneDetectMs = Date.now() - tSceneStart;
 
   // STAGE 1A
+  const t1A = Date.now();
   const path1A = await runStage1A(getOriginalPath(rec));
+  timings.stage1AMs = Date.now() - t1A;
 
   // STAGE 1B
+  const t1B = Date.now();
   const path1B = payload.options.declutter
     ? await runStage1B(path1A, { sceneType: String(sceneLabel) })
     : path1A;
+  timings.stage1BMs = Date.now() - t1B;
 
   // STAGE 2
+  const t2 = Date.now();
   const path2 = payload.options.virtualStage
     ? await runStage2(path1B, { roomType: payload.options.roomType })
     : path1B;
+  timings.stage2Ms = Date.now() - t2;
 
   // VALIDATE FINAL
+  const tVal = Date.now();
   const structural = await validateStructure(path1A, path2);
   const realism = await validateRealism(path2);
+  timings.validateMs = Date.now() - tVal;
 
   if (!structural.ok || !realism.ok) {
     updateJob(payload.jobId, {
@@ -108,7 +121,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": payload.options.virtualStage ? path2 : undefined
     },
     resultVersionId: finalPathVersion.versionId,
-    meta: { scene: { label: sceneLabel as any, confidence: 0.5 } }
+    meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, timings: { ...timings, totalMs: Date.now() - t0 } }
   });
 }
 
@@ -193,7 +206,8 @@ const worker = new Worker(
     }
   },
   {
-    connection: { url: REDIS_URL }
+    connection: { url: REDIS_URL },
+    concurrency: Number(process.env.WORKER_CONCURRENCY || 2)
   }
 );
 

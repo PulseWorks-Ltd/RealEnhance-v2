@@ -130,6 +130,7 @@ export default function BatchProcessor() {
   const [jobId, setJobId] = useState<string>("");
   const [results, setResults] = useState<any[]>([]);
   const [progressText, setProgressText] = useState<string>("");
+  const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
   const [processedImages, setProcessedImages] = useState<string[]>([]); // Track processed image URLs for ZIP download
   const [processedImagesByIndex, setProcessedImagesByIndex] = useState<{[key: number]: string}>({}); // Track processed image URLs by original index
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -325,6 +326,7 @@ export default function BatchProcessor() {
         if (next.result && next.result.meta && next.result.meta.scene) {
           const scene = next.result.meta.scene;
           setProgressText(`Detected: ${scene.label} (${Math.round((scene.confidence||0)*100)}%)`);
+          setLastDetected({ index: next.index, label: scene.label, confidence: scene.confidence || 0 });
         }
 
         // Update processed images tracking in the same tick
@@ -1957,6 +1959,29 @@ export default function BatchProcessor() {
                     {progressText}
                   </span>
                 </div>
+                {lastDetected && (
+                  <div className="mt-3 flex items-center justify-center gap-2">
+                    <span className="text-sm text-gray-700">
+                      Detected: <span className="font-medium capitalize">{lastDetected.label.replace(/_/g, ' ')}</span> ({Math.round((lastDetected.confidence||0)*100)}%)
+                    </span>
+                    <OverrideDropdown
+                      currentLabel={lastDetected.label}
+                      onSelect={async (label) => {
+                        try {
+                          const fname = files[lastDetected.index]?.name;
+                          if (!fname) return alert('Cannot re-queue: filename missing');
+                          await apiJson(`/api/requeue/by-filename`, {
+                            method: 'POST',
+                            body: JSON.stringify({ filename: fname, sceneType: label })
+                          });
+                          toast({ title: 'Re-queued', description: `Reprocessing with scene: ${label}` });
+                        } catch (e: any) {
+                          alert(e?.message || 'Failed to re-queue');
+                        }
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -2355,6 +2380,39 @@ export default function BatchProcessor() {
             </AlertDialogHeader>
           </AlertDialogContent>
         </AlertDialog>
+      )}
+    </div>
+  );
+}
+
+// Lightweight inline dropdown component for scene override
+function OverrideDropdown({ currentLabel, onSelect }: { currentLabel: string; onSelect: (label: string) => void | Promise<void> }) {
+  const labels = [
+    'exterior','living_room','kitchen','bathroom','bedroom','dining','twilight','floorplan','hallway','garage','balcony','other'
+  ];
+  const [open, setOpen] = React.useState(false);
+  return (
+    <div className="relative inline-block text-left">
+      <button
+        className="text-blue-600 hover:text-blue-700 text-sm font-medium underline"
+        onClick={() => setOpen(v => !v)}
+      >
+        Change
+      </button>
+      {open && (
+        <div className="absolute z-10 mt-2 w-48 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+          <div className="py-1 max-h-64 overflow-y-auto">
+            {labels.map(l => (
+              <button
+                key={l}
+                onClick={async () => { setOpen(false); await onSelect(l); }}
+                className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 ${l===currentLabel ? 'font-semibold text-gray-900' : 'text-gray-700'}`}
+              >
+                {l.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
