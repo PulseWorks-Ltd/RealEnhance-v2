@@ -5,12 +5,13 @@ import { listImagesForUser } from "../services/images.js";
 export function authUserRouter() {
   const r = Router();
 
-  r.get("/auth/user", (req: Request, res: Response) => {
+  // Primary route expected by client: GET /api/auth-user
+  r.get("/", (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
-    if (!sessUser) return res.json({});
+    if (!sessUser) return res.status(401).json({ error: "Unauthorized" });
 
     const full = getUserById(sessUser.id);
-    if (!full) return res.json({});
+    if (!full) return res.status(401).json({ error: "Unauthorized" });
 
     const imgs = listImagesForUser(full.id);
 
@@ -33,6 +34,11 @@ export function authUserRouter() {
         }))
       }))
     });
+  });
+
+  // Backwards-compat alias: GET /api/auth-user/auth/user
+  r.get("/auth/user", (req: Request, res: Response) => {
+    (r as any).handle({ ...req, url: "/" }, res);
   });
 
   return r;
