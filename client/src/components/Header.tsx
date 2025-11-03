@@ -23,7 +23,7 @@ export function Header() {
       <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
         {/* Brand */}
         <a href="/" className="flex items-center gap-3">
-          <img src="/RealEnhance-Logo.jpg" alt="RealEnhance" className="h-8 w-auto rounded object-contain drop-shadow-sm" />
+          <img src="/logo.svg" alt="RealEnhance" className="h-8 w-auto rounded object-contain drop-shadow-sm" />
           <div className="leading-tight">
             <h1
               className="text-xl font-bold bg-clip-text text-transparent

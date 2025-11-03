@@ -1426,7 +1426,7 @@ export default function BatchProcessor() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-black min-h-screen">
+  <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold text-white mb-2">Polish My Photo</h1>
         <p className="text-gray-400">Transform your images with AI-powered enhancement</p>
@@ -1462,7 +1462,7 @@ export default function BatchProcessor() {
       </div>
 
       {/* Tab Content */}
-      <div className="bg-gray-900 rounded-xl shadow-lg p-8">
+  <div className="bg-brand-surface/95 rounded-xl shadow-lg p-8">
         
         {/* Upload Tab */}
         {activeTab === "upload" && (

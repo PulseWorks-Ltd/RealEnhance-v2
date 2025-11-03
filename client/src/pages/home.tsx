@@ -11,7 +11,7 @@ export default function Home() {
         {/* Hero Section */}
         <section className="mb-8 text-center" data-testid="hero-section">
           <img
-            src="/RealEnhance-Logo.jpg"
+            src="/logo.svg"
             alt="RealEnhance"
             className="w-32 mx-auto mb-4 rounded-lg object-contain"
           />
@@ -45,7 +45,7 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <img
-                  src="/RealEnhance-Logo.jpg"
+                  src="/logo.svg"
                   alt="RealEnhance"
                   className="w-8 h-8 rounded-lg object-contain"
                 />

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="32" viewBox="0 0 640 128" role="img" aria-label="RealEnhance">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2E7CC4"/>
+      <stop offset="100%" stop-color="#4FA86C"/>
+    </linearGradient>
+  </defs>
+  <rect rx="12" ry="12" x="0" y="0" width="640" height="128" fill="none"/>
+  <g transform="translate(16,90)">
+    <text font-family="Inter,system-ui,Segoe UI,Helvetica,Arial,sans-serif" font-size="72" font-weight="800" fill="url(#g)">RealEnhance</text>
+  </g>
+</svg>

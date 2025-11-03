@@ -48,6 +48,7 @@ module.exports = {
         'brand-accent': 'hsl(var(--brand-accent))',
         'brand-light': 'hsl(var(--brand-light))',
         'brand-highlight': 'hsl(var(--brand-highlight))',
+        'brand-surface': 'hsl(var(--brand-surface))',
       },
       borderRadius: {
         lg: 'var(--radius)',
