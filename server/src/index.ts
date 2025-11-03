@@ -18,6 +18,7 @@ import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
 import { statusRouter } from "./routes/status.js";
 import { editRouter } from "./routes/edit.js";
+import { requeueRouter } from "./routes/requeue.js";
 
 const PORT = Number(process.env.PORT || 8080);
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -92,6 +93,7 @@ async function main() {
   app.use("/api", uploadRouter());
   app.use("/api", statusRouter());
   app.use("/api", editRouter());
+  app.use("/api", requeueRouter());
 
   // One-time admin seeding to guarantee partner accounts have 10k credits
   try {
