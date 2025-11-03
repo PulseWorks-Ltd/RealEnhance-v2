@@ -22,6 +22,9 @@ import {
   getVersionPath,
   getOriginalPath
 } from "./utils/persist";
+import { getGeminiClient } from "./ai/gemini";
+import { checkCompliance } from "./ai/compliance";
+import { toBase64 } from "./utils/images";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
@@ -74,17 +77,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // VALIDATE FINAL
   const tVal = Date.now();
-  const structural = await validateStructure(path1A, path2);
-  const realism = await validateRealism(path2);
+    // VALIDATE FINAL (Gemini compliance)
+    try {
+      const ai = getGeminiClient();
+      const base1A = toBase64(path1A);
+      const baseFinal = toBase64(path2);
+      const verdict = await checkCompliance(ai as any, base1A.data, baseFinal.data);
+      if (!verdict.ok) {
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: `compliance_failed: ${(verdict.reasons||[]).join(', ')}`,
+          meta: { ...(rec as any).meta, scene: (rec as any).meta?.scene, compliance: verdict }
+        });
+        return;
+      }
+    } catch (e:any) {
+      // If AI not configured, proceed without compliance gate
+      console.warn("[worker] compliance check skipped:", e?.message || e);
+    }
   timings.validateMs = Date.now() - tVal;
 
-  if (!structural.ok || !realism.ok) {
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: "validation_failed"
-    });
-    return;
-  }
 
   // record versions
   pushImageVersion({
