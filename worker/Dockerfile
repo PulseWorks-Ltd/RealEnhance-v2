@@ -12,16 +12,16 @@ COPY server/package.json server/
 COPY client/package.json client/
 COPY worker/package.json worker/
 
-# Install deps for the whole workspace (allow non-frozen to avoid mismatch)
-RUN pnpm install --no-frozen-lockfile --prefer-offline
+# Install only the packages we need (shared + worker) to reduce surface and avoid odd caching
+RUN pnpm --filter @realenhance/shared --filter @realenhance/worker install --no-frozen-lockfile --prefer-offline
 
 # Bring in source only for packages we build/run
 COPY shared ./shared
 COPY worker ./worker
 
-# Build shared first (types/runtime), then the worker
-RUN pnpm -w -F @realenhance/shared build \
- && pnpm -w -F @realenhance/worker build
+# Build shared first (types/runtime), then the worker (no workspace flag needed)
+RUN pnpm -C shared build \
+ && pnpm -C worker build
 
 WORKDIR /app/worker
 ENV NODE_ENV=production
