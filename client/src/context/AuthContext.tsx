@@ -40,11 +40,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Lazy auth: do not auto-load session on first paint.
+  // We fetch the user only when the app needs it (e.g., ensureSignedIn or an explicit refresh)
+  // This keeps first-time visitors looking anonymous until they interact.
   useEffect(() => {
-    refreshUser();
-    const id = setInterval(refreshUser, 60_000);
-    return () => clearInterval(id);
-  }, [refreshUser]);
+    // no-op: intentionally not auto-refreshing user on mount
+  }, []);
 
   const signOut = useCallback(async () => {
     try {

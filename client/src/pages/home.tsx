@@ -5,6 +5,8 @@ import { CreditPacks } from "@/components/credit-packs";
 export default function Home() {
   return (
     <div className="min-h-screen bg-background text-foreground" data-testid="home-page">
+      {/* Brand hero backdrop */}
+      <div className="bg-gradient-to-b from-brand-light/70 to-transparent">
       <main className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Hero Section */}
         <section className="mb-8 text-center" data-testid="hero-section">
@@ -33,7 +35,8 @@ export default function Home() {
         <div className="mt-24 pt-12 border-t border-border/50">
           <CreditPacks />
         </div>
-      </main>
+  </main>
+  </div>
 
       {/* Footer */}
       <footer className="border-t border-border bg-card/50 mt-16" data-testid="footer">
