@@ -65,7 +65,7 @@ export function uploadRouter() {
         declutter: false,
         virtualStage: false,
         roomType: "unknown",
-        sceneType: "interior",
+        sceneType: "auto",
       };
 
       const finalPath = path.join(userDir, f.filename || f.originalname);
