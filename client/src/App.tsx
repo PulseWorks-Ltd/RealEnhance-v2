@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Toaster } from "@/components/ui/toaster";
+import AuthComplete from "@/pages/auth-complete";
 
 // Match the filenames exactly (case sensitive on Linux)
 const Landing        = lazy(() => import("@/pages/landing"));
@@ -20,6 +21,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/home" element={<Home />} />
+    <Route path="/auth/complete" element={<AuthComplete />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/results" element={<Results />} />
           <Route path="/my-photos" element={<MyPhotos />} />
