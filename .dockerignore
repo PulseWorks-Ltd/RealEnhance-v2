@@ -1,8 +1,17 @@
-# Ignore everything the server doesn’t need
-client/
-worker/
-node_modules/
+# Monorepo Docker ignores (safe for all services)
+# Keep necessary packages and manifests available to Docker builds.
+
+# VCS & logs
 .git/
 .gitignore
-pnpm-lock.yaml
 *.log
+
+# Dependencies (each Dockerfile will run its own install)
+node_modules/
+
+# DO NOT ignore these; worker and shared are needed by the worker Dockerfile
+# client/
+# worker/
+
+# Keep lockfile to ensure reproducible installs
+# pnpm-lock.yaml
