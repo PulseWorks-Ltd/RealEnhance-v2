@@ -14,6 +14,8 @@ import { applyEdit } from "./pipeline/editApply";
 import { validateStructure } from "./validators/structural";
 import { validateRealism } from "./validators/realism";
 import { classifyScene } from "./validators/scene-classifier";
+import { detectSceneFromImage } from "./ai/scene-detector";
+import fs from "fs";
 
 import {
   updateJob,
@@ -42,17 +44,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
-  // Auto scene detection if requested
+  // Auto detection: primary scene (interior/exterior) + room type (heuristic)
+  let detectedRoom: string | undefined;
   let sceneLabel = (payload.options.sceneType as any) || "auto";
   const tSceneStart = Date.now();
-  if (sceneLabel === "auto" || !sceneLabel) {
-    try {
-      const r = await classifyScene(getOriginalPath(rec));
-      sceneLabel = r.label;
-      updateJob(payload.jobId, { meta: { ...(rec as any).meta, scene: r } });
-    } catch {
-      sceneLabel = "other" as any;
+  try {
+    const origPath = getOriginalPath(rec);
+    const buf = fs.readFileSync(origPath);
+    const primary = await detectSceneFromImage(buf);
+    const room = await classifyScene(origPath);
+    detectedRoom = room.label;
+    if (sceneLabel === "auto" || !sceneLabel) {
+      sceneLabel = room.label as any;
     }
+    updateJob(payload.jobId, { meta: { ...(rec as any).meta, scenePrimary: primary, scene: room } });
+  } catch {
+    if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
   }
   timings.sceneDetectMs = Date.now() - tSceneStart;
 
@@ -64,14 +71,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1B
   const t1B = Date.now();
   const path1B = payload.options.declutter
-    ? await runStage1B(path1A, { sceneType: String(sceneLabel) })
+    ? await runStage1B(path1A)
     : path1A;
   timings.stage1BMs = Date.now() - t1B;
 
   // STAGE 2
   const t2 = Date.now();
   const path2 = payload.options.virtualStage
-    ? await runStage2(path1B, { roomType: payload.options.roomType })
+    ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room") })
     : path1B;
   timings.stage2Ms = Date.now() - t2;
 
