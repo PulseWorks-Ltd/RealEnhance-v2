@@ -1,1 +1,11 @@
-{}
+{
+	"user_pulseworks": {
+		"id": "user_pulseworks",
+		"name": "PulseWorks",
+		"email": "hello@pulseworks.co.nz",
+		"credits": 10000,
+		"imageIds": [],
+		"createdAt": "2025-11-03T00:00:00.000Z",
+		"updatedAt": "2025-11-03T00:00:00.000Z"
+	}
+}

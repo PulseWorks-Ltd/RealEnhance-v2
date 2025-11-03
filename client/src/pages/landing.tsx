@@ -37,9 +37,9 @@ export default function Landing() {
 
             {/* asChild anchor wrapped inline to avoid whitespace */}
             <Button
-              variant="outline"
+              variant="secondary"
               size="lg"
-              className="border-white/70 text-white hover:bg-white/10"
+              className="bg-white/95 text-brand-primary hover:bg-white"
               asChild
             ><a href="/home">Open App</a></Button>
           </div>

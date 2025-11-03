@@ -1,43 +1,15 @@
 // client/src/components/header.tsx
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { ProfileDropdown } from "@/components/profile-dropdown";
 import { withDevice } from "@/lib/withDevice";
 import { apiFetch } from "@/lib/api";
 
 
-type MeUnified = { credits: number; isAuthenticated: boolean };
-
-function normalizeMe(resp: unknown): MeUnified {
-  const r = resp as any;
-  if (typeof r?.credits === "number") {
-    return { credits: r.credits, isAuthenticated: !!r.isAuthenticated };
-  }
-  if (r?.user) {
-    return { credits: Number(r.user.credits ?? 0), isAuthenticated: !!r.isAuthenticated };
-  }
-  return { credits: 0, isAuthenticated: false };
-}
-
 export function Header() {
-  const { ensureSignedIn, user: authUser, loading: authLoading } = useAuth();
-
-  const { data, isLoading } = useQuery<MeUnified>({
-    queryKey: ["/api/me"],
-    queryFn: async () => {
-      const res = await apiFetch("/api/me", { ...withDevice() });
-      if (!res.ok) return { credits: 0, isAuthenticated: false };
-      const json = await res.json();
-      return normalizeMe(json);
-    },
-    staleTime: 30_000,
-    retry: 1,
-  });
-
-  const credits = data?.credits ?? 0;
-  const isAuthed = !!(data?.isAuthenticated || authUser);
-  const loading = authLoading || isLoading;
+  const { ensureSignedIn, user: authUser, loading } = useAuth();
+  const credits = authUser?.credits ?? 0;
+  const isAuthed = !!authUser;
 
   const handleBuyCredits = () => {
     document.getElementById("credits-section")?.scrollIntoView({ behavior: "smooth" });
@@ -51,7 +23,7 @@ export function Header() {
       <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
         {/* Brand */}
         <a href="/" className="flex items-center gap-3">
-          <img src="/RealEnhance-Logo.jpg" alt="RealEnhance" className="h-8 w-auto rounded" />
+          <img src="/RealEnhance-Logo.jpg" alt="RealEnhance" className="h-8 w-auto rounded object-contain drop-shadow-sm" />
           <div className="leading-tight">
             <h1
               className="text-xl font-bold bg-clip-text text-transparent
