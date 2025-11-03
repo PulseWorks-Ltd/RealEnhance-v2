@@ -30,7 +30,7 @@ function writeJSON<T>(fileName: string, data: T) {
 }
 
 // Update job record
-export function updateJob(jobId: JobId, patch: Partial<JobRecord>) {
+export function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
   const allJobs = readJSON<Record<JobId, JobRecord>>("jobs.json", {});
   const rec = allJobs[jobId];
   if (!rec) return;

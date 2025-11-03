@@ -321,6 +321,12 @@ export default function BatchProcessor() {
           return copy;
         });
 
+        // If the server included job meta like scene detection, surface it
+        if (next.result && next.result.meta && next.result.meta.scene) {
+          const scene = next.result.meta.scene;
+          setProgressText(`Detected: ${scene.label} (${Math.round((scene.confidence||0)*100)}%)`);
+        }
+
         // Update processed images tracking in the same tick
         const enhancedUrl = getEnhancedUrl(next.result);
         if (enhancedUrl) {
