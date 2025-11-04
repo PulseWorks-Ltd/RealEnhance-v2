@@ -54,9 +54,9 @@ export function statusRouter() {
       const payload: any = job.data || {};
       const imgId = payload.imageId;
       let imageUrl: string | undefined;
-      // Prefer explicit return value from worker
-      const rv: any = await job.getReturnValue().catch(() => undefined);
-      if (rv?.finalPath) {
+      // Prefer explicit return value from worker (BullMQ exposes `.returnvalue` on completed jobs)
+      const rv: any = (job as any).returnvalue;
+      if (rv && rv.finalPath) {
         const rel = String(rv.finalPath).split(path.join(process.cwd(), 'server') + path.sep)[1];
         if (rel) imageUrl = `/files/${rel.replace(/\\/g,'/')}`;
       }

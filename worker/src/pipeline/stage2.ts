@@ -38,18 +38,18 @@ export async function runStage2(
       "Return only the staged image.",
     ].filter(Boolean).join("\n");
 
-    const parts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
+    const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
     if (opts.referenceImagePath) {
       const ref = toBase64(opts.referenceImagePath);
-      parts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+      requestParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
     }
 
     const { resp } = await runWithImageModelFallback(ai as any, {
-      contents: parts,
+      contents: requestParts,
       generationConfig: profile?.seed !== undefined ? { seed: profile.seed } : undefined,
     } as any, "stage2");
-    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    const img = parts.find(p => p.inlineData);
+    const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    const img = responseParts.find(p => p.inlineData);
     if (!img?.inlineData?.data) return basePath;
     out = siblingOutPath(basePath, "-2", ".webp");
     writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);

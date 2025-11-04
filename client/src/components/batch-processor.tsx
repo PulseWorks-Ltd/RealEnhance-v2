@@ -794,6 +794,7 @@ export default function BatchProcessor() {
   if (!jobs.length) throw new Error("Upload response missing jobs");
   const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
   setJobIds(ids);
+  setCancelIds(ids);
   jobIdToIndexRef.current = {};
   jobIdToImageIdRef.current = {};
   jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
