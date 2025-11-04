@@ -21,6 +21,7 @@ import { editRouter } from "./routes/edit.js";
 import { requeueRouter } from "./routes/requeue.js";
 import { cancelRouter } from "./routes/cancel.js";
 import { groupsRouter } from "./routes/groups.js";
+import { healthRouter } from "./routes/health.js";
 import path from "path";
 import fs from "fs";
 
@@ -100,6 +101,7 @@ async function main() {
   app.use("/api", requeueRouter());
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
+  app.use("/api", healthRouter());
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");
