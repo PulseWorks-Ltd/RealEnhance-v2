@@ -199,6 +199,54 @@ export default function BatchProcessor() {
   const { refreshUser } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
 
+  // Lightweight client-side scene detector (prefill UX): interior vs exterior
+  async function detectSceneFromFile(f: File): Promise<"interior"|"exterior"> {
+    try {
+      const bmp = await createImageBitmap(f);
+      const cnv = document.createElement("canvas");
+      cnv.width = 224; cnv.height = Math.max(1, Math.round(224 * (bmp.height / Math.max(1,bmp.width))));
+      const ctx = cnv.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(bmp, 0, 0, cnv.width, cnv.height);
+      const img = ctx.getImageData(0, 0, cnv.width, cnv.height);
+      let sky = 0, grass = 0, total = 0;
+      for (let i = 0; i < img.data.length; i += 4) {
+        const r = img.data[i], g = img.data[i+1], b = img.data[i+2];
+        const max = Math.max(r,g,b), min = Math.min(r,g,b);
+        const v = max/255;
+        const d = max-min; const s = max===0?0:d/max;
+        let h = 0; if (d!==0){ if (max===r) h=((g-b)/d)%6; else if (max===g) h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if (h<0) h+=360; }
+        total++;
+        if (v>0.7 && s<0.45 && h>=190 && h<=240) sky++;
+        if (v>0.35 && s>0.35 && h>=75 && h<=150) grass++;
+      }
+      const skyPct = sky/Math.max(1,total);
+      const grassPct = grass/Math.max(1,total);
+      const isExterior = skyPct>=0.15 || grassPct>=0.12;
+      return isExterior?"exterior":"interior";
+    } catch {
+      return "interior";
+    }
+  }
+
+  // When user enters the Images tab, prefill scene types using client-side detector
+  useEffect(() => {
+    if (activeTab !== "images" || !files.length) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<number, string> = {};
+      await Promise.all(files.map(async (f, i) => {
+        // only auto-fill if user hasn't set it
+        if (imageSceneTypes[i] && imageSceneTypes[i] !== "auto") return;
+        const scene = await detectSceneFromFile(f);
+        if (!cancelled) next[i] = scene;
+      }));
+      if (!cancelled && Object.keys(next).length) {
+        setImageSceneTypes(prev => ({ ...prev, ...next }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, files]);
+
   // Manual room linking functions
   function toggleSelect(i: number) {
     setSelection(prev => {
@@ -635,6 +683,11 @@ export default function BatchProcessor() {
         if (!resp.ok) {
           setRunState("idle");
           setAbortController(null);
+          // Fallback: if 404 (route missing on older deploy), poll per-id legacy endpoint
+          if (resp.status === 404) {
+            await pollForBatchLegacy(ids, controller);
+            return;
+          }
           const err = await resp.json().catch(() => ({}));
           alert(err.message || "Batch polling failed");
           return;
@@ -680,6 +733,52 @@ export default function BatchProcessor() {
         delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
       }
       await new Promise(r => setTimeout(r, delay));
+    }
+  };
+
+  // Legacy per-id polling fallback if /api/status/batch is unavailable
+  const pollForBatchLegacy = async (ids: string[], controller: AbortController) => {
+    const MAX_POLL_MS = 45 * 60 * 1000;
+    const BACKOFF_START_MS = 1000, BACKOFF_MAX_MS = 5000, BACKOFF_FACTOR = 1.5;
+    let delay = BACKOFF_START_MS; const deadline = Date.now() + MAX_POLL_MS;
+    while (Date.now() < deadline) {
+      if (controller.signal.aborted) return;
+      try {
+        const items: any[] = [];
+        for (const id of ids) {
+          const res = await fetch(api(`/api/status/${encodeURIComponent(id)}`), {
+            method: "GET", credentials: "include", headers: { ...withDevice().headers, "Cache-Control": "no-cache" }, signal: controller.signal
+          });
+          if (!res.ok) continue;
+          const j = await res.json();
+          // Map to minimal shape expected by UI
+          const st = j?.status || j?.state;
+          const status = st === 'complete' || st === 'succeeded' ? 'completed' : st === 'error' || st === 'failed' ? 'failed' : 'processing';
+          items.push({ id, status, imageUrl: j?.result?.imageUrl });
+        }
+        const completed = items.filter(i=>i.status==='completed').length;
+        setProgressText(`Processing images: ${completed}/${ids.length} completed`);
+        for (const it of items) {
+          const idx = jobIdToIndexRef.current[it.id];
+          if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
+            processedSetRef.current.add(idx);
+            queueRef.current.push({ index: idx, result: { imageUrl: it.imageUrl || null, mode: 'enhanced' }, filename: files[idx]?.name || `image-${idx+1}` });
+          }
+          if (typeof idx === 'number' && it.status === 'failed' && !processedSetRef.current.has(idx)) {
+            processedSetRef.current.add(idx);
+            queueRef.current.push({ index: idx, error: 'Processing failed', filename: files[idx]?.name || `image-${idx+1}` });
+          }
+        }
+        schedule();
+        if (completed === ids.length) {
+          setRunState('done'); setAbortController(null); await refreshUser(); return;
+        }
+        delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
+      } catch (e:any) {
+        if (e.name === 'AbortError') return;
+        delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+      }
+      await new Promise(r=>setTimeout(r, delay));
     }
   };
 
