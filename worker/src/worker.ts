@@ -6,16 +6,16 @@ import {
   EditJobPayload
 } from "@realenhance/shared/dist/types";
 
+import fs from "fs";
+
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2 } from "./pipeline/stage2";
 import { applyEdit } from "./pipeline/editApply";
 
-import { validateStructure } from "./validators/structural";
-import { validateRealism } from "./validators/realism";
-import { classifyScene } from "./validators/scene-classifier";
 import { detectSceneFromImage } from "./ai/scene-detector";
-import fs from "fs";
+import { detectRoomType } from "./ai/room-detector";
+import { classifyScene } from "./validators/scene-classifier";
 
 import {
   updateJob,
@@ -27,83 +27,103 @@ import {
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
-
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+import { isCancelled } from "./utils/cancel";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
-  const t0 = Date.now();
-  const timings: Record<string, number> = {};
-
   const rec = readImageRecord(payload.imageId);
   if (!rec) {
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: "image not found"
-    });
+    updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
     return;
   }
 
-  // Auto detection: primary scene (interior/exterior) + room type (heuristic)
+  const timings: Record<string, number> = {};
+  const t0 = Date.now();
+
+  // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
   let sceneLabel = (payload.options.sceneType as any) || "auto";
-  const tSceneStart = Date.now();
+  let scenePrimary: any = undefined;
+  const tScene = Date.now();
   try {
     const origPath = getOriginalPath(rec);
     const buf = fs.readFileSync(origPath);
+    // Primary scene (ONNX + heuristic fallback)
     const primary = await detectSceneFromImage(buf);
-    const room = await classifyScene(origPath);
-    detectedRoom = room.label;
-    if (sceneLabel === "auto" || !sceneLabel) {
-      sceneLabel = room.label as any;
+    scenePrimary = primary;
+    // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
+    let room = await detectRoomType(buf).catch(async () => null as any);
+    if (!room) {
+      const heur = await classifyScene(origPath);
+      room = { label: heur.label, confidence: heur.confidence } as any;
     }
-    updateJob(payload.jobId, { meta: { ...(rec as any).meta, scenePrimary: primary, scene: room } });
+    detectedRoom = room.label as string;
+    if (sceneLabel === "auto" || !sceneLabel) sceneLabel = room.label as any;
+    // store interim meta (non-fatal if write fails)
+    updateJob(payload.jobId, { meta: { ...(rec as any).meta, scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
   } catch {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
   }
-  timings.sceneDetectMs = Date.now() - tSceneStart;
+  timings.sceneDetectMs = Date.now() - tScene;
+
+  if (await isCancelled(payload.jobId)) {
+    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    return;
+  }
 
   // STAGE 1A
   const t1A = Date.now();
   const path1A = await runStage1A(getOriginalPath(rec));
   timings.stage1AMs = Date.now() - t1A;
 
-  // STAGE 1B
+  if (await isCancelled(payload.jobId)) {
+    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    return;
+  }
+
+  // STAGE 1B (optional declutter)
   const t1B = Date.now();
-  const path1B = payload.options.declutter
-    ? await runStage1B(path1A)
-    : path1A;
+  const path1B = payload.options.declutter ? await runStage1B(path1A) : path1A;
   timings.stage1BMs = Date.now() - t1B;
 
-  // STAGE 2
+  if (await isCancelled(payload.jobId)) {
+    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    return;
+  }
+
+  // STAGE 2 (optional virtual staging via Gemini)
   const t2 = Date.now();
   const path2 = payload.options.virtualStage
     ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room") })
     : path1B;
   timings.stage2Ms = Date.now() - t2;
 
-  // VALIDATE FINAL
-  const tVal = Date.now();
-    // VALIDATE FINAL (Gemini compliance)
-    try {
-      const ai = getGeminiClient();
-      const base1A = toBase64(path1A);
-      const baseFinal = toBase64(path2);
-      const verdict = await checkCompliance(ai as any, base1A.data, baseFinal.data);
-      if (!verdict.ok) {
-        updateJob(payload.jobId, {
-          status: "error",
-          errorMessage: `compliance_failed: ${(verdict.reasons||[]).join(', ')}`,
-          meta: { ...(rec as any).meta, scene: (rec as any).meta?.scene, compliance: verdict }
-        });
-        return;
-      }
-    } catch (e:any) {
-      // If AI not configured, proceed without compliance gate
-      console.warn("[worker] compliance check skipped:", e?.message || e);
-    }
-  timings.validateMs = Date.now() - tVal;
+  if (await isCancelled(payload.jobId)) {
+    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    return;
+  }
 
+  // COMPLIANCE VALIDATION (best-effort)
+  let compliance: any = undefined;
+  const tVal = Date.now();
+  try {
+    const ai = getGeminiClient();
+    const base1A = toBase64(path1A);
+    const baseFinal = toBase64(path2);
+    compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
+    if (compliance && compliance.ok === false) {
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: (compliance.reasons || ["Compliance check failed"]).join("; "),
+        meta: { ...(rec as any).meta, scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
+      });
+      return;
+    }
+  } catch (e) {
+    // proceed if Gemini not configured or any error
+    // console.warn("[worker] compliance check skipped:", (e as any)?.message || e);
+  }
+  timings.validateMs = Date.now() - tVal;
 
   // record versions
   pushImageVersion({
@@ -140,7 +160,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": payload.options.virtualStage ? path2 : undefined
     },
     resultVersionId: finalPathVersion.versionId,
-    meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, timings: { ...timings, totalMs: Date.now() - t0 } }
+    meta: {
+      scene: { label: sceneLabel as any, confidence: 0.5 },
+      scenePrimary,
+      timings: { ...timings, totalMs: Date.now() - t0 },
+      ...(compliance ? { compliance } : {})
+    }
   });
 }
 
@@ -148,19 +173,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 async function handleEditJob(payload: EditJobPayload) {
   const rec = readImageRecord(payload.imageId);
   if (!rec) {
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: "image not found"
-    });
+    updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
     return;
   }
 
   const basePath = getVersionPath(rec, payload.baseVersionId);
   if (!basePath) {
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: "base version not found"
-    });
+    updateJob(payload.jobId, { status: "error", errorMessage: "base version not found" });
     return;
   }
 
@@ -168,11 +187,7 @@ async function handleEditJob(payload: EditJobPayload) {
   if (payload.mode === "Restore") {
     // previous version in history before baseVersionId
     const idx = rec.history.findIndex(v => v.versionId === payload.baseVersionId);
-    if (idx > 0) {
-      restoreFromPath = rec.history[idx - 1]?.filePath;
-    } else {
-      restoreFromPath = basePath;
-    }
+    restoreFromPath = idx > 0 ? rec.history[idx - 1]?.filePath : basePath;
   }
 
   const editedPath = await applyEdit({
@@ -191,10 +206,7 @@ async function handleEditJob(payload: EditJobPayload) {
     note: `${payload.mode}: ${payload.instruction}`
   });
 
-  updateJob(payload.jobId, {
-    status: "complete",
-    resultVersionId: newVersion.versionId
-  });
+  updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
 }
 
 // BullMQ worker
@@ -203,7 +215,7 @@ const worker = new Worker(
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
 
-  updateJob((payload as any).jobId, { status: "processing" });
+    updateJob((payload as any).jobId, { status: "processing" });
 
     try {
       if (payload.type === "enhance") {
@@ -211,21 +223,15 @@ const worker = new Worker(
       } else if (payload.type === "edit") {
         await handleEditJob(payload as any);
       } else {
-        updateJob((payload as any).jobId, {
-          status: "error",
-          errorMessage: "unknown job type"
-        });
+        updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
       }
     } catch (err: any) {
       console.error("[worker] job failed", err);
-      updateJob((payload as any).jobId, {
-        status: "error",
-        errorMessage: err?.message || "unhandled worker error"
-      });
+      updateJob((payload as any).jobId, { status: "error", errorMessage: err?.message || "unhandled worker error" });
     }
   },
   {
-    connection: { url: REDIS_URL },
+    connection: { url: process.env.REDIS_URL || "redis://localhost:6379" },
     concurrency: Number(process.env.WORKER_CONCURRENCY || 2)
   }
 );

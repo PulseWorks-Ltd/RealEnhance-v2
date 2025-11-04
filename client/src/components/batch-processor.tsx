@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { withDevice } from "@/lib/withDevice";
-import { api, apiFetch } from "@/lib/api";
+import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -150,6 +150,8 @@ export default function BatchProcessor() {
   // Batch refine loading state
   const [isBatchRefining, setIsBatchRefining] = useState(false);
   const [hasRefinedImages, setHasRefinedImages] = useState(false);
+  // Track cancellable job ids reported by the server (per-image jobs)
+  const [cancelIds, setCancelIds] = useState<string[]>([]);
   
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<{ url: string, filename: string, originalUrl?: string, index: number } | null>(null);
@@ -526,6 +528,22 @@ export default function BatchProcessor() {
         }
 
         const data = await resp.json();
+
+        // Harvest per-item job ids for server-side cancellation
+        if (Array.isArray(data.items)) {
+          const ids: string[] = [];
+          for (const it of data.items) {
+            const id = it?.id || it?.jobId || it?.job_id;
+            if (typeof id === 'string') ids.push(id);
+          }
+          if (ids.length) {
+            setCancelIds(prev => {
+              const set = new Set(prev);
+              ids.forEach(id => set.add(id));
+              return Array.from(set);
+            });
+          }
+        }
         
         // Update progress text based on job status
         if (data.items) {
@@ -540,7 +558,7 @@ export default function BatchProcessor() {
               processedSetRef.current.add(i);
               queueRef.current.push({
                 index: i,
-                result: { imageUrl: item.imageUrl, originalImageUrl: item.originalImageUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note },
+                result: { imageUrl: item.imageUrl, originalImageUrl: item.originalImageUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -588,6 +606,31 @@ export default function BatchProcessor() {
     setAbortController(null);
     if (runState === "running") {
       setProgressText("Polling timeout reached - job may still be processing on server. You can refresh to resume.");
+    }
+  };
+
+  // Cancel entire batch: abort client polling and notify server to cancel queued jobs
+  const cancelBatchProcessing = async () => {
+    try {
+      if (abortController) {
+        abortController.abort();
+        setAbortController(null);
+      }
+      const ids = cancelIds;
+      if (ids.length) {
+        await fetch(api('/api/jobs/cancel-batch'), withDevice({
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        }));
+      }
+      setRunState("idle");
+      setProgressText("Cancelled");
+      localStorage.removeItem("activeJobId");
+      toast({ title: 'Batch cancelled', description: ids.length ? `Requested cancel for ${ids.length} job(s).` : 'Stopped polling.' });
+    } catch (e: any) {
+      toast({ title: 'Cancel failed', description: e?.message || 'Unable to cancel batch on server', variant: 'destructive' });
     }
   };
 
@@ -1953,11 +1996,23 @@ export default function BatchProcessor() {
             {/* Progress Display */}
             {runState === "running" && progressText && (
               <div className="bg-brand-light border border-blue-200 rounded-lg p-6 mb-6">
-                <div className="flex items-center justify-center">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-4"></div>
                   <span className="text-blue-800 font-medium" data-testid="text-progress-counter">
                     {progressText}
                   </span>
+                  </div>
+                  <div>
+                    <button
+                      onClick={cancelBatchProcessing}
+                      className="px-3 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                      disabled={!abortController}
+                      data-testid="button-cancel-batch"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
                 {lastDetected && (
                   <div className="mt-3 flex items-center justify-center gap-2">
@@ -2115,6 +2170,23 @@ export default function BatchProcessor() {
                                 {editingImages.has(i) ? "Editing..." : "Edit"}
                               </button>
                             </div>
+                            {/* Timings & Compliance badges if available */}
+                            {result?.result?.meta?.timings || result?.result?.meta?.compliance ? (
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                {result?.result?.meta?.timings && (
+                                  <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                                    ⏱ {Math.round((result.result.meta.timings.totalMs||0)/100)/10}s
+                                  </span>
+                                )}
+                                {result?.result?.meta?.compliance && (
+                                  result.result.meta.compliance.ok ? (
+                                    <span className="bg-green-100 text-green-700 px-2 py-1 rounded">Compliance OK</span>
+                                  ) : (
+                                    <span className="bg-red-100 text-red-700 px-2 py-1 rounded">Compliance blocked</span>
+                                  )
+                                )}
+                              </div>
+                            ) : null}
                           </>
                         ) : result?.error ? (
                           <p className="text-red-600 text-sm">Error: {result.error}</p>
