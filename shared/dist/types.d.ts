@@ -29,6 +29,7 @@ export interface ImageRecord {
     updatedAt: string;
 }
 export type JobStatus = "queued" | "processing" | "complete" | "error";
+export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface EnhanceJobPayload {
     jobId: JobId;
     userId: UserId;
@@ -38,7 +39,7 @@ export interface EnhanceJobPayload {
         declutter: boolean;
         virtualStage: boolean;
         roomType: string;
-        sceneType: string;
+        sceneType: string | "auto";
     };
     createdAt: string;
 }
@@ -67,6 +68,13 @@ export interface JobRecord {
         "2"?: string;
     };
     resultVersionId?: string;
+    meta?: {
+        scene?: {
+            label: SceneLabel;
+            confidence: number;
+        };
+        [k: string]: any;
+    };
     createdAt: string;
     updatedAt: string;
 }
