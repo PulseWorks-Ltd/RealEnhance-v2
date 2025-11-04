@@ -11,7 +11,7 @@ import {
 } from "@realenhance/shared/dist/types";
 
 function dataDir() {
-  return path.join(process.cwd(), "server", "data");
+  return process.env.DATA_DIR || path.resolve(process.cwd(), "..", "server", "data");
 }
 
 function readJSON<T>(fileName: string, fallback: T): T {

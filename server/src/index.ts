@@ -20,6 +20,9 @@ import { statusRouter } from "./routes/status.js";
 import { editRouter } from "./routes/edit.js";
 import { requeueRouter } from "./routes/requeue.js";
 import { cancelRouter } from "./routes/cancel.js";
+import { groupsRouter } from "./routes/groups.js";
+import path from "path";
+import fs from "fs";
 
 const PORT = Number(process.env.PORT || 8080);
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -57,7 +60,7 @@ async function main() {
       origin: PUBLIC_ORIGIN,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"]
+      allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With"]
     })
   );
   app.use(helmet());
@@ -96,6 +99,13 @@ async function main() {
   app.use("/api", editRouter());
   app.use("/api", requeueRouter());
   app.use(cancelRouter());
+  app.use("/api", groupsRouter());
+
+  // Static file serving for uploaded and data images (development-friendly)
+  const filesRoot = path.join(process.cwd(), "server");
+  if (fs.existsSync(filesRoot)) {
+    app.use("/files", express.static(filesRoot));
+  }
 
   // One-time admin seeding to guarantee partner accounts have 10k credits
   try {

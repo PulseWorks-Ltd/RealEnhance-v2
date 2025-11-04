@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const dataDir = path.join(process.cwd(), "server", "data");
+const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), "server", "data");
+const dataDir = DATA_DIR;
 
 // make sure it exists
 if (!fs.existsSync(dataDir)) {

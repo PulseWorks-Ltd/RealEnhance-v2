@@ -28,6 +28,7 @@ import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
+import { getStagingProfile } from "./utils/groups";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
@@ -93,8 +94,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 2 (optional virtual staging via Gemini)
   const t2 = Date.now();
+  const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
+  const profile = profileId ? getStagingProfile(profileId) : undefined;
+  const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   const path2 = payload.options.virtualStage
-    ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room") })
+    ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
     : path1B;
   timings.stage2Ms = Date.now() - t2;
 
@@ -152,6 +156,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
   });
 
+  const meta = {
+      scene: { label: sceneLabel as any, confidence: 0.5 },
+      scenePrimary,
+      timings: { ...timings, totalMs: Date.now() - t0 },
+      ...(compliance ? { compliance } : {})
+    };
+
   updateJob(payload.jobId, {
     status: "complete",
     stageOutputs: {
@@ -160,13 +171,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": payload.options.virtualStage ? path2 : undefined
     },
     resultVersionId: finalPathVersion.versionId,
-    meta: {
-      scene: { label: sceneLabel as any, confidence: 0.5 },
-      scenePrimary,
-      timings: { ...timings, totalMs: Date.now() - t0 },
-      ...(compliance ? { compliance } : {})
-    }
+    meta
   });
+
+  // Return value for BullMQ status consumers
+  return {
+    ok: true,
+    imageId: payload.imageId,
+    jobId: payload.jobId,
+    finalPath: path2,
+    meta
+  } as any;
 }
 
 // handle "edit" pipeline
@@ -219,15 +234,16 @@ const worker = new Worker(
 
     try {
       if (payload.type === "enhance") {
-        await handleEnhanceJob(payload as any);
+        return await handleEnhanceJob(payload as any);
       } else if (payload.type === "edit") {
-        await handleEditJob(payload as any);
+        return await handleEditJob(payload as any);
       } else {
         updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
       }
     } catch (err: any) {
       console.error("[worker] job failed", err);
       updateJob((payload as any).jobId, { status: "error", errorMessage: err?.message || "unhandled worker error" });
+      throw err;
     }
   },
   {

@@ -128,6 +128,9 @@ export default function BatchProcessor() {
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
   const [jobId, setJobId] = useState<string>("");
+  const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
+  const jobIdToIndexRef = useRef<Record<string, number>>({});
+  const jobIdToImageIdRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<any[]>([]);
   const [progressText, setProgressText] = useState<string>("");
   const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
@@ -502,7 +505,7 @@ export default function BatchProcessor() {
           return;
         }
         
-        const resp = await fetch(api(`/api/status/${encodeURIComponent(currentJobId)}`), {
+  const resp = await fetch(api(`/api/status/${encodeURIComponent(currentJobId)}`), {
           method: "GET",
           credentials: "include",
           headers: {
@@ -609,6 +612,77 @@ export default function BatchProcessor() {
     }
   };
 
+  // Multi-job polling using server batch endpoint
+  const pollForBatch = async (ids: string[], controller: AbortController) => {
+    const MAX_POLL_MINUTES = 45;
+    const MAX_POLL_MS = MAX_POLL_MINUTES * 60 * 1000;
+    const BACKOFF_START_MS = 1000;
+    const BACKOFF_MAX_MS = 5000;
+    const BACKOFF_FACTOR = 1.5;
+    let delay = BACKOFF_START_MS;
+    const deadline = Date.now() + MAX_POLL_MS;
+
+    while (Date.now() < deadline) {
+      try {
+        if (controller.signal.aborted) return;
+        const qs = encodeURIComponent(ids.join(","));
+        const resp = await fetch(api(`/api/status/batch?ids=${qs}`), {
+          method: "GET",
+          credentials: "include",
+          headers: { ...withDevice().headers, "Cache-Control": "no-cache" },
+          signal: controller.signal
+        });
+        if (!resp.ok) {
+          setRunState("idle");
+          setAbortController(null);
+          const err = await resp.json().catch(() => ({}));
+          alert(err.message || "Batch polling failed");
+          return;
+        }
+        const data = await resp.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        // progress
+        const completed = items.filter((it: any) => it && it.status === 'completed').length;
+        const total = ids.length;
+        setProgressText(`Processing images: ${completed}/${total} completed`);
+
+        // surface completed items
+        for (const it of items) {
+          const idx = jobIdToIndexRef.current[it.id];
+          if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
+            processedSetRef.current.add(idx);
+            const imageUrl = it.imageUrl || null;
+            queueRef.current.push({
+              index: idx,
+              result: { imageUrl, originalImageUrl: null, qualityEnhancedUrl: null, mode: 'enhanced' },
+              filename: files[idx]?.name || `image-${idx+1}`
+            });
+          }
+          if (typeof idx === 'number' && it.status === 'failed' && !processedSetRef.current.has(idx)) {
+            processedSetRef.current.add(idx);
+            queueRef.current.push({ index: idx, error: it.error || 'Processing failed', filename: files[idx]?.name || `image-${idx+1}` });
+          }
+        }
+        schedule();
+
+        if (data.done) {
+          setRunState("done");
+          setAbortController(null);
+          await refreshUser();
+          setProgressText(`Batch complete! ${items.filter((i:any)=>i.status==='completed').length} images enhanced successfully.`);
+          return;
+        }
+
+        delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
+      } catch (e:any) {
+        if (e.name === 'AbortError') return;
+        delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+      }
+      await new Promise(r => setTimeout(r, delay));
+    }
+  };
+
   // Cancel entire batch: abort client polling and notify server to cancel queued jobs
   const cancelBatchProcessing = async () => {
     try {
@@ -681,7 +755,7 @@ export default function BatchProcessor() {
     const controller = new AbortController();
     setAbortController(controller);
     
-    const fd = new FormData();
+  const fd = new FormData();
     files.forEach(f => fd.append("images", f));
     
     // Use shared industry mapping from component scope
@@ -715,12 +789,17 @@ export default function BatchProcessor() {
         return alert(err.message || "Failed to upload files");
       }
 
-      const uploadResult = await uploadResp.json();
-      const jobId = uploadResult.jobId;
-      setJobId(jobId);
+  const uploadResult = await uploadResp.json();
+  const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
+  if (!jobs.length) throw new Error("Upload response missing jobs");
+  const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
+  setJobIds(ids);
+  jobIdToIndexRef.current = {};
+  jobIdToImageIdRef.current = {};
+  jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
       
-      // Phase 2: Poll batch status for progressive results
-      await pollForResults(jobId, controller);
+  // Phase 2: Poll multi-job status
+  await pollForBatch(ids, controller);
       
     } catch (error: any) {
       setRunState("idle");
@@ -1379,6 +1458,7 @@ export default function BatchProcessor() {
     setPreserveStructure(true);
     setRunState("idle");
     setJobId("");
+  setJobIds([]);
     setResults([]);
     setProgressText("");
     setProcessedImages([]);
@@ -1402,6 +1482,24 @@ export default function BatchProcessor() {
     clearBatchJobState();
     
     toast({ title: "Restarted", description: "Ready for new batch processing." });
+  };
+
+  // Cancel batch request
+  const cancelBatch = async () => {
+    if (!jobIds.length) return;
+    try {
+      await fetch(api("/api/jobs/cancel-batch"), withDevice({
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: jobIds })
+      }));
+      if (abortController) abortController.abort();
+      setRunState("idle");
+      setProgressText("Batch cancelled");
+    } catch (e) {
+      console.warn("cancel-batch failed", e);
+    }
   };
 
   // Helper function to check if user can proceed to next tab
