@@ -13,7 +13,7 @@ import { setCreditsForEmail } from "./services/users.js";
 import { authUserRouter } from "./routes/authUser.js";
 import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
-import { statusRouter } from "./routes/status.js";
+import { statusRouter, debugStatusRouter } from "./routes/status.js";
 import { editRouter } from "./routes/edit.js";
 import { requeueRouter } from "./routes/requeue.js";
 import { cancelRouter } from "./routes/cancel.js";
@@ -85,6 +85,8 @@ async function main() {
   registerMeRoutes(app);
   app.use("/api", uploadRouter());
   app.use("/api", statusRouter());
+  // Optional debugging route to inspect BullMQ job state/returnvalue
+  app.use("/api", debugStatusRouter());
   app.use("/api", editRouter());
   app.use("/api", requeueRouter());
   app.use(cancelRouter());

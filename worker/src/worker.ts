@@ -46,6 +46,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish original so client can render before/after across services
   const origPath = getOriginalPath(rec);
   const publishedOriginal = await publishImage(origPath);
+  try { console.log('[worker] original published kind=%s url=%s', publishedOriginal?.kind, (publishedOriginal?.url||'').slice(0,120)); } catch {}
 
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
@@ -179,6 +180,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     publishedFinal = await publishImage(path2);
     pubFinalUrl = publishedFinal.url;
     setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, publishedFinal.url);
+    try { console.log('[worker] final published kind=%s url=%s', publishedFinal?.kind, (publishedFinal?.url||'').slice(0,120)); } catch {}
   } catch (e) {
     console.warn('[worker] failed to publish final', e);
   }
