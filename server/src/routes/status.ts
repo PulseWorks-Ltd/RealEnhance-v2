@@ -145,3 +145,43 @@ export function statusRouter() {
 
   return r;
 }
+
+// Debug-only helper route to inspect BullMQ job return values (sanitized)
+// Note: Keep this behind authentication; do not expose secrets.
+export function debugStatusRouter() {
+  const r = Router();
+  r.get("/debug/job/:jobId", async (req: Request, res: Response) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
+    try {
+      const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+      const job = await q.getJob(req.params.jobId);
+      if (!job) {
+        await q.close();
+        return res.status(404).json({ error: "not_found" });
+      }
+      const st = await job.getState();
+      const data: any = job.data || {};
+      if (data.userId && data.userId !== sessUser.id) {
+        await q.close();
+        return res.status(403).json({ error: "forbidden" });
+      }
+      const rv: any = (job as any).returnvalue;
+      await q.close();
+      return res.json({
+        id: job.id,
+        state: st,
+        payload: { imageId: data.imageId, type: data.type },
+        returnvalue: rv ? {
+          resultUrl: rv.resultUrl,
+          originalUrl: rv.originalUrl,
+          stageUrls: rv.stageUrls,
+          finalPath: rv.finalPath ? true : false,
+        } : null
+      });
+    } catch (e:any) {
+      return res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+  return r;
+}
