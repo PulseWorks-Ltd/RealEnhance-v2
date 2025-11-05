@@ -24,11 +24,13 @@ import {
   getVersionPath,
   getOriginalPath
 } from "./utils/persist";
+import { setVersionPublicUrl } from "./utils/persist";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
+import { publishImage } from "./utils/publish";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
@@ -41,13 +43,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const timings: Record<string, number> = {};
   const t0 = Date.now();
 
+  // Publish original so client can render before/after across services
+  const origPath = getOriginalPath(rec);
+  const publishedOriginal = await publishImage(origPath);
+
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
   let sceneLabel = (payload.options.sceneType as any) || "auto";
   let scenePrimary: any = undefined;
   const tScene = Date.now();
   try {
-    const origPath = getOriginalPath(rec);
     const buf = fs.readFileSync(origPath);
     // Primary scene (ONNX + heuristic fallback)
     const primary = await detectSceneFromImage(buf);
@@ -74,9 +79,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1A
   const t1A = Date.now();
-  const path1A = await runStage1A(getOriginalPath(rec));
+  const path1A = await runStage1A(origPath);
   timings.stage1AMs = Date.now() - t1A;
-
+  // Record 1A version and try to publish
+  const v1A = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1A", filePath: path1A, note: "Quality enhanced" });
+  let pub1AUrl: string | undefined = undefined;
+  try {
+    const pub1A = await publishImage(path1A);
+    pub1AUrl = pub1A.url;
+    setVersionPublicUrl(payload.imageId, v1A.versionId, pub1A.url);
+  } catch (e) {
+    console.warn('[worker] failed to publish 1A', e);
+  }
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
     return;
@@ -138,14 +152,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     note: "Quality enhanced"
   });
 
+  let pub1BUrl: string | undefined = undefined;
   if (payload.options.declutter) {
-    pushImageVersion({
-      imageId: payload.imageId,
-      userId: payload.userId,
-      stageLabel: "1B",
-      filePath: path1B,
-      note: "Decluttered / depersonalized"
-    });
+    const v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
+    try {
+      const pub1B = await publishImage(path1B);
+      pub1BUrl = pub1B.url;
+      setVersionPublicUrl(payload.imageId, v1B.versionId, pub1B.url);
+    } catch (e) {
+      console.warn('[worker] failed to publish 1B', e);
+    }
   }
 
   const finalPathVersion = pushImageVersion({
@@ -155,6 +171,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     filePath: path2,
     note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
   });
+
+  // Publish final for client consumption and attach to version
+  let publishedFinal: any = null;
+  let pubFinalUrl: string | undefined = undefined;
+  try {
+    publishedFinal = await publishImage(path2);
+    pubFinalUrl = publishedFinal.url;
+    setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, publishedFinal.url);
+  } catch (e) {
+    console.warn('[worker] failed to publish final', e);
+  }
 
   const meta = {
       scene: { label: sceneLabel as any, confidence: 0.5 },
@@ -171,7 +198,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": payload.options.virtualStage ? path2 : undefined
     },
     resultVersionId: finalPathVersion.versionId,
-    meta
+    meta,
+    originalUrl: publishedOriginal?.url,
+    resultUrl: pubFinalUrl,
+    stageUrls: {
+      "1A": pub1AUrl,
+      "1B": pub1BUrl,
+      "2": pubFinalUrl
+    }
   });
 
   // Return value for BullMQ status consumers
@@ -180,6 +214,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     imageId: payload.imageId,
     jobId: payload.jobId,
     finalPath: path2,
+    originalUrl: publishedOriginal.url,
+    resultUrl: pubFinalUrl,
+    stageUrls: {
+      "1A": pub1AUrl,
+      "1B": pub1BUrl,
+      "2": pubFinalUrl
+    },
     meta
   } as any;
 }
