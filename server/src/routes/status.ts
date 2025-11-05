@@ -9,20 +9,76 @@ import path from "path";
 export function statusRouter() {
   const r = Router();
 
-  r.get("/status/:jobId", (req: Request, res: Response) => {
+  r.get("/status/:jobId", async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) {
       return res.status(401).json({ error: "not_authenticated" });
     }
 
-    const job = getJob(req.params.jobId);
-    if (!job) return res.status(404).json({ error: "not_found" });
+    // Prefer authoritative BullMQ source so this works across containers
+    try {
+      const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+      const job = await q.getJob(req.params.jobId);
+      if (job) {
+        const st = await job.getState();
+        let status: 'queued'|'processing'|'completed'|'failed' = 'queued';
+        if (st === 'completed') status = 'completed';
+        else if (st === 'failed') status = 'failed';
+        else if (st === 'active') status = 'processing';
+        else status = 'queued';
 
-    if (job.userId !== sessUser.id) {
-      return res.status(403).json({ error: "forbidden" });
+        const payload: any = job.data || {};
+        if (payload.userId && payload.userId !== sessUser.id) {
+          await q.close();
+          return res.status(403).json({ error: 'forbidden' });
+        }
+
+        const imgId = payload.imageId;
+        let imageUrl: string | undefined;
+        let originalImageUrl: string | undefined;
+        const rv: any = (job as any).returnvalue;
+        if (rv?.resultUrl) imageUrl = rv.resultUrl;
+        if (rv?.originalUrl) originalImageUrl = rv.originalUrl;
+        if (!imageUrl && rv?.finalPath) {
+          const rel = String(rv.finalPath).split(path.join(process.cwd(), 'server') + path.sep)[1];
+          if (rel) imageUrl = `/files/${rel.replace(/\\/g,'/')}`;
+        }
+
+        // Fallback to server-side image record if needed
+        if (status === 'completed' && imgId && !imageUrl) {
+          const rec = getImageRecord(imgId as any);
+          if (rec) {
+            const latest = rec.history.find(v => v.versionId === rec.currentVersionId) || rec.history[rec.history.length-1];
+            if (latest?.filePath) {
+              const rel = latest.filePath.split(path.join(process.cwd(), 'server') + path.sep)[1];
+              if (rel) imageUrl = `/files/${rel.replace(/\\/g,'/')}`;
+            }
+          }
+        }
+
+        await q.close();
+        return res.json({
+          id: job.id,
+          jobId: job.id,
+          userId: payload.userId,
+          imageId: imgId,
+          status,
+          imageUrl,
+          originalImageUrl,
+          stageUrls: rv?.stageUrls || undefined,
+          updatedAt: (job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined)
+        });
+      }
+      await q.close();
+    } catch (e) {
+      // non-fatal; fall back to JSON store below
     }
 
-    res.json(job);
+    // Legacy/local fallback: JSON store (may not be updated in multi-service deployments)
+    const legacy = getJob(req.params.jobId);
+    if (!legacy) return res.status(404).json({ error: 'not_found' });
+    if (legacy.userId !== sessUser.id) return res.status(403).json({ error: 'forbidden' });
+    return res.json(legacy);
   });
 
   // Batch status: /api/status/batch?ids=a,b,c

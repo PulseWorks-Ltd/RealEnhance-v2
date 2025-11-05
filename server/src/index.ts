@@ -1,7 +1,4 @@
 // server/src/index.ts
-import dotenv from "dotenv";
-dotenv.config();
-
 import express, { type Express } from "express";
 import session, { type SessionOptions } from "express-session";
 import RedisStore from "connect-redis";
@@ -24,18 +21,9 @@ import { groupsRouter } from "./routes/groups.js";
 import { healthRouter } from "./routes/health.js";
 import path from "path";
 import fs from "fs";
+import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 
-const PORT = Number(process.env.PORT || 8080);
-const IS_PROD = process.env.NODE_ENV === "production";
-const PUBLIC_ORIGIN = (process.env.PUBLIC_ORIGIN || "http://localhost:3000")
-  .split(",")
-  .map(s => s.trim());
-
-const REDIS_URL =
-  process.env.REDIS_URL ||
-  (IS_PROD ? "" : "redis://localhost:6379"); // dev default
-
-const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
+const IS_PROD = NODE_ENV === "production";
 
 async function main() {
   // ---------------- Redis ----------------
