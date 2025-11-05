@@ -5,7 +5,11 @@ export const NODE_ENV = process.env.NODE_ENV ?? "development";
 export const PORT = Number(process.env.PORT ?? 5000);
 
 export const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret";
-export const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+// Prefer private/internal Redis URL when available
+export const REDIS_URL =
+  process.env.REDIS_PRIVATE_URL ||
+  process.env.REDIS_URL ||
+  "redis://localhost:6379";
 
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
