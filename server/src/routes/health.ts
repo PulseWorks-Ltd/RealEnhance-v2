@@ -24,5 +24,27 @@ export function healthRouter() {
       res.status(500).json({ ok: false, error: err?.message || String(err) });
     }
   });
+
+  // Redis env visibility (sanitized) to confirm which URL is used in prod
+  r.get("/health/redis", async (_req: Request, res: Response) => {
+    try {
+      const envUsed = process.env.REDIS_PRIVATE_URL ? "REDIS_PRIVATE_URL" : (process.env.REDIS_URL ? "REDIS_URL" : "default");
+      let parsed: any = null;
+      try {
+        const u = new URL(REDIS_URL);
+        parsed = {
+          protocol: u.protocol.replace(":", ""),
+          hostname: u.hostname,
+          port: u.port || (u.protocol === "rediss:" ? "6380" : "6379"),
+          // never expose username/password
+        };
+      } catch {
+        parsed = { raw: REDIS_URL ? "set" : "unset" };
+      }
+      res.json({ ok: true, envUsed, redis: parsed });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  });
   return r;
 }

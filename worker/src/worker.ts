@@ -224,6 +224,10 @@ async function handleEditJob(payload: EditJobPayload) {
   updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
 }
 
+// Determine Redis URL with preference for private/internal in hosted environments
+const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+console.log(`[worker] starting. queue=${JOB_QUEUE_NAME} redis=${REDIS_URL}`);
+
 // BullMQ worker
 const worker = new Worker(
   JOB_QUEUE_NAME,
@@ -247,10 +251,21 @@ const worker = new Worker(
     }
   },
   {
-    connection: { url: process.env.REDIS_URL || "redis://localhost:6379" },
+    connection: { url: REDIS_URL },
     concurrency: Number(process.env.WORKER_CONCURRENCY || 2)
   }
 );
+
+// Show readiness (optional in BullMQ v5)
+(async () => {
+  try {
+    // @ts-ignore
+    await worker.waitUntilReady?.();
+    console.log("[worker] ready and listening");
+  } catch (e) {
+    console.error("[worker] failed to initialize", e);
+  }
+})();
 
 worker.on("completed", job => {
   console.log(`[worker] completed job ${job.id}`);
