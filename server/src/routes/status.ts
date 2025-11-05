@@ -54,9 +54,16 @@ export function statusRouter() {
       const payload: any = job.data || {};
       const imgId = payload.imageId;
       let imageUrl: string | undefined;
+      let originalImageUrl: string | undefined;
       // Prefer explicit return value from worker (BullMQ exposes `.returnvalue` on completed jobs)
       const rv: any = (job as any).returnvalue;
-      if (rv && rv.finalPath) {
+      if (rv && rv.resultUrl) {
+        imageUrl = rv.resultUrl;
+      }
+      if (rv && rv.originalUrl) {
+        originalImageUrl = rv.originalUrl;
+      }
+      if (!imageUrl && rv && rv.finalPath) {
         const rel = String(rv.finalPath).split(path.join(process.cwd(), 'server') + path.sep)[1];
         if (rel) imageUrl = `/files/${rel.replace(/\\/g,'/')}`;
       }
@@ -73,7 +80,7 @@ export function statusRouter() {
         }
       }
       if (status === 'completed') completed++;
-      items.push({ id, status, imageId: imgId, imageUrl, filename: job.name || undefined });
+  items.push({ id, status, imageId: imgId, imageUrl, originalImageUrl, filename: job.name || undefined });
     }
 
     const done = completed === ids.length || items.every(i => i.status === 'failed');

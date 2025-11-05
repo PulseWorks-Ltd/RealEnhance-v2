@@ -92,3 +92,17 @@ export function getVersionPath(
 export function getOriginalPath(imageRecord: ImageRecord): string {
   return imageRecord.originalPath;
 }
+
+// Set a public URL for a specific version (best-effort)
+export function setVersionPublicUrl(imageId: ImageId, versionId: string, publicUrl: string) {
+  const allImages = readJSON<Record<ImageId, ImageRecord>>("images.json", {});
+  const rec = allImages[imageId];
+  if (!rec) return;
+  const idx = rec.history.findIndex(v => v.versionId === versionId);
+  if (idx === -1) return;
+  // attach publicUrl to that version
+  (rec.history[idx] as any).publicUrl = publicUrl;
+  rec.updatedAt = new Date().toISOString();
+  allImages[imageId] = rec;
+  writeJSON("images.json", allImages);
+}
