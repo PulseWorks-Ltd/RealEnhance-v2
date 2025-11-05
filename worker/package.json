@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx src/worker.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "NODE_ENV=production node dist/worker.js"
+    "start": "NODE_ENV=production node dist/worker.js",
+    "test:publish": "tsx src/scripts/test-publish.ts"
   },
   "dependencies": {
     "@realenhance/shared": "workspace:*",
