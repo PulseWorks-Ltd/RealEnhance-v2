@@ -47,6 +47,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const origPath = getOriginalPath(rec);
   const publishedOriginal = await publishImage(origPath);
   try { console.log('[worker] original published kind=%s url=%s', publishedOriginal?.kind, (publishedOriginal?.url||'').slice(0,120)); } catch {}
+  // surface early so UI can show before/after immediately
+  updateJob(payload.jobId, { stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
 
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
@@ -92,6 +94,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e) {
     console.warn('[worker] failed to publish 1A', e);
   }
+  updateJob(payload.jobId, { stage: "1A", progress: 35, stageUrls: { "1A": pub1AUrl } });
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
     return;
@@ -116,6 +119,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
     : path1B;
   timings.stage2Ms = Date.now() - t2;
+  updateJob(payload.jobId, { stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
 
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
@@ -144,15 +148,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   timings.validateMs = Date.now() - tVal;
 
-  // record versions
-  pushImageVersion({
-    imageId: payload.imageId,
-    userId: payload.userId,
-    stageLabel: "1A",
-    filePath: path1A,
-    note: "Quality enhanced"
-  });
-
+  // stage 1B publishing was deferred until here; attach URL and surface progress
   let pub1BUrl: string | undefined = undefined;
   if (payload.options.declutter) {
     const v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
@@ -160,6 +156,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
       setVersionPublicUrl(payload.imageId, v1B.versionId, pub1B.url);
+      updateJob(payload.jobId, { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } });
     } catch (e) {
       console.warn('[worker] failed to publish 1B', e);
     }
@@ -184,6 +181,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e) {
     console.warn('[worker] failed to publish final', e);
   }
+  updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
   const meta = {
       scene: { label: sceneLabel as any, confidence: 0.5 },
@@ -310,8 +308,9 @@ const worker = new Worker(
   }
 })();
 
-worker.on("completed", job => {
-  console.log(`[worker] completed job ${job.id}`);
+worker.on("completed", (job, result: any) => {
+  const url = (result && (result as any).resultUrl) ? String((result as any).resultUrl).slice(0, 120) : undefined;
+  console.log(`[worker] completed job ${job.id}${url ? ` → ${url}` : ""}`);
 });
 
 worker.on("failed", (job, err) => {

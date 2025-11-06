@@ -1,0 +1,74 @@
+{
+  "img_b5c8fa20-5d3d-4fee-8681-1de8625c0633": {
+    "id": "img_b5c8fa20-5d3d-4fee-8681-1de8625c0633",
+    "imageId": "img_b5c8fa20-5d3d-4fee-8681-1de8625c0633",
+    "ownerUserId": "user_test",
+    "currentVersionId": "ver_13571aa9-c3d6-4ced-bdf4-3136e042346c",
+    "history": [
+      {
+        "versionId": "ver_13571aa9-c3d6-4ced-bdf4-3136e042346c",
+        "stageLabel": "uploaded",
+        "filePath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+        "createdAt": "2025-11-06T17:18:38.177Z"
+      }
+    ],
+    "originalPath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+    "versions": {
+      "original": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png"
+    },
+    "meta": {
+      "roomType": "living_room",
+      "sceneType": "auto"
+    },
+    "createdAt": "2025-11-06T17:18:38.177Z",
+    "updatedAt": "2025-11-06T17:18:38.177Z"
+  },
+  "img_7fcf3a3d-444f-4699-a48f-8e449006926f": {
+    "id": "img_7fcf3a3d-444f-4699-a48f-8e449006926f",
+    "imageId": "img_7fcf3a3d-444f-4699-a48f-8e449006926f",
+    "ownerUserId": "user_test",
+    "currentVersionId": "ver_3de48581-64d1-48f1-a0b0-04849053995d",
+    "history": [
+      {
+        "versionId": "ver_3de48581-64d1-48f1-a0b0-04849053995d",
+        "stageLabel": "uploaded",
+        "filePath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+        "createdAt": "2025-11-06T18:06:54.295Z"
+      }
+    ],
+    "originalPath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+    "versions": {
+      "original": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png"
+    },
+    "meta": {
+      "roomType": "living_room",
+      "sceneType": "auto"
+    },
+    "createdAt": "2025-11-06T18:06:54.295Z",
+    "updatedAt": "2025-11-06T18:06:54.295Z"
+  },
+  "img_46d25c10-f270-4141-ab89-85daf675ba2e": {
+    "id": "img_46d25c10-f270-4141-ab89-85daf675ba2e",
+    "imageId": "img_46d25c10-f270-4141-ab89-85daf675ba2e",
+    "ownerUserId": "user_test",
+    "currentVersionId": "ver_fbe45dce-b864-47ac-8458-869e7cf8bde5",
+    "history": [
+      {
+        "versionId": "ver_fbe45dce-b864-47ac-8458-869e7cf8bde5",
+        "stageLabel": "uploaded",
+        "filePath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+        "createdAt": "2025-11-06T20:14:07.659Z"
+      }
+    ],
+    "originalPath": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png",
+    "versions": {
+      "original": "/workspaces/RealEnhance-v2/server/server/uploads/user_test/test.png"
+    },
+    "meta": {
+      "roomType": "living_room",
+      "sceneType": "interior"
+    },
+    "createdAt": "2025-11-06T20:14:07.659Z",
+    "updatedAt": "2025-11-06T20:14:07.659Z"
+  }
+}

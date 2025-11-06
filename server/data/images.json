@@ -1,1 +1,272 @@
-{}
+{
+  "img_test_1762461268662": {
+    "id": "img_test_1762461268662",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_91734180-d44f-45c6-a72d-f04d8cba1403",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T20:35:24.826Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_b416b091-f408-4289-9c7b-626399bbe6b5",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T20:35:24.828Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_b416b091-f408-4289-9c7b-626399bbe6b5",
+    "meta": {},
+    "createdAt": "2025-11-06T20:34:28.662Z",
+    "updatedAt": "2025-11-06T20:35:24.828Z"
+  },
+  "img_test_1762462022854": {
+    "id": "img_test_1762462022854",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_b9fe5cf3-a44c-4db0-922e-486a58267232",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:03:18.325Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_9943fb2b-ff43-4cb8-bd9b-d60a1e992816",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:03:18.329Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_9943fb2b-ff43-4cb8-bd9b-d60a1e992816",
+    "meta": {},
+    "createdAt": "2025-11-06T20:47:02.854Z",
+    "updatedAt": "2025-11-06T21:03:18.330Z"
+  },
+  "img_test_1762463042763": {
+    "id": "img_test_1762463042763",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_bf06310e-95a3-4258-88f0-859cd7e5c6e1",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:12:49.464Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_e7c758f6-a5bd-4e50-9db7-165f5ec119a9",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:12:50.526Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_e7c758f6-a5bd-4e50-9db7-165f5ec119a9",
+    "meta": {},
+    "createdAt": "2025-11-06T21:04:02.763Z",
+    "updatedAt": "2025-11-06T21:12:50.526Z"
+  },
+  "img_test_1762463686560": {
+    "id": "img_test_1762463686560",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_f6437aff-c3cc-4d16-895a-ab84f09ba300",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:14:46.614Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_fc63b237-f2bf-43c5-8c78-257d579a48ea",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:14:47.414Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_fc63b237-f2bf-43c5-8c78-257d579a48ea",
+    "meta": {},
+    "createdAt": "2025-11-06T21:14:46.560Z",
+    "updatedAt": "2025-11-06T21:14:47.415Z"
+  },
+  "img_test_1762463711784": {
+    "id": "img_test_1762463711784",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_d0bd9d17-2ea8-4090-b000-eecfa78af12d",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:15:11.838Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_683a7376-cb7d-42e5-99fd-d8764680dcfa",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:15:12.643Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_683a7376-cb7d-42e5-99fd-d8764680dcfa",
+    "meta": {},
+    "createdAt": "2025-11-06T21:15:11.784Z",
+    "updatedAt": "2025-11-06T21:15:12.643Z"
+  },
+  "img_test_1762463977098": {
+    "id": "img_test_1762463977098",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_f4b21544-cfb0-4f31-b73d-d58255addb6d",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:19:37.152Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_796ddaa0-a074-4c38-a7cc-93b1581b95be",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:19:37.960Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_796ddaa0-a074-4c38-a7cc-93b1581b95be",
+    "meta": {},
+    "createdAt": "2025-11-06T21:19:37.098Z",
+    "updatedAt": "2025-11-06T21:19:37.960Z"
+  },
+  "img_test_1762463998591": {
+    "id": "img_test_1762463998591",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_a03fad5f-3736-4592-bf3c-3dc003aead32",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:19:58.663Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_d63abcbc-fa99-4edd-9d19-fcd4ff8bdc79",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:19:59.459Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_d63abcbc-fa99-4edd-9d19-fcd4ff8bdc79",
+    "meta": {},
+    "createdAt": "2025-11-06T21:19:58.591Z",
+    "updatedAt": "2025-11-06T21:19:59.460Z"
+  },
+  "img_test_1762464133325": {
+    "id": "img_test_1762464133325",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_e8fa5161-e601-4de4-81e6-a27a8b447da8",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:22:13.374Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_616626c3-29fe-4d3b-99ca-21dbb13a0326",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:22:14.172Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_616626c3-29fe-4d3b-99ca-21dbb13a0326",
+    "meta": {},
+    "createdAt": "2025-11-06T21:22:13.325Z",
+    "updatedAt": "2025-11-06T21:22:14.172Z"
+  },
+  "img_test_1762464162171": {
+    "id": "img_test_1762464162171",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_1bdcd8b2-2df9-4787-bf4a-1a4482002576",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:22:42.222Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_b91880f6-9f86-40bf-a51b-4bc60670594d",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:22:43.014Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_b91880f6-9f86-40bf-a51b-4bc60670594d",
+    "meta": {},
+    "createdAt": "2025-11-06T21:22:42.171Z",
+    "updatedAt": "2025-11-06T21:22:43.015Z"
+  },
+  "img_test_1762464498247": {
+    "id": "img_test_1762464498247",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [
+      {
+        "versionId": "v_57e3d018-1a7b-495e-a78b-961e07714d2b",
+        "stageLabel": "1A",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:28:18.299Z",
+        "note": "Quality enhanced",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      },
+      {
+        "versionId": "v_08587331-7878-4951-9ef5-8f41e2f4d970",
+        "stageLabel": "2",
+        "filePath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+        "createdAt": "2025-11-06T21:28:19.109Z",
+        "note": "Virtual staging",
+        "publicUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+      }
+    ],
+    "currentVersionId": "v_08587331-7878-4951-9ef5-8f41e2f4d970",
+    "meta": {},
+    "createdAt": "2025-11-06T21:28:18.247Z",
+    "updatedAt": "2025-11-06T21:28:19.109Z"
+  }
+}

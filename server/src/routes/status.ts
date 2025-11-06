@@ -10,7 +10,9 @@ export function statusRouter() {
   const r = Router();
 
   r.get("/status/:jobId", async (req: Request, res: Response) => {
-    const sessUser = (req.session as any)?.user;
+    // In development, allow unauthenticated access for testing
+    const isDev = process.env.NODE_ENV === 'development';
+    const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;
     if (!sessUser) {
       return res.status(401).json({ error: "not_authenticated" });
     }
@@ -83,19 +85,32 @@ export function statusRouter() {
 
   // Batch status: /api/status/batch?ids=a,b,c
   r.get("/status/batch", async (req: Request, res: Response) => {
-    const sessUser = (req.session as any)?.user;
+    // In development, allow unauthenticated access for testing
+    const isDev = process.env.NODE_ENV === 'development';
+    const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
 
     const idsParam = String(req.query.ids || "").trim();
     if (!idsParam) return res.json({ items: [], done: true, count: 0 });
     const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean);
+    
+    if (ids.length === 0) {
+      return res.json({ items: [], done: true, count: 0 });
+    }
 
     const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
     const items: any[] = [];
     let completed = 0;
 
-    for (const id of ids) {
-      const job = await q.getJob(id);
+    try {
+      for (const id of ids) {
+      let job;
+      try {
+        job = await q.getJob(id);
+      } catch (e) {
+        items.push({ id, status: 'failed', error: 'job_error' });
+        continue;
+      }
       if (!job) {
         items.push({ id, status: 'failed', error: 'not_found' });
         continue;
@@ -137,10 +152,13 @@ export function statusRouter() {
       }
       if (status === 'completed') completed++;
   items.push({ id, status, imageId: imgId, imageUrl, originalImageUrl, filename: job.name || undefined });
-    }
+      }
 
-    const done = completed === ids.length || items.every(i => i.status === 'failed');
-    res.json({ items, count: ids.length, done });
+      const done = completed === ids.length || items.every(i => i.status === 'failed');
+      res.json({ items, count: ids.length, done });
+    } finally {
+      await q.close();
+    }
   });
 
   return r;
@@ -151,11 +169,20 @@ export function statusRouter() {
 export function debugStatusRouter() {
   const r = Router();
   r.get("/debug/job/:jobId", async (req: Request, res: Response) => {
-    const sessUser = (req.session as any)?.user;
+    // In development, allow unauthenticated access for testing
+    const isDev = process.env.NODE_ENV === 'development';
+    const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
     try {
       const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
-      const job = await q.getJob(req.params.jobId);
+      let job = await q.getJob(req.params.jobId);
+      // Fallback: search recent jobs by data.jobId in case IDs diverged
+      if (!job) {
+        try {
+          const recent = await q.getJobs(["active", "waiting", "completed", "failed", "delayed"], 0, 200, true);
+          job = recent.find(j => (j?.data as any)?.jobId === req.params.jobId) as any;
+        } catch {}
+      }
       if (!job) {
         await q.close();
         return res.status(404).json({ error: "not_found" });
