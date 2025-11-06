@@ -1,31 +1,32 @@
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
 import { runStage1A } from "../pipeline/stage1A";
 import { runStage2 } from "../pipeline/stage2";
+import type { StagingProfile } from "../utils/groups";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Create a test profile
+const createTestProfile = (): StagingProfile => ({
+  id: "test-profile-1",
+  roomGroupId: "test-group-1",
+  styleName: "Modern Scandinavian",
+  model: "staging-v1",
+  seed: 42,
+  palette: ["gray", "white", "natural wood"],
+  prompt: "Clean lines, minimalist furniture, natural materials. Add a comfortable sectional sofa, coffee table, and accent chairs.",
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+});
 
-async function main() {
-  // Ensure required env vars
-  process.env.STAGE1A_DEBUG = "1";
-  process.env.STAGE2_DEBUG = "1";
-  process.env.USE_GEMINI_STAGE2 = "1";
-
-  if (!process.env.GOOGLE_API_KEY) {
-    throw new Error("GOOGLE_API_KEY environment variable is required");
-  }
+/**
+ * Validates Gemini API key and quota configuration
+ */
+async function validateGeminiSetup(apiKey: string): Promise<void> {
+  console.log("Testing Gemini API key and quota configuration...");
   
-  // Validate API key format
-  if (!/^AIza[0-9A-Za-z-_]{35}$/.test(process.env.GOOGLE_API_KEY)) {
-    throw new Error("Invalid GOOGLE_API_KEY format - must start with 'AIza' and be 39 chars long");
-  }
-  
-  // Test the API key
-  console.log("Testing Gemini API key...");
+  // Step 1: Check API key validity
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models?key=${process.env.GOOGLE_API_KEY}`
+      `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`
     );
     if (!response.ok) {
       const error = await response.json();
@@ -34,10 +35,77 @@ async function main() {
         "Please visit https://makersuite.google.com/app/apikey to create a valid API key"
       );
     }
-    console.log("API key validated successfully!\n");
-  } catch (e) {
+    const modelsList = await response.json();
+    console.log("✓ API key is valid");
+
+    // Step 2: Test quota/billing configuration with a minimal request
+    console.log("Checking quota configuration...");
+    const testModel = modelsList.models?.[0]?.name;
+    if (!testModel) {
+      throw new Error("Could not find any available Gemini models");
+    }
+    console.log(`Using model: ${testModel}`);
+
+    const quotaTestResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1/${testModel}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "Hi" }] }],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 1,
+            topP: 1,
+            topK: 1
+          }
+        })
+      }
+    );
+
+    if (!quotaTestResponse.ok) {
+      const error = await quotaTestResponse.json();
+      if (error.error?.code === 429) {
+        throw new Error(
+          "Quota/billing configuration check failed. Please follow these steps:\n\n" +
+          "1. Go to https://console.cloud.google.com\n" +
+          "2. Select your project\n" +
+          "3. Enable billing for the project\n" +
+          "4. Visit https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas\n" +
+          "5. Configure appropriate quotas for your use case\n\n" +
+          "Error details: " + error.error?.message
+        );
+      }
+      throw new Error(`Quota test failed (${quotaTestResponse.status}): ${error.error?.message || "Unknown error"}`);
+    }
+
+    console.log("✓ Quota configuration validated\n");
+  } catch (e: any) {
     throw new Error(`Failed to validate Gemini API key: ${e.message}`);
   }
+}
+
+/**
+ * Main test function
+ */
+async function main(): Promise<void> {
+  // Ensure required env vars
+  process.env.STAGE1A_DEBUG = "1";
+  process.env.STAGE2_DEBUG = "1";
+  process.env.USE_GEMINI_STAGE2 = "1";
+
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_API_KEY environment variable is required");
+  }
+  
+  // Validate API key format
+  if (!/^AIza[0-9A-Za-z-_]{35}$/.test(apiKey)) {
+    throw new Error("Invalid GOOGLE_API_KEY format - must start with 'AIza' and be 39 chars long");
+  }
+
+  // Validate API key and quota configuration
+  await validateGeminiSetup(apiKey);
 
   // Test image path - using a real room image
   const testImage = path.join(__dirname, "..", "..", "test-data", "test-room.jpg");
@@ -63,16 +131,7 @@ async function main() {
   console.log("\nRunning Stage 2 (Virtual Staging)...");
   const stage2Output = await runStage2(stage1Output, { 
     roomType: "living room",
-    profile: {
-      id: "test-1",
-      roomGroupId: "test-group",
-      styleName: "Modern Scandinavian",
-      model: "gemini-2.5-flash-image",
-      seed: 42,
-      temperature: 0.7,
-      palette: ["gray", "white", "natural wood"],
-      prompt: "Clean lines, minimalist furniture, natural materials. Add a comfortable sectional sofa, coffee table, and accent chairs.",
-    }
+    profile: createTestProfile()
   });
   console.log("Stage 2 complete:", stage2Output);
 
@@ -82,6 +141,7 @@ async function main() {
   console.log("Stage 2 output:", stage2Output);
 }
 
+// Run the test
 main().catch((err) => {
   console.error("Test failed:", err);
   process.exit(1);
