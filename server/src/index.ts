@@ -108,8 +108,14 @@ async function main() {
     console.warn("[seed] failed to ensure credits:", e);
   }
 
-  app.listen(PORT, () => {
-    console.log(`[server] listening on ${PORT}`);
+  // Bind host/port for local dev and production (Railway)
+  const PORT = Number(process.env.PORT || 5000);
+  const HOST = 
+    process.env.HOST ||
+    (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+
+  app.listen(PORT, HOST, () => {
+    console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
   });
 
   process.on("SIGTERM", async () => {

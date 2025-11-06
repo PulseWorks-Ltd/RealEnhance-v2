@@ -1,1 +1,362 @@
-{}
+{
+  "job_test_1762461268662": {
+    "id": "job_test_1762461268662",
+    "jobId": "job_test_1762461268662",
+    "userId": "user_test",
+    "imageId": "img_test_1762461268662",
+    "status": "complete",
+    "createdAt": "2025-11-06T20:34:28.662Z",
+    "updatedAt": "2025-11-06T20:35:24.828Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_b416b091-f408-4289-9c7b-626399bbe6b5",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 19,
+        "stage1AMs": 6,
+        "stage1BMs": 0,
+        "stage2Ms": 0,
+        "validateMs": 1,
+        "totalMs": 34
+      }
+    }
+  },
+  "job_test_1762462022854": {
+    "id": "job_test_1762462022854",
+    "jobId": "job_test_1762462022854",
+    "userId": "user_test",
+    "imageId": "img_test_1762462022854",
+    "status": "complete",
+    "createdAt": "2025-11-06T20:47:02.854Z",
+    "updatedAt": "2025-11-06T21:03:18.331Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_9943fb2b-ff43-4cb8-bd9b-d60a1e992816",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 20,
+        "stage1AMs": 11,
+        "stage1BMs": 0,
+        "stage2Ms": 1,
+        "validateMs": 0,
+        "totalMs": 45
+      }
+    }
+  },
+  "job_test_1762463042763": {
+    "id": "job_test_1762463042763",
+    "jobId": "job_test_1762463042763",
+    "userId": "user_test",
+    "imageId": "img_test_1762463042763",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:04:02.763Z",
+    "updatedAt": "2025-11-06T21:12:50.527Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_e7c758f6-a5bd-4e50-9db7-165f5ec119a9",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 14,
+        "stage1AMs": 8,
+        "stage1BMs": 0,
+        "stage2Ms": 896,
+        "validateMs": 164,
+        "totalMs": 1092
+      }
+    }
+  },
+  "job_test_1762463686560": {
+    "id": "job_test_1762463686560",
+    "jobId": "job_test_1762463686560",
+    "userId": "user_test",
+    "imageId": "img_test_1762463686560",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:14:46.560Z",
+    "updatedAt": "2025-11-06T21:14:47.415Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_fc63b237-f2bf-43c5-8c78-257d579a48ea",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 5,
+        "stage1AMs": 18,
+        "stage1BMs": 0,
+        "stage2Ms": 686,
+        "validateMs": 111,
+        "totalMs": 825
+      }
+    }
+  },
+  "job_test_1762463711784": {
+    "id": "job_test_1762463711784",
+    "jobId": "job_test_1762463711784",
+    "userId": "user_test",
+    "imageId": "img_test_1762463711784",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:15:11.784Z",
+    "updatedAt": "2025-11-06T21:15:12.644Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_683a7376-cb7d-42e5-99fd-d8764680dcfa",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 5,
+        "stage1AMs": 16,
+        "stage1BMs": 0,
+        "stage2Ms": 688,
+        "validateMs": 112,
+        "totalMs": 828
+      }
+    }
+  },
+  "job_test_1762463977098": {
+    "id": "job_test_1762463977098",
+    "jobId": "job_test_1762463977098",
+    "userId": "user_test",
+    "imageId": "img_test_1762463977098",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:19:37.098Z",
+    "updatedAt": "2025-11-06T21:19:37.961Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_796ddaa0-a074-4c38-a7cc-93b1581b95be",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 4,
+        "stage1AMs": 18,
+        "stage1BMs": 0,
+        "stage2Ms": 694,
+        "validateMs": 111,
+        "totalMs": 831
+      }
+    }
+  },
+  "job_test_1762463998591": {
+    "id": "job_test_1762463998591",
+    "jobId": "job_test_1762463998591",
+    "userId": "user_test",
+    "imageId": "img_test_1762463998591",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:19:58.591Z",
+    "updatedAt": "2025-11-06T21:19:59.460Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_d63abcbc-fa99-4edd-9d19-fcd4ff8bdc79",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 14,
+        "stage1AMs": 18,
+        "stage1BMs": 0,
+        "stage2Ms": 685,
+        "validateMs": 108,
+        "totalMs": 830
+      }
+    }
+  },
+  "job_test_1762464133325": {
+    "id": "job_test_1762464133325",
+    "jobId": "job_test_1762464133325",
+    "userId": "user_test",
+    "imageId": "img_test_1762464133325",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:22:13.325Z",
+    "updatedAt": "2025-11-06T21:22:14.173Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_616626c3-29fe-4d3b-99ca-21dbb13a0326",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 5,
+        "stage1AMs": 11,
+        "stage1BMs": 0,
+        "stage2Ms": 687,
+        "validateMs": 109,
+        "totalMs": 816
+      }
+    }
+  },
+  "job_test_1762464162171": {
+    "id": "job_test_1762464162171",
+    "jobId": "job_test_1762464162171",
+    "userId": "user_test",
+    "imageId": "img_test_1762464162171",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:22:42.171Z",
+    "updatedAt": "2025-11-06T21:22:43.015Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_b91880f6-9f86-40bf-a51b-4bc60670594d",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 7,
+        "stage1AMs": 12,
+        "stage1BMs": 0,
+        "stage2Ms": 682,
+        "validateMs": 107,
+        "totalMs": 814
+      }
+    }
+  },
+  "job_test_1762464498247": {
+    "id": "job_test_1762464498247",
+    "jobId": "job_test_1762464498247",
+    "userId": "user_test",
+    "imageId": "img_test_1762464498247",
+    "status": "complete",
+    "createdAt": "2025-11-06T21:28:18.247Z",
+    "updatedAt": "2025-11-06T21:28:19.110Z",
+    "stage": "upload-final",
+    "progress": 90,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageUrls": {
+      "2": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+      "1A": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg=="
+    },
+    "resultUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8Xw8AAn0B9cQz5QAAAABJRU5ErkJggg==",
+    "stageOutputs": {
+      "2": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+      "1A": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png"
+    },
+    "resultVersionId": "v_08587331-7878-4951-9ef5-8f41e2f4d970",
+    "meta": {
+      "scene": {
+        "label": "other",
+        "confidence": 0.5
+      },
+      "timings": {
+        "sceneDetectMs": 5,
+        "stage1AMs": 13,
+        "stage1BMs": 0,
+        "stage2Ms": 698,
+        "validateMs": 110,
+        "totalMs": 830
+      }
+    }
+  }
+}
