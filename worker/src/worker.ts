@@ -34,6 +34,7 @@ import { publishImage } from "./utils/publish";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
+  console.log(`========== PROCESSING JOB ${payload.jobId} ==========`);
   const rec = readImageRecord(payload.imageId);
   if (!rec) {
     updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
@@ -45,9 +46,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Publish original so client can render before/after across services
   const origPath = getOriginalPath(rec);
-  console.log(`[worker] Publishing original image...`);
+  process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
   const publishedOriginal = await publishImage(origPath);
-  console.log(`[worker] Original: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...`);
+  process.stdout.write(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
   // surface early so UI can show before/after immediately
   updateJob(payload.jobId, { stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
 
@@ -175,13 +176,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
   try {
-    console.log(`[worker] Publishing final enhanced image...`);
+    process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
     publishedFinal = await publishImage(path2);
     pubFinalUrl = publishedFinal.url;
     setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, publishedFinal.url);
-    console.log(`[worker] Final: kind=${publishedFinal?.kind} url=${(publishedFinal?.url||'').substring(0, 80)}...`);
+    process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(publishedFinal?.url||'').substring(0, 80)}...\n\n`);
   } catch (e) {
-    console.warn('[worker] Failed to publish final image:', e);
+    process.stderr.write(`[WORKER] Failed to publish final image: ${e}\n`);
   }
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
@@ -269,16 +270,30 @@ async function handleEditJob(payload: EditJobPayload) {
 
 // Determine Redis URL with preference for private/internal in hosted environments
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
-console.log(`[worker] starting. queue=${JOB_QUEUE_NAME} redis=${REDIS_URL}`);
+
+// DEPLOYMENT VERIFICATION
+const BUILD_VERSION = "2025-11-07_16:00_S3_VERBOSE_LOGS";
+console.log('╔════════════════════════════════════════════════════════════════╗');
+console.log('║                   WORKER STARTING                              ║');
+console.log('╚════════════════════════════════════════════════════════════════╝');
+console.log(`[WORKER] BUILD: ${BUILD_VERSION}`);
+console.log(`[WORKER] Queue: ${JOB_QUEUE_NAME}`);
+console.log(`[WORKER] Redis: ${REDIS_URL}`);
+process.stdout.write('\n'); // Force flush
 
 // Log S3 configuration on startup
-console.log('[worker] S3 Configuration:');
-console.log('  S3_BUCKET:', process.env.S3_BUCKET || 'NOT SET');
-console.log('  AWS_REGION:', process.env.AWS_REGION || 'NOT SET');
-console.log('  AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `SET (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : 'NOT SET');
-console.log('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
+console.log('╔════════════════════════════════════════════════════════════════╗');
+console.log('║                   S3 CONFIGURATION                             ║');
+console.log('╚════════════════════════════════════════════════════════════════╝');
+console.log('  S3_BUCKET:', process.env.S3_BUCKET || '❌ NOT SET');
+console.log('  AWS_REGION:', process.env.AWS_REGION || '❌ NOT SET');
+console.log('  AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `✅ SET (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : '❌ NOT SET');
+console.log('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '✅ SET' : '❌ NOT SET');
 console.log('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (will use S3 direct URLs)');
-console.log('  S3 Status:', process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? '✓ ENABLED' : '❌ DISABLED (will use data URLs)');
+const s3Enabled = !!(process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
+console.log('  📊 Status:', s3Enabled ? '✅ ENABLED - Images will upload to S3' : '❌ DISABLED - Will use data URLs');
+console.log('╚════════════════════════════════════════════════════════════════╝');
+process.stdout.write('\n'); // Force flush
 
 // BullMQ worker
 const worker = new Worker(
