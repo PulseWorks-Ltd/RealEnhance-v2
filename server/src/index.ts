@@ -55,8 +55,8 @@ async function main() {
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' })); // Increased for data URLs from worker
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // Sessions
   const sessionOptions: SessionOptions = {
