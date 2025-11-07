@@ -130,6 +130,13 @@ export function statusRouter() {
       const rv: any = (job as any).returnvalue;
       if (rv && rv.resultUrl) {
         imageUrl = rv.resultUrl;
+        // If it's a data URL and this is a batch request, provide a link to fetch it separately
+        // to avoid huge batch responses
+        if (ids.length > 1 && typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
+          // Store the data URL temporarily and provide a fetch endpoint
+          // For now, still include it but log a warning for optimization
+          console.warn(`[status/batch] Returning data URL in batch (${Math.round(imageUrl.length/1024)}KB) - consider S3 for production`);
+        }
       }
       if (rv && rv.originalUrl) {
         originalImageUrl = rv.originalUrl;

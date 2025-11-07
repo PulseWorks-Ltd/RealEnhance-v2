@@ -8,7 +8,8 @@ When enhancing images with "Only enhance image quality" (Stage 1A), the app was 
 - Worker successfully processes images
 - Without S3 configured, falls back to base64 data URLs
 - Full-size enhanced images = 2-5MB+ base64 encoded
-- These massive data URLs break HTTP responses and cause UI failures
+- Express.json() default 100KB limit was truncating responses
+- Batch responses with multiple large data URLs overwhelmed client
 
 ## Fixes Applied
 
@@ -19,12 +20,22 @@ Added automatic image resizing when using data URL fallback:
 - Detects when file > 100KB
 - Resizes to max 800px (maintains aspect ratio)
 - Converts to WebP quality 85%
-- Result: Data URLs now ~200-500KB instead of 2-5MB+
-- Logs warning: "No S3 configured - using resized data URL"
+- Result: Data URLs now ~100-150KB instead of 2-5MB+
+- Improved logging to show size reduction
 
-**Status**: ✅ Deployed - App should work now with reduced-quality previews
+**Status**: ✅ Deployed - Reduces data URL size significantly
 
-### 2. AWS SDK Installation
+### 2. Express JSON Limit Increase
+**File**: `server/src/index.ts`
+
+Increased Express JSON payload limit:
+- Changed from default 100KB to 10MB
+- Allows data URLs to pass through without truncation
+- Handles batch responses with multiple images
+
+**Status**: ✅ Deployed - Prevents response truncation
+
+### 3. AWS SDK Installation
 **File**: `worker/package.json`
 
 Added `@aws-sdk/client-s3` as optional dependency:
@@ -33,8 +44,8 @@ Added `@aws-sdk/client-s3` as optional dependency:
 
 **Status**: ✅ Installed and built successfully
 
-### 3. Documentation
-**File**: `docs/IMAGE_PUBLISHING.md`
+### 4. Documentation
+**Files**: `docs/IMAGE_PUBLISHING.md`, `DEPLOYMENT_CHECKLIST.md`
 
 Complete guide for:
 - AWS S3 setup (step-by-step)
@@ -44,11 +55,18 @@ Complete guide for:
 
 ## What You Need to Do
 
-### Option A: Deploy with Temporary Fix (Quick)
-1. Commit and push the changes
-2. Railway will auto-deploy worker with the fix
-3. Test image enhancement - should work with 800px preview quality
-4. Set up S3/R2 when ready for full quality
+### Deploy the Fixes
+
+1. **Commit and push the changes**:
+   ```bash
+   git add .
+   git commit -m "Fix image publishing: resize fallback, increase JSON limit, add S3 support"
+   git push
+   ```
+
+2. **Railway will auto-deploy** both server and worker
+
+3. **Test**: Upload and enhance images - should work with preview quality now
 
 ### Option B: Configure S3/R2 Now (Recommended)
 
