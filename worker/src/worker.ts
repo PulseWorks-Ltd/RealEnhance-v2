@@ -31,6 +31,7 @@ import { toBase64 } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
+import { downloadToTemp } from "./utils/remote";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
@@ -45,7 +46,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t0 = Date.now();
 
   // Publish original so client can render before/after across services
-  const origPath = getOriginalPath(rec);
+  let origPath = getOriginalPath(rec);
+  // If the record path isn't accessible or remoteOriginalUrl provided in payload, prefer remote
+  const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
+  if (remoteUrl) {
+    try {
+      process.stdout.write(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+      origPath = await downloadToTemp(remoteUrl, payload.jobId);
+      process.stdout.write(`[WORKER] Remote original downloaded to: ${origPath}\n`);
+    } catch (e) {
+      process.stderr.write(`[WORKER] Remote download failed, falling back to local path (${origPath}): ${(e as any)?.message || e}\n`);
+    }
+  }
   process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
   const publishedOriginal = await publishImage(origPath);
   process.stdout.write(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
