@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, chargeForImages } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
+import { uploadOriginalToS3 } from "../utils/s3.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -92,9 +93,20 @@ export function uploadRouter() {
       const imageId = (rec as any).imageId ?? (rec as any).id;
       addImageToUser(sessUser.id, imageId);
 
+      // Upload original to S3 (best-effort; if it fails we still enqueue job without remote URL)
+      let remoteOriginalUrl: string | undefined = undefined;
+      try {
+        const up = await uploadOriginalToS3(finalPath);
+        remoteOriginalUrl = up.url;
+        // optionally, could store in record.versions here in future
+      } catch (e) {
+        console.warn('[upload] original S3 upload failed, continuing with local path', (e as any)?.message || e);
+      }
+
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId,
+        remoteOriginalUrl,
         options: {
           declutter: !!opts.declutter,
           virtualStage: !!opts.virtualStage,

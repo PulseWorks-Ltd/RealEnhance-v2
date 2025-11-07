@@ -31,6 +31,7 @@ function queue() {
 export async function enqueueEnhanceJob(params: {
   userId: UserId;
   imageId: ImageId;
+  remoteOriginalUrl?: string; // S3 URL of original if uploaded
   options: {
     declutter: boolean;
     virtualStage: boolean;
@@ -48,7 +49,9 @@ export async function enqueueEnhanceJob(params: {
     type: "enhance",
     options: params.options,
     createdAt: now,
-  };
+    // add non-typed extension field for worker consumption
+    remoteOriginalUrl: params.remoteOriginalUrl as any,
+  } as any;
 
   const state = loadAll();
   state[jobId] = {
@@ -58,7 +61,7 @@ export async function enqueueEnhanceJob(params: {
     imageId: params.imageId,
     type: "enhance",
     status: "queued",
-    payload,                  // ⬅️ persist payload for visibility
+  payload,                  // ⬅️ persist payload for visibility (includes remoteOriginalUrl optional)
     createdAt: now,
     updatedAt: now,
   };
