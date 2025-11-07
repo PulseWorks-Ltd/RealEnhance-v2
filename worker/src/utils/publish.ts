@@ -16,8 +16,13 @@ function mimeFromExt(p: string) {
  */
 export async function publishImage(filePath: string): Promise<{ url: string; kind: "s3" | "data-url"; key?: string }>{
   const bucket = process.env.S3_BUCKET;
+  console.log(`========================================`);
+  console.log(`[PUBLISH] File: ${path.basename(filePath)}`);
+  console.log(`[PUBLISH] S3_BUCKET: ${bucket || 'NOT SET'}`);
   if (bucket) {
-    console.log(`[publish] Attempting S3 upload: bucket=${bucket}, region=${process.env.AWS_REGION || 'us-east-1'}`);
+    console.log(`[PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<`);
+    console.log(`[PUBLISH] Bucket: ${bucket}`);
+    console.log(`[PUBLISH] Region: ${process.env.AWS_REGION || 'us-east-1'}`);
     try {
       // Avoid TS module resolution by using an indirect dynamic import
       const importer: any = new Function('p', 'return import(p)');
@@ -40,7 +45,10 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
       }
 
       const s3 = new S3Client(clientConfig);
-      console.log(`[publish] Uploading to s3://${bucket}/${key} (${Body.length} bytes)`);
+      console.log(`[PUBLISH] >>> UPLOADING NOW <<<`);
+      console.log(`[PUBLISH] Destination: s3://${bucket}/${key}`);
+      console.log(`[PUBLISH] Size: ${Body.length} bytes`);
+      console.log(`[PUBLISH] ACL: ${process.env.S3_ACL || 'public-read'}`);
       await s3.send(new PutObjectCommand({
         Bucket: bucket,
         Key: key,
@@ -51,23 +59,31 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
 
       const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
       const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
-      console.log(`[publish] S3 upload successful: ${url}`);
+      console.log(`[PUBLISH] ✅ SUCCESS!`);
+      console.log(`[PUBLISH] URL: ${url}`);
+      console.log(`========================================`);
       return { url, kind: 's3', key };
     } catch (e: any) {
       // Module not installed or runtime import failed; fall back to data URL
-      console.error('[publish] S3 upload FAILED:', e?.message || String(e));
-      console.error('[publish] Error details:', e);
-      console.warn('[publish] Falling back to data URL due to S3 error');
+      console.error(`[PUBLISH] ❌ FAILED!`);
+      console.error('[PUBLISH] Error:', e?.message || String(e));
+      console.error('[PUBLISH] Error code:', e?.Code || e?.code || 'none');
+      console.error('[PUBLISH] Full error:', JSON.stringify(e, null, 2));
+      console.warn('[PUBLISH] >>> FALLING BACK TO DATA URL <<<');
+      console.log(`========================================`);
     }
   } else {
-    console.log('[publish] S3_BUCKET not set, using data URL fallback');
+    console.log('[PUBLISH] S3_BUCKET not set - using data URL');
+    console.log(`========================================`);
   }
 
   // Fallback for dev/demo: inline data URL
   // IMPORTANT: For production, configure S3_BUCKET to avoid huge data URLs
   // Resize to max 800px to keep data URL reasonable (<500KB typically)
+  console.log(`[PUBLISH] Generating data URL fallback...`);
   const buf = fs.readFileSync(filePath);
   const mime = mimeFromExt(filePath);
+  console.log(`[PUBLISH] Original size: ${buf.length} bytes`);
   
   // Only resize if file is large to avoid overhead on small files
   let finalBuf = buf;
@@ -80,17 +96,18 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
         .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 })
         .toBuffer();
-      console.log(`[publish] No S3 configured - resized for data URL: ${buf.length} -> ${finalBuf.length} bytes (${Math.round(finalBuf.length/1024)}KB)`);
+      console.log(`[PUBLISH] Resized: ${buf.length} -> ${finalBuf.length} bytes (${Math.round(finalBuf.length/1024)}KB)`);
     } catch (e) {
-      console.warn('[publish] Could not resize for data URL fallback:', e);
+      console.warn('[PUBLISH] Resize failed:', e);
       finalBuf = buf;
     }
   } else {
-    console.log(`[publish] No S3 configured - using small file as data URL (${buf.length} bytes)`);
+    console.log(`[PUBLISH] Small file - no resize needed (${buf.length} bytes)`);
   }
   
   const b64 = finalBuf.toString("base64");
   const dataUrl = `data:${mime};base64,${b64}`;
-  console.log(`[publish] Created data URL: ${dataUrl.length} chars (${Math.round(dataUrl.length/1024)}KB)`);
+  console.log(`[PUBLISH] Data URL created: ${Math.round(dataUrl.length/1024)}KB`);
+  console.log(`========================================`);
   return { url: dataUrl, kind: "data-url" };
 }

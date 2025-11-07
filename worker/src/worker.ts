@@ -45,8 +45,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Publish original so client can render before/after across services
   const origPath = getOriginalPath(rec);
+  console.log(`[worker] Publishing original image...`);
   const publishedOriginal = await publishImage(origPath);
-  try { console.log('[worker] original published kind=%s url=%s', publishedOriginal?.kind, (publishedOriginal?.url||'').slice(0,120)); } catch {}
+  console.log(`[worker] Original: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...`);
   // surface early so UI can show before/after immediately
   updateJob(payload.jobId, { stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
 
@@ -174,12 +175,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
   try {
+    console.log(`[worker] Publishing final enhanced image...`);
     publishedFinal = await publishImage(path2);
     pubFinalUrl = publishedFinal.url;
     setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, publishedFinal.url);
-    try { console.log('[worker] final published kind=%s url=%s', publishedFinal?.kind, (publishedFinal?.url||'').slice(0,120)); } catch {}
+    console.log(`[worker] Final: kind=${publishedFinal?.kind} url=${(publishedFinal?.url||'').substring(0, 80)}...`);
   } catch (e) {
-    console.warn('[worker] failed to publish final', e);
+    console.warn('[worker] Failed to publish final image:', e);
   }
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
