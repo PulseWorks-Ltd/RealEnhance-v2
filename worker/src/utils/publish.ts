@@ -47,8 +47,28 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
   }
 
   // Fallback for dev/demo: inline data URL
+  // IMPORTANT: For production, configure S3_BUCKET to avoid huge data URLs
+  // Resize to max 800px to keep data URL reasonable (<500KB typically)
   const buf = fs.readFileSync(filePath);
-  const b64 = buf.toString("base64");
   const mime = mimeFromExt(filePath);
+  
+  // Only resize if file is large to avoid overhead on small files
+  let finalBuf = buf;
+  if (buf.length > 100 * 1024) { // > 100KB
+    try {
+      // Avoid TS module resolution by using dynamic import
+      const importer: any = new Function('p', 'return import(p)');
+      const sharp = await importer('sharp');
+      finalBuf = await sharp.default(buf)
+        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer();
+      console.warn(`[publish] No S3 configured - using resized data URL (${finalBuf.length} bytes). Configure S3_BUCKET for production.`);
+    } catch (e) {
+      console.warn('[publish] Could not resize for data URL fallback:', e);
+    }
+  }
+  
+  const b64 = finalBuf.toString("base64");
   return { url: `data:${mime};base64,${b64}`, kind: "data-url" };
 }
