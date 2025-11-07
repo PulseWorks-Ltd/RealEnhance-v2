@@ -269,6 +269,15 @@ async function handleEditJob(payload: EditJobPayload) {
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 console.log(`[worker] starting. queue=${JOB_QUEUE_NAME} redis=${REDIS_URL}`);
 
+// Log S3 configuration on startup
+console.log('[worker] S3 Configuration:');
+console.log('  S3_BUCKET:', process.env.S3_BUCKET || 'NOT SET');
+console.log('  AWS_REGION:', process.env.AWS_REGION || 'NOT SET');
+console.log('  AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `SET (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : 'NOT SET');
+console.log('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
+console.log('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (will use S3 direct URLs)');
+console.log('  S3 Status:', process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? '✓ ENABLED' : '❌ DISABLED (will use data URLs)');
+
 // BullMQ worker
 const worker = new Worker(
   JOB_QUEUE_NAME,
