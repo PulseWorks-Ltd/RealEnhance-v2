@@ -10,8 +10,18 @@ export interface S3UploadResult {
   contentType: string;
 }
 
+function sanitizeRegion(input?: string | null): string {
+  const raw = (input || "").trim();
+  if (!raw) return "us-east-1";
+  // Extract codes like ap-southeast-2 from human-readable strings like
+  // "Asia Pacific (Sydney) ap-southeast-2"
+  const m = raw.match(/([a-z]{2}-[a-z0-9-]+-\d)/i);
+  if (m && m[1]) return m[1].toLowerCase();
+  return raw.toLowerCase();
+}
+
 function getClient() {
-  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
   const cfg: any = { region };
   if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     cfg.credentials = {
@@ -51,7 +61,7 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   }));
 
   const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
-  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
   const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
   return { key, url, bucket, size, contentType };
 }
@@ -66,7 +76,7 @@ export interface S3Status {
 export async function ensureS3Ready(): Promise<S3Status> {
   const bucket = process.env.S3_BUCKET;
   if (!bucket) return { ok: false, reason: "S3_BUCKET not set" };
-  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
   try {
     const client = getClient();
     // HeadBucket validates auth + existence
