@@ -616,6 +616,39 @@ export default function BatchProcessor() {
           
           schedule(); // Process queued updates
         }
+        // Single-job endpoint (no items array): synthesize one entry when terminal
+        if (!data.items && typeof data.status === 'string') {
+          const terminal = ['completed','failed','error'].includes(data.status);
+          if (terminal && !processedSetRef.current.has(0)) {
+            processedSetRef.current.add(0);
+            if (data.status === 'completed') {
+              const url = data.imageUrl || data.resultUrl || data.image || null;
+              queueRef.current.push({
+                index: 0,
+                result: { imageUrl: url, originalImageUrl: data.originalImageUrl || null, mode: 'enhanced' },
+                filename: files[0]?.name || 'image-1'
+              });
+            } else {
+              queueRef.current.push({ index: 0, error: data.error || 'Processing failed', filename: files[0]?.name || 'image-1' });
+            }
+            schedule();
+          }
+          if (data.status === 'completed') {
+            setRunState('done');
+            setAbortController(null);
+            localStorage.removeItem('activeJobId');
+            await refreshUser();
+            setProgressText('Batch complete! 1 images enhanced successfully.');
+            return;
+          }
+          if (['failed','error'].includes(data.status)) {
+            setRunState('idle');
+            setAbortController(null);
+            localStorage.removeItem('activeJobId');
+            setProgressText('Batch failed');
+            return;
+          }
+        }
         
         if (data.done) {
           setRunState("done");
