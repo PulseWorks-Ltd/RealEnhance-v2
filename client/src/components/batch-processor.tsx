@@ -15,23 +15,12 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHea
 type RunState = "idle" | "running" | "done";
 
 // Normalizer functions to handle shape mismatch between backend and frontend
-function normalizeBatchItem(it: any) {
+function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; error?: string } | null {
   if (!it) return null;
-  const url =
-    it.image ||
-    it.imageUrl ||
-    it?.result?.imageUrl ||
-    (Array.isArray(it.images) && it.images[0]?.url) ||
-    null;
-
-  if (it.error) return { error: String(it.error) };
-
-  // Provide ALL common shapes so existing UI paths keep working
-  return {
-    image: url,                 // gallery expects this
-    imageUrl: url,              // new code uses this
-    result: { imageUrl: url },  // older code uses this
-  };
+  const url = it.image || it.imageUrl || it.result?.imageUrl || (Array.isArray(it.images) && it.images[0]?.url) || null;
+  if (it.error) return { ok: false, error: String(it.error), image: null };
+  if (!url) return { ok: false, error: 'completed_no_url', image: null };
+  return { ok: true, image: url };
 }
 
 function getDisplayUrl(data: any): string | null {
@@ -363,14 +352,16 @@ export default function BatchProcessor() {
     requestAnimationFrame(function tick() {
       const next = queueRef.current.shift();
       if (next) {
-        // Update results for this specific index
+        // Standardize to BatchResult shape
+        const norm = normalizeBatchItem(next.result);
         setResults(prev => {
           const copy = prev ? [...prev] : [];
-          copy[next.index] = { 
-            index: next.index, 
-            result: next.result, 
-            error: next.error,
-            filename: next.filename
+          copy[next.index] = {
+            index: next.index,
+            filename: next.filename,
+            ok: !!norm?.ok,
+            image: norm?.image || undefined,
+            error: next.error || norm?.error
           };
           return copy;
         });
@@ -383,7 +374,7 @@ export default function BatchProcessor() {
         }
 
         // Update processed images tracking in the same tick
-        const enhancedUrl = getEnhancedUrl(next.result);
+        const enhancedUrl = getEnhancedUrl(next.result) || (norm?.ok ? norm?.image : null);
         if (enhancedUrl) {
           if (enhancedUrl.startsWith('http') || enhancedUrl.startsWith('/api/images/')) {
             setProcessedImages(prev => [...prev, enhancedUrl]);
@@ -578,7 +569,7 @@ export default function BatchProcessor() {
           return alert(err.message || "Batch polling failed");
         }
 
-        const data = await resp.json();
+  const data = await resp.json();
 
         // Harvest per-item job ids for server-side cancellation
         if (Array.isArray(data.items)) {
@@ -605,11 +596,12 @@ export default function BatchProcessor() {
           // Process any new completed items
           for (let i = 0; i < data.items.length; i++) {
             const item = data.items[i];
+            const url = item?.imageUrl || item?.resultUrl || item?.image || null;
             if (item && item.status === 'completed' && !processedSetRef.current.has(i)) {
               processedSetRef.current.add(i);
               queueRef.current.push({
                 index: i,
-                result: { imageUrl: item.imageUrl, originalImageUrl: item.originalImageUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
+                result: { imageUrl: url, originalImageUrl: item.originalImageUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -693,7 +685,7 @@ export default function BatchProcessor() {
           return;
         }
         const data = await resp.json();
-        const items = Array.isArray(data.items) ? data.items : [];
+  const items = Array.isArray(data.items) ? data.items : [];
 
         // progress
         const completed = items.filter((it: any) => it && it.status === 'completed').length;
@@ -703,12 +695,12 @@ export default function BatchProcessor() {
         // surface completed items
         for (const it of items) {
           const idx = jobIdToIndexRef.current[it.id];
+          const url = it?.imageUrl || it?.resultUrl || it?.image || null;
           if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            const imageUrl = it.imageUrl || null;
             queueRef.current.push({
               index: idx,
-              result: { imageUrl, originalImageUrl: null, qualityEnhancedUrl: null, mode: 'enhanced' },
+              result: { imageUrl: url, originalImageUrl: it.originalImageUrl || null, qualityEnhancedUrl: null, mode: 'enhanced' },
               filename: files[idx]?.name || `image-${idx+1}`
             });
           }
