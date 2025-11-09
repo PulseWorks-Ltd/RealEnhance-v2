@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { PutObjectCommand, S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
 import fs from "fs";
 import path from "path";
 
@@ -56,13 +56,40 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   return { key, url, bucket, size, contentType };
 }
 
-export async function ensureS3Ready(): Promise<boolean> {
+export interface S3Status {
+  ok: boolean;
+  bucket?: string;
+  region?: string;
+  reason?: string;
+}
+
+export async function ensureS3Ready(): Promise<S3Status> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) return { ok: false, reason: "S3_BUCKET not set" };
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
   try {
-    if (!process.env.S3_BUCKET) return false;
-    // simple no-op client creation sanity
-    getClient();
-    return true;
-  } catch {
-    return false;
+    const client = getClient();
+    // HeadBucket validates auth + existence
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    return { ok: true, bucket, region };
+  } catch (e: any) {
+    return { ok: false, bucket, region, reason: e?.message || String(e) };
   }
+}
+
+export async function requireS3OrExit() {
+  const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+  const status = await ensureS3Ready();
+  if (!status.ok) {
+    const msg = `[S3] Unavailable${status.bucket ? ` (bucket=${status.bucket})` : ''}: ${status.reason}`;
+    if (strict) {
+      console.error(msg + " - exiting because strict S3 mode is enabled (production or REQUIRE_S3=1)");
+      process.exit(1);
+    } else {
+      console.warn(msg + " - continuing (strict mode off)");
+    }
+  } else {
+    console.log(`[S3] Ready: bucket=${status.bucket} region=${status.region}`);
+  }
+  return status;
 }
