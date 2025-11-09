@@ -93,14 +93,21 @@ export function uploadRouter() {
       const imageId = (rec as any).imageId ?? (rec as any).id;
       addImageToUser(sessUser.id, imageId);
 
-      // Upload original to S3 (best-effort; if it fails we still enqueue job without remote URL)
+      // Upload original to S3.
+      // In strict mode (production or REQUIRE_S3=1), failure will abort the request.
+      // In non-strict mode, we continue but mark lack of remoteOriginalUrl.
       let remoteOriginalUrl: string | undefined = undefined;
       try {
         const up = await uploadOriginalToS3(finalPath);
         remoteOriginalUrl = up.url;
         // optionally, could store in record.versions here in future
       } catch (e) {
-        console.warn('[upload] original S3 upload failed, continuing with local path', (e as any)?.message || e);
+        const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+        const msg = (e as any)?.message || String(e);
+        console.warn('[upload] original S3 upload failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without remote URL)');
+        if (strict) {
+          return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+        }
       }
 
       const { jobId } = await enqueueEnhanceJob({

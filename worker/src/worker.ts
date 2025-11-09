@@ -57,6 +57,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (e) {
       process.stderr.write(`[WORKER] Remote download failed, falling back to local path (${origPath}): ${(e as any)?.message || e}\n`);
     }
+  } else {
+    process.stderr.write("[WORKER] WARN: Job lacks remoteOriginalUrl. This means the server didn't upload the original to S3.\n");
+    process.stderr.write("[WORKER] In production, server should run with REQUIRE_S3=1 so uploads fail fast instead of enqueueing unusable jobs.\n");
   }
   process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
   const publishedOriginal = await publishImage(origPath);

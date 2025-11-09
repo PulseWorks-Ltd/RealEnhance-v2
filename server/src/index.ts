@@ -22,6 +22,7 @@ import { healthRouter } from "./routes/health.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
+import { requireS3OrExit } from "./utils/s3.js";
 
 const IS_PROD = NODE_ENV === "production";
 
@@ -42,6 +43,9 @@ async function main() {
 
   // ---------------- Express ----------------
   const app: Express = express();
+
+  // Hard-fail S3 early if required (production) to avoid silent local fallback
+  await requireS3OrExit();
   app.set("trust proxy", 1);
 
   app.use(
