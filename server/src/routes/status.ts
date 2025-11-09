@@ -66,6 +66,7 @@ export function statusRouter() {
           imageId: imgId,
           status,
           imageUrl,
+          resultUrl: imageUrl, // alias for client normalization
           originalImageUrl,
           stageUrls: rv?.stageUrls || undefined,
           updatedAt: (job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined)
@@ -158,7 +159,7 @@ export function statusRouter() {
         }
       }
       if (status === 'completed') completed++;
-  items.push({ id, status, imageId: imgId, imageUrl, originalImageUrl, filename: job.name || undefined });
+  items.push({ id, status, imageId: imgId, imageUrl, resultUrl: imageUrl, originalImageUrl, filename: job.name || undefined });
       }
 
       const done = completed === ids.length || items.every(i => i.status === 'failed');
