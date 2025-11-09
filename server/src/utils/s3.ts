@@ -51,14 +51,42 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   const size = buf.length;
 
   const client = getClient();
-  const acl = (process.env.S3_ACL as any) || "public-read"; // cast to satisfy TS enum
-  await client.send(new PutObjectCommand({
+
+  // Many modern buckets enforce BucketOwnerEnforced and do not allow ACLs.
+  // Default to NO ACL unless explicitly requested and not disabled.
+  const envNoAcl = process.env.S3_NO_ACL === '1' || process.env.S3_NO_ACL === 'true';
+  const wantAcl = !!process.env.S3_ACL && !envNoAcl;
+  const acl = (process.env.S3_ACL as any) || undefined;
+
+  const putParamsBase: any = {
     Bucket: bucket,
     Key: key,
     Body: buf,
     ContentType: contentType,
-    ACL: acl,
-  }));
+  };
+
+  let uploaded = false;
+  let lastErr: any = null;
+  if (wantAcl && acl) {
+    try {
+      await client.send(new PutObjectCommand({ ...putParamsBase, ACL: acl }));
+      uploaded = true;
+    } catch (e: any) {
+      lastErr = e;
+      const msg = e?.message || String(e);
+      const code = e?.Code || e?.code || e?.name;
+      const aclNotAllowed = /does not allow ACLs|AccessControlListNotSupported|InvalidRequest/i.test(msg) || /AccessControlListNotSupported|InvalidRequest/i.test(String(code || ''));
+      if (aclNotAllowed) {
+        console.warn(`[S3] Bucket does not allow ACLs; retrying without ACL (code=${code || 'n/a'})`);
+      } else {
+        // rethrow non-ACL errors
+        throw e;
+      }
+    }
+  }
+  if (!uploaded) {
+    await client.send(new PutObjectCommand(putParamsBase));
+  }
 
   const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
   const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");

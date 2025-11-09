@@ -48,16 +48,31 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
       process.stdout.write('[PUBLISH] >>> UPLOADING NOW <<<\n');
       process.stdout.write(`[PUBLISH] Destination: s3://${bucket}/${key}\n`);
       process.stdout.write(`[PUBLISH] Size: ${Body.length} bytes\n`);
-      process.stdout.write(`[PUBLISH] ACL: ${process.env.S3_ACL || 'public-read'}\n`);
-      await s3.send(new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body,
-        ContentType,
-        ACL: process.env.S3_ACL || 'public-read',
-      }));
+      const envNoAcl = process.env.S3_NO_ACL === '1' || process.env.S3_NO_ACL === 'true';
+      const wantAcl = !!process.env.S3_ACL && !envNoAcl;
+      const baseParams: any = { Bucket: bucket, Key: key, Body, ContentType };
+      let uploaded = false;
+      if (wantAcl) {
+        process.stdout.write(`[PUBLISH] ACL requested: ${process.env.S3_ACL}\n`);
+        try {
+          await s3.send(new PutObjectCommand({ ...baseParams, ACL: process.env.S3_ACL }));
+          uploaded = true;
+        } catch (e: any) {
+          const msg = e?.message || String(e);
+          const code = e?.Code || e?.code || e?.name;
+          const aclNotAllowed = /does not allow ACLs|AccessControlListNotSupported|InvalidRequest/i.test(msg) || /AccessControlListNotSupported|InvalidRequest/i.test(String(code || ''));
+          if (aclNotAllowed) {
+            process.stderr.write('[PUBLISH] Bucket disallows ACLs; retrying without ACL\n');
+          } else {
+            throw e;
+          }
+        }
+      }
+      if (!uploaded) {
+        await s3.send(new PutObjectCommand(baseParams));
+      }
 
-      const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
+  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
       const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
       process.stdout.write('[PUBLISH] ✅ SUCCESS!\n');
       process.stdout.write(`[PUBLISH] URL: ${url}\n`);
