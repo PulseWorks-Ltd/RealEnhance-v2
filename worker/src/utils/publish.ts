@@ -9,6 +9,16 @@ function mimeFromExt(p: string) {
   return "application/octet-stream";
 }
 
+function sanitizeRegion(input?: string | null): string {
+  const raw = (input || "").trim();
+  if (!raw) return "us-east-1";
+  // Extract codes like ap-southeast-2 from human-readable strings like
+  // "Asia Pacific (Sydney) ap-southeast-2"
+  const m = raw.match(/([a-z]{2}-[a-z0-9-]+-\d)/i);
+  if (m && m[1]) return m[1].toLowerCase();
+  return raw.toLowerCase();
+}
+
 /**
  * Publish an image so the client can access it across services.
  * - If S3_BUCKET is set, uploads to S3 (optionally via S3_PUBLIC_BASEURL/CDN).
@@ -22,13 +32,15 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
   if (bucket) {
     process.stdout.write('[PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<\n');
     process.stdout.write(`[PUBLISH] Bucket: ${bucket}\n`);
-    process.stdout.write(`[PUBLISH] Region: ${process.env.AWS_REGION || 'us-east-1'}\n`);
+    const rawRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
+    const region = sanitizeRegion(rawRegion);
+    process.stdout.write(`[PUBLISH] Region (raw): ${rawRegion}\n`);
+    process.stdout.write(`[PUBLISH] Region (sanitized): ${region}\n`);
     try {
       // Avoid TS module resolution by using an indirect dynamic import
       const importer: any = new Function('p', 'return import(p)');
       const mod: any = await importer('@aws-sdk/client-s3');
       const { S3Client, PutObjectCommand } = mod;
-      const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
       const prefix = (process.env.S3_PREFIX || 'realenhance/outputs').replace(/\/+$/, '');
       const key = `${prefix}/${Date.now()}-${path.basename(filePath)}`.replace(/^\//, '');
       const Body = fs.readFileSync(filePath);
