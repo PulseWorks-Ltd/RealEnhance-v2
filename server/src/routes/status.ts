@@ -39,6 +39,15 @@ export function statusRouter() {
         let imageUrl: string | undefined;
         let originalImageUrl: string | undefined;
         const rv: any = (job as any).returnvalue;
+        
+        // Debug logging
+        if (status === 'completed' && !rv) {
+          console.warn(`[status] Job ${job.id} completed but has no returnvalue`);
+        }
+        if (status === 'completed' && rv && !rv.resultUrl) {
+          console.warn(`[status] Job ${job.id} returnvalue missing resultUrl:`, JSON.stringify(rv).substring(0, 200));
+        }
+        
         if (rv?.resultUrl) imageUrl = rv.resultUrl;
         if (rv?.originalUrl) originalImageUrl = rv.originalUrl;
         if (!imageUrl && rv?.finalPath) {
@@ -129,6 +138,15 @@ export function statusRouter() {
       let originalImageUrl: string | undefined;
       // Prefer explicit return value from worker (BullMQ exposes `.returnvalue` on completed jobs)
       const rv: any = (job as any).returnvalue;
+      
+      // Debug logging for troubleshooting missing URLs
+      if (status === 'completed' && !rv) {
+        console.warn(`[status/batch] Job ${id} completed but has no returnvalue`);
+      }
+      if (status === 'completed' && rv && !rv.resultUrl) {
+        console.warn(`[status/batch] Job ${id} returnvalue exists but resultUrl is missing:`, JSON.stringify(rv).substring(0, 200));
+      }
+      
       if (rv && rv.resultUrl) {
         imageUrl = rv.resultUrl;
         // If it's a data URL and this is a batch request, provide a link to fetch it separately

@@ -193,11 +193,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
     publishedFinal = await publishImage(path2);
-    pubFinalUrl = publishedFinal.url;
-    setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, publishedFinal.url);
-    process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(publishedFinal?.url||'').substring(0, 80)}...\n\n`);
+    pubFinalUrl = publishedFinal?.url;
+    if (!pubFinalUrl) {
+      throw new Error('publishImage returned no URL');
+    }
+    setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, pubFinalUrl);
+    process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } catch (e) {
-    process.stderr.write(`[WORKER] Failed to publish final image: ${e}\n`);
+    process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
+    process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
   }
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
@@ -227,20 +231,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
 
   // Return value for BullMQ status consumers
-  return {
+  const returnValue = {
     ok: true,
     imageId: payload.imageId,
     jobId: payload.jobId,
     finalPath: path2,
-    originalUrl: publishedOriginal.url,
-    resultUrl: pubFinalUrl,
+    originalUrl: publishedOriginal?.url || null,
+    resultUrl: pubFinalUrl || null,
     stageUrls: {
-      "1A": pub1AUrl,
-      "1B": pub1BUrl,
-      "2": pubFinalUrl
+      "1A": pub1AUrl || null,
+      "1B": pub1BUrl || null,
+      "2": pubFinalUrl || null
     },
     meta
-  } as any;
+  };
+  
+  // Log the return value for debugging
+  process.stdout.write('\n[WORKER] ═══════════ JOB RETURN VALUE ═══════════\n');
+  process.stdout.write(`[WORKER] imageId: ${returnValue.imageId}\n`);
+  process.stdout.write(`[WORKER] originalUrl: ${returnValue.originalUrl ? (String(returnValue.originalUrl).substring(0, 80) + '...') : 'NULL'}\n`);
+  process.stdout.write(`[WORKER] resultUrl: ${returnValue.resultUrl ? (String(returnValue.resultUrl).substring(0, 80) + '...') : 'NULL'}\n`);
+  process.stdout.write(`[WORKER] stageUrls.2: ${returnValue.stageUrls["2"] ? (String(returnValue.stageUrls["2"]).substring(0, 80) + '...') : 'NULL'}\n`);
+  process.stdout.write('═══════════════════════════════════════════════\n\n');
+  
+  return returnValue;
 }
 
 // handle "edit" pipeline
