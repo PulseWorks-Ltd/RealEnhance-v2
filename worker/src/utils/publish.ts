@@ -60,15 +60,23 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
       process.stdout.write('[PUBLISH] >>> UPLOADING NOW <<<\n');
       process.stdout.write(`[PUBLISH] Destination: s3://${bucket}/${key}\n`);
       process.stdout.write(`[PUBLISH] Size: ${Body.length} bytes\n`);
+      
       const envNoAcl = process.env.S3_NO_ACL === '1' || process.env.S3_NO_ACL === 'true';
       const wantAcl = !!process.env.S3_ACL && !envNoAcl;
+      
+      // Default to public-read if no ACL env is set and not explicitly disabled
+      const shouldUseAcl = wantAcl || (!envNoAcl && !process.env.S3_ACL);
+      const aclValue = process.env.S3_ACL || 'public-read';
+      
       const baseParams: any = { Bucket: bucket, Key: key, Body, ContentType };
       let uploaded = false;
-      if (wantAcl) {
-        process.stdout.write(`[PUBLISH] ACL requested: ${process.env.S3_ACL}\n`);
+      
+      if (shouldUseAcl) {
+        process.stdout.write(`[PUBLISH] Attempting upload with ACL: ${aclValue}\n`);
         try {
-          await s3.send(new PutObjectCommand({ ...baseParams, ACL: process.env.S3_ACL }));
+          await s3.send(new PutObjectCommand({ ...baseParams, ACL: aclValue }));
           uploaded = true;
+          process.stdout.write(`[PUBLISH] ✅ Upload succeeded with ACL\n`);
         } catch (e: any) {
           const msg = e?.message || String(e);
           const code = e?.Code || e?.code || e?.name;
@@ -79,12 +87,26 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
             throw e;
           }
         }
+      } else {
+        process.stdout.write(`[PUBLISH] Uploading without ACL (S3_NO_ACL=${process.env.S3_NO_ACL})\n`);
       }
       if (!uploaded) {
-        await s3.send(new PutObjectCommand(baseParams));
+        const result = await s3.send(new PutObjectCommand(baseParams));
+        process.stdout.write(`[PUBLISH] PutObject response: ETag=${result.ETag || 'none'}, VersionId=${result.VersionId || 'none'}\n`);
       }
 
-  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
+      // Verify upload with HeadObject to ensure file actually exists
+      try {
+        const { HeadObjectCommand } = mod;
+        const headResult = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        process.stdout.write(`[PUBLISH] ✅ VERIFIED: Object exists, size=${headResult.ContentLength}, ETag=${headResult.ETag}\n`);
+      } catch (verifyErr: any) {
+        process.stderr.write(`[PUBLISH] ⚠️ WARNING: Upload reported success but verification failed: ${verifyErr?.message}\n`);
+        process.stderr.write(`[PUBLISH] Key: ${key}\n`);
+        // Continue anyway - might be eventual consistency
+      }
+
+      const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
       const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
       process.stdout.write('[PUBLISH] ✅ SUCCESS!\n');
       process.stdout.write(`[PUBLISH] URL: ${url}\n`);
