@@ -63,7 +63,18 @@ export function statusRouter() {
       
       // Build resultImages array for client (expects array of URLs)
       const resultImages: string[] = [];
-      if (resultUrl) resultImages.push(resultUrl);
+      // If worker provided explicit stageUrls as an array, use it
+      if (Array.isArray(rv.stageUrls)) {
+        for (const u of rv.stageUrls) if (u) resultImages.push(u);
+      } else if (rv && typeof rv.stageUrls === 'object') {
+        // stageUrls may be an object like { "1A": url, "1B": url, "2": url }
+        const preferOrder = ['1A','1B','2'];
+        for (const k of preferOrder) {
+          if (rv.stageUrls[k]) resultImages.push(rv.stageUrls[k]);
+        }
+      }
+      // Ensure final resultUrl is present as a fallback / canonical entry
+      if (resultUrl && !resultImages.includes(resultUrl)) resultImages.push(resultUrl);
       
       // Debug logging if completed job has no URLs
       if (status === 'completed' && !resultUrl) {
@@ -151,7 +162,15 @@ export function statusRouter() {
         
         // Build resultImages array
         const resultImages: string[] = [];
-        if (resultUrl) resultImages.push(resultUrl);
+        if (Array.isArray(rv.stageUrls)) {
+          for (const u of rv.stageUrls) if (u) resultImages.push(u);
+        } else if (rv && typeof rv.stageUrls === 'object') {
+          const preferOrder = ['1A','1B','2'];
+          for (const k of preferOrder) {
+            if (rv.stageUrls[k]) resultImages.push(rv.stageUrls[k]);
+          }
+        }
+        if (resultUrl && !resultImages.includes(resultUrl)) resultImages.push(resultUrl);
         
         // Debug logging if URLs are missing
         if (status === 'completed' && !resultUrl) {
