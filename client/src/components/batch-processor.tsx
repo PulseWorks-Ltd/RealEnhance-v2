@@ -718,7 +718,23 @@ export default function BatchProcessor() {
           return;
         }
         const data = await resp.json();
-  const items = Array.isArray(data.items) ? data.items : [];
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        // Debug logging to see what we're receiving
+        if (items.length > 0) {
+          console.log('[BATCH] Received status update:', {
+            totalItems: items.length,
+            completed: items.filter((it: any) => it && it.status === 'completed').length,
+            sample: items[0] ? {
+              id: items[0].id,
+              status: items[0].status,
+              hasImageUrl: !!items[0].imageUrl,
+              hasResultUrl: !!items[0].resultUrl,
+              imageUrlPreview: items[0].imageUrl ? String(items[0].imageUrl).substring(0, 100) : 'none',
+              resultUrlPreview: items[0].resultUrl ? String(items[0].resultUrl).substring(0, 100) : 'none'
+            } : null
+          });
+        }
 
         // progress
         const completed = items.filter((it: any) => it && it.status === 'completed').length;
