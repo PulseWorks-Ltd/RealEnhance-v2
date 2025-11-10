@@ -36,31 +36,45 @@ import { downloadToTemp } from "./utils/remote";
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   console.log(`========== PROCESSING JOB ${payload.jobId} ==========`);
-  const rec = readImageRecord(payload.imageId);
-  if (!rec) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
-    return;
+  
+  // Check if we have a remote original URL (multi-service deployment)
+  const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
+  let origPath: string;
+  
+  if (remoteUrl) {
+    // Multi-service mode: Download original from S3
+    try {
+      process.stdout.write(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+      origPath = await downloadToTemp(remoteUrl, payload.jobId);
+      process.stdout.write(`[WORKER] Remote original downloaded to: ${origPath}\n`);
+    } catch (e) {
+      process.stderr.write(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
+      updateJob(payload.jobId, { status: "error", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` });
+      return;
+    }
+  } else {
+    // Legacy single-service mode: Read from local filesystem
+    process.stderr.write("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
+    process.stderr.write("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
+    
+    const rec = readImageRecord(payload.imageId);
+    if (!rec) {
+      process.stderr.write(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
+      updateJob(payload.jobId, { status: "error", errorMessage: "image not found - no remote URL and local record missing" });
+      return;
+    }
+    origPath = getOriginalPath(rec);
+    if (!fs.existsSync(origPath)) {
+      process.stderr.write(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
+      updateJob(payload.jobId, { status: "error", errorMessage: "original file not accessible in this container" });
+      return;
+    }
   }
 
   const timings: Record<string, number> = {};
   const t0 = Date.now();
 
   // Publish original so client can render before/after across services
-  let origPath = getOriginalPath(rec);
-  // If the record path isn't accessible or remoteOriginalUrl provided in payload, prefer remote
-  const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
-  if (remoteUrl) {
-    try {
-      process.stdout.write(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
-      origPath = await downloadToTemp(remoteUrl, payload.jobId);
-      process.stdout.write(`[WORKER] Remote original downloaded to: ${origPath}\n`);
-    } catch (e) {
-      process.stderr.write(`[WORKER] Remote download failed, falling back to local path (${origPath}): ${(e as any)?.message || e}\n`);
-    }
-  } else {
-    process.stderr.write("[WORKER] WARN: Job lacks remoteOriginalUrl. This means the server didn't upload the original to S3.\n");
-    process.stderr.write("[WORKER] In production, server should run with REQUIRE_S3=1 so uploads fail fast instead of enqueueing unusable jobs.\n");
-  }
   process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
   const publishedOriginal = await publishImage(origPath);
   process.stdout.write(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
@@ -86,7 +100,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     detectedRoom = room.label as string;
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = room.label as any;
     // store interim meta (non-fatal if write fails)
-    updateJob(payload.jobId, { meta: { ...(rec as any).meta, scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
+    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
   } catch {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
   }
@@ -101,13 +115,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t1A = Date.now();
   const path1A = await runStage1A(origPath);
   timings.stage1AMs = Date.now() - t1A;
-  // Record 1A version and try to publish
-  const v1A = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1A", filePath: path1A, note: "Quality enhanced" });
+  
+  // Record 1A version (optional in multi-service mode where images.json is not shared)
+  let v1A: any = null;
+  try {
+    v1A = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1A", filePath: path1A, note: "Quality enhanced" });
+  } catch (e) {
+    process.stderr.write(`[worker] Note: Could not record 1A version in images.json (expected in multi-service deployment): ${(e as any)?.message}\n`);
+  }
+  
   let pub1AUrl: string | undefined = undefined;
   try {
     const pub1A = await publishImage(path1A);
     pub1AUrl = pub1A.url;
-    setVersionPublicUrl(payload.imageId, v1A.versionId, pub1A.url);
+    if (v1A) {
+      try {
+        setVersionPublicUrl(payload.imageId, v1A.versionId, pub1A.url);
+      } catch (e) {
+        // Ignore - images.json not accessible in multi-service mode
+      }
+    }
   } catch (e) {
     console.warn('[worker] failed to publish 1A', e);
   }
@@ -155,7 +182,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       updateJob(payload.jobId, {
         status: "error",
         errorMessage: (compliance.reasons || ["Compliance check failed"]).join("; "),
-        meta: { ...(rec as any).meta, scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
       });
       return;
     }
@@ -168,24 +195,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // stage 1B publishing was deferred until here; attach URL and surface progress
   let pub1BUrl: string | undefined = undefined;
   if (payload.options.declutter) {
-    const v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
+    let v1B: any = null;
+    try {
+      v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
+    } catch (e) {
+      process.stderr.write(`[worker] Note: Could not record 1B version in images.json (expected in multi-service deployment)\n`);
+    }
     try {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
-      setVersionPublicUrl(payload.imageId, v1B.versionId, pub1B.url);
+      if (v1B) {
+        try {
+          setVersionPublicUrl(payload.imageId, v1B.versionId, pub1B.url);
+        } catch (e) {
+          // Ignore
+        }
+      }
       updateJob(payload.jobId, { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } });
     } catch (e) {
       console.warn('[worker] failed to publish 1B', e);
     }
   }
 
-  const finalPathVersion = pushImageVersion({
-    imageId: payload.imageId,
-    userId: payload.userId,
-    stageLabel: payload.options.virtualStage ? "2" : "1B/1A",
-    filePath: path2,
-    note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
-  });
+  let finalPathVersion: any = null;
+  try {
+    finalPathVersion = pushImageVersion({
+      imageId: payload.imageId,
+      userId: payload.userId,
+      stageLabel: payload.options.virtualStage ? "2" : "1B/1A",
+      filePath: path2,
+      note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
+    });
+  } catch (e) {
+    process.stderr.write(`[worker] Note: Could not record final version in images.json (expected in multi-service deployment)\n`);
+  }
 
   // Publish final for client consumption and attach to version
   let publishedFinal: any = null;
@@ -197,7 +240,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!pubFinalUrl) {
       throw new Error('publishImage returned no URL');
     }
-    setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, pubFinalUrl);
+    if (finalPathVersion) {
+      try {
+        setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, pubFinalUrl);
+      } catch (e) {
+        // Ignore - images.json not accessible in multi-service mode
+      }
+    }
     process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } catch (e) {
     process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
