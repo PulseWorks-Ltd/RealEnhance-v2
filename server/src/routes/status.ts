@@ -43,48 +43,52 @@ export function statusRouter() {
         return res.status(403).json({ error: 'forbidden' });
       }
 
-      // Extract URLs from worker's return value
+      // Read worker's return value from BullMQ
       const rv: any = (job as any).returnvalue || {};
       
-      // Worker returns: { resultUrl, originalUrl, stageUrls: { "1A", "1B", "2" }, ... }
+      // Log what we received for debugging
+      if (status === 'completed') {
+        console.log(`[status] Job ${job.id} returnvalue:`, {
+          hasReturnvalue: !!rv,
+          resultUrl: rv.resultUrl ? (String(rv.resultUrl).substring(0, 100) + '...') : 'NULL',
+          originalUrl: rv.originalUrl ? (String(rv.originalUrl).substring(0, 100) + '...') : 'NULL',
+          stageUrlsKeys: rv.stageUrls ? Object.keys(rv.stageUrls) : []
+        });
+      }
+      
+      // Worker returns: { resultUrl, originalUrl, stageUrls: { "1A": "...", "2": "..." }, imageId, jobId }
       const resultUrl = rv.resultUrl || null;
       const originalUrl = rv.originalUrl || null;
       const stageUrls = rv.stageUrls || {};
       
-      // Build resultImages array for client compatibility
+      // Build resultImages array for client (expects array of URLs)
       const resultImages: string[] = [];
       if (resultUrl) resultImages.push(resultUrl);
       
-      // Debug logging if URLs are missing when job is completed
+      // Debug logging if completed job has no URLs
       if (status === 'completed' && !resultUrl) {
-        console.warn(`[status] ⚠️ Job ${job.id} completed but no resultUrl in returnvalue:`, {
+        console.warn(`[status] ⚠️ Job ${job.id} completed but returnvalue.resultUrl is missing`, {
           hasReturnvalue: !!rv,
-          returnvalueKeys: Object.keys(rv),
-          returnvalueSample: JSON.stringify(rv).substring(0, 300)
+          keys: Object.keys(rv),
+          sample: JSON.stringify(rv).substring(0, 300)
         });
       }
 
       await q.close();
       
-      // Return clean, predictable shape for client
+      // Return URLs in multiple fields for client compatibility
       return res.json({
         id: job.id,
         jobId: job.id,
         userId: payload.userId,
         imageId: payload.imageId,
         status,
-        // Multiple formats for compatibility
-        imageUrl: resultUrl,           // alias
-        resultUrl: resultUrl,           // alias  
+        imageUrl: resultUrl,           // client checks this
+        resultUrl: resultUrl,           // client checks this
         originalImageUrl: originalUrl,
-        resultImages,                   // array format
-        stageUrls,                      // stage-by-stage URLs
-        updatedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
-        // For debugging (optional, remove in production)
-        _debug: status === 'completed' ? {
-          hasReturnvalue: !!rv,
-          returnvalueKeys: Object.keys(rv)
-        } : undefined
+        resultImages,                   // array format: [url]
+        stageUrls,                      // { "1A": "...", "2": "..." }
+        updatedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined
       });
     } catch (e) {
       console.error('[status] Error reading job from BullMQ:', e);
