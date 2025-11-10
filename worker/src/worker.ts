@@ -268,7 +268,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "1B": payload.options.declutter ? path1B : undefined,
       "2": payload.options.virtualStage ? path2 : undefined
     },
-    resultVersionId: finalPathVersion.versionId,
+    resultVersionId: finalPathVersion?.versionId || undefined,
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: pubFinalUrl,
