@@ -147,19 +147,19 @@ export function CompareSlider({
           </div>
         </div>
         
-                {/* Labels - Positioned near center for visibility */}
+                {/* Labels - Positioned at top near center like in screenshot */}
         {showLabels && (
           <>
-            {/* Original label - left side, vertically centered */}
+            {/* Original label - top left of center */}
             <div 
-              className="absolute left-6 top-1/2 -translate-y-1/2 bg-blue-600/95 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
+              className="absolute left-1/4 -translate-x-1/2 top-6 bg-blue-600/95 text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
               data-testid={`${testId}-original-label`}
             >
               {originalLabel}
             </div>
-            {/* Enhanced label - right side, vertically centered */}
+            {/* Enhanced label - top right of center */}
             <div 
-              className="absolute right-6 top-1/2 -translate-y-1/2 bg-green-600/95 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
+              className="absolute right-1/4 translate-x-1/2 top-6 bg-green-600/95 text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
               data-testid={`${testId}-enhanced-label`}
             >
               {enhancedLabel}
