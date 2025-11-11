@@ -23,8 +23,8 @@ export function CompareSlider({
   onPositionChange,
   height = 500,
   showLabels = true,
-  originalLabel = "Before",
-  enhancedLabel = "After ✨",
+  originalLabel = "Original",
+  enhancedLabel = "Enhanced",
   className,
   "data-testid": testId = "compare-slider"
 }: CompareSliderProps) {
@@ -147,22 +147,29 @@ export function CompareSlider({
           </div>
         </div>
         
-        {/* Labels */}
+        {/* Labels - Enhanced visibility */}
         {showLabels && (
           <>
             <div 
-              className="absolute top-4 left-4 bg-black/70 text-white px-3 py-1 rounded-lg text-sm font-medium"
+              className="absolute top-4 left-4 bg-blue-600/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm border-2 border-white/20"
               data-testid={`${testId}-original-label`}
             >
-              {originalLabel}
+              📷 {originalLabel}
             </div>
             <div 
-              className="absolute top-4 right-4 bg-gradient-to-r from-brand-primary to-brand-accent text-white px-3 py-1 rounded-lg text-sm font-medium"
+              className="absolute top-4 right-4 bg-green-600/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm border-2 border-white/20"
               data-testid={`${testId}-enhanced-label`}
             >
-              {enhancedLabel}
+              ✨ {enhancedLabel}
             </div>
           </>
+        )}
+        
+        {/* Instruction hint */}
+        {currentPosition === initialPosition && !isDragging && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/70 text-white text-xs rounded-full animate-pulse backdrop-blur-sm">
+            ← Drag to compare →
+          </div>
         )}
       </div>
     </Card>
