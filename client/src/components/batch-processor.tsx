@@ -352,8 +352,25 @@ export default function BatchProcessor() {
     requestAnimationFrame(function tick() {
       const next = queueRef.current.shift();
       if (next) {
+        // Debug: Log what we're about to normalize
+        console.log('[SCHEDULE] Processing item:', {
+          index: next.index,
+          hasResult: !!next.result,
+          resultKeys: next.result ? Object.keys(next.result) : [],
+          imageUrl: next.result?.imageUrl ? String(next.result.imageUrl).substring(0, 100) : 'missing',
+          error: next.error
+        });
+        
         // Standardize to BatchResult shape
         const norm = normalizeBatchItem(next.result);
+        
+        console.log('[SCHEDULE] Normalized:', {
+          index: next.index,
+          normOk: norm?.ok,
+          normImage: norm?.image ? String(norm.image).substring(0, 100) : 'missing',
+          normError: norm?.error
+        });
+        
         setResults(prev => {
           const copy = prev ? [...prev] : [];
           copy[next.index] = {
