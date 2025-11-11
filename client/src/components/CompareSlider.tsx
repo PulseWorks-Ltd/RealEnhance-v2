@@ -147,27 +147,29 @@ export function CompareSlider({
           </div>
         </div>
         
-        {/* Labels - Enhanced visibility */}
+                {/* Labels - Positioned near center for visibility */}
         {showLabels && (
           <>
+            {/* Original label - left side, vertically centered */}
             <div 
-              className="absolute top-4 left-4 bg-blue-600/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm border-2 border-white/20"
+              className="absolute left-6 top-1/2 -translate-y-1/2 bg-blue-600/95 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
               data-testid={`${testId}-original-label`}
             >
-              📷 {originalLabel}
+              {originalLabel}
             </div>
+            {/* Enhanced label - right side, vertically centered */}
             <div 
-              className="absolute top-4 right-4 bg-green-600/90 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg backdrop-blur-sm border-2 border-white/20"
+              className="absolute right-6 top-1/2 -translate-y-1/2 bg-green-600/95 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
               data-testid={`${testId}-enhanced-label`}
             >
-              ✨ {enhancedLabel}
+              {enhancedLabel}
             </div>
           </>
         )}
         
         {/* Instruction hint */}
         {currentPosition === initialPosition && !isDragging && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/70 text-white text-xs rounded-full animate-pulse backdrop-blur-sm">
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white text-sm rounded-full animate-pulse backdrop-blur-sm shadow-lg">
             ← Drag to compare →
           </div>
         )}
