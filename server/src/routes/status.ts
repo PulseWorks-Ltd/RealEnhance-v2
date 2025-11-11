@@ -9,6 +9,113 @@ import path from "path";
 export function statusRouter() {
   const r = Router();
 
+  // IMPORTANT: More specific routes MUST come before parameterized routes!
+  // /status/batch must be before /status/:jobId or Express will match "batch" as a jobId
+  
+  // Batch status endpoint: /api/status/batch?ids=a,b,c
+  r.get("/status/batch", async (req: Request, res: Response) => {
+    // In development, allow unauthenticated access for testing
+    const isDev = process.env.NODE_ENV === 'development';
+    const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;
+    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
+
+    const idsParam = String(req.query.ids || "").trim();
+    if (!idsParam) return res.json({ items: [], done: true, count: 0 });
+    const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean);
+    
+    if (ids.length === 0) {
+      return res.json({ items: [], done: true, count: 0 });
+    }
+
+    const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+    const items: any[] = [];
+    let completed = 0;
+
+    try {
+      for (const id of ids) {
+        let job;
+        try {
+          job = await q.getJob(id);
+        } catch (e) {
+          items.push({ id, status: 'failed', error: 'job_error' });
+          continue;
+        }
+        if (!job) {
+          items.push({ id, status: 'failed', error: 'not_found' });
+          continue;
+        }
+        
+        const state = await job.getState();
+        let status: 'queued'|'processing'|'completed'|'failed' = 'queued';
+        if (state === 'completed') status = 'completed';
+        else if (state === 'failed') status = 'failed';
+        else if (state === 'active') status = 'processing';
+
+        const payload: any = job.data || {};
+        
+        // Extract URLs from worker's return value
+        const rv: any = (job as any).returnvalue || {};
+        
+        // CRITICAL DEBUG: Log what BullMQ actually has
+        console.log(`[status/batch] Job ${id} state=${status} returnvalue:`, {
+          exists: !!rv,
+          type: typeof rv,
+          keys: rv ? Object.keys(rv) : [],
+          resultUrl: rv?.resultUrl ? String(rv.resultUrl).substring(0, 80) + '...' : 'MISSING',
+          full: JSON.stringify(rv).substring(0, 300)
+        });
+        
+        const resultUrl = rv.resultUrl || null;
+        const originalUrl = rv.originalUrl || null;
+        const stageUrls = rv.stageUrls || {};
+        
+        // Build resultImages array
+        const resultImages: string[] = [];
+        if (Array.isArray(rv.stageUrls)) {
+          for (const u of rv.stageUrls) if (u) resultImages.push(u);
+        } else if (rv && typeof rv.stageUrls === 'object') {
+          const preferOrder = ['1A','1B','2'];
+          for (const k of preferOrder) {
+            if (rv.stageUrls[k]) resultImages.push(rv.stageUrls[k]);
+          }
+        }
+        if (resultUrl && !resultImages.includes(resultUrl)) resultImages.push(resultUrl);
+        
+        // Debug logging if URLs are missing
+        if (status === 'completed' && !resultUrl) {
+          console.warn(`[status/batch] ⚠️ Job ${id} completed but no resultUrl:`, {
+            hasReturnvalue: !!rv,
+            returnvalueKeys: Object.keys(rv),
+            sample: JSON.stringify(rv).substring(0, 200)
+          });
+        }
+        
+        if (status === 'completed') completed++;
+        
+        // Push clean, predictable shape
+        items.push({
+          id,
+          status,
+          imageId: payload.imageId,
+          // Multiple formats for compatibility
+          imageUrl: resultUrl,
+          resultUrl: resultUrl,
+          originalImageUrl: originalUrl,
+          resultImages,
+          stageUrls,
+          filename: job.name || undefined
+        });
+      }
+
+      const done = completed === ids.length || items.every(i => i.status === 'failed');
+      res.json({ items, count: ids.length, done });
+    } finally {
+      await q.close();
+    }
+  });
+
+  // Single job status: /api/status/:jobId
+  // NOTE: This MUST come after /status/batch to avoid matching "batch" as a jobId!
   r.get("/status/:jobId", async (req: Request, res: Response) => {
     // In development, allow unauthenticated access for testing
     const isDev = process.env.NODE_ENV === 'development';
@@ -112,108 +219,6 @@ export function statusRouter() {
     if (!legacy) return res.status(404).json({ error: 'not_found' });
     if (legacy.userId !== sessUser.id) return res.status(403).json({ error: 'forbidden' });
     return res.json(legacy);
-  });
-
-  // Batch status endpoint: /api/status/batch?ids=a,b,c
-  r.get("/status/batch", async (req: Request, res: Response) => {
-    // In development, allow unauthenticated access for testing
-    const isDev = process.env.NODE_ENV === 'development';
-    const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;
-    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
-
-    const idsParam = String(req.query.ids || "").trim();
-    if (!idsParam) return res.json({ items: [], done: true, count: 0 });
-    const ids = idsParam.split(",").map(s => s.trim()).filter(Boolean);
-    
-    if (ids.length === 0) {
-      return res.json({ items: [], done: true, count: 0 });
-    }
-
-    const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
-    const items: any[] = [];
-    let completed = 0;
-
-    try {
-      for (const id of ids) {
-        let job;
-        try {
-          job = await q.getJob(id);
-        } catch (e) {
-          items.push({ id, status: 'failed', error: 'job_error' });
-          continue;
-        }
-        if (!job) {
-          items.push({ id, status: 'failed', error: 'not_found' });
-          continue;
-        }
-        
-        const state = await job.getState();
-        let status: 'queued'|'processing'|'completed'|'failed' = 'queued';
-        if (state === 'completed') status = 'completed';
-        else if (state === 'failed') status = 'failed';
-        else if (state === 'active') status = 'processing';
-
-        const payload: any = job.data || {};
-        
-        // Extract URLs from worker's return value
-        const rv: any = (job as any).returnvalue || {};
-        
-        // CRITICAL DEBUG: Log what BullMQ actually has
-        console.log(`[status/batch] Job ${id} state=${status} returnvalue:`, {
-          exists: !!rv,
-          type: typeof rv,
-          keys: rv ? Object.keys(rv) : [],
-          resultUrl: rv?.resultUrl ? String(rv.resultUrl).substring(0, 80) + '...' : 'MISSING',
-          full: JSON.stringify(rv).substring(0, 300)
-        });
-        
-        const resultUrl = rv.resultUrl || null;
-        const originalUrl = rv.originalUrl || null;
-        const stageUrls = rv.stageUrls || {};
-        
-        // Build resultImages array
-        const resultImages: string[] = [];
-        if (Array.isArray(rv.stageUrls)) {
-          for (const u of rv.stageUrls) if (u) resultImages.push(u);
-        } else if (rv && typeof rv.stageUrls === 'object') {
-          const preferOrder = ['1A','1B','2'];
-          for (const k of preferOrder) {
-            if (rv.stageUrls[k]) resultImages.push(rv.stageUrls[k]);
-          }
-        }
-        if (resultUrl && !resultImages.includes(resultUrl)) resultImages.push(resultUrl);
-        
-        // Debug logging if URLs are missing
-        if (status === 'completed' && !resultUrl) {
-          console.warn(`[status/batch] ⚠️ Job ${id} completed but no resultUrl:`, {
-            hasReturnvalue: !!rv,
-            returnvalueKeys: Object.keys(rv),
-            sample: JSON.stringify(rv).substring(0, 200)
-          });
-        }
-        
-        if (status === 'completed') completed++;
-        
-        // Push clean, predictable shape
-        items.push({
-          id,
-          status,
-          imageId: payload.imageId,
-          // Multiple formats for compatibility
-          imageUrl: resultUrl,
-          resultUrl: resultUrl,
-          originalImageUrl: originalUrl,
-          resultImages,
-          stageUrls,
-          filename: job.name || undefined
-        });
-      }
-
-      const done = completed === ids.length || items.every(i => i.status === 'failed');
-      res.json({ items, count: ids.length, done });
-    } finally {
-      await q.close();
-    }
   });
 
   return r;
