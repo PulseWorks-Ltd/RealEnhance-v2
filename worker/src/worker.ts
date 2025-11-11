@@ -233,24 +233,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish final for client consumption and attach to version
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
-  try {
-    process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
-    publishedFinal = await publishImage(path2);
-    pubFinalUrl = publishedFinal?.url;
-    if (!pubFinalUrl) {
-      throw new Error('publishImage returned no URL');
-    }
-    if (finalPathVersion) {
-      try {
-        setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, pubFinalUrl);
-      } catch (e) {
-        // Ignore - images.json not accessible in multi-service mode
+  
+  // Optimization: If final path is same as 1A (no declutter, no staging), reuse 1A URL
+  if (path2 === path1A && pub1AUrl) {
+    process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
+    pubFinalUrl = pub1AUrl;
+    publishedFinal = { url: pub1AUrl, kind: 's3' };
+    process.stdout.write(`[WORKER] Final URL (reused from 1A): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+  } else {
+    // Final is different (declutter or staging applied), publish it
+    try {
+      process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
+      publishedFinal = await publishImage(path2);
+      pubFinalUrl = publishedFinal?.url;
+      if (!pubFinalUrl) {
+        throw new Error('publishImage returned no URL');
       }
+      if (finalPathVersion) {
+        try {
+          setVersionPublicUrl(payload.imageId, finalPathVersion.versionId, pubFinalUrl);
+        } catch (e) {
+          // Ignore - images.json not accessible in multi-service mode
+        }
+      }
+      process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+    } catch (e) {
+      process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
+      process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
     }
-    process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
-  } catch (e) {
-    process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
-    process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
   }
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
