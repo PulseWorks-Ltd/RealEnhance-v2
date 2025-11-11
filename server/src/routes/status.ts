@@ -114,7 +114,7 @@ export function statusRouter() {
     return res.json(legacy);
   });
 
-  // Batch status: /api/status/batch?ids=a,b,c
+  // Batch status endpoint: /api/status/batch?ids=a,b,c
   r.get("/status/batch", async (req: Request, res: Response) => {
     // In development, allow unauthenticated access for testing
     const isDev = process.env.NODE_ENV === 'development';
