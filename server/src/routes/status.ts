@@ -46,15 +46,16 @@ export function statusRouter() {
       // Read worker's return value from BullMQ
       const rv: any = (job as any).returnvalue || {};
       
-      // Log what we received for debugging
-      if (status === 'completed') {
-        console.log(`[status] Job ${job.id} returnvalue:`, {
-          hasReturnvalue: !!rv,
-          resultUrl: rv.resultUrl ? (String(rv.resultUrl).substring(0, 100) + '...') : 'NULL',
-          originalUrl: rv.originalUrl ? (String(rv.originalUrl).substring(0, 100) + '...') : 'NULL',
-          stageUrlsKeys: rv.stageUrls ? Object.keys(rv.stageUrls) : []
-        });
-      }
+      // CRITICAL DEBUG: Log what BullMQ actually has
+      console.log(`[status] Job ${job.id} state=${status}:`, {
+        hasReturnvalue: !!rv,
+        type: typeof rv,
+        keys: rv ? Object.keys(rv) : [],
+        resultUrl: rv?.resultUrl ? String(rv.resultUrl).substring(0, 100) + '...' : 'MISSING',
+        originalUrl: rv?.originalUrl ? String(rv.originalUrl).substring(0, 100) + '...' : 'MISSING',
+        stageUrlsKeys: rv.stageUrls ? Object.keys(rv.stageUrls) : [],
+        full: JSON.stringify(rv).substring(0, 400)
+      });
       
       // Worker returns: { resultUrl, originalUrl, stageUrls: { "1A": "...", "2": "..." }, imageId, jobId }
       const resultUrl = rv.resultUrl || null;
@@ -156,6 +157,16 @@ export function statusRouter() {
         
         // Extract URLs from worker's return value
         const rv: any = (job as any).returnvalue || {};
+        
+        // CRITICAL DEBUG: Log what BullMQ actually has
+        console.log(`[status/batch] Job ${id} state=${status} returnvalue:`, {
+          exists: !!rv,
+          type: typeof rv,
+          keys: rv ? Object.keys(rv) : [],
+          resultUrl: rv?.resultUrl ? String(rv.resultUrl).substring(0, 80) + '...' : 'MISSING',
+          full: JSON.stringify(rv).substring(0, 300)
+        });
+        
         const resultUrl = rv.resultUrl || null;
         const originalUrl = rv.originalUrl || null;
         const stageUrls = rv.stageUrls || {};

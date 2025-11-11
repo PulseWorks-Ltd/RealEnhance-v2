@@ -425,6 +425,18 @@ const worker = new Worker(
 worker.on("completed", (job, result: any) => {
   const url = (result && (result as any).resultUrl) ? String((result as any).resultUrl).slice(0, 120) : undefined;
   console.log(`[worker] completed job ${job.id}${url ? ` → ${url}` : ""}`);
+  
+  // CRITICAL DEBUG: Verify result was captured
+  if (result) {
+    console.log(`[worker] ✅ Result captured by BullMQ:`, {
+      hasResultUrl: !!result.resultUrl,
+      hasOriginalUrl: !!result.originalUrl,
+      hasStageUrls: !!result.stageUrls,
+      keys: Object.keys(result)
+    });
+  } else {
+    console.error(`[worker] ❌ NO RESULT captured for job ${job.id} - BullMQ returnvalue will be empty!`);
+  }
 });
 
 worker.on("failed", (job, err) => {
