@@ -149,7 +149,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     v1A = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1A", filePath: path1A, note: "Quality enhanced" });
   } catch (e) {
-    process.stderr.write(`[worker] Note: Could not record 1A version in images.json (expected in multi-service deployment): ${(e as any)?.message}\n`);
+    // Silently ignore - images.json is not available in multi-service deployment
+    // This is expected and normal behavior
   }
   
   let pub1AUrl: string | undefined = undefined;
@@ -258,7 +259,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
     } catch (e) {
-      process.stderr.write(`[worker] Note: Could not record 1B version in images.json (expected in multi-service deployment)\n`);
+      // Silently ignore - images.json is not available in multi-service deployment
     }
     try {
       const pub1B = await publishImage(path1B);
@@ -286,7 +287,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
     });
   } catch (e) {
-    process.stderr.write(`[worker] Note: Could not record final version in images.json (expected in multi-service deployment)\n`);
+    // Silently ignore - images.json is not available in multi-service deployment
   }
 
   // Publish final for client consumption and attach to version
