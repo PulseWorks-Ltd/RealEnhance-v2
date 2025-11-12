@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { enhanceWithGemini } from "../ai/gemini";
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -13,6 +14,7 @@ import sharp from "sharp";
  * 6. Sky enhancement (blue boost)
  * 7. Advanced sharpening
  * 8. Professional output quality
+ * 9. Gemini AI enhancement (professional HDR + optional sky replacement)
  */
 
 /**
@@ -60,8 +62,14 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
   });
 }
 
-export async function runStage1A(inputPath: string): Promise<string> {
-  const outPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
+export async function runStage1A(
+  inputPath: string,
+  options: { replaceSky?: boolean } = {}
+): Promise<string> {
+  const { replaceSky = false } = options;
+  
+  const sharpOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A-sharp.webp");
+  const finalOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
   
   let img = sharp(inputPath);
   const metadata = await img.metadata();
@@ -114,7 +122,7 @@ export async function runStage1A(inputPath: string): Promise<string> {
     m2: 0.8,        // High threshold = only crisp edges
   });
   
-  // 12. Export with maximum quality (HD marketing-ready)
+  // 12. Export Sharp enhancement with maximum quality
   await img
     .webp({ 
       quality: 97,            // Very high quality (maintains 4K detail)
@@ -122,8 +130,31 @@ export async function runStage1A(inputPath: string): Promise<string> {
       smartSubsample: true,   // Better color preservation, reduces banding
       nearLossless: false,    // Lossy for optimal compression
     })
-    .toFile(outPath);
+    .toFile(sharpOutputPath);
   
-  console.log(`[stage1A] HD professional enhancement complete: ${inputPath} → ${outPath}`);
-  return outPath;
+  console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
+  
+  // 13. Apply Gemini AI enhancement for professional HDR quality and optional sky replacement
+  console.log(`[stage1A] Starting Gemini AI enhancement (replaceSky: ${replaceSky})...`);
+  const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
+    skipIfNoApiKey: true,   // Gracefully skip if no API key
+    replaceSky: replaceSky, // Use the user's preference
+  });
+  
+  // If Gemini enhancement succeeded (returned different path), use it
+  // Otherwise, Sharp output is already at sharpOutputPath
+  if (geminiOutputPath !== sharpOutputPath) {
+    console.log(`[stage1A] ✅ Gemini AI enhancement applied successfully`);
+    // Rename Gemini output to final path
+    const fs = await import("fs/promises");
+    await fs.rename(geminiOutputPath, finalOutputPath);
+  } else {
+    console.log(`[stage1A] ℹ️ Using Sharp enhancement only (Gemini skipped)`);
+    // Rename Sharp output to final path
+    const fs = await import("fs/promises");
+    await fs.rename(sharpOutputPath, finalOutputPath);
+  }
+  
+  console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+  return finalOutputPath;
 }

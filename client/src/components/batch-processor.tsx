@@ -172,6 +172,7 @@ export default function BatchProcessor() {
   // Images tab state
   const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
   const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
+  const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
 
   // Progressive display queue for SSE items
@@ -223,14 +224,24 @@ export default function BatchProcessor() {
     let cancelled = false;
     (async () => {
       const next: Record<number, string> = {};
+      const skyDefaults: Record<number, boolean> = {};
       await Promise.all(files.map(async (f, i) => {
         // only auto-fill if user hasn't set it
         if (imageSceneTypes[i] && imageSceneTypes[i] !== "auto") return;
         const scene = await detectSceneFromFile(f);
-        if (!cancelled) next[i] = scene;
+        if (!cancelled) {
+          next[i] = scene;
+          // Auto-enable sky replacement for exterior images (can be toggled off by user)
+          if (scene === "exterior" && imageSkyReplacement[i] === undefined) {
+            skyDefaults[i] = true;
+          }
+        }
       }));
       if (!cancelled && Object.keys(next).length) {
         setImageSceneTypes(prev => ({ ...prev, ...next }));
+        if (Object.keys(skyDefaults).length) {
+          setImageSkyReplacement(prev => ({ ...prev, ...skyDefaults }));
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -279,13 +290,14 @@ export default function BatchProcessor() {
 
   // Build metaJson to send with the batch request
   const metaJson = useMemo(() => {
-    // meta: [{index, sameRoomKey?, followupAngle?, sceneType?, roomType?}]
+    // meta: [{index, sameRoomKey?, followupAngle?, sceneType?, roomType?, replaceSky?}]
     const arr: Array<{
       index: number; 
       sameRoomKey?: string; 
       followupAngle?: boolean;
       sceneType?: string;
       roomType?: string;
+      replaceSky?: boolean;
     }> = [];
     
     // First pass: collect room linking info when linkImages is enabled
@@ -317,6 +329,12 @@ export default function BatchProcessor() {
       const roomType = imageRoomTypes[i];
       const includeRoomType = roomType && roomType !== "auto";
       
+      // Determine sky replacement preference
+      // Default to true for exterior scenes, can be explicitly overridden
+      const isExterior = sceneType === "exterior";
+      const skyReplacementPref = imageSkyReplacement[i];
+      const replaceSky = skyReplacementPref !== undefined ? skyReplacementPref : isExterior;
+      
       // Determine sameRoomKey - manual takes precedence, then auto-linking
       let sameRoomKey = manualSameRoomKey;
       if (!sameRoomKey && linkImages && includeRoomType) {
@@ -329,20 +347,21 @@ export default function BatchProcessor() {
       }
       
       // Only add to array if we have at least one metadata field to include
-      if (sameRoomKey || followupAngle || includeSceneType || includeRoomType) {
+      if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined)) {
         const metaItem: any = { index: i };
         
         if (sameRoomKey) metaItem.sameRoomKey = sameRoomKey;
         if (followupAngle) metaItem.followupAngle = followupAngle;
         if (includeSceneType) metaItem.sceneType = sceneType;
         if (includeRoomType) metaItem.roomType = roomType;
+        if (isExterior) metaItem.replaceSky = replaceSky; // Only include for exterior
         
         arr.push(metaItem);
       }
     });
     
     return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, linkImages]);
+  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2149,6 +2168,29 @@ export default function BatchProcessor() {
                       <option value="exterior">Exterior</option>
                     </select>
                   </div>
+
+                  {/* Sky Replacement Toggle - Only show for exterior images */}
+                  {imageSceneTypes[index] === "exterior" && (
+                    <div className="mb-4 p-3 bg-gray-800/50 rounded-md border border-gray-700">
+                      <label className="flex items-center justify-between cursor-pointer">
+                        <div>
+                          <span className="block text-gray-300 text-sm font-medium">
+                            Replace Sky
+                          </span>
+                          <span className="block text-gray-500 text-xs mt-1">
+                            Replace cloudy skies with clear blue
+                          </span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={imageSkyReplacement[index] !== undefined ? imageSkyReplacement[index] : true}
+                          onChange={(e) => setImageSkyReplacement(prev => ({ ...prev, [index]: e.target.checked }))}
+                          className="ml-3 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
+                          data-testid={`toggle-sky-${index}`}
+                        />
+                      </label>
+                    </div>
+                  )}
 
                   {/* Room Type Dropdown */}
                   <div className="mb-4">

@@ -108,72 +108,65 @@ export function CompareSlider({
   };
 
   return (
-    <Card 
-      className={`overflow-hidden relative bg-gray-900 ${className || ''}`} 
-      style={containerStyle}
-      data-testid={testId}
-    >
-      <div ref={containerRef} className="relative w-full h-full">
-        {/* Original Image */}
-        <img 
-          src={originalImage}
-          alt="Original"
-          className="absolute inset-0 w-full h-full object-contain"
-          style={{ clipPath: `inset(0 ${100 - currentPosition}% 0 0)` }}
-          data-testid={`${testId}-original-image`}
-        />
-        
-        {/* Enhanced Image */}
-        <img 
-          src={enhancedImage}
-          alt="Enhanced"
-          className="absolute inset-0 w-full h-full object-contain"
-          style={{ clipPath: `inset(0 0 0 ${currentPosition}%)` }}
-          data-testid={`${testId}-enhanced-image`}
-        />
-        
-        {/* Slider Handle */}
-        <div 
-          className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-brand-primary to-brand-accent cursor-ew-resize z-10 touch-none"
-          style={{ left: `${currentPosition}%` }}
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-          data-testid={`${testId}-handle`}
-        >
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-purple-500">
-            <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M18 9v6h-2V9h2zm-8 0v6H8V9h2z"/>
-            </svg>
+    <div className={className} style={containerStyle} data-testid={testId}>
+      {/* Labels above the image */}
+      {showLabels && (
+        <div className="flex justify-between items-center mb-3 px-4">
+          <div className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+            {originalLabel}
+          </div>
+          <div className="bg-green-600 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+            {enhancedLabel}
           </div>
         </div>
-        
-                {/* Labels - Positioned at top near center like in screenshot */}
-        {showLabels && (
-          <>
-            {/* Original label - top left of center */}
-            <div 
-              className="absolute left-1/4 -translate-x-1/2 top-6 bg-blue-600/95 text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
-              data-testid={`${testId}-original-label`}
-            >
-              {originalLabel}
+      )}
+      
+      {/* Image comparison slider */}
+      <Card 
+        className="overflow-hidden relative bg-gray-900"
+      >
+        <div ref={containerRef} className="relative w-full h-full">
+          {/* Original Image */}
+          <img 
+            src={originalImage}
+            alt="Original"
+            className="absolute inset-0 w-full h-full object-contain"
+            style={{ clipPath: `inset(0 ${100 - currentPosition}% 0 0)` }}
+            data-testid={`${testId}-original-image`}
+          />
+          
+          {/* Enhanced Image */}
+          <img 
+            src={enhancedImage}
+            alt="Enhanced"
+            className="absolute inset-0 w-full h-full object-contain"
+            style={{ clipPath: `inset(0 0 0 ${currentPosition}%)` }}
+            data-testid={`${testId}-enhanced-image`}
+          />
+          
+          {/* Slider Handle */}
+          <div 
+            className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-brand-primary to-brand-accent cursor-ew-resize z-10 touch-none"
+            style={{ left: `${currentPosition}%` }}
+            onMouseDown={handleMouseDown}
+            onTouchStart={handleTouchStart}
+            data-testid={`${testId}-handle`}
+          >
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-purple-500">
+              <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18 9v6h-2V9h2zm-8 0v6H8V9h2z"/>
+              </svg>
             </div>
-            {/* Enhanced label - top right of center */}
-            <div 
-              className="absolute right-1/4 translate-x-1/2 top-6 bg-green-600/95 text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-xl backdrop-blur-sm border-2 border-white/30"
-              data-testid={`${testId}-enhanced-label`}
-            >
-              {enhancedLabel}
-            </div>
-          </>
-        )}
-        
-        {/* Instruction hint */}
-        {currentPosition === initialPosition && !isDragging && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white text-sm rounded-full animate-pulse backdrop-blur-sm shadow-lg">
-            ← Drag to compare →
           </div>
-        )}
-      </div>
-    </Card>
+          
+          {/* Instruction hint */}
+          {currentPosition === initialPosition && !isDragging && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/80 text-white text-sm rounded-full animate-pulse backdrop-blur-sm shadow-lg">
+              ← Drag to compare →
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
   );
 }
