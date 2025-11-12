@@ -123,7 +123,8 @@ export function CompareSlider({
       
       {/* Image comparison slider */}
       <Card 
-        className="overflow-hidden relative bg-gray-900"
+        className="overflow-hidden relative bg-gray-900 h-full"
+        style={{ height: '100%' }}
       >
         <div ref={containerRef} className="relative w-full h-full">
           {/* Original Image */}
