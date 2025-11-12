@@ -33,10 +33,10 @@ export async function runStage1B(
     console.log(`[stage1B] 🤖 Calling Gemini with COMBINED enhance+declutter prompt...`);
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
-      replaceSky: replaceSky,
-      declutter: true,        // Enable combined enhance+declutter mode
-      sceneType: sceneType,
-      stage: "1B",            // Use Gemini 1.5 Flash for Stage 1B
+      replaceSky,
+      declutter: true,
+      sceneType,
+      stage: "1B",
     });
     
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);

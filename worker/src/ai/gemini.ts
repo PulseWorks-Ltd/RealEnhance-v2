@@ -1,6 +1,8 @@
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
+import { runWithImageModelFallback } from "./runWithImageModelFallback";
+import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 
 let singleton: GoogleGenAI | null = null;
 
@@ -118,145 +120,56 @@ export async function enhanceWithGemini(
     throw new Error("GOOGLE_API_KEY missing for Gemini enhancement");
   }
 
-  // IMPORTANT: Gemini 2.5 Flash does NOT support image generation/editing!
-  // Gemini models are vision models (analysis only), not image generators.
-  // For image editing, you need Imagen 3 API or other image generation APIs.
-  // For now, we'll skip Gemini for image editing and use Sharp-only enhancement.
-  
-  console.log(`[Gemini] ⚠️ NOTE: Gemini Flash models are vision-only (analysis), not image editors`);
-  console.log(`[Gemini] Using Sharp-only enhancement (Gemini image editing not supported)`);
-  console.log(`[Gemini] Input: ${inputPath}`);
-  console.log(`[Gemini] Scene: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
-  console.log(`[Gemini] Skipping Gemini API call, returning original path for Sharp processing`);
-  
-  // Return the original path - Sharp will handle the enhancement
-  return inputPath;
-  
-  /* DISABLED: Gemini does not support image generation
-  const model = (stage === "2") ? "gemini-2.5-flash" : "gemini-1.5-flash";
-  
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
-  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'}, model: ${model})...`);
+  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'})...`);
   console.log(`[Gemini] 🔵 Input path: ${inputPath}`);
-  console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}`);
-  
+  console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
+
   try {
     const client = getGeminiClient();
     console.log(`[Gemini] ✓ Gemini client initialized`);
-    
-    // Read the image file
-    const imageBuffer = await fs.readFile(inputPath);
-    const imageSizeKB = Math.round(imageBuffer.length / 1024);
-    console.log(`[Gemini] 🖼️ Loaded image from disk: ${imageSizeKB} KB`);
-    
-    const imageBase64 = imageBuffer.toString("base64");
-    const base64SizeKB = Math.round(imageBase64.length / 1024);
-    console.log(`[Gemini] 📦 Encoded to base64: ${base64SizeKB} KB`);
-    
-    const mimeType = "image/webp";
-    
-    // Build the appropriate prompt based on options
+
+    // Build prompt and image parts
     const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter });
-    console.log(`[Gemini] 📝 Generated prompt (length: ${prompt.length} chars)`);
-    console.log(`[Gemini] Using ${declutter ? 'combined enhance+declutter' : 'enhance-only'} prompt`);
-    console.log(`[Gemini] Prompt preview: ${prompt.substring(0, 200)}...`);
+    console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
-    // Call Gemini's vision model with image editing using the new API
-    console.log(`[Gemini] 🤖 Using model: ${model}`);
-    
-    console.log(`[Gemini] 🚀 Calling Gemini API with image (${imageSizeKB} KB) and prompt (${prompt.length} chars)...`);
-    const startTime = Date.now();
-    
-    const result = await (client as any).models.generateContent({
-      model: model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                data: imageBase64,
-                mimeType: mimeType,
-              },
-            },
-            { text: prompt },
-          ],
-        },
-      ],
-    });
+    const { data, mime } = toBase64(inputPath);
+    const requestParts: any[] = [
+      { inlineData: { mimeType: mime, data } },
+      { text: prompt },
+    ];
 
-    const elapsedMs = Date.now() - startTime;
-    console.log(`[Gemini] ✅ Gemini API responded in ${elapsedMs} ms`);
-
-    // In the new API, result is the response directly (no .response property)
-    console.log(`[Gemini] 📊 Response received`);
-    console.log(`[Gemini] 📊 Response structure:`, Object.keys(result));
-    
-    // Extract the enhanced image from the response
-    const candidates = result.candidates;
-    console.log(`[Gemini] 📊 Response candidates: ${candidates?.length || 0}`);
-    
-    if (!candidates || candidates.length === 0) {
-      console.error("❌ [Gemini] ERROR: Gemini returned no candidates!");
-      console.error("❌ [Gemini] Full response:", JSON.stringify(result, null, 2));
-      console.warn("⚠️ Gemini returned no candidates, using original image");
-      return inputPath;
-    }
-    console.log(`[Gemini] ✓ Found ${candidates.length} candidate(s)`);
-
-    const parts = candidates[0].content?.parts;
-    console.log(`[Gemini] 📊 Parts in candidate[0]: ${parts?.length || 0}`);
-    
-    if (!parts || parts.length === 0) {
-      console.error("❌ [Gemini] ERROR: Gemini response has no parts!");
-      console.error("❌ [Gemini] Candidate[0]:", JSON.stringify(candidates[0], null, 2));
-      console.warn("⚠️ Gemini response has no parts, using original image");
-      return inputPath;
-    }
-    console.log(`[Gemini] ✓ Found ${parts.length} part(s) in response`);
-
-    // Look for inline data in the parts
-    let enhancedImageData: string | null = null;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      console.log(`[Gemini] 🔍 Checking part ${i}:`, Object.keys(part));
-      if ((part as any).inlineData) {
-        enhancedImageData = (part as any).inlineData.data;
-        const dataSizeKB = enhancedImageData ? Math.round(enhancedImageData.length / 1024) : 0;
-        console.log(`[Gemini] ✓ Found inline image data in part ${i}: ${dataSizeKB} KB (base64)`);
-        break;
+    console.log(`[Gemini] 🚀 Calling Gemini 2.5 Image model (with fallback)...`);
+    const apiStart = Date.now();
+    const { resp, modelUsed } = await runWithImageModelFallback(client as any, {
+      contents: requestParts,
+      generationConfig: {
+        // Encourage high fidelity + keep dimensions
+        temperature: 0.4,
       }
-    }
+    } as any, declutter ? "enhance+declutter" : "enhance");
+    const apiMs = Date.now() - apiStart;
+    console.log(`[Gemini] ✅ API responded in ${apiMs} ms (model=${modelUsed})`);
 
-    if (!enhancedImageData) {
-      console.error("❌ [Gemini] ERROR: No image data found in any part!");
-      console.error("❌ [Gemini] All parts:", JSON.stringify(parts, null, 2));
-      console.warn("⚠️ No image data in Gemini response, using original image");
+    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    console.log(`[Gemini] 📊 Response parts: ${parts.length}`);
+    const img = parts.find((p: any) => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
+    if (!img?.inlineData?.data) {
+      console.error("❌ [Gemini] No image returned by model");
       return inputPath;
     }
 
-    // Save the enhanced image with appropriate suffix
-    const suffix = declutter ? "-gemini-enhanced-decluttered" : "-gemini-enhanced";
-    const outputPath = inputPath.replace(/\.(webp|jpg|jpeg|png)$/i, `${suffix}.webp`);
-    const enhancedBuffer = Buffer.from(enhancedImageData, "base64");
-    const outputSizeKB = Math.round(enhancedBuffer.length / 1024);
-    console.log(`[Gemini] 📦 Decoded enhanced image: ${outputSizeKB} KB`);
-    
-    await fs.writeFile(outputPath, enhancedBuffer);
-    console.log(`[Gemini] 💾 Saved enhanced image to: ${outputPath}`);
-
-    console.log(`✅ Gemini ${operationType} complete: ${outputPath}`);
-    console.log(`[Gemini] 🎉 SUCCESS - Enhanced image ready`);
-    return outputPath;
-
+    const suffix = declutter ? "-gemini-1B" : "-gemini-1A";
+    const out = siblingOutPath(inputPath, suffix, ".webp");
+    writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
+    console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
+    return out;
   } catch (error) {
-    console.error(`❌ [Gemini] EXCEPTION: Gemini ${operationType} failed:`, error);
-    console.error(`❌ [Gemini] Error details:`, JSON.stringify(error, null, 2));
+    console.error(`❌ [Gemini] ${operationType} failed:`, error);
     if (skipIfNoApiKey) {
       console.log("⚠️ Falling back to original image");
       return inputPath;
     }
     throw error;
   }
-  */
 }

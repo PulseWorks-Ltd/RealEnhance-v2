@@ -151,11 +151,11 @@ export async function runStage1A(
   // For enhance-only: Apply Gemini AI enhancement with professional HDR quality
   console.log(`[stage1A] Starting Gemini AI enhancement (enhance-only, replaceSky: ${replaceSky})...`);
   const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
-    skipIfNoApiKey: true,   // Gracefully skip if no API key
-    replaceSky: replaceSky, // Use the user's preference
-    declutter: false,       // Enhance-only mode
-    sceneType: sceneType,   // Interior/exterior for context-aware prompts
-    stage: "1A",            // Use Gemini 1.5 Flash for Stage 1A
+    skipIfNoApiKey: true,
+    replaceSky: replaceSky,
+    declutter: false,
+    sceneType: sceneType,
+    stage: "1A",
   });
   
   // If Gemini enhancement succeeded (returned different path), use it
