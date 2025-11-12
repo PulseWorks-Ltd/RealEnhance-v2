@@ -113,7 +113,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1A
   const t1A = Date.now();
-  const path1A = await runStage1A(origPath);
+  const path1A = await runStage1A(origPath, {
+    replaceSky: payload.options.replaceSky ?? false
+  });
   timings.stage1AMs = Date.now() - t1A;
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)

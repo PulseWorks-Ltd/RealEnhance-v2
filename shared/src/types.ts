@@ -60,6 +60,7 @@ export interface EnhanceJobPayload {
     virtualStage: boolean;
     roomType: string;
     sceneType: string | "auto";
+    replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
   };
   createdAt: string;
 }

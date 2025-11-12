@@ -51,6 +51,24 @@ export function uploadRouter() {
     if (!files.length) return res.status(400).json({ error: "no_files" });
 
     const optionsList = safeParseOptions((req.body as any)?.options);
+    
+    // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
+    let metaByIndex: Record<number, any> = {};
+    try {
+      const metaJson = (req.body as any)?.metaJson;
+      if (metaJson && typeof metaJson === "string") {
+        const metaArr = JSON.parse(metaJson);
+        if (Array.isArray(metaArr)) {
+          metaArr.forEach((item: any) => {
+            if (typeof item.index === "number") {
+              metaByIndex[item.index] = item;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[upload] Failed to parse metaJson:', e);
+    }
 
     // charge credits (throws on insufficient)
     await chargeForImages(sessUser.id, files.length);
@@ -68,6 +86,18 @@ export function uploadRouter() {
         roomType: "unknown",
         sceneType: "auto",
       };
+      
+      // Merge metadata from metaJson if available
+      const meta = metaByIndex[i] || {};
+      if (meta.sceneType) opts.sceneType = meta.sceneType;
+      if (meta.roomType) opts.roomType = meta.roomType;
+      if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+
+      // Auto-enable sky replacement for exterior images if not explicitly set
+      // Can be explicitly disabled by user setting replaceSky: false
+      if (opts.sceneType === "exterior" && opts.replaceSky === undefined) {
+        opts.replaceSky = true;
+      }
 
       const finalPath = path.join(userDir, f.filename || f.originalname);
 
@@ -119,6 +149,7 @@ export function uploadRouter() {
           virtualStage: !!opts.virtualStage,
           roomType: opts.roomType,
           sceneType: opts.sceneType,
+          replaceSky: opts.replaceSky, // Pass through sky replacement preference
         },
       });
 
