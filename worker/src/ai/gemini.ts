@@ -94,7 +94,7 @@ Output a single enhanced version of the image that looks like a professionally e
  * 
  * Model selection:
  * - Stage 1A/1B: gemini-1.5-flash (fast, cost-effective for enhancement/declutter)
- * - Stage 2: gemini-2.0-flash-exp (advanced capabilities for virtual staging)
+ * - Stage 2: gemini-2.5-flash (advanced capabilities for virtual staging)
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -120,8 +120,8 @@ export async function enhanceWithGemini(
 
   // Select model based on stage
   // Stage 1A/1B: Use Gemini 1.5 Flash (fast, cost-effective for enhancement/declutter)
-  // Stage 2: Use Gemini 2.0 Flash (advanced for virtual staging)
-  const model = (stage === "2") ? "gemini-2.0-flash-exp" : "gemini-1.5-flash";
+  // Stage 2: Use Gemini 2.5 Flash (advanced for virtual staging)
+  const model = (stage === "2") ? "gemini-2.5-flash" : "gemini-1.5-flash";
   
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
   console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'}, model: ${model})...`);
