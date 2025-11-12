@@ -155,6 +155,7 @@ export async function runStage1A(
     replaceSky: replaceSky, // Use the user's preference
     declutter: false,       // Enhance-only mode
     sceneType: sceneType,   // Interior/exterior for context-aware prompts
+    stage: "1A",            // Use Gemini 1.5 Flash for Stage 1A
   });
   
   // If Gemini enhancement succeeded (returned different path), use it
