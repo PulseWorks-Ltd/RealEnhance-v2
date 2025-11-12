@@ -138,38 +138,44 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] Using ${declutter ? 'combined enhance+declutter' : 'enhance-only'} prompt`);
     console.log(`[Gemini] Prompt preview: ${prompt.substring(0, 200)}...`);
 
-    // Call Gemini's vision model with image editing
-    const model = (client as any).getGenerativeModel({ 
-      model: "gemini-1.5-pro-latest" 
-    });
-    console.log(`[Gemini] 🤖 Initialized model: gemini-1.5-pro-latest`);
+    // Call Gemini's vision model with image editing using the new API
+    console.log(`[Gemini] 🤖 Using model: gemini-2.0-flash-exp`);
     
     console.log(`[Gemini] 🚀 Calling Gemini API with image (${imageSizeKB} KB) and prompt (${prompt.length} chars)...`);
     const startTime = Date.now();
     
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          data: imageBase64,
-          mimeType: mimeType,
+    const result = await (client as any).models.generateContent({
+      model: "gemini-2.0-flash-exp",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                data: imageBase64,
+                mimeType: mimeType,
+              },
+            },
+            { text: prompt },
+          ],
         },
-      },
-      { text: prompt },
-    ]);
+      ],
+    });
 
     const elapsedMs = Date.now() - startTime;
     console.log(`[Gemini] ✅ Gemini API responded in ${elapsedMs} ms`);
 
-    const response = await result.response;
+    // In the new API, result is the response directly (no .response property)
     console.log(`[Gemini] 📊 Response received`);
+    console.log(`[Gemini] 📊 Response structure:`, Object.keys(result));
     
     // Extract the enhanced image from the response
-    const candidates = response.candidates;
+    const candidates = result.candidates;
     console.log(`[Gemini] 📊 Response candidates: ${candidates?.length || 0}`);
     
     if (!candidates || candidates.length === 0) {
       console.error("❌ [Gemini] ERROR: Gemini returned no candidates!");
-      console.error("❌ [Gemini] Full response:", JSON.stringify(response, null, 2));
+      console.error("❌ [Gemini] Full response:", JSON.stringify(result, null, 2));
       console.warn("⚠️ Gemini returned no candidates, using original image");
       return inputPath;
     }
