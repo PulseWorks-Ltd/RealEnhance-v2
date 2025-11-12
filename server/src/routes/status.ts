@@ -116,7 +116,13 @@ export function statusRouter() {
 
   // Single job status: /api/status/:jobId
   // NOTE: This MUST come after /status/batch to avoid matching "batch" as a jobId!
-  r.get("/status/:jobId", async (req: Request, res: Response) => {
+  r.get("/status/:jobId", async (req: Request, res: Response, next) => {
+    // HARDENING: Guard against "batch" being caught as a jobId parameter
+    if (req.params.jobId === "batch") {
+      console.warn("[status/:jobId] ⚠️ 'batch' matched as jobId - routing to next handler");
+      return next(); // Let the batch route handle it
+    }
+    
     // In development, allow unauthenticated access for testing
     const isDev = process.env.NODE_ENV === 'development';
     const sessUser = isDev ? { id: 'user_test' } : (req.session as any)?.user;

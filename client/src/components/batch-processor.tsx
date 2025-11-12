@@ -397,6 +397,7 @@ export default function BatchProcessor() {
             filename: next.filename,
             ok: !!norm?.ok,
             image: norm?.image || undefined,
+            originalImageUrl: next.result?.originalImageUrl || undefined,  // Preserve original URL for comparison slider
             error: next.error || norm?.error
           };
           return copy;
@@ -746,6 +747,11 @@ export default function BatchProcessor() {
           setAbortController(null);
           // Fallback: if 404 (route missing on older deploy), poll per-id legacy endpoint
           if (resp.status === 404) {
+            console.error("❌ BATCH STATUS 404 – WRONG ROUTE MATCH!", {
+              url: `/api/status/batch?ids=${qs}`,
+              status: resp.status,
+              hint: "Check if Express is matching 'batch' as :jobId parameter"
+            });
             await pollForBatchLegacy(ids, controller);
             return;
           }
@@ -2349,7 +2355,8 @@ export default function BatchProcessor() {
                     // Add cache-busting version to force browser reload on retry/edit
                     const imageUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
                     const displayName = result?.filename || file?.name || `Image ${i+1}`;
-                    const originalUrl = previewUrls[result?.index ?? i];
+                    // Use server's original URL (from S3) for comparison slider, fallback to local preview
+                    const originalUrl = result?.originalImageUrl || previewUrls[result?.index ?? i];
                     return (
                     <div key={i} className="bg-brand-light rounded-lg p-4 flex gap-4 items-start">
                       <div className="relative w-24 h-24">
