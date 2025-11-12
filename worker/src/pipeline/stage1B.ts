@@ -8,7 +8,10 @@ import { enhanceWithGemini } from "../ai/gemini";
  * When declutter is requested, this stage calls Gemini with a combined
  * enhance+declutter prompt in ONE API call (saving cost vs separate calls).
  * 
- * The input is the Sharp pre-processed image from Stage1A (1A-sharp.webp).
+ * IMPORTANT: The input should be the Sharp pre-processed image (1A output when declutter=true).
+ * Stage1A skips Gemini enhancement when declutter=true, so this stage does BOTH
+ * enhancement AND decluttering in a single Gemini call.
+ * 
  * The output is both enhanced AND decluttered, ready for optional staging.
  */
 export async function runStage1B(
