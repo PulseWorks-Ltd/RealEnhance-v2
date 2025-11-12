@@ -33,6 +33,30 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 
+/**
+ * OPTIMIZED GEMINI API CALL STRATEGY
+ * ==================================
+ * 
+ * To minimize costs and API calls, we use these strategies:
+ * 
+ * Case A - Enhance Only (no declutter, no staging):
+ *   • Stage 1A: Sharp pre-process → 1 Gemini call (enhance-only prompt) → save as 1A
+ *   • Total: 1 Gemini call per image
+ * 
+ * Case B - Enhance + Declutter (no staging):
+ *   • Stage 1A: Sharp pre-process → save as 1A (no Gemini, just technical prep)
+ *   • Stage 1B: 1 Gemini call (combined enhance+declutter prompt) → save as 1B
+ *   • Total: 1 Gemini call per image (saves cost vs separate enhance + declutter)
+ * 
+ * Case C - Enhance + Declutter + Staging:
+ *   • Stage 1A: Sharp pre-process → save as 1A (no Gemini)
+ *   • Stage 1B: 1 Gemini call (combined enhance+declutter prompt) → save as 1B
+ *   • Stage 2: 1 Gemini call (virtual staging) → save as 2
+ *   • Total: 2 Gemini calls per image
+ * 
+ * Maximum reduction: From 3 potential calls → 2 max, 1 typical
+ */
+
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   console.log(`========== PROCESSING JOB ${payload.jobId} ==========`);
@@ -114,7 +138,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1A
   const t1A = Date.now();
   const path1A = await runStage1A(origPath, {
-    replaceSky: payload.options.replaceSky ?? false
+    replaceSky: payload.options.replaceSky ?? false,
+    declutter: payload.options.declutter ?? false,  // Pass declutter flag
+    sceneType: sceneLabel,  // Pass detected/specified scene type
   });
   timings.stage1AMs = Date.now() - t1A;
   
@@ -148,7 +174,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
-  const path1B = payload.options.declutter ? await runStage1B(path1A) : path1A;
+  const path1B = payload.options.declutter 
+    ? await runStage1B(path1A, {
+        replaceSky: payload.options.replaceSky ?? false,
+        sceneType: sceneLabel,
+      }) 
+    : path1A;
   timings.stage1BMs = Date.now() - t1B;
 
   if (await isCancelled(payload.jobId)) {

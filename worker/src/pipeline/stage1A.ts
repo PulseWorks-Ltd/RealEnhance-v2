@@ -64,9 +64,13 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
 
 export async function runStage1A(
   inputPath: string,
-  options: { replaceSky?: boolean } = {}
+  options: { 
+    replaceSky?: boolean;
+    declutter?: boolean;
+    sceneType?: "interior" | "exterior" | string;
+  } = {}
 ): Promise<string> {
-  const { replaceSky = false } = options;
+  const { replaceSky = false, declutter = false, sceneType } = options;
   
   const sharpOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A-sharp.webp");
   const finalOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
@@ -134,11 +138,23 @@ export async function runStage1A(
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
   
-  // 13. Apply Gemini AI enhancement for professional HDR quality and optional sky replacement
-  console.log(`[stage1A] Starting Gemini AI enhancement (replaceSky: ${replaceSky})...`);
+  // If declutter is requested, skip Gemini in Stage1A
+  // Stage1B will call Gemini with combined enhance+declutter prompt (saves API cost)
+  if (declutter) {
+    console.log(`[stage1A] Declutter requested - skipping Gemini (will be combined with Stage1B)`);
+    const fs = await import("fs/promises");
+    await fs.rename(sharpOutputPath, finalOutputPath);
+    console.log(`[stage1A] Sharp-only enhancement complete: ${inputPath} → ${finalOutputPath}`);
+    return finalOutputPath;
+  }
+  
+  // For enhance-only: Apply Gemini AI enhancement with professional HDR quality
+  console.log(`[stage1A] Starting Gemini AI enhancement (enhance-only, replaceSky: ${replaceSky})...`);
   const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
     skipIfNoApiKey: true,   // Gracefully skip if no API key
     replaceSky: replaceSky, // Use the user's preference
+    declutter: false,       // Enhance-only mode
+    sceneType: sceneType,   // Interior/exterior for context-aware prompts
   });
   
   // If Gemini enhancement succeeded (returned different path), use it
