@@ -23,11 +23,14 @@ export async function runStage1B(
 ): Promise<string> {
   const { replaceSky = false, sceneType } = options;
   
-  console.log(`[stage1B] Starting combined Gemini enhance+declutter...`);
+  console.log(`[stage1B] 🔵 Starting combined Gemini enhance+declutter...`);
+  console.log(`[stage1B] Input (Stage1A): ${stage1APath}`);
+  console.log(`[stage1B] Options: replaceSky=${replaceSky}, sceneType=${sceneType}`);
   
   try {
     // Call Gemini with combined enhance+declutter prompt
     // This saves one API call compared to separate enhance → declutter
+    console.log(`[stage1B] 🤖 Calling Gemini with COMBINED enhance+declutter prompt...`);
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
       replaceSky: replaceSky,
@@ -35,17 +38,21 @@ export async function runStage1B(
       sceneType: sceneType,
     });
     
+    console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
+    console.log(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
+    
     // If Gemini succeeded, rename to Stage1B output
     if (declutteredPath !== stage1APath) {
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
+      console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
       await fs.rename(declutteredPath, outputPath);
-      console.log(`[stage1B] ✅ Combined enhance+declutter complete: ${outputPath}`);
+      console.log(`[stage1B] ✅ SUCCESS - Combined enhance+declutter complete: ${outputPath}`);
       return outputPath;
     }
     
     // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
-    console.log(`[stage1B] ⚠️ Gemini unavailable, using Sharp fallback`);
+    console.log(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
     const out = siblingOutPath(stage1APath, "-1B", ".webp");
     await sharp(stage1APath)
       .rotate()
@@ -54,6 +61,7 @@ export async function runStage1B(
       .sharpen(0.4)
       .webp({ quality: 90 })
       .toFile(out);
+    console.log(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
     return out;
     
   } catch (error) {
