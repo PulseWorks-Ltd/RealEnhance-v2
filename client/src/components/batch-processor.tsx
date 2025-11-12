@@ -2366,12 +2366,16 @@ export default function BatchProcessor() {
                               key={imageUrl}
                               src={imageUrl} 
                               className={`w-24 h-24 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-80 ${retryingImages.has(i) || editingImages.has(i) ? 'opacity-50' : ''}`}
-                              onClick={() => !(retryingImages.has(i) || editingImages.has(i)) && setPreviewImage({
-                                url: imageUrl,
-                                filename: displayName,
-                                originalUrl: originalUrl,
-                                index: i
-                              })}
+                              onClick={() => {
+                                if (retryingImages.has(i) || editingImages.has(i)) return;
+                                console.log('[PREVIEW] Opening modal:', { imageUrl, displayName, originalUrl, index: i });
+                                setPreviewImage({
+                                  url: imageUrl,
+                                  filename: displayName,
+                                  originalUrl: originalUrl,
+                                  index: i
+                                });
+                              }}
                               onLoad={() => {
                                 // Show success toast only when new image loads during retry or edit
                                 if (retryingImages.has(i)) {
@@ -2560,6 +2564,15 @@ export default function BatchProcessor() {
           <div className="text-center">
             <h3 className="text-lg font-semibold mb-4">{previewImage.filename}</h3>
             
+            {/* Debug logging */}
+            {console.log('[PREVIEW MODAL] Rendering:', { 
+              url: previewImage.url?.substring(0, 100), 
+              originalUrl: previewImage.originalUrl?.substring(0, 100),
+              filename: previewImage.filename,
+              hasUrl: !!previewImage.url,
+              hasOriginal: !!previewImage.originalUrl
+            })}
+            
             {/* Show before/after slider if we have both original and enhanced images */}
             {previewImage.originalUrl ? (
               <div className="mb-4">
@@ -2581,6 +2594,16 @@ export default function BatchProcessor() {
                 alt={previewImage.filename} 
                 className="max-w-full max-h-[80vh] mx-auto rounded border"
                 data-testid="img-preview-modal"
+                onError={(e) => {
+                  console.error('[PREVIEW] Image failed to load:', {
+                    url: previewImage.url,
+                    filename: previewImage.filename,
+                    error: e
+                  });
+                }}
+                onLoad={() => {
+                  console.log('[PREVIEW] Image loaded successfully:', previewImage.url?.substring(0, 100));
+                }}
               />
             )}
             

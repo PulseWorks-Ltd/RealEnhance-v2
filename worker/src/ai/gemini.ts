@@ -118,9 +118,21 @@ export async function enhanceWithGemini(
     throw new Error("GOOGLE_API_KEY missing for Gemini enhancement");
   }
 
-  // Select model based on stage
-  // Stage 1A/1B: Use Gemini 1.5 Flash (fast, cost-effective for enhancement/declutter)
-  // Stage 2: Use Gemini 2.5 Flash (advanced for virtual staging)
+  // IMPORTANT: Gemini 2.5 Flash does NOT support image generation/editing!
+  // Gemini models are vision models (analysis only), not image generators.
+  // For image editing, you need Imagen 3 API or other image generation APIs.
+  // For now, we'll skip Gemini for image editing and use Sharp-only enhancement.
+  
+  console.log(`[Gemini] ⚠️ NOTE: Gemini Flash models are vision-only (analysis), not image editors`);
+  console.log(`[Gemini] Using Sharp-only enhancement (Gemini image editing not supported)`);
+  console.log(`[Gemini] Input: ${inputPath}`);
+  console.log(`[Gemini] Scene: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
+  console.log(`[Gemini] Skipping Gemini API call, returning original path for Sharp processing`);
+  
+  // Return the original path - Sharp will handle the enhancement
+  return inputPath;
+  
+  /* DISABLED: Gemini does not support image generation
   const model = (stage === "2") ? "gemini-2.5-flash" : "gemini-1.5-flash";
   
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
@@ -246,4 +258,5 @@ export async function enhanceWithGemini(
     }
     throw error;
   }
+  */
 }
