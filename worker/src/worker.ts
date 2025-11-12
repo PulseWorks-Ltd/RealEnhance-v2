@@ -203,6 +203,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  // Publish Stage 2 immediately if virtualStage was requested
+  let pub2Url: string | undefined = undefined;
+  if (payload.options.virtualStage && path2 !== path1B) {
+    let v2: any = null;
+    try {
+      v2 = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "2", filePath: path2, note: "Virtual staging" });
+    } catch (e) {
+      process.stderr.write(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
+    }
+    try {
+      const pub2 = await publishImage(path2);
+      pub2Url = pub2.url;
+      if (v2) {
+        try {
+          setVersionPublicUrl(payload.imageId, v2.versionId, pub2.url);
+        } catch (e) {
+          // Ignore
+        }
+      }
+      updateJob(payload.jobId, { stage: "2", progress: 85, stageUrls: { "2": pub2Url } });
+      console.log(`[worker] ✅ Stage 2 published: ${pub2Url}`);
+    } catch (e) {
+      console.warn('[worker] failed to publish Stage 2', e);
+    }
+  }
+
   // COMPLIANCE VALIDATION (best-effort)
   let compliance: any = undefined;
   const tVal = Date.now();
@@ -318,7 +344,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageUrls: {
       "1A": pub1AUrl,
       "1B": pub1BUrl,
-      "2": pubFinalUrl
+      "2": pub2Url  // Use separately published Stage2 URL
     }
   });
 
@@ -333,7 +359,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageUrls: {
       "1A": pub1AUrl || null,
       "1B": pub1BUrl || null,
-      "2": pubFinalUrl || null
+      "2": pub2Url || null  // Use separately published Stage2 URL
     },
     meta
   };

@@ -40,6 +40,7 @@ export interface EnhanceJobPayload {
         virtualStage: boolean;
         roomType: string;
         sceneType: string | "auto";
+        replaceSky?: boolean;
     };
     createdAt: string;
 }

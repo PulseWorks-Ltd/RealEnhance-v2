@@ -37,6 +37,7 @@ export async function enqueueEnhanceJob(params: {
     virtualStage: boolean;
     roomType: string;
     sceneType: string;
+    replaceSky?: boolean;  // Sky replacement toggle
   };
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
