@@ -91,6 +91,10 @@ Output a single enhanced version of the image that looks like a professionally e
  * Can perform either:
  * 1. Enhance-only (quality improvements, no structural changes)
  * 2. Enhance + Declutter (combined in one call to save API costs)
+ * 
+ * Model selection:
+ * - Stage 1A/1B: gemini-1.5-flash (fast, cost-effective for enhancement/declutter)
+ * - Stage 2: gemini-2.0-flash-exp (advanced capabilities for virtual staging)
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -99,9 +103,10 @@ export async function enhanceWithGemini(
     replaceSky?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
+    stage?: "1A" | "1B" | "2";  // Added to determine model selection
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage } = options;
 
   // Check if Gemini API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
@@ -113,9 +118,15 @@ export async function enhanceWithGemini(
     throw new Error("GOOGLE_API_KEY missing for Gemini enhancement");
   }
 
+  // Select model based on stage
+  // Stage 1A/1B: Use Gemini 1.5 Flash (fast, cost-effective for enhancement/declutter)
+  // Stage 2: Use Gemini 2.0 Flash (advanced for virtual staging)
+  const model = (stage === "2") ? "gemini-2.0-flash-exp" : "gemini-1.5-flash";
+  
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
-  console.log(`🤖 Starting Gemini AI ${operationType} (sceneType: ${sceneType}, replaceSky: ${replaceSky})...`);
+  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'}, model: ${model})...`);
   console.log(`[Gemini] 🔵 Input path: ${inputPath}`);
+  console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}`);
   
   try {
     const client = getGeminiClient();
@@ -139,13 +150,13 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] Prompt preview: ${prompt.substring(0, 200)}...`);
 
     // Call Gemini's vision model with image editing using the new API
-    console.log(`[Gemini] 🤖 Using model: gemini-2.0-flash-exp`);
+    console.log(`[Gemini] 🤖 Using model: ${model}`);
     
     console.log(`[Gemini] 🚀 Calling Gemini API with image (${imageSizeKB} KB) and prompt (${prompt.length} chars)...`);
     const startTime = Date.now();
     
     const result = await (client as any).models.generateContent({
-      model: "gemini-2.0-flash-exp",
+      model: model,
       contents: [
         {
           role: "user",
