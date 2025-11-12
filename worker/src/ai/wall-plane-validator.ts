@@ -89,7 +89,7 @@ Return JSON with this structure:
 ⚠️ PREFERENCE: Leaving blank space is better than fabricating false architecture`;
 
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: [{
         role: "user",
         parts: [
