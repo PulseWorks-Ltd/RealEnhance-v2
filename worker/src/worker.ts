@@ -168,6 +168,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   
   let pub1AUrl: string | undefined = undefined;
+  let pub1BUrl: string | undefined = undefined;
   try {
     const pub1A = await publishImage(path1A);
     pub1AUrl = pub1A.url;
@@ -201,7 +202,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const errMsg = e?.message || String(e);
     console.error(`[worker] Stage 1B failed: ${errMsg}`);
     updateJob(payload.jobId, {
-      status: "failed",
+      status: "error",
       errorMessage: errMsg,
       error: errMsg,
       meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
@@ -216,7 +217,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Record Stage 1B publish if different from 1A
-  let pub1BUrl: string | undefined = undefined;
+  // pub1BUrl already declared above; removed duplicate
   if (path1B !== path1A) {
     try {
       const pub1B = await publishImage(path1B);
@@ -247,7 +248,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const errMsg = e?.message || String(e);
     console.error(`[worker] Stage 2 failed: ${errMsg}`);
     updateJob(payload.jobId, {
-      status: "failed",
+      status: "error",
       errorMessage: errMsg,
       error: errMsg,
       meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
@@ -299,7 +300,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (compliance && compliance.ok === false) {
       const violationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       updateJob(payload.jobId, {
-        status: "failed",
+        status: "error",
         errorMessage: violationMsg,
         error: violationMsg,
         meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
@@ -314,7 +315,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   timings.validateMs = Date.now() - tVal;
 
   // stage 1B publishing was deferred until here; attach URL and surface progress
-  let pub1BUrl: string | undefined = undefined;
+  // pub1BUrl already declared above; removed duplicate
   if (payload.options.declutter) {
     let v1B: any = null;
     try {
