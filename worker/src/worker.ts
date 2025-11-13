@@ -189,13 +189,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
-  const path1B = payload.options.declutter 
-    ? await runStage1B(path1A, {
-        replaceSky: payload.options.replaceSky ?? false,
-        sceneType: sceneLabel,
-      }) 
-    : path1A;
+  let path1B = path1A;
+  try {
+    path1B = payload.options.declutter 
+      ? await runStage1B(path1A, {
+          replaceSky: payload.options.replaceSky ?? false,
+          sceneType: sceneLabel,
+        }) 
+      : path1A;
+  } catch (e: any) {
+    const errMsg = e?.message || String(e);
+    console.error(`[worker] Stage 1B failed: ${errMsg}`);
+    updateJob(payload.jobId, {
+      status: "failed",
+      errorMessage: errMsg,
+      error: errMsg,
+      meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+    });
+    return;
+  }
   timings.stage1BMs = Date.now() - t1B;
+
+  if (await isCancelled(payload.jobId)) {
+    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    return;
+  }
+
+  // Record Stage 1B publish if different from 1A
+  let pub1BUrl: string | undefined = undefined;
+  if (path1B !== path1A) {
+    try {
+      const pub1B = await publishImage(path1B);
+      pub1BUrl = pub1B.url;
+      updateJob(payload.jobId, { stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl });
+    } catch (e) {
+      console.warn('[worker] failed to publish 1B', e);
+    }
+  }
 
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
@@ -208,9 +238,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
-  const path2 = payload.options.virtualStage
-    ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
-    : path1B;
+  let path2 = path1B;
+  try {
+    path2 = payload.options.virtualStage
+      ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
+      : path1B;
+  } catch (e: any) {
+    const errMsg = e?.message || String(e);
+    console.error(`[worker] Stage 2 failed: ${errMsg}`);
+    updateJob(payload.jobId, {
+      status: "failed",
+      errorMessage: errMsg,
+      error: errMsg,
+      meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+    });
+    return;
+  }
   timings.stage2Ms = Date.now() - t2;
   updateJob(payload.jobId, { stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
 
@@ -238,7 +281,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // Ignore
         }
       }
-      updateJob(payload.jobId, { stage: "2", progress: 85, stageUrls: { "2": pub2Url } });
+      updateJob(payload.jobId, { stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
       console.log(`[worker] ✅ Stage 2 published: ${pub2Url}`);
     } catch (e) {
       console.warn('[worker] failed to publish Stage 2', e);
@@ -254,11 +297,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const baseFinal = toBase64(path2);
     compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
     if (compliance && compliance.ok === false) {
+      const violationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       updateJob(payload.jobId, {
-        status: "error",
-        errorMessage: (compliance.reasons || ["Compliance check failed"]).join("; "),
+        status: "failed",
+        errorMessage: violationMsg,
+        error: violationMsg,
         meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
       });
+      console.error(`[worker] ❌ Job ${payload.jobId} failed compliance: ${violationMsg}`);
       return;
     }
   } catch (e) {

@@ -85,11 +85,13 @@ export async function runStage1B(
             console.log(`[stage1B] ✅ SUCCESS - Combined enhance+declutter complete: ${outputPath}`);
             return outputPath;
           }
-          console.warn(`[stage1B] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}). Falling back to Stage1A.`);
+          console.warn(`[stage1B] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
+          console.error(`[stage1B] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
+          throw new Error(`Stage 1B validation failed: ${retryVerdict.reasons.join('; ')}`);
         } else {
-          console.warn(`[stage1B] ❌ Retry did not produce image. Falling back to Stage1A.`);
+          console.warn(`[stage1B] ❌ Retry did not produce image.`);
+          throw new Error('Stage 1B retry failed to generate image');
         }
-        return stage1APath;
       }
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
