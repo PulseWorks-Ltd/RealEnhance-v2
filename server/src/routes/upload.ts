@@ -82,9 +82,10 @@ export function uploadRouter() {
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
+      const hasPerItemOptions = !!optionsList[i];
       const opts: any = optionsList[i] ?? {
         declutter: false,
-        virtualStage: false,
+        // NOTE: Do not set default virtualStage here; allow form-level override below
         roomType: "unknown",
         sceneType: "auto",
       };
@@ -113,8 +114,8 @@ export function uploadRouter() {
         }
       }
 
-      // If virtualStage not explicitly set per-image, inherit from form-level allowStaging
-      if (opts.virtualStage === undefined || opts.virtualStage === null) {
+      // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging
+      if (!hasPerItemOptions || opts.virtualStage === undefined) {
         opts.virtualStage = allowStagingForm;
       }
 
@@ -164,6 +165,18 @@ export function uploadRouter() {
           return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
         }
       }
+
+      // Debug summary for this item
+      try {
+        console.log('[upload] item %d → sceneType=%s roomType=%s replaceSky=%s virtualStage=%s allowStagingForm=%s',
+          i,
+          String(opts.sceneType),
+          String(opts.roomType),
+          String(opts.replaceSky),
+          String(opts.virtualStage),
+          String(allowStagingForm)
+        );
+      } catch {}
 
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,

@@ -185,6 +185,7 @@ export default function BatchProcessor() {
   const queueRef = useRef<any[]>([]);
   const scheduledRef = useRef(false);
   const processedSetRef = useRef<Set<number>>(new Set());
+  const filesFingerprintRef = useRef<string>("");
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -291,6 +292,27 @@ export default function BatchProcessor() {
       return "interior";
     }
   }
+
+  // When a brand-new file selection is made by the user (not a restore),
+  // clear all per-image settings so previous batch state doesn't bleed over.
+  function fingerprintFiles(list: File[]): string {
+    return list.map((f: any) => `${f.name}:${f.size}:${f.lastModified}:${f.__restored ? 'R' : 'U'}`).join('|');
+  }
+
+  useEffect(() => {
+    const fp = fingerprintFiles(files);
+    if (fp !== filesFingerprintRef.current) {
+      const userSelected = files.some(f => !(f as any).__restored);
+      if (userSelected) {
+        setImageSceneTypes({});
+        setImageRoomTypes({});
+        setImageSkyReplacement({});
+        setMetaByIndex({});
+        setSelection(new Set());
+      }
+      filesFingerprintRef.current = fp;
+    }
+  }, [files]);
 
   // When user enters the Images tab, prefill scene types using client-side detector
   useEffect(() => {

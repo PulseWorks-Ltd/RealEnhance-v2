@@ -126,6 +126,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
     // store interim meta (non-fatal if write fails)
     updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
+    try {
+      console.log(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
+    } catch {}
   } catch {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
   }
