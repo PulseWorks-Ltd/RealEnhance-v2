@@ -297,15 +297,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const base1A = toBase64(path1A);
     const baseFinal = toBase64(path2);
     compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
-    if (compliance && compliance.ok === false) {
-      const violationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+    let retries = 0;
+    let maxRetries = 2;
+    let temperature = (payload.options.sampling?.temperature ?? 0.5);
+    let lastViolationMsg = "";
+    while (compliance && compliance.ok === false && retries < maxRetries) {
+      lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       updateJob(payload.jobId, {
-        status: "error",
-        errorMessage: violationMsg,
-        error: violationMsg,
+        status: "retrying",
+        errorMessage: lastViolationMsg,
+        error: lastViolationMsg,
+        message: `First attempt at enhancing this image failed. Please hold tight while we try again (attempt ${retries+2}/3)...`,
         meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
       });
-      console.error(`[worker] ❌ Job ${payload.jobId} failed compliance: ${violationMsg}`);
+      console.warn(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
+      // Decrease temperature by 0.1 for next retry
+      temperature = Math.max(0.1, temperature - 0.1);
+      // Re-run enhancement with reduced temperature
+      // NOTE: You may need to pass temperature to the correct stage function (runStage1B/runStage2)
+      if (payload.options.virtualStage) {
+        path2 = await runStage2(path1B, { ...payload.options, temperature });
+      } else if (payload.options.declutter) {
+        path1B = await runStage1B(path1A, { ...payload.options, temperature });
+        path2 = path1B;
+      } else {
+        path1A = await runStage1A(origPath, { ...payload.options, temperature });
+        path2 = path1A;
+      }
+      const baseFinalRetry = toBase64(path2);
+      compliance = await checkCompliance(ai as any, base1A.data, baseFinalRetry.data);
+      retries++;
+    }
+    if (compliance && compliance.ok === false) {
+      lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: lastViolationMsg,
+        error: lastViolationMsg,
+        message: "Image enhancement failed after 3 attempts due to structural violations.",
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
+      });
+      console.error(`[worker] ❌ Job ${payload.jobId} failed compliance after retries: ${lastViolationMsg}`);
       return;
     }
   } catch (e) {
