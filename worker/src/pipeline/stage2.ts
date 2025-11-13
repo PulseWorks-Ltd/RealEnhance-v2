@@ -2,6 +2,7 @@ import { getGeminiClient } from "../ai/gemini";
 import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
+import { validateStage } from "../ai/unified-validator";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -104,10 +105,24 @@ export async function runStage2(
       }
       console.log(`[stage2] ✓ Found staged image in response`);
       
-      out = siblingOutPath(basePath, "-2", ".webp");
-      writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
-      console.log(`[stage2] 💾 Saved staged image to: ${out}`);
-      console.log(`[stage2] 🎉 SUCCESS - Virtual staging complete: ${out}`);
+      const candidatePath = siblingOutPath(basePath, "-2", ".webp");
+      writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
+      console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
+
+      // Validate staged result vs base
+      const verdict = await validateStage(
+        { stage: "1B", path: basePath },
+        { stage: "2", path: candidatePath },
+        { sceneType: "interior", roomType: opts.roomType }
+      );
+      if (!verdict.ok) {
+        console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Using Stage 1 output.`);
+        if (dbg) console.log("[stage2] validation failed → using base");
+        return basePath;
+      }
+
+      out = candidatePath;
+      console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (score=${verdict.score.toFixed(2)}): ${out}`);
       if (dbg) console.log("[stage2] success → %s", out);
       return out;
     } catch (e: any) {

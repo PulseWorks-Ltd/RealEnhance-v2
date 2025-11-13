@@ -25,8 +25,9 @@ function buildGeminiPrompt(options: {
   sceneType?: "interior" | "exterior" | string;
   replaceSky?: boolean;
   declutter?: boolean;
+  strictMode?: boolean;
 }): string {
-  const { sceneType, replaceSky = false, declutter = false } = options;
+  const { sceneType, replaceSky = false, declutter = false, strictMode = false } = options;
   const isExterior = sceneType === "exterior";
   const isInterior = sceneType === "interior";
 
@@ -56,6 +57,7 @@ Forbidden changes (critical):
 • Do not add any new furniture, decor, or objects – staging will be done separately.
 • Do not change the camera angle, lens distortion, crop, or aspect ratio.
 • Do not add people, animals, text, logos, or watermarks.
+${strictMode ? "• Do not alter wall/ceiling/floor materials, textures, or patterns; match existing materials where reconstruction is needed." : ""}
 ${replaceSky && isExterior ? `• Replace any overcast, cloudy, or gray sky with a vibrant, clear blue sky with light clouds. Match the lighting naturally.` : ''}
 
 ${isExterior ? `This is an EXTERIOR photo. Remove clutter and enhance dramatically to showcase maximum curb appeal. The sky should be vibrant and inviting.` : ''}
@@ -81,6 +83,7 @@ Forbidden changes:
 • Do not remove or add any furniture, decor, appliances, plants, vehicles, or other objects.
 • Do not change the camera angle, crop, or aspect ratio.
 • Do not add text, watermarks, logos, people, or animals.
+${strictMode ? "• Do not alter wall/ceiling/floor materials, textures, or patterns; match existing materials where reconstruction is needed." : ""}
 
 ${isExterior ? `This is an EXTERIOR photo. The sky should look natural; avoid over-saturated cartoon skies.` : ''}
 ${isInterior ? `This is an INTERIOR photo. Aim for bright but realistic daylight in the room.` : ''}
@@ -106,9 +109,10 @@ export async function enhanceWithGemini(
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
     stage?: "1A" | "1B" | "2";  // Added to determine model selection
+    strictMode?: boolean;          // Stricter constraints
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false } = options;
 
   // Check if Gemini API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
@@ -130,7 +134,7 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] ✓ Gemini client initialized`);
 
     // Build prompt and image parts
-    const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter });
+    const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter, strictMode });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);
@@ -145,7 +149,7 @@ export async function enhanceWithGemini(
       contents: requestParts,
       generationConfig: {
         // Encourage high fidelity + keep dimensions
-        temperature: 0.4,
+        temperature: strictMode ? 0.2 : 0.4,
       }
     } as any, declutter ? "enhance+declutter" : "enhance");
     const apiMs = Date.now() - apiStart;

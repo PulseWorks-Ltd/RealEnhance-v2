@@ -1,3 +1,149 @@
+import { getGeminiClient } from "./gemini";
+import { toBase64 } from "../utils/images";
+import { validatePerspectivePreservation } from "./perspective-detector";
+import { validateWallPlanes } from "./wall-plane-validator";
+import { validateWindowPreservation } from "./windowDetector";
+import { validateFurnitureScale } from "./furniture-scale-validator";
+import { validateExteriorEnhancement } from "./exterior-validator";
+
+export type StageId = "1A" | "1B" | "2";
+export type SceneType = "interior" | "exterior" | string | undefined;
+
+export interface Artifact {
+  stage: StageId;
+  path: string; // local file path
+  width?: number;
+  height?: number;
+}
+
+export interface ValidationCtx {
+  sceneType?: SceneType;
+  roomType?: string;
+}
+
+export interface ValidationVerdict {
+  ok: boolean;
+  score: number; // 0..1
+  reasons: string[];
+  metrics: Record<string, number>;
+}
+
+/**
+ * Unified structural validator that combines local checks using our detectors.
+ * Returns a single verdict with weighted score and reasons.
+ */
+export async function validateStage(
+  prev: Artifact,
+  cand: Artifact,
+  ctx: ValidationCtx = {}
+): Promise<ValidationVerdict> {
+  const ai = getGeminiClient();
+  const prevB64 = toBase64(prev.path).data;
+  const candB64 = toBase64(cand.path).data;
+
+  const reasons: string[] = [];
+  const metrics: Record<string, number> = {};
+  let score = 0;
+  let totalW = 0;
+
+  // 1) Perspective stability (heavy weight)
+  try {
+    const persp = await validatePerspectivePreservation(ai as any, prevB64, candB64);
+    const ok = !!persp.ok;
+    const s = ok ? 1 : 0;
+    metrics.perspective = s;
+    if (!ok) reasons.push(persp.reason || "perspective violation");
+    const w = 0.35;
+    score += s * w; totalW += w;
+  } catch (e) {
+    metrics.perspective = 0;
+    reasons.push("perspective check failed");
+    totalW += 0.35; // count as 0 contribution
+  }
+
+  // 2) Wall planes (heavy weight)
+  try {
+    const wall = await validateWallPlanes(ai as any, prevB64, candB64);
+    const ok = !!wall.ok;
+    const s = ok ? 1 : 0;
+    metrics.wallPlanes = s;
+    if (!ok) reasons.push(wall.reason || "wall planes changed");
+    const w = 0.35;
+    score += s * w; totalW += w;
+  } catch (e) {
+    metrics.wallPlanes = 0;
+    reasons.push("wall plane check failed");
+    totalW += 0.35;
+  }
+
+  // 3) Windows (interior-only)
+  if ((ctx.sceneType || "interior").toString() === "interior") {
+    try {
+      const res = await validateWindowPreservation(ai as any, prevB64, candB64);
+      const ok = !!res.ok;
+      const s = ok ? 1 : 0;
+      metrics.windows = s;
+      if (!ok) reasons.push(res.reason || "windows changed");
+      const w = 0.15;
+      score += s * w; totalW += w;
+    } catch (e) {
+      metrics.windows = 0;
+      reasons.push("window check failed");
+      totalW += 0.15;
+    }
+  }
+
+  // 4) Furniture checks (not applied for 1A)
+  if (cand.stage !== "1A") {
+    try {
+      const furn = await validateFurnitureScale(ai as any, prevB64, candB64);
+      const ok = !!furn.ok;
+      const s = ok ? 1 : 0;
+      metrics.furniture = s;
+      if (!ok) reasons.push(furn.reason || "furniture scale/added");
+      const w = 0.15;
+      score += s * w; totalW += w;
+    } catch (e) {
+      metrics.furniture = 0;
+      reasons.push("furniture check failed");
+      totalW += 0.15;
+    }
+  }
+
+  // 5) Exterior sanity (exterior-only)
+  if ((ctx.sceneType || "interior").toString() === "exterior") {
+    try {
+      const ext = await validateExteriorEnhancement(
+        ai as any,
+        prevB64,
+        candB64,
+        cand.stage === "2" ? "staging" : "quality-only"
+      );
+      const ok = !!ext.passed;
+      const s = ok ? 1 : 0;
+      metrics.exterior = s;
+      if (!ok) reasons.push("exterior structure shift");
+      const w = 0.15;
+      score += s * w; totalW += w;
+    } catch (e) {
+      metrics.exterior = 0;
+      reasons.push("exterior check failed");
+      totalW += 0.15;
+    }
+  }
+
+  const normalized = totalW ? (score / totalW) : 0;
+  const threshold = cand.stage === "1A" ? 0.75 : cand.stage === "1B" ? 0.70 : 0.68;
+  // Also require no explicit reasons for failure
+  const ok = normalized >= threshold && reasons.filter(r => r && r.toLowerCase().includes("violation")).length === 0;
+
+  return {
+    ok,
+    score: normalized,
+    reasons: ok ? [] : reasons,
+    metrics,
+  };
+}
 import type { GoogleGenAI } from "@google/genai";
 
 /**

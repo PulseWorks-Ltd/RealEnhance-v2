@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
 import { enhanceWithGemini } from "../ai/gemini";
+import { validateStage } from "../ai/unified-validator";
 
 /**
  * Stage 1B: Declutter (combined with enhancement)
@@ -44,6 +45,43 @@ export async function runStage1B(
     
     // If Gemini succeeded, rename to Stage1B output
     if (declutteredPath !== stage1APath) {
+      // Validate candidate vs Stage1A
+      const verdict = await validateStage(
+        { stage: "1A", path: stage1APath },
+        { stage: "1B", path: declutteredPath },
+        { sceneType }
+      );
+      if (!verdict.ok) {
+        console.warn(`[stage1B] ❌ Validation failed (score=${verdict.score.toFixed(2)}):`, verdict.reasons.join("; "));
+        console.log(`[stage1B] 🔁 Retrying Gemini with strictMode...`);
+        const retryPath = await enhanceWithGemini(stage1APath, {
+          skipIfNoApiKey: true,
+          replaceSky,
+          declutter: true,
+          sceneType,
+          stage: "1B",
+          strictMode: true,
+        });
+        if (retryPath !== stage1APath) {
+          const retryVerdict = await validateStage(
+            { stage: "1A", path: stage1APath },
+            { stage: "1B", path: retryPath },
+            { sceneType }
+          );
+          if (retryVerdict.ok) {
+            console.log(`[stage1B] ✅ Retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
+            const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
+            const fs = await import("fs/promises");
+            await fs.rename(retryPath, outputPath);
+            console.log(`[stage1B] ✅ SUCCESS - Combined enhance+declutter complete: ${outputPath}`);
+            return outputPath;
+          }
+          console.warn(`[stage1B] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}). Falling back to Stage1A.`);
+        } else {
+          console.warn(`[stage1B] ❌ Retry did not produce image. Falling back to Stage1A.`);
+        }
+        return stage1APath;
+      }
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);

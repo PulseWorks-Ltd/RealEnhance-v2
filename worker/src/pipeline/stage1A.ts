@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { enhanceWithGemini } from "../ai/gemini";
+import { validateStage } from "../ai/unified-validator";
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -161,7 +162,45 @@ export async function runStage1A(
   // If Gemini enhancement succeeded (returned different path), use it
   // Otherwise, Sharp output is already at sharpOutputPath
   if (geminiOutputPath !== sharpOutputPath) {
-    console.log(`[stage1A] ✅ Gemini AI enhancement applied successfully`);
+    // Validate candidate vs sharp pre-pass
+    const verdict = await validateStage(
+      { stage: "1A", path: sharpOutputPath },
+      { stage: "1A", path: geminiOutputPath },
+      { sceneType }
+    );
+    if (!verdict.ok) {
+      console.warn(`[stage1A] ❌ Validation failed (score=${verdict.score.toFixed(2)}):`, verdict.reasons.join("; "));
+      console.log(`[stage1A] 🔁 Retrying Gemini with strictMode...`);
+      const retryPath = await enhanceWithGemini(sharpOutputPath, {
+        skipIfNoApiKey: true,
+        replaceSky: replaceSky,
+        declutter: false,
+        sceneType: sceneType,
+        stage: "1A",
+        strictMode: true,
+      });
+      if (retryPath !== sharpOutputPath) {
+        const retryVerdict = await validateStage(
+          { stage: "1A", path: sharpOutputPath },
+          { stage: "1A", path: retryPath },
+          { sceneType }
+        );
+        if (retryVerdict.ok) {
+          console.log(`[stage1A] ✅ Retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
+          const fs = await import("fs/promises");
+          await fs.rename(retryPath, finalOutputPath);
+          return finalOutputPath;
+        }
+        console.warn(`[stage1A] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}). Falling back to Sharp output.`);
+      } else {
+        console.warn(`[stage1A] ❌ Retry did not produce image. Falling back to Sharp output.`);
+      }
+      // Fallback to Sharp result
+      const fs = await import("fs/promises");
+      await fs.rename(sharpOutputPath, finalOutputPath);
+      return finalOutputPath;
+    }
+    console.log(`[stage1A] ✅ Gemini AI enhancement applied successfully and passed validation (score=${verdict.score.toFixed(2)})`);
     // Rename Gemini output to final path
     const fs = await import("fs/promises");
     await fs.rename(geminiOutputPath, finalOutputPath);
