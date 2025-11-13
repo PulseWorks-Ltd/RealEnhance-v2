@@ -156,16 +156,20 @@ export async function runStage2(
               console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
               return retryPath;
             }
-            console.warn(`[stage2] ❌ Strict retry failed validation (score=${retryVerdict.score.toFixed(2)}). Using Stage 1 output.`);
+            console.warn(`[stage2] ❌ Strict retry failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
+            console.error(`[stage2] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
+            throw new Error(`Stage 2 validation failed: ${retryVerdict.reasons.join('; ')}`);
           } else {
-            console.warn("[stage2] ❌ Strict retry produced no image. Using Stage 1 output.");
+            console.warn("[stage2] ❌ Strict retry produced no image.");
+            throw new Error('Stage 2 strict retry failed to generate image');
           }
         } catch (e: any) {
           console.error("[stage2] Strict retry error:", e?.message || String(e));
+          throw e;
         }
 
-        if (dbg) console.log("[stage2] validation failed → using base");
-        return basePath;
+        if (dbg) console.log("[stage2] validation failed → throwing error");
+        throw new Error(`Stage 2 validation failed (score=${verdict.score.toFixed(2)}): ${verdict.reasons.join('; ')}`);
       }
 
       out = candidatePath;

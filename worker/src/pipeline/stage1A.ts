@@ -199,14 +199,14 @@ export async function runStage1A(
           await fs.rename(retryPath, finalOutputPath);
           return finalOutputPath;
         }
-        console.warn(`[stage1A] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}). Falling back to Sharp output.`);
+        console.warn(`[stage1A] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
+        console.error(`[stage1A] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
+        throw new Error(`Stage 1A validation failed: ${retryVerdict.reasons.join('; ')}`);
       } else {
-        console.warn(`[stage1A] ❌ Retry did not produce image. Falling back to Sharp output.`);
+        console.warn(`[stage1A] ❌ Retry did not produce image.`);
+        throw new Error('Stage 1A retry failed to generate image');
       }
-      // Fallback to Sharp result
-      const fs = await import("fs/promises");
-      await fs.rename(sharpOutputPath, finalOutputPath);
-      return finalOutputPath;
+      // Note: No longer falling back to Sharp - validation failures now fail the job
     }
     console.log(`[stage1A] ✅ Gemini AI enhancement applied successfully and passed validation (score=${verdict.score.toFixed(2)})`);
     // Rename Gemini output to final path
