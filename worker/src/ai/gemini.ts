@@ -4,6 +4,7 @@ import path from "path";
 import { runWithImageModelFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
+import { buildPrompt, PromptOptions } from "./prompt";
 
 let singleton: GoogleGenAI | null = null;
 
@@ -19,74 +20,8 @@ export function getGeminiClient(): GoogleGenAI {
   return singleton as any;
 }
 
-/**
- * Build the appropriate Gemini prompt based on job options
- */
-function buildGeminiPrompt(options: {
-  sceneType?: "interior" | "exterior" | string;
-  replaceSky?: boolean;
-  declutter?: boolean;
-  strictMode?: boolean;
-  // Optional, mild cleanup helpers
-  floorClean?: boolean;      // interior floors: remove scuffs/smudges, keep texture
-  hardscapeClean?: boolean;  // exterior concrete/driveways/decks: remove stains, keep texture
-  // Optional declutter intensity hint for 1B
-  declutterIntensity?: "light" | "standard" | "heavy";
-}): string {
-  const { sceneType, replaceSky = false, declutter = false, strictMode = false, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
-  const isExterior = sceneType === "exterior";
-  const isInterior = sceneType === "interior";
-
-  if (declutter) {
-    // Combined Enhance + Declutter prompt (saves one Gemini call)
-    // Get intensity from config then env
-    // Note: buildGeminiPrompt is sync; we read env-backed cached config via a best-effort pattern by not awaiting here.
-    // The runtime code sets intensity string based on a snapshot read in enhanceWithGemini.
-    const envScene = isInterior
-      ? process.env.GEMINI_DECLUTTER_INTENSITY_INTERIOR
-      : (isExterior ? process.env.GEMINI_DECLUTTER_INTENSITY_EXTERIOR : undefined);
-    let intensityStr = (declutterIntensity || envScene || process.env.GEMINI_DECLUTTER_INTENSITY || '').trim().toLowerCase();
-    try {
-      // Fire-and-forget synchronous style read via then/catch is not possible; keep env-based here.
-      // Intensity by scene is additionally handled in enhanceWithGemini and passed via env for simplicity.
-      // This block intentionally does nothing extra to keep prompt builder synchronous.
-    } catch {}
-    const validIntensity = intensityStr === 'light' || intensityStr === 'standard' || intensityStr === 'heavy' ? intensityStr : '';
-    return `You are a professional real-estate editor. Produce a marketing-ready image that is enhanced and decluttered while keeping architecture unchanged.
-
-  Enhance: improve exposure/contrast/clarity, correct white balance, reduce noise, natural saturation, preserve lens geometry and aspect.
-  Declutter: remove loose furniture (sofas/chairs/tables/freestanding shelves/beds) and small clutter (toys/bins/personal items/small appliances). Where objects are removed, reconstruct walls, skirting, windows, door frames, corners and floors to match original materials and lighting.
-  Do not change any fixed structure (walls/ceilings/floors/windows/doors/columns/built-ins), room proportions, camera angle, crop, or materials. Do not add any objects; staging happens later.
-  ${isExterior
-      ? (
-        replaceSky
-          ? 'Exterior: replace any overcast or dull sky with a realistic clear blue sky and soft, natural clouds. Match scene lighting and color temperature; avoid halos and edge artifacts; preserve rooflines, fences and tree edges.'
-          : 'Exterior: you may remove vehicles/bins; keep rooflines/fences/trees aligned and crisp.'
-        )
-      : 'Interior: produce a clean empty room ready for staging.'}
-  ${validIntensity ? `Declutter intensity: ${validIntensity}.` : ''}
-  ${floorClean && isInterior ? `\n• Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
-  ${hardscapeClean && isExterior ? `\n• Gently clean driveways, concrete and deck surfaces by removing obvious stains or patchy dirt while preserving real-world texture, cracks, seams and edges. Avoid over-smoothing or plastic look.` : ''}
-  ${strictMode ? `\nStrict: do not alter materials/textures/patterns; match existing when reconstruction is needed.` : ''}
-
-  Output one enhanced, decluttered image only.`;
-  }
-
-  // Enhance-only prompt (Stage 1A when no declutter requested)
-  return `You are a professional real-estate photo editor. Enhance image quality for property marketing while keeping the scene structurally identical.
-
-Do: improve exposure/contrast/clarity, correct white balance, reduce noise, modest natural saturation, preserve lens geometry and aspect.
-Don't: move/resize/remove walls, ceilings, floors, windows, doors, built-ins; add/remove any objects; change camera angle, crop, or materials; add text/logos/people.
-${isInterior ? `Interior: aim for bright, realistic daylight.` : ''}
-${replaceSky && isExterior ? `Exterior: replace overcast or dull sky with a realistic clear blue sky and soft clouds. Maintain crisp rooflines/fences/trees, avoid halos, and match the existing lighting.` : ''}
-${floorClean && isInterior ? `
-• Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
-${hardscapeClean && isExterior ? `
-• Gently clean driveways, concrete and deck surfaces by removing obvious stains or patchy dirt while preserving real-world texture, cracks, seams and edges. Avoid over-smoothing or plastic look.` : ''}
-${strictMode ? `
-Strict: do not alter materials/textures/patterns; match existing when reconstruction is needed.` : ''}
-
-Output one professionally enhanced image only.`;
+function buildGeminiPrompt(options: PromptOptions): string {
+  return buildPrompt(options);
 }
 
 /**
@@ -164,7 +99,13 @@ export async function enhanceWithGemini(
         }
       }
     }
-    const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter, strictMode, floorClean, hardscapeClean, declutterIntensity: di });
+    // Ensure sceneType matches PromptOptions type
+    const prompt = buildGeminiPrompt({
+      goal: declutter ? "Declutter and enhance image" : "Enhance image", // Default goal
+      sceneType: sceneType === "interior" || sceneType === "exterior" ? sceneType : "auto",
+      declutterLevel: di,
+      // Add other valid PromptOptions properties here as needed
+    });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);
