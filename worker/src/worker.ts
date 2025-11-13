@@ -25,7 +25,7 @@ import {
   getOriginalPath
 } from "./utils/persist";
 import { setVersionPublicUrl } from "./utils/persist";
-import { getGeminiClient } from "./ai/gemini";
+import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
@@ -299,32 +299,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
     let retries = 0;
     let maxRetries = 2;
-    let temperature = (payload.options.sampling?.temperature ?? 0.5);
+    let temperature = 0.5;
     let lastViolationMsg = "";
+    let retryPath2 = path2;
     while (compliance && compliance.ok === false && retries < maxRetries) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       updateJob(payload.jobId, {
-        status: "retrying",
+        status: "processing", // Use allowed JobStatus
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
         message: `First attempt at enhancing this image failed. Please hold tight while we try again (attempt ${retries+2}/3)...`,
         meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
       });
       console.warn(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
-      // Decrease temperature by 0.1 for next retry
       temperature = Math.max(0.1, temperature - 0.1);
-      // Re-run enhancement with reduced temperature
-      // NOTE: You may need to pass temperature to the correct stage function (runStage1B/runStage2)
-      if (payload.options.virtualStage) {
-        path2 = await runStage2(path1B, { ...payload.options, temperature });
-      } else if (payload.options.declutter) {
-        path1B = await runStage1B(path1A, { ...payload.options, temperature });
-        path2 = path1B;
-      } else {
-        path1A = await runStage1A(origPath, { ...payload.options, temperature });
-        path2 = path1A;
-      }
-      const baseFinalRetry = toBase64(path2);
+      // Call Gemini enhancement directly with reduced temperature
+      retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
+      const baseFinalRetry = toBase64(retryPath2);
       compliance = await checkCompliance(ai as any, base1A.data, baseFinalRetry.data);
       retries++;
     }
