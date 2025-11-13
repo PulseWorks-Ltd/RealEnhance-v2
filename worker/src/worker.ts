@@ -137,6 +137,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1A
   const t1A = Date.now();
+  // Inject per-job tuning into global for pipeline modules (simple dependency injection)
+  try {
+    const s = (payload.options as any)?.sampling || {};
+    (global as any).__jobSampling = {
+      temperature: typeof s.temperature === 'number' ? s.temperature : undefined,
+      topP: typeof s.topP === 'number' ? s.topP : undefined,
+      topK: typeof s.topK === 'number' ? s.topK : undefined,
+    };
+    (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+  } catch {}
   const path1A = await runStage1A(origPath, {
     replaceSky: payload.options.replaceSky ?? false,
     declutter: payload.options.declutter ?? false,  // Pass declutter flag

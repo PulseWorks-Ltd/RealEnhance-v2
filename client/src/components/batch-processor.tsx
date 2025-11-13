@@ -175,6 +175,12 @@ export default function BatchProcessor() {
   const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
 
+  // Tuning controls (apply to all images in this batch; optional)
+  const [declutterIntensity, setDeclutterIntensity] = useState<""|"light"|"standard"|"heavy">("");
+  const [temperatureInput, setTemperatureInput] = useState<string>("");
+  const [topPInput, setTopPInput] = useState<string>("");
+  const [topKInput, setTopKInput] = useState<string>("");
+
   // Progressive display queue for SSE items
   const queueRef = useRef<any[]>([]);
   const scheduledRef = useRef(false);
@@ -298,6 +304,11 @@ export default function BatchProcessor() {
       sceneType?: string;
       roomType?: string;
       replaceSky?: boolean;
+      // optional tuning
+      declutterIntensity?: string;
+      temperature?: number;
+      topP?: number;
+      topK?: number;
     }> = [];
     
     // First pass: collect room linking info when linkImages is enabled
@@ -347,7 +358,11 @@ export default function BatchProcessor() {
       }
       
       // Only add to array if we have at least one metadata field to include
-      if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined)) {
+      const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
+      const pNum = topPInput.trim() ? Number(topPInput) : undefined;
+      const kNum = topKInput.trim() ? Number(topKInput) : undefined;
+      const hasTuning = (!!declutterIntensity && declutterIntensity !== "") || Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum);
+      if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
         const metaItem: any = { index: i };
         
         if (sameRoomKey) metaItem.sameRoomKey = sameRoomKey;
@@ -355,13 +370,18 @@ export default function BatchProcessor() {
         if (includeSceneType) metaItem.sceneType = sceneType;
         if (includeRoomType) metaItem.roomType = roomType;
         if (isExterior) metaItem.replaceSky = replaceSky; // Only include for exterior
+        // Batch-level tuning applies to each image (optional)
+        if (declutterIntensity) metaItem.declutterIntensity = declutterIntensity;
+        if (Number.isFinite(tNum)) metaItem.temperature = tNum;
+        if (Number.isFinite(pNum)) metaItem.topP = pNum;
+        if (Number.isFinite(kNum)) metaItem.topK = kNum;
         
         arr.push(metaItem);
       }
     });
     
     return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages]);
+  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, declutterIntensity, temperatureInput, topPInput, topKInput]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2132,6 +2152,61 @@ export default function BatchProcessor() {
               </div>
             </div>
             
+            {/* Tuning Controls */}
+            <div className="mb-6 p-4 rounded-lg border border-gray-700 bg-gray-800/60">
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-gray-300 text-xs font-medium mb-2">Declutter Intensity</label>
+                  <select
+                    value={declutterIntensity}
+                    onChange={(e)=>setDeclutterIntensity(e.target.value as any)}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  >
+                    <option value="">Default</option>
+                    <option value="light">Light</option>
+                    <option value="standard">Standard</option>
+                    <option value="heavy">Heavy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-xs font-medium mb-2">Temperature</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 0.55"
+                    value={temperatureInput}
+                    onChange={(e)=>setTemperatureInput(e.target.value)}
+                    className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-xs font-medium mb-2">topP</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 0.85"
+                    value={topPInput}
+                    onChange={(e)=>setTopPInput(e.target.value)}
+                    className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 text-xs font-medium mb-2">topK</label>
+                  <input
+                    type="number"
+                    step="1"
+                    placeholder="e.g. 40"
+                    value={topKInput}
+                    onChange={(e)=>setTopKInput(e.target.value)}
+                    className="w-28 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  />
+                </div>
+                <div className="text-xs text-gray-400 max-w-xl">
+                  These optional controls apply to the whole batch. Leave blank to use smart defaults or server config. Declutter produces empty rooms: no furniture/art/clutter remains; only fixed architecture stays.
+                </div>
+              </div>
+            </div>
+
             <p className="text-gray-300 mb-8">
               Selecting scene type and room type is completely optional but will often get better results if completed. If you don't want to complete this section, just click "Start Enhancing" at the bottom of the page.
             </p>

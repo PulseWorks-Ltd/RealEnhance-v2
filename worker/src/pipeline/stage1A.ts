@@ -157,6 +157,11 @@ export async function runStage1A(
     declutter: false,
     sceneType: sceneType,
     stage: "1A",
+    // Apply light hardscape cleanup only for exteriors in Stage1A
+    floorClean: false,
+    hardscapeClean: sceneType === "exterior",
+    // Sampling overrides from job options if available (passed via context by worker)
+    ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
   });
   
   // If Gemini enhancement succeeded (returned different path), use it
@@ -178,6 +183,9 @@ export async function runStage1A(
         sceneType: sceneType,
         stage: "1A",
         strictMode: true,
+        floorClean: false,
+        hardscapeClean: sceneType === "exterior",
+        ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
       });
       if (retryPath !== sharpOutputPath) {
         const retryVerdict = await validateStage(

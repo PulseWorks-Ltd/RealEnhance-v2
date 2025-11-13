@@ -38,6 +38,11 @@ export async function runStage1B(
       declutter: true,
       sceneType,
       stage: "1B",
+      // When decluttering, allow interior floor cleanup and exterior hardscape cleanup
+      floorClean: sceneType === "interior",
+      hardscapeClean: sceneType === "exterior",
+      declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
+      ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
     });
     
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
@@ -61,6 +66,10 @@ export async function runStage1B(
           sceneType,
           stage: "1B",
           strictMode: true,
+          floorClean: sceneType === "interior",
+          hardscapeClean: sceneType === "exterior",
+          declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
+          ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
         });
         if (retryPath !== stage1APath) {
           const retryVerdict = await validateStage(

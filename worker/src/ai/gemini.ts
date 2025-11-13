@@ -2,6 +2,7 @@ import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
 import { runWithImageModelFallback } from "./runWithImageModelFallback";
+import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 
 let singleton: GoogleGenAI | null = null;
@@ -26,69 +27,57 @@ function buildGeminiPrompt(options: {
   replaceSky?: boolean;
   declutter?: boolean;
   strictMode?: boolean;
+  // Optional, mild cleanup helpers
+  floorClean?: boolean;      // interior floors: remove scuffs/smudges, keep texture
+  hardscapeClean?: boolean;  // exterior concrete/driveways/decks: remove stains, keep texture
+  // Optional declutter intensity hint for 1B
+  declutterIntensity?: "light" | "standard" | "heavy";
 }): string {
-  const { sceneType, replaceSky = false, declutter = false, strictMode = false } = options;
+  const { sceneType, replaceSky = false, declutter = false, strictMode = false, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
   const isExterior = sceneType === "exterior";
   const isInterior = sceneType === "interior";
 
   if (declutter) {
     // Combined Enhance + Declutter prompt (saves one Gemini call)
-    return `You are a professional real estate image editor specializing in high-end property marketing.
-Your job is to transform this photo into a stunning, magazine-quality image AND remove loose furniture and clutter, creating a clean canvas for virtual staging.
+    // Get intensity from config then env
+    // Note: buildGeminiPrompt is sync; we read env-backed cached config via a best-effort pattern by not awaiting here.
+    // The runtime code sets intensity string based on a snapshot read in enhanceWithGemini.
+    let intensityStr = (declutterIntensity || process.env.GEMINI_DECLUTTER_INTENSITY || '').trim().toLowerCase();
+    try {
+      // Fire-and-forget synchronous style read via then/catch is not possible; keep env-based here.
+      // Intensity by scene is additionally handled in enhanceWithGemini and passed via env for simplicity.
+      // This block intentionally does nothing extra to keep prompt builder synchronous.
+    } catch {}
+    const validIntensity = intensityStr === 'light' || intensityStr === 'standard' || intensityStr === 'heavy' ? intensityStr : '';
+    return `You are a professional real-estate editor. Produce a marketing-ready image that is enhanced and decluttered while keeping architecture unchanged.
 
-Enhancement requirements:
-• **Dramatic Quality Boost**: Significantly improve exposure, brightness and contrast so the room looks exceptionally bright, airy and inviting.
-• **Professional HDR**: Apply professional HDR tone mapping to bring out detail in shadows and highlights. The space should have depth and dimension.
-• **White Balance**: Correct white balance and color cast; walls should look neutral and clean.
-• **Clarity & Detail**: Dramatically increase clarity and local contrast to bring out sharp detail in floors, walls, fixtures and architectural features.
-• **Noise Reduction**: Eliminate noise and compression artifacts for a clean, professional finish.
-• **Rich Colors**: Increase saturation moderately so colors look rich and appealing, but maintain realism.
-• **Magazine Quality**: The result should look like a professionally shot and edited luxury real estate photograph.
+  Enhance: improve exposure/contrast/clarity, correct white balance, reduce noise, natural saturation, preserve lens geometry and aspect.
+  Declutter: remove loose furniture (sofas/chairs/tables/freestanding shelves/beds) and small clutter (toys/bins/personal items/small appliances). Where objects are removed, reconstruct walls, skirting, windows, door frames, corners and floors to match original materials and lighting.
+  Do not change any fixed structure (walls/ceilings/floors/windows/doors/columns/built-ins), room proportions, camera angle, crop, or materials. Do not add any objects; staging happens later.
+  ${isExterior ? `Exterior: you may remove vehicles/bins; keep rooflines/fences/trees aligned and crisp.${replaceSky ? ' If replacing sky, match lighting and avoid halos.' : ''}` : 'Interior: produce a clean empty room ready for staging.'}
+  ${validIntensity ? `Declutter intensity: ${validIntensity}.` : ''}
+  ${floorClean && isInterior ? `\n• Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
+  ${hardscapeClean && isExterior ? `\n• Gently clean driveways, concrete and deck surfaces by removing obvious stains or patchy dirt while preserving real-world texture, cracks, seams and edges. Avoid over-smoothing or plastic look.` : ''}
+  ${strictMode ? `\nStrict: do not alter materials/textures/patterns; match existing when reconstruction is needed.` : ''}
 
-Declutter requirements:
-• Remove ALL loose furniture (sofas, chairs, tables, freestanding shelves, beds, etc.) and clutter (toys, personal items, bins, appliances, decorations) to create a completely empty space.
-• Where objects are removed, perfectly reconstruct the background (walls, baseboards, windows, doors, corners, flooring) to match the original architecture and lighting seamlessly.
-• Preserve ALL built-in elements: kitchens, built-in wardrobes, fireplaces, window frames, fixed shelving, countertops, bathroom fixtures.
-${isExterior ? `• For exterior photos: Remove vehicles, bins, tools, garden furniture, temporary structures, but keep permanent landscaping, fencing, and building features.` : ''}
-
-Forbidden changes (critical):
-• Do not move, resize, or remove any walls, ceilings, floors, windows, doors, structural columns, or fixed cabinetry.
-• Do not change ceiling height, room proportions or window positions.
-• Do not add any new furniture, decor, or objects – staging will be done separately.
-• Do not change the camera angle, lens distortion, crop, or aspect ratio.
-• Do not add people, animals, text, logos, or watermarks.
-${strictMode ? "• Do not alter wall/ceiling/floor materials, textures, or patterns; match existing materials where reconstruction is needed." : ""}
-${replaceSky && isExterior ? `• Replace any overcast, cloudy, or gray sky with a vibrant, clear blue sky with light clouds. Match the lighting naturally.` : ''}
-
-${isExterior ? `This is an EXTERIOR photo. Remove clutter and enhance dramatically to showcase maximum curb appeal. The sky should be vibrant and inviting.` : ''}
-${isInterior ? `This is an INTERIOR photo. Create a completely empty, bright, luxurious-looking space ready for professional virtual staging.` : ''}
-
-Output one image that is both professionally enhanced to magazine quality AND completely decluttered, ready for virtual staging.`;
+  Output one enhanced, decluttered image only.`;
   }
 
   // Enhance-only prompt (Stage 1A when no declutter requested)
-  return `You are a professional real estate photo editor.
-Your job is to enhance image quality for property marketing while keeping the scene structurally identical to the input.
+  return `You are a professional real-estate photo editor. Enhance image quality for property marketing while keeping the scene structurally identical.
 
-Allowed changes:
-• Improve exposure, brightness and contrast.
-• Correct white balance and color cast to look neutral and natural.
-• Increase clarity and local contrast for better detail.
-• Reduce noise and compression artifacts.
-• Slightly increase saturation to make the image more inviting, but keep it realistic.
-${replaceSky && isExterior ? `• Replace any overcast, cloudy, or gray sky with a clear, natural blue sky while maintaining realistic lighting consistency.` : ''}
+Do: improve exposure/contrast/clarity, correct white balance, reduce noise, modest natural saturation, preserve lens geometry and aspect.
+Don't: move/resize/remove walls, ceilings, floors, windows, doors, built-ins; add/remove any objects; change camera angle, crop, or materials; add text/logos/people.
+${isInterior ? `Interior: aim for bright, realistic daylight.` : ''}
+${replaceSky && isExterior ? `Exterior: sky should look natural (no cartoon blues).` : ''}
+${floorClean && isInterior ? `
+• Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
+${hardscapeClean && isExterior ? `
+• Gently clean driveways, concrete and deck surfaces by removing obvious stains or patchy dirt while preserving real-world texture, cracks, seams and edges. Avoid over-smoothing or plastic look.` : ''}
+${strictMode ? `
+Strict: do not alter materials/textures/patterns; match existing when reconstruction is needed.` : ''}
 
-Forbidden changes:
-• Do not move, resize or remove any walls, ceilings, floors, windows, doors, built-in cabinetry or other fixed architecture.
-• Do not remove or add any furniture, decor, appliances, plants, vehicles, or other objects.
-• Do not change the camera angle, crop, or aspect ratio.
-• Do not add text, watermarks, logos, people, or animals.
-${strictMode ? "• Do not alter wall/ceiling/floor materials, textures, or patterns; match existing materials where reconstruction is needed." : ""}
-
-${isExterior ? `This is an EXTERIOR photo. The sky should look natural; avoid over-saturated cartoon skies.` : ''}
-${isInterior ? `This is an INTERIOR photo. Aim for bright but realistic daylight in the room.` : ''}
-
-Output a single enhanced version of the image that looks like a professionally edited real-estate photograph.`;
+Output one professionally enhanced image only.`;
 }
 
 /**
@@ -110,9 +99,17 @@ export async function enhanceWithGemini(
     sceneType?: "interior" | "exterior" | string;
     stage?: "1A" | "1B" | "2";  // Added to determine model selection
     strictMode?: boolean;          // Stricter constraints
+    // Sampling controls (optional overrides)
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    // Optional, mild cleanup helpers
+    floorClean?: boolean;
+    hardscapeClean?: boolean;
+    declutterIntensity?: "light" | "standard" | "heavy";
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
 
   // Check if Gemini API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
@@ -134,7 +131,20 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] ✓ Gemini client initialized`);
 
     // Build prompt and image parts
-    const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter, strictMode });
+    // Map config-based declutter intensity to env for prompt builder (kept sync)
+    let di = declutterIntensity;
+    if (!di) {
+      try {
+        const admin = await getAdminConfig();
+        const sceneKey = sceneType === 'interior' ? 'interior' : (sceneType === 'exterior' ? 'exterior' : undefined);
+        const byScene = sceneKey ? admin.declutterIntensityByScene?.[sceneKey] : undefined;
+        const intensity = byScene || admin.declutterIntensity;
+        if (intensity && ['light','standard','heavy'].includes(intensity)) {
+          di = intensity as any;
+        }
+      } catch {}
+    }
+    const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter, strictMode, floorClean, hardscapeClean, declutterIntensity: di });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);
@@ -145,11 +155,80 @@ export async function enhanceWithGemini(
 
     console.log(`[Gemini] 🚀 Calling Gemini 2.5 Image model (with fallback)...`);
     const apiStart = Date.now();
+    // Decide sampling defaults based on scene + mode, then apply any overrides
+    const baseSampling = (() => {
+      const isExterior = sceneType === "exterior";
+      const isInterior = sceneType === "interior";
+      let t: number;
+      let p: number;
+      let k: number;
+      if (declutter) {
+        // Keep conservative to avoid artifacts while still allowing cleanup
+        if (isInterior) {
+          t = 0.45; p = 0.80; k = 40;
+        } else {
+          t = 0.35; p = 0.75; k = 40;
+        }
+      } else {
+        // Enhance-only: allow a touch more variation for interiors
+        if (isInterior) {
+          t = 0.55; p = 0.85; k = 40;
+        } else {
+          t = 0.40; p = 0.80; k = 40;
+        }
+      }
+      if (strictMode) {
+        t = Math.max(0.1, t - 0.15);
+        p = Math.max(0.5, p - 0.05);
+        k = Math.max(20, k - 5);
+      }
+      return { temperature: t, topP: p, topK: k };
+    })();
+
+    // Environment overrides (if provided). Explicit options take precedence over env.
+    const parseEnvNumber = (v?: string) => {
+      if (!v) return undefined;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    // Per-scene env overrides (scene takes precedence over global)
+    const sceneKey = (sceneType === 'interior' ? 'INTERIOR' : (sceneType === 'exterior' ? 'EXTERIOR' : '')) as 'INTERIOR'|'EXTERIOR'|'';
+    const envTempScene = sceneKey ? parseEnvNumber(process.env[`GEMINI_TEMP_${sceneKey}`]) : undefined;
+    const envTopPScene = sceneKey ? parseEnvNumber(process.env[`GEMINI_TOP_P_${sceneKey}`] || process.env[`GEMINI_TOPP_${sceneKey}`]) : undefined;
+    const envTopKScene = sceneKey ? parseEnvNumber(process.env[`GEMINI_TOP_K_${sceneKey}`]) : undefined;
+    const envTemp = envTempScene ?? parseEnvNumber(process.env.GEMINI_TEMP);
+    const envTopP = envTopPScene ?? parseEnvNumber(process.env.GEMINI_TOP_P || process.env.GEMINI_TOPP);
+    const envTopK = envTopKScene ?? parseEnvNumber(process.env.GEMINI_TOP_K);
+
+    // Admin config overrides (file-based), applied before env but after explicit options?
+    // Precedence: explicit options > config > env > defaults
+    const admin = await getAdminConfig();
+    const modeKey = declutter ? 'declutter' : 'enhance';
+    const cfgSampling = admin.sampling?.[
+      sceneType === 'interior' ? 'interior' : (sceneType === 'exterior' ? 'exterior' : 'default' as any)
+    ] as any;
+    const cfgForMode = (cfgSampling && (cfgSampling[modeKey] as any)) || (admin.sampling?.default ?? {});
+    const cfgTemp = typeof cfgForMode?.temperature === 'number' ? cfgForMode.temperature : undefined;
+    const cfgTopP = typeof cfgForMode?.topP === 'number' ? cfgForMode.topP : undefined;
+    const cfgTopK = typeof cfgForMode?.topK === 'number' ? cfgForMode.topK : undefined;
+
+    const sampling = {
+      temperature: typeof temperature === 'number' ? temperature : (cfgTemp ?? envTemp ?? baseSampling.temperature),
+      topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
+      topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
+    };
+    const sourceNotes: string[] = [];
+    if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
+    if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
+    console.log(`[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
+
     const { resp, modelUsed } = await runWithImageModelFallback(client as any, {
       contents: requestParts,
       generationConfig: {
         // Encourage high fidelity + keep dimensions
-        temperature: strictMode ? 0.2 : 0.4,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
+        topK: sampling.topK,
       }
     } as any, declutter ? "enhance+declutter" : "enhance");
     const apiMs = Date.now() - apiStart;

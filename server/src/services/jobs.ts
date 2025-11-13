@@ -38,6 +38,12 @@ export async function enqueueEnhanceJob(params: {
     roomType: string;
     sceneType: string;
     replaceSky?: boolean;  // Sky replacement toggle
+    sampling?: {
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+    };
+    declutterIntensity?: "light" | "standard" | "heavy";
   };
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();

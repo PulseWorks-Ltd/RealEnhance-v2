@@ -61,6 +61,13 @@ export interface EnhanceJobPayload {
     roomType: string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
+    // Optional tuning controls
+    sampling?: {
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+    };
+    declutterIntensity?: "light" | "standard" | "heavy";
   };
   createdAt: string;
 }
