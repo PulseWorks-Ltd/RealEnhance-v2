@@ -204,6 +204,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
+  console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
   const path2 = payload.options.virtualStage
     ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
     : path1B;

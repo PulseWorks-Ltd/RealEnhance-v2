@@ -51,6 +51,8 @@ export function uploadRouter() {
     if (!files.length) return res.status(400).json({ error: "no_files" });
 
     const optionsList = safeParseOptions((req.body as any)?.options);
+    // Read high-level staging toggle from form (string booleans)
+    const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     
     // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
     let metaByIndex: Record<number, any> = {};
@@ -109,6 +111,11 @@ export function uploadRouter() {
         if (['light','standard','heavy'].includes(s)) {
           opts.declutterIntensity = s;
         }
+      }
+
+      // If virtualStage not explicitly set per-image, inherit from form-level allowStaging
+      if (opts.virtualStage === undefined || opts.virtualStage === null) {
+        opts.virtualStage = allowStagingForm;
       }
 
       // Auto-enable sky replacement for exterior images if not explicitly set
