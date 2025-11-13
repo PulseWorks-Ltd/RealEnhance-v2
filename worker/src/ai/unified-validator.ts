@@ -5,6 +5,7 @@ import { validateWallPlanes } from "./wall-plane-validator";
 import { validateWindowPreservation } from "./windowDetector";
 import { validateFurnitureScale } from "./furniture-scale-validator";
 import { validateExteriorEnhancement } from "./exterior-validator";
+import { getAdminConfig } from "../utils/adminConfig";
 
 export type StageId = "1A" | "1B" | "2";
 export type SceneType = "interior" | "exterior" | string | undefined;
@@ -37,6 +38,28 @@ export async function validateStage(
   cand: Artifact,
   ctx: ValidationCtx = {}
 ): Promise<ValidationVerdict> {
+  // Load optional config/env overrides for weights/thresholds
+  const admin = await getAdminConfig().catch(() => ({} as any));
+  const parseNum = (v?: string) => {
+    if (v === undefined) return undefined;
+    const n = parseFloat(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const weightsCfg = (admin as any)?.validator?.weights || {};
+  const thresholdsCfg = (admin as any)?.validator?.thresholds || {};
+  const weights = {
+    perspective: parseNum(process.env.VALIDATOR_WEIGHT_PERSPECTIVE) ?? (typeof weightsCfg.perspective === 'number' ? weightsCfg.perspective : 0.35),
+    wallPlanes: parseNum(process.env.VALIDATOR_WEIGHT_WALLS) ?? (typeof weightsCfg.wallPlanes === 'number' ? weightsCfg.wallPlanes : 0.35),
+    windows: parseNum(process.env.VALIDATOR_WEIGHT_WINDOWS) ?? (typeof weightsCfg.windows === 'number' ? weightsCfg.windows : 0.15),
+    furniture: parseNum(process.env.VALIDATOR_WEIGHT_FURNITURE) ?? (typeof weightsCfg.furniture === 'number' ? weightsCfg.furniture : 0.15),
+    exterior: parseNum(process.env.VALIDATOR_WEIGHT_EXTERIOR) ?? (typeof weightsCfg.exterior === 'number' ? weightsCfg.exterior : 0.15),
+  };
+  const thresholds = {
+    "1A": parseNum(process.env.VALIDATOR_THRESH_1A) ?? (typeof thresholdsCfg?.["1A"] === 'number' ? thresholdsCfg["1A"] : 0.75),
+    "1B": parseNum(process.env.VALIDATOR_THRESH_1B) ?? (typeof thresholdsCfg?.["1B"] === 'number' ? thresholdsCfg["1B"] : 0.70),
+    "2": parseNum(process.env.VALIDATOR_THRESH_2) ?? (typeof thresholdsCfg?.["2"] === 'number' ? thresholdsCfg["2"] : 0.68),
+  } as Record<StageId, number>;
+
   const ai = getGeminiClient();
   const prevB64 = toBase64(prev.path).data;
   const candB64 = toBase64(cand.path).data;
@@ -53,12 +76,12 @@ export async function validateStage(
     const s = ok ? 1 : 0;
     metrics.perspective = s;
     if (!ok) reasons.push(persp.reason || "perspective violation");
-    const w = 0.35;
+    const w = weights.perspective;
     score += s * w; totalW += w;
   } catch (e) {
     metrics.perspective = 0;
     reasons.push("perspective check failed");
-    totalW += 0.35; // count as 0 contribution
+    totalW += weights.perspective; // count as 0 contribution
   }
 
   // 2) Wall planes (heavy weight)
@@ -68,12 +91,12 @@ export async function validateStage(
     const s = ok ? 1 : 0;
     metrics.wallPlanes = s;
     if (!ok) reasons.push(wall.reason || "wall planes changed");
-    const w = 0.35;
+    const w = weights.wallPlanes;
     score += s * w; totalW += w;
   } catch (e) {
     metrics.wallPlanes = 0;
     reasons.push("wall plane check failed");
-    totalW += 0.35;
+    totalW += weights.wallPlanes;
   }
 
   // 3) Windows (interior-only)
@@ -84,12 +107,12 @@ export async function validateStage(
       const s = ok ? 1 : 0;
       metrics.windows = s;
       if (!ok) reasons.push(res.reason || "windows changed");
-      const w = 0.15;
+      const w = weights.windows;
       score += s * w; totalW += w;
     } catch (e) {
       metrics.windows = 0;
       reasons.push("window check failed");
-      totalW += 0.15;
+      totalW += weights.windows;
     }
   }
 
@@ -101,12 +124,12 @@ export async function validateStage(
       const s = ok ? 1 : 0;
       metrics.furniture = s;
       if (!ok) reasons.push(furn.reason || "furniture scale/added");
-      const w = 0.15;
+      const w = weights.furniture;
       score += s * w; totalW += w;
     } catch (e) {
       metrics.furniture = 0;
       reasons.push("furniture check failed");
-      totalW += 0.15;
+      totalW += weights.furniture;
     }
   }
 
@@ -123,17 +146,17 @@ export async function validateStage(
       const s = ok ? 1 : 0;
       metrics.exterior = s;
       if (!ok) reasons.push("exterior structure shift");
-      const w = 0.15;
+      const w = weights.exterior;
       score += s * w; totalW += w;
     } catch (e) {
       metrics.exterior = 0;
       reasons.push("exterior check failed");
-      totalW += 0.15;
+      totalW += weights.exterior;
     }
   }
 
   const normalized = totalW ? (score / totalW) : 0;
-  const threshold = cand.stage === "1A" ? 0.75 : cand.stage === "1B" ? 0.70 : 0.68;
+  const threshold = thresholds[cand.stage as StageId];
   // Also require no explicit reasons for failure
   const ok = normalized >= threshold && reasons.filter(r => r && r.toLowerCase().includes("violation")).length === 0;
 

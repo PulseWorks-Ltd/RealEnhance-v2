@@ -25,10 +25,10 @@ export async function runStage2(
     return out;
   }
 
-  // Check API key before attempting Gemini calls
-  if (!process.env.GOOGLE_API_KEY) {
-    console.warn("[stage2] ⚠️ No GOOGLE_API_KEY set – skipping (using Stage1B output)");
-    console.warn("[stage2] No GOOGLE_API_KEY set – skipping (using Stage 1 output)");
+  // Check API key before attempting Gemini calls (support GOOGLE_API_KEY or GEMINI_API_KEY)
+  if (!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)) {
+    console.warn("[stage2] ⚠️ No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using Stage1B output)");
+    console.warn("[stage2] No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using Stage 1 output)");
     return out;
   }
 
@@ -116,7 +116,54 @@ export async function runStage2(
         { sceneType: "interior", roomType: opts.roomType }
       );
       if (!verdict.ok) {
-        console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Using Stage 1 output.`);
+        console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
+
+        // Strict retry: reinforce architectural constraints and reduce sampling randomness
+        const strictText = textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` +
+          [
+            "• DO NOT alter architecture: no new walls, openings, or partitions.",
+            "• DO NOT block doors/windows; maintain egress and ventilation.",
+            "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
+            "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
+            "• Preserve all window counts and sizes; keep frames/positions unchanged.",
+          ].join("\n");
+
+        const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
+        if (opts.referenceImagePath) {
+          const ref = toBase64(opts.referenceImagePath);
+          strictParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+        }
+
+        try {
+          const { resp: strictResp } = await runWithImageModelFallback(ai as any, {
+            contents: strictParts,
+            generationConfig: { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 }
+          } as any, "stage2");
+
+          const strictPartsResp: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];
+          const strictImg = strictPartsResp.find(p => p.inlineData);
+          if (strictImg?.inlineData?.data) {
+            const retryPath = siblingOutPath(basePath, "-2r", ".webp");
+            writeImageDataUrl(retryPath, `data:image/webp;base64,${strictImg.inlineData.data}`);
+            console.log(`[stage2] 💾 Saved strict retry image to: ${retryPath}`);
+
+            const retryVerdict = await validateStage(
+              { stage: "1B", path: basePath },
+              { stage: "2", path: retryPath },
+              { sceneType: "interior", roomType: opts.roomType }
+            );
+            if (retryVerdict.ok) {
+              console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
+              return retryPath;
+            }
+            console.warn(`[stage2] ❌ Strict retry failed validation (score=${retryVerdict.score.toFixed(2)}). Using Stage 1 output.`);
+          } else {
+            console.warn("[stage2] ❌ Strict retry produced no image. Using Stage 1 output.");
+          }
+        } catch (e: any) {
+          console.error("[stage2] Strict retry error:", e?.message || String(e));
+        }
+
         if (dbg) console.log("[stage2] validation failed → using base");
         return basePath;
       }

@@ -42,7 +42,10 @@ function buildGeminiPrompt(options: {
     // Get intensity from config then env
     // Note: buildGeminiPrompt is sync; we read env-backed cached config via a best-effort pattern by not awaiting here.
     // The runtime code sets intensity string based on a snapshot read in enhanceWithGemini.
-    let intensityStr = (declutterIntensity || process.env.GEMINI_DECLUTTER_INTENSITY || '').trim().toLowerCase();
+    const envScene = isInterior
+      ? process.env.GEMINI_DECLUTTER_INTENSITY_INTERIOR
+      : (isExterior ? process.env.GEMINI_DECLUTTER_INTENSITY_EXTERIOR : undefined);
+    let intensityStr = (declutterIntensity || envScene || process.env.GEMINI_DECLUTTER_INTENSITY || '').trim().toLowerCase();
     try {
       // Fire-and-forget synchronous style read via then/catch is not possible; keep env-based here.
       // Intensity by scene is additionally handled in enhanceWithGemini and passed via env for simplicity.
@@ -54,7 +57,13 @@ function buildGeminiPrompt(options: {
   Enhance: improve exposure/contrast/clarity, correct white balance, reduce noise, natural saturation, preserve lens geometry and aspect.
   Declutter: remove loose furniture (sofas/chairs/tables/freestanding shelves/beds) and small clutter (toys/bins/personal items/small appliances). Where objects are removed, reconstruct walls, skirting, windows, door frames, corners and floors to match original materials and lighting.
   Do not change any fixed structure (walls/ceilings/floors/windows/doors/columns/built-ins), room proportions, camera angle, crop, or materials. Do not add any objects; staging happens later.
-  ${isExterior ? `Exterior: you may remove vehicles/bins; keep rooflines/fences/trees aligned and crisp.${replaceSky ? ' If replacing sky, match lighting and avoid halos.' : ''}` : 'Interior: produce a clean empty room ready for staging.'}
+  ${isExterior
+      ? (
+        replaceSky
+          ? 'Exterior: replace any overcast or dull sky with a realistic clear blue sky and soft, natural clouds. Match scene lighting and color temperature; avoid halos and edge artifacts; preserve rooflines, fences and tree edges.'
+          : 'Exterior: you may remove vehicles/bins; keep rooflines/fences/trees aligned and crisp.'
+        )
+      : 'Interior: produce a clean empty room ready for staging.'}
   ${validIntensity ? `Declutter intensity: ${validIntensity}.` : ''}
   ${floorClean && isInterior ? `\n• Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
   ${hardscapeClean && isExterior ? `\n• Gently clean driveways, concrete and deck surfaces by removing obvious stains or patchy dirt while preserving real-world texture, cracks, seams and edges. Avoid over-smoothing or plastic look.` : ''}
@@ -69,7 +78,7 @@ function buildGeminiPrompt(options: {
 Do: improve exposure/contrast/clarity, correct white balance, reduce noise, modest natural saturation, preserve lens geometry and aspect.
 Don't: move/resize/remove walls, ceilings, floors, windows, doors, built-ins; add/remove any objects; change camera angle, crop, or materials; add text/logos/people.
 ${isInterior ? `Interior: aim for bright, realistic daylight.` : ''}
-${replaceSky && isExterior ? `Exterior: sky should look natural (no cartoon blues).` : ''}
+${replaceSky && isExterior ? `Exterior: replace overcast or dull sky with a realistic clear blue sky and soft clouds. Maintain crisp rooflines/fences/trees, avoid halos, and match the existing lighting.` : ''}
 ${floorClean && isInterior ? `
 • Gently clean visible floor blemishes (small scuffs, light stains, dust) while preserving the true material, grain, joints, grout lines and natural texture. Do not change the flooring material or pattern.` : ''}
 ${hardscapeClean && isExterior ? `
@@ -143,6 +152,17 @@ export async function enhanceWithGemini(
           di = intensity as any;
         }
       } catch {}
+      // Env-based per-scene override if still not set
+      if (!di) {
+        const envScene = sceneType === 'interior'
+          ? process.env.GEMINI_DECLUTTER_INTENSITY_INTERIOR
+          : (sceneType === 'exterior' ? process.env.GEMINI_DECLUTTER_INTENSITY_EXTERIOR : undefined);
+        const envGlobal = process.env.GEMINI_DECLUTTER_INTENSITY;
+        const val = (envScene || envGlobal || '').trim().toLowerCase();
+        if (['light','standard','heavy'].includes(val)) {
+          di = val as any;
+        }
+      }
     }
     const prompt = buildGeminiPrompt({ sceneType, replaceSky, declutter, strictMode, floorClean, hardscapeClean, declutterIntensity: di });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);

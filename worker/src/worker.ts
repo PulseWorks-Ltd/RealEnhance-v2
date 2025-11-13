@@ -122,7 +122,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       room = { label: heur.label, confidence: heur.confidence } as any;
     }
     detectedRoom = room.label as string;
-    if (sceneLabel === "auto" || !sceneLabel) sceneLabel = room.label as any;
+    // Use primary scene detector for interior/exterior when sceneType=auto
+    if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
     // store interim meta (non-fatal if write fails)
     updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
   } catch {

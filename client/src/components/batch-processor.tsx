@@ -196,30 +196,98 @@ export default function BatchProcessor() {
   const { ensureLoggedInAndCredits } = useAuthGuard();
 
   // Lightweight client-side scene detector (prefill UX): interior vs exterior
-  async function detectSceneFromFile(f: File): Promise<"interior"|"exterior"> {
+  // More robust heuristic using regional sampling and relaxed thresholds.
+  async function detectSceneFromFile(f: File): Promise<"interior" | "exterior"> {
     try {
       const bmp = await createImageBitmap(f);
       const cnv = document.createElement("canvas");
-      cnv.width = 224; cnv.height = Math.max(1, Math.round(224 * (bmp.height / Math.max(1,bmp.width))));
+      // Normalize width to 256 while preserving aspect
+      cnv.width = 256; cnv.height = Math.max(1, Math.round(256 * (bmp.height / Math.max(1, bmp.width))));
       const ctx = cnv.getContext("2d", { willReadFrequently: true })!;
       ctx.drawImage(bmp, 0, 0, cnv.width, cnv.height);
-      const img = ctx.getImageData(0, 0, cnv.width, cnv.height);
-      let sky = 0, grass = 0, total = 0;
-      for (let i = 0; i < img.data.length; i += 4) {
-        const r = img.data[i], g = img.data[i+1], b = img.data[i+2];
-        const max = Math.max(r,g,b), min = Math.min(r,g,b);
-        const v = max/255;
-        const d = max-min; const s = max===0?0:d/max;
-        let h = 0; if (d!==0){ if (max===r) h=((g-b)/d)%6; else if (max===g) h=(b-r)/d+2; else h=(r-g)/d+4; h*=60; if (h<0) h+=360; }
+      const { width, height } = cnv;
+      const img = ctx.getImageData(0, 0, width, height);
+
+      let total = 0;
+      let blueOverall = 0;
+      let greenOverall = 0;
+      let skyTop10 = 0;
+      let skyTop40 = 0;
+      let grassBottom40 = 0;
+      let luminanceSum = 0;
+
+      // Helper: classify pixel H,S,V
+      for (let i = 0, px = 0; i < img.data.length; i += 4, px++) {
+        const r = img.data[i];
+        const g = img.data[i + 1];
+        const b = img.data[i + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const v = max / 255;
+        const d = max - min;
+        const s = max === 0 ? 0 : d / max;
+        let h = 0;
+        if (d !== 0) {
+          if (max === r) h = ((g - b) / d) % 6;
+          else if (max === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+
+        const y = Math.floor(px / width);
         total++;
-        if (v>0.7 && s<0.45 && h>=190 && h<=240) sky++;
-        if (v>0.35 && s>0.35 && h>=75 && h<=150) grass++;
+        luminanceSum += v;
+
+        // Overall blue/green presence (broader bands)
+        if (v > 0.45 && s > 0.10 && h >= 190 && h <= 255) blueOverall++;
+        if (v > 0.30 && s > 0.30 && h >= 70 && h <= 160) greenOverall++;
+
+        // Sky-like pixels: light, low-ish saturation blues
+        const isSkyish = v > 0.65 && s < 0.55 && h >= 185 && h <= 245;
+        // Grass-like pixels: green with reasonable sat
+        const isGrass = v > 0.35 && s > 0.35 && h >= 75 && h <= 150;
+
+        // Weight top region for sky, bottom region for grass
+        if (isSkyish) {
+          if (y < height * 0.10) skyTop10++;
+          if (y < height * 0.40) skyTop40++;
+        }
+        if (isGrass && y > height * 0.60) grassBottom40++;
       }
-      const skyPct = sky/Math.max(1,total);
-      const grassPct = grass/Math.max(1,total);
-      const isExterior = skyPct>=0.15 || grassPct>=0.12;
-      return isExterior?"exterior":"interior";
-    } catch {
+
+      const denom = Math.max(1, total);
+      const skyTop10Pct = skyTop10 / denom;
+      const skyTop40Pct = skyTop40 / denom;
+      const grassBottomPct = grassBottom40 / denom;
+      const blueOverallPct = blueOverall / denom;
+      const greenOverallPct = greenOverall / denom;
+      const meanLum = luminanceSum / denom;
+
+      // Heuristic rules tuned for typical RE photos
+      // Primary cues
+      const skyStrong = skyTop10Pct >= 0.06 || skyTop40Pct >= 0.12;
+      const grassStrong = grassBottomPct >= 0.08;
+      // Secondary cues supporting low sky/grass (e.g., cropped exterior, night)
+      const blueSupport = blueOverallPct >= 0.18 && skyTop40Pct >= 0.05;
+      const greenSupport = greenOverallPct >= 0.18 && grassBottomPct >= 0.05;
+      // Night exterior: dim image, modest blue band near top
+      const nightSkySupport = meanLum < 0.40 && skyTop40Pct >= 0.06;
+
+      const isExterior = skyStrong || grassStrong || blueSupport || greenSupport || nightSkySupport;
+
+      // Debug: surface quick metrics to help tuning if needed
+      console.log("[SceneDetect] skyTop10=", skyTop10Pct.toFixed(3),
+        " skyTop40=", skyTop40Pct.toFixed(3),
+        " grassBottom=", grassBottomPct.toFixed(3),
+        " blueOverall=", blueOverallPct.toFixed(3),
+        " greenOverall=", greenOverallPct.toFixed(3),
+        " meanLum=", meanLum.toFixed(3),
+        " -> exterior=", isExterior);
+
+      return isExterior ? "exterior" : "interior";
+    } catch (e) {
+      console.warn("[SceneDetect] Fallback to interior due to error:", e);
       return "interior";
     }
   }
