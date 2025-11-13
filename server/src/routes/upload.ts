@@ -80,7 +80,7 @@ export function uploadRouter() {
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const opts = optionsList[i] ?? {
+      const opts: any = optionsList[i] ?? {
         declutter: false,
         virtualStage: false,
         roomType: "unknown",
@@ -92,6 +92,24 @@ export function uploadRouter() {
       if (meta.sceneType) opts.sceneType = meta.sceneType;
       if (meta.roomType) opts.roomType = meta.roomType;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      // Optional tuning propagated from UI per-image meta
+      const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
+      const topP = Number.isFinite(meta.topP) ? Number(meta.topP) : undefined;
+      const topK = Number.isFinite(meta.topK) ? Number(meta.topK) : undefined;
+      if (temp !== undefined || topP !== undefined || topK !== undefined) {
+        opts.sampling = {
+          ...(opts.sampling || {}),
+          ...(temp !== undefined ? { temperature: temp } : {}),
+          ...(topP !== undefined ? { topP } : {}),
+          ...(topK !== undefined ? { topK } : {}),
+        };
+      }
+      if (typeof meta.declutterIntensity === 'string') {
+        const s = String(meta.declutterIntensity).toLowerCase();
+        if (['light','standard','heavy'].includes(s)) {
+          opts.declutterIntensity = s;
+        }
+      }
 
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
@@ -150,6 +168,8 @@ export function uploadRouter() {
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
+          sampling: opts.sampling,
+          declutterIntensity: opts.declutterIntensity,
         },
       });
 

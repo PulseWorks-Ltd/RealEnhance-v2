@@ -1,0 +1,18 @@
+{
+  "sampling": {
+    "interior": {
+      "enhance": { "temperature": 0.6, "topP": 0.9, "topK": 40 },
+      "declutter": { "temperature": 0.45, "topP": 0.8, "topK": 40 }
+    },
+    "exterior": {
+      "enhance": { "temperature": 0.4, "topP": 0.8, "topK": 40 },
+      "declutter": { "temperature": 0.35, "topP": 0.75, "topK": 40 }
+    },
+    "default": { "temperature": 0.5, "topP": 0.85, "topK": 40 }
+  },
+  "declutterIntensity": "standard",
+  "declutterIntensityByScene": {
+    "interior": "standard",
+    "exterior": "light"
+  }
+}
