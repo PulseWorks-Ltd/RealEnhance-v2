@@ -40,17 +40,20 @@ export async function applyEdit(params: {
   }
 
   // Normalize mask to match base size and generate solid alpha map (0 or 255)
-  let baseMask: Buffer;
-  export async function applyEdit(params: {
-    baseImagePath: string;
-    mask: unknown; // expected: data URL string (white=edit/restore region, black=preserve)
-    mode: "Add" | "Remove" | "Replace" | "Restore";
-    instruction: string;
-    restoreFromPath?: string;
-    smartReinstate?: boolean;
-    sensitivityPx?: number; // grow/feather radius in pixels
-  }): Promise<string> {
+  let workingMask: Buffer;
+  try {
+    workingMask = await sharp(maskBuf)
+      .resize(W, H, { fit: 'fill' })
+      .greyscale()
+      .threshold(128)
+      .toBuffer();
+    // Debug: check mask stats
+    const maskStats = await sharp(workingMask).stats();
+    console.log(`[editApply] Mask stats: min=${maskStats.channels[0].min}, max=${maskStats.channels[0].max}, mean=${maskStats.channels[0].mean}`);
+    // Check for uniform mask
+    if (maskStats.channels[0].min === maskStats.channels[0].max) {
       console.warn('[applyEdit] Mask is uniform (all black or all white).');
+      return baseImagePath;
     }
   } catch (err) {
     console.error('[applyEdit] Error normalizing mask:', err);
@@ -58,41 +61,22 @@ export async function applyEdit(params: {
   }
 
     // Debug: log mask type and size
-    let maskBuf: Buffer;
-    if (isDataUrl(mask)) {
-      const b64 = String(mask).split(',')[1] || '';
-      maskBuf = Buffer.from(b64, 'base64');
-      console.log(`[editApply] Received mask as data URL, length=${maskBuf.length}`);
-    } else if (Buffer.isBuffer(mask)) {
-      maskBuf = mask;
-      console.log(`[editApply] Received mask as Buffer, length=${maskBuf.length}`);
-    } else {
-      maskBuf = Buffer.alloc(0);
-      console.warn(`[editApply] Mask is not a valid Buffer or data URL, type=${typeof mask}`);
-    }
+    console.log(`[editApply] Received mask, length=${maskBuf.length}, type=${typeof mask}`);
     if (maskBuf.length < 100) {
       console.warn(`[editApply] Mask buffer is suspiciously small (${maskBuf.length} bytes)`);
       // Return error image or original
       return baseImagePath;
     }
-    const dilate = Math.max(0, Math.floor(sensitivityPx));
-    if (dilate > 0) {
-    let baseMask: Buffer;
+  const dilate = Math.max(0, Math.floor(sensitivityPx));
+  if (dilate > 0) {
     try {
-      baseMask = await sharp(maskBuf)
-        .resize(W, H, { fit: 'fill' })
-        .greyscale()
-        .threshold(128)
+      workingMask = await sharp(workingMask)
+        .blur(dilate)
         .toBuffer();
-      // Debug: check mask stats
-      const maskStats = await sharp(baseMask).stats();
-      console.log(`[editApply] Mask stats: min=${maskStats.channels[0].min}, max=${maskStats.channels[0].max}, mean=${maskStats.channels[0].mean}`);
-    } catch (e) {
-      console.error(`[editApply] Mask normalization failed:`, e);
+    } catch (err) {
+      console.error('[applyEdit] Error during mask dilation/blur:', err);
       return baseImagePath;
     }
-  } catch (err) {
-    console.error('[applyEdit] Error during mask dilation/blur:', err);
   }
 
   if (mode === "Restore") {
