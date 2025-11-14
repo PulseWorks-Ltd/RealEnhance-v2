@@ -1,4 +1,5 @@
 import type { GoogleGenAI } from "@google/genai";
+import sharp from "sharp";
 
 /**
  * Unified Exterior Validator
@@ -30,7 +31,30 @@ export async function validateExteriorEnhancement(
   enhancedBase64: string,
   operationType: 'quality-only' | 'staging'
 ): Promise<ExteriorValidationResult> {
-  
+  // 1) HYBRID LOCAL HEURISTIC – fast check for lawn→hard-surface conversions
+  try {
+    const heuristic = await analyzeSurfaceChange(originalBase64, enhancedBase64);
+    if (heuristic) {
+      const { greenOrig, greenEnh, hardOrig, hardEnh } = heuristic;
+      const greenDrop = greenOrig - greenEnh;
+      const hardRise = hardEnh - hardOrig;
+      // Trigger if lawn area drops substantially while hard surface increases
+      if (greenDrop >= 0.20 && hardRise >= 0.15) {
+        return {
+          passed: false,
+          violations: [{
+            type: 'structure_built',
+            severity: 'critical',
+            description: `Local check found large lawn→hard-surface change (green -${(greenDrop*100).toFixed(0)}%, hard +${(hardRise*100).toFixed(0)}%).`
+          }]
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('[EXTERIOR VALIDATOR] Heuristic surface analysis failed (continuing with AI):', (e as any)?.message || e);
+  }
+
+  // 2) AI VALIDATION
   const prompt = operationType === 'quality-only' 
     ? buildQualityOnlyValidationPrompt()
     : buildStagingValidationPrompt();
@@ -108,6 +132,67 @@ export async function validateExteriorEnhancement(
     // On error, pass to avoid blocking legitimate enhancements
     return { passed: true, violations: [] };
   }
+}
+
+/**
+ * Analyze bottom portion of the image to estimate green lawn and hard-surface proportions.
+ * Returns fractions 0..1 for green and hard surfaces in original/enhanced.
+ */
+async function analyzeSurfaceChange(originalBase64: string, enhancedBase64: string): Promise<{ greenOrig: number; greenEnh: number; hardOrig: number; hardEnh: number } | null> {
+  const oBuf = Buffer.from(originalBase64, 'base64');
+  const eBuf = Buffer.from(enhancedBase64, 'base64');
+
+  const oImg = sharp(oBuf).ensureAlpha();
+  const eImg = sharp(eBuf).ensureAlpha();
+
+  const oMeta = await oImg.metadata();
+  const eMeta = await eImg.metadata();
+  if (!oMeta.width || !oMeta.height || !eMeta.width || !eMeta.height) return null;
+
+  // Normalize both to same analysis size to simplify math
+  const W = 384; // analysis width
+  const H = 256; // analysis height
+  const [oRaw, eRaw] = await Promise.all([
+    oImg.resize(W, H, { fit: 'cover' }).raw().toBuffer(),
+    eImg.resize(W, H, { fit: 'cover' }).raw().toBuffer(),
+  ]);
+
+  function classify(buf: Buffer): { green: number; hard: number; total: number } {
+    let green = 0, hard = 0, total = 0;
+    // Focus on lower 60% (ground region)
+    const startY = Math.floor(H * 0.40);
+    for (let y = startY; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const r = buf[i] / 255, g = buf[i+1] / 255, b = buf[i+2] / 255;
+        const max = Math.max(r,g,b), min = Math.min(r,g,b);
+        const v = max; const d = max - min; const s = max === 0 ? 0 : d / max;
+        let h = 0;
+        if (d !== 0) {
+          if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+          h *= 60; if (h < 0) h += 360;
+        }
+        // green lawn: reasonably saturated greens
+        const isGreen = (v > 0.25) && (s > 0.28) && (h >= 70 && h <= 160);
+        // gray concrete/asphalt: low saturation mid/high value
+        const isGray = (s < 0.18) && (v > 0.35 && v < 0.95);
+        // brown/red deck/wood: warm hues reasonably saturated
+        const isBrown = (v > 0.25) && (s > 0.25) && ((h >= 8 && h <= 35) || (h >= 340 && h <= 360));
+        if (isGreen) green++;
+        if (isGray || isBrown) hard++;
+        total++;
+      }
+    }
+    return { green, hard, total };
+  }
+
+  const O = classify(oRaw);
+  const E = classify(eRaw);
+  const greenOrig = O.green / Math.max(1, O.total);
+  const greenEnh = E.green / Math.max(1, E.total);
+  const hardOrig = O.hard / Math.max(1, O.total);
+  const hardEnh = E.hard / Math.max(1, E.total);
+  return { greenOrig, greenEnh, hardOrig, hardEnh };
 }
 
 function buildQualityOnlyValidationPrompt(): string {
