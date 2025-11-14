@@ -92,6 +92,9 @@ export function statusRouter() {
         
         if (status === 'completed') completed++;
         
+        // Merge in local JSON job (for message/meta streaming between worker updates)
+        const local = getJob(id);
+
         // Push clean, predictable shape
         items.push({
           id,
@@ -103,7 +106,10 @@ export function statusRouter() {
           originalImageUrl: originalUrl,
           resultImages,
           stageUrls,
-          filename: job.name || undefined
+          filename: job.name || undefined,
+          // Surface additional fields used for UI toasts
+          message: (local as any)?.message || undefined,
+          meta: (local as any)?.meta || undefined
         });
       }
 
@@ -201,6 +207,9 @@ export function statusRouter() {
 
       await q.close();
       
+      // Merge local job (message/meta) for UI toasts during processing
+      const local = getJob(req.params.jobId);
+
       // Return URLs in multiple fields for client compatibility
       return res.json({
         id: job.id,
@@ -213,7 +222,9 @@ export function statusRouter() {
         originalImageUrl: originalUrl,
         resultImages,                   // array format: [url]
         stageUrls,                      // { "1A": "...", "2": "..." }
-        updatedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined
+        updatedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
+        message: (local as any)?.message || undefined,
+        meta: (local as any)?.meta || undefined
       });
     } catch (e) {
       console.error('[status] Error reading job from BullMQ:', e);

@@ -124,18 +124,18 @@ export async function enhanceWithGemini(
       let p: number;
       let k: number;
       if (declutter) {
-        // Keep conservative to avoid artifacts while still allowing cleanup
+        // Balanced for declutter; slightly higher for exterior polish
         if (isInterior) {
           t = 0.45; p = 0.80; k = 40;
         } else {
-          t = 0.35; p = 0.75; k = 40;
+          t = 0.50; p = 0.86; k = 45;
         }
       } else {
-        // Enhance-only: allow a touch more variation for interiors
+        // Enhance-only: boost exterior to improve sky/grass/surface polish
         if (isInterior) {
           t = 0.55; p = 0.85; k = 40;
         } else {
-          t = 0.40; p = 0.80; k = 40;
+          t = 0.60; p = 0.90; k = 50;
         }
       }
       if (strictMode) {
