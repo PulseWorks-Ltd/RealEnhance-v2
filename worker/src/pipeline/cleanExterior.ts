@@ -1,3 +1,12 @@
+export async function sharpNormalize(imgBuffer: Buffer): Promise<Buffer> {
+  // Ensures output is color (3 channels)
+  let buf = await sharp(imgBuffer).normalize().sharpen().toBuffer();
+  const meta = await sharp(buf).metadata();
+  if (meta.channels !== 3 && meta.channels !== 4) {
+    buf = await sharp(buf).toColourspace('srgb').toBuffer();
+  }
+  return buf;
+}
 import sharp from "sharp";
 // If OpenCV bindings are available, import them here
 // import cv from "opencv4nodejs";

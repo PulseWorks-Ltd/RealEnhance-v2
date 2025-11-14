@@ -85,12 +85,20 @@ export async function prepareWindowLock(
         }
       }).png().toBuffer();
     }
+    // Create alpha channel from windowMask and join to fill
+    const maskAlpha = await sharp(windowMask)
+      .ensureAlpha()
+      .extractChannel('alpha')
+      .toBuffer();
+    const fillWithAlpha = await sharp(fill)
+      .joinChannel(maskAlpha)
+      .toBuffer();
+    // Composite fillWithAlpha over original
     maskedForModel = await sharp(original)
       .composite([
         {
-          input: fill,
-          blend: "over",
-          mask: { input: windowMask }
+          input: fillWithAlpha,
+          blend: "over"
         }
       ])
       .toBuffer();
@@ -110,12 +118,20 @@ export async function stageModelOutputRestore(
   windowMask: Buffer,
   opts: WindowLockOptions = {}
 ): Promise<WindowLockResult> {
+  // Create alpha channel from windowMask and join to original
+  const maskAlpha = await sharp(windowMask)
+    .ensureAlpha()
+    .extractChannel('alpha')
+    .toBuffer();
+  const originalWithAlpha = await sharp(original)
+    .joinChannel(maskAlpha)
+    .toBuffer();
+  // Composite originalWithAlpha over modelOutput
   const restored = await sharp(modelOutput)
     .composite([
       {
-        input: original,
-        blend: "over",
-        mask: { input: windowMask }
+        input: originalWithAlpha,
+        blend: "over"
       }
     ])
     .toBuffer();
