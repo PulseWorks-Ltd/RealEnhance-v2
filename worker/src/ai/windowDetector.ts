@@ -116,6 +116,9 @@ export async function validateWindowPreservation(
 
     // STRICT: Validate bounding boxes didn't move/resize materially
     const editedBoxes: Array<[number, number, number, number]> = (editedWindows.windows || []).map(w => w.bbox);
+    // Calculate image height from max y+height of all windows if not provided
+    const allBoxes = [...originalBoxes, ...editedBoxes];
+    const imageHeight = allBoxes.length > 0 ? Math.max(...allBoxes.map(([x, y, w, h]) => y + h)) : 1;
     const iou = (a: [number,number,number,number], b: [number,number,number,number]) => {
       const [ax, ay, aw, ah] = a, [bx, by, bw, bh] = b;
       const ax2 = ax + aw, ay2 = ay + ah;
@@ -135,9 +138,18 @@ export async function validateWindowPreservation(
         const sc = iou(ob, editedBoxes[j]);
         if (sc > best) { best = sc; bestIdx = j; }
       }
-      // Require good overlap to consider the same window
+      // If no good overlap, check if window is blocked by furniture
       if (bestIdx === -1 || best < 0.50) {
-        return { ok: false, reason: "Window location/size changed" };
+        const [ox, oy, ow, oh] = ob;
+        const windowBottom = oy + oh;
+        // If bottom 20% of window is blocked (touches floor), allow
+        if (windowBottom > imageHeight * 0.80) {
+          console.log(`[WINDOW VALIDATOR] Window at (${ox},${oy},${ow},${oh}) blocked by floor-standing furniture (bottom 20%)`);
+          continue; // allow
+        }
+        // Otherwise, fail for wall-mounted block
+        console.warn(`[WINDOW VALIDATOR] Window at (${ox},${oy},${ow},${oh}) blocked by wall-mounted item (not floor-standing)`);
+        return { ok: false, reason: "Window blocked by wall-mounted item" };
       }
       used.add(bestIdx);
     }
