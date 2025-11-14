@@ -3,6 +3,16 @@
 import { buildSpatialConstraints, type SpatialBlueprint } from './spatialAnalyzer';
 
 export type PromptOptions = {
+    // Optional: region for exterior staging (bounding box)
+    stagingRegion?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      areaType: string;
+      confidence: string;
+      reasoning: string;
+    };
   goal: string;
   industry?: string;
 
@@ -1057,6 +1067,19 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
 
   if (activeScene === "exterior") {
     lines.push(...exteriorStagingRules, "");
+
+    // If a stagingRegion is provided, instruct Gemini to only stage within that region
+    if (opts.stagingRegion) {
+      lines.push(
+        `[STAGING REGION]`,
+        `You may ONLY place outdoor furniture within the following region:`,
+        `Coordinates: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`,
+        `Area type: ${opts.stagingRegion.areaType}.`,
+        `Do NOT stage outside this area.`,
+        `Reasoning: ${opts.stagingRegion.reasoning}`,
+        ""
+      );
+    }
 
     if (outdoorStaging === "none") {
       lines.push(
