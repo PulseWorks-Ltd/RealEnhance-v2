@@ -126,18 +126,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Use primary scene detector for interior/exterior when sceneType=auto
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
     // Outdoor staging area detection for exteriors
+    let stagingRegion = null;
     if (sceneLabel === "exterior") {
       try {
         const { getGeminiClient } = await import("./ai/gemini");
         const { detectStagingArea } = await import("./ai/staging-area-detector");
+        const { detectStagingRegion } = await import("./ai/region-detector");
         const ai = getGeminiClient();
         const base64 = toBase64(origPath).data;
         const stagingResult = await detectStagingArea(ai, base64);
         allowStaging = stagingResult.hasStagingArea;
+        if (allowStaging) {
+          stagingRegion = await detectStagingRegion(ai, base64);
+        }
         console.log(`[WORKER] Outdoor staging area detected: allowStaging=${allowStaging} (${stagingResult.areaType}, ${stagingResult.confidence})`);
+        if (stagingRegion) {
+          console.log(`[WORKER] Staging region:`, stagingRegion);
+        }
       } catch (e) {
         allowStaging = false;
-        console.warn(`[WORKER] Outdoor staging area detection failed, defaulting to no staging:`, e);
+        stagingRegion = null;
+        console.warn(`[WORKER] Outdoor staging area/region detection failed, defaulting to no staging:`, e);
       }
     }
     // store interim meta (non-fatal if write fails)
