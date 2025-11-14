@@ -110,6 +110,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let sceneLabel = (payload.options.sceneType as any) || "auto";
   let scenePrimary: any = undefined;
   let allowStaging = true;
+  let stagingRegionGlobal: any = null;
   const tScene = Date.now();
   try {
     const buf = fs.readFileSync(origPath);
@@ -126,31 +127,55 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Use primary scene detector for interior/exterior when sceneType=auto
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
     // Outdoor staging area detection for exteriors
-    let stagingRegion = null;
+    let stagingRegion: any = null;
     if (sceneLabel === "exterior") {
       try {
         const { getGeminiClient } = await import("./ai/gemini");
         const { detectStagingArea } = await import("./ai/staging-area-detector");
         const { detectStagingRegion } = await import("./ai/region-detector");
+        const sharpMod: any = await import("sharp");
         const ai = getGeminiClient();
         const base64 = toBase64(origPath).data;
         const stagingResult = await detectStagingArea(ai, base64);
         allowStaging = stagingResult.hasStagingArea;
         if (allowStaging) {
           stagingRegion = await detectStagingRegion(ai, base64);
+          // Compute coverage % if region detected and image size known
+          try {
+            const meta = await sharpMod.default(origPath).metadata();
+            const W = meta.width || 0;
+            const H = meta.height || 0;
+            if (stagingRegion && W > 0 && H > 0) {
+              const area = Math.max(0, Math.min(stagingRegion.width, W)) * Math.max(0, Math.min(stagingRegion.height, H));
+              const coverage = area / (W * H);
+              const minCoverage = Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2);
+              if (coverage < minCoverage) {
+                allowStaging = false;
+                console.log(`[WORKER] Exterior staging region below threshold: ${(coverage*100).toFixed(1)}% < ${(minCoverage*100).toFixed(0)}% → disallow staging`);
+              } else {
+                console.log(`[WORKER] Exterior staging region coverage: ${(coverage*100).toFixed(1)}% (>= ${(minCoverage*100).toFixed(0)}%)`);
+              }
+              // attach coverage for meta/debugging
+              (stagingRegion as any).coverage = coverage;
+            }
+          } catch (e) {
+            console.warn('[WORKER] Failed to compute staging coverage; proceeding without area gate', e);
+          }
         }
         console.log(`[WORKER] Outdoor staging area detected: allowStaging=${allowStaging} (${stagingResult.areaType}, ${stagingResult.confidence})`);
         if (stagingRegion) {
           console.log(`[WORKER] Staging region:`, stagingRegion);
         }
+        stagingRegionGlobal = stagingRegion;
       } catch (e) {
         allowStaging = false;
         stagingRegion = null;
+        stagingRegionGlobal = null;
         console.warn(`[WORKER] Outdoor staging area/region detection failed, defaulting to no staging:`, e);
       }
     }
     // store interim meta (non-fatal if write fails)
-    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence }, allowStaging } });
+    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence }, allowStaging, stagingRegion: stagingRegionGlobal } });
     try {
       console.log(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
     } catch {}
@@ -178,24 +203,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   } catch {}
   let path1A: string = origPath;
-  if (sceneLabel === "exterior") {
-    // Classical cleaning for exteriors
-    const { cleanDrivewayAndDeck, sharpNormalize } = await import("./pipeline/cleanExterior");
-    const cleaned = await cleanDrivewayAndDeck(origPath);
-    const normalized = await sharpNormalize(cleaned);
-    // Save normalized image to temp file for Gemini
-    const fs = await import("fs");
-    const tempPath = `/tmp/cleaned_${payload.jobId}.jpg`;
-    fs.writeFileSync(tempPath, normalized);
-    path1A = tempPath;
-  } else {
-    // Non-exterior: original pipeline
-    path1A = await runStage1A(origPath, {
-      replaceSky: payload.options.replaceSky ?? false,
-      declutter: payload.options.declutter ?? false,
-      sceneType: sceneLabel,
-    });
-  }
+  // Unified Stage 1A for all scenes (remove exterior pre-clean)
+  path1A = await runStage1A(origPath, {
+    replaceSky: payload.options.replaceSky ?? false,
+    declutter: payload.options.declutter ?? false,
+    sceneType: sceneLabel,
+  });
   timings.stage1AMs = Date.now() - t1A;
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)
@@ -287,7 +300,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = path1B; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
-        ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
+        ? await runStage2(path1B, {
+            roomType: payload.options.roomType || String(detectedRoom || "living_room"),
+            profile,
+            angleHint,
+            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+            onStrictRetry: ({ reasons }) => {
+              try {
+                const msg = reasons && reasons.length
+                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                  : "Validation failed. Retrying with stricter settings...";
+                updateJob(payload.jobId, {
+                  message: msg,
+                  meta: {
+                    ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
+                    scenePrimary,
+                    strictRetry: true,
+                    strictRetryReasons: reasons || []
+                  }
+                });
+              } catch {}
+            }
+          })
         : path1B;
     }
   } catch (e: any) {
@@ -351,11 +385,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     while (compliance && compliance.ok === false && retries < maxRetries) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       updateJob(payload.jobId, {
-        status: "processing", // Use allowed JobStatus
+        status: "processing",
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
-        message: `First attempt at enhancing this image failed. Please hold tight while we try again (attempt ${retries+2}/3)...`,
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
+        message: `Validation failed. Retrying with stricter settings (attempt ${retries+2}/3)...`,
+        meta: {
+          scene: { label: sceneLabel as any, confidence: 0.5 },
+          scenePrimary,
+          compliance,
+          strictRetry: true,
+          strictRetryReasons: Array.isArray((compliance as any)?.reasons) ? (compliance as any).reasons : ["compliance retry"],
+          strictRetryPhase: "compliance"
+        }
       });
       console.warn(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
       temperature = Math.max(0.1, temperature - 0.1);
@@ -543,8 +584,16 @@ async function handleEditJob(payload: EditJobPayload) {
     filePath: editedPath,
     note: `${payload.mode}: ${payload.instruction}`
   });
-
-  updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
+  // Publish edited image and attach public URL for client consumption
+  try {
+    const pub = await publishImage(editedPath);
+    try {
+      setVersionPublicUrl(payload.imageId, newVersion.versionId, pub.url);
+    } catch {}
+    updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId, resultUrl: pub.url });
+  } catch (e) {
+    updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
+  }
 }
 
 // Determine Redis URL with preference for private/internal in hosted environments

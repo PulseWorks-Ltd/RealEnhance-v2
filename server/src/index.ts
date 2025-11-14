@@ -16,9 +16,12 @@ import { uploadRouter } from "./routes/upload.js";
 import { statusRouter, debugStatusRouter } from "./routes/status.js";
 import { editRouter } from "./routes/edit.js";
 import { requeueRouter } from "./routes/requeue.js";
+import { retrySingleRouter } from "./routes/retrySingle.js";
+import { regionEditRouter } from "./routes/region-edit.js";
 import { cancelRouter } from "./routes/cancel.js";
 import { groupsRouter } from "./routes/groups.js";
 import { healthRouter } from "./routes/health.js";
+import { undoRouter } from "./routes/undo.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -93,9 +96,12 @@ async function main() {
   app.use("/api", debugStatusRouter());
   app.use("/api", editRouter());
   app.use("/api", requeueRouter());
+  app.use("/api", retrySingleRouter());
+  app.use("/api", regionEditRouter());
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
   app.use("/api", healthRouter());
+  app.use("/api", undoRouter());
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

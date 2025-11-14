@@ -3,12 +3,22 @@ import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
+import sharp from "sharp";
+import type { StagingRegion } from "../ai/region-detector";
 
 // Stage 2: virtual staging (add furniture)
 
 export async function runStage2(
   basePath: string,
-  opts: { roomType: string; profile?: StagingProfile; angleHint?: "primary" | "secondary" | "other"; referenceImagePath?: string }
+  opts: {
+    roomType: string;
+    profile?: StagingProfile;
+    angleHint?: "primary" | "secondary" | "other";
+    referenceImagePath?: string;
+    stagingRegion?: StagingRegion | null;
+    // Optional callback to surface strict retry status to job updater
+    onStrictRetry?: (info: { reasons: string[] }) => void;
+  }
 ): Promise<string> {
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
@@ -46,7 +56,44 @@ export async function runStage2(
       return out;
     }
 
-    const { data, mime } = toBase64(basePath);
+    // If a stagingRegion is provided, build a "guided" input that darkens outside the region
+    let inputForStage2 = basePath;
+    if (opts.stagingRegion) {
+      try {
+        const meta = await sharp(basePath).metadata();
+        const W = meta.width || 0;
+        const H = meta.height || 0;
+        const r = opts.stagingRegion;
+        const x = Math.max(0, Math.min(Math.floor(r.x), Math.max(0, W - 1)));
+        const y = Math.max(0, Math.min(Math.floor(r.y), Math.max(0, H - 1)));
+        const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
+        const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
+
+        const darkened = await sharp(basePath)
+          .composite([
+            { input: Buffer.from([0, 0, 0, Math.round(255 * 0.35)]), raw: { width: 1, height: 1, channels: 4 }, tile: true, left: 0, top: 0 }
+          ])
+          .toBuffer();
+
+        const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
+
+        const guided = await sharp(darkened)
+          .composite([
+            { input: regionPatch, left: x, top: y }
+          ])
+          .toFormat("png")
+          .toBuffer();
+
+        const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
+        await sharp(guided).toFile(guidedPath);
+        inputForStage2 = guidedPath;
+        if (dbg) console.log(`[stage2] Built guided input for staging region: ${guidedPath}`);
+      } catch (e) {
+        console.warn("[stage2] Failed to build guided staging input; proceeding with original base image", e);
+      }
+    }
+
+    const { data, mime } = toBase64(inputForStage2);
     const profile = opts.profile;
     const baseStyle = profile?.styleName
       ? `Style: ${profile.styleName}${profile.palette?.length ? ` | Palette: ${profile.palette.join(", ")}` : ""}`
@@ -60,6 +107,15 @@ export async function runStage2(
       ? "This photo is another angle of the same room. If a sofa is present in the hero angle, show the back of the same sofa facing a TV wall when appropriate."
       : "";
 
+    const regionRules = opts.stagingRegion ? [
+      "[STAGING REGION]",
+      `You may ONLY place outdoor furniture within the following region: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`,
+      `Area type: ${opts.stagingRegion.areaType}. Do NOT stage outside this area.`,
+      `Place EXACTLY ONE furniture set suitable for this area (e.g., dining table + 4–6 chairs OR side table + 2 chairs) and up to 3 small pot plants on hard surfaces only.`,
+      `Do not place any furniture on grass or driveways. Do not add structures.`,
+      ""
+    ] : [];
+
     const textPrompt = [
       "VIRTUAL STAGING.",
       roomSpecific,
@@ -67,6 +123,7 @@ export async function runStage2(
       placement,
       consistency,
       angleInstruction,
+      ...regionRules,
       profile?.prompt?.trim() ? `Profile prompt: ${profile.prompt.trim()}` : "",
       profile?.negativePrompt?.trim() ? `Negative prompt: ${profile.negativePrompt.trim()}` : "",
       "Remove existing décor/furniture if needed to avoid mixing styles.",
@@ -117,6 +174,10 @@ export async function runStage2(
       );
       if (!verdict.ok) {
         console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
+        try {
+          // Notify upstream (worker) to update job meta/message for UI toast
+          opts.onStrictRetry?.({ reasons: verdict.reasons || [] });
+        } catch {}
 
         // Strict retry: reinforce architectural constraints and reduce sampling randomness
         const strictText = textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` +

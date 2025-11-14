@@ -99,21 +99,19 @@ export async function validateStage(
     totalW += weights.wallPlanes;
   }
 
-  // 3) Windows (interior-only)
-  if ((ctx.sceneType || "interior").toString() === "interior") {
-    try {
-      const res = await validateWindowPreservation(ai as any, prevB64, candB64);
-      const ok = !!res.ok;
-      const s = ok ? 1 : 0;
-      metrics.windows = s;
-      if (!ok) reasons.push(res.reason || "windows changed");
-      const w = weights.windows;
-      score += s * w; totalW += w;
-    } catch (e) {
-      metrics.windows = 0;
-      reasons.push("window check failed");
-      totalW += weights.windows;
-    }
+  // 3) Windows (all scenes)
+  try {
+    const res = await validateWindowPreservation(ai as any, prevB64, candB64);
+    const ok = !!res.ok;
+    const s = ok ? 1 : 0;
+    metrics.windows = s;
+    if (!ok) reasons.push(res.reason || "windows changed");
+    const w = weights.windows;
+    score += s * w; totalW += w;
+  } catch (e) {
+    metrics.windows = 0;
+    reasons.push("window check failed");
+    totalW += weights.windows;
   }
 
   // 4) Furniture checks (not applied for 1A)

@@ -186,6 +186,10 @@ export default function BatchProcessor() {
   const scheduledRef = useRef(false);
   const processedSetRef = useRef<Set<number>>(new Set());
   const filesFingerprintRef = useRef<string>("");
+  // Track which jobIds have shown a strict-retry toast
+  const strictNotifiedRef = useRef<Set<string>>(new Set());
+  // Track which indices are currently undergoing strict validator retry
+  const [strictRetryingIndices, setStrictRetryingIndices] = useState<Set<number>>(new Set());
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -718,6 +722,35 @@ export default function BatchProcessor() {
 
   const data = await resp.json();
 
+        // Single-job strict retry toast + badge state
+        try {
+          const jid = data?.id || data?.jobId || currentJobId;
+          const meta = data?.meta || {};
+          if (jid && meta && meta.strictRetry && !strictNotifiedRef.current.has(jid)) {
+            strictNotifiedRef.current.add(jid);
+            const reasons: string[] = Array.isArray(meta.strictRetryReasons) ? meta.strictRetryReasons : [];
+            toast({
+              title: 'Retrying with stricter validation',
+              description: reasons.length ? reasons.join('; ') : (data?.message || 'Adjusting settings to preserve structure.'),
+            });
+          }
+          // Maintain badge for index 0 in single-job mode
+          if (meta && meta.strictRetry) {
+            setStrictRetryingIndices(prev => {
+              const next = new Set(prev);
+              next.add(0);
+              return next;
+            });
+          } else {
+            // Clear when strictRetry no longer present
+            setStrictRetryingIndices(prev => {
+              const next = new Set(prev);
+              next.delete(0);
+              return next;
+            });
+          }
+        } catch {}
+
         // Harvest per-item job ids for server-side cancellation
         if (Array.isArray(data.items)) {
           const ids: string[] = [];
@@ -739,6 +772,23 @@ export default function BatchProcessor() {
           const completed = data.items.filter((item: any) => item && (item.status === 'completed' || item.status === 'failed')).length;
           const total = data.count || data.items.length;
           setProgressText(`Processing images: ${completed}/${total} completed`);
+
+          // Surface strict retry notifications as toasts (once per job)
+          try {
+            for (const item of data.items) {
+              const jid = item?.id || item?.jobId || item?.job_id;
+              if (!jid) continue;
+              const meta = item?.meta || {};
+              if (meta && meta.strictRetry && !strictNotifiedRef.current.has(jid)) {
+                strictNotifiedRef.current.add(jid);
+                const reasons: string[] = Array.isArray(meta.strictRetryReasons) ? meta.strictRetryReasons : [];
+                toast({
+                  title: 'Retrying with stricter validation',
+                  description: reasons.length ? reasons.join('; ') : (item?.message || 'Adjusting settings to preserve structure.'),
+                });
+              }
+            }
+          } catch {}
           
           // Process any new completed items
           for (let i = 0; i < data.items.length; i++) {
@@ -887,6 +937,30 @@ export default function BatchProcessor() {
             } : null
           });
         }
+
+        // strict retry toasts (once per job) and badge indices map
+        try {
+          const currentStrict = new Set<number>();
+          for (const it of items) {
+            const jid = it?.id || it?.jobId || it?.job_id;
+            if (!jid) continue;
+            const meta = it?.meta || {};
+            if (meta && meta.strictRetry && !strictNotifiedRef.current.has(jid)) {
+              strictNotifiedRef.current.add(jid);
+              const reasons: string[] = Array.isArray(meta.strictRetryReasons) ? meta.strictRetryReasons : [];
+              toast({
+                title: 'Retrying with stricter validation',
+                description: reasons.length ? reasons.join('; ') : (it?.message || 'Adjusting settings to preserve structure.'),
+              });
+            }
+            if (meta && meta.strictRetry) {
+              const idx = jobIdToIndexRef.current[jid];
+              if (typeof idx === 'number') currentStrict.add(idx);
+            }
+          }
+          // Replace the set with current strict retry indices
+          setStrictRetryingIndices(currentStrict);
+        } catch {}
 
         // progress
         const completed = items.filter((it: any) => it && it.status === 'completed').length;
@@ -2578,6 +2652,14 @@ export default function BatchProcessor() {
                                     {retryingImages.has(i) ? "Enhancing..." : "Editing..."}
                                   </div>
                                 </div>
+                              </div>
+                            )}
+                            {/* Strict retry badge (validator-driven) */}
+                            {strictRetryingIndices.has(i) && (
+                              <div className="absolute top-1 left-1">
+                                <span className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full shadow">
+                                  Strict retry
+                                </span>
                               </div>
                             )}
                           </>
