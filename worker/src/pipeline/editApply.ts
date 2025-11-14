@@ -18,6 +18,13 @@ export async function applyEdit(params: {
 }): Promise<string> {
   const { baseImagePath, mask, mode, instruction, restoreFromPath, smartReinstate = true, sensitivityPx = 4 } = params;
 
+  // Debug: log input params
+  console.log('[applyEdit] Params:', { baseImagePath, mode, instruction, restoreFromPath, smartReinstate, sensitivityPx });
+  if (!mask) {
+    console.warn('[applyEdit] No mask provided, returning original image.');
+    return baseImagePath;
+  }
+
   const meta = await sharp(baseImagePath).metadata();
   const W = meta.width || 0;
   const H = meta.height || 0;
@@ -27,23 +34,66 @@ export async function applyEdit(params: {
     ? Buffer.from(String(mask).split(',')[1] || '', 'base64')
     : (Buffer.isBuffer(mask) ? mask : Buffer.alloc(0));
 
-  // Normalize mask to match base size and generate solid alpha map (0 or 255)
-  const baseMask = await sharp(maskBuf)
-    .resize(W, H, { fit: 'fill' })
-    .greyscale()
-    .threshold(128)
-    .toBuffer();
+  if (!maskBuf || maskBuf.length === 0) {
+    console.warn('[applyEdit] Mask buffer is empty, returning original image.');
+    return baseImagePath;
+  }
 
-  // Optional sensitivity: dilate + slight blur to avoid hard seams
-  let workingMask = baseMask;
-  try {
+  // Normalize mask to match base size and generate solid alpha map (0 or 255)
+  let baseMask: Buffer;
+  export async function applyEdit(params: {
+    baseImagePath: string;
+    mask: unknown; // expected: data URL string (white=edit/restore region, black=preserve)
+    mode: "Add" | "Remove" | "Replace" | "Restore";
+    instruction: string;
+    restoreFromPath?: string;
+    smartReinstate?: boolean;
+    sensitivityPx?: number; // grow/feather radius in pixels
+  }): Promise<string> {
+      console.warn('[applyEdit] Mask is uniform (all black or all white).');
+    }
+  } catch (err) {
+    console.error('[applyEdit] Error normalizing mask:', err);
+    return baseImagePath;
+  }
+
+    // Debug: log mask type and size
+    let maskBuf: Buffer;
+    if (isDataUrl(mask)) {
+      const b64 = String(mask).split(',')[1] || '';
+      maskBuf = Buffer.from(b64, 'base64');
+      console.log(`[editApply] Received mask as data URL, length=${maskBuf.length}`);
+    } else if (Buffer.isBuffer(mask)) {
+      maskBuf = mask;
+      console.log(`[editApply] Received mask as Buffer, length=${maskBuf.length}`);
+    } else {
+      maskBuf = Buffer.alloc(0);
+      console.warn(`[editApply] Mask is not a valid Buffer or data URL, type=${typeof mask}`);
+    }
+    if (maskBuf.length < 100) {
+      console.warn(`[editApply] Mask buffer is suspiciously small (${maskBuf.length} bytes)`);
+      // Return error image or original
+      return baseImagePath;
+    }
     const dilate = Math.max(0, Math.floor(sensitivityPx));
     if (dilate > 0) {
-      // crude dilation via blur + threshold
-      const blurred = await sharp(baseMask).blur(dilate / 2).toBuffer();
-      workingMask = await sharp(blurred).threshold(32).toBuffer();
+    let baseMask: Buffer;
+    try {
+      baseMask = await sharp(maskBuf)
+        .resize(W, H, { fit: 'fill' })
+        .greyscale()
+        .threshold(128)
+        .toBuffer();
+      // Debug: check mask stats
+      const maskStats = await sharp(baseMask).stats();
+      console.log(`[editApply] Mask stats: min=${maskStats.channels[0].min}, max=${maskStats.channels[0].max}, mean=${maskStats.channels[0].mean}`);
+    } catch (e) {
+      console.error(`[editApply] Mask normalization failed:`, e);
+      return baseImagePath;
     }
-  } catch {}
+  } catch (err) {
+    console.error('[applyEdit] Error during mask dilation/blur:', err);
+  }
 
   if (mode === "Restore") {
     // Smart Restore: take pixels from restoreFromPath (baseline) wherever mask=white
@@ -58,15 +108,22 @@ export async function applyEdit(params: {
     await sharp(baseImagePath)
       .composite([{ input: overlay }])
       .toFile(outPath);
+    console.log('[applyEdit] Restore mode output:', outPath);
     return outPath;
   }
 
   // For Add/Remove/Replace: build guided input and call Gemini with explicit mask instruction
   // 1) Guided input – darken outside mask region
-  const invertedMask = await sharp(workingMask)
-    .negate()
-    .toColourspace('b-w')
-    .toBuffer();
+  let invertedMask: Buffer;
+  try {
+    invertedMask = await sharp(workingMask)
+      .negate()
+      .toColourspace('b-w')
+      .toBuffer();
+  } catch (err) {
+    console.error('[applyEdit] Error inverting mask:', err);
+    return baseImagePath;
+  }
 
   // Create a black overlay with alpha = invertedMask to darken outside region
   const blackout = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.45 } } })
@@ -83,6 +140,7 @@ export async function applyEdit(params: {
 
   const guidedPath = siblingOutPath(baseImagePath, "-edit-guide", ".png");
   await sharp(guidedBuf).toFile(guidedPath);
+  console.log('[applyEdit] Guided input saved:', guidedPath);
 
   // 2) Gemini inpaint-style call
   const ai = getGeminiClient();
@@ -99,22 +157,32 @@ export async function applyEdit(params: {
     `- Instruction: ${instruction}`,
   ].join('\n');
 
-  const { resp } = await runWithImageModelFallback(ai as any, {
-    contents: [
-      { inlineData: { mimeType: 'image/png', data: guidedB64 } },
-      { inlineData: { mimeType: 'image/png', data: maskB64 } },
-      { text: prompt }
-    ]
-  } as any, "region-edit");
+  let resp;
+  try {
+    resp = (await runWithImageModelFallback(ai as any, {
+      contents: [
+        { inlineData: { mimeType: 'image/png', data: guidedB64 } },
+        { inlineData: { mimeType: 'image/png', data: maskB64 } },
+        { text: prompt }
+      ]
+    } as any, "region-edit")).resp;
+    console.log('[applyEdit] Gemini model response received.');
+  } catch (err) {
+    console.error('[applyEdit] Gemini model call failed:', err);
+    return baseImagePath;
+  }
 
   const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
   const img = parts.find(p => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
+    console.warn(`[editApply] Gemini region edit failed, returning original image`);
   if (img?.inlineData?.data) {
     const outPath = siblingOutPath(baseImagePath, "-edit", ".webp");
     writeImageDataUrl(outPath, `data:image/webp;base64,${img.inlineData.data}`);
+    console.log('[applyEdit] Edit output saved:', outPath);
     return outPath;
   }
 
   // Fallback: if model failed, return original
+  console.warn('[applyEdit] No valid output from Gemini, returning original image.');
   return baseImagePath;
 }
