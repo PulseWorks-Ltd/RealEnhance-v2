@@ -115,7 +115,7 @@ export async function validateStage(
   }
 
   // 4) Furniture checks (not applied for 1A)
-  if (cand.stage !== "1A") {
+  if (cand.stage === "2") {
     try {
       const furn = await validateFurnitureScale(ai as any, prevB64, candB64);
       const ok = !!furn.ok;
@@ -128,6 +128,28 @@ export async function validateStage(
       metrics.furniture = 0;
       reasons.push("furniture check failed");
       totalW += weights.furniture;
+    }
+
+    // Egress/fixture blocking check (Stage 2 only)
+    try {
+      const { validateStructure } = await import("../validators/structural");
+      const struct = await validateStructure(prev.path, cand.path);
+      if (!struct.ok) {
+        reasons.push(...(struct.notes || ["egress/fixture blocking detected"]));
+      }
+    } catch (e) {
+      reasons.push("egress/fixture blocking check failed");
+    }
+
+    // Realism check (Stage 2 only)
+    try {
+      const { validateRealism } = await import("../validators/realism");
+      const realism = await validateRealism(cand.path);
+      if (!realism.ok) {
+        reasons.push(...(realism.notes || ["realism violation detected"]));
+      }
+    } catch (e) {
+      reasons.push("realism check failed");
     }
   }
 
