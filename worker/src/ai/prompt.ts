@@ -1067,16 +1067,35 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     }
   } else {
     // INTERIOR
+    const bedroomWindowArtRule = [
+      "🚫 BEDROOM WINDOW ART PROHIBITION:",
+      "If a bed is placed in front of a window, DO NOT install wall art above the bed.",
+      "DO NOT split, shrink, remove, or cover any window to create wall space for art above the bed.",
+      "Windows must remain fully intact, unobstructed, and visible in their original size and position.",
+      "Wall art may only be placed on solid wall surfaces, never over or in place of windows.",
+      "",
+    ];
+
     const roomSpecificRules = roomType ? [
       `[ROOM-SPECIFIC STYLING] Identified as: ${roomType}`,
-      roomType.toLowerCase() === "kitchen" ? "Kitchen: clear counters; tasteful small appliances/fruit/flowers allowed; keep it minimal." :
-      roomType.toLowerCase() === "bedroom" ? "Bedroom: quality bedding, nightstands/lamps, minimal clutter; soft cohesive palette." :
-      (roomType.toLowerCase() === "living room" || roomType.toLowerCase() === "lounge") ? "Living: conversational seating, coffee table, plant/books; balanced layout." :
-      roomType.toLowerCase() === "dining room" ? "Dining: table with appropriate number of chairs; simple centerpiece; correct spacing." :
-      roomType.toLowerCase() === "bathroom" ? "Bathroom: no staging; return image as-is (quality was already enhanced in Stage 1)." :
-      (roomType.toLowerCase() === "office" || roomType.toLowerCase() === "study") ? "Office: professional desk setup, tidy accessories, minimal decor." :
-      (roomType.toLowerCase().includes("outdoor") || roomType.toLowerCase().includes("patio") || roomType.toLowerCase().includes("deck")) ? "Outdoor: follow exterior staging rules; only on hard surfaces; enhance natural elements." :
-      `${roomType}: apply sensible staging for intended function.`,
+      roomType.toLowerCase() === "kitchen"
+        ? "Kitchen: clear counters; tasteful small appliances/fruit/flowers allowed; keep it minimal."
+        : roomType.toLowerCase() === "bedroom"
+        ? [
+            "Bedroom: quality bedding, nightstands/lamps, minimal clutter; soft cohesive palette.",
+            ...bedroomWindowArtRule,
+          ].join("\n")
+        : (roomType.toLowerCase() === "living room" || roomType.toLowerCase() === "lounge")
+        ? "Living: conversational seating, coffee table, plant/books; balanced layout."
+        : roomType.toLowerCase() === "dining room"
+        ? "Dining: table with appropriate number of chairs; simple centerpiece; correct spacing."
+        : roomType.toLowerCase() === "bathroom"
+        ? "Bathroom: no staging; return image as-is (quality was already enhanced in Stage 1)."
+        : (roomType.toLowerCase() === "office" || roomType.toLowerCase() === "study")
+        ? "Office: professional desk setup, tidy accessories, minimal decor."
+        : (roomType.toLowerCase().includes("outdoor") || roomType.toLowerCase().includes("patio") || roomType.toLowerCase().includes("deck"))
+        ? "Outdoor: follow exterior staging rules; only on hard surfaces; enhance natural elements."
+        : `${roomType}: apply sensible staging for intended function.`,
       "",
     ] : [];
 
