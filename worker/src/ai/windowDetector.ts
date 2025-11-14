@@ -66,13 +66,14 @@ Requirements:
 }
 
 export async function validateWindowPreservation(
-  ai: GoogleGenAI, 
-  originalB64: string, 
+  ai: GoogleGenAI,
+  originalB64: string,
   editedB64: string,
   userProvidedOriginalCount?: number
 ): Promise<{ ok: boolean; reason?: string }> {
   try {
     let originalCount: number;
+    let originalBoxes: Array<[number, number, number, number]> = [];
     
     // If user provided original count, use it directly (skip AI detection on original)
     if (userProvidedOriginalCount !== undefined) {
@@ -82,23 +83,22 @@ export async function validateWindowPreservation(
       // Otherwise detect windows in original image
       const originalWindows = await detectWindows(ai, originalB64);
       
-      // If detection failed, assume windows are preserved (fail open)
+      // If detection failed, hard fail to trigger strict retry
       if (originalWindows.detectionFailed) {
-        console.log("[WINDOW VALIDATOR] Original detection failed, assuming windows preserved");
-        return { ok: true };
+        return { ok: false, reason: "Window detection failed on original image" };
       }
       
       originalCount = originalWindows.windowCount;
+      originalBoxes = (originalWindows.windows || []).map(w => w.bbox);
       console.log(`[WINDOW VALIDATOR] AI-detected original count: ${originalCount} windows`);
     }
     
     // Always detect windows in edited image
     const editedWindows = await detectWindows(ai, editedB64);
     
-    // If edited detection failed, assume windows are preserved (fail open)
+    // If edited detection failed, hard fail to trigger strict retry
     if (editedWindows.detectionFailed) {
-      console.log("[WINDOW VALIDATOR] Edited detection failed, assuming windows preserved");
-      return { ok: true };
+      return { ok: false, reason: "Window detection failed on enhanced image" };
     }
 
     // Simple validation: Window count must match exactly
@@ -114,12 +114,40 @@ export async function validateWindowPreservation(
       };
     }
 
-    console.log(`[WINDOW VALIDATOR] Window count preserved: ${originalCount} windows`);
+    // STRICT: Validate bounding boxes didn't move/resize materially
+    const editedBoxes: Array<[number, number, number, number]> = (editedWindows.windows || []).map(w => w.bbox);
+    const iou = (a: [number,number,number,number], b: [number,number,number,number]) => {
+      const [ax, ay, aw, ah] = a, [bx, by, bw, bh] = b;
+      const ax2 = ax + aw, ay2 = ay + ah;
+      const bx2 = bx + bw, by2 = by + bh;
+      const ix = Math.max(0, Math.min(ax2, bx2) - Math.max(ax, bx));
+      const iy = Math.max(0, Math.min(ay2, by2) - Math.max(ay, by));
+      const inter = ix * iy;
+      const ua = aw * ah + bw * bh - inter;
+      return ua > 0 ? inter / ua : 0;
+    };
+    // Greedy matching based on IoU
+    const used = new Set<number>();
+    for (const ob of originalBoxes) {
+      let bestIdx = -1; let best = 0;
+      for (let j = 0; j < editedBoxes.length; j++) {
+        if (used.has(j)) continue;
+        const sc = iou(ob, editedBoxes[j]);
+        if (sc > best) { best = sc; bestIdx = j; }
+      }
+      // Require good overlap to consider the same window
+      if (bestIdx === -1 || best < 0.50) {
+        return { ok: false, reason: "Window location/size changed" };
+      }
+      used.add(bestIdx);
+    }
+
+    console.log(`[WINDOW VALIDATOR] Window count and bounding boxes preserved (${originalCount} windows)`);
     return { ok: true };
     
   } catch (error) {
     console.error("[WINDOW VALIDATOR] Validation failed:", error);
-    // On validation failure, assume windows are preserved (fail open)
-    return { ok: true };
+    // Fail closed to trigger strict retry
+    return { ok: false, reason: 'Window validation error' };
   }
 }

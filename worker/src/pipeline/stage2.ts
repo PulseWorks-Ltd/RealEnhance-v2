@@ -69,16 +69,14 @@ export async function runStage2(
         const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
         const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
 
-        const darkened = await sharp(basePath)
-          .composite([
-            { input: Buffer.from([0, 0, 0, Math.round(255 * 0.35)]), raw: { width: 1, height: 1, channels: 4 }, tile: true, left: 0, top: 0 }
-          ])
-          .toBuffer();
-
+        // Build a full-frame semi-transparent black overlay to darken entire frame
+        const overlay = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.35 } } }).toBuffer();
+        // Extract original region to restore brightness inside the staging rect
         const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
 
-        const guided = await sharp(darkened)
+        const guided = await sharp(basePath)
           .composite([
+            { input: overlay, left: 0, top: 0 },
             { input: regionPatch, left: x, top: y }
           ])
           .toFormat("png")
