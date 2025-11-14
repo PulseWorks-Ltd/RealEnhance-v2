@@ -12,7 +12,7 @@ import sharp from "sharp";
  */
 
 export interface ExteriorViolation {
-  type: 'gray_sky' | 'structure_built' | 'furniture_on_grass' | 'window_added';
+  type: 'gray_sky' | 'structure_built' | 'furniture_on_grass' | 'window_added' | 'furniture_on_driveway' | 'furniture_near_vehicle';
   severity: 'critical' | 'moderate';
   description: string;
 }
