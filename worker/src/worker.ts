@@ -109,6 +109,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let detectedRoom: string | undefined;
   let sceneLabel = (payload.options.sceneType as any) || "auto";
   let scenePrimary: any = undefined;
+  let allowStaging = true;
   const tScene = Date.now();
   try {
     const buf = fs.readFileSync(origPath);
@@ -124,13 +125,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     detectedRoom = room.label as string;
     // Use primary scene detector for interior/exterior when sceneType=auto
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
+    // Outdoor staging area detection for exteriors
+    if (sceneLabel === "exterior") {
+      try {
+        const { getGeminiClient } = await import("./ai/gemini");
+        const { detectStagingArea } = await import("./ai/staging-area-detector");
+        const ai = getGeminiClient();
+        const base64 = toBase64(origPath).data;
+        const stagingResult = await detectStagingArea(ai, base64);
+        allowStaging = stagingResult.hasStagingArea;
+        console.log(`[WORKER] Outdoor staging area detected: allowStaging=${allowStaging} (${stagingResult.areaType}, ${stagingResult.confidence})`);
+      } catch (e) {
+        allowStaging = false;
+        console.warn(`[WORKER] Outdoor staging area detection failed, defaulting to no staging:`, e);
+      }
+    }
     // store interim meta (non-fatal if write fails)
-    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence } } });
+    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence }, allowStaging } });
     try {
       console.log(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
     } catch {}
   } catch {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
+    allowStaging = false;
   }
   timings.sceneDetectMs = Date.now() - tScene;
 
@@ -241,9 +258,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
   let path2 = path1B;
   try {
-    path2 = payload.options.virtualStage
-      ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
-      : path1B;
+    // Only allow exterior staging if allowStaging is true
+    if (sceneLabel === "exterior" && !allowStaging) {
+      console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging.`);
+      path2 = path1B; // Only enhancement, no staging
+    } else {
+      path2 = payload.options.virtualStage
+        ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint, allowStaging })
+        : path1B;
+    }
   } catch (e: any) {
     const errMsg = e?.message || String(e);
     console.error(`[worker] Stage 2 failed: ${errMsg}`);
