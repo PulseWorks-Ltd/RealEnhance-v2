@@ -39,13 +39,13 @@ export async function validateExteriorEnhancement(
       const greenDrop = greenOrig - greenEnh;
       const hardRise = hardEnh - hardOrig;
       // Trigger if lawn area drops substantially while hard surface increases
-      if (greenDrop >= 0.20 && hardRise >= 0.15) {
+      if (greenDrop >= 0.15 && hardRise >= 0.10) {
         return {
           passed: false,
           violations: [{
             type: 'structure_built',
             severity: 'critical',
-            description: `Local check found large lawn→hard-surface change (green -${(greenDrop*100).toFixed(0)}%, hard +${(hardRise*100).toFixed(0)}%).`
+            description: `Local check found significant lawn→hard-surface change (green -${(greenDrop*100).toFixed(0)}%, hard +${(hardRise*100).toFixed(0)}%).`
           }]
         };
       }
@@ -107,6 +107,20 @@ export async function validateExteriorEnhancement(
         type: 'furniture_on_grass',
         severity: 'critical',
         description: result.furnitureDescription || 'Furniture placed on grass or inappropriate surface'
+      });
+    }
+    if (operationType === 'staging' && result.furnitureOnDriveway) {
+      violations.push({
+        type: 'furniture_on_driveway',
+        severity: 'critical',
+        description: result.furnitureDescription || 'Furniture placed on driveway (vehicle area)'
+      });
+    }
+    if (operationType === 'staging' && result.furnitureNearVehicle) {
+      violations.push({
+        type: 'furniture_near_vehicle',
+        severity: 'critical',
+        description: result.furnitureDescription || 'Furniture placed near vehicle(s)'
       });
     }
 
@@ -228,33 +242,36 @@ Set flags to true ONLY if violations exist.`;
 }
 
 function buildStagingValidationPrompt(): string {
-  return `You are validating an exterior property photo enhancement (Stage 2: Staging).
+    return `You are validating an exterior property photo enhancement (Stage 2: Staging).
 
-Compare the ORIGINAL image (first) with the STAGED image (second).
+  Compare the ORIGINAL image (first) with the STAGED image (second).
 
-Check for these violations:
+  Check for these violations:
 
-1. FURNITURE PLACEMENT (CRITICAL):
-   - Check if furniture (chairs, tables, sofas, umbrellas) is on grass, lawn, dirt, or garden beds
-   - Furniture should ONLY be on: decks, patios, verandas, concrete, stone, tile
-   - Check if furniture is near vehicles or on driveways
-   
-2. STRUCTURE BUILDING (CRITICAL):
-   - Check if any NEW decks, platforms, patios, or terraces were built
-   - Existing surfaces can have furniture, but NO new structures should appear
-   
-3. ARCHITECTURAL PRESERVATION:
-   - Windows and doors should remain the same count and position
+  1. FURNITURE PLACEMENT (CRITICAL):
+    - Check if furniture (chairs, tables, sofas, umbrellas) is on grass, lawn, dirt, or garden beds
+    - Furniture should ONLY be on: decks, patios, verandas, concrete, stone, tile
+    - Check if furniture is on driveways (concrete/asphalt used for vehicles)
+    - Check if furniture is near vehicles (cars, trucks, motorcycles, etc.)
 
-Return ONLY valid JSON:
-{
-  "furnitureOnGrass": true|false,
-  "furnitureDescription": "description of furniture placement issues",
-  "structureBuilt": true|false,
-  "structureDescription": "description of any new structures",
-  "windowsAdded": true|false,
-  "windowDescription": "description of window changes"
-}
+  2. STRUCTURE BUILDING (CRITICAL):
+    - Check if any NEW decks, platforms, patios, or terraces were built
+    - Existing surfaces can have furniture, but NO new structures should appear
 
-Set flags to true ONLY if violations exist.`;
+  3. ARCHITECTURAL PRESERVATION:
+    - Windows and doors should remain the same count and position
+
+  Return ONLY valid JSON:
+  {
+    "furnitureOnGrass": true|false,
+    "furnitureOnDriveway": true|false,
+    "furnitureNearVehicle": true|false,
+    "furnitureDescription": "description of furniture placement issues",
+    "structureBuilt": true|false,
+    "structureDescription": "description of any new structures",
+    "windowsAdded": true|false,
+    "windowDescription": "description of window changes"
+  }
+
+  Set flags to true ONLY if violations exist.`;
 }
