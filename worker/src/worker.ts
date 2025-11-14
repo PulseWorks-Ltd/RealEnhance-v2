@@ -264,7 +264,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = path1B; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
-        ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint, allowStaging })
+        ? await runStage2(path1B, { roomType: payload.options.roomType || String(detectedRoom || "living_room"), profile, angleHint })
         : path1B;
     }
   } catch (e: any) {
