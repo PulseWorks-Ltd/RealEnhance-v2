@@ -177,11 +177,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     };
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   } catch {}
-  const path1A = await runStage1A(origPath, {
-    replaceSky: payload.options.replaceSky ?? false,
-    declutter: payload.options.declutter ?? false,  // Pass declutter flag
-    sceneType: sceneLabel,  // Pass detected/specified scene type
-  });
+  let path1A: string = origPath;
+  if (sceneLabel === "exterior") {
+    // Classical cleaning for exteriors
+    const { cleanDrivewayAndDeck, sharpNormalize } = await import("./pipeline/cleanExterior");
+    const cleaned = await cleanDrivewayAndDeck(origPath);
+    const normalized = await sharpNormalize(cleaned);
+    // Save normalized image to temp file for Gemini
+    const fs = await import("fs");
+    const tempPath = `/tmp/cleaned_${payload.jobId}.jpg`;
+    fs.writeFileSync(tempPath, normalized);
+    path1A = tempPath;
+  } else {
+    // Non-exterior: original pipeline
+    path1A = await runStage1A(origPath, {
+      replaceSky: payload.options.replaceSky ?? false,
+      declutter: payload.options.declutter ?? false,
+      sceneType: sceneLabel,
+    });
+  }
   timings.stage1AMs = Date.now() - t1A;
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)
