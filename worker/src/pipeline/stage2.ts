@@ -12,6 +12,7 @@ export async function runStage2(
   basePath: string,
   opts: {
     roomType: string;
+    sceneType?: "interior" | "exterior";
     profile?: StagingProfile;
     angleHint?: "primary" | "secondary" | "other";
     referenceImagePath?: string;
@@ -26,6 +27,7 @@ export async function runStage2(
   console.log(`[stage2] 🔵 Starting virtual staging...`);
   console.log(`[stage2] Input (Stage1B): ${basePath}`);
   console.log(`[stage2] Room type: ${opts.roomType}`);
+  console.log(`[stage2] Scene type: ${opts.sceneType || 'interior'}`);
   console.log(`[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
   
   // Early exit if Stage 2 not enabled
@@ -91,6 +93,7 @@ export async function runStage2(
       }
     }
 
+    const scene = opts.sceneType || "interior";
     const { data, mime } = toBase64(inputForStage2);
     const profile = opts.profile;
     const baseStyle = profile?.styleName
@@ -107,26 +110,33 @@ export async function runStage2(
 
     const regionRules = opts.stagingRegion ? [
       "[STAGING REGION]",
-      `You may ONLY place outdoor furniture within the following region: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`,
+      scene === "exterior"
+        ? `You may ONLY place outdoor furniture within the following region: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`
+        : `You may ONLY place furniture within the following region: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`,
       `Area type: ${opts.stagingRegion.areaType}. Do NOT stage outside this area.`,
-      `Place EXACTLY ONE furniture set suitable for this area (e.g., dining table + 4–6 chairs OR side table + 2 chairs) and up to 3 small pot plants on hard surfaces only.`,
-      `Do not place any furniture on grass or driveways. Do not add structures.`,
+      scene === "exterior"
+        ? `Place EXACTLY ONE outdoor furniture set suitable for this area (e.g., dining table + 4–6 chairs OR side table + 2 chairs) and up to 3 small pot plants on hard surfaces only.`
+        : `Place EXACTLY ONE furniture set suitable for this area.`,
+      scene === "exterior" ? `Do not place any furniture on grass or driveways. Do not add structures.` : "",
       ""
     ] : [];
 
-    const textPrompt = [
-      "VIRTUAL STAGING.",
-      roomSpecific,
-      baseStyle,
-      placement,
-      consistency,
-      angleInstruction,
-      ...regionRules,
-      profile?.prompt?.trim() ? `Profile prompt: ${profile.prompt.trim()}` : "",
-      profile?.negativePrompt?.trim() ? `Negative prompt: ${profile.negativePrompt.trim()}` : "",
-      "Remove existing décor/furniture if needed to avoid mixing styles.",
-      "Return only the staged image.",
-    ].filter(Boolean).join("\n");
+    const useTest = process.env.USE_TEST_PROMPTS === "1";
+    const textPrompt = useTest
+      ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
+      : [
+          "VIRTUAL STAGING.",
+          roomSpecific,
+          baseStyle,
+          placement,
+          consistency,
+          angleInstruction,
+          ...regionRules,
+          profile?.prompt?.trim() ? `Profile prompt: ${profile.prompt.trim()}` : "",
+          profile?.negativePrompt?.trim() ? `Negative prompt: ${profile.negativePrompt.trim()}` : "",
+          "Remove existing décor/furniture if needed to avoid mixing styles.",
+          "Return only the staged image.",
+        ].filter(Boolean).join("\n");
 
     const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
     if (opts.referenceImagePath) {
@@ -142,7 +152,7 @@ export async function runStage2(
     try {
       const { resp } = await runWithImageModelFallback(ai as any, {
         contents: requestParts,
-        generationConfig: profile?.seed !== undefined ? { seed: profile.seed } : undefined,
+        generationConfig: useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined),
       } as any, "stage2");
       
       const apiElapsed = Date.now() - apiStartTime;
@@ -168,7 +178,7 @@ export async function runStage2(
       const verdict = await validateStage(
         { stage: "1B", path: basePath },
         { stage: "2", path: candidatePath },
-        { sceneType: "interior", roomType: opts.roomType }
+        { sceneType: scene, roomType: opts.roomType }
       );
       if (!verdict.ok) {
         console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
@@ -177,15 +187,17 @@ export async function runStage2(
           opts.onStrictRetry?.({ reasons: verdict.reasons || [] });
         } catch {}
 
-        // Strict retry: reinforce architectural constraints and reduce sampling randomness
-        const strictText = textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` +
-          [
-            "• DO NOT alter architecture: no new walls, openings, or partitions.",
-            "• DO NOT block doors/windows; maintain egress and ventilation.",
-            "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
-            "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
-            "• Preserve all window counts and sizes; keep frames/positions unchanged.",
-          ].join("\n");
+        // Strict retry: tighten prompt and, if using test prompts, lower embedded temperature by 20%
+        const strictText = useTest
+          ? require("../ai/prompts-test").tightenPromptAndLowerTemp(textPrompt, 0.8)
+          : textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` +
+            [
+              "• DO NOT alter architecture: no new walls, openings, or partitions.",
+              "• DO NOT block doors/windows; maintain egress and ventilation.",
+              "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
+              "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
+              "• Preserve all window counts and sizes; keep frames/positions unchanged.",
+            ].join("\n");
 
         const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
         if (opts.referenceImagePath) {
@@ -196,7 +208,7 @@ export async function runStage2(
         try {
           const { resp: strictResp } = await runWithImageModelFallback(ai as any, {
             contents: strictParts,
-            generationConfig: { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 }
+            generationConfig: useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 }
           } as any, "stage2");
 
           const strictPartsResp: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];
@@ -209,7 +221,7 @@ export async function runStage2(
             const retryVerdict = await validateStage(
               { stage: "1B", path: basePath },
               { stage: "2", path: retryPath },
-              { sceneType: "interior", roomType: opts.roomType }
+              { sceneType: scene, roomType: opts.roomType }
             );
             if (retryVerdict.ok) {
               console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)})`);

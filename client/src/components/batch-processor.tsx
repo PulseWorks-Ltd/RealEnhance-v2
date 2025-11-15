@@ -177,6 +177,8 @@ export default function BatchProcessor() {
 
   // Tuning controls (apply to all images in this batch; optional)
   const [declutterIntensity, setDeclutterIntensity] = useState<""|"light"|"standard"|"heavy">("");
+  // Disable manual sampling controls; prompt embeds temperature instead
+  const samplingUiEnabled = false;
   const [temperatureInput, setTemperatureInput] = useState<string>("");
   const [topPInput, setTopPInput] = useState<string>("");
   const [topKInput, setTopKInput] = useState<string>("");
@@ -452,10 +454,10 @@ export default function BatchProcessor() {
       }
       
       // Only add to array if we have at least one metadata field to include
-      const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
-      const pNum = topPInput.trim() ? Number(topPInput) : undefined;
-      const kNum = topKInput.trim() ? Number(topKInput) : undefined;
-      const hasTuning = (!!declutterIntensity && declutterIntensity !== "") || Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum);
+      const tNum = samplingUiEnabled && temperatureInput.trim() ? Number(temperatureInput) : undefined;
+      const pNum = samplingUiEnabled && topPInput.trim() ? Number(topPInput) : undefined;
+      const kNum = samplingUiEnabled && topKInput.trim() ? Number(topKInput) : undefined;
+      const hasTuning = (!!declutterIntensity && declutterIntensity !== "") || (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
       if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
         const metaItem: any = { index: i };
         
@@ -466,9 +468,9 @@ export default function BatchProcessor() {
         if (isExterior) metaItem.replaceSky = replaceSky; // Only include for exterior
         // Batch-level tuning applies to each image (optional)
         if (declutterIntensity) metaItem.declutterIntensity = declutterIntensity;
-        if (Number.isFinite(tNum)) metaItem.temperature = tNum;
-        if (Number.isFinite(pNum)) metaItem.topP = pNum;
-        if (Number.isFinite(kNum)) metaItem.topK = kNum;
+        if (samplingUiEnabled && Number.isFinite(tNum)) metaItem.temperature = tNum;
+        if (samplingUiEnabled && Number.isFinite(pNum)) metaItem.topP = pNum;
+        if (samplingUiEnabled && Number.isFinite(kNum)) metaItem.topK = kNum;
         
         arr.push(metaItem);
       }
@@ -2332,42 +2334,50 @@ export default function BatchProcessor() {
                     <option value="heavy">Heavy</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">Temperature</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 0.55"
-                    value={temperatureInput}
-                    onChange={(e)=>setTemperatureInput(e.target.value)}
-                    className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">topP</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 0.85"
-                    value={topPInput}
-                    onChange={(e)=>setTopPInput(e.target.value)}
-                    className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">topK</label>
-                  <input
-                    type="number"
-                    step="1"
-                    placeholder="e.g. 40"
-                    value={topKInput}
-                    onChange={(e)=>setTopKInput(e.target.value)}
-                    className="w-28 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                  />
-                </div>
-                <div className="text-xs text-gray-400 max-w-xl">
-                  These optional controls apply to the whole batch. Leave blank to use smart defaults or server config. Declutter produces empty rooms: no furniture/art/clutter remains; only fixed architecture stays.
-                </div>
+                {!samplingUiEnabled ? (
+                  <div className="text-xs text-gray-400 max-w-xl">
+                    Temperature/topP/topK are disabled. Prompts embed temperature per stage/scene. Declutter intensity remains configurable here.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-gray-300 text-xs font-medium mb-2">Temperature</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 0.55"
+                        value={temperatureInput}
+                        onChange={(e)=>setTemperatureInput(e.target.value)}
+                        className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 text-xs font-medium mb-2">topP</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 0.85"
+                        value={topPInput}
+                        onChange={(e)=>setTopPInput(e.target.value)}
+                        className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-gray-300 text-xs font-medium mb-2">topK</label>
+                      <input
+                        type="number"
+                        step="1"
+                        placeholder="e.g. 40"
+                        value={topKInput}
+                        onChange={(e)=>setTopKInput(e.target.value)}
+                        className="w-28 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                      />
+                    </div>
+                    <div className="text-xs text-gray-400 max-w-xl">
+                      These optional controls apply to the whole batch. Leave blank to use smart defaults or server config.
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

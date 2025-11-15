@@ -5,6 +5,7 @@ import { runWithImageModelFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
+import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 
 let singleton: GoogleGenAI | null = null;
 
@@ -20,7 +21,21 @@ export function getGeminiClient(): GoogleGenAI {
   return singleton as any;
 }
 
-function buildGeminiPrompt(options: PromptOptions): string {
+function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {
+  const useTest = process.env.USE_TEST_PROMPTS === "1";
+  const stage = options as any as { stage?: "1A"|"1B"|"2"; };
+  if (useTest && stage.stage) {
+    const scene = (options.sceneType === "interior" || options.sceneType === "exterior") ? options.sceneType : "interior";
+    let p = stage.stage === "1A"
+      ? buildTestStage1APrompt(scene as any, { replaceSky: (options as any).replaceSky })
+      : stage.stage === "1B"
+      ? buildTestStage1BPrompt(scene as any)
+      : buildTestStage2Prompt(scene as any, (options as any).roomType);
+    if ((options as any).strictMode) {
+      p = tightenPromptAndLowerTemp(p, 0.8);
+    }
+    return p;
+  }
   return buildPrompt(options);
 }
 
@@ -104,6 +119,8 @@ export async function enhanceWithGemini(
       goal: declutter ? "Declutter and enhance image" : "Enhance image", // Default goal
       sceneType: sceneType === "interior" || sceneType === "exterior" ? sceneType : "auto",
       declutterLevel: di,
+      stage: stage,
+      strictMode: strictMode,
       // Add other valid PromptOptions properties here as needed
     });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
@@ -118,6 +135,10 @@ export async function enhanceWithGemini(
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
+      // If using test prompts with embedded temp, keep API sampling neutral
+      if (process.env.USE_TEST_PROMPTS === "1") {
+        return { temperature: undefined as any, topP: undefined as any, topK: undefined as any };
+      }
       const isExterior = sceneType === "exterior";
       const isInterior = sceneType === "interior";
       let t: number;
@@ -173,19 +194,26 @@ export async function enhanceWithGemini(
     const cfgTopP = typeof cfgForMode?.topP === 'number' ? cfgForMode.topP : undefined;
     const cfgTopK = typeof cfgForMode?.topK === 'number' ? cfgForMode.topK : undefined;
 
-    const sampling = {
-      temperature: typeof temperature === 'number' ? temperature : (cfgTemp ?? envTemp ?? baseSampling.temperature),
-      topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
-      topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
-    };
+    const usingTest = process.env.USE_TEST_PROMPTS === "1";
+    const sampling = usingTest
+      ? { temperature: undefined as any, topP: undefined as any, topK: undefined as any }
+      : {
+          temperature: typeof temperature === 'number' ? temperature : (cfgTemp ?? envTemp ?? baseSampling.temperature),
+          topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
+          topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
+        };
     const sourceNotes: string[] = [];
-    if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
-    if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
-    console.log(`[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
+    if (!usingTest) {
+      if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
+      if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
+      console.log(`[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
+    } else {
+      console.log(`[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
+    }
 
     const { resp, modelUsed } = await runWithImageModelFallback(client as any, {
       contents: requestParts,
-      generationConfig: {
+      generationConfig: usingTest ? undefined : {
         // Encourage high fidelity + keep dimensions
         temperature: sampling.temperature,
         topP: sampling.topP,

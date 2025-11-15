@@ -302,6 +302,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = payload.options.virtualStage
         ? await runStage2(path1B, {
             roomType: payload.options.roomType || String(detectedRoom || "living_room"),
+            sceneType: sceneLabel as any,
             profile,
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
