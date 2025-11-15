@@ -18,7 +18,7 @@ export async function detectWindows(ai: GoogleGenAI, imageB64: string): Promise<
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { 
-          text: `Analyze this image and detect ALL windows. Return only a JSON response with this exact format:
+          text: `Analyze this image and detect ALL distinct window openings. Return only a JSON response with this exact format:
 {
   "windowCount": <number>,
   "windows": [
@@ -30,9 +30,14 @@ export async function detectWindows(ai: GoogleGenAI, imageB64: string): Promise<
   ]
 }
 
-Requirements:
-- Count ALL visible windows including partially visible ones
-- Provide bounding box coordinates as [x, y, width, height] 
+CRITICAL RULES FOR COUNTING:
+- Count each PHYSICALLY SEPARATE window opening (separated by walls/structure) as ONE window
+- A single window with multiple panes/glass panels = 1 window
+- Two windows side-by-side with a wall/frame between them = 2 windows
+- Sliding doors with multiple glass panels = count as distinct openings only if separated by structural frames
+- DO NOT split a single window opening into multiple counts
+- Include ALL visible windows including partially visible ones
+- Provide bounding box coordinates as [x, y, width, height]
 - Include confidence score (0.0-1.0)
 - Return ONLY the JSON, no explanation text`
         }
@@ -152,6 +157,13 @@ export async function validateWindowPreservation(
         return { ok: false, reason: "Window blocked by wall-mounted item" };
       }
       used.add(bestIdx);
+    }
+
+    // Additional check: detect if any structural walls were added between windows
+    if (originalCount > 0 && editedWindows.windowCount > originalCount) {
+      // More windows in edited than original = likely splitting existing windows with walls
+      console.error(`[WINDOW VALIDATOR] CRITICAL: Window count increased from ${originalCount} to ${editedWindows.windowCount} - walls may have been added to split windows`);
+      return { ok: false, reason: `Window count increased from ${originalCount} to ${editedWindows.windowCount} - structural wall added between windows` };
     }
 
     console.log(`[WINDOW VALIDATOR] Window count and bounding boxes preserved (${originalCount} windows)`);

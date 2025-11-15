@@ -107,8 +107,8 @@ export function buildTestStage2Prompt(scene: TestScene, roomType?: string): stri
     `Temperature: ${formatTemp(t)}`,
     "Exterior staging: Only stage on existing hard surfaces clearly separated from grass/driveways/vehicles.",
     "Never place items on grass or same-level areas near vehicles. Never build decks or new surfaces.",
-    "When uncertain if an area is suitable, skip furniture and use at most 1-3 pot plants on hard surfaces only.",
-    "Do not alter structures, colors, or materials. Add staging items only.",
+    "If the outdoor area appears small or ambiguous, skip staging entirely. Do NOT add pot plants when uncertain.",
+    "Do not alter structures, colors, or materials. Add staging items only when obviously appropriate.",
   ];
 
   const roomHint = roomLabel ? [`Room type: ${roomLabel}`] : [];
@@ -123,13 +123,13 @@ export function buildTestStage1APrompt(scene: TestScene, opts?: { replaceSky?: b
   const lines: string[] = [
     `Temperature: ${formatTemp(t)}`,
     s === "exterior"
-      ? "Enhance exterior quality. Replace gray/overcast sky with blue sky and soft white clouds. Boost grass health gently. Remove debris (bins, hoses, toys)."
+      ? "Enhance exterior quality. Replace overcast sky with blue sky and a few soft, fluffy clouds; add warm sunlight (no harsh HDR glow). Improve lawn health (denser, greener, even coverage), trim edges, tidy garden beds, and lightly prune overgrowth. Remove debris (bins, hoses, toys)."
       : "Enhance interior quality. Balance exposure and color, increase clarity, subtle sharpening, reduce noise.",
     "Do not change architecture, camera angle, or field-of-view.",
   ];
   if (s === "exterior" && opts?.replaceSky === false) {
     // Explicitly note no sky replacement if disabled
-    lines[1] = "Enhance exterior quality. Boost clarity and color. Remove debris.";
+    lines[1] = "Enhance exterior quality. Boost clarity and color. Improve lawn uniformity and tidy vegetation. Remove debris.";
   }
   return lines.join("\n");
 }
@@ -141,7 +141,7 @@ export function buildTestStage1BPrompt(scene: TestScene): string {
   return [
     `Temperature: ${formatTemp(t)}`,
     s === "exterior"
-      ? "Enhance and declutter exterior. Remove debris and temporary items completely. Preserve structures and surfaces; do not build or add new surfaces."
+      ? "Enhance and declutter exterior. Maintain blue sky and warm sunlight feel if present; even out lawn color/texture; trim edges and tidy garden beds; remove weeds and dead foliage. Remove debris and temporary items completely. Preserve structures and surfaces; do not build or add new surfaces."
       : "Enhance and declutter interior. Remove obvious clutter and small decor. Preserve architecture and built-ins.",
     "Keep camera, walls, doors, and windows unchanged."
   ].join("\n");

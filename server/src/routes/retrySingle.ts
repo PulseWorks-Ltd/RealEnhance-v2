@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, chargeForImages } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
+import { uploadOriginalToS3 } from "../utils/s3.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -87,6 +88,20 @@ export function retrySingleRouter() {
     const rec = createImageRecord({ userId: sessUser.id, originalPath: finalPath, roomType, sceneType });
     addImageToUser(sessUser.id, (rec as any).imageId);
 
+    // Upload original to S3 so worker can download it (required for multi-service deployments)
+    let remoteOriginalUrl: string | undefined = undefined;
+    try {
+      const up = await uploadOriginalToS3(finalPath);
+      remoteOriginalUrl = up.url;
+    } catch (e) {
+      const msg = (e as any)?.message || String(e);
+      console.warn('[retrySingle] original S3 upload failed:', msg);
+      // In dev, continue without remote URL (worker will try local fallback)
+      if (process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production') {
+        return res.status(503).json({ error: 's3_unavailable', message: msg });
+      }
+    }
+
     const options: any = {
       declutter: false,
       virtualStage: !!allowStaging,
@@ -102,7 +117,7 @@ export function retrySingleRouter() {
       };
     }
 
-    const { jobId } = await enqueueEnhanceJob({ userId: sessUser.id, imageId: (rec as any).imageId, options });
+    const { jobId } = await enqueueEnhanceJob({ userId: sessUser.id, imageId: (rec as any).imageId, remoteOriginalUrl, options });
 
     // Poll jobs.json for completion (up to ~120s)
     const started = Date.now();

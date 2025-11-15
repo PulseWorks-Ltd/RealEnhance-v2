@@ -6,6 +6,103 @@ import { validateWindowPreservation } from "./windowDetector";
 import { validateFurnitureScale } from "./furniture-scale-validator";
 import { validateExteriorEnhancement } from "./exterior-validator";
 import { getAdminConfig } from "../utils/adminConfig";
+import sharp from "sharp";
+
+// Local validation functions (no Gemini calls)
+async function validateStructuralIntegrityLocal(
+  prevPath: string,
+  candPath: string
+): Promise<{ ok: boolean; reason?: string; metrics: { edgeSimilarity: number; brightnessDiff: number } }> {
+  try {
+    // Load both images
+    const [prevImg, candImg] = await Promise.all([
+      sharp(prevPath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+      sharp(candPath).greyscale().raw().toBuffer({ resolveWithObject: true })
+    ]);
+
+    if (prevImg.info.width !== candImg.info.width || prevImg.info.height !== candImg.info.height) {
+      return { ok: false, reason: "Image dimensions changed", metrics: { edgeSimilarity: 0, brightnessDiff: 999 } };
+    }
+
+    const width = prevImg.info.width;
+    const height = prevImg.info.height;
+    const prevData = prevImg.data;
+    const candData = candImg.data;
+
+    // 1) Edge detection for structural changes
+    // Simple Sobel-like edge detection
+    let prevEdges = 0, candEdges = 0, matchingEdges = 0;
+    const edgeThreshold = 30;
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+        
+        // Sobel gradients
+        const prevGx = Math.abs(
+          prevData[idx - width - 1] + 2 * prevData[idx - 1] + prevData[idx + width - 1] -
+          prevData[idx - width + 1] - 2 * prevData[idx + 1] - prevData[idx + width + 1]
+        );
+        const prevGy = Math.abs(
+          prevData[idx - width - 1] + 2 * prevData[idx - width] + prevData[idx - width + 1] -
+          prevData[idx + width - 1] - 2 * prevData[idx + width] - prevData[idx + width + 1]
+        );
+        const prevEdge = Math.sqrt(prevGx * prevGx + prevGy * prevGy) > edgeThreshold;
+
+        const candGx = Math.abs(
+          candData[idx - width - 1] + 2 * candData[idx - 1] + candData[idx + width - 1] -
+          candData[idx - width + 1] - 2 * candData[idx + 1] - candData[idx + width + 1]
+        );
+        const candGy = Math.abs(
+          candData[idx - width - 1] + 2 * candData[idx - width] + candData[idx - width + 1] -
+          candData[idx + width - 1] - 2 * candData[idx + width] - candData[idx + width + 1]
+        );
+        const candEdge = Math.sqrt(candGx * candGx + candGy * candGy) > edgeThreshold;
+
+        if (prevEdge) prevEdges++;
+        if (candEdge) candEdges++;
+        if (prevEdge && candEdge) matchingEdges++;
+      }
+    }
+
+    const edgeSimilarity = prevEdges > 0 ? matchingEdges / prevEdges : 1;
+
+    // 2) Brightness analysis (windows detection)
+    let prevBright = 0, candBright = 0;
+    const brightThreshold = 200;
+
+    for (let i = 0; i < prevData.length; i++) {
+      if (prevData[i] > brightThreshold) prevBright++;
+      if (candData[i] > brightThreshold) candBright++;
+    }
+
+    const prevBrightRatio = prevBright / prevData.length;
+    const candBrightRatio = candBright / candData.length;
+    const brightnessDiff = Math.abs(candBrightRatio - prevBrightRatio);
+
+    console.log(`[LOCAL STRUCTURAL] Edge similarity: ${(edgeSimilarity * 100).toFixed(1)}%, Brightness diff: ${(brightnessDiff * 100).toFixed(1)}%`);
+
+    // Structural integrity check: edges should be >85% similar
+    const structuralOk = edgeSimilarity > 0.85;
+    
+    // Allow brightness changes for enhancement but flag major shifts (>30% could indicate new openings)
+    const brightnessOk = brightnessDiff < 0.30;
+
+    if (!structuralOk) {
+      return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
+    }
+
+    if (!brightnessOk) {
+      return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
+    }
+
+    return { ok: true, metrics: { edgeSimilarity, brightnessDiff } };
+
+  } catch (error) {
+    console.error("[LOCAL STRUCTURAL] Validation failed:", error);
+    return { ok: false, reason: "Structural validation error", metrics: { edgeSimilarity: 0, brightnessDiff: 0 } };
+  }
+}
 
 export type StageId = "1A" | "1B" | "2";
 export type SceneType = "interior" | "exterior" | string | undefined;
@@ -69,59 +166,61 @@ export async function validateStage(
   let score = 0;
   let totalW = 0;
 
-  // 1) Perspective stability (heavy weight)
+  // ===== LOCAL CHECKS (NO GEMINI CALLS) =====
+  
+  // 1) Structural integrity check using Sharp (edge detection + brightness analysis)
+  console.log("[VALIDATOR] Running local structural checks...");
   try {
-    const persp = await validatePerspectivePreservation(ai as any, prevB64, candB64);
-    const ok = !!persp.ok;
-    const s = ok ? 1 : 0;
-    metrics.perspective = s;
-    if (!ok) reasons.push(persp.reason || "perspective violation");
-    const w = weights.perspective;
-    score += s * w; totalW += w;
+    const structural = await validateStructuralIntegrityLocal(prev.path, cand.path);
+    metrics.structuralEdges = structural.metrics.edgeSimilarity;
+    metrics.brightnessDiff = structural.metrics.brightnessDiff;
+    
+    if (!structural.ok) {
+      console.error(`[VALIDATOR] CRITICAL: ${structural.reason}`);
+      reasons.push(structural.reason!);
+      // Hard fail on major structural violations
+      return {
+        ok: false,
+        score: 0,
+        reasons: [structural.reason!],
+        metrics
+      };
+    }
+    console.log("[VALIDATOR] ✅ Local structural check passed");
   } catch (e) {
-    metrics.perspective = 0;
-    reasons.push("perspective check failed");
-    totalW += weights.perspective; // count as 0 contribution
+    console.warn("[VALIDATOR] Local structural check error:", e);
+    reasons.push("structural check error");
   }
 
-  // 2) Wall planes (heavy weight)
-  try {
-    const wall = await validateWallPlanes(ai as any, prevB64, candB64);
-    const ok = !!wall.ok;
-    const s = ok ? 1 : 0;
-    metrics.wallPlanes = s;
-    if (!ok) reasons.push(wall.reason || "wall planes changed");
-    const w = weights.wallPlanes;
-    score += s * w; totalW += w;
-  } catch (e) {
-    metrics.wallPlanes = 0;
-    reasons.push("wall plane check failed");
-    totalW += weights.wallPlanes;
-  }
+  // ===== GEMINI CHECKS (ONLY FOR COMPLEX SEMANTIC VALIDATION) =====
+  // Only run Gemini checks for Stage 2 (staging) - semantic furniture/realism validation
+  const useGeminiValidation = cand.stage === "2" && process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION !== "0";
 
-  // 3) Windows (all scenes)
-  try {
-    const res = await validateWindowPreservation(ai as any, prevB64, candB64);
-    const ok = !!res.ok;
-    const s = ok ? 1 : 0;
-    metrics.windows = s;
-    if (!ok) reasons.push(res.reason || "windows changed");
-    const w = weights.windows;
-    score += s * w; totalW += w;
-  } catch (e) {
-    metrics.windows = 0;
-    reasons.push("window check failed");
-    totalW += weights.windows;
-  }
+  if (useGeminiValidation) {
+    console.log("[VALIDATOR] Running Gemini semantic checks for Stage 2...");
 
-  // 4) Furniture checks (not applied for 1A)
-  if (cand.stage === "2") {
+    // 1) Perspective stability - semantic check for staging
+    try {
+      const persp = await validatePerspectivePreservation(ai as any, prevB64, candB64);
+      const ok = !!persp.ok;
+      const s = ok ? 1 : 0;
+      metrics.perspective = s;
+      if (!ok) reasons.push(persp.reason || "perspective violation");
+      const w = weights.perspective;
+      score += s * w; totalW += w;
+    } catch (e) {
+      metrics.perspective = 0;
+      reasons.push("perspective check failed");
+      totalW += weights.perspective;
+    }
+
+    // 2) Furniture scale and placement - Stage 2 only
     try {
       const furn = await validateFurnitureScale(ai as any, prevB64, candB64);
       const ok = !!furn.ok;
       const s = ok ? 1 : 0;
       metrics.furniture = s;
-      if (!ok) reasons.push(furn.reason || "furniture scale/added");
+      if (!ok) reasons.push(furn.reason || "furniture scale/placement issue");
       const w = weights.furniture;
       score += s * w; totalW += w;
     } catch (e) {
@@ -130,18 +229,7 @@ export async function validateStage(
       totalW += weights.furniture;
     }
 
-    // Egress/fixture blocking check (Stage 2 only)
-    try {
-      const { validateStructure } = await import("../validators/structural");
-      const struct = await validateStructure(prev.path, cand.path);
-      if (!struct.ok) {
-        reasons.push(...(struct.notes || ["egress/fixture blocking detected"]));
-      }
-    } catch (e) {
-      reasons.push("egress/fixture blocking check failed");
-    }
-
-    // Realism check (Stage 2 only)
+    // 3) Realism check
     try {
       const { validateRealism } = await import("../validators/realism");
       const realism = await validateRealism(cand.path);
@@ -151,27 +239,23 @@ export async function validateStage(
     } catch (e) {
       reasons.push("realism check failed");
     }
+  } else {
+    console.log("[VALIDATOR] Skipping Gemini semantic checks (Stage 1 or disabled)");
+    // For Stage 1, just use local structural checks
+    score = 1;
+    totalW = 1;
   }
 
-  // 5) Exterior sanity (exterior-only)
-  if ((ctx.sceneType || "interior").toString() === "exterior") {
+  // Local structural/egress check for Stage 2
+  if (cand.stage === "2") {
     try {
-      const ext = await validateExteriorEnhancement(
-        ai as any,
-        prevB64,
-        candB64,
-        cand.stage === "2" ? "staging" : "quality-only"
-      );
-      const ok = !!ext.passed;
-      const s = ok ? 1 : 0;
-      metrics.exterior = s;
-      if (!ok) reasons.push("exterior structure shift");
-      const w = weights.exterior;
-      score += s * w; totalW += w;
+      const { validateStructure } = await import("../validators/structural");
+      const struct = await validateStructure(prev.path, cand.path);
+      if (!struct.ok) {
+        reasons.push(...(struct.notes || ["egress/fixture blocking detected"]));
+      }
     } catch (e) {
-      metrics.exterior = 0;
-      reasons.push("exterior check failed");
-      totalW += weights.exterior;
+      reasons.push("egress/fixture blocking check failed");
     }
   }
 

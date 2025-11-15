@@ -148,7 +148,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             if (stagingRegion && W > 0 && H > 0) {
               const area = Math.max(0, Math.min(stagingRegion.width, W)) * Math.max(0, Math.min(stagingRegion.height, H));
               const coverage = area / (W * H);
-              const minCoverage = Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2);
+              const minCoverage = Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.3);
               if (coverage < minCoverage) {
                 allowStaging = false;
                 console.log(`[WORKER] Exterior staging region below threshold: ${(coverage*100).toFixed(1)}% < ${(minCoverage*100).toFixed(0)}% → disallow staging`);
@@ -203,9 +203,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   } catch {}
   let path1A: string = origPath;
-  // Unified Stage 1A for all scenes (remove exterior pre-clean)
+  // Unified Stage 1A for all scenes (with sensible exterior defaults)
   path1A = await runStage1A(origPath, {
-    replaceSky: payload.options.replaceSky ?? false,
+    replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
     declutter: payload.options.declutter ?? false,
     sceneType: sceneLabel,
   });
@@ -565,9 +565,12 @@ async function handleEditJob(payload: EditJobPayload) {
 
   let restoreFromPath: string | undefined;
   if (payload.mode === "Restore") {
-    // previous version in history before baseVersionId
-    const idx = rec.history.findIndex(v => v.versionId === payload.baseVersionId);
-    restoreFromPath = idx > 0 ? rec.history[idx - 1]?.filePath : basePath;
+    // Find the last enhancement stage (1B if declutter was used, otherwise 1A)
+    // to restore pixels from the enhanced image instead of the raw original
+    const stage1B = rec.history.find(v => v.stageLabel === "1B");
+    const stage1A = rec.history.find(v => v.stageLabel === "1A");
+    restoreFromPath = stage1B?.filePath || stage1A?.filePath || basePath;
+    console.log(`[worker] Restore mode: using ${stage1B ? 'Stage 1B' : stage1A ? 'Stage 1A' : 'base'} as restore source: ${restoreFromPath}`);
   }
 
   const editedPath = await applyEdit({
