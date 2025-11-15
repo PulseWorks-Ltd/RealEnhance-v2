@@ -355,9 +355,14 @@ export async function validateStage(
       console.log('[WINDOW LOCAL] Skipping windows check for Stage 1 exterior as configured');
     } else {
       // Stage 1 uses more tolerant IoU with mask dilation; Stage 2 remains strict
+      // IoU minimums: Stage 1A is more lenient (default 0.30), Stage 2 stricter (default 0.60)
       const W_IOU_MIN = isStage1
-        ? Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1_STAGE_INTERIOR'] || (isExterior ? 0.45 : 0.50))
-        : Number(process.env.WINDOW_IOU_MIN_2 || 0.75);
+        ? (
+            cand.stage === '1A'
+              ? Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1A_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1A_STAGE_INTERIOR'] || 0.30)
+              : Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1_STAGE_INTERIOR'] || (isExterior ? 0.45 : 0.50))
+          )
+        : Number(process.env.WINDOW_IOU_MIN_2 || 0.60);
       const W_AREA_DELTA_MAX = isStage1 ? Number(process.env.WINDOW_AREA_DELTA_MAX_1 || 0.20) : Number(process.env.WINDOW_AREA_DELTA_MAX_2 || 0.15);
       const W_CENTROID_SHIFT_MAX = isStage1 ? Number(process.env.WINDOW_CENTROID_SHIFT_MAX_1 || 0.08) : Number(process.env.WINDOW_CENTROID_SHIFT_MAX_2 || 0.05);
       const W_OCCLUSION_MAX = isStage1 ? Number(process.env[isExterior ? 'WINDOW_OCCLUSION_MAX_1_EXTERIOR' : 'WINDOW_OCCLUSION_MAX_1_INTERIOR'] || (isExterior ? 0.40 : 0.30)) : Number(process.env.WINDOW_OCCLUSION_MAX_2 || 0.25);
