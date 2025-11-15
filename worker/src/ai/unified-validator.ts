@@ -32,8 +32,8 @@ function getBrightDiffMax(stage: StageId, scene?: SceneType) {
 
 function getEdgeSimHardMin(stage: StageId, scene?: SceneType) {
   const s = (scene === 'exterior') ? 'EXTERIOR' : 'INTERIOR';
-  if (stage === '1A') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1A_${s}`], scene === 'exterior' ? 0.58 : 0.60);
-  if (stage === '1B') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1B_${s}`], scene === 'exterior' ? 0.60 : 0.62);
+  if (stage === '1A') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1A_${s}`], 0.30);
+  if (stage === '1B') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1B_${s}`], 0.30);
   return num(process.env.LOCAL_EDGE_SIM_HARD_MIN_2, 0.83);
 }
 
@@ -42,6 +42,13 @@ function getBrightDiffHardMax(stage: StageId, scene?: SceneType) {
   if (stage === '1A') return num(process.env[`LOCAL_BRIGHT_DIFF_HARD_MAX_1A_${s}`], scene === 'exterior' ? 0.55 : 0.40);
   if (stage === '1B') return num(process.env[`LOCAL_BRIGHT_DIFF_HARD_MAX_1B_${s}`], scene === 'exterior' ? 0.50 : 0.38);
   return num(process.env.LOCAL_BRIGHT_DIFF_HARD_MAX_2, 0.30);
+}
+
+function getEdgeSimExtremeMin(stage: StageId, scene?: SceneType) {
+  // Extreme floor: below this, fail regardless (likely true structural change)
+  if (stage === '2') return num(process.env.LOCAL_EDGE_SIM_EXTREME_MIN_2, 0.50);
+  if (stage === '1A' || stage === '1B') return num(process.env.LOCAL_EDGE_SIM_EXTREME_MIN_1, 0.20);
+  return 0.20;
 }
 
 function percentileThreshold(hist: number[], total: number, pct: number): number {
@@ -124,7 +131,7 @@ async function validateStructuralIntegrityLocal(
         candEdge[idx] = (Math.sqrt(cGx * cGx + cGy * cGy) > edgeThreshold) ? 1 : 0;
       }
     }
-    const dilateR = (opts.stage === '2') ? 0 : Math.max(0, Math.floor(num(process.env.LOCAL_EDGE_DILATE_RADIUS, 1)));
+    const dilateR = (opts.stage === '2') ? 0 : Math.max(0, Math.floor(num(process.env.LOCAL_EDGE_DILATE_RADIUS, 2)));
     let mapA: any = prevEdge, mapB: any = candEdge;
     if (dilateR > 0) {
       mapA = dilate1(mapA as Uint8Array, width, height) as any;
@@ -169,6 +176,7 @@ async function validateStructuralIntegrityLocal(
 
     const softEdgeMin = getEdgeSimMin(opts.stage, opts.sceneType);
     const hardEdgeMin = getEdgeSimHardMin(opts.stage, opts.sceneType);
+    const extremeEdgeMin = getEdgeSimExtremeMin(opts.stage, opts.sceneType);
     const softBrightMax = getBrightDiffMax(opts.stage, opts.sceneType);
     const hardBrightMax = getBrightDiffHardMax(opts.stage, opts.sceneType);
 
@@ -181,12 +189,14 @@ async function validateStructuralIntegrityLocal(
         return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
       }
     } else {
-      // Stage 1: only HARD fail; borderline allowed to pass and be checked by windows/egress
-      if (edgeSimilarity < hardEdgeMin) {
-        return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
+      // Stage 1: two-signal rule
+      // 1) If edge IoU is extremely low, hard fail outright
+      if (edgeSimilarity < extremeEdgeMin) {
+        return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity < extreme floor)`, metrics: { edgeSimilarity, brightnessDiff } };
       }
-      if (brightnessDiff > hardBrightMax) {
-        return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
+      // 2) Otherwise, require BOTH low edge IoU and large brightness shift to hard fail
+      if (edgeSimilarity < hardEdgeMin && brightnessDiff > hardBrightMax) {
+        return { ok: false, reason: `Combined structural signals: low edge similarity ${(edgeSimilarity*100).toFixed(1)}% and large brightness change ${(brightnessDiff*100).toFixed(1)}%`, metrics: { edgeSimilarity, brightnessDiff } };
       }
       // If only soft thresholds tripped, allow but log
       if (edgeSimilarity < softEdgeMin || brightnessDiff > softBrightMax) {
