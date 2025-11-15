@@ -302,9 +302,7 @@ export async function validateStage(
     "2": parseNum(process.env.VALIDATOR_THRESH_2) ?? (typeof thresholdsCfg?.["2"] === 'number' ? thresholdsCfg["2"] : 0.68),
   } as Record<StageId, number>;
 
-  const ai = getGeminiClient();
-  const prevB64 = toBase64(prev.path).data;
-  const candB64 = toBase64(cand.path).data;
+  // Defer Gemini client initialization and base64 conversion until needed
 
   // Normalize candidate dims for local checks if needed
   const { usedPath: candNormPath, resized: candWasResized } = await normalizeCandidateDims(prev.path, cand.path);
@@ -476,6 +474,9 @@ export async function validateStage(
 
   if (useGeminiValidation) {
     console.log("[VALIDATOR] Running Gemini semantic checks for Stage 2...");
+    const ai = getGeminiClient();
+    const prevB64 = toBase64(prev.path).data;
+    const candB64 = toBase64(cand.path).data;
 
     // 1) Perspective stability - semantic check for staging
     try {
