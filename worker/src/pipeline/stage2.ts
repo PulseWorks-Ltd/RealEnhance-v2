@@ -115,7 +115,7 @@ export async function runStage2(
         : `You may ONLY place furniture within the following region: left=${opts.stagingRegion.x}, top=${opts.stagingRegion.y}, width=${opts.stagingRegion.width}, height=${opts.stagingRegion.height}.`,
       `Area type: ${opts.stagingRegion.areaType}. Do NOT stage outside this area.`,
       scene === "exterior"
-        ? `Place EXACTLY ONE outdoor furniture set suitable for this area (e.g., dining table + 4–6 chairs OR side table + 2 chairs) and up to 3 small pot plants on hard surfaces only.`
+        ? `Place EXACTLY ONE outdoor furniture set (e.g., dining table + 4–6 chairs OR bistro table + 2 chairs). If the area is small or ambiguous, skip staging entirely (add nothing).`
         : `Place EXACTLY ONE furniture set suitable for this area.`,
       scene === "exterior" ? `Do not place any furniture on grass or driveways. Do not add structures.` : "",
       ""
