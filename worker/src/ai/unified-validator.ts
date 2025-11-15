@@ -10,16 +10,68 @@ import sharp from "sharp";
 import { detectWindowsLocal, iouMasks, centroidFromMask } from "../validators/local-windows";
 import path from "path";
 
+// Helpers for env parsing
+const num = (v: any, d: number) => {
+  const n = parseFloat(String(v ?? ''));
+  return Number.isFinite(n) ? n : d;
+};
+
+function getEdgeSimMin(stage: StageId, scene?: SceneType) {
+  const s = (scene === 'exterior') ? 'EXTERIOR' : 'INTERIOR';
+  if (stage === '1A') return num(process.env[`LOCAL_EDGE_SIM_MIN_1A_${s}`], scene === 'exterior' ? 0.72 : 0.76);
+  if (stage === '1B') return num(process.env[`LOCAL_EDGE_SIM_MIN_1B_${s}`], scene === 'exterior' ? 0.74 : 0.78);
+  return num(process.env.LOCAL_EDGE_SIM_MIN_2, 0.83);
+}
+
+function getBrightDiffMax(stage: StageId, scene?: SceneType) {
+  const s = (scene === 'exterior') ? 'EXTERIOR' : 'INTERIOR';
+  if (stage === '1A') return num(process.env[`LOCAL_BRIGHT_DIFF_MAX_1A_${s}`], scene === 'exterior' ? 0.45 : 0.35);
+  if (stage === '1B') return num(process.env[`LOCAL_BRIGHT_DIFF_MAX_1B_${s}`], scene === 'exterior' ? 0.40 : 0.32);
+  return num(process.env.LOCAL_BRIGHT_DIFF_MAX_2, 0.30);
+}
+
+function percentileThreshold(hist: number[], total: number, pct: number): number {
+  let acc = 0;
+  const target = total * pct;
+  for (let i = 0; i < hist.length; i++) {
+    acc += hist[i];
+    if (acc >= target) return i;
+  }
+  return 200;
+}
+
+function computeHistogram(buf: Uint8Array): number[] {
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < buf.length; i++) hist[buf[i]]++;
+  return hist;
+}
+
+function dilate1(inMap: Uint8Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(inMap.length);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      let on = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) on |= inMap[(y + dy) * w + (x + dx)];
+      }
+      out[y * w + x] = on ? 1 : 0;
+    }
+  }
+  return out;
+}
+
 // Local validation functions (no Gemini calls)
 async function validateStructuralIntegrityLocal(
   prevPath: string,
-  candPath: string
+  candPath: string,
+  opts: { stage: StageId; sceneType?: SceneType }
 ): Promise<{ ok: boolean; reason?: string; metrics: { edgeSimilarity: number; brightnessDiff: number } }> {
   try {
-    // Load both images
+    // Load both images with optional pre-blur to stabilize micro edges
+    const preBlurSigmaDefault = (opts.stage === '2') ? 0 : num(process.env.LOCAL_EDGE_PREBLUR_SIGMA, 0.8);
     const [prevImg, candImg] = await Promise.all([
-      sharp(prevPath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-      sharp(candPath).greyscale().raw().toBuffer({ resolveWithObject: true })
+      sharp(prevPath).greyscale().blur(preBlurSigmaDefault).raw().toBuffer({ resolveWithObject: true }),
+      sharp(candPath).greyscale().blur(preBlurSigmaDefault).raw().toBuffer({ resolveWithObject: true })
     ]);
 
     if (prevImg.info.width !== candImg.info.width || prevImg.info.height !== candImg.info.height) {
@@ -28,67 +80,81 @@ async function validateStructuralIntegrityLocal(
 
     const width = prevImg.info.width;
     const height = prevImg.info.height;
-    const prevData = prevImg.data;
-    const candData = candImg.data;
+    const prevData = new Uint8Array(prevImg.data);
+    const candData = new Uint8Array(candImg.data);
 
-    // 1) Edge detection for structural changes
-    // Simple Sobel-like edge detection
-    let prevEdges = 0, candEdges = 0, matchingEdges = 0;
-    const edgeThreshold = 30;
-
+    // 1) Edge detection for structural changes -> symmetric IoU of edge maps
+    const edgeThreshold = num(process.env.LOCAL_EDGE_MAG_THRESHOLD, 35);
+    const prevEdge = new Uint8Array(prevData.length);
+    const candEdge = new Uint8Array(candData.length);
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
         const idx = y * width + x;
-        
-        // Sobel gradients
-        const prevGx = Math.abs(
+        const pGx = Math.abs(
           prevData[idx - width - 1] + 2 * prevData[idx - 1] + prevData[idx + width - 1] -
           prevData[idx - width + 1] - 2 * prevData[idx + 1] - prevData[idx + width + 1]
         );
-        const prevGy = Math.abs(
+        const pGy = Math.abs(
           prevData[idx - width - 1] + 2 * prevData[idx - width] + prevData[idx - width + 1] -
           prevData[idx + width - 1] - 2 * prevData[idx + width] - prevData[idx + width + 1]
         );
-        const prevEdge = Math.sqrt(prevGx * prevGx + prevGy * prevGy) > edgeThreshold;
-
-        const candGx = Math.abs(
+        const cGx = Math.abs(
           candData[idx - width - 1] + 2 * candData[idx - 1] + candData[idx + width - 1] -
           candData[idx - width + 1] - 2 * candData[idx + 1] - candData[idx + width + 1]
         );
-        const candGy = Math.abs(
+        const cGy = Math.abs(
           candData[idx - width - 1] + 2 * candData[idx - width] + candData[idx - width + 1] -
           candData[idx + width - 1] - 2 * candData[idx + width] - candData[idx + width + 1]
         );
-        const candEdge = Math.sqrt(candGx * candGx + candGy * candGy) > edgeThreshold;
-
-        if (prevEdge) prevEdges++;
-        if (candEdge) candEdges++;
-        if (prevEdge && candEdge) matchingEdges++;
+        prevEdge[idx] = (Math.sqrt(pGx * pGx + pGy * pGy) > edgeThreshold) ? 1 : 0;
+        candEdge[idx] = (Math.sqrt(cGx * cGx + cGy * cGy) > edgeThreshold) ? 1 : 0;
       }
     }
-
-    const edgeSimilarity = prevEdges > 0 ? matchingEdges / prevEdges : 1;
-
-    // 2) Brightness analysis (windows detection)
-    let prevBright = 0, candBright = 0;
-    const brightThreshold = 200;
-
-    for (let i = 0; i < prevData.length; i++) {
-      if (prevData[i] > brightThreshold) prevBright++;
-      if (candData[i] > brightThreshold) candBright++;
+    const dilateR = (opts.stage === '2') ? 0 : Math.max(0, Math.floor(num(process.env.LOCAL_EDGE_DILATE_RADIUS, 1)));
+    let mapA: any = prevEdge, mapB: any = candEdge;
+    if (dilateR > 0) {
+      mapA = dilate1(mapA as Uint8Array, width, height) as any;
+      mapB = dilate1(mapB as Uint8Array, width, height) as any;
     }
+    let inter = 0, uni = 0;
+    for (let i = 0; i < mapA.length; i++) {
+      const a = mapA[i] ? 1 : 0;
+      const b = mapB[i] ? 1 : 0;
+      if (a & b) inter++;
+      if (a | b) uni++;
+    }
+    const edgeSimilarity = uni > 0 ? inter / uni : 1;
 
-    const prevBrightRatio = prevBright / prevData.length;
-    const candBrightRatio = candBright / candData.length;
+    // 2) Brightness analysis (windows/openings proxy) using percentile threshold
+    const topExclude = (opts.sceneType === 'exterior') ? num(process.env.LOCAL_BRIGHT_EXTERIOR_TOP_EXCLUDE, 0.15) : 0;
+    const pctl = Math.max(0.5, Math.min(0.98, num(process.env.LOCAL_BRIGHT_THRESH_PCTL, 0.88)));
+    const sliceForHist = (buf: Uint8Array) => {
+      if (!topExclude) return buf;
+      const cut = Math.floor(height * topExclude);
+      const out = new Uint8Array(width * (height - cut));
+      let j = 0;
+      for (let y = cut; y < height; y++) {
+        const off = y * width;
+        out.set(buf.subarray(off, off + width), j);
+        j += width;
+      }
+      return out;
+    };
+    const prevSlice = sliceForHist(prevData);
+    const candSlice = sliceForHist(candData);
+    const thrPrev = percentileThreshold(computeHistogram(prevSlice), prevSlice.length, pctl);
+    const thrCand = percentileThreshold(computeHistogram(candSlice), candSlice.length, pctl);
+    let prevBright = 0, candBright = 0;
+    for (let i = 0; i < prevSlice.length; i++) if (prevSlice[i] >= thrPrev) prevBright++;
+    for (let i = 0; i < candSlice.length; i++) if (candSlice[i] >= thrCand) candBright++;
+    const prevBrightRatio = prevBright / Math.max(1, prevSlice.length);
+    const candBrightRatio = candBright / Math.max(1, candSlice.length);
     const brightnessDiff = Math.abs(candBrightRatio - prevBrightRatio);
 
-    console.log(`[LOCAL STRUCTURAL] Edge similarity: ${(edgeSimilarity * 100).toFixed(1)}%, Brightness diff: ${(brightnessDiff * 100).toFixed(1)}%`);
+    console.log(`[LOCAL STRUCTURAL] Edge IoU: ${(edgeSimilarity * 100).toFixed(1)}%, Brightness diff: ${(brightnessDiff * 100).toFixed(1)}%`);
 
-    // Structural integrity check: edges should be >85% similar
-    const structuralOk = edgeSimilarity > 0.85;
-    
-    // Allow brightness changes for enhancement but flag major shifts (>30% could indicate new openings)
-    const brightnessOk = brightnessDiff < 0.30;
+    const structuralOk = edgeSimilarity >= getEdgeSimMin(opts.stage, opts.sceneType);
+    const brightnessOk = brightnessDiff <= getBrightDiffMax(opts.stage, opts.sceneType);
 
     if (!structuralOk) {
       return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
@@ -217,7 +283,7 @@ export async function validateStage(
   // 1) Structural integrity check using Sharp (edge detection + brightness analysis)
   console.log("[VALIDATOR] Running local structural checks...");
   try {
-    const structural = await validateStructuralIntegrityLocal(prev.path, candNormPath);
+    const structural = await validateStructuralIntegrityLocal(prev.path, candNormPath, { stage: cand.stage as StageId, sceneType: ctx.sceneType });
     metrics.structuralEdges = structural.metrics.edgeSimilarity;
     metrics.brightnessDiff = structural.metrics.brightnessDiff;
     
@@ -244,79 +310,87 @@ export async function validateStage(
 
   // ===== LOCAL WINDOW MASK COMPARISON (IoU/Area/Centroid/Occlusion) =====
   try {
-    const W_IOU_MIN = Number(process.env.WINDOW_IOU_MIN || 0.75);
-    const W_AREA_DELTA_MAX = Number(process.env.WINDOW_AREA_DELTA_MAX || 0.15);
-    const W_CENTROID_SHIFT_MAX = Number(process.env.WINDOW_CENTROID_SHIFT_MAX || 0.05);
-    const W_OCCLUSION_MAX = Number(process.env.WINDOW_OCCLUSION_MAX || 0.25);
+    const isStage1 = cand.stage === '1A' || cand.stage === '1B';
+    const isExterior = ctx.sceneType === 'exterior';
+    // Allow disabling windows check for Stage 1 exteriors if desired
+    if (isStage1 && isExterior && process.env.WINDOW_CHECK_EXTERIOR_STAGE1 === '0') {
+      console.log('[WINDOW LOCAL] Skipping windows check for Stage 1 exterior as configured');
+    } else {
+      const W_IOU_MIN = isStage1 ? Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1_STAGE_INTERIOR'] || (isExterior ? 0.65 : 0.70)) : Number(process.env.WINDOW_IOU_MIN_2 || 0.75);
+      const W_AREA_DELTA_MAX = isStage1 ? Number(process.env.WINDOW_AREA_DELTA_MAX_1 || 0.20) : Number(process.env.WINDOW_AREA_DELTA_MAX_2 || 0.15);
+      const W_CENTROID_SHIFT_MAX = isStage1 ? Number(process.env.WINDOW_CENTROID_SHIFT_MAX_1 || 0.08) : Number(process.env.WINDOW_CENTROID_SHIFT_MAX_2 || 0.05);
+      const W_OCCLUSION_MAX = isStage1 ? Number(process.env[isExterior ? 'WINDOW_OCCLUSION_MAX_1_EXTERIOR' : 'WINDOW_OCCLUSION_MAX_1_INTERIOR'] || (isExterior ? 0.40 : 0.30)) : Number(process.env.WINDOW_OCCLUSION_MAX_2 || 0.25);
 
-    const [origDet, enhDet, origRaw, enhRaw] = await Promise.all([
-      detectWindowsLocal(prev.path),
-      detectWindowsLocal(candNormPath),
-      sharp(prev.path).greyscale().raw().toBuffer({ resolveWithObject: true }),
-      sharp(candNormPath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-    ]);
+      const [origDet, enhDet, origRaw, enhRaw] = await Promise.all([
+        detectWindowsLocal(prev.path),
+        detectWindowsLocal(candNormPath),
+        sharp(prev.path).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candNormPath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+      ]);
 
-    const W = origDet.width;
-    const H = origDet.height;
-    const diag = Math.sqrt(W * W + H * H);
-    const origBuf = new Uint8Array(origRaw.data.buffer, origRaw.data.byteOffset, origRaw.data.byteLength);
-    const enhBuf = new Uint8Array(enhRaw.data.buffer, enhRaw.data.byteOffset, enhRaw.data.byteLength);
+      const W = origDet.width;
+      const H = origDet.height;
+      const diag = Math.sqrt(W * W + H * H);
+      const origBuf = new Uint8Array(origRaw.data.buffer, origRaw.data.byteOffset, origRaw.data.byteLength);
+      const enhBuf = new Uint8Array(enhRaw.data.buffer, enhRaw.data.byteOffset, enhRaw.data.byteLength);
 
-    // Greedy matching by IoU (sufficient here given small counts)
-    const used = new Set<number>();
-    for (let i = 0; i < origDet.windows.length; i++) {
-      const ow = origDet.windows[i];
-      let bestIdx = -1;
-      let bestIou = 0;
-      for (let j = 0; j < enhDet.windows.length; j++) {
-        if (used.has(j)) continue;
-        const iou = iouMasks(ow.mask, enhDet.windows[j].mask);
-        if (iou > bestIou) {
-          bestIou = iou;
-          bestIdx = j;
-        }
-      }
+      // If both zero windows, skip quietly
+      if (origDet.windows.length === 0 && enhDet.windows.length === 0) {
+        console.log('[WINDOW LOCAL] No windows detected in either image; skipping window compliance.');
+      } else {
+        // Greedy matching by IoU (sufficient here given small counts)
+        const used = new Set<number>();
+        for (let i = 0; i < origDet.windows.length; i++) {
+          const ow = origDet.windows[i];
+          let bestIdx = -1;
+          let bestIou = 0;
+          for (let j = 0; j < enhDet.windows.length; j++) {
+            if (used.has(j)) continue;
+            const iou = iouMasks(ow.mask, enhDet.windows[j].mask);
+            if (iou > bestIou) {
+              bestIou = iou;
+              bestIdx = j;
+            }
+          }
 
-      if (bestIdx === -1) {
-        const msg = `Window ${i + 1} disappeared entirely`;
-        console.error(`[WINDOW LOCAL] ${msg}`);
-        return { ok: false, score: 0, reasons: [msg], metrics };
-      }
-      used.add(bestIdx);
+          if (bestIdx === -1) {
+            const msg = `Window ${i + 1} disappeared entirely`;
+            console.error(`[WINDOW LOCAL] ${msg}`);
+            return { ok: false, score: 0, reasons: [msg], metrics };
+          }
+          used.add(bestIdx);
 
-      const nw = enhDet.windows[bestIdx];
-      const iou = bestIou;
-      const areaDelta = Math.abs(nw.area - ow.area) / Math.max(1, ow.area);
-      const occluded = (() => {
-        // Brightness drop inside original mask
-        let oSum = 0, eSum = 0, c = 0;
-        for (let p = 0; p < ow.mask.length; p++) {
-          if (ow.mask[p]) {
-            oSum += origBuf[p];
-            eSum += enhBuf[p];
-            c++;
+          const nw = enhDet.windows[bestIdx];
+          const iou = bestIou;
+          const areaDelta = Math.abs(nw.area - ow.area) / Math.max(1, ow.area);
+          const occluded = (() => {
+            // Brightness drop inside original mask
+            let oSum = 0, eSum = 0, c = 0;
+            for (let p = 0; p < ow.mask.length; p++) {
+              if (ow.mask[p]) {
+                oSum += origBuf[p];
+                eSum += enhBuf[p];
+                c++;
+              }
+            }
+            const drop = c ? Math.max(0, (oSum / c - eSum / c) / Math.max(1, oSum / c)) : 0;
+            return drop;
+          })();
+          const occlusionOk = occluded <= W_OCCLUSION_MAX;
+
+          const { cx: ox, cy: oy } = centroidFromMask(ow.mask, W);
+          const { cx: nx, cy: ny } = centroidFromMask(nw.mask, W);
+          const cshift = Math.hypot(nx - ox, ny - oy) / Math.max(1, diag);
+
+          if (iou < W_IOU_MIN || areaDelta > W_AREA_DELTA_MAX || cshift > W_CENTROID_SHIFT_MAX || !occlusionOk) {
+            const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (<${W_IOU_MIN}), areaΔ=${(areaDelta * 100).toFixed(1)}% (> ${(W_AREA_DELTA_MAX * 100).toFixed(0)}%), centroidΔ=${(cshift * 100).toFixed(2)}% (> ${(W_CENTROID_SHIFT_MAX * 100).toFixed(0)}%), occlusion=${(occluded * 100).toFixed(1)}% (> ${(W_OCCLUSION_MAX * 100).toFixed(0)}%)`;
+            console.error(`[WINDOW LOCAL] ${rsn}`);
+            return { ok: false, score: 0, reasons: [rsn], metrics };
           }
         }
-        const drop = c ? Math.max(0, (oSum / c - eSum / c) / Math.max(1, oSum / c)) : 0;
-        return drop;
-      })();
-      const occlusionOk = occluded <= W_OCCLUSION_MAX;
-
-      const { cx: ox, cy: oy } = centroidFromMask(ow.mask, W);
-      const { cx: nx, cy: ny } = centroidFromMask(nw.mask, W);
-      const cshift = Math.hypot(nx - ox, ny - oy) / Math.max(1, diag);
-
-      if (iou < W_IOU_MIN || areaDelta > W_AREA_DELTA_MAX || cshift > W_CENTROID_SHIFT_MAX || !occlusionOk) {
-        const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (<${W_IOU_MIN}), areaΔ=${(areaDelta * 100).toFixed(1)}% (>${
-          W_AREA_DELTA_MAX * 100
-        }%), centroidΔ=${(cshift * 100).toFixed(2)}% (>${W_CENTROID_SHIFT_MAX * 100}%), occlusion=${(occluded * 100).toFixed(
-          1
-        )}% (>${W_OCCLUSION_MAX * 100}%)`;
-        console.error(`[WINDOW LOCAL] ${rsn}`);
-        return { ok: false, score: 0, reasons: [rsn], metrics };
+        console.log(`[WINDOW LOCAL] Passed: ${origDet.windows.length} windows preserved.`);
       }
     }
-    console.log(`[WINDOW LOCAL] Passed: ${origDet.windows.length} windows preserved.`);
   } catch (e) {
     console.warn('[WINDOW LOCAL] check failed, continuing with remaining validators:', e);
   }
