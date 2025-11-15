@@ -7,6 +7,8 @@ import { validateFurnitureScale } from "./furniture-scale-validator";
 import { validateExteriorEnhancement } from "./exterior-validator";
 import { getAdminConfig } from "../utils/adminConfig";
 import sharp from "sharp";
+import { detectWindowsLocal, iouMasks, centroidFromMask } from "../validators/local-windows";
+import path from "path";
 
 // Local validation functions (no Gemini calls)
 async function validateStructuralIntegrityLocal(
@@ -135,6 +137,43 @@ export async function validateStage(
   cand: Artifact,
   ctx: ValidationCtx = {}
 ): Promise<ValidationVerdict> {
+  // If candidate dimensions differ from prev, resize a copy to match prev
+  // so that local geometric checks operate on aligned grids. This avoids
+  // blanket failures when the model outputs a different absolute size.
+  async function normalizeCandidateDims(prevPath: string, candPath: string): Promise<{ usedPath: string; resized: boolean; }> {
+    try {
+      const [pm, cm] = await Promise.all([sharp(prevPath).metadata(), sharp(candPath).metadata()]);
+      if (!pm.width || !pm.height || !cm.width || !cm.height) return { usedPath: candPath, resized: false };
+      if (pm.width === cm.width && pm.height === cm.height) return { usedPath: candPath, resized: false };
+
+      // Compute scale by width; keep aspect ratio. If resulting height is off by a few px, pad/crop centrally.
+      const tmpOut = path.join(path.dirname(candPath), path.basename(candPath).replace(/(\.[a-z0-9]+)$/i, "-normalized.webp"));
+      let img = sharp(candPath).rotate();
+      img = img.resize({ width: pm.width });
+      const buf = await img.webp({ quality: 95 }).toBuffer({ resolveWithObject: true });
+      let resized = sharp(buf.data);
+      const rm = buf.info;
+      if (rm.height !== pm.height) {
+        const delta = pm.height - (rm.height || 0);
+        if (Math.abs(delta) <= 2) {
+          // Pad or crop by up to 2px to match exact height
+          if (delta > 0) {
+            resized = resized.extend({ top: Math.floor(delta/2), bottom: delta - Math.floor(delta/2), background: { r: 0, g: 0, b: 0, alpha: 1 } });
+          } else if (delta < 0) {
+            const crop = Math.abs(delta);
+            resized = resized.extract({ left: 0, top: Math.floor(crop/2), width: pm.width!, height: pm.height! });
+          }
+        } else {
+          // If mismatch is large (aspect ratio change), fall back to contain with padding
+          resized = sharp(candPath).resize({ width: pm.width, height: pm.height, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 1 } });
+        }
+      }
+      await resized.webp({ quality: 95 }).toFile(tmpOut);
+      return { usedPath: tmpOut, resized: true };
+    } catch {
+      return { usedPath: candPath, resized: false };
+    }
+  }
   // Load optional config/env overrides for weights/thresholds
   const admin = await getAdminConfig().catch(() => ({} as any));
   const parseNum = (v?: string) => {
@@ -161,17 +200,24 @@ export async function validateStage(
   const prevB64 = toBase64(prev.path).data;
   const candB64 = toBase64(cand.path).data;
 
+  // Normalize candidate dims for local checks if needed
+  const { usedPath: candNormPath, resized: candWasResized } = await normalizeCandidateDims(prev.path, cand.path);
+
   const reasons: string[] = [];
   const metrics: Record<string, number> = {};
   let score = 0;
   let totalW = 0;
+  if (candWasResized) {
+    metrics.resizedForValidation = 1;
+    console.log(`[VALIDATOR] Candidate resized for validation to match original dimensions`);
+  }
 
   // ===== LOCAL CHECKS (NO GEMINI CALLS) =====
   
   // 1) Structural integrity check using Sharp (edge detection + brightness analysis)
   console.log("[VALIDATOR] Running local structural checks...");
   try {
-    const structural = await validateStructuralIntegrityLocal(prev.path, cand.path);
+    const structural = await validateStructuralIntegrityLocal(prev.path, candNormPath);
     metrics.structuralEdges = structural.metrics.edgeSimilarity;
     metrics.brightnessDiff = structural.metrics.brightnessDiff;
     
@@ -195,6 +241,85 @@ export async function validateStage(
   // ===== GEMINI CHECKS (ONLY FOR COMPLEX SEMANTIC VALIDATION) =====
   // Only run Gemini checks for Stage 2 (staging) - semantic furniture/realism validation
   const useGeminiValidation = cand.stage === "2" && process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION !== "0";
+
+  // ===== LOCAL WINDOW MASK COMPARISON (IoU/Area/Centroid/Occlusion) =====
+  try {
+    const W_IOU_MIN = Number(process.env.WINDOW_IOU_MIN || 0.75);
+    const W_AREA_DELTA_MAX = Number(process.env.WINDOW_AREA_DELTA_MAX || 0.15);
+    const W_CENTROID_SHIFT_MAX = Number(process.env.WINDOW_CENTROID_SHIFT_MAX || 0.05);
+    const W_OCCLUSION_MAX = Number(process.env.WINDOW_OCCLUSION_MAX || 0.25);
+
+    const [origDet, enhDet, origRaw, enhRaw] = await Promise.all([
+      detectWindowsLocal(prev.path),
+      detectWindowsLocal(candNormPath),
+      sharp(prev.path).greyscale().raw().toBuffer({ resolveWithObject: true }),
+      sharp(candNormPath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+    ]);
+
+    const W = origDet.width;
+    const H = origDet.height;
+    const diag = Math.sqrt(W * W + H * H);
+    const origBuf = new Uint8Array(origRaw.data.buffer, origRaw.data.byteOffset, origRaw.data.byteLength);
+    const enhBuf = new Uint8Array(enhRaw.data.buffer, enhRaw.data.byteOffset, enhRaw.data.byteLength);
+
+    // Greedy matching by IoU (sufficient here given small counts)
+    const used = new Set<number>();
+    for (let i = 0; i < origDet.windows.length; i++) {
+      const ow = origDet.windows[i];
+      let bestIdx = -1;
+      let bestIou = 0;
+      for (let j = 0; j < enhDet.windows.length; j++) {
+        if (used.has(j)) continue;
+        const iou = iouMasks(ow.mask, enhDet.windows[j].mask);
+        if (iou > bestIou) {
+          bestIou = iou;
+          bestIdx = j;
+        }
+      }
+
+      if (bestIdx === -1) {
+        const msg = `Window ${i + 1} disappeared entirely`;
+        console.error(`[WINDOW LOCAL] ${msg}`);
+        return { ok: false, score: 0, reasons: [msg], metrics };
+      }
+      used.add(bestIdx);
+
+      const nw = enhDet.windows[bestIdx];
+      const iou = bestIou;
+      const areaDelta = Math.abs(nw.area - ow.area) / Math.max(1, ow.area);
+      const occluded = (() => {
+        // Brightness drop inside original mask
+        let oSum = 0, eSum = 0, c = 0;
+        for (let p = 0; p < ow.mask.length; p++) {
+          if (ow.mask[p]) {
+            oSum += origBuf[p];
+            eSum += enhBuf[p];
+            c++;
+          }
+        }
+        const drop = c ? Math.max(0, (oSum / c - eSum / c) / Math.max(1, oSum / c)) : 0;
+        return drop;
+      })();
+      const occlusionOk = occluded <= W_OCCLUSION_MAX;
+
+      const { cx: ox, cy: oy } = centroidFromMask(ow.mask, W);
+      const { cx: nx, cy: ny } = centroidFromMask(nw.mask, W);
+      const cshift = Math.hypot(nx - ox, ny - oy) / Math.max(1, diag);
+
+      if (iou < W_IOU_MIN || areaDelta > W_AREA_DELTA_MAX || cshift > W_CENTROID_SHIFT_MAX || !occlusionOk) {
+        const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (<${W_IOU_MIN}), areaΔ=${(areaDelta * 100).toFixed(1)}% (>${
+          W_AREA_DELTA_MAX * 100
+        }%), centroidΔ=${(cshift * 100).toFixed(2)}% (>${W_CENTROID_SHIFT_MAX * 100}%), occlusion=${(occluded * 100).toFixed(
+          1
+        )}% (>${W_OCCLUSION_MAX * 100}%)`;
+        console.error(`[WINDOW LOCAL] ${rsn}`);
+        return { ok: false, score: 0, reasons: [rsn], metrics };
+      }
+    }
+    console.log(`[WINDOW LOCAL] Passed: ${origDet.windows.length} windows preserved.`);
+  } catch (e) {
+    console.warn('[WINDOW LOCAL] check failed, continuing with remaining validators:', e);
+  }
 
   if (useGeminiValidation) {
     console.log("[VALIDATOR] Running Gemini semantic checks for Stage 2...");
@@ -250,7 +375,7 @@ export async function validateStage(
   if (cand.stage === "2") {
     try {
       const { validateStructure } = await import("../validators/structural");
-      const struct = await validateStructure(prev.path, cand.path);
+      const struct = await validateStructure(prev.path, candNormPath);
       if (!struct.ok) {
         reasons.push(...(struct.notes || ["egress/fixture blocking detected"]));
       }
