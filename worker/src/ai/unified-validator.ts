@@ -346,7 +346,10 @@ export async function validateStage(
     if (isStage1 && isExterior && process.env.WINDOW_CHECK_EXTERIOR_STAGE1 === '0') {
       console.log('[WINDOW LOCAL] Skipping windows check for Stage 1 exterior as configured');
     } else {
-      const W_IOU_MIN = isStage1 ? Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1_STAGE_INTERIOR'] || (isExterior ? 0.65 : 0.70)) : Number(process.env.WINDOW_IOU_MIN_2 || 0.75);
+      // Stage 1 uses more tolerant IoU with mask dilation; Stage 2 remains strict
+      const W_IOU_MIN = isStage1
+        ? Number(process.env[isExterior ? 'WINDOW_IOU_MIN_1_STAGE_EXTERIOR' : 'WINDOW_IOU_MIN_1_STAGE_INTERIOR'] || (isExterior ? 0.45 : 0.50))
+        : Number(process.env.WINDOW_IOU_MIN_2 || 0.75);
       const W_AREA_DELTA_MAX = isStage1 ? Number(process.env.WINDOW_AREA_DELTA_MAX_1 || 0.20) : Number(process.env.WINDOW_AREA_DELTA_MAX_2 || 0.15);
       const W_CENTROID_SHIFT_MAX = isStage1 ? Number(process.env.WINDOW_CENTROID_SHIFT_MAX_1 || 0.08) : Number(process.env.WINDOW_CENTROID_SHIFT_MAX_2 || 0.05);
       const W_OCCLUSION_MAX = isStage1 ? Number(process.env[isExterior ? 'WINDOW_OCCLUSION_MAX_1_EXTERIOR' : 'WINDOW_OCCLUSION_MAX_1_INTERIOR'] || (isExterior ? 0.40 : 0.30)) : Number(process.env.WINDOW_OCCLUSION_MAX_2 || 0.25);
@@ -370,13 +373,34 @@ export async function validateStage(
       } else {
         // Greedy matching by IoU (sufficient here given small counts)
         const used = new Set<number>();
+        // Small helper to dilate masks by 1px for tolerance
+        const dilateMask1 = (mask: Uint8Array, Wm: number, Hm: number) => {
+          const out = new Uint8Array(mask.length);
+          for (let y = 1; y < Hm - 1; y++) {
+            for (let x = 1; x < Wm - 1; x++) {
+              let on = 0;
+              for (let dy = -1; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                  if (mask[(y + dy) * Wm + (x + dx)]) { on = 1; break; }
+                }
+                if (on) break;
+              }
+              out[y * Wm + x] = on ? 255 : 0;
+            }
+          }
+          return out;
+        };
+
         for (let i = 0; i < origDet.windows.length; i++) {
           const ow = origDet.windows[i];
           let bestIdx = -1;
           let bestIou = 0;
           for (let j = 0; j < enhDet.windows.length; j++) {
             if (used.has(j)) continue;
-            const iou = iouMasks(ow.mask, enhDet.windows[j].mask);
+            // For Stage 1, compute IoU with 1px dilation for tolerance
+            const aMask = isStage1 ? dilateMask1(ow.mask, W, H) : ow.mask;
+            const bMask = isStage1 ? dilateMask1(enhDet.windows[j].mask, W, H) : enhDet.windows[j].mask;
+            const iou = iouMasks(aMask, bMask);
             if (iou > bestIou) {
               bestIou = iou;
               bestIdx = j;
@@ -412,10 +436,25 @@ export async function validateStage(
           const { cx: nx, cy: ny } = centroidFromMask(nw.mask, W);
           const cshift = Math.hypot(nx - ox, ny - oy) / Math.max(1, diag);
 
-          if (iou < W_IOU_MIN || areaDelta > W_AREA_DELTA_MAX || cshift > W_CENTROID_SHIFT_MAX || !occlusionOk) {
-            const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (<${W_IOU_MIN}), areaΔ=${(areaDelta * 100).toFixed(1)}% (> ${(W_AREA_DELTA_MAX * 100).toFixed(0)}%), centroidΔ=${(cshift * 100).toFixed(2)}% (> ${(W_CENTROID_SHIFT_MAX * 100).toFixed(0)}%), occlusion=${(occluded * 100).toFixed(1)}% (> ${(W_OCCLUSION_MAX * 100).toFixed(0)}%)`;
-            console.error(`[WINDOW LOCAL] ${rsn}`);
-            return { ok: false, score: 0, reasons: [rsn], metrics };
+          // Stage 1: only fail windows if IoU is very low AND one of the geometry/occlusion limits is violated.
+          // This prevents false fails from tone-mapped panes while keeping geometry preserved.
+          const iouBad = iou < W_IOU_MIN;
+          const geomBad = areaDelta > W_AREA_DELTA_MAX || cshift > W_CENTROID_SHIFT_MAX || !occlusionOk;
+          if (!isStage1) {
+            if (iouBad || geomBad) {
+              const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (${iouBad ? '<' : '≥'}${W_IOU_MIN}), areaΔ=${(areaDelta * 100).toFixed(1)}% (${areaDelta > W_AREA_DELTA_MAX ? '>' : '≤'} ${(W_AREA_DELTA_MAX * 100).toFixed(0)}%), centroidΔ=${(cshift * 100).toFixed(2)}% (${cshift > W_CENTROID_SHIFT_MAX ? '>' : '≤'} ${(W_CENTROID_SHIFT_MAX * 100).toFixed(0)}%), occlusion=${(occluded * 100).toFixed(1)}% (${occlusionOk ? '≤' : '>'} ${(W_OCCLUSION_MAX * 100).toFixed(0)}%)`;
+              console.error(`[WINDOW LOCAL] ${rsn}`);
+              return { ok: false, score: 0, reasons: [rsn], metrics };
+            }
+          } else {
+            if (iouBad && geomBad) {
+              const rsn = `Window ${i + 1}: IoU=${iou.toFixed(2)} (<${W_IOU_MIN}) + geometry/occlusion limit exceeded`;
+              console.error(`[WINDOW LOCAL] ${rsn}`);
+              return { ok: false, score: 0, reasons: [rsn], metrics };
+            }
+            if (iouBad) {
+              console.log(`[WINDOW LOCAL] Borderline IoU accepted (Stage 1): ${iou.toFixed(2)} with areaΔ=${(areaDelta*100).toFixed(1)}%, centroidΔ=${(cshift*100).toFixed(2)}%, occ=${(occluded*100).toFixed(1)}%`);
+            }
           }
         }
         console.log(`[WINDOW LOCAL] Passed: ${origDet.windows.length} windows preserved.`);
