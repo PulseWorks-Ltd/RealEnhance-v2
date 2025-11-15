@@ -523,6 +523,22 @@ export async function validateStage(
     } catch (e) {
       reasons.push("realism check failed");
     }
+
+    // 4) Exterior-specific surface/furniture checks
+    try {
+      if ((ctx.sceneType === 'exterior') && (process.env.EXTERIOR_SURFACE_CHECK !== '0')) {
+        const { validateExteriorEnhancement } = await import("../ai/exterior-validator");
+        const ext = await validateExteriorEnhancement(ai as any, prevB64, candB64, 'staging');
+        if (!ext.passed) {
+          for (const v of ext.violations || []) {
+            const msg = `exterior violation: ${v.type}${v.description ? ` - ${v.description}` : ''}`;
+            reasons.push(msg);
+          }
+        }
+      }
+    } catch (e) {
+      reasons.push("exterior surface check failed");
+    }
   } else {
     console.log("[VALIDATOR] Skipping Gemini semantic checks (Stage 1 or disabled)");
     // For Stage 1, just use local structural checks

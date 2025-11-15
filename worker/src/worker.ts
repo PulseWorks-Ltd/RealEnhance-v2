@@ -137,7 +137,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const ai = getGeminiClient();
         const base64 = toBase64(origPath).data;
         const stagingResult = await detectStagingArea(ai, base64);
-        allowStaging = stagingResult.hasStagingArea;
+        // ---------- Exterior gating rules ----------
+        // Allowed types and confidence
+        const allowedTypes = (process.env.EXTERIOR_STAGING_ALLOWED_TYPES || "deck,patio,balcony,terrace,verandah")
+          .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+        const minConfLevel = (process.env.EXTERIOR_STAGING_MIN_CONFIDENCE_LEVEL || "medium").toLowerCase();
+        const confRank = (c: string) => c === 'high' ? 3 : (c === 'medium' ? 2 : 1);
+        const minRank = confRank(minConfLevel);
+
+        // Initial decision from detector
+        allowStaging = !!stagingResult.hasStagingArea;
+        // Area type filter (defensive)
+        const areaType = String(stagingResult.areaType || 'none').toLowerCase();
+        if (!allowedTypes.includes(areaType)) {
+          allowStaging = false;
+          console.log(`[WORKER] Exterior gating: areaType='${areaType}' not in allowedTypes=[${allowedTypes.join(', ')}] → disallow staging`);
+        }
+        // Confidence gate
+        const level = String(stagingResult.confidence || 'low').toLowerCase();
+        if (confRank(level) < minRank) {
+          allowStaging = false;
+          console.log(`[WORKER] Exterior gating: confidence='${level}' < minLevel='${minConfLevel}' → disallow staging`);
+        }
+
+        // Region detection only if preliminarily allowed
         if (allowStaging) {
           stagingRegion = await detectStagingRegion(ai, base64);
           // Compute coverage % if region detected and image size known
@@ -148,12 +171,75 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             if (stagingRegion && W > 0 && H > 0) {
               const area = Math.max(0, Math.min(stagingRegion.width, W)) * Math.max(0, Math.min(stagingRegion.height, H));
               const coverage = area / (W * H);
-              const minCoverage = Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.3);
+              const minCoverage = Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2);
+              // Optional: require region to exist for staging
+              const requireRegion = (process.env.EXTERIOR_STAGING_REQUIRE_REGION || '1') === '1';
               if (coverage < minCoverage) {
                 allowStaging = false;
                 console.log(`[WORKER] Exterior staging region below threshold: ${(coverage*100).toFixed(1)}% < ${(minCoverage*100).toFixed(0)}% → disallow staging`);
               } else {
                 console.log(`[WORKER] Exterior staging region coverage: ${(coverage*100).toFixed(1)}% (>= ${(minCoverage*100).toFixed(0)}%)`);
+              }
+              if (requireRegion && !stagingRegion) {
+                allowStaging = false;
+                console.log(`[WORKER] Exterior gating: requireRegion=1 but no region detected → disallow staging`);
+              }
+              // If region has areaType metadata, ensure it matches allowed types
+              const regionType = String((stagingRegion as any)?.areaType || areaType).toLowerCase();
+              if (!allowedTypes.includes(regionType)) {
+                allowStaging = false;
+                console.log(`[WORKER] Exterior gating: region.areaType='${regionType}' not allowed → disallow staging`);
+              }
+              // Green dominance sanity check inside region (avoid staging on lawns)
+              const greenCheck = (process.env.EXTERIOR_REGION_GREEN_CHECK || '1') === '1';
+              if (allowStaging && greenCheck) {
+                try {
+                  const analysisSize = Math.max(64, Number(process.env.EXTERIOR_REGION_ANALYSIS_SIZE || 256));
+                  const H_MIN = Number(process.env.EXTERIOR_GREEN_H_MIN || 70);
+                  const H_MAX = Number(process.env.EXTERIOR_GREEN_H_MAX || 160);
+                  const S_MIN = Number(process.env.EXTERIOR_GREEN_S_MIN || 0.28);
+                  const V_MIN = Number(process.env.EXTERIOR_GREEN_V_MIN || 0.25);
+                  const maxGreen = Math.min(0.9, Math.max(0, Number(process.env.EXTERIOR_REGION_GREEN_MAX || 0.25)));
+                  // Shrink region by 5% margins to avoid boundary bleed
+                  const shrinkX = Math.floor(stagingRegion.width * 0.05);
+                  const shrinkY = Math.floor(stagingRegion.height * 0.05);
+                  const rx = Math.max(0, Math.min(W - 1, Math.floor(stagingRegion.x + shrinkX)));
+                  const ry = Math.max(0, Math.min(H - 1, Math.floor(stagingRegion.y + shrinkY)));
+                  const rw = Math.max(1, Math.min(W - rx, Math.floor(stagingRegion.width - shrinkX * 2)));
+                  const rh = Math.max(1, Math.min(H - ry, Math.floor(stagingRegion.height - shrinkY * 2)));
+                  const patch = await sharpMod.default(origPath)
+                    .extract({ left: rx, top: ry, width: rw, height: rh })
+                    .resize(analysisSize, analysisSize, { fit: 'cover' })
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+                  const buf = patch.data as Buffer;
+                  const w = analysisSize, h = analysisSize;
+                  let green = 0, total = 0;
+                  for (let y = 0; y < h; y++) {
+                    for (let x = 0; x < w; x++) {
+                      const i = (y * w + x) * 3; // raw() defaults to 3 channels without alpha
+                      const r = buf[i] / 255, g = buf[i+1] / 255, b = buf[i+2] / 255;
+                      const max = Math.max(r,g,b), min = Math.min(r,g,b);
+                      const v = max; const d = max - min; const s = max === 0 ? 0 : d / max;
+                      let hdeg = 0;
+                      if (d !== 0) {
+                        if (max === r) hdeg = ((g - b) / d) % 6; else if (max === g) hdeg = (b - r) / d + 2; else hdeg = (r - g) / d + 4;
+                        hdeg *= 60; if (hdeg < 0) hdeg += 360;
+                      }
+                      const isGreen = (v > V_MIN) && (s > S_MIN) && (hdeg >= H_MIN && hdeg <= H_MAX);
+                      if (isGreen) green++;
+                      total++;
+                    }
+                  }
+                  const greenRatio = green / Math.max(1, total);
+                  const decision = greenRatio <= maxGreen;
+                  console.log(`[WORKER] Exterior region green check: green=${(greenRatio*100).toFixed(1)}% max=${(maxGreen*100).toFixed(0)}% → ${decision ? 'allow' : 'disallow'}`);
+                  if (!decision) {
+                    allowStaging = false;
+                  }
+                } catch (e) {
+                  console.warn('[WORKER] Green-region check failed; proceeding without this gate', e);
+                }
               }
               // attach coverage for meta/debugging
               (stagingRegion as any).coverage = coverage;
@@ -162,7 +248,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             console.warn('[WORKER] Failed to compute staging coverage; proceeding without area gate', e);
           }
         }
-        console.log(`[WORKER] Outdoor staging area detected: allowStaging=${allowStaging} (${stagingResult.areaType}, ${stagingResult.confidence})`);
+        console.log(`[WORKER] Outdoor staging area: has=${stagingResult.hasStagingArea}, type=${stagingResult.areaType}, conf=${stagingResult.confidence}`);
+        console.log(`[WORKER] Exterior staging decision: allowStaging=${allowStaging} (minConf=${minConfLevel}, minCoverage=${Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2)})`);
         if (stagingRegion) {
           console.log(`[WORKER] Staging region:`, stagingRegion);
         }
