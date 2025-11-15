@@ -30,6 +30,20 @@ function getBrightDiffMax(stage: StageId, scene?: SceneType) {
   return num(process.env.LOCAL_BRIGHT_DIFF_MAX_2, 0.30);
 }
 
+function getEdgeSimHardMin(stage: StageId, scene?: SceneType) {
+  const s = (scene === 'exterior') ? 'EXTERIOR' : 'INTERIOR';
+  if (stage === '1A') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1A_${s}`], scene === 'exterior' ? 0.58 : 0.60);
+  if (stage === '1B') return num(process.env[`LOCAL_EDGE_SIM_HARD_MIN_1B_${s}`], scene === 'exterior' ? 0.60 : 0.62);
+  return num(process.env.LOCAL_EDGE_SIM_HARD_MIN_2, 0.83);
+}
+
+function getBrightDiffHardMax(stage: StageId, scene?: SceneType) {
+  const s = (scene === 'exterior') ? 'EXTERIOR' : 'INTERIOR';
+  if (stage === '1A') return num(process.env[`LOCAL_BRIGHT_DIFF_HARD_MAX_1A_${s}`], scene === 'exterior' ? 0.55 : 0.40);
+  if (stage === '1B') return num(process.env[`LOCAL_BRIGHT_DIFF_HARD_MAX_1B_${s}`], scene === 'exterior' ? 0.50 : 0.38);
+  return num(process.env.LOCAL_BRIGHT_DIFF_HARD_MAX_2, 0.30);
+}
+
 function percentileThreshold(hist: number[], total: number, pct: number): number {
   let acc = 0;
   const target = total * pct;
@@ -153,15 +167,31 @@ async function validateStructuralIntegrityLocal(
 
     console.log(`[LOCAL STRUCTURAL] Edge IoU: ${(edgeSimilarity * 100).toFixed(1)}%, Brightness diff: ${(brightnessDiff * 100).toFixed(1)}%`);
 
-    const structuralOk = edgeSimilarity >= getEdgeSimMin(opts.stage, opts.sceneType);
-    const brightnessOk = brightnessDiff <= getBrightDiffMax(opts.stage, opts.sceneType);
+    const softEdgeMin = getEdgeSimMin(opts.stage, opts.sceneType);
+    const hardEdgeMin = getEdgeSimHardMin(opts.stage, opts.sceneType);
+    const softBrightMax = getBrightDiffMax(opts.stage, opts.sceneType);
+    const hardBrightMax = getBrightDiffHardMax(opts.stage, opts.sceneType);
 
-    if (!structuralOk) {
-      return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
-    }
-
-    if (!brightnessOk) {
-      return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
+    // Stage 2: strict (hard == soft)
+    if (opts.stage === '2') {
+      if (edgeSimilarity < softEdgeMin) {
+        return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
+      }
+      if (brightnessDiff > softBrightMax) {
+        return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
+      }
+    } else {
+      // Stage 1: only HARD fail; borderline allowed to pass and be checked by windows/egress
+      if (edgeSimilarity < hardEdgeMin) {
+        return { ok: false, reason: `Major structural changes detected (${(edgeSimilarity * 100).toFixed(1)}% edge similarity)`, metrics: { edgeSimilarity, brightnessDiff } };
+      }
+      if (brightnessDiff > hardBrightMax) {
+        return { ok: false, reason: `Significant brightness shift detected (${(brightnessDiff * 100).toFixed(1)}% change) - possible new openings`, metrics: { edgeSimilarity, brightnessDiff } };
+      }
+      // If only soft thresholds tripped, allow but log
+      if (edgeSimilarity < softEdgeMin || brightnessDiff > softBrightMax) {
+        console.log(`[LOCAL STRUCTURAL] Borderline (soft) deviation accepted: edgeIoU=${(edgeSimilarity*100).toFixed(1)}%, brightΔ=${(brightnessDiff*100).toFixed(1)}%`);
+      }
     }
 
     return { ok: true, metrics: { edgeSimilarity, brightnessDiff } };
