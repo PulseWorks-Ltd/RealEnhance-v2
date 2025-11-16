@@ -27,9 +27,9 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
   if (useTest && stage.stage) {
     const scene = (options.sceneType === "interior" || options.sceneType === "exterior") ? options.sceneType : "interior";
     let p = stage.stage === "1A"
-      ? buildTestStage1APrompt(scene as any, { replaceSky: (options as any).replaceSky })
+      ? buildTestStage1APrompt(scene as any, (options as any).roomType)
       : stage.stage === "1B"
-      ? buildTestStage1BPrompt(scene as any)
+      ? buildTestStage1BPrompt(scene as any, (options as any).roomType)
       : buildTestStage2Prompt(scene as any, (options as any).roomType);
     if ((options as any).strictMode) {
       p = tightenPromptAndLowerTemp(p, 0.8);

@@ -7,6 +7,7 @@ import {
 } from "@realenhance/shared/dist/types";
 
 import fs from "fs";
+import sharp from "sharp";
 
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";

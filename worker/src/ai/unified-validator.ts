@@ -89,7 +89,8 @@ async function validateStructuralIntegrityLocal(
 ): Promise<{ ok: boolean; reason?: string; metrics: { edgeSimilarity: number; brightnessDiff: number } }> {
   try {
     // Load both images with optional pre-blur to stabilize micro edges
-    const preBlurSigmaDefault = (opts.stage === '2') ? 0 : num(process.env.LOCAL_EDGE_PREBLUR_SIGMA, 0.8);
+    let preBlurSigmaDefault = (opts.stage === '2') ? 0 : num(process.env.LOCAL_EDGE_PREBLUR_SIGMA, 0.8);
+    if (!preBlurSigmaDefault || typeof preBlurSigmaDefault !== 'number' || preBlurSigmaDefault < 0.3 || preBlurSigmaDefault > 1000) preBlurSigmaDefault = 0.8;
     const [prevImg, candImg] = await Promise.all([
       sharp(prevPath).greyscale().blur(preBlurSigmaDefault).raw().toBuffer({ resolveWithObject: true }),
       sharp(candPath).greyscale().blur(preBlurSigmaDefault).raw().toBuffer({ resolveWithObject: true })
