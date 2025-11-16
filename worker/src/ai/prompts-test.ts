@@ -101,41 +101,47 @@ Temperature: 0.21
 export function buildTestStage1BPrompt(sceneType: string, roomType?: string) {
   if (sceneType === "interior") {
     return RULE_PREFIX + `
-Remove ALL movable furniture and household items from this ${roomType || "room"} interior, to prepare it for digital staging.
+Remove ALL movable furniture, decor, and household items from this ${roomType || "room"}
+interior, to prepare it for digital staging.
 
-REMOVE:
-• Sofas, armchairs, beds, side tables, dining tables, chairs, consoles, dressers,
-  nightstands, desks, freestanding shelving units, bookcases, wardrobes, TV units.
-• Lamps, rugs, wall art, decor items, toys, electronics, plants.
-• Countertop clutter, small appliances, and items on window sills.
-• Loose textiles like throws and cushions.
-
-PARTIALLY VISIBLE ITEMS:
-• If ANY part of a movable furniture item is visible (for example only the arm
-  of a sofa, the edge of a TV, the legs of a chair, part of a table, or the
-  corner of a bed), treat this as the full object and remove ALL of its visible
-  pixels from the image.
-• Do NOT leave fragments or “cut-off” pieces of furniture or decor. The scene
-  should look as if the entire item was never there.
-• If part of a movable object is hidden behind another object, still remove all
-  visible parts of the movable object.
+REMOVE (full list):
+• All sofas, armchairs, ottomans, coffee tables, side tables, dining tables,
+  chairs, consoles, bookcases, shelving units, nightstands, beds, TV units.
+• All lamps, rugs, cushions, blankets, throws, baskets, plants (real or fake).
+• ALL wall-mounted artwork, frames, pictures, clocks, mirrors, and decorative
+  plates or ornaments on walls.
+• ALL decor and clutter on ANY surface:
+  – kitchen counters  
+  – benchtops  
+  – islands  
+  – shelves  
+  – desks  
+  – cabinets  
+  – sideboards  
+  – window sills  
+  – breakfast bars  
+• ALL bottles, jars, trays, soap, fruit bowls, dishes, spices, utensils,
+  appliances, and ANY visible loose items in the kitchen area.
+• All partially visible furniture or decor: if ANY part of a removable item is
+  visible, remove ALL of its visible pixels. Do NOT leave partial fragments.
 
 KEEP EXACTLY:
-• Built-in stoves/ovens, cabinets, countertops, vanities, fixed shelving.
-• ALL windows, blinds, curtains, doors, trims, skirtings, and architectural
-  features.
+• Built-in stoves/ovens, range hoods, sinks, taps, cabinets, countertops,
+  fixed shelving, and all permanently attached fixtures.
+• All windows, blinds, curtains, doors, trims, skirting boards, and all
+  architectural features.
 • Original walls, ceilings, flooring, and their colors and materials.
 
-HARD RULES — NON-NEGOTIABLE:
+STRICT RULES:
 • Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe,
   zoom, or change the camera angle or perspective.
-• Do NOT change, resize, move, hide, or replace any architecture.
-• Do NOT alter window shapes, frames, views, or door openings.
-• Do NOT repaint or re-texture walls, ceilings, or floors.
-• Do NOT create new built-ins or structural elements.
+• Do NOT change, move, or replace any architecture.
+• Do NOT alter the shape, size, location, or framing of windows or doors.
+• Do NOT repaint, brighten, recolor, or re-texture walls, ceilings, or floors.
+• Do NOT create new structures, cabinets, or built-in elements.
 
-Produce a clean, empty version of the room with identical architecture, with
-ALL visible movable furniture and decor fully removed, ready for staging.
+Produce a completely empty, clutter-free room with ONLY the permanent
+architecture and fixed kitchen fixtures remaining — ready for virtual staging.
 Temperature: 0.30
 `;
   }
