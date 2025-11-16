@@ -62,7 +62,12 @@ function getDeclutterInstructions(level: "light" | "standard" | "heavy"): string
     return ["DECLUTTER INTENSITY: LIGHT – remove only obvious items (bins, hoses, visible trash). Minimize other edits."];
   }
   if (level === "heavy") {
-    return ["DECLUTTER INTENSITY: HEAVY – remove ALL listed priority items, ALL decorative elements, and personal effects for a clean staged look."];
+    return [
+      "DECLUTTER INTENSITY: HEAVY (COMPLETE ROOM CLEARING) – remove ALL movable furniture and items to create a completely empty room.",
+      "REMOVE: ALL furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL lamps (portable only), ALL wall art (paintings, frames, mirrors, decorations), ALL decorative items (vases, plants, sculptures, candles, ornaments), ALL appliances EXCEPT built-in stoves.",
+      "KEEP ONLY: built-in stoves, countertops, cabinets, built-in shelving, recessed lighting, ceiling fans, window frames, door frames, baseboards, crown molding, fireplaces, mantels, ALL curtains, ALL blinds, ALL window treatments (MUST remain 100% visible and unchanged).",
+      "GOAL: Produce a completely empty room with bare walls and floors, preserving ONLY fixed architectural elements, built-in stoves, and ALL window treatments (curtains/blinds)."
+    ];
   }
   return ["DECLUTTER INTENSITY: STANDARD – remove priority items and tidy visible clutter without over-editing."];
 }
@@ -173,9 +178,10 @@ export function buildPrompt(opts: PromptOptions): string {
     "",
     "[DECLUTTER – TARGETED]",
     ...getDeclutterInstructions(declutterLevel),
-    "REMOVE: trash bags, boxes, laundry piles, excess countertop items, window sill clutter, floor cables, fridge magnets/notes, personal toiletries, pet bowls, scattered toys.",
-    "KEEP: built-ins, fixed appliances, light fixtures, window coverings, safety devices.",
-    "MINIMIZE: reduce duplicates to a tidy set; do not sterilize the scene.",
+    "REMOVE (for standard/heavy modes): trash bags, boxes, laundry piles, excess countertop items, window sill clutter, floor cables, fridge magnets/notes, personal toiletries, pet bowls, scattered toys.",
+    "REMOVE (heavy mode only): ALL movable furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL portable lamps, ALL wall art, ALL decorative items, ALL appliances EXCEPT built-in stoves.",
+    "KEEP: built-ins, built-in stoves (preserve these explicitly), fixed appliances (dishwashers, range hoods), cabinets, countertops, light fixtures (recessed/hardwired), ALL curtains and blinds (MUST remain 100% visible), baseboards, crown molding, fireplaces, mantels, safety devices.",
+    "MINIMIZE (standard mode): reduce duplicates to a tidy set; do not sterilize the scene.",
     "TRACELESS: remove without smudges/ghosting; preserve shadows/reflections of kept objects.",
     "",
     "[PHOTO QUALITY]",
@@ -193,7 +199,9 @@ export function buildPrompt(opts: PromptOptions): string {
     "",
     "[DECLUTTER – TARGETED]",
     ...getDeclutterInstructions(declutterLevel),
-    "REMOVE: ALL clutter, personal effects, window sill clutter, ALL wall art and decorative items; keep built-ins and fixed elements ONLY.",
+    "REMOVE: ALL clutter, personal effects, window sill clutter, ALL wall art and decorative items.",
+    "REMOVE (heavy mode only): ALL existing furniture and items to create empty room baseline; keep built-ins, built-in stoves, cabinets, countertops, curtains, blinds, and fixed elements ONLY.",
+    "KEEP: built-ins, built-in stoves (preserve explicitly), cabinets, countertops, recessed lighting, window frames, door frames, ALL curtains and blinds (MUST remain 100% visible), and fixed architectural elements.",
     "",
     "[PHOTO QUALITY]",
     "Balance exposure and color; subtle sharpening without artifacts; denoise while preserving detail.",
