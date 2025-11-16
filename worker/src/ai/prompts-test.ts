@@ -142,7 +142,7 @@ STRICT RULES:
 
 Produce a completely empty, clutter-free room with ONLY the permanent
 architecture and fixed kitchen fixtures remaining — ready for virtual staging.
-Temperature: 0.30
+Temperature: 0.60
 `;
   }
   // exterior
