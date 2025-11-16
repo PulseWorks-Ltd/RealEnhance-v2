@@ -176,6 +176,11 @@ export async function runStage1A(
     if (!verdict.ok) {
       console.warn(`[stage1A] ❌ Validation failed (score=${verdict.score.toFixed(2)}):`, verdict.reasons.join("; "));
       console.log(`[stage1A] 🔁 Retrying Gemini with strictMode...`);
+      // For test prompts with embedded temperature, reduce by 20% in strict retry
+      const sampling = typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {};
+      const strictSampling = process.env.USE_TEST_PROMPTS === '1' && sampling.temperature !== undefined
+        ? { ...sampling, temperature: Math.max(0.1, sampling.temperature * 0.8) }
+        : sampling;
       const retryPath = await enhanceWithGemini(sharpOutputPath, {
         skipIfNoApiKey: true,
         replaceSky: replaceSky,
@@ -185,7 +190,7 @@ export async function runStage1A(
         strictMode: true,
         floorClean: false,
         hardscapeClean: sceneType === "exterior",
-        ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+        ...strictSampling,
       });
       if (retryPath !== sharpOutputPath) {
         const retryVerdict = await validateStage(

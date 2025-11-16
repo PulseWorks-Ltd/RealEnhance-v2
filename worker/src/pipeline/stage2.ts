@@ -188,16 +188,24 @@ export async function runStage2(
         } catch {}
 
         // Strict retry: tighten prompt and, if using test prompts, lower embedded temperature by 20%
-        const strictText = useTest
-          ? require("../ai/prompts-test").tightenPromptAndLowerTemp(textPrompt, 0.8)
-          : textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` +
+        let strictText: string;
+        let strictGenConfig: any;
+        
+        if (useTest) {
+          const tightened = require("../ai/prompts-test").tightenPromptAndLowerTemp(textPrompt, 0.8);
+          strictText = tightened.prompt || tightened; // handle both string and object return
+          strictGenConfig = profile?.seed !== undefined ? { seed: profile.seed } : undefined;
+        } else {
+          strictText = textPrompt + `\\n\\nSTRICT MODE (VALIDATION FAILED):\\n` +
             [
               "• DO NOT alter architecture: no new walls, openings, or partitions.",
               "• DO NOT block doors/windows; maintain egress and ventilation.",
               "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
               "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
               "• Preserve all window counts and sizes; keep frames/positions unchanged.",
-            ].join("\n");
+            ].join("\\n");
+          strictGenConfig = { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 };
+        }
 
         const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
         if (opts.referenceImagePath) {
@@ -208,7 +216,7 @@ export async function runStage2(
         try {
           const { resp: strictResp } = await runWithImageModelFallback(ai as any, {
             contents: strictParts,
-            generationConfig: useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 }
+            generationConfig: strictGenConfig
           } as any, "stage2");
 
           const strictPartsResp: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];

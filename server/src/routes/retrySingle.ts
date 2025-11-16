@@ -90,15 +90,25 @@ export function retrySingleRouter() {
 
     // Upload original to S3 so worker can download it (required for multi-service deployments)
     let remoteOriginalUrl: string | undefined = undefined;
-    try {
-      const up = await uploadOriginalToS3(finalPath);
-      remoteOriginalUrl = up.url;
-    } catch (e) {
-      const msg = (e as any)?.message || String(e);
-      console.warn('[retrySingle] original S3 upload failed:', msg);
-      // In dev, continue without remote URL (worker will try local fallback)
-      if (process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production') {
-        return res.status(503).json({ error: 's3_unavailable', message: msg });
+    const requireS3 = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+    
+    if (requireS3 || process.env.S3_BUCKET) {
+      try {
+        const up = await uploadOriginalToS3(finalPath);
+        remoteOriginalUrl = up.url;
+        console.log(`[retrySingle] Original uploaded to S3: ${remoteOriginalUrl}`);
+      } catch (e) {
+        const msg = (e as any)?.message || String(e);
+        console.error('[retrySingle] S3 upload failed:', msg);
+        if (requireS3) {
+          return res.status(503).json({ error: 's3_upload_failed', message: msg });
+        }
+        console.warn('[retrySingle] Continuing without S3 (dev mode)');
+      }
+    } else {
+      // Dev mode without S3: verify local file exists
+      if (!fss.existsSync(finalPath)) {
+        return res.status(404).json({ error: 'local_file_missing' });
       }
     }
 

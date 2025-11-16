@@ -87,6 +87,8 @@ export async function enqueueEditJob(params: {
   mode: "Add" | "Remove" | "Replace" | "Restore";
   instruction: string;
   mask: unknown;
+  remoteBaseUrl?: string;
+  remoteRestoreUrl?: string;
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
@@ -101,7 +103,9 @@ export async function enqueueEditJob(params: {
     instruction: params.instruction,
     mask: params.mask,
     createdAt: now,
-  };
+    ...(params.remoteBaseUrl ? { remoteBaseUrl: params.remoteBaseUrl } : {}),
+    ...(params.remoteRestoreUrl ? { remoteRestoreUrl: params.remoteRestoreUrl } : {}),
+  } as any;
 
   const state = loadAll();
   state[jobId] = {
