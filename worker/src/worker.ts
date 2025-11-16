@@ -638,26 +638,67 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
 // handle "edit" pipeline
 async function handleEditJob(payload: EditJobPayload) {
-  const rec = readImageRecord(payload.imageId);
-  if (!rec) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
-    return;
-  }
-
-  const basePath = getVersionPath(rec, payload.baseVersionId);
-  if (!basePath) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "base version not found" });
-    return;
+  // Check if we have remote URLs (multi-service deployment)
+  const remoteBaseUrl: string | undefined = (payload as any).remoteBaseUrl;
+  const remoteRestoreUrl: string | undefined = (payload as any).remoteRestoreUrl;
+  let basePath: string;
+  
+  if (remoteBaseUrl) {
+    // Multi-service mode: Download base from S3
+    try {
+      console.log(`[worker-edit] Downloading base from: ${remoteBaseUrl}`);
+      basePath = await downloadToTemp(remoteBaseUrl, payload.jobId + '-base');
+      console.log(`[worker-edit] Base downloaded to: ${basePath}`);
+    } catch (e) {
+      console.error(`[worker-edit] Failed to download remote base: ${(e as any)?.message || e}`);
+      updateJob(payload.jobId, { status: "error", errorMessage: `Failed to download base: ${(e as any)?.message || 'unknown'}` });
+      return;
+    }
+  } else {
+    // Legacy single-service mode: Read from local filesystem
+    const rec = readImageRecord(payload.imageId);
+    if (!rec) {
+      updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
+      return;
+    }
+    const localPath = getVersionPath(rec, payload.baseVersionId);
+    if (!localPath || !fs.existsSync(localPath)) {
+      updateJob(payload.jobId, { status: "error", errorMessage: "base version not found" });
+      return;
+    }
+    basePath = localPath;
   }
 
   let restoreFromPath: string | undefined;
   if (payload.mode === "Restore") {
-    // Find the last enhancement stage (1B if declutter was used, otherwise 1A)
-    // to restore pixels from the enhanced image instead of the raw original
-    const stage1B = rec.history.find(v => v.stageLabel === "1B");
-    const stage1A = rec.history.find(v => v.stageLabel === "1A");
-    restoreFromPath = stage1B?.filePath || stage1A?.filePath || basePath;
-    console.log(`[worker] Restore mode: using ${stage1B ? 'Stage 1B' : stage1A ? 'Stage 1A' : 'base'} as restore source: ${restoreFromPath}`);
+    if (remoteRestoreUrl) {
+      // Download restore source from S3
+      try {
+        console.log(`[worker-edit] Downloading restore source from: ${remoteRestoreUrl}`);
+        restoreFromPath = await downloadToTemp(remoteRestoreUrl, payload.jobId + '-restore');
+        console.log(`[worker-edit] Restore source downloaded to: ${restoreFromPath}`);
+      } catch (e) {
+        console.warn(`[worker-edit] Failed to download restore source, using base: ${(e as any)?.message}`);
+        restoreFromPath = basePath;
+      }
+    } else {
+      // Legacy: try to find enhancement stage in local record
+      const rec = readImageRecord(payload.imageId);
+      if (rec) {
+        const stage1B = rec.history.find(v => v.stageLabel === "1B");
+        const stage1A = rec.history.find(v => v.stageLabel === "1A");
+        const restoreVersion = stage1B || stage1A;
+        if (restoreVersion?.filePath && fs.existsSync(restoreVersion.filePath)) {
+          restoreFromPath = restoreVersion.filePath;
+          console.log(`[worker-edit] Restore mode: using ${stage1B ? 'Stage 1B' : 'Stage 1A'} as restore source: ${restoreFromPath}`);
+        } else {
+          console.warn(`[worker-edit] Enhancement stage not found locally, using base`);
+          restoreFromPath = basePath;
+        }
+      } else {
+        restoreFromPath = basePath;
+      }
+    }
   }
 
   const editedPath = await applyEdit({

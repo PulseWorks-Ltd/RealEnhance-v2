@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type RequestHandler } from "express";
 import multer from "multer";
 import * as fs from "node:fs/promises";
+import * as fss from "node:fs";
 import * as path from "node:path";
 import { readJsonFile } from "../services/jsonStore.js";
 import { enqueueEditJob, getJob } from "../services/jobs.js";
@@ -90,7 +91,53 @@ export function regionEditRouter() {
     const mode = operation === 'add' ? 'Add' : operation === 'remove' ? 'Remove' : operation === 'replace' ? 'Replace' : operation === 'restore' ? 'Restore' : 'Replace';
     const instruction = goal || (mode === 'Restore' ? 'Restore original pixels for the masked region.' : 'Apply requested edit in the masked region only.');
 
-    // Enqueue edit job and poll similar to retry-single
+    // Resolve base version for edit - ensure it exists and has a valid path
+    const history = (record as any).history || [];
+    const baseVersion = history.find((v: any) => v.versionId === baseVersionId);
+    if (!baseVersion || !baseVersion.filePath) {
+      return res.status(404).json({ success: false, error: "base_version_not_found" });
+    }
+
+    // For Restore mode, find the enhancement stage to restore from
+    let restoreVersion: any = undefined;
+    if (mode === 'Restore') {
+      const stage1B = history.find((v: any) => v.stageLabel === '1B');
+      const stage1A = history.find((v: any) => v.stageLabel === '1A');
+      restoreVersion = stage1B || stage1A;
+      if (!restoreVersion) {
+        return res.status(404).json({ success: false, error: "enhancement_stage_not_found" });
+      }
+    }
+
+    // Upload base (and restore source if different) to S3 for multi-service worker access
+    let remoteBaseUrl: string | undefined;
+    let remoteRestoreUrl: string | undefined;
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.REQUIRE_S3 === '1';
+    
+    if (isProduction) {
+      try {
+        const { uploadOriginalToS3 } = await import('../utils/s3.js');
+        const basePath = path.join(uploadRoot, sessUser.id, baseVersion.filePath);
+        if (!fss.existsSync(basePath)) {
+          return res.status(404).json({ success: false, error: "base_file_not_found_on_disk" });
+        }
+        const baseUpload = await uploadOriginalToS3(basePath);
+        remoteBaseUrl = baseUpload.url;
+        
+        if (restoreVersion && restoreVersion.versionId !== baseVersion.versionId) {
+          const restorePath = path.join(uploadRoot, sessUser.id, restoreVersion.filePath);
+          if (fss.existsSync(restorePath)) {
+            const restoreUpload = await uploadOriginalToS3(restorePath);
+            remoteRestoreUrl = restoreUpload.url;
+          }
+        }
+      } catch (err: any) {
+        console.error('[region-edit] S3 upload failed:', err);
+        return res.status(503).json({ success: false, error: 's3_upload_failed', message: err?.message });
+      }
+    }
+
+    // Enqueue edit job with remote URLs
     const { jobId } = await enqueueEditJob({
       userId: sessUser.id,
       imageId: (record as any).imageId || (record as any).id,
@@ -98,6 +145,8 @@ export function regionEditRouter() {
       mode: mode as any,
       instruction,
       mask,
+      remoteBaseUrl,
+      remoteRestoreUrl,
     });
 
     const started = Date.now();
