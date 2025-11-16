@@ -142,7 +142,7 @@ export function buildTestStage1BPrompt(scene: TestScene): string {
     `Temperature: ${formatTemp(t)}`,
     s === "exterior"
       ? "Enhance and declutter exterior. Maintain blue sky and warm sunlight feel if present; even out lawn color/texture; trim edges and tidy garden beds; remove weeds and dead foliage. Remove debris and temporary items completely. Preserve structures and surfaces; do not build or add new surfaces."
-      : "Enhance and declutter interior. Remove obvious clutter and small decor. Preserve architecture and built-ins.",
+      : "Enhance and declutter interior. Remove ALL movable furniture (sofas, beds, tables, chairs, dressers, lamps, rugs, wall art, decorations) to create a completely empty room. Keep ONLY built-in stoves, countertops, cabinets, and fixed architectural elements. Preserve architecture and built-ins.",
     "Keep camera, walls, doors, and windows unchanged."
   ].join("\n");
 }
