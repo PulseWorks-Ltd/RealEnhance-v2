@@ -292,10 +292,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   } catch {}
   let path1A: string = origPath;
-  // Unified Stage 1A for all scenes (with sensible exterior defaults)
+  // Stage 1A: Always run as a separate Gemini call, only for quality enhancement and surface cleanliness
   path1A = await runStage1A(origPath, {
     replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
-    declutter: payload.options.declutter ?? false,
+    declutter: false, // Never combine declutter with Stage 1A
     sceneType: sceneLabel,
   });
   timings.stage1AMs = Date.now() - t1A;
@@ -332,30 +332,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
-  let path1B = path1A;
-  try {
-    path1B = payload.options.declutter 
-      ? await runStage1B(path1A, {
-          replaceSky: payload.options.replaceSky ?? false,
-          sceneType: sceneLabel,
-        }) 
-      : path1A;
-  } catch (e: any) {
-    const errMsg = e?.message || String(e);
-    console.error(`[worker] Stage 1B failed: ${errMsg}`);
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: errMsg,
-      error: errMsg,
-      meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
-    });
-    return;
-  }
-  timings.stage1BMs = Date.now() - t1B;
-
-  if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
-    return;
+  let path1B: string | undefined = undefined;
+  if (payload.options.declutter) {
+    try {
+      // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
+      path1B = await runStage1B(path1A, {
+        replaceSky: false, // Never combine with sky replacement
+        sceneType: sceneLabel,
+      });
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      console.error(`[worker] Stage 1B failed: ${errMsg}`);
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: errMsg,
+        error: errMsg,
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+      });
+      return;
+    }
+    timings.stage1BMs = Date.now() - t1B;
+    if (await isCancelled(payload.jobId)) {
+      updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+      return;
+    }
   }
 
   // Record Stage 1B publish if different from 1A
@@ -381,15 +381,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
-  let path2 = path1B;
+  // Stage 2: Use declutteredBase if furniture removal is selected, otherwise enhancedBase
+  let path2: string = payload.options.declutter && path1B ? path1B : path1A;
   try {
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
       console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging.`);
-      path2 = path1B; // Only enhancement, no staging
+      path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
-        ? await runStage2(path1B, {
+        ? await runStage2(payload.options.declutter && path1B ? path1B : path1A, {
             roomType: payload.options.roomType || String(detectedRoom || "living_room"),
             sceneType: sceneLabel as any,
             profile,
@@ -412,7 +413,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               } catch {}
             }
           })
-        : path1B;
+        : (payload.options.declutter && path1B ? path1B : path1A);
     }
   } catch (e: any) {
     const errMsg = e?.message || String(e);
