@@ -176,7 +176,7 @@ export default function BatchProcessor() {
   const [linkImages, setLinkImages] = useState<boolean>(false);
 
   // Tuning controls (apply to all images in this batch; optional)
-  const [declutterIntensity, setDeclutterIntensity] = useState<""|"light"|"standard"|"heavy">("");
+  // Declutter intensity removed: always heavy/preset in backend
   // Disable manual sampling controls; prompt embeds temperature instead
   const samplingUiEnabled = false;
   const [temperatureInput, setTemperatureInput] = useState<string>("");
@@ -401,7 +401,7 @@ export default function BatchProcessor() {
       roomType?: string;
       replaceSky?: boolean;
       // optional tuning
-      declutterIntensity?: string;
+      // declutterIntensity removed
       temperature?: number;
       topP?: number;
       topK?: number;
@@ -457,7 +457,7 @@ export default function BatchProcessor() {
       const tNum = samplingUiEnabled && temperatureInput.trim() ? Number(temperatureInput) : undefined;
       const pNum = samplingUiEnabled && topPInput.trim() ? Number(topPInput) : undefined;
       const kNum = samplingUiEnabled && topKInput.trim() ? Number(topKInput) : undefined;
-      const hasTuning = (!!declutterIntensity && declutterIntensity !== "") || (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
+      const hasTuning = (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
       if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
         const metaItem: any = { index: i };
         
@@ -467,7 +467,7 @@ export default function BatchProcessor() {
         if (includeRoomType) metaItem.roomType = roomType;
         if (isExterior) metaItem.replaceSky = replaceSky; // Only include for exterior
         // Batch-level tuning applies to each image (optional)
-        if (declutterIntensity) metaItem.declutterIntensity = declutterIntensity;
+        // declutterIntensity removed
         if (samplingUiEnabled && Number.isFinite(tNum)) metaItem.temperature = tNum;
         if (samplingUiEnabled && Number.isFinite(pNum)) metaItem.topP = pNum;
         if (samplingUiEnabled && Number.isFinite(kNum)) metaItem.topK = kNum;
@@ -477,7 +477,7 @@ export default function BatchProcessor() {
     });
     
     return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, declutterIntensity, temperatureInput, topPInput, topKInput]);
+  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2321,19 +2321,7 @@ export default function BatchProcessor() {
             {/* Tuning Controls */}
             <div className="mb-6 p-4 rounded-lg border border-gray-700 bg-gray-800/60">
               <div className="flex flex-wrap items-end gap-4">
-                <div>
-                  <label className="block text-gray-300 text-xs font-medium mb-2">Declutter Intensity</label>
-                  <select
-                    value={declutterIntensity}
-                    onChange={(e)=>setDeclutterIntensity(e.target.value as any)}
-                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                  >
-                    <option value="">Default</option>
-                    <option value="light">Light</option>
-                    <option value="standard">Standard</option>
-                    <option value="heavy">Heavy</option>
-                  </select>
-                </div>
+                {/* Declutter Intensity removed: always uses heavy/preset in backend prompt */}
                 {!samplingUiEnabled ? (
                   <div className="text-xs text-gray-400 max-w-xl">
                     Temperature/topP/topK are disabled. Prompts embed temperature per stage/scene. Declutter intensity remains configurable here.

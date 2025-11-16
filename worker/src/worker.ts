@@ -13,6 +13,7 @@ import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2 } from "./pipeline/stage2";
 import { applyEdit } from "./pipeline/editApply";
+import { preprocessToCanonical } from "./pipeline/preprocess";
 
 import { detectSceneFromImage } from "./ai/scene-detector";
 import { detectRoomType } from "./ai/room-detector";

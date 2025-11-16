@@ -104,24 +104,38 @@ export function buildTestStage1BPrompt(sceneType: string, roomType?: string) {
 Remove ALL movable furniture and household items from this ${roomType || "room"} interior, to prepare it for digital staging.
 
 REMOVE:
-• Sofas, armchairs, beds, side tables, dining tables, chairs, consoles, dressers, nightstands, desks, freestanding shelving units, bookcases, wardrobes, TV units.
+• Sofas, armchairs, beds, side tables, dining tables, chairs, consoles, dressers,
+  nightstands, desks, freestanding shelving units, bookcases, wardrobes, TV units.
 • Lamps, rugs, wall art, decor items, toys, electronics, plants.
 • Countertop clutter, small appliances, and items on window sills.
 • Loose textiles like throws and cushions.
 
+PARTIALLY VISIBLE ITEMS:
+• If ANY part of a movable furniture item is visible (for example only the arm
+  of a sofa, the edge of a TV, the legs of a chair, part of a table, or the
+  corner of a bed), treat this as the full object and remove ALL of its visible
+  pixels from the image.
+• Do NOT leave fragments or “cut-off” pieces of furniture or decor. The scene
+  should look as if the entire item was never there.
+• If part of a movable object is hidden behind another object, still remove all
+  visible parts of the movable object.
+
 KEEP EXACTLY:
 • Built-in stoves/ovens, cabinets, countertops, vanities, fixed shelving.
-• ALL windows, blinds, curtains, doors, trims, skirtings, and architectural features.
+• ALL windows, blinds, curtains, doors, trims, skirtings, and architectural
+  features.
 • Original walls, ceilings, flooring, and their colors and materials.
 
 HARD RULES — NON-NEGOTIABLE:
-• Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe, zoom, or change the camera angle or perspective.
+• Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe,
+  zoom, or change the camera angle or perspective.
 • Do NOT change, resize, move, hide, or replace any architecture.
 • Do NOT alter window shapes, frames, views, or door openings.
 • Do NOT repaint or re-texture walls, ceilings, or floors.
 • Do NOT create new built-ins or structural elements.
 
-Produce a clean, empty version of the room with identical architecture, ready for staging.
+Produce a clean, empty version of the room with identical architecture, with
+ALL visible movable furniture and decor fully removed, ready for staging.
 Temperature: 0.30
 `;
   }
