@@ -286,7 +286,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     }
     // store interim meta (non-fatal if write fails)
-    updateJob(payload.jobId, { meta: { scenePrimary: primary, scene: { label: room.label as any, confidence: room.confidence }, allowStaging, stagingRegion: stagingRegionGlobal } });
+    updateJob(payload.jobId, { meta: {
+      scenePrimary: primary,
+      scene: { label: room.label as any, confidence: room.confidence },
+      allowStaging,
+      stagingRegion: stagingRegionGlobal,
+      roomTypeDetected: detectedRoom,
+      roomType: payload.options.roomType || undefined
+    } });
     try {
       console.log(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
     } catch {}
@@ -640,11 +647,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
   const meta = {
-      scene: { label: sceneLabel as any, confidence: 0.5 },
-      scenePrimary,
-      timings: { ...timings, totalMs: Date.now() - t0 },
-      ...(compliance ? { compliance } : {})
-    };
+    scene: { label: sceneLabel as any, confidence: 0.5 },
+    scenePrimary,
+    roomTypeDetected: detectedRoom,
+    roomType: payload.options.roomType || undefined,
+    allowStaging,
+    stagingRegion: stagingRegionGlobal,
+    timings: { ...timings, totalMs: Date.now() - t0 },
+    ...(compliance ? { compliance } : {})
+  };
 
   updateJob(payload.jobId, {
     status: "complete",

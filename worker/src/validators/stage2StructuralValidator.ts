@@ -50,11 +50,19 @@ function iouMasked(a: Uint8Array, b: Uint8Array, mask: Uint8Array): number {
 export async function runStage2StructuralValidator(params: Stage2StructParams): Promise<Stage2StructVerdict> {
   const { canonicalPath, stagedPath, structuralMask } = params;
   try {
-    const blurSigma = Number(process.env.STAGE2_STRUCT_VALIDATOR_BLUR || 0.0);
+    // Blur handling: clamp, allow 'none' to disable blur safely
+    const rawBlur = process.env.STAGE2_STRUCT_VALIDATOR_BLUR;
+    let blurSigma = rawBlur === 'none' ? 0 : Number(rawBlur);
+    if (!isFinite(blurSigma) || blurSigma <= 0) blurSigma = 0.4; // safe default avoiding Sharp error
+    blurSigma = Math.max(0.3, Math.min(blurSigma, 8));
     const edgeThr = Number(process.env.STAGE2_STRUCT_VALIDATOR_EDGE_THRESHOLD || 40);
+    const baseSharp = sharp(canonicalPath).greyscale();
+    const stagedSharp = sharp(stagedPath).greyscale();
+    const basePipe = blurSigma >= 0.3 ? baseSharp.blur(blurSigma) : baseSharp;
+    const stagedPipe = blurSigma >= 0.3 ? stagedSharp.blur(blurSigma) : stagedSharp;
     const [baseRaw, stagedRaw] = await Promise.all([
-      sharp(canonicalPath).greyscale().blur(blurSigma).raw().toBuffer({ resolveWithObject: true }),
-      sharp(stagedPath).greyscale().blur(blurSigma).raw().toBuffer({ resolveWithObject: true })
+      basePipe.raw().toBuffer({ resolveWithObject: true }),
+      stagedPipe.raw().toBuffer({ resolveWithObject: true })
     ]);
     if (baseRaw.info.width !== stagedRaw.info.width || baseRaw.info.height !== stagedRaw.info.height) {
       return { ok: false, structuralIoU: 0, reason: "dimension_change" };
