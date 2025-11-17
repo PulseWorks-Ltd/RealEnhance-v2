@@ -1,3 +1,22 @@
+import fs from "fs/promises";
+import path from "path";
+// Loads mask from cache if present, else computes and saves for future reuse
+export async function loadOrComputeStructuralMask(jobId: string, canonicalBasePath: string): Promise<StructuralMask> {
+  const maskCacheDir = path.join(path.dirname(canonicalBasePath), "_maskcache");
+  const maskCachePath = path.join(maskCacheDir, `${jobId}.mask.json`);
+  try {
+    await fs.mkdir(maskCacheDir, { recursive: true });
+    const raw = await fs.readFile(maskCachePath, "utf8");
+    const obj = JSON.parse(raw);
+    if (obj && obj.width && obj.height && obj.data) {
+      return { width: obj.width, height: obj.height, data: Uint8Array.from(obj.data) };
+    }
+  } catch {}
+  // Compute and cache
+  const mask = await computeStructuralEdgeMask(canonicalBasePath);
+  await fs.writeFile(maskCachePath, JSON.stringify({ width: mask.width, height: mask.height, data: Array.from(mask.data) }), "utf8");
+  return mask;
+}
 import sharp from "sharp";
 
 export interface StructuralMask {

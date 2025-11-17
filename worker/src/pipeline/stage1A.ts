@@ -220,61 +220,54 @@ export async function runStage1A(
   // If Gemini enhancement succeeded (returned different path), use it
   // Otherwise, Sharp output is already at sharpOutputPath
   if (geminiOutputPath !== sharpOutputPath) {
-    // Validate candidate vs canonical base (sharp pre-pass is our canonical)
-    // New centralized validator (stage-aware with dimension normalization)
-    const { validateStageOutput } = await import("../validators");
-    const verdict = await validateStageOutput("stage1A", sharpOutputPath, geminiOutputPath, { sceneType: sceneType as any });
-    if (!verdict.ok) {
+    // Use mask-based validator
+    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask");
+    const { validateStage1A } = await import("../validators/stage1AValidator");
+    const jobId = (global as any).__jobId || "default";
+    const canonicalBasePath = sharpOutputPath;
+    const mask = await loadOrComputeStructuralMask(jobId, canonicalBasePath);
+    let verdict = await validateStage1A(canonicalBasePath, geminiOutputPath, mask);
+    if (!verdict.ok && (verdict.reason === "structural_change" || verdict.reason === "dimension_change")) {
       console.warn(`[stage1A] ❌ Validation failed: ${verdict.reason}`);
-      // Retry only on structural or dimension issues; skip for validator_error
-      if (verdict.reason !== 'structural_change' && verdict.reason !== 'dimension_change') {
-        throw new Error(`Stage 1A validation failed (non-retryable): ${verdict.reason}`);
-      }
-      console.log(`[stage1A] 🔁 Retrying Gemini with strictMode due to ${verdict.reason}...`);
-      // For test prompts with embedded temperature, reduce by 20% in strict retry
-      const sampling = typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {};
-      const strictSampling = process.env.USE_TEST_PROMPTS === '1' && sampling.temperature !== undefined
-        ? { ...sampling, temperature: Math.max(0.1, sampling.temperature * 0.8) }
-        : sampling;
-      const retryPath = await enhanceWithGemini(sharpOutputPath, {
-        skipIfNoApiKey: true,
-        replaceSky: replaceSky,
-        declutter: false,
-        sceneType: sceneType,
-        stage: "1A",
-        strictMode: true,
-        floorClean: false,
-        hardscapeClean: sceneType === "exterior",
-        ...strictSampling,
-      });
-      if (retryPath !== sharpOutputPath) {
-        const retryVerdict = await validateStageOutput("stage1A", sharpOutputPath, retryPath, { sceneType: sceneType as any });
-        if (retryVerdict.ok) {
-          console.log(`[stage1A] ✅ Retry passed validation`);
-          const fs = await import("fs/promises");
-          await fs.rename(retryPath, finalOutputPath);
-          return finalOutputPath;
+      // Strict retry (max 2 attempts)
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        console.log(`[stage1A] 🔁 Strict retry #${attempt}...`);
+        const retryPath = await enhanceWithGemini(sharpOutputPath, {
+          skipIfNoApiKey: true,
+          replaceSky: replaceSky,
+          declutter: false,
+          sceneType: sceneType,
+          stage: "1A",
+          strictMode: true,
+          floorClean: false,
+          hardscapeClean: sceneType === "exterior",
+        });
+        if (retryPath !== sharpOutputPath) {
+          verdict = await validateStage1A(canonicalBasePath, retryPath, mask);
+          if (verdict.ok) {
+            console.log(`[stage1A] ✅ Strict retry passed validation`);
+            const fs = await import("fs/promises");
+            await fs.rename(retryPath, finalOutputPath);
+            return finalOutputPath;
+          }
         }
-        console.warn(`[stage1A] ❌ Retry still failed validation: ${retryVerdict.reason}`);
-        console.error(`[stage1A] CRITICAL: Validation failed`);
-        throw new Error(`Stage 1A validation failed: ${retryVerdict.reason}`);
-      } else {
-        console.warn(`[stage1A] ❌ Retry did not produce image.`);
-        throw new Error('Stage 1A retry failed to generate image');
       }
-      // Note: No longer falling back to Sharp - validation failures now fail the job
+      // Fallback: use Sharp-only output
+      console.warn(`[stage1A] ❌ All retries failed, falling back to Sharp-only output.`);
+      const fs = await import("fs/promises");
+      await fs.rename(sharpOutputPath, finalOutputPath);
+      return finalOutputPath;
+    } else if (!verdict.ok) {
+      throw new Error(`Stage 1A validation failed: ${verdict.reason}`);
     }
-    console.log(`[stage1A] ✅ Gemini AI enhancement passed validation`);
-    // Rename Gemini output to final path
+    // Passed validation
     const fs = await import("fs/promises");
     await fs.rename(geminiOutputPath, finalOutputPath);
   } else {
     console.log(`[stage1A] ℹ️ Using Sharp enhancement only (Gemini skipped)`);
-    // Rename Sharp output to final path
     const fs = await import("fs/promises");
     await fs.rename(sharpOutputPath, finalOutputPath);
   }
-  
   console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
   return finalOutputPath;
 }
