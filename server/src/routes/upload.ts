@@ -183,8 +183,8 @@ export function uploadRouter() {
         imageId,
         remoteOriginalUrl,
         options: {
-          declutter: !!opts.declutter,
-          virtualStage: !!opts.virtualStage,
+          declutter: parseStrictBool(opts.declutter),
+          virtualStage: parseStrictBool(opts.virtualStage),
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
@@ -200,4 +200,16 @@ export function uploadRouter() {
   });
 
   return r;
+}
+
+// Strict boolean parsing helper (placed at end for minimal intrusion; could be centralized later)
+function parseStrictBool(v: any, defaultValue = false): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v === 1;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (["true","1","yes","y","on"].includes(s)) return true;
+    if (["false","0","no","n","off",""].includes(s)) return false;
+  }
+  return defaultValue;
 }

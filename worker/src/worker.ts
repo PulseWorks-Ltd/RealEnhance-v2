@@ -63,6 +63,27 @@ import { downloadToTemp } from "./utils/remote";
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   console.log(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
+  const strictBool = (v: any): boolean => {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v === 1;
+    if (typeof v === 'string') {
+      const s = v.trim().toLowerCase();
+      if (["true","1","yes","y","on"].includes(s)) return true;
+      if (["false","0","no","n","off",""] .includes(s)) return false;
+    }
+    return false;
+  };
+  const rawDeclutter = (payload as any).options.declutter;
+  const rawVirtualStage = (payload as any).options.virtualStage;
+  (payload as any).options.declutter = strictBool(rawDeclutter);
+  (payload as any).options.virtualStage = strictBool(rawVirtualStage);
+  if (typeof rawDeclutter !== 'boolean') {
+    console.log(`[WORKER] Normalized declutter '${rawDeclutter}' → ${payload.options.declutter}`);
+  }
+  if (typeof rawVirtualStage !== 'boolean') {
+    console.log(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
+  }
   
   // Check if we have a remote original URL (multi-service deployment)
   const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
