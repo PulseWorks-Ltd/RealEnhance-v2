@@ -1,8 +1,7 @@
 import { VALIDATION_PROFILES, ValidationResult, StageId, SceneType } from "./config";
 import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { computeStructuralEdgeMask } from "./structuralMask";
-import { validateStage2 } from "./stage2StructuralValidator";
-import { runLandcoverCheck } from "./landcoverValidator";
+import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateWindows } from "./windowValidator";
 import { checkSizeMatch } from "./sizeValidator";
 import { computeBrightnessDiff } from "./brightnessValidator";
@@ -39,10 +38,10 @@ export async function validateStageOutput(
     if (profile.minStructuralIoU !== undefined) {
       // Build structural mask from base and compute masked IoU
       const mask = await computeStructuralEdgeMask(basePath);
-      const m = await validateStage2(basePath, candidatePath, mask);
+      const m = await validateStage2Structural(basePath, candidatePath, { structuralMask: mask });
       structuralIoU = m.structuralIoU;
       if (structuralIoU !== undefined && profile.minStructuralIoU !== undefined && structuralIoU < profile.minStructuralIoU) {
-        return { ok: false, stage, sceneType, structuralIoU, reason: "structural_geometry", message: `Structural IoU too low (${structuralIoU.toFixed(3)}).` };
+        return { ok: false, stage, sceneType, structuralIoU, reason: "structural_geometry" };
       }
     }
 
@@ -54,22 +53,15 @@ export async function validateStageOutput(
       }
     }
 
-    if (profile.enforceLandcover && sceneType === "exterior") {
-      const landOk = await runLandcoverCheck(basePath, candidatePath);
-      if (!landOk) {
-        return { ok: false, stage, sceneType, reason: "landcover", message: "Landcover changed (e.g., grass vs driveway)." };
-      }
-    }
-
     if (profile.enforceWindowIoU) {
       const winRes = await validateWindows(basePath, candidatePath);
       if (!winRes.ok) {
-        return { ok: false, stage, sceneType, reason: winRes.issue, message: winRes.message };
+        return { ok: false, stage, sceneType, reason: (winRes.reason as any) };
       }
     }
 
     return { ok: true, stage, sceneType, structuralIoU, globalEdgeIoU, brightnessDiff, reason: "ok" };
   } catch (err: any) {
-    return { ok: false, stage, sceneType, reason: "validator_error", message: err?.message || String(err) };
+    return { ok: false, stage, sceneType, reason: "validator_error" };
   }
 }

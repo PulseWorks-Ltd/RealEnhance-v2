@@ -23,7 +23,7 @@ export async function validateWindows(basePath: string, candidatePath: string): 
   const OCCLUSION_MAX = Number(process.env.WINDOW_OCCLUSION_MAX_2 || 0.25);
   // Window count check
   if (Math.abs(base.windows.length - cand.windows.length) > 1) {
-    return { ok: false, issue: "window_count_change", message: "Window count changed." };
+    return { ok: false, reason: "window_count_change" };
   }
   // Greedy match each base window to best candidate window
   for (const w of base.windows) {
@@ -34,17 +34,17 @@ export async function validateWindows(basePath: string, candidatePath: string): 
     }
     if (!best) continue;
     if (bestIou < IOU_MIN) {
-      return { ok: false, issue: "window_position_change", message: "Window position changed or window missing." };
+      return { ok: false, reason: "window_position_change" };
     }
     const areaDelta = Math.abs(best.area - w.area) / Math.max(1, w.area);
     if (areaDelta > AREA_DELTA_MAX) {
-      return { ok: false, issue: "window_size_change", message: "Window size changed significantly." };
+      return { ok: false, reason: "window_size_change" };
     }
     const baseCent = centroidFromMask(w.mask, base.width);
     const candCent = centroidFromMask(best.mask, cand.width);
     const cshift = Math.hypot(baseCent.cx - candCent.cx, baseCent.cy - candCent.cy) / Math.hypot(base.width, base.height);
     if (cshift > CENTROID_SHIFT_MAX) {
-      return { ok: false, issue: "window_position_change", message: "Window position changed or window missing." };
+      return { ok: false, reason: "window_position_change" };
     }
     // Occlusion estimate: brightness drop inside base window region
     const [a, b] = await Promise.all([
@@ -61,5 +61,5 @@ export async function validateWindows(basePath: string, candidatePath: string): 
       // return { ok: false, issue: "window_occlusion", message: "Window occlusion increased." };
     }
   }
-  return { ok: true, issue: "none" };
+  return { ok: true };
 }
