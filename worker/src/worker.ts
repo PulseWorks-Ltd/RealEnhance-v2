@@ -340,10 +340,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   } catch {}
   let path1A: string = origPath;
-  // Stage 1A: Always run as a separate Gemini call, only for quality enhancement and surface cleanliness
+  // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
   path1A = await runStage1A(canonicalPath, {
     replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
-    declutter: false, // Never combine declutter with Stage 1A
+    declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
     sceneType: sceneLabel,
     interiorProfile: ((): any => {
       const p = (payload.options as any)?.interiorProfile;
@@ -386,7 +386,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
   let path1B: string | undefined = undefined;
+  console.log(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   if (payload.options.declutter) {
+    console.log(`[WORKER] ✅ Stage 1B ENABLED - will remove furniture from enhanced 1A output`);
     try {
       // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
       path1B = await runStage1B(path1A, {
