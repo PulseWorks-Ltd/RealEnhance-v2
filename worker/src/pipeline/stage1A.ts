@@ -2,6 +2,8 @@ import sharp from "sharp";
 import { enhanceWithGemini } from "../ai/gemini";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
+import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighEnd } from "../ai/prompts.nzInterior";
 import { validateStage } from "../ai/unified-validator";
 
 /**
@@ -74,6 +76,14 @@ export async function runStage1A(
   } = {}
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType } = options;
+  const isInterior = sceneType === "interior";
+  const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
+  let interiorProfileKey = INTERIOR_PROFILE_FROM_ENV;
+  const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
+  if (!applyInteriorProfile) {
+    // Fallback to standard so references are safe; will be unused.
+    interiorProfileKey = "nz_standard";
+  }
   
   const sharpOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A-sharp.webp");
   const finalOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
@@ -96,14 +106,30 @@ export async function runStage1A(
   // 5. HDR tone mapping first (lift shadows, retain highlights)
   img = applyHDRToneMapping(img);
   
-  // 6. Adaptive brightness/saturation (high-end real estate standard)
-  img = img.modulate({
-    brightness: 1.14,  // +14% brightness (adaptive, marketing-grade)
-    saturation: 1.20,  // +20% saturation (clamped to avoid orange shift)
-  });
+  // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
+  if (applyInteriorProfile) {
+    const brightness = 1 + interiorCfg.brightnessBoost; // strong global lift
+    // Base saturation 1.15 plus profile extra (kept lower than exterior to avoid colour cast)
+    const saturation = 1.15 + interiorCfg.saturation;
+    img = img.modulate({ brightness, saturation });
+    // Additional midtone/local contrast shaping
+    img = img.gamma(1.0 + (interiorCfg.midtoneLift * 0.12)); // gentle gamma tweak for midtones
+    img = img.linear(1 + interiorCfg.localContrast, -(128 * interiorCfg.localContrast));
+    console.log(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)})`);
+  } else {
+    img = img.modulate({
+      brightness: 1.14,  // +14% brightness (adaptive, marketing-grade)
+      saturation: 1.20,  // +20% saturation (clamped to avoid orange shift)
+    });
+  }
   
   // 7. Gamma correction for shadow detail (lower = brighter shadows)
-  img = img.gamma(1.08);  // Optimized for interior depth
+  if (!applyInteriorProfile) {
+    img = img.gamma(1.08);  // legacy optimization (non-profile path)
+  } else {
+    // Profile already adjusted gamma; apply mild shadow lift using linear offset
+    img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.15));
+  }
   
   // 8. Sky enhancement (boost blues for dramatic sky)
   img = applySkyEnhancement(img);
@@ -158,13 +184,27 @@ export async function runStage1A(
   let nzTopP: number | undefined = undefined;
   let nzTopK: number | undefined = undefined;
   if (isNZStyleEnabled()) {
-    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
-    nzTemp = preset.temperature;
+    if (applyInteriorProfile) {
+      // Use profile-specific Gemini temperature for interior
+      nzTemp = interiorCfg.geminiTemperature;
+    } else {
+      const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
+      nzTemp = preset.temperature;
+    }
     nzTopP = preset.topP;
     nzTopK = preset.topK;
   }
   // Inject custom prompt via global hook so buildGeminiPrompt can detect (simplest non-invasive approach)
-  const nzPrompt = isNZStyleEnabled() ? buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any) : undefined;
+  let nzPrompt: string | undefined = undefined;
+  if (isNZStyleEnabled()) {
+    if (applyInteriorProfile) {
+      nzPrompt = interiorProfileKey === "nz_high_end"
+        ? buildStage1AInteriorPromptNZHighEnd("room")
+        : buildStage1AInteriorPromptNZStandard("room");
+    } else {
+      nzPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
+    }
+  }
   const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
     skipIfNoApiKey: true,
     replaceSky: replaceSky,
