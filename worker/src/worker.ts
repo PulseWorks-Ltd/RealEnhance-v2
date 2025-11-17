@@ -404,9 +404,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
-  // Record Stage 1B publish if different from 1A
+  // Record Stage 1B publish if it exists and is different from 1A
   // pub1BUrl already declared above; removed duplicate
-  if (path1B !== path1A) {
+  if (path1B && path1B !== path1A) {
     try {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
@@ -433,11 +433,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isExteriorScene = sceneLabel === "exterior";
   const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  console.log(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
   try {
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
-      console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging.`);
+      console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
