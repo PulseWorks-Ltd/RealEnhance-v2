@@ -3,7 +3,7 @@ import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
-import { runStage2StructuralValidator } from "../validators/stage2StructuralValidator";
+import { validateStage2 } from "../validators/stage2StructuralValidator";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import sharp from "sharp";

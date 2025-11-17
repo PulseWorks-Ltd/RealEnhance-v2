@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { computeBrightnessDiff } from "./brightnessValidator";
 import { computeStructuralEdgeMask } from "./structuralMask";
-import { runStage2StructuralValidator } from "./stage2StructuralValidator";
+import * as stage2Struct from "./stage2StructuralValidator";
 
 export type StageName = "stage1A" | "stage1B" | "stage2";
 
@@ -73,8 +73,8 @@ async function computeEdgeIoU(basePath: string, outputPath: string): Promise<num
 
 async function computeStructuralEdgeIoU(basePath: string, outputPath: string): Promise<number> {
   const mask = await computeStructuralEdgeMask(basePath);
-  const verdict = await runStage2StructuralValidator({ canonicalPath: basePath, stagedPath: outputPath, structuralMask: mask });
-  return verdict.structuralIoU;
+  const verdict = await stage2Struct.validateStage2(basePath, outputPath, mask);
+  return verdict.structuralIoU ?? 0;
 }
 
 async function validateStage1A(basePath: string, outputPath: string, context: any, sizeMismatch: boolean): Promise<ValidationResult> {
