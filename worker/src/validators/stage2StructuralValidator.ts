@@ -47,37 +47,67 @@ function iouMasked(a: Uint8Array, b: Uint8Array, mask: Uint8Array): number {
   return uni > 0 ? inter / uni : 1;
 }
 
-export async function runStage2StructuralValidator(params: Stage2StructParams): Promise<Stage2StructVerdict> {
-  const { canonicalPath, stagedPath, structuralMask } = params;
-  try {
-    // Blur handling: clamp, allow 'none' to disable blur safely
-    const rawBlur = process.env.STAGE2_STRUCT_VALIDATOR_BLUR;
-    let blurSigma = rawBlur === 'none' ? 0 : Number(rawBlur);
-    if (!isFinite(blurSigma) || blurSigma <= 0) blurSigma = 0.4; // safe default avoiding Sharp error
-    blurSigma = Math.max(0.3, Math.min(blurSigma, 8));
-    const edgeThr = Number(process.env.STAGE2_STRUCT_VALIDATOR_EDGE_THRESHOLD || 40);
-    const baseSharp = sharp(canonicalPath).greyscale();
-    const stagedSharp = sharp(stagedPath).greyscale();
-    const basePipe = blurSigma >= 0.3 ? baseSharp.blur(blurSigma) : baseSharp;
-    const stagedPipe = blurSigma >= 0.3 ? stagedSharp.blur(blurSigma) : stagedSharp;
-    // Normalize staged image dimensions to canonical for fair comparison.
-    // This avoids treating benign canvas changes (e.g., padding) as hard failures.
-    const baseRaw = await basePipe.raw().toBuffer({ resolveWithObject: true });
-    const stagedResized = stagedPipe.resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" });
-    const stagedRaw = await stagedResized.raw().toBuffer({ resolveWithObject: true });
-    const width = baseRaw.info.width; const height = baseRaw.info.height;
-    const baseBuf = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
-    const stagedBuf = new Uint8Array(stagedRaw.data.buffer, stagedRaw.data.byteOffset, stagedRaw.data.byteLength);
-    const baseEdge = sobelBinary(baseBuf, width, height, edgeThr);
-    const stagedEdge = sobelBinary(stagedBuf, width, height, edgeThr);
-    const structuralIoU = iouMasked(baseEdge, stagedEdge, structuralMask.data);
-    const minIoU = Number(process.env.STAGE2_STRUCT_IOU_MIN || 0.30);
-    if (structuralIoU < minIoU) {
-      return { ok: false, structuralIoU, reason: "structural_change" };
+export type Stage2ValidationResult = {
+  ok: boolean;
+  reason?: string;
+  dims?: { baseW: number; baseH: number; outW: number; outH: number };
+  structuralIoU?: number;
+};
+
+export async function validateStage2(
+  canonicalBasePath: string,
+  stage2Path: string,
+  structuralMask: StructuralMask
+): Promise<Stage2ValidationResult> {
+  const baseMeta = await sharp(canonicalBasePath).metadata();
+  const outMeta = await sharp(stage2Path).metadata();
+  const baseW = baseMeta.width!;
+  const baseH = baseMeta.height!;
+  const outW = outMeta.width!;
+  const outH = outMeta.height!;
+  if (baseW !== outW || baseH !== outH) {
+    const wRatio = outW / baseW;
+    const hRatio = outH / baseH;
+    const maxDev = Math.max(Math.abs(wRatio - 1), Math.abs(hRatio - 1));
+    if (maxDev <= 0.01) {
+      await sharp(stage2Path)
+        .resize(baseW, baseH, { fit: "fill", withoutEnlargement: false })
+        .toFile(stage2Path + ".aligned.webp");
+      stage2Path = stage2Path + ".aligned.webp";
+    } else {
+      return {
+        ok: false,
+        reason: "dimension_change",
+        dims: { baseW, baseH, outW, outH },
+      };
     }
-    return { ok: true, structuralIoU };
-  } catch (e) {
-    console.error('[stage2-struct] validator error', e);
-    return { ok: false, structuralIoU: 0, reason: 'validator_error' };
   }
+  // Blur handling: clamp, safe default
+  let sigma = Number(process.env.STAGE2_STRUCT_VALIDATOR_BLUR || 0.5);
+  if (!isFinite(sigma) || sigma < 0.3) sigma = 0.5;
+  const edgeThr = Number(process.env.STAGE2_STRUCT_VALIDATOR_EDGE_THRESHOLD || 40);
+  const baseMetaObj = await sharp(canonicalBasePath).greyscale().blur(sigma).raw().toBuffer({ resolveWithObject: true });
+  const outMetaObj = await sharp(stage2Path).greyscale().blur(sigma).raw().toBuffer({ resolveWithObject: true });
+  const baseBuf = new Uint8Array(baseMetaObj.data.buffer, baseMetaObj.data.byteOffset, baseMetaObj.data.byteLength);
+  const outBuf = new Uint8Array(outMetaObj.data.buffer, outMetaObj.data.byteOffset, outMetaObj.data.byteLength);
+  const width = baseMetaObj.info.width;
+  const height = baseMetaObj.info.height;
+  const baseEdge = sobelBinary(baseBuf, width, height, edgeThr);
+  const outEdge = sobelBinary(outBuf, width, height, edgeThr);
+  const baseStruct = new Uint8Array(baseEdge.length);
+  const outStruct = new Uint8Array(outEdge.length);
+  for (let i = 0; i < baseEdge.length; i++) {
+    baseStruct[i] = baseEdge[i] & structuralMask.data[i];
+    outStruct[i] = outEdge[i] & structuralMask.data[i];
+  }
+  let inter = 0, uni = 0;
+  for (let i = 0; i < baseStruct.length; i++) {
+    if (baseStruct[i] | outStruct[i]) uni++;
+    if (baseStruct[i] & outStruct[i]) inter++;
+  }
+  const structuralIoU = uni > 0 ? inter / uni : 1;
+  if (structuralIoU < 0.78) {
+    return { ok: false, reason: "structural_change", structuralIoU };
+  }
+  return { ok: true, structuralIoU };
 }
