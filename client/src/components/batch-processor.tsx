@@ -1153,7 +1153,6 @@ export default function BatchProcessor() {
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     fd.append("declutter", declutter.toString());
-    fd.append("declutter", declutter.toString());
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);

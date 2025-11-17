@@ -358,5 +358,140 @@
         "totalMs": 830
       }
     }
+  },
+  "job_bdb05b97-3079-45bf-acf0-415ef768f412": {
+    "id": "job_bdb05b97-3079-45bf-acf0-415ef768f412",
+    "jobId": "job_bdb05b97-3079-45bf-acf0-415ef768f412",
+    "userId": "user_test",
+    "imageId": "img_96e48b3b-41c8-40a2-bc16-e59e4e221217",
+    "type": "enhance",
+    "status": "error",
+    "payload": {
+      "jobId": "job_bdb05b97-3079-45bf-acf0-415ef768f412",
+      "userId": "user_test",
+      "imageId": "img_96e48b3b-41c8-40a2-bc16-e59e4e221217",
+      "type": "enhance",
+      "options": {
+        "declutter": true,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "interior"
+      },
+      "createdAt": "2025-11-17T07:35:52.071Z"
+    },
+    "createdAt": "2025-11-17T07:35:52.071Z",
+    "updatedAt": "2025-11-17T08:04:55.374Z",
+    "stage": "upload-original",
+    "progress": 10,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
+    "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
+  },
+  "job_a41c62c6-21fa-4335-8817-28de7e032713": {
+    "id": "job_a41c62c6-21fa-4335-8817-28de7e032713",
+    "jobId": "job_a41c62c6-21fa-4335-8817-28de7e032713",
+    "userId": "user_test",
+    "imageId": "img_0005fba0-0b53-4250-8e7d-8e142a325aa6",
+    "type": "enhance",
+    "status": "error",
+    "payload": {
+      "jobId": "job_a41c62c6-21fa-4335-8817-28de7e032713",
+      "userId": "user_test",
+      "imageId": "img_0005fba0-0b53-4250-8e7d-8e142a325aa6",
+      "type": "enhance",
+      "options": {
+        "declutter": true,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "interior"
+      },
+      "createdAt": "2025-11-17T07:41:52.801Z"
+    },
+    "createdAt": "2025-11-17T07:41:52.801Z",
+    "updatedAt": "2025-11-17T08:04:55.386Z",
+    "stage": "upload-original",
+    "progress": 10,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
+    "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
+  },
+  "job_b672f804-af52-45ea-9678-e820561f1f0c": {
+    "id": "job_b672f804-af52-45ea-9678-e820561f1f0c",
+    "jobId": "job_b672f804-af52-45ea-9678-e820561f1f0c",
+    "userId": "user_test",
+    "imageId": "img_db509db1-a95f-4521-873e-217bc2197c03",
+    "type": "enhance",
+    "status": "error",
+    "payload": {
+      "jobId": "job_b672f804-af52-45ea-9678-e820561f1f0c",
+      "userId": "user_test",
+      "imageId": "img_db509db1-a95f-4521-873e-217bc2197c03",
+      "type": "enhance",
+      "options": {
+        "declutter": true,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "interior"
+      },
+      "createdAt": "2025-11-17T07:51:18.492Z"
+    },
+    "createdAt": "2025-11-17T07:51:18.492Z",
+    "updatedAt": "2025-11-17T08:04:55.409Z",
+    "stage": "upload-original",
+    "progress": 10,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
+    "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
+  },
+  "job_a2641323-30d2-4910-88df-d84ce9a1658e": {
+    "id": "job_a2641323-30d2-4910-88df-d84ce9a1658e",
+    "jobId": "job_a2641323-30d2-4910-88df-d84ce9a1658e",
+    "userId": "user_test",
+    "imageId": "img_05bee4fc-9306-47ff-9835-d131fde340b3",
+    "type": "enhance",
+    "status": "error",
+    "payload": {
+      "jobId": "job_a2641323-30d2-4910-88df-d84ce9a1658e",
+      "userId": "user_test",
+      "imageId": "img_05bee4fc-9306-47ff-9835-d131fde340b3",
+      "type": "enhance",
+      "options": {
+        "declutter": true,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "interior"
+      },
+      "createdAt": "2025-11-17T07:53:27.439Z"
+    },
+    "createdAt": "2025-11-17T07:53:27.439Z",
+    "updatedAt": "2025-11-17T08:04:55.411Z",
+    "stage": "upload-original",
+    "progress": 10,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
+    "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
+  },
+  "job_7d62e9a4-b729-4174-8751-6a1e425088bd": {
+    "id": "job_7d62e9a4-b729-4174-8751-6a1e425088bd",
+    "jobId": "job_7d62e9a4-b729-4174-8751-6a1e425088bd",
+    "userId": "user_test",
+    "imageId": "img_9a1576c1-b307-4a64-aff9-c30302a69016",
+    "type": "enhance",
+    "status": "error",
+    "payload": {
+      "jobId": "job_7d62e9a4-b729-4174-8751-6a1e425088bd",
+      "userId": "user_test",
+      "imageId": "img_9a1576c1-b307-4a64-aff9-c30302a69016",
+      "type": "enhance",
+      "options": {
+        "declutter": true,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "interior"
+      },
+      "createdAt": "2025-11-17T07:56:06.219Z"
+    },
+    "createdAt": "2025-11-17T07:56:06.219Z",
+    "updatedAt": "2025-11-17T08:04:55.425Z",
+    "stage": "upload-original",
+    "progress": 10,
+    "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
+    "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
   }
 }

@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), "server", "data");
+// Resolve data directory robustly whether CWD is repo root or ./server
+const cwd = process.cwd();
+const repoRoot = path.basename(cwd) === "server" ? path.resolve(cwd, "..") : cwd;
+const DEFAULT_DATA_DIR = path.resolve(repoRoot, "server", "data");
+const DATA_DIR = process.env.DATA_DIR || DEFAULT_DATA_DIR;
 const dataDir = DATA_DIR;
 
 // make sure it exists

@@ -1,29 +1,44 @@
 {
-	"user_pulseworks": {
-		"id": "user_pulseworks",
-		"name": "PulseWorks",
-		"email": "hello@pulseworks.co.nz",
-		"credits": 10000,
-		"imageIds": [],
-		"createdAt": "2025-11-03T00:00:00.000Z",
-		"updatedAt": "2025-11-03T00:00:00.000Z"
-	},
-	"user_pulseworkslimited": {
-		"id": "user_pulseworkslimited",
-		"name": "PulseWorks Limited",
-		"email": "pulseworkslimited@gmail.com",
-		"credits": 10000,
-		"imageIds": [],
-		"createdAt": "2025-11-03T00:00:00.000Z",
-		"updatedAt": "2025-11-03T00:00:00.000Z"
-	},
-	"user_propertybrokershaun": {
-		"id": "user_propertybrokershaun",
-		"name": "Shaun (Property Brokers)",
-		"email": "propertybrokershaun@gmail.com",
-		"credits": 10000,
-		"imageIds": [],
-		"createdAt": "2025-11-03T00:00:00.000Z",
-		"updatedAt": "2025-11-03T00:00:00.000Z"
-	}
+  "user_pulseworks": {
+    "id": "user_pulseworks",
+    "name": "PulseWorks",
+    "email": "hello@pulseworks.co.nz",
+    "credits": 10000,
+    "imageIds": [],
+    "createdAt": "2025-11-03T00:00:00.000Z",
+    "updatedAt": "2025-11-03T00:00:00.000Z"
+  },
+  "user_pulseworkslimited": {
+    "id": "user_pulseworkslimited",
+    "name": "PulseWorks Limited",
+    "email": "pulseworkslimited@gmail.com",
+    "credits": 10000,
+    "imageIds": [],
+    "createdAt": "2025-11-03T00:00:00.000Z",
+    "updatedAt": "2025-11-03T00:00:00.000Z"
+  },
+  "user_propertybrokershaun": {
+    "id": "user_propertybrokershaun",
+    "name": "Shaun (Property Brokers)",
+    "email": "propertybrokershaun@gmail.com",
+    "credits": 10000,
+    "imageIds": [],
+    "createdAt": "2025-11-03T00:00:00.000Z",
+    "updatedAt": "2025-11-03T00:00:00.000Z"
+  },
+  "user_test": {
+    "id": "user_test",
+    "email": "test@example.com",
+    "name": "Test User",
+    "credits": 1000,
+    "imageIds": [
+      "img_96e48b3b-41c8-40a2-bc16-e59e4e221217",
+      "img_0005fba0-0b53-4250-8e7d-8e142a325aa6",
+      "img_db509db1-a95f-4521-873e-217bc2197c03",
+      "img_05bee4fc-9306-47ff-9835-d131fde340b3",
+      "img_9a1576c1-b307-4a64-aff9-c30302a69016"
+    ],
+    "createdAt": "2025-11-17T07:35:52.069Z",
+    "updatedAt": "2025-11-17T07:56:06.218Z"
+  }
 }
