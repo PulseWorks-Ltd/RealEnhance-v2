@@ -3,6 +3,7 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
+import type { EnhancementProfile } from "../config/enhancementProfiles";
 import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighEnd } from "../ai/prompts.nzInterior";
 import { validateStage } from "../ai/unified-validator";
 
@@ -73,12 +74,15 @@ export async function runStage1A(
     replaceSky?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
+    interiorProfile?: EnhancementProfile;
   } = {}
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType } = options;
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
-  let interiorProfileKey = INTERIOR_PROFILE_FROM_ENV;
+  let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
+    ? options.interiorProfile
+    : INTERIOR_PROFILE_FROM_ENV;
   const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
   if (!applyInteriorProfile) {
     // Fallback to standard so references are safe; will be unused.
