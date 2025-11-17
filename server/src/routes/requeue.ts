@@ -35,8 +35,8 @@ export function requeueRouter() {
 
     const prevOptions = (img?.meta as any) || {};
     const options = {
-      declutter: typeof declutter === "boolean" ? declutter : !!prevOptions.declutter,
-      virtualStage: typeof virtualStage === "boolean" ? virtualStage : !!prevOptions.virtualStage,
+      declutter: parseStrictBool(typeof declutter !== 'undefined' ? declutter : prevOptions.declutter),
+      virtualStage: parseStrictBool(typeof virtualStage !== 'undefined' ? virtualStage : prevOptions.virtualStage),
       roomType: (roomType as string) || prevOptions.roomType || "unknown",
       sceneType: (sceneType as string) || prevOptions.sceneType || "auto",
     };
@@ -66,8 +66,8 @@ export function requeueRouter() {
     const { sceneType, roomType, declutter, virtualStage } = (req.body || {}) as any;
     const prevOpts = (prev as any)?.payload?.options || {};
     const options = {
-      declutter: typeof declutter === "boolean" ? declutter : !!prevOpts.declutter,
-      virtualStage: typeof virtualStage === "boolean" ? virtualStage : !!prevOpts.virtualStage,
+      declutter: parseStrictBool(typeof declutter !== 'undefined' ? declutter : prevOpts.declutter),
+      virtualStage: parseStrictBool(typeof virtualStage !== 'undefined' ? virtualStage : prevOpts.virtualStage),
       roomType: (roomType as string) || prevOpts.roomType || "unknown",
       sceneType: (sceneType as string) || prevOpts.sceneType || "auto",
     };
@@ -85,4 +85,15 @@ export function requeueRouter() {
   });
 
   return r;
+}
+
+function parseStrictBool(v: any, defaultValue = false): boolean {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number') return v === 1;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    if (["true","1","yes","y","on"].includes(s)) return true;
+    if (["false","0","no","n","off",""] .includes(s)) return false;
+  }
+  return defaultValue;
 }
