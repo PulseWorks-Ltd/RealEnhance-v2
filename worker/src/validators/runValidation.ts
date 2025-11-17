@@ -1,7 +1,7 @@
 import { VALIDATION_PROFILES, ValidationResult, StageId, SceneType } from "./config";
 import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { computeStructuralEdgeMask } from "./structuralMask";
-import { runStage2StructuralValidator } from "./stage2StructuralValidator";
+import { validateStage2 } from "./stage2StructuralValidator";
 import { runLandcoverCheck } from "./landcoverValidator";
 import { runWindowCheck } from "./windowValidator";
 import { checkSizeMatch } from "./sizeValidator";
@@ -39,9 +39,9 @@ export async function validateStageOutput(
     if (profile.minStructuralIoU !== undefined) {
       // Build structural mask from base and compute masked IoU
       const mask = await computeStructuralEdgeMask(basePath);
-      const m = await runStage2StructuralValidator({ canonicalPath: basePath, stagedPath: candidatePath, structuralMask: mask, sceneType });
+      const m = await validateStage2(basePath, candidatePath, mask);
       structuralIoU = m.structuralIoU;
-      if (structuralIoU < profile.minStructuralIoU) {
+      if (structuralIoU !== undefined && profile.minStructuralIoU !== undefined && structuralIoU < profile.minStructuralIoU) {
         return { ok: false, stage, sceneType, structuralIoU, reason: "structural_geometry", message: `Structural IoU too low (${structuralIoU.toFixed(3)}).` };
       }
     }
