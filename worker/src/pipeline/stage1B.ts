@@ -4,16 +4,14 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { validateStage } from "../ai/unified-validator";
 
 /**
- * Stage 1B: Declutter (combined with enhancement)
+ * Stage 1B: Furniture & Clutter Removal
  * 
- * When declutter is requested, this stage calls Gemini with a combined
- * enhance+declutter prompt in ONE API call (saving cost vs separate calls).
+ * Takes the enhanced output from Stage 1A and removes ALL furniture, decor, and clutter
+ * to create an empty room ready for virtual staging.
  * 
- * IMPORTANT: The input should be the Sharp pre-processed image (1A output when declutter=true).
- * Stage1A skips Gemini enhancement when declutter=true, so this stage does BOTH
- * enhancement AND decluttering in a single Gemini call.
+ * Pipeline: Sharp → Stage 1A (Gemini enhance) → Stage 1B (Gemini declutter) → Stage 2 (Gemini stage)
  * 
- * The output is both enhanced AND decluttered, ready for optional staging.
+ * The output is an empty, decluttered room with preserved architecture, ready for Stage 2 staging.
  */
 export async function runStage1B(
   stage1APath: string,
@@ -24,14 +22,13 @@ export async function runStage1B(
 ): Promise<string> {
   const { replaceSky = false, sceneType } = options;
   
-  console.log(`[stage1B] 🔵 Starting combined Gemini enhance+declutter...`);
-  console.log(`[stage1B] Input (Stage1A): ${stage1APath}`);
-  console.log(`[stage1B] Options: replaceSky=${replaceSky}, sceneType=${sceneType}`);
+  console.log(`[stage1B] 🔵 Starting furniture & clutter removal...`);
+  console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
+  console.log(`[stage1B] Options: sceneType=${sceneType}`);
   
   try {
-    // Call Gemini with combined enhance+declutter prompt
-    // This saves one API call compared to separate enhance → declutter
-    console.log(`[stage1B] 🤖 Calling Gemini with COMBINED enhance+declutter prompt...`);
+    // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
+    console.log(`[stage1B] 🤖 Calling Gemini to remove furniture and clutter...`);
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
       replaceSky,
@@ -82,7 +79,7 @@ export async function runStage1B(
             const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
             const fs = await import("fs/promises");
             await fs.rename(retryPath, outputPath);
-            console.log(`[stage1B] ✅ SUCCESS - Combined enhance+declutter complete: ${outputPath}`);
+            console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
             return outputPath;
           }
           console.warn(`[stage1B] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
@@ -97,7 +94,7 @@ export async function runStage1B(
       const fs = await import("fs/promises");
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
       await fs.rename(declutteredPath, outputPath);
-      console.log(`[stage1B] ✅ SUCCESS - Combined enhance+declutter complete: ${outputPath}`);
+      console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
       return outputPath;
     }
     
