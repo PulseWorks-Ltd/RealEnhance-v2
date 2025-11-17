@@ -141,10 +141,9 @@ export async function runStage2(
           "Remove existing décor/furniture if needed to avoid mixing styles.",
           "Return only the staged image.",
         ].filter(Boolean).join("\n");
-    if (isNZStyleEnabled()) {
-      try {
-        textPrompt = buildStage2PromptNZStyle(opts.roomType, scene as any);
-      } catch {}
+    // Always use roomType from opts for test prompt
+    if (useTest) {
+      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
     }
 
     const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
