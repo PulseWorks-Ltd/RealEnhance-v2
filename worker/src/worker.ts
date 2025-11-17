@@ -12,6 +12,7 @@ import sharp from "sharp";
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2 } from "./pipeline/stage2";
+import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
@@ -279,6 +280,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  // CANONICAL PREPROCESS (new) for structural baseline
+  let canonicalPath = origPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-canonical.webp");
+  try {
+    await preprocessToCanonical(origPath, canonicalPath, sceneLabel);
+    (global as any).__canonicalPath = canonicalPath;
+    // Precompute structural mask (architecture only) from canonical
+    try {
+      const mask = await computeStructuralEdgeMask(canonicalPath);
+      (global as any).__structuralMask = mask;
+      console.log(`[WORKER] Structural mask computed: ${mask.width}x${mask.height}`);
+    } catch (e) {
+      console.warn('[WORKER] Failed to compute structural mask:', e);
+    }
+  } catch (e) {
+    console.warn('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
+    canonicalPath = origPath; // fallback
+    (global as any).__canonicalPath = canonicalPath;
+  }
+
   // STAGE 1A
   const t1A = Date.now();
   // Inject per-job tuning into global for pipeline modules (simple dependency injection)
@@ -293,7 +313,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run as a separate Gemini call, only for quality enhancement and surface cleanliness
-  path1A = await runStage1A(origPath, {
+  path1A = await runStage1A(canonicalPath, {
     replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
     declutter: false, // Never combine declutter with Stage 1A
     sceneType: sceneLabel,
@@ -390,7 +410,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
-        ? await runStage2(payload.options.declutter && path1B ? path1B : path1A, {
+        ? await runStage2(payload.options.declutter && path1B ? path1B : path1A, (payload.options.declutter && path1B ? "1B" : "1A"), {
             roomType: payload.options.roomType || String(detectedRoom || "living_room"),
             sceneType: sceneLabel as any,
             profile,

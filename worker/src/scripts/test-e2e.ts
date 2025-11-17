@@ -129,7 +129,7 @@ async function main(): Promise<void> {
 
   // Run Stage 2 (virtual staging)
   console.log("\nRunning Stage 2 (Virtual Staging)...");
-  const stage2Output = await runStage2(stage1Output, { 
+  const stage2Output = await runStage2(stage1Output, "1A", { 
     roomType: "living room",
     sceneType: "interior",
     profile: createTestProfile()
