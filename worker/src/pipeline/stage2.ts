@@ -189,54 +189,19 @@ export async function runStage2(
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
-      // Stage 2 STRUCTURAL (architecture-only) validation first
-      let structuralOk = true;
-      let structuralIoU = 1;
-      try {
-        const canonicalPath: string | undefined = (global as any).__canonicalPath;
-        const structuralMask: any = (global as any).__structuralMask;
-        if (canonicalPath && structuralMask) {
-          const structVerdict = await runStage2StructuralValidator({
-            canonicalPath,
-            stagedPath: candidatePath,
-            structuralMask,
-            sceneType: scene as any,
-            roomType: opts.roomType
-          });
-          structuralOk = structVerdict.ok;
-          structuralIoU = structVerdict.structuralIoU;
-          console.log(`[stage2] 🧱 StructuralIoU=${(structuralIoU*100).toFixed(1)}% (structure-only)`);
-          if (!structVerdict.ok) {
-            console.warn(`[stage2] ❌ Structural architecture validator failed: ${structVerdict.reason}`);
-          }
-        } else {
-          console.warn(`[stage2] ⚠️ Structural mask or canonical path missing; skipping structure-only validator`);
-        }
-      } catch (e) {
-        console.error(`[stage2] Structural architecture validator error:`, e);
+      // Stage-aware validation (Stage 2 compares to canonical base)
+      const canonicalPath: string | undefined = (global as any).__canonicalPath;
+      const baseForValidation = canonicalPath || basePath;
+      const { validateStageOutput } = await import("../validators/runValidation");
+      const v2 = await validateStageOutput("2", scene as any, baseForValidation, candidatePath);
+      if (v2.ok) {
+        out = candidatePath;
+        console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (structIoU=${v2.structuralIoU !== undefined ? (v2.structuralIoU*100).toFixed(1)+'%' : 'n/a'})`);
+        if (dbg) console.log("[stage2] success → %s", out);
+        return out;
       }
-
-      if (!structuralOk) {
-        console.warn(`[stage2] ❌ Validation failed (structuralIoU=${(structuralIoU*100).toFixed(1)}). Attempting strict retry...`);
-        try { opts.onStrictRetry?.({ reasons: ["structural_change"] }); } catch {}
-      } else {
-        // Semantic + window/wall checks (skip local structural)
-        const verdict = await validateStage(
-          { stage: baseStage, path: basePath },
-          { stage: "2", path: candidatePath },
-          { sceneType: scene, roomType: opts.roomType },
-          { skipLocalStructural: true }
-        );
-        if (!verdict.ok) {
-          console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
-          try { opts.onStrictRetry?.({ reasons: verdict.reasons || [] }); } catch {}
-        } else {
-          out = candidatePath;
-          console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (score=${verdict.score.toFixed(2)}, structuralIoU=${(structuralIoU*100).toFixed(1)}%): ${out}`);
-          if (dbg) console.log("[stage2] success → %s", out);
-          return out;
-        }
-      }
+      console.warn(`[stage2] ❌ Validation failed: ${v2.reason} ${v2.message ? '('+v2.message+')' : ''}. Attempting strict retry...`);
+      try { opts.onStrictRetry?.({ reasons: [v2.reason] }); } catch {}
 
       // Strict retry flow (either structural failed or semantic failed)
       let strictText: string; let strictGenConfig: any;
@@ -272,43 +237,15 @@ export async function runStage2(
           const retryPath = siblingOutPath(basePath, "-2r", ".webp");
           writeImageDataUrl(retryPath, `data:image/webp;base64,${strictImg.inlineData.data}`);
           console.log(`[stage2] 💾 Saved strict retry image to: ${retryPath}`);
-          // Structural re-check
-          let retryStructuralOk = true; let retryStructuralIoU = 1; let structuralReason: string | undefined;
-          try {
-            const canonicalPath: string | undefined = (global as any).__canonicalPath;
-            const structuralMask: any = (global as any).__structuralMask;
-            if (canonicalPath && structuralMask) {
-              const structVerdict = await runStage2StructuralValidator({
-                canonicalPath,
-                stagedPath: retryPath,
-                structuralMask,
-                sceneType: scene as any,
-                roomType: opts.roomType
-              });
-              retryStructuralOk = structVerdict.ok;
-              retryStructuralIoU = structVerdict.structuralIoU;
-              structuralReason = structVerdict.reason;
-              console.log(`[stage2] (retry) StructuralIoU=${(retryStructuralIoU*100).toFixed(1)}%`);
-            }
-          } catch (e) { console.error(`[stage2] Structural validator retry error:`, e); }
-          if (retryStructuralOk) {
-            const retryVerdict = await validateStage(
-              { stage: baseStage, path: basePath },
-              { stage: "2", path: retryPath },
-              { sceneType: scene, roomType: opts.roomType },
-              { skipLocalStructural: true }
-            );
-            if (retryVerdict.ok) {
-              console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)}, structuralIoU=${(retryStructuralIoU*100).toFixed(1)}%)`);
-              return retryPath;
-            }
-            console.warn(`[stage2] ❌ Strict retry semantic/window validation failed (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
-            console.error(`[stage2] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
-            throw new Error(`Stage 2 validation failed: ${retryVerdict.reasons.join('; ')}`);
-          } else {
-            console.error(`[stage2] ❌ Strict retry still failed structural validator: ${structuralReason || 'structural_change'}`);
-            throw new Error(`Stage 2 structural validation failed after retry`);
+          // Strict retry validation (stage-aware)
+          const v2r = await validateStageOutput("2", scene as any, baseForValidation, retryPath);
+          if (v2r.ok) {
+            console.log(`[stage2] ✅ Strict retry passed validation (structIoU=${v2r.structuralIoU !== undefined ? (v2r.structuralIoU*100).toFixed(1)+'%' : 'n/a'})`);
+            return retryPath;
           }
+          console.warn(`[stage2] ❌ Strict retry validation failed: ${v2r.reason} ${v2r.message ? '('+v2r.message+')' : ''}`);
+          console.error(`[stage2] CRITICAL: Validation failed`);
+          throw new Error(`Stage 2 validation failed: ${v2r.reason}`);
         } else {
           console.warn("[stage2] ❌ Strict retry produced no image.");
           throw new Error('Stage 2 strict retry failed to generate image');

@@ -106,7 +106,9 @@ function buildStructuralMask(edge: Uint8Array, width: number, height: number): S
 }
 
 export async function computeStructuralEdgeMask(imagePath: string): Promise<StructuralMask> {
-  const preBlur = Number(process.env.STAGE2_STRUCT_PREBLUR || 0.6);
+  let preBlur = Number(process.env.STAGE2_STRUCT_PREBLUR || 0.6);
+  if (!isFinite(preBlur) || preBlur <= 0) preBlur = 0.6;
+  preBlur = Math.max(0.3, Math.min(preBlur, 8));
   const edgeThr = Number(process.env.STAGE2_STRUCT_EDGE_THRESHOLD || 38);
   const raw = await sharp(imagePath).greyscale().blur(preBlur).raw().toBuffer({ resolveWithObject: true });
   const buf = new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength);
