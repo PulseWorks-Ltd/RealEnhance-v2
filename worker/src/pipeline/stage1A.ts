@@ -171,18 +171,9 @@ export async function runStage1A(
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
   
-  // If declutter is requested, skip Gemini in Stage1A
-  // Stage1B will call Gemini with combined enhance+declutter prompt (saves API cost)
-  if (declutter) {
-    console.log(`[stage1A] Declutter requested - skipping Gemini (will be combined with Stage1B)`);
-    const fs = await import("fs/promises");
-    await fs.rename(sharpOutputPath, finalOutputPath);
-    console.log(`[stage1A] Sharp-only enhancement complete: ${inputPath} → ${finalOutputPath}`);
-    return finalOutputPath;
-  }
-  
-  // For enhance-only: Apply Gemini AI enhancement with professional HDR quality
-  console.log(`[stage1A] Starting Gemini AI enhancement (enhance-only, replaceSky: ${replaceSky})...`);
+  // Always apply Gemini AI enhancement with professional HDR quality
+  // (Stage 1B will handle furniture removal separately if declutter is enabled)
+  console.log(`[stage1A] Starting Gemini AI enhancement (replaceSky: ${replaceSky})...`);
   // NZ real estate style sampling overrides (applied before env/config precedence inside enhanceWithGemini)
   let nzTemp: number | undefined = undefined;
   let nzTopP: number | undefined = undefined;
