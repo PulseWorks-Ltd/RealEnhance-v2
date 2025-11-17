@@ -62,13 +62,15 @@ export async function enhanceWithGemini(
     temperature?: number;
     topP?: number;
     topK?: number;
+    // Optional direct prompt override (NZ style wiring)
+    promptOverride?: string;
     // Optional, mild cleanup helpers
     floorClean?: boolean;
     hardscapeClean?: boolean;
     declutterIntensity?: "light" | "standard" | "heavy";
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
 
   // Check if Gemini API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
@@ -115,14 +117,16 @@ export async function enhanceWithGemini(
       }
     }
     // Ensure sceneType matches PromptOptions type
-    const prompt = buildGeminiPrompt({
-      goal: declutter ? "Declutter and enhance image" : "Enhance image", // Default goal
-      sceneType: sceneType === "interior" || sceneType === "exterior" ? sceneType : "auto",
-      declutterLevel: di,
-      stage: stage,
-      strictMode: strictMode,
-      // Add other valid PromptOptions properties here as needed
-    });
+    const prompt = (typeof promptOverride === 'string' && promptOverride.length > 0)
+      ? promptOverride
+      : buildGeminiPrompt({
+          goal: declutter ? "Declutter and enhance image" : "Enhance image", // Default goal
+          sceneType: sceneType === "interior" || sceneType === "exterior" ? sceneType : "auto",
+          declutterLevel: di,
+          stage: stage,
+          strictMode: strictMode,
+          // Add other valid PromptOptions properties here as needed
+        });
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);

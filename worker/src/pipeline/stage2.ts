@@ -4,6 +4,8 @@ import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { runStage2StructuralValidator } from "../validators/stage2StructuralValidator";
+import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
+import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
 
@@ -125,7 +127,7 @@ export async function runStage2(
     ] : [];
 
     const useTest = process.env.USE_TEST_PROMPTS === "1";
-    const textPrompt = useTest
+    let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
       : [
           "VIRTUAL STAGING.",
@@ -140,6 +142,11 @@ export async function runStage2(
           "Remove existing décor/furniture if needed to avoid mixing styles.",
           "Return only the staged image.",
         ].filter(Boolean).join("\n");
+    if (isNZStyleEnabled()) {
+      try {
+        textPrompt = buildStage2PromptNZStyle(opts.roomType, scene as any);
+      } catch {}
+    }
 
     const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
     if (opts.referenceImagePath) {
@@ -152,10 +159,16 @@ export async function runStage2(
     console.log(`[stage2] 📝 Prompt length: ${textPrompt.length} chars`);
     
     const apiStartTime = Date.now();
+    // Apply NZ sampling overrides if enabled
+    let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
+    if (isNZStyleEnabled()) {
+      const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
+      generationConfig = { ...(generationConfig || {}), temperature: preset.temperature, topP: preset.topP, topK: preset.topK };
+    }
     try {
       const { resp } = await runWithImageModelFallback(ai as any, {
         contents: requestParts,
-        generationConfig: useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined),
+        generationConfig,
       } as any, "stage2");
       
       const apiElapsed = Date.now() - apiStartTime;
@@ -241,6 +254,11 @@ export async function runStage2(
           "• Preserve all window counts and sizes; keep frames/positions unchanged.",
         ].join("\n");
         strictGenConfig = { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 };
+      }
+      // If NZ style enabled, enforce NZ sampling also in strict retry
+      if (isNZStyleEnabled()) {
+        const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
+        strictGenConfig = { ...(strictGenConfig || {}), temperature: preset.temperature, topP: preset.topP ?? strictGenConfig?.topP, topK: preset.topK ?? strictGenConfig?.topK };
       }
       const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
       if (opts.referenceImagePath) {

@@ -1,5 +1,7 @@
 import sharp from "sharp";
 import { enhanceWithGemini } from "../ai/gemini";
+import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
+import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 
 /**
@@ -151,12 +153,28 @@ export async function runStage1A(
   
   // For enhance-only: Apply Gemini AI enhancement with professional HDR quality
   console.log(`[stage1A] Starting Gemini AI enhancement (enhance-only, replaceSky: ${replaceSky})...`);
+  // NZ real estate style sampling overrides (applied before env/config precedence inside enhanceWithGemini)
+  let nzTemp: number | undefined = undefined;
+  let nzTopP: number | undefined = undefined;
+  let nzTopK: number | undefined = undefined;
+  if (isNZStyleEnabled()) {
+    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
+    nzTemp = preset.temperature;
+    nzTopP = preset.topP;
+    nzTopK = preset.topK;
+  }
+  // Inject custom prompt via global hook so buildGeminiPrompt can detect (simplest non-invasive approach)
+  const nzPrompt = isNZStyleEnabled() ? buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any) : undefined;
   const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
     skipIfNoApiKey: true,
     replaceSky: replaceSky,
     declutter: false,
     sceneType: sceneType,
     stage: "1A",
+    promptOverride: nzPrompt,
+    temperature: nzTemp,
+    topP: nzTopP,
+    topK: nzTopK,
     // Apply light hardscape cleanup only for exteriors in Stage1A
     floorClean: false,
     hardscapeClean: sceneType === "exterior",
