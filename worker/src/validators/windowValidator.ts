@@ -63,4 +63,3 @@ export async function validateWindows(basePath: string, candidatePath: string): 
   }
   return { ok: true, issue: "none" };
 }
-}

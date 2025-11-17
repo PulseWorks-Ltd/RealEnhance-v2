@@ -3,7 +3,7 @@ import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { computeStructuralEdgeMask } from "./structuralMask";
 import { validateStage2 } from "./stage2StructuralValidator";
 import { runLandcoverCheck } from "./landcoverValidator";
-import { runWindowCheck } from "./windowValidator";
+import { validateWindows } from "./windowValidator";
 import { checkSizeMatch } from "./sizeValidator";
 import { computeBrightnessDiff } from "./brightnessValidator";
 
@@ -62,9 +62,9 @@ export async function validateStageOutput(
     }
 
     if (profile.enforceWindowIoU) {
-      const windowOk = await runWindowCheck(basePath, candidatePath);
-      if (!windowOk) {
-        return { ok: false, stage, sceneType, reason: "window_change", message: "Windows changed position/shape/visibility." };
+      const winRes = await validateWindows(basePath, candidatePath);
+      if (!winRes.ok) {
+        return { ok: false, stage, sceneType, reason: winRes.issue, message: winRes.message };
       }
     }
 
