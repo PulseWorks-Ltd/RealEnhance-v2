@@ -338,6 +338,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
     declutter: false, // Never combine declutter with Stage 1A
     sceneType: sceneLabel,
+    interiorProfile: ((): any => {
+      const p = (payload.options as any)?.interiorProfile;
+      if (p === 'nz_high_end' || p === 'nz_standard') return p;
+      return undefined;
+    })(),
   });
   timings.stage1AMs = Date.now() - t1A;
   
