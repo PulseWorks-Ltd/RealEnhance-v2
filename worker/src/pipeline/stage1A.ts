@@ -184,11 +184,11 @@ export async function runStage1A(
   let nzTopP: number | undefined = undefined;
   let nzTopK: number | undefined = undefined;
   if (isNZStyleEnabled()) {
+    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
     if (applyInteriorProfile) {
       // Use profile-specific Gemini temperature for interior
       nzTemp = interiorCfg.geminiTemperature;
     } else {
-      const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
       nzTemp = preset.temperature;
     }
     nzTopP = preset.topP;
