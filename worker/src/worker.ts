@@ -401,8 +401,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
-  // Stage 2: Use declutteredBase if furniture removal is selected, otherwise enhancedBase
-  let path2: string = payload.options.declutter && path1B ? path1B : path1A;
+  // Stage 2 input selection:
+  // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
+  // - Exterior: always use Stage 1A
+  const isExteriorScene = sceneLabel === "exterior";
+  const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
+  const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  let path2: string = stage2InputPath;
   try {
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
@@ -410,7 +415,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       path2 = payload.options.virtualStage
-        ? await runStage2(payload.options.declutter && path1B ? path1B : path1A, (payload.options.declutter && path1B ? "1B" : "1A"), {
+        ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: payload.options.roomType || String(detectedRoom || "living_room"),
             sceneType: sceneLabel as any,
             profile,
