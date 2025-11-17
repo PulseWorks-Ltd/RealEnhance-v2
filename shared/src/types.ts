@@ -107,6 +107,10 @@ export interface JobRecord {
   // auxiliary metadata (e.g., scene classification)
   meta?: {
     scene?: { label: SceneLabel; confidence: number };
+    /** Room type inferred by worker (model + heuristics). Never overwrites user choice. */
+    roomTypeDetected?: string;
+    /** User selected / requested room type (authoritative for prompts & staging). */
+    roomType?: string;
     [k: string]: any;
   };
 

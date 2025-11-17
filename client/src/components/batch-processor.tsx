@@ -811,6 +811,19 @@ export default function BatchProcessor() {
                 filename: item.filename || `image-${i + 1}`
               });
             }
+            // Merge room type detection (user override precedence)
+            try {
+              const detected = item?.meta?.roomTypeDetected || item?.meta?.roomType;
+              if (detected) {
+                setImageRoomTypes(prev => {
+                  const current = prev[i];
+                  if (!current || current === 'auto') {
+                    return { ...prev, [i]: detected };
+                  }
+                  return prev;
+                });
+              }
+            } catch {}
           }
           
           schedule(); // Process queued updates
@@ -2741,6 +2754,45 @@ export default function BatchProcessor() {
                                 )}
                               </div>
                             ) : null}
+                            {/* Classification badges (scene + room + staging gate) */}
+                            {(() => {
+                              const meta = result?.result?.meta;
+                              if (!meta) return null;
+                              const sceneLabel = meta?.scene?.label;
+                              const userRoom = imageRoomTypes[i];
+                              const detectedRoom = meta?.roomTypeDetected || meta?.roomType;
+                              const finalRoom = userRoom && userRoom !== 'auto' ? userRoom : detectedRoom;
+                              const badges: React.ReactNode[] = [];
+                              if (sceneLabel) {
+                                badges.push(
+                                  <span key="scene" className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                                    {String(sceneLabel).replace(/_/g,' ')}
+                                  </span>
+                                );
+                              }
+                              if (finalRoom) {
+                                badges.push(
+                                  <span key="room" className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
+                                    Room: {String(finalRoom).replace(/_/g,' ')}
+                                  </span>
+                                );
+                              }
+                              if (meta?.allowStaging === false) {
+                                badges.push(<span key="staging-block" className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">Staging blocked</span>);
+                              } else if (meta?.allowStaging) {
+                                badges.push(<span key="staging-ok" className="bg-green-100 text-green-700 px-2 py-1 rounded">Staging OK</span>);
+                              }
+                              if (!badges.length) return null;
+                              return (
+                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                  {badges}
+                                  <button
+                                    onClick={() => handleOpenRetryDialog(i)}
+                                    className="underline text-blue-600 hover:text-blue-700"
+                                  >Override room</button>
+                                </div>
+                              );
+                            })()}
                           </>
                         ) : result?.error ? (
                           <p className="text-red-600 text-sm">Error: {result.error}</p>
