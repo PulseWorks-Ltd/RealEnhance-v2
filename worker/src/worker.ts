@@ -601,14 +601,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // Decide final base path for versioning + final publish.
+  // Preference order:
+  //   1) Stage 2 (if virtualStage requested and validator succeeded)
+  //   2) Stage 1B (decluttered) if available
+  //   3) Stage 1A
+  const hasStage2 = payload.options.virtualStage && !!pub2Url;
+  const finalBasePath = hasStage2 ? path2 : (payload.options.declutter && path1B ? path1B! : path1A);
+
   let finalPathVersion: any = null;
   try {
     finalPathVersion = pushImageVersion({
       imageId: payload.imageId,
       userId: payload.userId,
-      stageLabel: payload.options.virtualStage ? "2" : "1B/1A",
-      filePath: path2,
-      note: payload.options.virtualStage ? "Virtual staging" : "Final enhanced"
+      stageLabel: hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A"),
+      filePath: finalBasePath,
+      note: hasStage2 ? "Virtual staging" : (payload.options.declutter ? "Decluttered final" : "Final enhanced")
     });
   } catch (e) {
     // Silently ignore - images.json is not available in multi-service deployment
@@ -617,15 +625,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish final for client consumption and attach to version
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
-  
-  // Optimization: If final path is same as 1A (no declutter, no staging), reuse 1A URL
-  if (path2 === path1A && pub1AUrl) {
+
+  // Optimization: If final base is same as 1A and we already have 1A URL, reuse it
+  if (finalBasePath === path1A && pub1AUrl) {
     process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
     pubFinalUrl = pub1AUrl;
     publishedFinal = { url: pub1AUrl, kind: 's3' };
     process.stdout.write(`[WORKER] Final URL (reused from 1A): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+  } else if (finalBasePath === path1B && pub1BUrl) {
+    // Declutter-only final and we already published 1B
+    process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1B - reusing URL ═══════════\n`);
+    pubFinalUrl = pub1BUrl;
+    publishedFinal = { url: pub1BUrl, kind: 's3' };
+    process.stdout.write(`[WORKER] Final URL (reused from 1B): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } else {
-    // Final is different (declutter or staging applied), publish it
+    // Final is different (staging applied or declutter-only unpublished), publish it
     try {
       process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
       publishedFinal = await publishImage(path2);
@@ -664,7 +678,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageOutputs: {
       "1A": path1A,
       "1B": payload.options.declutter ? path1B : undefined,
-      "2": payload.options.virtualStage ? path2 : undefined
+      "2": hasStage2 ? path2 : undefined
     },
     resultVersionId: finalPathVersion?.versionId || undefined,
     meta,
@@ -673,7 +687,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageUrls: {
       "1A": pub1AUrl,
       "1B": pub1BUrl,
-      "2": pub2Url  // Use separately published Stage2 URL
+      "2": hasStage2 ? pub2Url : null
     }
   });
 
@@ -682,13 +696,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ok: true,
     imageId: payload.imageId,
     jobId: payload.jobId,
-    finalPath: path2,
+    finalPath: finalBasePath,
     originalUrl: publishedOriginal?.url || null,
     resultUrl: pubFinalUrl || null,
     stageUrls: {
       "1A": pub1AUrl || null,
       "1B": pub1BUrl || null,
-      "2": pub2Url || null  // Use separately published Stage2 URL
+      "2": hasStage2 ? (pub2Url || null) : null
     },
     meta
   };
