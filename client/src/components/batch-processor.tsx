@@ -3072,6 +3072,7 @@ export default function BatchProcessor() {
               ? "furniture-replace" 
               : "staging"
         }
+        detectedRoomType={retryDialog.imageIndex !== null ? imageRoomTypes[retryDialog.imageIndex] : undefined}
       />
 
       {/* Editing in Progress Alert */}
