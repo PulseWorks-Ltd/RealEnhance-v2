@@ -242,7 +242,8 @@ export interface ValidationVerdict {
 export async function validateStage(
   prev: Artifact,
   cand: Artifact,
-  ctx: ValidationCtx = {}
+  ctx: ValidationCtx = {},
+  opts: { skipLocalStructural?: boolean } = {}
 ): Promise<ValidationVerdict> {
   // If candidate dimensions differ from prev, resize a copy to match prev
   // so that local geometric checks operate on aligned grids. This avoids
@@ -319,28 +320,32 @@ export async function validateStage(
 
   // ===== LOCAL CHECKS (NO GEMINI CALLS) =====
   
-  // 1) Structural integrity check using Sharp (edge detection + brightness analysis)
-  console.log("[VALIDATOR] Running local structural checks...");
-  try {
-    const structural = await validateStructuralIntegrityLocal(prev.path, candNormPath, { stage: cand.stage as StageId, sceneType: ctx.sceneType });
-    metrics.structuralEdges = structural.metrics.edgeSimilarity;
-    metrics.brightnessDiff = structural.metrics.brightnessDiff;
-    
-    if (!structural.ok) {
-      console.error(`[VALIDATOR] CRITICAL: ${structural.reason}`);
-      reasons.push(structural.reason!);
-      // Hard fail on major structural violations
-      return {
-        ok: false,
-        score: 0,
-        reasons: [structural.reason!],
-        metrics
-      };
+  // 1) Structural integrity check (skip for Stage 2 when external structural validator already executed)
+  if (!opts.skipLocalStructural) {
+    console.log("[VALIDATOR] Running local structural checks...");
+    try {
+      const structural = await validateStructuralIntegrityLocal(prev.path, candNormPath, { stage: cand.stage as StageId, sceneType: ctx.sceneType });
+      metrics.structuralEdges = structural.metrics.edgeSimilarity;
+      metrics.brightnessDiff = structural.metrics.brightnessDiff;
+      
+      if (!structural.ok) {
+        console.error(`[VALIDATOR] CRITICAL: ${structural.reason}`);
+        reasons.push(structural.reason!);
+        // Hard fail on major structural violations
+        return {
+          ok: false,
+          score: 0,
+          reasons: [structural.reason!],
+          metrics
+        };
+      }
+      console.log("[VALIDATOR] ✅ Local structural check passed");
+    } catch (e) {
+      console.warn("[VALIDATOR] Local structural check error:", e);
+      reasons.push("structural check error");
     }
-    console.log("[VALIDATOR] ✅ Local structural check passed");
-  } catch (e) {
-    console.warn("[VALIDATOR] Local structural check error:", e);
-    reasons.push("structural check error");
+  } else {
+    console.log("[VALIDATOR] ⚙️ Skipping local structural check (external Stage 2 structural validator used)");
   }
 
   // ===== GEMINI CHECKS (ONLY FOR COMPLEX SEMANTIC VALIDATION) =====

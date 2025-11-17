@@ -3,6 +3,7 @@ import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
+import { runStage2StructuralValidator } from "../validators/stage2StructuralValidator";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
 
@@ -10,6 +11,7 @@ import type { StagingRegion } from "../ai/region-detector";
 
 export async function runStage2(
   basePath: string,
+  baseStage: "1A" | "1B",
   opts: {
     roomType: string;
     sceneType?: "interior" | "exterior";
@@ -25,7 +27,8 @@ export async function runStage2(
   const dbg = process.env.STAGE2_DEBUG === "1";
   
   console.log(`[stage2] 🔵 Starting virtual staging...`);
-  console.log(`[stage2] Input (Stage1B): ${basePath}`);
+  console.log(`[stage2] Input: ${basePath}`);
+  console.log(`[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
   console.log(`[stage2] Room type: ${opts.roomType}`);
   console.log(`[stage2] Scene type: ${opts.sceneType || 'interior'}`);
   console.log(`[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
@@ -174,87 +177,131 @@ export async function runStage2(
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
-      // Validate staged result vs base
-      const verdict = await validateStage(
-        { stage: "1B", path: basePath },
-        { stage: "2", path: candidatePath },
-        { sceneType: scene, roomType: opts.roomType }
-      );
-      if (!verdict.ok) {
-        console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
-        try {
-          // Notify upstream (worker) to update job meta/message for UI toast
-          opts.onStrictRetry?.({ reasons: verdict.reasons || [] });
-        } catch {}
-
-        // Strict retry: tighten prompt and, if using test prompts, lower embedded temperature by 20%
-        let strictText: string;
-        let strictGenConfig: any;
-        
-        if (useTest) {
-          const tightened = require("../ai/prompts-test").tightenPromptAndLowerTemp(textPrompt, 0.8);
-          strictText = tightened.prompt || tightened; // handle both string and object return
-          strictGenConfig = profile?.seed !== undefined ? { seed: profile.seed } : undefined;
+      // Stage 2 STRUCTURAL (architecture-only) validation first
+      let structuralOk = true;
+      let structuralIoU = 1;
+      try {
+        const canonicalPath: string | undefined = (global as any).__canonicalPath;
+        const structuralMask: any = (global as any).__structuralMask;
+        if (canonicalPath && structuralMask) {
+          const structVerdict = await runStage2StructuralValidator({
+            canonicalPath,
+            stagedPath: candidatePath,
+            structuralMask,
+            sceneType: scene as any,
+            roomType: opts.roomType
+          });
+          structuralOk = structVerdict.ok;
+          structuralIoU = structVerdict.structuralIoU;
+          console.log(`[stage2] 🧱 StructuralIoU=${(structuralIoU*100).toFixed(1)}% (structure-only)`);
+          if (!structVerdict.ok) {
+            console.warn(`[stage2] ❌ Structural architecture validator failed: ${structVerdict.reason}`);
+          }
         } else {
-          strictText = textPrompt + `\\n\\nSTRICT MODE (VALIDATION FAILED):\\n` +
-            [
-              "• DO NOT alter architecture: no new walls, openings, or partitions.",
-              "• DO NOT block doors/windows; maintain egress and ventilation.",
-              "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
-              "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
-              "• Preserve all window counts and sizes; keep frames/positions unchanged.",
-            ].join("\\n");
-          strictGenConfig = { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 };
+          console.warn(`[stage2] ⚠️ Structural mask or canonical path missing; skipping structure-only validator`);
         }
+      } catch (e) {
+        console.error(`[stage2] Structural architecture validator error:`, e);
+      }
 
-        const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
-        if (opts.referenceImagePath) {
-          const ref = toBase64(opts.referenceImagePath);
-          strictParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+      if (!structuralOk) {
+        console.warn(`[stage2] ❌ Validation failed (structuralIoU=${(structuralIoU*100).toFixed(1)}). Attempting strict retry...`);
+        try { opts.onStrictRetry?.({ reasons: ["structural_change"] }); } catch {}
+      } else {
+        // Semantic + window/wall checks (skip local structural)
+        const verdict = await validateStage(
+          { stage: baseStage, path: basePath },
+          { stage: "2", path: candidatePath },
+          { sceneType: scene, roomType: opts.roomType },
+          { skipLocalStructural: true }
+        );
+        if (!verdict.ok) {
+          console.warn(`[stage2] ❌ Validation failed (score=${verdict.score.toFixed(2)}). Attempting strict retry...`);
+          try { opts.onStrictRetry?.({ reasons: verdict.reasons || [] }); } catch {}
+        } else {
+          out = candidatePath;
+          console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (score=${verdict.score.toFixed(2)}, structuralIoU=${(structuralIoU*100).toFixed(1)}%): ${out}`);
+          if (dbg) console.log("[stage2] success → %s", out);
+          return out;
         }
+      }
 
-        try {
-          const { resp: strictResp } = await runWithImageModelFallback(ai as any, {
-            contents: strictParts,
-            generationConfig: strictGenConfig
-          } as any, "stage2");
-
-          const strictPartsResp: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];
-          const strictImg = strictPartsResp.find(p => p.inlineData);
-          if (strictImg?.inlineData?.data) {
-            const retryPath = siblingOutPath(basePath, "-2r", ".webp");
-            writeImageDataUrl(retryPath, `data:image/webp;base64,${strictImg.inlineData.data}`);
-            console.log(`[stage2] 💾 Saved strict retry image to: ${retryPath}`);
-
+      // Strict retry flow (either structural failed or semantic failed)
+      let strictText: string; let strictGenConfig: any;
+      if (useTest) {
+        const tightened = require("../ai/prompts-test").tightenPromptAndLowerTemp(textPrompt, 0.8);
+        strictText = tightened.prompt || tightened;
+        strictGenConfig = profile?.seed !== undefined ? { seed: profile.seed } : undefined;
+      } else {
+        strictText = textPrompt + `\n\nSTRICT MODE (VALIDATION FAILED):\n` + [
+          "• DO NOT alter architecture: no new walls, openings, or partitions.",
+          "• DO NOT block doors/windows; maintain egress and ventilation.",
+          "• LOCK camera viewpoint/perspective; match vanishing points and horizon.",
+          "• Furniture must sit on existing floor plane with realistic scale and contact shadows.",
+          "• Preserve all window counts and sizes; keep frames/positions unchanged.",
+        ].join("\n");
+        strictGenConfig = { ...(profile?.seed !== undefined ? { seed: profile.seed } : {}), temperature: 0.35, topP: 0.8, topK: 40 };
+      }
+      const strictParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: strictText }];
+      if (opts.referenceImagePath) {
+        const ref = toBase64(opts.referenceImagePath);
+        strictParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+      }
+      try {
+        const { resp: strictResp } = await runWithImageModelFallback(ai as any, { contents: strictParts, generationConfig: strictGenConfig } as any, "stage2");
+        const strictPartsResp: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];
+        const strictImg = strictPartsResp.find(p => p.inlineData);
+        if (strictImg?.inlineData?.data) {
+          const retryPath = siblingOutPath(basePath, "-2r", ".webp");
+          writeImageDataUrl(retryPath, `data:image/webp;base64,${strictImg.inlineData.data}`);
+          console.log(`[stage2] 💾 Saved strict retry image to: ${retryPath}`);
+          // Structural re-check
+          let retryStructuralOk = true; let retryStructuralIoU = 1; let structuralReason: string | undefined;
+          try {
+            const canonicalPath: string | undefined = (global as any).__canonicalPath;
+            const structuralMask: any = (global as any).__structuralMask;
+            if (canonicalPath && structuralMask) {
+              const structVerdict = await runStage2StructuralValidator({
+                canonicalPath,
+                stagedPath: retryPath,
+                structuralMask,
+                sceneType: scene as any,
+                roomType: opts.roomType
+              });
+              retryStructuralOk = structVerdict.ok;
+              retryStructuralIoU = structVerdict.structuralIoU;
+              structuralReason = structVerdict.reason;
+              console.log(`[stage2] (retry) StructuralIoU=${(retryStructuralIoU*100).toFixed(1)}%`);
+            }
+          } catch (e) { console.error(`[stage2] Structural validator retry error:`, e); }
+          if (retryStructuralOk) {
             const retryVerdict = await validateStage(
-              { stage: "1B", path: basePath },
+              { stage: baseStage, path: basePath },
               { stage: "2", path: retryPath },
-              { sceneType: scene, roomType: opts.roomType }
+              { sceneType: scene, roomType: opts.roomType },
+              { skipLocalStructural: true }
             );
             if (retryVerdict.ok) {
-              console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
+              console.log(`[stage2] ✅ Strict retry passed validation (score=${retryVerdict.score.toFixed(2)}, structuralIoU=${(retryStructuralIoU*100).toFixed(1)}%)`);
               return retryPath;
             }
-            console.warn(`[stage2] ❌ Strict retry failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
+            console.warn(`[stage2] ❌ Strict retry semantic/window validation failed (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
             console.error(`[stage2] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
             throw new Error(`Stage 2 validation failed: ${retryVerdict.reasons.join('; ')}`);
           } else {
-            console.warn("[stage2] ❌ Strict retry produced no image.");
-            throw new Error('Stage 2 strict retry failed to generate image');
+            console.error(`[stage2] ❌ Strict retry still failed structural validator: ${structuralReason || 'structural_change'}`);
+            throw new Error(`Stage 2 structural validation failed after retry`);
           }
-        } catch (e: any) {
-          console.error("[stage2] Strict retry error:", e?.message || String(e));
-          throw e;
+        } else {
+          console.warn("[stage2] ❌ Strict retry produced no image.");
+          throw new Error('Stage 2 strict retry failed to generate image');
         }
-
-        if (dbg) console.log("[stage2] validation failed → throwing error");
-        throw new Error(`Stage 2 validation failed (score=${verdict.score.toFixed(2)}): ${verdict.reasons.join('; ')}`);
+      } catch (e: any) {
+        console.error("[stage2] Strict retry error:", e?.message || String(e));
+        throw e;
       }
-
-      out = candidatePath;
-      console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (score=${verdict.score.toFixed(2)}): ${out}`);
-      if (dbg) console.log("[stage2] success → %s", out);
-      return out;
+      if (dbg) console.log("[stage2] validation failed → throwing error");
+      throw new Error(`Stage 2 validation failed after strict retry attempts`);
     } catch (e: any) {
       console.error("[stage2] ❌ Gemini API error:", e?.message || String(e));
       console.error("[stage2] Error details:", JSON.stringify(e, null, 2));
