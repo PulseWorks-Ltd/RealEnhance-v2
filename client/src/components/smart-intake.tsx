@@ -20,9 +20,11 @@ type AdvancedAnswers = Partial<{
 export default function SmartIntake({
   onPromptReady,
   context,
+  detectedRoomType,
 }: {
   onPromptReady: (prompt: string) => void;
   context?: Record<string, any>;
+  detectedRoomType?: string;
 }) {
   // 1) Minimal, required
   const [goal, setGoal] = useState(() => localStorage.getItem("pmp_goal") || "");
@@ -50,6 +52,9 @@ export default function SmartIntake({
   useEffect(() => { const id=setTimeout(()=>localStorage.setItem("pmp_basic", JSON.stringify(basic)), 200); return ()=>clearTimeout(id); }, [basic]);
   useEffect(() => { const id=setTimeout(()=>localStorage.setItem("pmp_adv", JSON.stringify(adv)), 200); return ()=>clearTimeout(id); }, [adv]);
 
+  // Room type override state
+  const [roomTypeOverride, setRoomTypeOverride] = useState<string>(detectedRoomType || "auto");
+
   // Compose locally (fast) so user sees what will be sent
   const composed = useMemo(() => {
     const lines: string[] = [];
@@ -74,6 +79,13 @@ export default function SmartIntake({
     if (outputSize) lines.push(`Output size: ${outputSize}.`);
     if ((adv.notes || "").trim()) lines.push(`Notes: ${adv.notes!.trim()}`);
 
+    // Room type
+    if (roomTypeOverride && roomTypeOverride !== "auto") {
+      lines.push(`Room type: ${roomTypeOverride}.`);
+    } else if (detectedRoomType && detectedRoomType !== "auto") {
+      lines.push(`Room type: ${detectedRoomType}.`);
+    }
+
     // Contextual hints from preset/category if provided
     if (context?.presetKey) lines.push(`Preset: ${context.presetKey}.`);
     if (context?.imageCategory) lines.push(`Image category: ${context.imageCategory}.`);
@@ -82,7 +94,7 @@ export default function SmartIntake({
     lines.push("Preserve identity/structure. Avoid adding text overlays. Ensure natural colors and lighting.");
 
     return lines.join("\n");
-  }, [goal, basic, adv, context]);
+  }, [goal, basic, adv, context, roomTypeOverride, detectedRoomType]);
 
   return (
     <section className="space-y-3">
@@ -118,6 +130,44 @@ export default function SmartIntake({
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Room Type</label>
+          <Select
+            value={roomTypeOverride}
+            onValueChange={setRoomTypeOverride}
+          >
+            <SelectTrigger data-testid="select-room-type"><SelectValue placeholder={detectedRoomType || "Auto Detect"} /></SelectTrigger>
+            <SelectContent className="bg-black border-gray-700">
+              <SelectItem value="auto">Auto Detect{detectedRoomType ? ` (${detectedRoomType})` : ""}</SelectItem>
+              <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
+              <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
+              <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
+              <SelectItem value="kitchen">Kitchen</SelectItem>
+              <SelectItem value="living-room">Living Room</SelectItem>
+              <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
+              <SelectItem value="dining-room">Dining Room</SelectItem>
+              <SelectItem value="study">Study</SelectItem>
+              <SelectItem value="office">Office</SelectItem>
+              <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
+              <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
+              <SelectItem value="laundry">Laundry</SelectItem>
+              <SelectItem value="garden">Garden</SelectItem>
+              <SelectItem value="patio">Patio</SelectItem>
+              <SelectItem value="deck">Deck</SelectItem>
+              <SelectItem value="balcony">Balcony</SelectItem>
+              <SelectItem value="garage">Garage</SelectItem>
+              <SelectItem value="basement">Basement</SelectItem>
+              <SelectItem value="attic">Attic</SelectItem>
+              <SelectItem value="hallway">Hallway</SelectItem>
+              <SelectItem value="staircase">Staircase</SelectItem>
+              <SelectItem value="entryway">Entryway</SelectItem>
+              <SelectItem value="closet">Closet</SelectItem>
+              <SelectItem value="pantry">Pantry</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{detectedRoomType || "Unknown"}</span>. You can override if needed.</p>
+        </div>
         <div>
           <label className="text-xs text-muted-foreground">Subject</label>
           <Select
