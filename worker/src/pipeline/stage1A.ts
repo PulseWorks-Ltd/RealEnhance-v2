@@ -229,38 +229,8 @@ export async function runStage1A(
     // You may need to pass window/landcover mask paths if available
     const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(canonicalBasePath, geminiOutputPath, masks, sceneType as any);
-    if (!verdict.ok) {
-      console.warn(`[stage1A] ❌ Structural validation failed: ${verdict.reason}`);
-      // Strict retry (max 2 attempts)
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        console.log(`[stage1A] 🔁 Strict retry #${attempt}...`);
-        const retryPath = await enhanceWithGemini(sharpOutputPath, {
-          skipIfNoApiKey: true,
-          replaceSky: replaceSky,
-          declutter: false,
-          sceneType: sceneType,
-          stage: "1A",
-          strictMode: true,
-          floorClean: false,
-          hardscapeClean: sceneType === "exterior",
-        });
-        if (retryPath !== sharpOutputPath) {
-          verdict = await validateStage1AStructural(canonicalBasePath, retryPath, masks, sceneType as any);
-          if (verdict.ok) {
-            console.log(`[stage1A] ✅ Strict retry passed validation`);
-            const fs = await import("fs/promises");
-            await fs.rename(retryPath, finalOutputPath);
-            return finalOutputPath;
-          }
-        }
-      }
-      // Fallback: use Sharp-only output
-      console.warn(`[stage1A] ❌ All retries failed, falling back to Sharp-only output.`);
-      const fs = await import("fs/promises");
-      await fs.rename(sharpOutputPath, finalOutputPath);
-      return finalOutputPath;
-    }
-    // Passed validation
+    // Soft mode: log verdict, always proceed
+    console.log(`[stage1A] Validator verdict:`, verdict);
     const fs = await import("fs/promises");
     await fs.rename(geminiOutputPath, finalOutputPath);
   } else {

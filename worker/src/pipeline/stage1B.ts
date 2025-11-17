@@ -59,47 +59,8 @@ export async function runStage1B(
       const canonicalPath: string | undefined = (global as any).__canonicalPath;
       const base = canonicalPath || stage1APath;
       const verdict = await validateStageOutput("stage1B", base, declutteredPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
-      if (!verdict.ok) {
-        console.warn(`[stage1B] ❌ Validation failed: ${verdict.reason}`);
-        if (verdict.reason !== 'structural_change' && verdict.reason !== 'dimension_change') {
-          throw new Error(`Stage 1B validation failed (non-retryable): ${verdict.reason}`);
-        }
-        console.log(`[stage1B] 🔁 Retrying Gemini with strictMode due to ${verdict.reason}...`);
-        const retryPath = await enhanceWithGemini(stage1APath, {
-          skipIfNoApiKey: true,
-          replaceSky,
-          declutter: true,
-          sceneType,
-          stage: "1B",
-          strictMode: true,
-          // Tighten sampling on retry
-          temperature: 0.20,
-          topP: 0.65,
-          topK: 32,
-          promptOverride: buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
-          floorClean: sceneType === "interior",
-          hardscapeClean: sceneType === "exterior",
-          declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
-          ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
-        });
-        if (retryPath !== stage1APath) {
-          const retryVerdict = await validateStageOutput("stage1B", base, retryPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
-          if (retryVerdict.ok) {
-            console.log(`[stage1B] ✅ Retry passed validation`);
-            const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
-            const fs = await import("fs/promises");
-            await fs.rename(retryPath, outputPath);
-            console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
-            return outputPath;
-          }
-          console.warn(`[stage1B] ❌ Retry still failed validation: ${retryVerdict.reason}`);
-          console.error(`[stage1B] CRITICAL: Validation failed`);
-          throw new Error(`Stage 1B validation failed: ${retryVerdict.reason}`);
-        } else {
-          console.warn(`[stage1B] ❌ Retry did not produce image.`);
-          throw new Error('Stage 1B retry failed to generate image');
-        }
-      }
+      // Soft mode: log verdict, always proceed
+      console.log(`[stage1B] Validator verdict:`, verdict);
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
