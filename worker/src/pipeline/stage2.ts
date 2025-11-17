@@ -37,15 +37,14 @@ export async function runStage2(
   
   // Early exit if Stage 2 not enabled
   if (process.env.USE_GEMINI_STAGE2 !== "1") {
-    console.log("[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using Stage1B output)");
-    if (dbg) console.log("[stage2] USE_GEMINI_STAGE2!=1 → skipping (using Stage 1 output)");
+    console.log(`[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
+    if (dbg) console.log(`[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
     return out;
   }
 
   // Check API key before attempting Gemini calls (support GOOGLE_API_KEY or GEMINI_API_KEY)
   if (!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)) {
-    console.warn("[stage2] ⚠️ No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using Stage1B output)");
-    console.warn("[stage2] No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using Stage 1 output)");
+    console.warn(`[stage2] ⚠️ No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using ${baseStage} output)`);
     return out;
   }
 
