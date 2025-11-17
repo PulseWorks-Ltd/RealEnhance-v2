@@ -11,13 +11,7 @@ export async function validateStage1AStructure(
   // 1) Dimensions
   const dimRes = await normaliseDimensionsForValidation(basePath, outPath);
   if (dimRes.dimIssue === "dimension_change") {
-    return {
-      ok: false,
-      issue: "dimension_change",
-      message: "Image aspect ratio / dimensions changed in a way that suggests a crop or warp.",
-      baseSize: dimRes.baseSize,
-      outSize: dimRes.outSize,
-    };
+    return { ok: false, reason: "dimension_change" };
   }
   // 2) Windows
   const winResult = await validateWindows(dimRes.baseImgPath, dimRes.outImgPath);
@@ -28,5 +22,5 @@ export async function validateStage1AStructure(
     if (!wallResult.ok) return wallResult;
   }
   // For exteriors, landcover handled separately
-  return { ok: true, issue: "none", baseSize: dimRes.baseSize, outSize: dimRes.outSize };
+  return { ok: true };
 }
