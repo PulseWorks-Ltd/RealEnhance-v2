@@ -227,7 +227,7 @@ export async function runStage1A(
     const canonicalBasePath = sharpOutputPath;
     const maskPath = await loadOrComputeStructuralMask(jobId, canonicalBasePath);
     // You may need to pass window/landcover mask paths if available
-    const masks = { structuralMaskPath: maskPath };
+    const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(canonicalBasePath, geminiOutputPath, masks, sceneType as any);
     if (!verdict.ok) {
       console.warn(`[stage1A] ❌ Structural validation failed: ${verdict.reason}`);
