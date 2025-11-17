@@ -192,16 +192,19 @@ export async function runStage2(
       // Stage-aware validation (Stage 2 compares to canonical base)
       const canonicalPath: string | undefined = (global as any).__canonicalPath;
       const baseForValidation = canonicalPath || basePath;
-      const { validateStageOutput } = await import("../validators/runValidation");
-      const v2 = await validateStageOutput("2", scene as any, baseForValidation, candidatePath);
+      const { validateStageOutput } = await import("../validators");
+      const v2 = await validateStageOutput("stage2", baseForValidation, candidatePath, { sceneType: scene as any });
       if (v2.ok) {
         out = candidatePath;
-        console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (structIoU=${v2.structuralIoU !== undefined ? (v2.structuralIoU*100).toFixed(1)+'%' : 'n/a'})`);
+        console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (structIoU=${v2.details?.structIoU !== undefined ? ((v2.details.structIoU as number)*100).toFixed(1)+'%' : 'n/a'})`);
         if (dbg) console.log("[stage2] success → %s", out);
         return out;
       }
-      console.warn(`[stage2] ❌ Validation failed: ${v2.reason} ${v2.message ? '('+v2.message+')' : ''}. Attempting strict retry...`);
-      try { opts.onStrictRetry?.({ reasons: [v2.reason] }); } catch {}
+      console.warn(`[stage2] ❌ Validation failed: ${v2.reason}. Attempting strict retry if structural/dimension related...`);
+      if (v2.reason !== 'structural_change' && v2.reason !== 'dimension_change') {
+        throw new Error(`Stage 2 validation failed (non-retryable): ${v2.reason}`);
+      }
+      try { opts.onStrictRetry?.({ reasons: [v2.reason || 'unknown'] }); } catch {}
 
       // Strict retry flow (either structural failed or semantic failed)
       let strictText: string; let strictGenConfig: any;
@@ -238,12 +241,12 @@ export async function runStage2(
           writeImageDataUrl(retryPath, `data:image/webp;base64,${strictImg.inlineData.data}`);
           console.log(`[stage2] 💾 Saved strict retry image to: ${retryPath}`);
           // Strict retry validation (stage-aware)
-          const v2r = await validateStageOutput("2", scene as any, baseForValidation, retryPath);
+          const v2r = await validateStageOutput("stage2", baseForValidation, retryPath, { sceneType: scene as any });
           if (v2r.ok) {
-            console.log(`[stage2] ✅ Strict retry passed validation (structIoU=${v2r.structuralIoU !== undefined ? (v2r.structuralIoU*100).toFixed(1)+'%' : 'n/a'})`);
+            console.log(`[stage2] ✅ Strict retry passed validation (structIoU=${v2r.details?.structIoU !== undefined ? ((v2r.details.structIoU as number)*100).toFixed(1)+'%' : 'n/a'})`);
             return retryPath;
           }
-          console.warn(`[stage2] ❌ Strict retry validation failed: ${v2r.reason} ${v2r.message ? '('+v2r.message+')' : ''}`);
+          console.warn(`[stage2] ❌ Strict retry validation failed: ${v2r.reason}`);
           console.error(`[stage2] CRITICAL: Validation failed`);
           throw new Error(`Stage 2 validation failed: ${v2r.reason}`);
         } else {
