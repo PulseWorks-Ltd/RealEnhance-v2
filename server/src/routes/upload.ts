@@ -85,8 +85,7 @@ export function uploadRouter() {
       const f = files[i];
       const hasPerItemOptions = !!optionsList[i];
       const opts: any = optionsList[i] ?? {
-        declutter: false,
-        // NOTE: Do not set default virtualStage here; allow form-level override below
+        // NOTE: Do not set defaults for declutter or virtualStage here; allow form-level override below
         roomType: "unknown",
         sceneType: "auto",
       };
