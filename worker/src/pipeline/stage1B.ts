@@ -55,13 +55,16 @@ export async function runStage1B(
     
     // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
-      const { validateStageOutput } = await import("../validators/runValidation");
+      const { validateStageOutput } = await import("../validators");
       const canonicalPath: string | undefined = (global as any).__canonicalPath;
       const base = canonicalPath || stage1APath;
-      const verdict = await validateStageOutput("1B", (sceneType === 'interior' ? 'interior' : 'exterior') as any, base, declutteredPath);
+      const verdict = await validateStageOutput("stage1B", base, declutteredPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
       if (!verdict.ok) {
-        console.warn(`[stage1B] ❌ Validation failed: ${verdict.reason} ${verdict.message ? '('+verdict.message+')' : ''}`);
-        console.log(`[stage1B] 🔁 Retrying Gemini with strictMode...`);
+        console.warn(`[stage1B] ❌ Validation failed: ${verdict.reason}`);
+        if (verdict.reason !== 'structural_change' && verdict.reason !== 'dimension_change') {
+          throw new Error(`Stage 1B validation failed (non-retryable): ${verdict.reason}`);
+        }
+        console.log(`[stage1B] 🔁 Retrying Gemini with strictMode due to ${verdict.reason}...`);
         const retryPath = await enhanceWithGemini(stage1APath, {
           skipIfNoApiKey: true,
           replaceSky,
@@ -80,7 +83,7 @@ export async function runStage1B(
           ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
         });
         if (retryPath !== stage1APath) {
-          const retryVerdict = await validateStageOutput("1B", (sceneType === 'interior' ? 'interior' : 'exterior') as any, base, retryPath);
+          const retryVerdict = await validateStageOutput("stage1B", base, retryPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
           if (retryVerdict.ok) {
             console.log(`[stage1B] ✅ Retry passed validation`);
             const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
@@ -89,7 +92,7 @@ export async function runStage1B(
             console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
             return outputPath;
           }
-          console.warn(`[stage1B] ❌ Retry still failed validation: ${retryVerdict.reason} ${retryVerdict.message ? '('+retryVerdict.message+')' : ''}`);
+          console.warn(`[stage1B] ❌ Retry still failed validation: ${retryVerdict.reason}`);
           console.error(`[stage1B] CRITICAL: Validation failed`);
           throw new Error(`Stage 1B validation failed: ${retryVerdict.reason}`);
         } else {
