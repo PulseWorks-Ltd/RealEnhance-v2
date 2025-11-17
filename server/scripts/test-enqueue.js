@@ -70,7 +70,7 @@ const __dirname = dirname(__filename);
       userId,
       fileName: 'sample.png',
       profile: undefined,
-      options: { declutter: false, virtualStage: true, roomType: 'living_room' }
+      options: { declutter: true, virtualStage: false, roomType: 'living_room', sceneType: 'interior' }
     }, { jobId });
     console.log('Enqueued job to Redis:', added.id || added.jobId || jobId);
   } catch (e) {

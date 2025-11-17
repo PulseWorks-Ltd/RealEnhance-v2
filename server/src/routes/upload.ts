@@ -54,6 +54,10 @@ export function uploadRouter() {
     // Read high-level form toggles (string booleans)
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
+    try {
+      console.log('[upload] FORM raw allowStaging=%s declutter=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter);
+      console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s', String(allowStagingForm), String(declutterForm));
+    } catch {}
     
     // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
     let metaByIndex: Record<number, any> = {};
@@ -121,9 +125,11 @@ export function uploadRouter() {
       }
 
       // If no per-item declutter provided, inherit from form-level declutter
+      try { console.log(`[upload] item ${i} before declutter assign: hasPerItemOptions=${hasPerItemOptions} opts.declutter=${opts.declutter} declutterForm=${declutterForm}`); } catch {}
       if (!hasPerItemOptions || opts.declutter === undefined) {
         opts.declutter = declutterForm;
       }
+      try { console.log(`[upload] item ${i} after declutter assign: opts.declutter=${opts.declutter}`); } catch {}
 
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
@@ -174,23 +180,27 @@ export function uploadRouter() {
 
       // Debug summary for this item
       try {
-        console.log('[upload] item %d → sceneType=%s roomType=%s replaceSky=%s virtualStage=%s allowStagingForm=%s',
+        console.log('[upload] item %d → sceneType=%s roomType=%s replaceSky=%s virtualStage=%s declutter=%s',
           i,
           String(opts.sceneType),
           String(opts.roomType),
           String(opts.replaceSky),
           String(opts.virtualStage),
-          String(allowStagingForm)
+          String(opts.declutter)
         );
       } catch {}
+
+      const finalDeclutter = parseStrictBool(opts.declutter);
+      const finalVirtualStage = parseStrictBool(opts.virtualStage);
+      try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s`, String(finalDeclutter), String(finalVirtualStage)); } catch {}
 
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId,
         remoteOriginalUrl,
         options: {
-          declutter: parseStrictBool(opts.declutter),
-          virtualStage: parseStrictBool(opts.virtualStage),
+          declutter: finalDeclutter,
+          virtualStage: finalVirtualStage,
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference

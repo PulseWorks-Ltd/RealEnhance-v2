@@ -67,5 +67,51 @@
     },
     "createdAt": "2025-11-06T20:14:07.660Z",
     "updatedAt": "2025-11-06T20:14:07.660Z"
+  },
+  "job_2b9b7b8a-544f-4f3b-a502-5bb675bfee2c": {
+    "id": "job_2b9b7b8a-544f-4f3b-a502-5bb675bfee2c",
+    "jobId": "job_2b9b7b8a-544f-4f3b-a502-5bb675bfee2c",
+    "userId": "user_test",
+    "imageId": "img_20ed27be-a925-47c6-b12b-f2979f8b9846",
+    "type": "enhance",
+    "status": "queued",
+    "payload": {
+      "jobId": "job_2b9b7b8a-544f-4f3b-a502-5bb675bfee2c",
+      "userId": "user_test",
+      "imageId": "img_20ed27be-a925-47c6-b12b-f2979f8b9846",
+      "type": "enhance",
+      "options": {
+        "declutter": false,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "auto"
+      },
+      "createdAt": "2025-11-17T07:31:55.462Z"
+    },
+    "createdAt": "2025-11-17T07:31:55.462Z",
+    "updatedAt": "2025-11-17T07:31:55.462Z"
+  },
+  "job_6a6b7a6d-7aff-4ee8-a995-7cd51a4f2834": {
+    "id": "job_6a6b7a6d-7aff-4ee8-a995-7cd51a4f2834",
+    "jobId": "job_6a6b7a6d-7aff-4ee8-a995-7cd51a4f2834",
+    "userId": "user_test",
+    "imageId": "img_1292f09a-1380-49d5-b96e-f677db7c0f62",
+    "type": "enhance",
+    "status": "queued",
+    "payload": {
+      "jobId": "job_6a6b7a6d-7aff-4ee8-a995-7cd51a4f2834",
+      "userId": "user_test",
+      "imageId": "img_1292f09a-1380-49d5-b96e-f677db7c0f62",
+      "type": "enhance",
+      "options": {
+        "declutter": false,
+        "virtualStage": false,
+        "roomType": "living_room",
+        "sceneType": "auto"
+      },
+      "createdAt": "2025-11-17T07:32:03.302Z"
+    },
+    "createdAt": "2025-11-17T07:32:03.302Z",
+    "updatedAt": "2025-11-17T07:32:03.302Z"
   }
 }
