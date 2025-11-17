@@ -2174,32 +2174,38 @@ export default function BatchProcessor() {
                   <label className="flex items-center gap-3">
                     <input
                       type="checkbox"
+                      checked={declutter}
+                      onChange={(e) => { 
+                        const checked = e.target.checked;
+                        setDeclutter(checked); 
+                        setFurnitureReplacement(checked);
+                      }}
+                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
+                      data-testid="checkbox-declutter"
+                    />
+                    <div>
+                      <span className="text-sm font-medium text-white">Remove furniture & clutter</span>
+                      <p className="text-xs text-gray-400">Clean out existing furniture and clutter (Stage 1B)</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
                       checked={allowStaging}
                       onChange={(e) => setAllowStaging(e.target.checked)}
                       className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
                       data-testid="checkbox-allow-staging"
                     />
                     <div>
-                      <span className="text-sm font-medium text-white">Allow staging</span>
-                      <p className="text-xs text-gray-400">Add furniture, decor, and props</p>
+                      <span className="text-sm font-medium text-white">Add virtual staging</span>
+                      <p className="text-xs text-gray-400">
+                        {declutter 
+                          ? "Stage the empty room with new furniture (Stage 2)" 
+                          : "Add furniture and decor to existing room (Stage 2)"}
+                      </p>
                     </div>
                   </label>
-
-                  {allowStaging && (
-                    <label className="flex items-center gap-3 ml-8">
-                      <input
-                        type="checkbox"
-                        checked={furnitureReplacement}
-                        onChange={(e) => { setFurnitureReplacement(e.target.checked); setDeclutter(e.target.checked); }}
-                        className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                        data-testid="checkbox-furniture-replacement"
-                      />
-                      <div>
-                        <span className="text-sm font-medium text-white">Upgrade existing furniture</span>
-                        <p className="text-xs text-gray-400">Replace old furniture with modern alternatives</p>
-                      </div>
-                    </label>
-                  )}
 
                   <label className="flex items-center gap-3">
                     <input
