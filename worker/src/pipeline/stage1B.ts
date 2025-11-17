@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
 import { enhanceWithGemini } from "../ai/gemini";
+import { buildStage1BPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 
 /**
@@ -18,9 +19,10 @@ export async function runStage1B(
   options: {
     replaceSky?: boolean;
     sceneType?: "interior" | "exterior" | string;
+    roomType?: string;
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, sceneType } = options;
+  const { replaceSky = false, sceneType, roomType } = options;
   
   console.log(`[stage1B] 🔵 Starting furniture & clutter removal...`);
   console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
@@ -35,6 +37,12 @@ export async function runStage1B(
       declutter: true,
       sceneType,
       stage: "1B",
+      // Low-temp for deterministic, aggressive removal
+      temperature: 0.30,
+      topP: 0.70,
+      topK: 32,
+      // NZ explicit 1B prompt (preserves curtains/blinds)
+      promptOverride: buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
       // When decluttering, allow interior floor cleanup and exterior hardscape cleanup
       floorClean: sceneType === "interior",
       hardscapeClean: sceneType === "exterior",
@@ -63,6 +71,11 @@ export async function runStage1B(
           sceneType,
           stage: "1B",
           strictMode: true,
+          // Tighten sampling on retry
+          temperature: 0.20,
+          topP: 0.65,
+          topK: 32,
+          promptOverride: buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
           floorClean: sceneType === "interior",
           hardscapeClean: sceneType === "exterior",
           declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,

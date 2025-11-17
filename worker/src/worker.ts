@@ -394,6 +394,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path1B = await runStage1B(path1A, {
         replaceSky: false, // Never combine with sky replacement
         sceneType: sceneLabel,
+        roomType: payload.options.roomType,
       });
     } catch (e: any) {
       const errMsg = e?.message || String(e);
