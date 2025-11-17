@@ -53,16 +53,14 @@ export async function runStage1B(
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
     console.log(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
     
-    // If Gemini succeeded, rename to Stage1B output
+    // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
-      // Validate candidate vs Stage1A
-      const verdict = await validateStage(
-        { stage: "1A", path: stage1APath },
-        { stage: "1B", path: declutteredPath },
-        { sceneType }
-      );
+      const { validateStageOutput } = await import("../validators/runValidation");
+      const canonicalPath: string | undefined = (global as any).__canonicalPath;
+      const base = canonicalPath || stage1APath;
+      const verdict = await validateStageOutput("1B", (sceneType === 'interior' ? 'interior' : 'exterior') as any, base, declutteredPath);
       if (!verdict.ok) {
-        console.warn(`[stage1B] ❌ Validation failed (score=${verdict.score.toFixed(2)}):`, verdict.reasons.join("; "));
+        console.warn(`[stage1B] ❌ Validation failed: ${verdict.reason} ${verdict.message ? '('+verdict.message+')' : ''}`);
         console.log(`[stage1B] 🔁 Retrying Gemini with strictMode...`);
         const retryPath = await enhanceWithGemini(stage1APath, {
           skipIfNoApiKey: true,
@@ -82,22 +80,18 @@ export async function runStage1B(
           ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
         });
         if (retryPath !== stage1APath) {
-          const retryVerdict = await validateStage(
-            { stage: "1A", path: stage1APath },
-            { stage: "1B", path: retryPath },
-            { sceneType }
-          );
+          const retryVerdict = await validateStageOutput("1B", (sceneType === 'interior' ? 'interior' : 'exterior') as any, base, retryPath);
           if (retryVerdict.ok) {
-            console.log(`[stage1B] ✅ Retry passed validation (score=${retryVerdict.score.toFixed(2)})`);
+            console.log(`[stage1B] ✅ Retry passed validation`);
             const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
             const fs = await import("fs/promises");
             await fs.rename(retryPath, outputPath);
             console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
             return outputPath;
           }
-          console.warn(`[stage1B] ❌ Retry still failed validation (score=${retryVerdict.score.toFixed(2)}): ${retryVerdict.reasons.join('; ')}`);
-          console.error(`[stage1B] CRITICAL: Validation failed - ${retryVerdict.reasons.join('; ')}`);
-          throw new Error(`Stage 1B validation failed: ${retryVerdict.reasons.join('; ')}`);
+          console.warn(`[stage1B] ❌ Retry still failed validation: ${retryVerdict.reason} ${retryVerdict.message ? '('+retryVerdict.message+')' : ''}`);
+          console.error(`[stage1B] CRITICAL: Validation failed`);
+          throw new Error(`Stage 1B validation failed: ${retryVerdict.reason}`);
         } else {
           console.warn(`[stage1B] ❌ Retry did not produce image.`);
           throw new Error('Stage 1B retry failed to generate image');

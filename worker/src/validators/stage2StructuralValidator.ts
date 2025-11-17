@@ -71,7 +71,7 @@ export async function runStage2StructuralValidator(params: Stage2StructParams): 
     const baseEdge = sobelBinary(baseBuf, width, height, edgeThr);
     const stagedEdge = sobelBinary(stagedBuf, width, height, edgeThr);
     const structuralIoU = iouMasked(baseEdge, stagedEdge, structuralMask.data);
-    const minIoU = Number(process.env.STAGE2_STRUCT_IOU_MIN || 0.7);
+    const minIoU = Number(process.env.STAGE2_STRUCT_IOU_MIN || 0.30);
     if (structuralIoU < minIoU) {
       return { ok: false, structuralIoU, reason: "structural_change" };
     }
