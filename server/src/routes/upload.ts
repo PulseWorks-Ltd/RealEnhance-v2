@@ -51,8 +51,9 @@ export function uploadRouter() {
     if (!files.length) return res.status(400).json({ error: "no_files" });
 
     const optionsList = safeParseOptions((req.body as any)?.options);
-    // Read high-level staging toggle from form (string booleans)
+    // Read high-level form toggles (string booleans)
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
+    const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     
     // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
     let metaByIndex: Record<number, any> = {};
@@ -94,6 +95,7 @@ export function uploadRouter() {
       const meta = metaByIndex[i] || {};
       if (meta.sceneType) opts.sceneType = meta.sceneType;
       if (meta.roomType) opts.roomType = meta.roomType;
+      if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
@@ -117,6 +119,11 @@ export function uploadRouter() {
       // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging
       if (!hasPerItemOptions || opts.virtualStage === undefined) {
         opts.virtualStage = allowStagingForm;
+      }
+
+      // If no per-item declutter provided, inherit from form-level declutter
+      if (!hasPerItemOptions || opts.declutter === undefined) {
+        opts.declutter = declutterForm;
       }
 
       // Auto-enable sky replacement for exterior images if not explicitly set

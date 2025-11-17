@@ -61,6 +61,7 @@ interface PersistedBatchJob {
     allowRetouch: boolean;
     outdoorStaging: string;
     furnitureReplacement: boolean;
+    declutter: boolean;
   };
   fileMetadata: PersistedFileMetadata[];
 }
@@ -132,6 +133,8 @@ export default function BatchProcessor() {
   const [allowRetouch, setAllowRetouch] = useState(true);
   const [outdoorStaging, setOutdoorStaging] = useState<"auto" | "none">("auto");
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
+  // Declutter flag (drives Stage 1B in worker)
+  const [declutter, setDeclutter] = useState<boolean>(false);
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -599,6 +602,7 @@ export default function BatchProcessor() {
       setAllowRetouch(savedState.settings.allowRetouch);
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
+      setDeclutter(savedState.settings.declutter ?? false);
       
       // Restore file metadata if available
       if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
@@ -656,7 +660,8 @@ export default function BatchProcessor() {
           allowStaging,
           allowRetouch,
           outdoorStaging,
-          furnitureReplacement
+          furnitureReplacement,
+          declutter
         },
         fileMetadata: files.map(file => ({
           name: file.name,
@@ -667,7 +672,7 @@ export default function BatchProcessor() {
       };
       saveBatchJobState(state);
     }
-  }, [jobId, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement]);
+  }, [jobId, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter]);
 
   // Polling function for existing jobs
   const startPollingExistingJob = async (existingJobId: string) => {
@@ -1147,6 +1152,8 @@ export default function BatchProcessor() {
     fd.append("allowStaging", allowStaging.toString());
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
+    fd.append("declutter", declutter.toString());
+    fd.append("declutter", declutter.toString());
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);
@@ -2183,7 +2190,7 @@ export default function BatchProcessor() {
                       <input
                         type="checkbox"
                         checked={furnitureReplacement}
-                        onChange={(e) => setFurnitureReplacement(e.target.checked)}
+                        onChange={(e) => { setFurnitureReplacement(e.target.checked); setDeclutter(e.target.checked); }}
                         className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
                         data-testid="checkbox-furniture-replacement"
                       />
