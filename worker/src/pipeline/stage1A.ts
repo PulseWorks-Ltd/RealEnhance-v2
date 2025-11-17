@@ -220,15 +220,17 @@ export async function runStage1A(
   // If Gemini enhancement succeeded (returned different path), use it
   // Otherwise, Sharp output is already at sharpOutputPath
   if (geminiOutputPath !== sharpOutputPath) {
-    // Use mask-based validator
+    // Use structure-first validator
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask");
-    const { validateStage1A } = await import("../validators/stage1AValidator");
+    const { validateStage1AStructural } = await import("../validators/stage1AValidator");
     const jobId = (global as any).__jobId || "default";
     const canonicalBasePath = sharpOutputPath;
-    const mask = await loadOrComputeStructuralMask(jobId, canonicalBasePath);
-    let verdict = await validateStage1A(canonicalBasePath, geminiOutputPath, mask);
-    if (!verdict.ok && (verdict.reason === "structural_change" || verdict.reason === "dimension_change")) {
-      console.warn(`[stage1A] ❌ Validation failed: ${verdict.reason}`);
+    const maskPath = await loadOrComputeStructuralMask(jobId, canonicalBasePath);
+    // You may need to pass window/landcover mask paths if available
+    const masks = { structuralMaskPath: maskPath };
+    let verdict = await validateStage1AStructural(canonicalBasePath, geminiOutputPath, masks, sceneType as any);
+    if (!verdict.ok) {
+      console.warn(`[stage1A] ❌ Structural validation failed: ${verdict.reason}`);
       // Strict retry (max 2 attempts)
       for (let attempt = 1; attempt <= 2; attempt++) {
         console.log(`[stage1A] 🔁 Strict retry #${attempt}...`);
@@ -243,7 +245,7 @@ export async function runStage1A(
           hardscapeClean: sceneType === "exterior",
         });
         if (retryPath !== sharpOutputPath) {
-          verdict = await validateStage1A(canonicalBasePath, retryPath, mask);
+          verdict = await validateStage1AStructural(canonicalBasePath, retryPath, masks, sceneType as any);
           if (verdict.ok) {
             console.log(`[stage1A] ✅ Strict retry passed validation`);
             const fs = await import("fs/promises");
@@ -257,8 +259,6 @@ export async function runStage1A(
       const fs = await import("fs/promises");
       await fs.rename(sharpOutputPath, finalOutputPath);
       return finalOutputPath;
-    } else if (!verdict.ok) {
-      throw new Error(`Stage 1A validation failed: ${verdict.reason}`);
     }
     // Passed validation
     const fs = await import("fs/promises");

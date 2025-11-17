@@ -49,10 +49,10 @@ async function cannyEdge(imagePath: string): Promise<Uint8Array> {
   return edge;
 }
 
-export async function validateStage1B(
+export async function validateStage1BStructural(
   canonicalBasePath: string,
   stage1BPath: string,
-  structuralMask: StructuralMask
+  masks: { structuralMask: StructuralMask }
 ): Promise<Stage1BValidationResult> {
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage1BPath).metadata();
@@ -60,7 +60,6 @@ export async function validateStage1B(
   const baseH = baseMeta.height!;
   const outW = outMeta.width!;
   const outH = outMeta.height!;
-
   if (baseW !== outW || baseH !== outH) {
     const wRatio = outW / baseW;
     const hRatio = outH / baseH;
@@ -78,13 +77,11 @@ export async function validateStage1B(
       };
     }
   }
-
   const baseEdges = await cannyEdge(canonicalBasePath);
   const outEdges = await cannyEdge(stage1BPath);
-  const baseStruct = maskEdges(baseEdges, structuralMask);
-  const outStruct = maskEdges(outEdges, structuralMask);
+  const baseStruct = maskEdges(baseEdges, masks.structuralMask);
+  const outStruct = maskEdges(outEdges, masks.structuralMask);
   const structuralIoU = computeIoU(baseStruct, outStruct);
-
   if (structuralIoU < 0.80) {
     return { ok: false, reason: "structural_change", structuralIoU };
   }
