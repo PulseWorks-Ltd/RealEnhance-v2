@@ -60,13 +60,11 @@ export async function runStage2StructuralValidator(params: Stage2StructParams): 
     const stagedSharp = sharp(stagedPath).greyscale();
     const basePipe = blurSigma >= 0.3 ? baseSharp.blur(blurSigma) : baseSharp;
     const stagedPipe = blurSigma >= 0.3 ? stagedSharp.blur(blurSigma) : stagedSharp;
-    const [baseRaw, stagedRaw] = await Promise.all([
-      basePipe.raw().toBuffer({ resolveWithObject: true }),
-      stagedPipe.raw().toBuffer({ resolveWithObject: true })
-    ]);
-    if (baseRaw.info.width !== stagedRaw.info.width || baseRaw.info.height !== stagedRaw.info.height) {
-      return { ok: false, structuralIoU: 0, reason: "dimension_change" };
-    }
+    // Normalize staged image dimensions to canonical for fair comparison.
+    // This avoids treating benign canvas changes (e.g., padding) as hard failures.
+    const baseRaw = await basePipe.raw().toBuffer({ resolveWithObject: true });
+    const stagedResized = stagedPipe.resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" });
+    const stagedRaw = await stagedResized.raw().toBuffer({ resolveWithObject: true });
     const width = baseRaw.info.width; const height = baseRaw.info.height;
     const baseBuf = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
     const stagedBuf = new Uint8Array(stagedRaw.data.buffer, stagedRaw.data.byteOffset, stagedRaw.data.byteLength);
