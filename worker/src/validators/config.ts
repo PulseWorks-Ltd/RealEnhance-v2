@@ -1,3 +1,13 @@
+export const VALIDATION_THRESHOLDS = {
+  structuralChangeMaxRatioStage1A: 0.08,
+  structuralChangeMaxRatioStage1B: 0.08,
+  structuralChangeMaxRatioStage2: 0.10,
+  windowIoUMinStage1A: 0.65,
+  windowIoUMinStage1B: 0.65,
+  windowIoUMinStage2: 0.60,
+  maxLandcoverChangeInterior: 0.0,
+  maxLandcoverChangeExterior: 0.05,
+};
 export type StageId = "1A" | "1B" | "2";
 
 export type SceneType = "interior" | "exterior";

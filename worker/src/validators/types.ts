@@ -10,11 +10,14 @@ export type StructuralIssueCode =
 
 export type StructuralValidationResult = {
   ok: boolean;
-  issue: StructuralIssueCode;
-  message?: string;
+  reason?: string;             // e.g. "window_missing", "landcover_changed"
+  structuralChangeRatio?: number;
   windowIoU?: number;
-  wallIoU?: number;
-  landcoverDiffRatio?: number;
-  baseSize?: { width: number; height: number };
-  outSize?: { width: number; height: number };
+  landcoverChangeRatio?: number;
 };
+
+export function isHardStructuralFailure(res: StructuralValidationResult | null | undefined): boolean {
+  if (!res) return false;
+  if (!res.ok && res.reason) return true;
+  return false;
+}

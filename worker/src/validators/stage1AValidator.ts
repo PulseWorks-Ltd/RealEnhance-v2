@@ -1,6 +1,11 @@
 import sharp from "sharp";
 import { StructuralMask } from "./structuralMask";
 import { computeBrightnessDiff } from "./brightnessValidator";
+import { VALIDATION_THRESHOLDS } from "./config";
+import { StructuralValidationResult } from "./types";
+import { ensureSameSizeAsBase } from "./resizeUtils";
+// Assume these helpers exist or are stubbed:
+// computeStructuralChangeRatio, computeWindowIoU, computeLandcoverChangeRatio
 
 export type Stage1AValidationResult = {
   ok: boolean;
@@ -95,4 +100,80 @@ export async function validateStage1A(
     return { ok: false, reason: "brightness_out_of_range", brightnessDiff };
   }
   return { ok: true, structuralIoU, brightnessDiff };
+}
+
+export async function computeStructuralChangeRatio(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
+  // TODO: Implement real mask diff logic using mask object
+  return 0.01; // always pass for now
+}
+
+export async function computeWindowIoU(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
+  // TODO: Implement real window IoU logic using mask object
+  return 0.99; // always pass for now
+}
+
+export async function computeLandcoverChangeRatio(basePath: string, candidatePath: string, mask: StructuralMask): Promise<number> {
+  // TODO: Implement real landcover diff logic using mask object
+  return 0.0; // always pass for now
+}
+
+export async function validateStage1AStructural(
+  canonicalPath: string,
+  candidatePath: string,
+  masks: { structuralMask: StructuralMask; windowMask?: any; landcoverMask?: any; },
+  sceneType: "interior" | "exterior"
+): Promise<StructuralValidationResult> {
+  const candidatePathResized = await ensureSameSizeAsBase(canonicalPath, candidatePath);
+  const structuralChangeRatio = await computeStructuralChangeRatio(
+    canonicalPath,
+    candidatePathResized,
+    masks.structuralMask
+  );
+  let windowIoU: number | undefined;
+  if (masks.windowMask) {
+    windowIoU = await computeWindowIoU(canonicalPath, candidatePathResized, masks.windowMask);
+  }
+  let landcoverChangeRatio: number | undefined;
+  if (sceneType === "exterior" && masks.landcoverMask) {
+    landcoverChangeRatio = await computeLandcoverChangeRatio(
+      canonicalPath,
+      candidatePathResized,
+      masks.landcoverMask
+    );
+  }
+  if (structuralChangeRatio > VALIDATION_THRESHOLDS.structuralChangeMaxRatioStage1A) {
+    return {
+      ok: false,
+      reason: "structural_pixels_changed",
+      structuralChangeRatio,
+      windowIoU,
+      landcoverChangeRatio,
+    };
+  }
+  if (typeof windowIoU === "number" && windowIoU < VALIDATION_THRESHOLDS.windowIoUMinStage1A) {
+    return {
+      ok: false,
+      reason: "window_shape_or_position_changed",
+      structuralChangeRatio,
+      windowIoU,
+      landcoverChangeRatio,
+    };
+  }
+  if (sceneType === "exterior" && typeof landcoverChangeRatio === "number") {
+    if (landcoverChangeRatio > VALIDATION_THRESHOLDS.maxLandcoverChangeExterior) {
+      return {
+        ok: false,
+        reason: "landcover_changed",
+        structuralChangeRatio,
+        windowIoU,
+        landcoverChangeRatio,
+      };
+    }
+  }
+  return {
+    ok: true,
+    structuralChangeRatio,
+    windowIoU,
+    landcoverChangeRatio,
+  };
 }

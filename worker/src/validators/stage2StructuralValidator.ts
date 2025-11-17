@@ -54,10 +54,10 @@ export type Stage2ValidationResult = {
   structuralIoU?: number;
 };
 
-export async function validateStage2(
+export async function validateStage2Structural(
   canonicalBasePath: string,
   stage2Path: string,
-  structuralMask: StructuralMask
+  masks: { structuralMask: StructuralMask },
 ): Promise<Stage2ValidationResult> {
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage2Path).metadata();
@@ -97,8 +97,8 @@ export async function validateStage2(
   const baseStruct = new Uint8Array(baseEdge.length);
   const outStruct = new Uint8Array(outEdge.length);
   for (let i = 0; i < baseEdge.length; i++) {
-    baseStruct[i] = baseEdge[i] & structuralMask.data[i];
-    outStruct[i] = outEdge[i] & structuralMask.data[i];
+    baseStruct[i] = baseEdge[i] & masks.structuralMask.data[i];
+    outStruct[i] = outEdge[i] & masks.structuralMask.data[i];
   }
   let inter = 0, uni = 0;
   for (let i = 0; i < baseStruct.length; i++) {

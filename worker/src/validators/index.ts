@@ -1,8 +1,9 @@
 import sharp from "sharp";
 import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { computeBrightnessDiff } from "./brightnessValidator";
-import { computeStructuralEdgeMask } from "./structuralMask";
-import * as stage2Struct from "./stage2StructuralValidator";
+import { StructuralMask, loadOrComputeStructuralMask } from "./structuralMask";
+import { validateStage1BStructural } from "./stage1BValidator";
+import { validateStage2Structural } from "./stage2StructuralValidator";
 
 export type StageName = "stage1A" | "stage1B" | "stage2";
 
@@ -72,8 +73,8 @@ async function computeEdgeIoU(basePath: string, outputPath: string): Promise<num
 }
 
 async function computeStructuralEdgeIoU(basePath: string, outputPath: string): Promise<number> {
-  const mask = await computeStructuralEdgeMask(basePath);
-  const verdict = await stage2Struct.validateStage2(basePath, outputPath, mask);
+  const mask = await loadOrComputeStructuralMask("default", basePath);
+  const verdict = await validateStage2Structural(basePath, outputPath, { structuralMask: mask });
   return verdict.structuralIoU ?? 0;
 }
 
@@ -105,17 +106,17 @@ async function validateStage1B(basePath: string, outputPath: string, context: an
       return { ok: false, reason: "dimension_change", details: { stage: "stage1B" } };
     }
   }
-  let structIoU: number;
+  let mask: StructuralMask;
   try {
-    structIoU = await computeStructuralEdgeIoU(basePath, outputPath);
+    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath);
+    const verdict = await validateStage1BStructural(basePath, outputPath, { structuralMask: mask });
+    if (!verdict.ok) {
+      return { ok: false, reason: verdict.reason || "structural_change", details: { structIoU: verdict.structuralIoU } };
+    }
+    return { ok: true, details: { structIoU: verdict.structuralIoU, sizeMismatch } };
   } catch (e) {
     return { ok: false, reason: "validator_error", details: { error: (e as any)?.message } };
   }
-  const MIN_STRUCT_IOU = Number(process.env.STAGE1B_MIN_STRUCT_IOU || 0.75);
-  if (structIoU < MIN_STRUCT_IOU) {
-    return { ok: false, reason: "structural_change", details: { structIoU } };
-  }
-  return { ok: true, details: { structIoU, sizeMismatch } };
 }
 
 async function validateStage2(basePath: string, outputPath: string, context: any, sizeMismatch: boolean): Promise<ValidationResult> {
@@ -125,17 +126,17 @@ async function validateStage2(basePath: string, outputPath: string, context: any
       return { ok: false, reason: "dimension_change", details: { stage: "stage2" } };
     }
   }
-  let structIoU: number;
+  let mask: StructuralMask;
   try {
-    structIoU = await computeStructuralEdgeIoU(basePath, outputPath);
+    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath);
+    const verdict = await validateStage2Structural(basePath, outputPath, { structuralMask: mask });
+    if (!verdict.ok) {
+      return { ok: false, reason: verdict.reason || "structural_change", details: { structIoU: verdict.structuralIoU } };
+    }
+    return { ok: true, details: { structIoU: verdict.structuralIoU, sizeMismatch } };
   } catch (e) {
     return { ok: false, reason: "validator_error", details: { error: (e as any)?.message } };
   }
-  const MIN_STRUCT_IOU = Number(process.env.STAGE2_MIN_STRUCT_IOU || 0.80);
-  if (structIoU < MIN_STRUCT_IOU) {
-    return { ok: false, reason: "structural_change", details: { structIoU } };
-  }
-  return { ok: true, details: { structIoU, sizeMismatch } };
 }
 
 export async function validateStageOutput(
