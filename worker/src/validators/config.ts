@@ -9,7 +9,15 @@ export type ValidationReason =
   | "window_change"
   | "size_mismatch"
   | "brightness_out_of_range"
-  | "validator_error";
+  | "validator_error"
+  | "none"
+  | "window_count_change"
+  | "window_position_change"
+  | "window_size_change"
+  | "wall_structure_change"
+  | "dimension_change"
+  | "exterior_landcover_change"
+  | "implausible_crop_or_padding";
 
 export interface ValidationResult {
   ok: boolean;
