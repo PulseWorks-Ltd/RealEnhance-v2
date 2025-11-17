@@ -3,6 +3,7 @@ import { siblingOutPath } from "../utils/images";
 import { enhanceWithGemini } from "../ai/gemini";
 import { buildStage1BPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
+import { validateStage1BStructural } from "../validators/stage1BValidator";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -58,9 +59,19 @@ export async function runStage1B(
       const { validateStageOutput } = await import("../validators");
       const canonicalPath: string | undefined = (global as any).__canonicalPath;
       const base = canonicalPath || stage1APath;
-      const verdict = await validateStageOutput("stage1B", base, declutteredPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
+      const verdict1 = await validateStageOutput("stage1B", base, declutteredPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
       // Soft mode: log verdict, always proceed
-      console.log(`[stage1B] Validator verdict:`, verdict);
+      console.log(`[stage1B] Validator verdict:`, verdict1);
+      const { validateStage1BStructural } = await import("../validators/stage1BValidator");
+      const jobId = (global as any).__jobId || "default";
+      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask");
+      const maskPath = await loadOrComputeStructuralMask(jobId, base);
+      const masks = { structuralMask: maskPath };
+      const verdict2 = await validateStage1BStructural(base, declutteredPath, masks);
+      console.log(`[stage1B] Structural validator verdict:`, verdict2);
+      if (!verdict2.ok) {
+        console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
+      }
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);

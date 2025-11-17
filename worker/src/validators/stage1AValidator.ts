@@ -4,8 +4,16 @@ import { computeBrightnessDiff } from "./brightnessValidator";
 import { VALIDATION_THRESHOLDS } from "./config";
 import { StructuralValidationResult } from "./types";
 import { ensureSameSizeAsBase } from "./resizeUtils";
-// Assume these helpers exist or are stubbed:
-// computeStructuralChangeRatio, computeWindowIoU, computeLandcoverChangeRatio
+import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
+import {
+  compareWalls,
+  compareWindows,
+  compareDoors,
+  compareFloorMaterial,
+  compareGrassConcrete,
+  compareDrivewayPresence,
+  compareVehicles,
+} from "./classComparisons";
 
 export type Stage1AValidationResult = {
   ok: boolean;
@@ -123,57 +131,27 @@ export async function validateStage1AStructural(
   masks: { structuralMask: StructuralMask; windowMask?: any; landcoverMask?: any; },
   sceneType: "interior" | "exterior"
 ): Promise<StructuralValidationResult> {
+  // Segment both images
+  const baseSeg = await segmentImageClasses(canonicalPath);
+  const candSeg = await segmentImageClasses(candidatePath);
+  // Hard fail if dimensions change
   const candidatePathResized = await ensureSameSizeAsBase(canonicalPath, candidatePath);
-  const structuralChangeRatio = await computeStructuralChangeRatio(
-    canonicalPath,
-    candidatePathResized,
-    masks.structuralMask
-  );
-  let windowIoU: number | undefined;
-  if (masks.windowMask) {
-    windowIoU = await computeWindowIoU(canonicalPath, candidatePathResized, masks.windowMask);
+  // Run per-class checks
+  const wallRes = compareWalls(baseSeg, candSeg);
+  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed" };
+  const winRes = compareWindows(baseSeg, candSeg);
+  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed" };
+  const doorRes = compareDoors(baseSeg, candSeg);
+  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed" };
+  const floorRes = compareFloorMaterial(baseSeg, candSeg);
+  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed" };
+  if (sceneType === "exterior") {
+    const grassRes = compareGrassConcrete(baseSeg, candSeg);
+    if (!grassRes.pass) return { ok: false, reason: grassRes.code || "grass_to_concrete" };
+    const driveRes = compareDrivewayPresence(baseSeg, candSeg);
+    if (!driveRes.pass) return { ok: false, reason: driveRes.code || "driveway_changed" };
+    const carRes = compareVehicles(baseSeg, candSeg);
+    if (!carRes.pass) return { ok: false, reason: carRes.code || "vehicle_changed" };
   }
-  let landcoverChangeRatio: number | undefined;
-  if (sceneType === "exterior" && masks.landcoverMask) {
-    landcoverChangeRatio = await computeLandcoverChangeRatio(
-      canonicalPath,
-      candidatePathResized,
-      masks.landcoverMask
-    );
-  }
-  if (structuralChangeRatio > VALIDATION_THRESHOLDS.structuralChangeMaxRatioStage1A) {
-    return {
-      ok: false,
-      reason: "structural_pixels_changed",
-      structuralChangeRatio,
-      windowIoU,
-      landcoverChangeRatio,
-    };
-  }
-  if (typeof windowIoU === "number" && windowIoU < VALIDATION_THRESHOLDS.windowIoUMinStage1A) {
-    return {
-      ok: false,
-      reason: "window_shape_or_position_changed",
-      structuralChangeRatio,
-      windowIoU,
-      landcoverChangeRatio,
-    };
-  }
-  if (sceneType === "exterior" && typeof landcoverChangeRatio === "number") {
-    if (landcoverChangeRatio > VALIDATION_THRESHOLDS.maxLandcoverChangeExterior) {
-      return {
-        ok: false,
-        reason: "landcover_changed",
-        structuralChangeRatio,
-        windowIoU,
-        landcoverChangeRatio,
-      };
-    }
-  }
-  return {
-    ok: true,
-    structuralChangeRatio,
-    windowIoU,
-    landcoverChangeRatio,
-  };
+  return { ok: true };
 }
