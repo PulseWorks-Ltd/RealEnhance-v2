@@ -1,5 +1,15 @@
 import sharp from "sharp";
 import { StructuralMask } from "./structuralMask";
+import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
+import {
+  compareWalls,
+  compareWindows,
+  compareDoors,
+  compareFloorMaterial,
+  compareGrassConcrete,
+  compareDrivewayPresence,
+  compareVehicles,
+} from "./classComparisons";
 
 export type Stage1BValidationResult = {
   ok: boolean;
@@ -52,38 +62,27 @@ async function cannyEdge(imagePath: string): Promise<Uint8Array> {
 export async function validateStage1BStructural(
   canonicalBasePath: string,
   stage1BPath: string,
-  masks: { structuralMask: StructuralMask }
+  masks: { structuralMask: StructuralMask },
 ): Promise<Stage1BValidationResult> {
+  // Segment both images
+  const baseSeg = await segmentImageClasses(canonicalBasePath);
+  const candSeg = await segmentImageClasses(stage1BPath);
+  // Hard fail if dimensions change
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage1BPath).metadata();
-  const baseW = baseMeta.width!;
-  const baseH = baseMeta.height!;
-  const outW = outMeta.width!;
-  const outH = outMeta.height!;
-  if (baseW !== outW || baseH !== outH) {
-    const wRatio = outW / baseW;
-    const hRatio = outH / baseH;
-    const maxDev = Math.max(Math.abs(wRatio - 1), Math.abs(hRatio - 1));
-    if (maxDev <= 0.01) {
-      await sharp(stage1BPath)
-        .resize(baseW, baseH, { fit: "fill", withoutEnlargement: false })
-        .toFile(stage1BPath + ".aligned.webp");
-      stage1BPath = stage1BPath + ".aligned.webp";
-    } else {
-      return {
-        ok: false,
-        reason: "dimension_change",
-        dims: { baseW, baseH, outW, outH },
-      };
-    }
+  if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {
+    return { ok: false, reason: "dimension_change" };
   }
-  const baseEdges = await cannyEdge(canonicalBasePath);
-  const outEdges = await cannyEdge(stage1BPath);
-  const baseStruct = maskEdges(baseEdges, masks.structuralMask);
-  const outStruct = maskEdges(outEdges, masks.structuralMask);
-  const structuralIoU = computeIoU(baseStruct, outStruct);
-  if (structuralIoU < 0.80) {
-    return { ok: false, reason: "structural_change", structuralIoU };
-  }
-  return { ok: true, structuralIoU };
+  // Run per-class checks
+  const wallRes = compareWalls(baseSeg, candSeg);
+  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed" };
+  const winRes = compareWindows(baseSeg, candSeg);
+  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed" };
+  const doorRes = compareDoors(baseSeg, candSeg);
+  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed" };
+  const floorRes = compareFloorMaterial(baseSeg, candSeg);
+  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed" };
+  // Log debug metrics (IoU, brightness, etc.)
+  // ...existing code...
+  return { ok: true };
 }

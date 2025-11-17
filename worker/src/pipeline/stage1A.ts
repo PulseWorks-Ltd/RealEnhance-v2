@@ -224,13 +224,14 @@ export async function runStage1A(
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask");
     const { validateStage1AStructural } = await import("../validators/stage1AValidator");
     const jobId = (global as any).__jobId || "default";
-    const canonicalBasePath = sharpOutputPath;
-    const maskPath = await loadOrComputeStructuralMask(jobId, canonicalBasePath);
-    // You may need to pass window/landcover mask paths if available
+    const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
     const masks = { structuralMask: maskPath };
-    let verdict = await validateStage1AStructural(canonicalBasePath, geminiOutputPath, masks, sceneType as any);
-    // Soft mode: log verdict, always proceed
-    console.log(`[stage1A] Validator verdict:`, verdict);
+    let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
+    console.log(`[stage1A] Structural validator verdict:`, verdict);
+    // Always proceed, but log if hardFail
+    if (!verdict.ok) {
+      console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+    }
     const fs = await import("fs/promises");
     await fs.rename(geminiOutputPath, finalOutputPath);
   } else {

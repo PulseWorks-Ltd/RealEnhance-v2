@@ -1,5 +1,15 @@
 import sharp from "sharp";
 import { StructuralMask } from "./structuralMask";
+import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
+import {
+  compareWalls,
+  compareWindows,
+  compareDoors,
+  compareFloorMaterial,
+  compareGrassConcrete,
+  compareDrivewayPresence,
+  compareVehicles,
+} from "./classComparisons";
 
 interface Stage2StructParams {
   canonicalPath: string;
@@ -59,55 +69,31 @@ export async function validateStage2Structural(
   stage2Path: string,
   masks: { structuralMask: StructuralMask },
 ): Promise<Stage2ValidationResult> {
+  // Segment both images
+  const baseSeg = await segmentImageClasses(canonicalBasePath);
+  const candSeg = await segmentImageClasses(stage2Path);
+  // Hard fail if dimensions change
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage2Path).metadata();
-  const baseW = baseMeta.width!;
-  const baseH = baseMeta.height!;
-  const outW = outMeta.width!;
-  const outH = outMeta.height!;
-  if (baseW !== outW || baseH !== outH) {
-    const wRatio = outW / baseW;
-    const hRatio = outH / baseH;
-    const maxDev = Math.max(Math.abs(wRatio - 1), Math.abs(hRatio - 1));
-    if (maxDev <= 0.01) {
-      await sharp(stage2Path)
-        .resize(baseW, baseH, { fit: "fill", withoutEnlargement: false })
-        .toFile(stage2Path + ".aligned.webp");
-      stage2Path = stage2Path + ".aligned.webp";
-    } else {
-      return {
-        ok: false,
-        reason: "dimension_change",
-        dims: { baseW, baseH, outW, outH },
-      };
-    }
+  if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {
+    return { ok: false, reason: "dimension_change" };
   }
-  // Blur handling: clamp, safe default
-  let sigma = Number(process.env.STAGE2_STRUCT_VALIDATOR_BLUR || 0.5);
-  if (!isFinite(sigma) || sigma < 0.3) sigma = 0.5;
-  const edgeThr = Number(process.env.STAGE2_STRUCT_VALIDATOR_EDGE_THRESHOLD || 40);
-  const baseMetaObj = await sharp(canonicalBasePath).greyscale().blur(sigma).raw().toBuffer({ resolveWithObject: true });
-  const outMetaObj = await sharp(stage2Path).greyscale().blur(sigma).raw().toBuffer({ resolveWithObject: true });
-  const baseBuf = new Uint8Array(baseMetaObj.data.buffer, baseMetaObj.data.byteOffset, baseMetaObj.data.byteLength);
-  const outBuf = new Uint8Array(outMetaObj.data.buffer, outMetaObj.data.byteOffset, outMetaObj.data.byteLength);
-  const width = baseMetaObj.info.width;
-  const height = baseMetaObj.info.height;
-  const baseEdge = sobelBinary(baseBuf, width, height, edgeThr);
-  const outEdge = sobelBinary(outBuf, width, height, edgeThr);
-  const baseStruct = new Uint8Array(baseEdge.length);
-  const outStruct = new Uint8Array(outEdge.length);
-  for (let i = 0; i < baseEdge.length; i++) {
-    baseStruct[i] = baseEdge[i] & masks.structuralMask.data[i];
-    outStruct[i] = outEdge[i] & masks.structuralMask.data[i];
-  }
-  let inter = 0, uni = 0;
-  for (let i = 0; i < baseStruct.length; i++) {
-    if (baseStruct[i] | outStruct[i]) uni++;
-    if (baseStruct[i] & outStruct[i]) inter++;
-  }
-  const structuralIoU = uni > 0 ? inter / uni : 1;
-  if (structuralIoU < 0.78) {
-    return { ok: false, reason: "structural_change", structuralIoU };
-  }
-  return { ok: true, structuralIoU };
+  // Run per-class checks
+  const wallRes = compareWalls(baseSeg, candSeg);
+  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed" };
+  const winRes = compareWindows(baseSeg, candSeg);
+  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed" };
+  const doorRes = compareDoors(baseSeg, candSeg);
+  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed" };
+  const floorRes = compareFloorMaterial(baseSeg, candSeg);
+  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed" };
+  const grassRes = compareGrassConcrete(baseSeg, candSeg);
+  if (!grassRes.pass) return { ok: false, reason: grassRes.code || "grass_to_concrete" };
+  const driveRes = compareDrivewayPresence(baseSeg, candSeg);
+  if (!driveRes.pass) return { ok: false, reason: driveRes.code || "driveway_changed" };
+  const carRes = compareVehicles(baseSeg, candSeg);
+  if (!carRes.pass) return { ok: false, reason: carRes.code || "vehicle_changed" };
+  // Log debug metrics (IoU, brightness, etc.)
+  // ...existing code...
+  return { ok: true };
 }
