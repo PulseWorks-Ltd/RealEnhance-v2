@@ -1,3 +1,4 @@
+import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
 // server/src/index.ts
 import express, { type Express } from "express";
 import session, { type SessionOptions } from "express-session";
@@ -103,7 +104,6 @@ async function main() {
   app.use("/api", undoRouter());
   // Register ML-based room type detection API
   app.use("/api", visionRoomTypeRouter);
-import { visionRoomTypeRouter } from "./routes/vision-room-type";
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");
