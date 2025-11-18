@@ -817,6 +817,7 @@ export default function BatchProcessor() {
                 setImageRoomTypes(prev => {
                   const current = prev[i];
                   if (!current || current === 'auto') {
+                    setRoomTypeDetectionTick(tick => tick + 1); // Force re-render
                     return { ...prev, [i]: detected };
                   }
                   return prev;
@@ -1638,7 +1639,7 @@ export default function BatchProcessor() {
         // Update the specific result with flattened structure and version stamp for cache-busting
         setResults(prev => prev.map((r, i) => 
           i === imageIndex ? {
-            index: imageIndex,
+            ...r,
             // Flatten important fields to top level for easy access
             image: data.imageUrl,
             imageUrl: data.imageUrl,
@@ -1955,6 +1956,9 @@ export default function BatchProcessor() {
       return newTypes;
     });
   };
+
+  // Dummy state to force re-render when room type detection updates
+  const [roomTypeDetectionTick, setRoomTypeDetectionTick] = useState(0);
 
   return (
   <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
