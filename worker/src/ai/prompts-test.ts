@@ -181,7 +181,7 @@ HARD RULES — BASE IMAGE:
 
 FURNITURE RULES:
 • You may ONLY ADD movable furniture and decor on top of the existing image.
-• Furniture must be correctly scaled to the room.
+  • Furniture must be kept at TRUE SCALE relative to the room. Use windows, doors, and other architectural features as reference points for scale. Do NOT shrink, stretch, or distort furniture to fit the image.
 • Do NOT obstruct or cover doors, cupboards, or walkways.
 • Do NOT cover any part of a window above ~40% of its height. The upper part of all windows must remain fully visible.
 • Furniture must not intersect walls or built-in objects.
