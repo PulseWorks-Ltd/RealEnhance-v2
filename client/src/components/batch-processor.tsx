@@ -1,3 +1,16 @@
+  // Client-side stub for room type detection (replace with real logic as needed)
+  function detectRoomTypeFromImage(file: File): string {
+    // TODO: Replace with actual ML/heuristic detection
+    // For now, use filename keywords as a placeholder
+    const name = file.name.toLowerCase();
+    if (name.includes('bedroom')) return 'bedroom';
+    if (name.includes('kitchen')) return 'kitchen';
+    if (name.includes('living')) return 'living_room';
+    if (name.includes('bathroom')) return 'bathroom';
+    if (name.includes('dining')) return 'dining_room';
+    if (name.includes('office') || name.includes('study')) return 'office';
+    return 'auto';
+  }
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
@@ -318,6 +331,12 @@ export default function BatchProcessor() {
         setImageSkyReplacement({});
         setMetaByIndex({});
         setSelection(new Set());
+        // Run client-side room type detection for each image
+        const detectedRoomTypes: Record<number, string> = {};
+        files.forEach((file, i) => {
+          detectedRoomTypes[i] = detectRoomTypeFromImage(file);
+        });
+        setImageRoomTypes(detectedRoomTypes);
       }
       filesFingerprintRef.current = fp;
     }
