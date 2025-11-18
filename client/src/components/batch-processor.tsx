@@ -321,44 +321,46 @@ export default function BatchProcessor() {
         setMetaByIndex({});
         setSelection(new Set());
         // Run backend ML room type detection for each image
-        const detectedRoomTypes: Record<number, string> = {};
-        await Promise.all(files.map(async (file, i) => {
-          // Upload image to get a URL if needed
-          let imageUrl: string | undefined;
-          if ((file as any).url) {
-            imageUrl = (file as any).url;
-          } else {
-            // Upload to server to get a URL (assume api.upload returns { url })
-            const formData = new FormData();
-            formData.append('file', file);
-            try {
-              const resp = await apiFetch('/api/upload', {
-                method: 'POST',
-                body: formData
-              });
-              const data = await resp.json();
-              imageUrl = data.url;
-            } catch (e) {
-              imageUrl = undefined;
+        (async () => {
+          const detectedRoomTypes: Record<number, string> = {};
+          await Promise.all(files.map(async (file, i) => {
+            // Upload image to get a URL if needed
+            let imageUrl: string | undefined;
+            if ((file as any).url) {
+              imageUrl = (file as any).url;
+            } else {
+              // Upload to server to get a URL (assume api.upload returns { url })
+              const formData = new FormData();
+              formData.append('file', file);
+              try {
+                const resp = await apiFetch('/api/upload', {
+                  method: 'POST',
+                  body: formData
+                });
+                const data = await resp.json();
+                imageUrl = data.url;
+              } catch (e) {
+                imageUrl = undefined;
+              }
             }
-          }
-          if (imageUrl) {
-            try {
-              const resp = await apiFetch('/api/room-type', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ imageUrl })
-              });
-              const data = await resp.json();
-              detectedRoomTypes[i] = data.roomType || 'auto';
-            } catch (e) {
+            if (imageUrl) {
+              try {
+                const resp = await apiFetch('/api/room-type', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ imageUrl })
+                });
+                const data = await resp.json();
+                detectedRoomTypes[i] = data.roomType || 'auto';
+              } catch (e) {
+                detectedRoomTypes[i] = 'auto';
+              }
+            } else {
               detectedRoomTypes[i] = 'auto';
             }
-          } else {
-            detectedRoomTypes[i] = 'auto';
-          }
-        }));
-        setImageRoomTypes(detectedRoomTypes);
+          }));
+          setImageRoomTypes(detectedRoomTypes);
+        })();
       }
       filesFingerprintRef.current = fp;
     }
@@ -2912,14 +2914,10 @@ export default function BatchProcessor() {
           <div className="text-center">
             <h3 className="text-lg font-semibold mb-4">{previewImage.filename}</h3>
             
-            {/* Debug logging */}
-            {console.log('[PREVIEW MODAL] Rendering:', { 
-              url: previewImage.url?.substring(0, 100), 
-              originalUrl: previewImage.originalUrl?.substring(0, 100),
+            {/* Debug logging removed: do not use console.log in JSX */}
               filename: previewImage.filename,
               hasUrl: !!previewImage.url,
               hasOriginal: !!previewImage.originalUrl
-            })}
             
             {/* Show before/after slider if we have both original and enhanced images */}
             {previewImage.originalUrl ? (
