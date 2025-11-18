@@ -20,7 +20,7 @@ type AdvancedAnswers = Partial<{
 export default function SmartIntake({
   onPromptReady,
   context,
-  detectedRoomType,
+  detectedRoomType = undefined,
 }: {
   onPromptReady: (prompt: string) => void;
   context?: Record<string, any>;
