@@ -453,7 +453,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } else {
       path2 = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
-            roomType: payload.options.roomType || String(detectedRoom || "living_room"),
+            roomType: (
+              !payload.options.roomType ||
+              ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+            )
+              ? String(detectedRoom || "living_room")
+              : payload.options.roomType,
             sceneType: sceneLabel as any,
             profile,
             angleHint,
