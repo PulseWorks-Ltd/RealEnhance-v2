@@ -394,93 +394,87 @@ export default function BatchProcessor() {
   }
 
   // Build metaJson to send with the batch request
-  const metaJson = useMemo(() => {
-    // meta: [{index, sameRoomKey?, followupAngle?, sceneType?, roomType?, replaceSky?}]
-    const arr: Array<{
-      index: number; 
-      sameRoomKey?: string; 
-      followupAngle?: boolean;
-      sceneType?: string;
-      roomType?: string;
-      replaceSky?: boolean;
-      // optional tuning
-      // declutterIntensity removed
-      temperature?: number;
-      topP?: number;
-      topK?: number;
-    }> = [];
-    
-    // First pass: collect room linking info when linkImages is enabled
-    const roomTypeGroups: Record<string, number[]> = {};
-    if (linkImages) {
-      files.forEach((_, i) => {
-        const roomType = imageRoomTypes[i];
-        if (roomType && roomType !== "auto") {
-          if (!roomTypeGroups[roomType]) {
-            roomTypeGroups[roomType] = [];
+    const metaJson = useMemo(() => {
+      // meta: [{index, sameRoomKey?, followupAngle?, sceneType?, roomType?, replaceSky?}]
+      const arr: Array<{
+        index: number;
+        sameRoomKey?: string;
+        followupAngle?: boolean;
+        sceneType?: string;
+        roomType?: string;
+        replaceSky?: boolean;
+        temperature?: number;
+        topP?: number;
+        topK?: number;
+      }> = [];
+
+      // First pass: collect room linking info when linkImages is enabled
+      const roomTypeGroups: Record<string, number[]> = {};
+      if (linkImages) {
+        files.forEach((_, i) => {
+          const roomType = imageRoomTypes[i];
+          if (roomType && roomType !== "auto") {
+            if (!roomTypeGroups[roomType]) {
+              roomTypeGroups[roomType] = [];
+            }
+            roomTypeGroups[roomType].push(i);
           }
-          roomTypeGroups[roomType].push(i);
+        });
+      }
+
+      files.forEach((_, i) => {
+        const m = metaByIndex[i];
+        const manualSameRoomKey = m?.roomKey;
+        const followupAngle = !!m?.angleOrder && m.angleOrder > 1;
+
+        // Always assign detected values if user hasn't overridden
+        let sceneType = imageSceneTypes[i];
+        if (!sceneType || sceneType === "auto") {
+          // Try to get detected value from backend result if available
+          const detectedScene = results[i]?.result?.meta?.sceneType || results[i]?.result?.meta?.scene?.label;
+          if (detectedScene) sceneType = detectedScene;
+        }
+        const includeSceneType = sceneType && sceneType !== "auto";
+
+        let roomType = imageRoomTypes[i];
+        if (!roomType || roomType === "auto") {
+          // Try to get detected value from backend result if available
+          const detectedRoom = results[i]?.result?.meta?.roomTypeDetected || results[i]?.result?.meta?.roomType;
+          if (detectedRoom) roomType = detectedRoom;
+        }
+        const includeRoomType = roomType && roomType !== "auto";
+
+        const isExterior = sceneType === "exterior";
+        const skyReplacementPref = imageSkyReplacement[i];
+        const replaceSky = skyReplacementPref !== undefined ? skyReplacementPref : isExterior;
+
+        let sameRoomKey = manualSameRoomKey;
+        if (!sameRoomKey && linkImages && includeRoomType) {
+          const groupForThisRoomType = roomTypeGroups[roomType];
+          if (groupForThisRoomType && groupForThisRoomType.length > 1) {
+            sameRoomKey = `auto-${roomType}`;
+          }
+        }
+
+        const tNum = samplingUiEnabled && temperatureInput.trim() ? Number(temperatureInput) : undefined;
+        const pNum = samplingUiEnabled && topPInput.trim() ? Number(topPInput) : undefined;
+        const kNum = samplingUiEnabled && topKInput.trim() ? Number(topKInput) : undefined;
+        const hasTuning = (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
+        if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
+          const metaItem: any = { index: i };
+          if (sameRoomKey) metaItem.sameRoomKey = sameRoomKey;
+          if (followupAngle) metaItem.followupAngle = followupAngle;
+          if (includeSceneType) metaItem.sceneType = sceneType;
+          if (includeRoomType) metaItem.roomType = roomType;
+          if (isExterior) metaItem.replaceSky = replaceSky;
+          if (samplingUiEnabled && Number.isFinite(tNum)) metaItem.temperature = tNum;
+          if (samplingUiEnabled && Number.isFinite(pNum)) metaItem.topP = pNum;
+          if (samplingUiEnabled && Number.isFinite(kNum)) metaItem.topK = kNum;
+          arr.push(metaItem);
         }
       });
-    }
-    
-    files.forEach((_, i) => {
-      const m = metaByIndex[i];
-      
-      // Get existing manual room linking data
-      const manualSameRoomKey = m?.roomKey;
-      const followupAngle = !!m?.angleOrder && m.angleOrder > 1;
-      
-      // Get scene type (only include if not "auto")
-      const sceneType = imageSceneTypes[i];
-      const includeSceneType = sceneType && sceneType !== "auto";
-      
-      // Get room type (only include if not "auto")
-      const roomType = imageRoomTypes[i];
-      const includeRoomType = roomType && roomType !== "auto";
-      
-      // Determine sky replacement preference
-      // Default to true for exterior scenes, can be explicitly overridden
-      const isExterior = sceneType === "exterior";
-      const skyReplacementPref = imageSkyReplacement[i];
-      const replaceSky = skyReplacementPref !== undefined ? skyReplacementPref : isExterior;
-      
-      // Determine sameRoomKey - manual takes precedence, then auto-linking
-      let sameRoomKey = manualSameRoomKey;
-      if (!sameRoomKey && linkImages && includeRoomType) {
-        // Auto-link images with same roomType if linkImages is enabled
-        const groupForThisRoomType = roomTypeGroups[roomType];
-        if (groupForThisRoomType && groupForThisRoomType.length > 1) {
-          // Generate a consistent key for this room type group
-          sameRoomKey = `auto-${roomType}`;
-        }
-      }
-      
-      // Only add to array if we have at least one metadata field to include
-      const tNum = samplingUiEnabled && temperatureInput.trim() ? Number(temperatureInput) : undefined;
-      const pNum = samplingUiEnabled && topPInput.trim() ? Number(topPInput) : undefined;
-      const kNum = samplingUiEnabled && topKInput.trim() ? Number(topKInput) : undefined;
-      const hasTuning = (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
-      if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
-        const metaItem: any = { index: i };
-        
-        if (sameRoomKey) metaItem.sameRoomKey = sameRoomKey;
-        if (followupAngle) metaItem.followupAngle = followupAngle;
-        if (includeSceneType) metaItem.sceneType = sceneType;
-        if (includeRoomType) metaItem.roomType = roomType;
-        if (isExterior) metaItem.replaceSky = replaceSky; // Only include for exterior
-        // Batch-level tuning applies to each image (optional)
-        // declutterIntensity removed
-        if (samplingUiEnabled && Number.isFinite(tNum)) metaItem.temperature = tNum;
-        if (samplingUiEnabled && Number.isFinite(pNum)) metaItem.topP = pNum;
-        if (samplingUiEnabled && Number.isFinite(kNum)) metaItem.topK = kNum;
-        
-        arr.push(metaItem);
-      }
-    });
-    
-    return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput]);
+      return JSON.stringify(arr);
+    }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput, results]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
