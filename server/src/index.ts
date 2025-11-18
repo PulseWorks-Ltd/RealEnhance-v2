@@ -102,6 +102,9 @@ async function main() {
   app.use("/api", groupsRouter());
   app.use("/api", healthRouter());
   app.use("/api", undoRouter());
+  // Register ML-based room type detection API
+  import visionRoomTypeRouter from "./routes/vision-room-type.js";
+  app.use("/api", visionRoomTypeRouter);
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");
