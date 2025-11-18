@@ -46,4 +46,4 @@ router.post("/room-type", async (req, res) => {
   }
 });
 
-export default router;
+export const visionRoomTypeRouter = router;

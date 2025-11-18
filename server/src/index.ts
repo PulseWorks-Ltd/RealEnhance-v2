@@ -35,7 +35,6 @@ async function main() {
   redisClient.on("error", (err) => console.error("[redis] error", err));
   if (REDIS_URL) {
     await redisClient.connect();
-    console.log("[redis] connected");
   } else {
     console.warn("[redis] REDIS_URL not set; session store will not connect.");
   }
@@ -103,8 +102,8 @@ async function main() {
   app.use("/api", healthRouter());
   app.use("/api", undoRouter());
   // Register ML-based room type detection API
-  import visionRoomTypeRouter from "./routes/vision-room-type.js";
   app.use("/api", visionRoomTypeRouter);
+import { visionRoomTypeRouter } from "./routes/vision-room-type";
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");
