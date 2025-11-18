@@ -1,16 +1,5 @@
   // Client-side stub for room type detection (replace with real logic as needed)
-  function detectRoomTypeFromImage(file: File): string {
-    // TODO: Replace with actual ML/heuristic detection
-    // For now, use filename keywords as a placeholder
-    const name = file.name.toLowerCase();
-    if (name.includes('bedroom')) return 'bedroom';
-    if (name.includes('kitchen')) return 'kitchen';
-    if (name.includes('living')) return 'living_room';
-    if (name.includes('bathroom')) return 'bathroom';
-    if (name.includes('dining')) return 'dining_room';
-    if (name.includes('office') || name.includes('study')) return 'office';
-    return 'auto';
-  }
+  // Replaced by backend ML API call below
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
@@ -331,11 +320,44 @@ export default function BatchProcessor() {
         setImageSkyReplacement({});
         setMetaByIndex({});
         setSelection(new Set());
-        // Run client-side room type detection for each image
+        // Run backend ML room type detection for each image
         const detectedRoomTypes: Record<number, string> = {};
-        files.forEach((file, i) => {
-          detectedRoomTypes[i] = detectRoomTypeFromImage(file);
-        });
+        await Promise.all(files.map(async (file, i) => {
+          // Upload image to get a URL if needed
+          let imageUrl: string | undefined;
+          if ((file as any).url) {
+            imageUrl = (file as any).url;
+          } else {
+            // Upload to server to get a URL (assume api.upload returns { url })
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+              const resp = await apiFetch('/api/upload', {
+                method: 'POST',
+                body: formData
+              });
+              const data = await resp.json();
+              imageUrl = data.url;
+            } catch (e) {
+              imageUrl = undefined;
+            }
+          }
+          if (imageUrl) {
+            try {
+              const resp = await apiFetch('/api/room-type', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ imageUrl })
+              });
+              const data = await resp.json();
+              detectedRoomTypes[i] = data.roomType || 'auto';
+            } catch (e) {
+              detectedRoomTypes[i] = 'auto';
+            }
+          } else {
+            detectedRoomTypes[i] = 'auto';
+          }
+        }));
         setImageRoomTypes(detectedRoomTypes);
       }
       filesFingerprintRef.current = fp;
