@@ -25,7 +25,8 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
   const [enhancementMode, setEnhancementMode] = useState<EnhancementMode>(defaultEnhancementMode);
-  const [roomType, setRoomType] = useState<string>(detectedRoomType || "auto");
+  const safeDetectedRoomType = typeof detectedRoomType === 'undefined' ? "auto" : detectedRoomType;
+  const [roomType, setRoomType] = useState<string>(safeDetectedRoomType);
   const [windowCount, setWindowCount] = useState<string>("");
   const [sliderPosition, setSliderPosition] = useState(50);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
@@ -182,10 +183,10 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             </Label>
             <Select value={roomType} onValueChange={setRoomType}>
               <SelectTrigger data-testid="select-retry-room-type">
-                <SelectValue placeholder={detectedRoomType || "Auto Detect"} />
+                <SelectValue placeholder={safeDetectedRoomType || "Auto Detect"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto">Auto Detect{detectedRoomType ? ` (${detectedRoomType})` : ""}</SelectItem>
+                <SelectItem value="auto">Auto Detect{safeDetectedRoomType ? ` (${safeDetectedRoomType})` : ""}</SelectItem>
                 <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
                 <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
                 <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
@@ -213,7 +214,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{detectedRoomType || "Unknown"}</span>. You can override if needed.</p>
+            <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{safeDetectedRoomType || "Unknown"}</span>. You can override if needed.</p>
           </div>
 
           <div>
