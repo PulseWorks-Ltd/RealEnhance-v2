@@ -71,12 +71,50 @@ export interface ImageRecord {
 
 export type JobStatus =
   | "queued"
-  | "processing"
-  | "succeeded"
-  | "failed"
-  | "cancelled";
+  | "enhance"
+  | "edit"
+  | "region-edit"
+  | "diagnosis"
+  | "classification"
+  | "credit-purchase"
+  | "credit-grant"
+  | "credit-revoke"
+  | "credit-refund"
+  | "credit-adjust"
+  | "credit-expire"
+  | "credit-restore"
+  | "credit-transfer"
+  | "credit-batch-grant"
+  | "credit-batch-revoke"
+  | "credit-batch-refund"
+  | "credit-batch-adjust"
+  | "credit-batch-expire"
+  | "credit-batch-restore"
+  | "credit-batch-transfer"
+  | "credit-batch-purchase";
 
-export type JobKind = "enhance" | "edit" | "ingest" | "cleanup";
+export type JobKind =
+  | "enhance"
+  | "edit"
+  | "region-edit"
+  | "diagnosis"
+  | "classification"
+  | "credit-purchase"
+  | "credit-grant"
+  | "credit-revoke"
+  | "credit-refund"
+  | "credit-adjust"
+  | "credit-expire"
+  | "credit-restore"
+  | "credit-transfer"
+  | "credit-batch-grant"
+  | "credit-batch-revoke"
+  | "credit-batch-refund"
+  | "credit-batch-adjust"
+  | "credit-batch-expire"
+  | "credit-batch-restore"
+  | "credit-batch-transfer"
+  | "credit-batch-purchase";
 
 /** Strongly-typed payloads you enqueue */
 export interface EnhanceJobPayload {
@@ -89,7 +127,7 @@ export interface EnhanceJobPayload {
     virtualStage: boolean;
     roomType: string;
     sceneType: string | "auto";
-    replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
+    replaceSky?: boolean;
   };
   createdAt: string;
 }
@@ -106,7 +144,19 @@ export interface EditJobPayload {
   createdAt: string; // ISO
 }
 
-export type AnyJobPayload = EnhanceJobPayload | EditJobPayload;
+export interface RegionEditJobPayload {
+  jobId: JobId;
+  userId: UserId;
+  imageId: ImageId;
+  type: "region-edit";
+  baseVersionId: string;
+  mode: "Add" | "Remove" | "Restore";
+  instruction?: string;
+  mask: unknown;
+  createdAt: string; // ISO
+}
+
+export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
 
 export interface ImageJobResult {
   outputUrl: string;

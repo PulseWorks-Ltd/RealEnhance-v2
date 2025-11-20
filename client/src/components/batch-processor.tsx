@@ -2007,39 +2007,7 @@ export default function BatchProcessor() {
 
   return (
   <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Polish My Photo</h1>
-        <p className="text-gray-400">Transform your images with AI-powered enhancement</p>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex justify-center mb-8">
-        <div className="flex bg-gray-800 rounded-lg p-1">
-          {[
-            { key: "upload", label: "Upload", icon: "📁" },
-            { key: "describe", label: "Describe", icon: "✍️" },
-            { key: "images", label: "Images", icon: "🖼️" },
-            { key: "enhance", label: "Enhance", icon: "✨" }
-          ].map(({ key, label, icon }) => (
-            <button
-              key={key}
-              onClick={() => canProceedToTab(key as any) && setActiveTab(key as any)}
-              disabled={!canProceedToTab(key as any)}
-              className={`px-6 py-3 rounded-md font-medium transition-all flex items-center gap-2 ${
-                activeTab === key
-                  ? "bg-gray-200 shadow-sm text-gray-900"
-                  : canProceedToTab(key as any)
-                  ? "text-gray-300 hover:text-gray-100"
-                  : "text-gray-500 cursor-not-allowed"
-              }`}
-              data-testid={`tab-${key}`}
-            >
-              <span>{icon}</span>
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
   <div className="bg-brand-surface/95 rounded-xl shadow-lg p-8">
