@@ -1,3 +1,14 @@
+export interface RegionEditJobPayload {
+    jobId: JobId;
+    userId: UserId;
+    imageId: ImageId;
+    type: "region-edit";
+    baseVersionId: string;
+    mode: "Add" | "Remove" | "Restore";
+    instruction?: string;
+    mask: unknown;
+    createdAt: string;
+}
 export type UserId = string;
 export type ImageId = string;
 export type JobId = string;
@@ -41,6 +52,12 @@ export interface EnhanceJobPayload {
         roomType: string;
         sceneType: string | "auto";
         replaceSky?: boolean;
+        sampling?: {
+            temperature?: number;
+            topP?: number;
+            topK?: number;
+        };
+        declutterIntensity?: "light" | "standard" | "heavy";
     };
     createdAt: string;
 }
@@ -55,7 +72,7 @@ export interface EditJobPayload {
     mask: unknown;
     createdAt: string;
 }
-export type AnyJobPayload = EnhanceJobPayload | EditJobPayload;
+export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
 export interface JobRecord {
     jobId: JobId;
     userId: UserId;
@@ -74,6 +91,10 @@ export interface JobRecord {
             label: SceneLabel;
             confidence: number;
         };
+        /** Room type inferred by worker (model + heuristics). Never overwrites user choice. */
+        roomTypeDetected?: string;
+        /** User selected / requested room type (authoritative for prompts & staging). */
+        roomType?: string;
         [k: string]: any;
     };
     createdAt: string;

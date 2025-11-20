@@ -3,7 +3,8 @@ import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants";
 import {
   AnyJobPayload,
   EnhanceJobPayload,
-  EditJobPayload
+  EditJobPayload,
+  RegionEditJobPayload
 } from "@realenhance/shared/dist/types";
 
 import fs from "fs";
@@ -854,12 +855,13 @@ const worker = new Worker(
 
     try {
       if (payload.type === "enhance") {
-        return await handleEnhanceJob(payload as any);
+        return await handleEnhanceJob(payload as EnhanceJobPayload);
       } else if (payload.type === "edit") {
-        return await handleEditJob(payload as any);
+        return await handleEditJob(payload as EditJobPayload);
       } else if (payload.type === "region-edit") {
+        const regionPayload = payload as RegionEditJobPayload;
         // Region edit job handler
-        const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = payload as any;
+        const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
         // Download images to temp files if URLs
         const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
         let basePath = baseImageUrl;
