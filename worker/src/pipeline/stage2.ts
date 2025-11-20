@@ -4,6 +4,7 @@ import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
+import { runOpenCVStructuralValidator } from "../validators/index";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import sharp from "sharp";
@@ -41,6 +42,18 @@ export async function runStage2(
     if (dbg) console.log(`[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
     return out;
   }
+
+    // Run OpenCV validator after Stage 1B (before staging)
+    try {
+      const imageBuffer = await sharp(basePath).toBuffer();
+      const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+      console.log('[OpenCV Validator][Stage 1B]', result1B);
+      if (!result1B.ok && process.env.STRICT_STRUCTURE_VALIDATION === '1') {
+        throw new Error('Structural validation failed after Stage 1B: ' + result1B.errors.join(', '));
+      }
+    } catch (e) {
+      console.warn('[OpenCV Validator][Stage 1B] error:', e);
+    }
 
   // Check API key before attempting Gemini calls (support GOOGLE_API_KEY or GEMINI_API_KEY)
   if (!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)) {
@@ -198,6 +211,22 @@ export async function runStage2(
       out = candidatePath;
       console.log(`[stage2] 🎉 SUCCESS - Virtual staging validated (structIoU=${v2.details?.structIoU !== undefined ? ((v2.details.structIoU as number)*100).toFixed(1)+'%' : 'n/a'})`);
       if (dbg) console.log("[stage2] success → %s", out);
+
+        // Run OpenCV validator after Stage 2
+        try {
+          const stagedBuffer = await sharp(out).toBuffer();
+          const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+          console.log('[OpenCV Validator][Stage 2]', result2);
+          if (!result2.ok && process.env.STRICT_STRUCTURE_VALIDATION === '1') {
+            throw new Error('Structural validation failed after Stage 2: ' + result2.errors.join(', '));
+          }
+        } catch (e) {
+          console.warn('[OpenCV Validator][Stage 2] error:', e);
+        }
+
+        // Gemini-based validators (DISCONNECTED)
+        // const validationResult = await validateStage2Structural(...);
+        // if (!validationResult.ok) { ... }
       return out;
     } catch (e: any) {
       console.error("[stage2] ❌ Gemini API error:", e?.message || String(e));

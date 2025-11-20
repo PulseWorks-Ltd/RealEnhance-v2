@@ -5,6 +5,17 @@ import { StructuralMask, loadOrComputeStructuralMask } from "./structuralMask";
 import { validateStage1BStructural } from "./stage1BValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 
+// OpenCV-based structural validator
+import { validateStructureWithOpenCV } from "../ai/validators/structural-opencv";
+
+/**
+ * Wrapper to run OpenCV-based structural validation.
+ * Accepts image buffer and options, returns validation result.
+ */
+export async function runOpenCVStructuralValidator(imageBuffer: Buffer, opts?: { strict?: boolean }) {
+  return await validateStructureWithOpenCV(imageBuffer, opts);
+}
+
 export type StageName = "stage1A" | "stage1B" | "stage2";
 
 export type ValidationResult = {
