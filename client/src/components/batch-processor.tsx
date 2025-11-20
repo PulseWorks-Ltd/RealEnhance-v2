@@ -153,6 +153,7 @@ export default function BatchProcessor() {
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<{ url: string, filename: string, originalUrl?: string, index: number } | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
+  const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
   
@@ -1412,8 +1413,78 @@ export default function BatchProcessor() {
 
   // Handle edit image - just open the modal (don't add to editing set yet)
   const handleEditImage = (imageIndex: number) => {
-    // Just open the RegionEditor modal
     setEditingImageIndex(imageIndex);
+    setRegionEditorOpen(true);
+    // New: handleRegionEdit stub
+    const handleRegionEdit = async (
+      imageIndex: number,
+      options: {
+        mode: "add" | "remove" | "restore";
+        prompt?: string;
+        mask: Blob;
+      }
+    ) => {
+      try {
+        await ensureLoggedInAndCredits(1);
+        const currentImageUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex];
+        const originalImageUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+        const qualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+        const fd = new FormData();
+        fd.append("mode", options.mode);
+        if (options.prompt) fd.append("prompt", options.prompt);
+        fd.append("mask", options.mask);
+        fd.append("imageUrl", currentImageUrl);
+        if (qualityEnhancedUrl) fd.append("baseImageUrl", qualityEnhancedUrl);
+        else if (originalImageUrl) fd.append("baseImageUrl", originalImageUrl);
+        fd.append("imageIndex", String(imageIndex));
+        const resp = await fetch("/api/batch/edit-region", {
+          method: "POST",
+          body: fd,
+          credentials: "include"
+        });
+        if (!resp.ok) {
+          throw new Error("Region edit failed");
+        }
+        const data = await resp.json();
+        if (data.success && data.imageUrl) {
+          // Preserve original/quality URLs
+          const preservedOriginalUrl = originalImageUrl;
+          const preservedQualityEnhancedUrl = qualityEnhancedUrl;
+          setResults(prev => prev.map((r, i) =>
+            i === imageIndex ? {
+              ...r,
+              image: data.imageUrl,
+              imageUrl: data.imageUrl,
+              version: Date.now(),
+              mode: options.mode,
+              originalImageUrl: preservedOriginalUrl,
+              qualityEnhancedUrl: preservedQualityEnhancedUrl,
+              result: {
+                image: data.imageUrl,
+                imageUrl: data.imageUrl,
+                originalImageUrl: preservedOriginalUrl,
+                qualityEnhancedUrl: preservedQualityEnhancedUrl
+              },
+              error: null,
+              filename: r?.filename
+            } : r
+          ));
+          setProcessedImagesByIndex(prev => ({ ...prev, [imageIndex]: data.imageUrl }));
+          setProcessedImages(prev => {
+            const newSet = new Set(prev);
+            newSet.add(data.imageUrl);
+            return Array.from(newSet);
+          });
+          await refreshUser();
+        }
+      } catch (e) {
+        // Optionally surface error
+        console.error("Region edit error", e);
+      } finally {
+        setRegionEditorOpen(false);
+        setEditingImageIndex(null);
+      }
+    };
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
@@ -2936,99 +3007,27 @@ export default function BatchProcessor() {
         </Modal>
       )}
 
-      {/* Edit Modal */}
-      {editingImageIndex !== null && (
-        <Dialog open={true} onOpenChange={() => setEditingImageIndex(null)}>
-          <DialogContent className="max-w-7xl max-h-[95vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Edit - Image {editingImageIndex + 1}</DialogTitle>
-              <DialogDescription>
-                Use mask drawing or text instructions to enhance specific regions of your image.
-              </DialogDescription>
-            </DialogHeader>
-            <RegionEditor
-              initialImageUrl={
-                // Display the final staged result (what user sees in gallery)
-                getDisplayUrl(results[editingImageIndex]) || undefined
-              }
-              originalImageUrl={
-                // TWO-STAGE: Use quality-enhanced baseline for "Restore Original" so colors/exposure match
-                // Fall back to true original for legacy images without quality-enhanced version
-                (results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl)
-                  || (results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl)
-              }
-              initialGoal={globalGoal}
-              initialIndustry={industryMap[presetKey] || "Real Estate"}
-              onStart={() => {
-                // Show editing spinner immediately when processing starts
-                if (editingImageIndex !== null) {
-                  setEditingImages(prev => new Set(prev).add(editingImageIndex));
-                }
-              }}
-              onError={() => {
-                // Remove from editing set when processing fails
-                if (editingImageIndex !== null) {
-                  setEditingImages(prev => {
-                    const next = new Set(prev);
-                    next.delete(editingImageIndex);
-                    return next;
-                  });
-                }
-              }}
-              onComplete={(result) => {
-                // Capture the current index before we close modal
-                const currentEditIndex = editingImageIndex;
-                
-                // Close modal immediately  
-                setEditingImageIndex(null);
-                
-                // Remove from editing set to hide spinner
-                if (currentEditIndex !== null) {
-                  setEditingImages(prev => {
-                    const next = new Set(prev);
-                    next.delete(currentEditIndex);
-                    return next;
-                  });
-                }
-                
-                // Update the batch result with the new image URL while preserving original batch job originalImageUrl
-                setResults(prev => prev.map((res, idx) => 
-                  idx === currentEditIndex ? {
-                    ...res,
-                    result: { 
-                      imageUrl: result.imageUrl,
-                      // Preserve batch job URLs, don't accept region edit URLs
-                      // (Region edits don't return meaningful URLs for these fields)
-                      originalImageUrl: res?.result?.originalImageUrl || res?.originalImageUrl,
-                      qualityEnhancedUrl: res?.result?.qualityEnhancedUrl || res?.qualityEnhancedUrl
-                    }
-                  } : res
-                ));
-                
-                // Update processed images arrays
-                setProcessedImages(prev => {
-                  const updated = [...prev];
-                  updated[currentEditIndex] = result.imageUrl;
-                  return updated;
-                });
-                
-                setProcessedImagesByIndex(prev => ({
-                  ...prev,
-                  [currentEditIndex]: result.imageUrl
-                }));
-                
-                // Refresh credits
-                refreshUser();
-                
-                // Success message will be shown when the new image loads via onLoad handler
-              }}
-              onCancel={() => {
-                // Just close modal on cancel
-                setEditingImageIndex(null);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
+      {/* RegionEditor Modal */}
+      {regionEditorOpen && editingImageIndex !== null && (
+        <RegionEditor
+          open={regionEditorOpen}
+          imageIndex={editingImageIndex}
+          imageUrl={getDisplayUrl(results[editingImageIndex])}
+          baseImageUrl={
+            results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl ||
+            results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl
+          }
+          onClose={() => {
+            setRegionEditorOpen(false);
+            setEditingImageIndex(null);
+          }}
+          onUpdated={async (imageIndex, newUrl) => {
+            // TODO: Call handleRegionEdit with mask, mode, prompt
+            // For now, just close modal
+            setRegionEditorOpen(false);
+            setEditingImageIndex(null);
+          }}
+        />
       )}
 
       {/* Retry Dialog */}
