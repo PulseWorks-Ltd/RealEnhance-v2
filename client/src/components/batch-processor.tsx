@@ -2994,7 +2994,7 @@ export default function BatchProcessor() {
             }}
           />
         </Modal>
-      )
+      )}
 
       {/* Retry Dialog */}
       <RetryDialog
