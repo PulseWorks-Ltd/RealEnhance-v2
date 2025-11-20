@@ -546,9 +546,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       // This ensures restored pixels match the color/exposure of staged content
       // Send as both qualityEnhancedUrl (preferred) and originalUrl (fallback for legacy)
       if (originalImageUrl) {
+        // Always send as baseImageUrl for server compatibility
         console.log('Using originalImageUrl for pixel-level restoration:', originalImageUrl);
-        formData.append("qualityEnhancedUrl", originalImageUrl);
-        formData.append("originalUrl", originalImageUrl);  // Also send as originalUrl for backward compatibility
+        formData.append("baseImageUrl", originalImageUrl);
       }
     }
     
