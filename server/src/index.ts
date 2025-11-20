@@ -98,9 +98,6 @@ async function main() {
   app.use("/api", requeueRouter());
   app.use("/api", retrySingleRouter());
   app.use("/api", regionEditRouter());
-  // Register new batch region edit endpoint
-  const { batchEditRegionRouter } = await import("./routes/batchEditRegion.js");
-  app.use("/api", batchEditRegionRouter());
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
   app.use("/api", healthRouter());

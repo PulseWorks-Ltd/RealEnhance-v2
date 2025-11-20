@@ -877,9 +877,36 @@ const worker = new Worker(
             instruction: prompt || "",
             restoreFromPath: basePath
           });
-          // Publish result
-          const pub = await publishImage(outPath);
-          updateJob(jobId, { status: "complete", resultUrl: pub.url });
+          // Publish edited image and attach public URL for client consumption
+          let pub;
+          try {
+            pub = await publishImage(outPath);
+            setVersionPublicUrl(regionPayload.imageId, regionPayload.jobId, pub.url);
+          } catch (e) {
+            console.warn("[region-edit] Failed to publish image:", e);
+            pub = { url: outPath };
+          }
+          // Compliance/validator logic (log feedback, never block)
+          let compliance = undefined;
+          try {
+            const { checkCompliance } = await import("./ai/compliance");
+            compliance = await checkCompliance(null, currentPath, outPath);
+          } catch (e) {
+            console.warn("[region-edit] Compliance check failed:", e);
+          }
+          if (compliance && compliance.ok === false) {
+            const lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+            updateJob(jobId, {
+              status: "complete",
+              resultUrl: pub.url,
+              errorMessage: lastViolationMsg,
+              error: lastViolationMsg,
+              meta: { compliance, complianceFailed: true }
+            });
+            console.warn(`[region-edit] Compliance failed for job ${jobId}: ${lastViolationMsg} (image still published)`);
+          } else {
+            updateJob(jobId, { status: "complete", resultUrl: pub.url, meta: { compliance } });
+          }
           return { ok: true, resultUrl: pub.url };
         } else {
           updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });

@@ -1437,7 +1437,7 @@ export default function BatchProcessor() {
         if (qualityEnhancedUrl) fd.append("baseImageUrl", qualityEnhancedUrl);
         else if (originalImageUrl) fd.append("baseImageUrl", originalImageUrl);
         fd.append("imageIndex", String(imageIndex));
-        const resp = await fetch("/api/batch/edit-region", {
+        const resp = await fetch("/api/region-edit", {
           method: "POST",
           body: fd,
           credentials: "include"
@@ -2980,13 +2980,9 @@ export default function BatchProcessor() {
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={getDisplayUrl(results[editingImageIndex])}
-            originalImageUrl={results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl}
             onComplete={async (result) => {
-              // Call handleRegionEdit with mask, mode, instructions
-              // You may need to adapt this to your handleRegionEdit logic
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
-              // Optionally update results state with new image
             }}
             onCancel={() => {
               setRegionEditorOpen(false);
