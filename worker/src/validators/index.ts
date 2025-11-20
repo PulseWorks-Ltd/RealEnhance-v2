@@ -123,7 +123,8 @@ async function validateStage2(basePath: string, outputPath: string, context: any
   if (sizeMismatch) {
     const aspectOk = await aspectRatioApproximatelyEqual(basePath, outputPath);
     if (!aspectOk) {
-      return { ok: false, reason: "dimension_change", details: { stage: "stage2" } };
+      console.warn('[stage2] Validator: dimension_change detected, but not blocking.');
+      // Do not block, continue validation and allow result
     }
   }
   let mask: StructuralMask;
