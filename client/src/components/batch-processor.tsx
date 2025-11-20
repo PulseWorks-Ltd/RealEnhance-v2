@@ -1427,15 +1427,14 @@ export default function BatchProcessor() {
       try {
         await ensureLoggedInAndCredits(1);
         const currentImageUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex];
-        const originalImageUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-        const qualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+        // Always use the quality-enhanced baseline for baseImageUrl
+        const baseImageUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl || results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
         const fd = new FormData();
         fd.append("mode", options.mode);
         if (options.prompt) fd.append("prompt", options.prompt);
         fd.append("mask", options.mask);
         fd.append("imageUrl", currentImageUrl);
-        if (qualityEnhancedUrl) fd.append("baseImageUrl", qualityEnhancedUrl);
-        else if (originalImageUrl) fd.append("baseImageUrl", originalImageUrl);
+        if (baseImageUrl) fd.append("baseImageUrl", baseImageUrl);
         fd.append("imageIndex", String(imageIndex));
         const resp = await fetch("/api/region-edit", {
           method: "POST",
