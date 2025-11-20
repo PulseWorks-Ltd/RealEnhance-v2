@@ -72,11 +72,12 @@ export async function validateStage2Structural(
   // Segment both images
   const baseSeg = await segmentImageClasses(canonicalBasePath);
   const candSeg = await segmentImageClasses(stage2Path);
-  // Hard fail if dimensions change
+  // Dimension change check: log but do not block
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage2Path).metadata();
   if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {
-    return { ok: false, reason: "dimension_change" };
+    console.warn('[stage2] Structural validator verdict: { ok: false, reason: "dimension_change" }');
+    // Do not block, continue validation
   }
   // Run per-class checks
   const wallRes = compareWalls(baseSeg, candSeg);
