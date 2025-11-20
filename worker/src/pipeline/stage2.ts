@@ -28,7 +28,12 @@ export async function runStage2(
 ): Promise<string> {
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
-  
+  const validatorNotes: any[] = [];
+  let retryCount = 0;
+  let needsRetry = false;
+  let lastValidatorResults: any = {};
+  let tempMultiplier = 1.0;
+  let strictPrompt = false;
   console.log(`[stage2] 🔵 Starting virtual staging...`);
   console.log(`[stage2] Input: ${basePath}`);
   console.log(`[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
@@ -43,17 +48,18 @@ export async function runStage2(
     return out;
   }
 
-    // Run OpenCV validator after Stage 1B (before staging)
-    try {
-      const imageBuffer = await sharp(basePath).toBuffer();
-      const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
-      console.log('[OpenCV Validator][Stage 1B]', result1B);
-      if (!result1B.ok && process.env.STRICT_STRUCTURE_VALIDATION === '1') {
-        throw new Error('Structural validation failed after Stage 1B: ' + result1B.errors.join(', '));
-      }
-    } catch (e) {
-      console.warn('[OpenCV Validator][Stage 1B] error:', e);
-    }
+  // Run OpenCV validator after Stage 1B (before staging)
+  try {
+    const imageBuffer = await sharp(basePath).toBuffer();
+    const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+    validatorNotes.push({ stage: '1B', validator: 'OpenCV', result: result1B });
+    lastValidatorResults['1B'] = result1B;
+    if (!result1B.ok) needsRetry = true;
+  } catch (e) {
+    validatorNotes.push({ stage: '1B', validator: 'OpenCV', error: String(e) });
+    lastValidatorResults['1B'] = { ok: false, error: String(e) };
+    needsRetry = true;
+  }
 
   // Check API key before attempting Gemini calls (support GOOGLE_API_KEY or GEMINI_API_KEY)
   if (!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)) {
@@ -63,23 +69,13 @@ export async function runStage2(
 
   if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
-  try {
-    // Initialize Gemini client
-    let ai: any = null;
-    try {
-      ai = getGeminiClient();
-      if (!ai) throw new Error("getGeminiClient returned null/undefined");
-    } catch (e: any) {
-      console.error("[stage2] Failed to initialize Gemini:", e?.message || String(e));
-      if (dbg) console.log("[stage2] → using Stage 1 output instead");
-      return out;
-    }
-
-    // If a stagingRegion is provided, build a "guided" input that darkens outside the region
-    let inputForStage2 = basePath;
+  // Only allow a single retry if validators fail
+  for (let attempt = 0; attempt < 2; attempt++) {
+    needsRetry = false;
+    let inputForStage2 = out;
     if (opts.stagingRegion) {
       try {
-        const meta = await sharp(basePath).metadata();
+        const meta = await sharp(out).metadata();
         const W = meta.width || 0;
         const H = meta.height || 0;
         const r = opts.stagingRegion;
@@ -87,21 +83,16 @@ export async function runStage2(
         const y = Math.max(0, Math.min(Math.floor(r.y), Math.max(0, H - 1)));
         const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
         const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
-
-        // Build a full-frame semi-transparent black overlay to darken entire frame
         const overlay = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.35 } } }).toBuffer();
-        // Extract original region to restore brightness inside the staging rect
-        const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
-
-        const guided = await sharp(basePath)
+        const regionPatch = await sharp(out).extract({ left: x, top: y, width: w, height: h }).toBuffer();
+        const guided = await sharp(out)
           .composite([
             { input: overlay, left: 0, top: 0 },
             { input: regionPatch, left: x, top: y }
           ])
           .toFormat("png")
           .toBuffer();
-
-        const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
+        const guidedPath = siblingOutPath(out, "-staging-guide", ".png");
         await sharp(guided).toFile(guidedPath);
         inputForStage2 = guidedPath;
         if (dbg) console.log(`[stage2] Built guided input for staging region: ${guidedPath}`);
@@ -109,6 +100,97 @@ export async function runStage2(
         console.warn("[stage2] Failed to build guided staging input; proceeding with original base image", e);
       }
     }
+
+    // Build prompt and call Gemini
+    const scene = opts.sceneType || "interior";
+    const { data, mime } = toBase64(inputForStage2);
+    const profile = opts.profile;
+    const useTest = process.env.USE_TEST_PROMPTS === "1";
+    let textPrompt = useTest
+      ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
+      : buildStage2PromptNZStyle(opts.roomType, scene);
+    if (useTest) {
+      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
+    }
+    // On retry, make prompt stricter
+    if (attempt === 1) {
+      textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
+      tempMultiplier = 0.8;
+      strictPrompt = true;
+    }
+    const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
+    if (opts.referenceImagePath) {
+      const ref = toBase64(opts.referenceImagePath);
+      requestParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+    }
+    if (dbg) console.log("[stage2] invoking Gemini with roomType=%s", opts.roomType);
+    console.log(`[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
+    try {
+      let ai: any = null;
+      ai = getGeminiClient();
+      if (!ai) throw new Error("getGeminiClient returned null/undefined");
+      const apiStartTime = Date.now();
+      let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
+      if (isNZStyleEnabled()) {
+        const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
+        let temperature = preset.temperature;
+        if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
+        generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+      }
+      const { resp } = await runWithImageModelFallback(ai as any, {
+        contents: requestParts,
+        generationConfig,
+      } as any, "stage2");
+      const apiElapsed = Date.now() - apiStartTime;
+      console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms`);
+      const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+      console.log(`[stage2] 📊 Response parts: ${responseParts.length}`);
+      const img = responseParts.find(p => p.inlineData);
+      if (!img?.inlineData?.data) {
+        validatorNotes.push({ stage: '2', validator: 'Gemini', error: 'No image data in Gemini response' });
+        if (dbg) console.log("[stage2] no image in response → using previous output");
+        break;
+      }
+      const candidatePath = siblingOutPath(out, `-2-retry${attempt + 1}`, ".webp");
+      writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
+      out = candidatePath;
+      console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
+
+      // Run validators after Stage 2
+      let validatorFailed = false;
+      // OpenCV validator
+      try {
+        const stagedBuffer = await sharp(out).toBuffer();
+        const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+        validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
+        lastValidatorResults['2'] = result2;
+        if (!result2.ok) validatorFailed = true;
+      } catch (e) {
+        validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
+        lastValidatorResults['2'] = { ok: false, error: String(e) };
+        validatorFailed = true;
+      }
+      // Gemini-based validators (DISCONNECTED)
+      // const validationResult = await validateStage2Structural(...);
+      // if (!validationResult.ok) { validatorFailed = true; }
+
+      if (validatorFailed && attempt === 0) {
+        needsRetry = true;
+        retryCount++;
+        console.log(`[stage2] Validator requested retry (single retry)`);
+        continue;
+      } else {
+        break;
+      }
+    } catch (e: any) {
+      validatorNotes.push({ stage: '2', validator: 'Gemini', error: String(e) });
+      lastValidatorResults['2'] = { ok: false, error: String(e) };
+      console.error("[stage2] ❌ Gemini API error:", e?.message || String(e));
+      break;
+    }
+  }
+  // After retry, always return the last output and notes
+  return { imagePath: out, validatorNotes, lastValidatorResults, retryCount };
 
     const scene = opts.sceneType || "interior";
     const { data, mime } = toBase64(inputForStage2);

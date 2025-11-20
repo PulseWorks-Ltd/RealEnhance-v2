@@ -23,6 +23,11 @@ function buildStage1AExteriorPromptNZStyle(): string {
 
 export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
   if (sceneType === "exterior") return buildStage2ExteriorPromptNZStyle();
+  // Require roomType for interior staging
+  if (!roomType || typeof roomType !== 'string' || !roomType.trim()) {
+    // Fail gracefully: return a prompt indicating missing roomType
+    return '[ERROR] Room type is required for interior staging. Please select a valid room type.';
+  }
   return buildStage2InteriorPromptNZStyle(roomType);
 }
 
