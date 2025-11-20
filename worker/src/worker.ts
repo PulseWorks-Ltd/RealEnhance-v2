@@ -850,40 +850,42 @@ const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
-
     updateJob((payload as any).jobId, { status: "processing" });
-
     try {
-      if (payload.type === "enhance") {
-        return await handleEnhanceJob(payload as EnhanceJobPayload);
-      } else if (payload.type === "edit") {
-        return await handleEditJob(payload as EditJobPayload);
-      } else if (payload.type === "region-edit") {
-        const regionPayload = payload as RegionEditJobPayload;
-        // Region edit job handler
-        const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
-        // Download images to temp files if URLs
-        const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
-        let basePath = baseImageUrl;
-        if (mode === "restore" && baseImageUrl) {
-          basePath = baseImageUrl.startsWith("/tmp/") ? baseImageUrl : await downloadToTemp(baseImageUrl, jobId + "-region-base");
+      if (typeof payload === "object" && payload && "type" in payload) {
+        if (payload.type === "enhance") {
+          return await handleEnhanceJob(payload as EnhanceJobPayload);
+        } else if (payload.type === "edit") {
+          return await handleEditJob(payload as EditJobPayload);
+        } else if (payload.type === "region-edit") {
+          const regionPayload = payload as RegionEditJobPayload;
+          // Region edit job handler
+          const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
+          // Download images to temp files if URLs
+          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
+          let basePath = baseImageUrl;
+          if (mode === "restore" && baseImageUrl) {
+            basePath = baseImageUrl.startsWith("/tmp/") ? baseImageUrl : await downloadToTemp(baseImageUrl, jobId + "-region-base");
+          }
+          // Read mask as buffer
+          const maskBuf = await fs.promises.readFile(maskPath);
+          // Call applyEdit
+          const outPath = await (await import("./pipeline/editApply")).applyEdit({
+            baseImagePath: currentPath,
+            mask: maskBuf,
+            mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
+            instruction: prompt || "",
+            restoreFromPath: basePath
+          });
+          // Publish result
+          const pub = await publishImage(outPath);
+          updateJob(jobId, { status: "complete", resultUrl: pub.url });
+          return { ok: true, resultUrl: pub.url };
+        } else {
+          updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
         }
-        // Read mask as buffer
-        const maskBuf = await fs.promises.readFile(maskPath);
-        // Call applyEdit
-        const outPath = await (await import("./pipeline/editApply")).applyEdit({
-          baseImagePath: currentPath,
-          mask: maskBuf,
-          mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
-          instruction: prompt || "",
-          restoreFromPath: basePath
-        });
-        // Publish result
-        const pub = await publishImage(outPath);
-        updateJob(jobId, { status: "complete", resultUrl: pub.url });
-        return { ok: true, resultUrl: pub.url };
       } else {
-        updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
+        throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
       console.error("[worker] job failed", err);
