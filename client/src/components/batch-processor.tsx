@@ -320,47 +320,6 @@ export default function BatchProcessor() {
         setImageSkyReplacement({});
         setMetaByIndex({});
         setSelection(new Set());
-        // Run backend ML room type detection for each image
-        (async () => {
-          const detectedRoomTypes: Record<number, string> = {};
-          await Promise.all(files.map(async (file, i) => {
-            // Upload image to get a URL if needed
-            let imageUrl: string | undefined;
-            if ((file as any).url) {
-              imageUrl = (file as any).url;
-            } else {
-              // Upload to server to get a URL (assume api.upload returns { url })
-              const formData = new FormData();
-              formData.append('file', file);
-              try {
-                const resp = await apiFetch('/api/upload', {
-                  method: 'POST',
-                  body: formData
-                });
-                const data = await resp.json();
-                imageUrl = data.url;
-              } catch (e) {
-                imageUrl = undefined;
-              }
-            }
-            if (imageUrl) {
-              try {
-                const resp = await apiFetch('/api/room-type', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ imageUrl })
-                });
-                const data = await resp.json();
-                detectedRoomTypes[i] = data.roomType || 'auto';
-              } catch (e) {
-                detectedRoomTypes[i] = 'auto';
-              }
-            } else {
-              detectedRoomTypes[i] = 'auto';
-            }
-          }));
-          setImageRoomTypes(detectedRoomTypes);
-        })();
       }
       filesFingerprintRef.current = fp;
     }
@@ -437,87 +396,40 @@ export default function BatchProcessor() {
   }
 
   // Build metaJson to send with the batch request
-    const metaJson = useMemo(() => {
-      // meta: [{index, sameRoomKey?, followupAngle?, sceneType?, roomType?, replaceSky?}]
-      const arr: Array<{
-        index: number;
-        sameRoomKey?: string;
-        followupAngle?: boolean;
-        sceneType?: string;
-        roomType?: string;
-        replaceSky?: boolean;
-        temperature?: number;
-        topP?: number;
-        topK?: number;
-      }> = [];
-
-      // First pass: collect room linking info when linkImages is enabled
-      const roomTypeGroups: Record<string, number[]> = {};
-      if (linkImages) {
-        files.forEach((_, i) => {
-          const roomType = imageRoomTypes[i];
-          if (roomType && roomType !== "auto") {
-            if (!roomTypeGroups[roomType]) {
-              roomTypeGroups[roomType] = [];
-            }
-            roomTypeGroups[roomType].push(i);
-          }
-        });
+  // Build metaJson to send with the batch request
+  const metaJson = useMemo(() => {
+    // Build array of metadata for each image
+    const arr: any[] = [];
+    files.forEach((file, i) => {
+      const metaItem: any = { index: i };
+      // Room linking
+      if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
+      if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
+      // Scene type
+      const sceneType = imageSceneTypes[i] || "auto";
+      if (sceneType !== "auto") metaItem.sceneType = sceneType;
+      // Room type (only for interiors)
+      if (allowStaging && (sceneType !== "exterior")) {
+        const roomType = imageRoomTypes[i];
+        if (roomType) metaItem.roomType = roomType;
       }
-
-      files.forEach((_, i) => {
-        const m = metaByIndex[i];
-        const manualSameRoomKey = m?.roomKey;
-        const followupAngle = !!m?.angleOrder && m.angleOrder > 1;
-
-        // Always assign detected values if user hasn't overridden
-        let sceneType = imageSceneTypes[i];
-        if (!sceneType || sceneType === "auto") {
-          // Try to get detected value from backend result if available
-          const detectedScene = results[i]?.result?.meta?.sceneType || results[i]?.result?.meta?.scene?.label;
-          if (detectedScene) sceneType = detectedScene;
-        }
-        const includeSceneType = sceneType && sceneType !== "auto";
-
-        let roomType = imageRoomTypes[i];
-        if (!roomType || roomType === "auto") {
-          // Try to get detected value from backend result if available
-          const detectedRoom = results[i]?.result?.meta?.roomTypeDetected || results[i]?.result?.meta?.roomType;
-          if (detectedRoom) roomType = detectedRoom;
-        }
-        const includeRoomType = roomType && roomType !== "auto";
-
-        const isExterior = sceneType === "exterior";
-        const skyReplacementPref = imageSkyReplacement[i];
-        const replaceSky = skyReplacementPref !== undefined ? skyReplacementPref : isExterior;
-
-        let sameRoomKey = manualSameRoomKey;
-        if (!sameRoomKey && linkImages && includeRoomType) {
-          const groupForThisRoomType = roomTypeGroups[roomType];
-          if (groupForThisRoomType && groupForThisRoomType.length > 1) {
-            sameRoomKey = `auto-${roomType}`;
-          }
-        }
-
-        const tNum = samplingUiEnabled && temperatureInput.trim() ? Number(temperatureInput) : undefined;
-        const pNum = samplingUiEnabled && topPInput.trim() ? Number(topPInput) : undefined;
-        const kNum = samplingUiEnabled && topKInput.trim() ? Number(topKInput) : undefined;
-        const hasTuning = (samplingUiEnabled && (Number.isFinite(tNum) || Number.isFinite(pNum) || Number.isFinite(kNum)));
-        if (sameRoomKey || followupAngle || includeSceneType || includeRoomType || (isExterior && replaceSky !== undefined) || hasTuning) {
-          const metaItem: any = { index: i };
-          if (sameRoomKey) metaItem.sameRoomKey = sameRoomKey;
-          if (followupAngle) metaItem.followupAngle = followupAngle;
-          if (includeSceneType) metaItem.sceneType = sceneType;
-          if (includeRoomType) metaItem.roomType = roomType;
-          if (isExterior) metaItem.replaceSky = replaceSky;
-          if (samplingUiEnabled && Number.isFinite(tNum)) metaItem.temperature = tNum;
-          if (samplingUiEnabled && Number.isFinite(pNum)) metaItem.topP = pNum;
-          if (samplingUiEnabled && Number.isFinite(kNum)) metaItem.topK = kNum;
-          arr.push(metaItem);
-        }
-      });
-      return JSON.stringify(arr);
-    }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput, results]);
+      // Sky replacement (only for exteriors)
+      if (sceneType === "exterior" && imageSkyReplacement[i] !== undefined) {
+        metaItem.replaceSky = imageSkyReplacement[i];
+      }
+      // Tuning controls
+      if (samplingUiEnabled) {
+        const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
+        const pNum = topPInput.trim() ? Number(topPInput) : undefined;
+        const kNum = topKInput.trim() ? Number(topKInput) : undefined;
+        if (Number.isFinite(tNum)) metaItem.temperature = tNum;
+        if (Number.isFinite(pNum)) metaItem.topP = pNum;
+        if (Number.isFinite(kNum)) metaItem.topK = kNum;
+      }
+      arr.push(metaItem);
+    });
+    return JSON.stringify(arr);
+  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -1138,6 +1050,25 @@ export default function BatchProcessor() {
     if (!files.length) {
       alert("Please choose images first.");
       return;
+    }
+
+    // NEW: if staging is enabled, ensure every interior image has a room type selected
+    if (allowStaging) {
+      const missing: number[] = [];
+      files.forEach((_, index) => {
+        const scene = imageSceneTypes[index] || "interior"; // default to interior if unset
+        const isInterior = scene !== "exterior";
+        if (isInterior && !imageRoomTypes[index]) {
+          missing.push(index + 1);
+        }
+      });
+      if (missing.length) {
+        alert(
+          `Please select a room type for image(s): ${missing.join(", ")} before running staging.`
+        );
+        setActiveTab("images");
+        return;
+      }
     }
 
     // Calculate credits needed based on two-stage system:
@@ -2502,43 +2433,50 @@ export default function BatchProcessor() {
                   )}
 
                   {/* Room Type Dropdown */}
-                  <div className="mb-4">
-                    <label className="block text-gray-300 text-xs font-medium mb-2">
-                      Room Type
-                    </label>
-                    <select
-                      value={imageRoomTypes[index] || "auto"}
-                      onChange={(e) => setImageRoomTypes(prev => ({ ...prev, [index]: e.target.value }))}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      data-testid={`select-room-${index}`}
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="bedroom-1">Bedroom 1</option>
-                      <option value="bedroom-2">Bedroom 2</option>
-                      <option value="bedroom-3">Bedroom 3</option>
-                      <option value="kitchen">Kitchen</option>
-                      <option value="living-room">Living Room</option>
-                      <option value="multiple-living-areas">Multiple Living Areas</option>
-                      <option value="dining-room">Dining Room</option>
-                      <option value="study">Study</option>
-                      <option value="office">Office</option>
-                      <option value="bathroom-1">Bathroom 1</option>
-                      <option value="bathroom-2">Bathroom 2</option>
-                      <option value="laundry">Laundry</option>
-                      <option value="garden">Garden</option>
-                      <option value="patio">Patio</option>
-                      <option value="deck">Deck</option>
-                      <option value="balcony">Balcony</option>
-                      <option value="garage">Garage</option>
-                      <option value="basement">Basement</option>
-                      <option value="attic">Attic</option>
-                      <option value="hallway">Hallway</option>
-                      <option value="staircase">Staircase</option>
-                      <option value="entryway">Entryway</option>
-                      <option value="closet">Closet</option>
-                      <option value="pantry">Pantry</option>
-                    </select>
-                  </div>
+                  {/* Room Type Dropdown – only for interior images when staging is enabled */}
+                  {allowStaging && (imageSceneTypes[index] || "interior") !== "exterior" && (
+                    <div className="mb-4">
+                      <label className="block text-gray-300 text-xs font-medium mb-2">
+                        Room Type
+                      </label>
+                      <select
+                        value={imageRoomTypes[index] || ""}
+                        onChange={(e) =>
+                          setImageRoomTypes((prev) => ({ ...prev, [index]: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        data-testid={`select-room-${index}`}
+                      >
+                        <option value="" disabled>
+                          Select room type…
+                        </option>
+                        <option value="bedroom-1">Bedroom 1</option>
+                        <option value="bedroom-2">Bedroom 2</option>
+                        <option value="bedroom-3">Bedroom 3</option>
+                        <option value="kitchen">Kitchen</option>
+                        <option value="living-room">Living Room</option>
+                        <option value="multi-living">Multiple Living Areas</option>
+                        <option value="dining-room">Dining Room</option>
+                        <option value="study">Study</option>
+                        <option value="office">Office</option>
+                        <option value="bathroom-1">Bathroom 1</option>
+                        <option value="bathroom-2">Bathroom 2</option>
+                        <option value="laundry">Laundry</option>
+                        <option value="garden">Garden</option>
+                        <option value="patio">Patio</option>
+                        <option value="deck">Deck</option>
+                        <option value="balcony">Balcony</option>
+                        <option value="garage">Garage</option>
+                        <option value="basement">Basement</option>
+                        <option value="attic">Attic</option>
+                        <option value="hallway">Hallway</option>
+                        <option value="staircase">Staircase</option>
+                        <option value="entryway">Entryway</option>
+                        <option value="closet">Closet</option>
+                        <option value="pantry">Pantry</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

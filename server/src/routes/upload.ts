@@ -85,6 +85,30 @@ export function uploadRouter() {
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
 
+
+    // Server-side validation: if staging is enabled, every interior image must have a valid roomType
+    if (allowStagingForm) {
+      const missingRoomType: number[] = [];
+      for (let i = 0; i < files.length; i++) {
+        // Determine sceneType and roomType from metaJson or options
+        const meta = metaByIndex[i] || {};
+        const sceneType = meta.sceneType || (optionsList[i]?.sceneType) || "auto";
+        const roomType = meta.roomType || (optionsList[i]?.roomType);
+        if (sceneType !== "exterior") {
+          // Must have a non-empty roomType string
+          if (!roomType || typeof roomType !== "string" || !roomType.trim()) {
+            missingRoomType.push(i + 1);
+          }
+        }
+      }
+      if (missingRoomType.length) {
+        return res.status(400).json({
+          error: "missing_room_type",
+          message: `Room type is required for interior image(s): ${missingRoomType.join(", ")}`
+        });
+      }
+    }
+
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const hasPerItemOptions = !!optionsList[i];
@@ -93,7 +117,6 @@ export function uploadRouter() {
         roomType: "unknown",
         sceneType: "auto",
       };
-      
       // Merge metadata from metaJson if available
       const meta = metaByIndex[i] || {};
       if (meta.sceneType) opts.sceneType = meta.sceneType;
@@ -118,19 +141,16 @@ export function uploadRouter() {
           opts.declutterIntensity = s;
         }
       }
-
       // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging
       if (!hasPerItemOptions || opts.virtualStage === undefined) {
         opts.virtualStage = allowStagingForm;
       }
-
       // If no per-item declutter provided, inherit from form-level declutter
       try { console.log(`[upload] item ${i} before declutter assign: hasPerItemOptions=${hasPerItemOptions} opts.declutter=${opts.declutter} declutterForm=${declutterForm}`); } catch {}
       if (!hasPerItemOptions || opts.declutter === undefined) {
         opts.declutter = declutterForm;
       }
       try { console.log(`[upload] item ${i} after declutter assign: opts.declutter=${opts.declutter}`); } catch {}
-
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
       if (opts.sceneType === "exterior" && opts.replaceSky === undefined) {
