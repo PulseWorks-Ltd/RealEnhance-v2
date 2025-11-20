@@ -566,15 +566,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     if (compliance && compliance.ok === false) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+      // Log the compliance failure, but DO NOT block publishing the image
       updateJob(payload.jobId, {
-        status: "error",
+        status: "complete", // Mark as complete so UI receives the image
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
-        message: "Image enhancement failed after 3 attempts due to structural violations.",
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance }
+        message: "Image enhancement completed after 1 retry, but failed compliance validation.",
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance, complianceFailed: true }
       });
-      console.error(`[worker] ❌ Job ${payload.jobId} failed compliance after retries: ${lastViolationMsg}`);
-      return;
+      console.warn(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
+      // Do NOT return; continue so image is published
     }
   } catch (e) {
     // proceed if Gemini not configured or any error
