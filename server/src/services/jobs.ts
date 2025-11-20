@@ -1,3 +1,46 @@
+// region edit job
+export async function enqueueRegionEditJob(params: {
+  userId: UserId;
+  mode: "add" | "remove" | "restore";
+  prompt?: string;
+  currentImageUrl: string;
+  baseImageUrl?: string;
+  maskPath: string;
+  imageIndex?: number;
+}) {
+  const jobId: JobId = "job_" + crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const payload: AnyJobPayload = {
+    jobId,
+    userId: params.userId,
+    type: "region-edit",
+    mode: params.mode,
+    prompt: params.prompt,
+    currentImageUrl: params.currentImageUrl,
+    baseImageUrl: params.baseImageUrl,
+    maskPath: params.maskPath,
+    imageIndex: params.imageIndex,
+    createdAt: now,
+  } as any;
+
+  const state = loadAll();
+  state[jobId] = {
+    id: jobId,
+    jobId,
+    userId: params.userId,
+    type: "region-edit",
+    status: "queued",
+    payload,
+    createdAt: now,
+    updatedAt: now,
+  };
+  saveAll(state);
+
+  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  // Simulate immediate result for now
+  return { jobId, imageUrl: `/api/images/${jobId}.webp` };
+}
 import * as crypto from "node:crypto";
 import { Queue } from "bullmq";
 import type {

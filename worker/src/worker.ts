@@ -857,6 +857,29 @@ const worker = new Worker(
         return await handleEnhanceJob(payload as any);
       } else if (payload.type === "edit") {
         return await handleEditJob(payload as any);
+      } else if (payload.type === "region-edit") {
+        // Region edit job handler
+        const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = payload as any;
+        // Download images to temp files if URLs
+        const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
+        let basePath = baseImageUrl;
+        if (mode === "restore" && baseImageUrl) {
+          basePath = baseImageUrl.startsWith("/tmp/") ? baseImageUrl : await downloadToTemp(baseImageUrl, jobId + "-region-base");
+        }
+        // Read mask as buffer
+        const maskBuf = await fs.promises.readFile(maskPath);
+        // Call applyEdit
+        const outPath = await (await import("./pipeline/editApply")).applyEdit({
+          baseImagePath: currentPath,
+          mask: maskBuf,
+          mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
+          instruction: prompt || "",
+          restoreFromPath: basePath
+        });
+        // Publish result
+        const pub = await publishImage(outPath);
+        updateJob(jobId, { status: "complete", resultUrl: pub.url });
+        return { ok: true, resultUrl: pub.url };
       } else {
         updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
       }
