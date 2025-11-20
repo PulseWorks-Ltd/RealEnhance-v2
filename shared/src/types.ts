@@ -1,3 +1,14 @@
+export interface RegionEditJobPayload {
+  jobId: JobId;
+  userId: UserId;
+  imageId: ImageId;
+  type: "region-edit";
+  baseVersionId: string;
+  mode: "Add" | "Remove" | "Restore";
+  instruction?: string;
+  mask: unknown;
+  createdAt: string;
+}
 export type UserId = string;
 export type ImageId = string;
 export type JobId = string;
@@ -84,7 +95,7 @@ export interface EditJobPayload {
   createdAt: string;
 }
 
-export type AnyJobPayload = EnhanceJobPayload | EditJobPayload;
+export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
 
 export interface JobRecord {
   jobId: JobId;
