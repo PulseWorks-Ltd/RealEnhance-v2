@@ -2975,28 +2975,26 @@ export default function BatchProcessor() {
         </Modal>
       )}
 
-      {/* RegionEditor Modal */}
+      {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && (
-        <RegionEditor
-          open={regionEditorOpen}
-          imageIndex={editingImageIndex}
-          imageUrl={getDisplayUrl(results[editingImageIndex])}
-          baseImageUrl={
-            results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl ||
-            results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl
-          }
-          onClose={() => {
-            setRegionEditorOpen(false);
-            setEditingImageIndex(null);
-          }}
-          onUpdated={async (imageIndex, newUrl) => {
-            // TODO: Call handleRegionEdit with mask, mode, prompt
-            // For now, just close modal
-            setRegionEditorOpen(false);
-            setEditingImageIndex(null);
-          }}
-        />
-      )}
+        <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
+          <RegionEditor
+            initialImageUrl={getDisplayUrl(results[editingImageIndex])}
+            originalImageUrl={results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl}
+            onComplete={async (result) => {
+              // Call handleRegionEdit with mask, mode, instructions
+              // You may need to adapt this to your handleRegionEdit logic
+              setRegionEditorOpen(false);
+              setEditingImageIndex(null);
+              // Optionally update results state with new image
+            }}
+            onCancel={() => {
+              setRegionEditorOpen(false);
+              setEditingImageIndex(null);
+            }}
+          />
+        </Modal>
+      )
 
       {/* Retry Dialog */}
       <RetryDialog
