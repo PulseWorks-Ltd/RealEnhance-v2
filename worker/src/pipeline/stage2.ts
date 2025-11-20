@@ -189,5 +189,6 @@ export async function runStage2(
       break;
     }
   }
-  }
   // After retry, always return the last output and notes
+  return out;
+}
