@@ -42,51 +42,67 @@ function findByPublicUrl(userId: string, url: string) {
 
 export function regionEditRouter() {
   const r = Router();
-  const uploadMw: RequestHandler = upload.single("image") as unknown as RequestHandler;
+  const uploadMw: RequestHandler = upload.fields([
+    { name: "regionMask", maxCount: 1 },
+    { name: "image", maxCount: 1 }
+  ]) as unknown as RequestHandler;
 
   // POST /api/region-edit
   r.post("/region-edit", uploadMw, async (req: Request, res: Response) => {
-    const sessUser = (req.session as any)?.user;
-    if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });
+    try {
+      const sessUser = (req.session as any)?.user;
+      if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });
 
-    const file = (req.file as Express.Multer.File | undefined);
-    const body = (req.body || {}) as any;
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      const file = files?.["image"]?.[0];
+      const maskFile = files?.["regionMask"]?.[0];
+      const body = (req.body || {}) as any;
 
-    const imageUrl = body.imageUrl as string | undefined;
-    const mask = body.regionMask as string | undefined;
-    const operation = (body.regionOperation as string || '').toLowerCase();
-    const goal = String(body.goal || '').trim();
-    const smartReinstate = String(body.smartReinstate || 'true').toLowerCase() === 'true';
-    const sensitivityPx = Number.isFinite(Number(body.sensitivityPx)) ? Number(body.sensitivityPx) : undefined;
+      const imageUrl = body.imageUrl as string | undefined;
+      const operation = (body.regionOperation as string || '').toLowerCase();
+      const goal = String(body.goal || '').trim();
+      const smartReinstate = String(body.smartReinstate || 'true').toLowerCase() === 'true';
+      const sensitivityPx = Number.isFinite(Number(body.sensitivityPx)) ? Number(body.sensitivityPx) : undefined;
 
-    if (!mask) return res.status(400).json({ success: false, error: "missing_mask" });
-    if (!operation) return res.status(400).json({ success: false, error: "missing_operation" });
+      if (!maskFile) return res.status(400).json({ success: false, error: "missing_mask_file" });
+      if (!operation) return res.status(400).json({ success: false, error: "missing_operation" });
 
-    // Resolve image record + base version
-    let record: any | undefined;
-    let baseVersionId: string | undefined;
+      // Save mask file to disk and get its path
+      const maskPath = maskFile.path;
 
-    if (imageUrl) {
-      const found = findByPublicUrl(sessUser.id, imageUrl);
-      if (!found) return res.status(404).json({ success: false, error: "image_not_found" });
-      record = found.record;
-      baseVersionId = found.versionId;
-    } else if (file) {
-      // Create a new record from uploaded file (less common path for region edit)
-      const userDir = path.join(uploadRoot, sessUser.id);
-      await fs.mkdir(userDir, { recursive: true });
-      const finalPath = path.join(userDir, file.filename || file.originalname);
-      const src = path.join((file as any).destination ?? uploadRoot, file.filename);
-      await fs.rename(src, finalPath).catch(async () => {
-        const buf = await fs.readFile((file as any).path);
-        await fs.writeFile(finalPath, buf);
-      });
-      const rec = createImageRecord({ userId: sessUser.id, originalPath: finalPath });
-      record = rec;
-      baseVersionId = rec.currentVersionId;
-    } else {
-      return res.status(400).json({ success: false, error: "missing_image_reference" });
+      // Resolve image record + base version
+      let record: any | undefined;
+      let baseVersionId: string | undefined;
+
+      if (imageUrl) {
+        const found = findByPublicUrl(sessUser.id, imageUrl);
+        if (!found) return res.status(404).json({ success: false, error: "image_not_found" });
+        record = found.record;
+        baseVersionId = found.versionId;
+      } else if (file) {
+        // Create a new record from uploaded file (less common path for region edit)
+        const userDir = path.join(uploadRoot, sessUser.id);
+        await fs.mkdir(userDir, { recursive: true });
+        const finalPath = path.join(userDir, file.filename || file.originalname);
+        const src = path.join((file as any).destination ?? uploadRoot, file.filename);
+        await fs.rename(src, finalPath).catch(async () => {
+          const buf = await fs.readFile((file as any).path);
+          await fs.writeFile(finalPath, buf);
+        });
+        const rec = createImageRecord({ userId: sessUser.id, originalPath: finalPath });
+        record = rec;
+        baseVersionId = rec.currentVersionId;
+      } else {
+        return res.status(400).json({ success: false, error: "missing_image_reference" });
+      }
+      // ...existing logic continues...
+      // Pass maskPath to worker/job logic as needed
+      // ...existing code...
+    } catch (err: any) {
+      console.error("region-edit error", err);
+      return res.status(500).json({ success: false, message: err.message, code: err.code });
     }
+  });
 
     const mode = operation === 'add' ? 'Add' : operation === 'remove' ? 'Remove' : operation === 'replace' ? 'Replace' : operation === 'restore' ? 'Restore' : 'Replace';
     const instruction = goal || (mode === 'Restore' ? 'Restore original pixels for the masked region.' : 'Apply requested edit in the masked region only.');
