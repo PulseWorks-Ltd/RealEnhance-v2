@@ -22,6 +22,7 @@ export async function runStage2(
     angleHint?: "primary" | "secondary" | "other";
     referenceImagePath?: string;
     stagingRegion?: StagingRegion | null;
+    stagingStyle?: string;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
   }
@@ -109,6 +110,9 @@ export async function runStage2(
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
       : buildStage2PromptNZStyle(opts.roomType, scene);
+    if (opts.stagingStyle) {
+      textPrompt += `\n\n[STAGING STYLE: ${opts.stagingStyle}] Please apply a ${opts.stagingStyle} style to the staged furniture and decor.`;
+    }
     if (useTest) {
       textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
     }

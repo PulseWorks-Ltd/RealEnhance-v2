@@ -63,6 +63,8 @@ export function regionEditRouter() {
       const goal = String(body.goal || '').trim();
       const smartReinstate = String(body.smartReinstate || 'true').toLowerCase() === 'true';
       const sensitivityPx = Number.isFinite(Number(body.sensitivityPx)) ? Number(body.sensitivityPx) : undefined;
+      const allowStaging = String(body.allowStaging || 'false').toLowerCase() === 'true';
+      const stagingStyle = String(body.stagingStyle || '').trim();
 
       if (!maskFile) return res.status(400).json({ success: false, error: "missing_mask_file" });
       if (!operation) return res.status(400).json({ success: false, error: "missing_operation" });
@@ -155,6 +157,8 @@ export function regionEditRouter() {
         mask: maskPath,
         remoteBaseUrl,
         remoteRestoreUrl,
+        allowStaging,
+        stagingStyle,
       });
 
       const started = Date.now();
