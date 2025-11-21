@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
 interface RegionEditorProps {
-  onComplete?: (result: { imageUrl: string; originalUrl: string; maskUrl: string }) => void;
+  onComplete?: (result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => void;
   onCancel?: () => void;
   onStart?: () => void;  // Called when processing starts (for immediate UI feedback)
   onError?: () => void;  // Called when processing fails
@@ -28,13 +28,13 @@ interface RegionEditResult {
   maskUrl?: string;
   creditsUsed: number;
   error?: string;
-  mode?: "staged" | "polish-only";
+  mode?: string;
 }
 
 export function RegionEditor({ onComplete, onCancel, onStart, onError, initialImageUrl, originalImageUrl, initialGoal, initialIndustry }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl || null);
-  const [maskData, setMaskData] = useState<string | null>(null);
+  const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
   const [operation, setOperation] = useState<"add" | "remove" | "replace" | "enhance" | "restore" | "">("");
@@ -398,10 +398,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       autoFillEnclosedAreas(canvas);
       
       // Export mask at correct dimensions (not DPR-scaled)
-      const maskDataUrl = exportMaskAtCorrectSize(canvas);
-      setMaskData(maskDataUrl);
+      canvas.toBlob((blob) => {
+        setMaskData(blob);
+      }, 'image/png');
     }, 100); // Small delay to ensure drawing is complete
-  }, [autoFillEnclosedAreas, exportMaskAtCorrectSize]);
+  }, [autoFillEnclosedAreas]);
 
   // Combined mouse event handler
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -467,12 +468,12 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       onCancel?.();
     },
     onSuccess: (result) => {
-      if (result.success && result.imageUrl && result.originalUrl && result.maskUrl) {
-        // Don't show toast here - batch-processor handles it when image loads
+      if (result.success && result.imageUrl) {
         onComplete?.({ 
           imageUrl: result.imageUrl!, 
-          originalUrl: result.originalUrl!, 
-          maskUrl: result.maskUrl! 
+          originalUrl: result.originalUrl || "", 
+          maskUrl: result.maskUrl || "", 
+          mode: result.mode || ""
         });
       } else {
         toast({ 
@@ -480,7 +481,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           description: result.error || "Unknown error", 
           variant: "destructive" 
         });
-        onError?.(); // Signal processing failed
+        onError?.();
       }
     },
     onError: (error) => {
@@ -561,7 +562,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("allowRetouch", "true");
     
     if (hasMask) {
-      formData.append("regionMask", maskData);
+      if (maskData) {
+        formData.append("regionMask", maskData);
+      }
       formData.append("regionOperation", operation);
       formData.append("smartReinstate", smartReinstate.toString());
     }
