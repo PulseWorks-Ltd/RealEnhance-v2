@@ -1419,7 +1419,74 @@ export default function BatchProcessor() {
     const latestEnhancedUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex] || results[imageIndex]?.imageUrl;
     // Pass latestEnhancedUrl to RegionEditor modal as imageUrl prop
     // (Assume modal is rendered below with correct props)
-    // handleRegionEdit logic unchanged, just ensure modal preview uses latestEnhancedUrl
+    // Patch: update handleRegionEdit to use regionMask and regionOperation
+    const handleRegionEdit = async (
+      imageIndex: number,
+      options: {
+        mode: "add" | "remove" | "restore";
+        prompt?: string;
+        mask: Blob;
+      }
+    ) => {
+      try {
+        await ensureLoggedInAndCredits(1);
+        const currentImageUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex];
+        const baseImageUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl || results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+        const fd = new FormData();
+        fd.append("regionOperation", options.mode);
+        if (options.prompt) fd.append("goal", options.prompt);
+        fd.append("regionMask", options.mask);
+        fd.append("imageUrl", currentImageUrl);
+        if (baseImageUrl) fd.append("baseImageUrl", baseImageUrl);
+        fd.append("imageIndex", String(imageIndex));
+        const resp = await fetch("/api/region-edit", {
+          method: "POST",
+          body: fd,
+          credentials: "include"
+        });
+        if (!resp.ok) {
+          throw new Error("Region edit failed");
+        }
+        const data = await resp.json();
+        if (data.success && data.imageUrl) {
+          // Preserve original/quality URLs
+          const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+          const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+          setResults(prev => prev.map((r, i) =>
+            i === imageIndex ? {
+              ...r,
+              image: data.imageUrl,
+              imageUrl: data.imageUrl,
+              version: Date.now(),
+              mode: options.mode,
+              originalImageUrl: preservedOriginalUrl,
+              qualityEnhancedUrl: preservedQualityEnhancedUrl,
+              result: {
+                image: data.imageUrl,
+                imageUrl: data.imageUrl,
+                originalImageUrl: preservedOriginalUrl,
+                qualityEnhancedUrl: preservedQualityEnhancedUrl
+              },
+              error: null,
+              filename: r?.filename
+            } : r
+          ));
+          setProcessedImagesByIndex(prev => ({ ...prev, [imageIndex]: data.imageUrl }));
+          setProcessedImages(prev => {
+            const newSet = new Set(prev);
+            newSet.add(data.imageUrl);
+            return Array.from(newSet);
+          });
+          await refreshUser();
+        }
+      } catch (e) {
+        // Optionally surface error
+        console.error("Region edit error", e);
+      } finally {
+        setRegionEditorOpen(false);
+        setEditingImageIndex(null);
+      }
+    };
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
