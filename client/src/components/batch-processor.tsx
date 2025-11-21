@@ -1,4 +1,4 @@
-  // Client-side stub for room type detection (replace with real logic as needed)
+// Client-side stub for room type detection (replace with real logic as needed)
   // Replaced by backend ML API call below
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { withDevice } from "@/lib/withDevice";
@@ -1416,77 +1416,12 @@ export default function BatchProcessor() {
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
     // Always use the latest enhanced image for modal preview
+    // Use result.imageUrl if available, fallback to processedImagesByIndex, then results.imageUrl
     const latestEnhancedUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex] || results[imageIndex]?.imageUrl;
-    // Pass latestEnhancedUrl to RegionEditor modal as imageUrl prop
-    // (Assume modal is rendered below with correct props)
-    // Patch: update handleRegionEdit to use regionMask and regionOperation
-    const handleRegionEdit = async (
-      imageIndex: number,
-      options: {
-        mode: "add" | "remove" | "restore";
-        prompt?: string;
-        mask: Blob;
-      }
-    ) => {
-      try {
-        await ensureLoggedInAndCredits(1);
-        const currentImageUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex];
-        const baseImageUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl || results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-        const fd = new FormData();
-        fd.append("regionOperation", options.mode);
-        if (options.prompt) fd.append("goal", options.prompt);
-        fd.append("regionMask", options.mask);
-        fd.append("imageUrl", currentImageUrl);
-        if (baseImageUrl) fd.append("baseImageUrl", baseImageUrl);
-        fd.append("imageIndex", String(imageIndex));
-        const resp = await fetch("/api/region-edit", {
-          method: "POST",
-          body: fd,
-          credentials: "include"
-        });
-        if (!resp.ok) {
-          throw new Error("Region edit failed");
-        }
-        const data = await resp.json();
-        if (data.success && data.imageUrl) {
-          // Preserve original/quality URLs
-          const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-          const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
-          setResults(prev => prev.map((r, i) =>
-            i === imageIndex ? {
-              ...r,
-              image: data.imageUrl,
-              imageUrl: data.imageUrl,
-              version: Date.now(),
-              mode: options.mode,
-              originalImageUrl: preservedOriginalUrl,
-              qualityEnhancedUrl: preservedQualityEnhancedUrl,
-              result: {
-                image: data.imageUrl,
-                imageUrl: data.imageUrl,
-                originalImageUrl: preservedOriginalUrl,
-                qualityEnhancedUrl: preservedQualityEnhancedUrl
-              },
-              error: null,
-              filename: r?.filename
-            } : r
-          ));
-          setProcessedImagesByIndex(prev => ({ ...prev, [imageIndex]: data.imageUrl }));
-          setProcessedImages(prev => {
-            const newSet = new Set(prev);
-            newSet.add(data.imageUrl);
-            return Array.from(newSet);
-          });
-          await refreshUser();
-        }
-      } catch (e) {
-        // Optionally surface error
-        console.error("Region edit error", e);
-      } finally {
-        setRegionEditorOpen(false);
-        setEditingImageIndex(null);
-      }
-    };
+    // Wire RegionEditor modal props below
+    // The modal should call onComplete with the new imageUrl, which updates results
+    // The handleRegionEdit logic is now handled inside RegionEditor via mutation
+    // Pass latestEnhancedUrl and originalImageUrl to RegionEditor
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
@@ -1778,10 +1713,9 @@ export default function BatchProcessor() {
       
       const response = await fetch(api("/api/batch/refine"), {
         method: "POST",
-        headers: {
+               headers: {
           "Content-Type": "application/json",
-          ...withDevice().headers
-        },
+          ...withDevice().headers        },
         credentials: "include",
         body: JSON.stringify({ 
           imageUrlsWithIndex: Object.entries(processedImagesByIndex).map(([index, url]) => ({index: parseInt(index), url})),
@@ -2981,8 +2915,41 @@ export default function BatchProcessor() {
       {regionEditorOpen && editingImageIndex !== null && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
-            initialImageUrl={getDisplayUrl(results[editingImageIndex])}
-            onComplete={async (result) => {
+            initialImageUrl={getDisplayUrl(results[editingImageIndex]) || undefined}
+            originalImageUrl={results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl || results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl}
+            initialGoal={globalGoal}
+            initialIndustry={industryMap[presetKey] || "Real Estate"}
+            onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
+              if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
+                const preservedOriginalUrl = results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl;
+                const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
+                setResults(prev => prev.map((r, i) =>
+                  i === editingImageIndex ? {
+                    ...r,
+                    image: result.imageUrl,
+                    imageUrl: result.imageUrl,
+                    version: Date.now(),
+                    mode: result.mode,
+                    originalImageUrl: preservedOriginalUrl,
+                    qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    result: {
+                      image: result.imageUrl,
+                      imageUrl: result.imageUrl,
+                      originalImageUrl: preservedOriginalUrl,
+                      qualityEnhancedUrl: preservedQualityEnhancedUrl
+                    },
+                    error: null,
+                    filename: r?.filename
+                  } : r
+                ));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(editingImageIndex)]: result.imageUrl }));
+                setProcessedImages(prev => {
+                  const newSet = new Set(prev);
+                  newSet.add(result.imageUrl);
+                  return Array.from(newSet);
+                });
+              }
+              refreshUser();
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
             }}
