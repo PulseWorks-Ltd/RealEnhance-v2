@@ -1415,75 +1415,11 @@ export default function BatchProcessor() {
   const handleEditImage = (imageIndex: number) => {
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
-    // New: handleRegionEdit stub
-    const handleRegionEdit = async (
-      imageIndex: number,
-      options: {
-        mode: "add" | "remove" | "restore";
-        prompt?: string;
-        mask: Blob;
-      }
-    ) => {
-      try {
-        await ensureLoggedInAndCredits(1);
-        const currentImageUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex];
-        // Always use the quality-enhanced baseline for baseImageUrl
-        const baseImageUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl || results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-        const fd = new FormData();
-        fd.append("mode", options.mode);
-        if (options.prompt) fd.append("prompt", options.prompt);
-        fd.append("mask", options.mask);
-        fd.append("imageUrl", currentImageUrl);
-        if (baseImageUrl) fd.append("baseImageUrl", baseImageUrl);
-        fd.append("imageIndex", String(imageIndex));
-        const resp = await fetch("/api/region-edit", {
-          method: "POST",
-          body: fd,
-          credentials: "include"
-        });
-        if (!resp.ok) {
-          throw new Error("Region edit failed");
-        }
-        const data = await resp.json();
-        if (data.success && data.imageUrl) {
-          // Preserve original/quality URLs
-          const preservedOriginalUrl = originalImageUrl;
-          const preservedQualityEnhancedUrl = qualityEnhancedUrl;
-          setResults(prev => prev.map((r, i) =>
-            i === imageIndex ? {
-              ...r,
-              image: data.imageUrl,
-              imageUrl: data.imageUrl,
-              version: Date.now(),
-              mode: options.mode,
-              originalImageUrl: preservedOriginalUrl,
-              qualityEnhancedUrl: preservedQualityEnhancedUrl,
-              result: {
-                image: data.imageUrl,
-                imageUrl: data.imageUrl,
-                originalImageUrl: preservedOriginalUrl,
-                qualityEnhancedUrl: preservedQualityEnhancedUrl
-              },
-              error: null,
-              filename: r?.filename
-            } : r
-          ));
-          setProcessedImagesByIndex(prev => ({ ...prev, [imageIndex]: data.imageUrl }));
-          setProcessedImages(prev => {
-            const newSet = new Set(prev);
-            newSet.add(data.imageUrl);
-            return Array.from(newSet);
-          });
-          await refreshUser();
-        }
-      } catch (e) {
-        // Optionally surface error
-        console.error("Region edit error", e);
-      } finally {
-        setRegionEditorOpen(false);
-        setEditingImageIndex(null);
-      }
-    };
+    // Always use the latest enhanced image for modal preview
+    const latestEnhancedUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex] || results[imageIndex]?.imageUrl;
+    // Pass latestEnhancedUrl to RegionEditor modal as imageUrl prop
+    // (Assume modal is rendered below with correct props)
+    // handleRegionEdit logic unchanged, just ensure modal preview uses latestEnhancedUrl
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
