@@ -46,6 +46,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  // Staging style dropdown state
+  const [stagingEnabled, setStagingEnabled] = useState(false);
+  const [stagingStyle, setStagingStyle] = useState<string>("Modern");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -558,9 +561,10 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("industry", industry);
     formData.append("sceneType", sceneType);
     formData.append("preserveStructure", "true");
-    formData.append("allowStaging", "true");
+    formData.append("allowStaging", stagingEnabled ? "true" : "false");
+    formData.append("stagingStyle", stagingEnabled ? stagingStyle : "");
     formData.append("allowRetouch", "true");
-    
+
     if (hasMask) {
       if (maskData) {
         formData.append("regionMask", maskData);
@@ -568,7 +572,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       formData.append("regionOperation", operation);
       formData.append("smartReinstate", smartReinstate.toString());
     }
-    
+
     regionEditMutation.mutate(formData);
   }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, operation, smartReinstate, regionEditMutation, toast]);
 
@@ -789,6 +793,37 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             <span>Required for enhancing to commence</span>
           </div>
         )}
+
+        {/* Staging Style Selection */}
+        <div className="flex items-center space-x-2 mt-4">
+          <input
+            type="checkbox"
+            id="enable-staging"
+            checked={stagingEnabled}
+            onChange={(e) => setStagingEnabled(e.target.checked)}
+            className="rounded"
+            data-testid="checkbox-enable-staging"
+          />
+          <Label htmlFor="enable-staging">Enable Staging</Label>
+          {stagingEnabled && (
+            <div className="ml-4 w-48">
+              <Label htmlFor="staging-style" className="text-base font-medium">Staging Style</Label>
+              <Select value={stagingStyle} onValueChange={setStagingStyle}>
+                <SelectTrigger data-testid="select-staging-style">
+                  <SelectValue placeholder="Choose Style" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Modern">Modern</SelectItem>
+                  <SelectItem value="Contemporary">Contemporary</SelectItem>
+                  <SelectItem value="Minimalist">Minimalist</SelectItem>
+                  <SelectItem value="Scandinavian">Scandinavian</SelectItem>
+                  <SelectItem value="Traditional">Traditional</SelectItem>
+                  <SelectItem value="Industrial">Industrial</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Action Buttons */}
