@@ -134,42 +134,46 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                 </div>
                 <input
                   type="range"
-                  <div>
-                    <Label htmlFor="room-type" className="text-sm font-medium">
-                      Room Type <span className="text-red-500">*</span>
-                    </Label>
-                    <Select value={roomType} onValueChange={setRoomType}>
-                      <SelectTrigger data-testid="select-retry-room-type">
-                        <SelectValue placeholder="Select room type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Select room type</SelectItem>
-                        <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
-                        <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
-                        <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
-                        <SelectItem value="kitchen">Kitchen</SelectItem>
-                        <SelectItem value="living-room">Living Room</SelectItem>
-                        <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
-                        <SelectItem value="dining-room">Dining Room</SelectItem>
-                        <SelectItem value="study">Study</SelectItem>
-                        <SelectItem value="office">Office</SelectItem>
-                        <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
-                        <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
-                        <SelectItem value="garage">Garage</SelectItem>
-                        <SelectItem value="laundry">Laundry</SelectItem>
-                        <SelectItem value="outdoor">Outdoor</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
-            <Textarea
-              id="custom-instructions"
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="Example: 'Add more furniture', 'Brighter lighting', 'Different staging style'..."
-              rows={3}
-              data-testid="textarea-retry-instructions"
-            />
+                  min="0"
+                  max="100"
+                  value={sliderPosition}
+                  onChange={(e) => setSliderPosition(Number(e.target.value))}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-20"
+                  data-testid="slider-retry-preview"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Room Type Dropdown (Required) */}
+          <div>
+            <Label htmlFor="room-type" className="text-sm font-medium">
+              Room Type <span className="text-red-500">*</span>
+            </Label>
+            <Select value={roomType} onValueChange={setRoomType}>
+              <SelectTrigger data-testid="select-retry-room-type">
+                <SelectValue placeholder="Select room type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Select room type</SelectItem>
+                <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
+                <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
+                <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
+                <SelectItem value="kitchen">Kitchen</SelectItem>
+                <SelectItem value="living-room">Living Room</SelectItem>
+                <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
+                <SelectItem value="dining-room">Dining Room</SelectItem>
+                <SelectItem value="study">Study</SelectItem>
+                <SelectItem value="office">Office</SelectItem>
+                <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
+                <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
+                <SelectItem value="garage">Garage</SelectItem>
+                <SelectItem value="laundry">Laundry</SelectItem>
+                <SelectItem value="outdoor">Outdoor</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
           </div>
 
           <div>
