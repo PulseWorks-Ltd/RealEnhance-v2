@@ -238,68 +238,6 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             </p>
           </div>
 
-          <div>
-            <Label htmlFor="enhancement-mode" className="text-sm font-medium">
-              Enhancement Mode
-            </Label>
-            <Select value={enhancementMode} onValueChange={(v) => setEnhancementMode(v as EnhancementMode)}>
-              <SelectTrigger data-testid="select-retry-enhancement-mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="quality-only">Enhance Quality Only (1 credit)</SelectItem>
-                <SelectItem value="staging">Add Staging (2 credits)</SelectItem>
-                <SelectItem value="furniture-replace">Replace Existing Furniture (2 credits)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-1">
-              {enhancementMode === "quality-only" && "Improves color, exposure, and sharpness without adding furniture"}
-              {enhancementMode === "staging" && "Adds modern furniture and staging to empty/sparse rooms"}
-              {enhancementMode === "furniture-replace" && "Replaces ALL dated furniture with modern alternatives"}
-            </p>
-          </div>
-
-          {/* Reference Image Upload */}
-          {enhancementMode !== "quality-only" && (
-            <div className="space-y-2 border-t pt-4">
-              <Label htmlFor="reference-image" className="text-sm font-medium">
-                Reference Staging Image (Optional)
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Upload a reference image to match its staging style and furniture choices
-              </p>
-              
-              {!referencePreview ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="reference-image"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleReferenceImageSelect}
-                    data-testid="input-retry-reference-image"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="relative w-full h-48 bg-brand-light rounded-lg overflow-hidden border">
-                    <img 
-                      src={referencePreview} 
-                      alt="Reference staging" 
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRemoveReference}
-                    data-testid="button-retry-remove-reference"
-                  >
-                    Remove Reference Image
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="flex justify-end space-x-2">
             <Button 
