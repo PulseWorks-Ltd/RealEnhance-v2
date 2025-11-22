@@ -49,6 +49,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   // Staging style dropdown state
   const [stagingEnabled, setStagingEnabled] = useState(false);
   const [stagingStyle, setStagingStyle] = useState<string>("Modern");
+  const [roomType, setRoomType] = useState<string>("");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -535,6 +536,10 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       return;
     }
     
+    if (!roomType) {
+      toast({ title: "Room type required", description: "Please select a room type", variant: "destructive" });
+      return;
+    }
     const formData = new FormData();
     
     // Only append file if we have selectedFile (for file uploads)
@@ -560,6 +565,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("goal", instructions);
     formData.append("industry", industry);
     formData.append("sceneType", sceneType);
+    formData.append("roomType", roomType);
     formData.append("preserveStructure", "true");
     formData.append("allowStaging", stagingEnabled ? "true" : "false");
     formData.append("stagingStyle", stagingEnabled ? stagingStyle : "");

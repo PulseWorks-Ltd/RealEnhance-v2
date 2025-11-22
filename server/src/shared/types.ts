@@ -142,6 +142,8 @@ export interface EditJobPayload {
   instruction: string;
   mask: unknown;
   createdAt: string; // ISO
+  allowStaging?: boolean;
+  stagingStyle?: string;
 }
 
 export interface RegionEditJobPayload {
@@ -154,6 +156,8 @@ export interface RegionEditJobPayload {
   instruction?: string;
   mask: unknown;
   createdAt: string; // ISO
+  allowStaging?: boolean;
+  stagingStyle?: string;
 }
 
 export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
