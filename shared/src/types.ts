@@ -92,6 +92,8 @@ export interface EditJobPayload {
   mode: "Add" | "Remove" | "Replace" | "Restore";
   instruction: string;
   mask: unknown;
+  allowStaging?: boolean;
+  stagingStyle?: string;
   createdAt: string;
 }
 

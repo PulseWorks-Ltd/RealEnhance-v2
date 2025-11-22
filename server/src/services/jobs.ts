@@ -132,6 +132,8 @@ export async function enqueueEditJob(params: {
   mask: unknown;
   remoteBaseUrl?: string;
   remoteRestoreUrl?: string;
+  allowStaging?: boolean;
+  stagingStyle?: string;
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
@@ -148,6 +150,8 @@ export async function enqueueEditJob(params: {
     createdAt: now,
     ...(params.remoteBaseUrl ? { remoteBaseUrl: params.remoteBaseUrl } : {}),
     ...(params.remoteRestoreUrl ? { remoteRestoreUrl: params.remoteRestoreUrl } : {}),
+    ...(params.allowStaging !== undefined ? { allowStaging: params.allowStaging } : {}),
+    ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
   } as any;
 
   const state = loadAll();
