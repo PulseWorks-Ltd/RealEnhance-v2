@@ -24,7 +24,7 @@ interface RetryDialogProps {
 export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultEnhancementMode = "staging" }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
-  const [enhancementMode, setEnhancementMode] = useState<EnhancementMode>(defaultEnhancementMode);
+  // Remove enhancement mode selection for staging style; use batch preset only
   const safeDetectedRoomType = typeof detectedRoomType === 'undefined' ? "auto" : detectedRoomType;
   const [roomType, setRoomType] = useState<string>(safeDetectedRoomType);
   const [roomTypeError, setRoomTypeError] = useState<string>("");
@@ -33,12 +33,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
 
-  // Sync enhancement mode with prop when dialog opens
-  useEffect(() => {
-    if (isOpen) {
-      setEnhancementMode(defaultEnhancementMode);
-    }
-  }, [isOpen, defaultEnhancementMode]);
+  // No enhancement mode selection; always use batch preset
 
   const handleReferenceImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -72,10 +67,8 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
     // Close dialog immediately 
     handleClose();
     const windowCountNum = windowCount.trim() !== "" ? parseInt(windowCount, 10) : undefined;
-    // Convert enhancement mode to allowStaging and furnitureReplacementMode flags
-    const allowStaging = enhancementMode !== "quality-only";
-    const furnitureReplacementMode = enhancementMode === "furniture-replace";
-    onSubmit(customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, windowCountNum, referenceImage || undefined);
+    // Use batch preset for allowStaging/furnitureReplacementMode (not user-editable here)
+    onSubmit(customInstructions, sceneType, undefined, undefined, roomType, windowCountNum, referenceImage || undefined);
   };
 
   const handleClose = () => {
@@ -97,7 +90,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Customize your retry with specific instructions and scene type for better results.
+            Customize your retry with specific instructions and scene type for better results. Staging style is set at batch upload and cannot be changed here.
           </p>
 
           {/* Before/After Preview Slider */}

@@ -64,6 +64,7 @@ interface PersistedBatchJob {
     outdoorStaging: string;
     furnitureReplacement: boolean;
     declutter: boolean;
+    stagingStyle: string;
   };
   fileMetadata: PersistedFileMetadata[];
 }
@@ -110,6 +111,8 @@ function clearBatchJobState() {
 }
 
 export default function BatchProcessor() {
+    // Staging style preset for the batch
+    const [stagingStyle, setStagingStyle] = useState<string>("Modern");
   // Tab state for clean UI flow
   const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">("upload");
   
@@ -553,6 +556,7 @@ export default function BatchProcessor() {
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
+      if (savedState.settings.stagingStyle) setStagingStyle(savedState.settings.stagingStyle);
       
       // Restore file metadata if available
       if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
@@ -611,7 +615,8 @@ export default function BatchProcessor() {
           allowRetouch,
           outdoorStaging,
           furnitureReplacement,
-          declutter
+          declutter,
+          stagingStyle
         },
         fileMetadata: files.map(file => ({
           name: file.name,
@@ -1120,6 +1125,7 @@ export default function BatchProcessor() {
     fd.append("industry", industryMap[presetKey] || "Real Estate");
     fd.append("preserveStructure", preserveStructure.toString());
     fd.append("allowStaging", allowStaging.toString());
+    fd.append("stagingStyle", allowStaging ? stagingStyle : "");
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     fd.append("declutter", declutter.toString());
@@ -1331,6 +1337,7 @@ export default function BatchProcessor() {
     fd.append("industry", industryMap[presetKey] || "Real Estate");
     fd.append("preserveStructure", preserveStructure.toString());
     fd.append("allowStaging", allowStaging.toString());
+    fd.append("stagingStyle", allowStaging ? stagingStyle : "");
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     // NEW: Manual room linking metadata (for retry)
@@ -2152,6 +2159,28 @@ export default function BatchProcessor() {
                       </p>
                     </div>
                   </label>
+                  {/* Staging Style Dropdown - only shown if staging is enabled */}
+                  {allowStaging && (
+                    <div className="mb-2">
+                      <label className="text-sm font-medium text-white block mb-1" htmlFor="staging-style-select">
+                        Staging Style <span className="text-gray-400 text-xs">(applies to all staged images in this batch)</span>
+                      </label>
+                      <select
+                        id="staging-style-select"
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
+                        value={stagingStyle}
+                        onChange={e => setStagingStyle(e.target.value)}
+                        data-testid="select-staging-style"
+                      >
+                        <option value="Modern">Modern</option>
+                        <option value="Contemporary">Contemporary</option>
+                        <option value="Minimalist">Minimalist</option>
+                        <option value="Scandinavian">Scandinavian</option>
+                        <option value="Traditional">Traditional</option>
+                        <option value="Industrial">Industrial</option>
+                      </select>
+                    </div>
+                  )}
 
                   <label className="flex items-center gap-3">
                     <input

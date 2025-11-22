@@ -46,9 +46,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
-  // Staging style dropdown state
-  const [stagingEnabled, setStagingEnabled] = useState(false);
-  const [stagingStyle, setStagingStyle] = useState<string>("Modern");
+  // Staging style is now batch-level only; removed from region editor
   const [roomType, setRoomType] = useState<string>("");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -536,10 +534,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       return;
     }
     
-    if (!roomType) {
-      toast({ title: "Room type required", description: "Please select a room type", variant: "destructive" });
-      return;
-    }
+    // Room type is not required for edits
     const formData = new FormData();
     
     // Only append file if we have selectedFile (for file uploads)
@@ -565,10 +560,12 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("goal", instructions);
     formData.append("industry", industry);
     formData.append("sceneType", sceneType);
-    formData.append("roomType", roomType);
+    if (roomType) {
+      formData.append("roomType", roomType);
+    }
     formData.append("preserveStructure", "true");
-    formData.append("allowStaging", stagingEnabled ? "true" : "false");
-    formData.append("stagingStyle", stagingEnabled ? stagingStyle : "");
+    formData.append("allowStaging", "false"); // Always false in region editor
+    // Staging style is not settable here
     formData.append("allowRetouch", "true");
 
     if (hasMask) {
@@ -800,36 +797,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           </div>
         )}
 
-        {/* Staging Style Selection */}
-        <div className="flex items-center space-x-2 mt-4">
-          <input
-            type="checkbox"
-            id="enable-staging"
-            checked={stagingEnabled}
-            onChange={(e) => setStagingEnabled(e.target.checked)}
-            className="rounded"
-            data-testid="checkbox-enable-staging"
-          />
-          <Label htmlFor="enable-staging">Enable Staging</Label>
-          {stagingEnabled && (
-            <div className="ml-4 w-48">
-              <Label htmlFor="staging-style" className="text-base font-medium">Staging Style</Label>
-              <Select value={stagingStyle} onValueChange={setStagingStyle}>
-                <SelectTrigger data-testid="select-staging-style">
-                  <SelectValue placeholder="Choose Style" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Modern">Modern</SelectItem>
-                  <SelectItem value="Contemporary">Contemporary</SelectItem>
-                  <SelectItem value="Minimalist">Minimalist</SelectItem>
-                  <SelectItem value="Scandinavian">Scandinavian</SelectItem>
-                  <SelectItem value="Traditional">Traditional</SelectItem>
-                  <SelectItem value="Industrial">Industrial</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
+        {/* Staging style selection removed: now batch-level only */}
       </div>
 
       {/* Action Buttons */}
