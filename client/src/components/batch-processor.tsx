@@ -2999,7 +2999,6 @@ export default function BatchProcessor() {
         imageIndex={retryDialog.imageIndex || 0}
         originalImageUrl={retryDialog.imageIndex !== null ? (results[retryDialog.imageIndex]?.result?.originalImageUrl || results[retryDialog.imageIndex]?.originalImageUrl || previewUrls[retryDialog.imageIndex]) : undefined}
         enhancedImageUrl={retryDialog.imageIndex !== null ? withVersion(getDisplayUrl(results[retryDialog.imageIndex]), results[retryDialog.imageIndex]?.version || results[retryDialog.imageIndex]?.updatedAt) || undefined : undefined}
-        defaultEnhancementMode={
           !allowStaging 
             ? "quality-only" 
             : furnitureReplacement 

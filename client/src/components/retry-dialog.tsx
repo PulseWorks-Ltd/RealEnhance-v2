@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 
-export type EnhancementMode = "quality-only" | "staging" | "furniture-replace";
 
 interface RetryDialogProps {
   isOpen: boolean;
@@ -17,14 +16,12 @@ interface RetryDialogProps {
   imageIndex: number;
   originalImageUrl?: string;
   enhancedImageUrl?: string;
-  defaultEnhancementMode?: EnhancementMode; // Default mode from original batch settings
   detectedRoomType?: string;
 }
 
-export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultEnhancementMode = "staging" }: RetryDialogProps) {
+export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
-  // Remove enhancement mode selection for staging style; use batch preset only
   const safeDetectedRoomType = typeof detectedRoomType === 'undefined' ? "auto" : detectedRoomType;
   const [roomType, setRoomType] = useState<string>(safeDetectedRoomType);
   const [roomTypeError, setRoomTypeError] = useState<string>("");
@@ -33,7 +30,6 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
 
-  // No enhancement mode selection; always use batch preset
 
   const handleReferenceImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -74,7 +70,6 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   const handleClose = () => {
     setCustomInstructions("");
     setSceneType("auto");
-    setEnhancementMode(defaultEnhancementMode); // Reset to default from batch settings
     setRoomType("auto");
     setWindowCount("");
     setReferenceImage(null);
