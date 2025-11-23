@@ -133,7 +133,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             </div>
           )}
 
-          {/* Room Type Dropdown (Required) */}
+          {/* Room Type Dropdown (Required, no empty value) */}
           <div>
             <Label htmlFor="room-type" className="text-sm font-medium">
               Room Type <span className="text-red-500">*</span>
@@ -143,7 +143,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                 <SelectValue placeholder="Select room type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Select room type</SelectItem>
+                <SelectItem value="auto">Auto Detect{safeDetectedRoomType ? ` (${safeDetectedRoomType})` : ""}</SelectItem>
                 <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
                 <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
                 <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
@@ -162,6 +162,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
               </SelectContent>
             </Select>
             {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
+            <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{safeDetectedRoomType || "Unknown"}</span>. You can override if needed.</p>
           </div>
 
           <div>
@@ -180,45 +181,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             </Select>
           </div>
 
-          <div>
-            <Label htmlFor="room-type" className="text-sm font-medium">
-              Room Type (Optional)
-            </Label>
-            <Select value={roomType} onValueChange={setRoomType}>
-              <SelectTrigger data-testid="select-retry-room-type">
-                <SelectValue placeholder={safeDetectedRoomType || "Auto Detect"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto Detect{safeDetectedRoomType ? ` (${safeDetectedRoomType})` : ""}</SelectItem>
-                <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
-                <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
-                <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="living-room">Living Room</SelectItem>
-                <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
-                <SelectItem value="dining-room">Dining Room</SelectItem>
-                <SelectItem value="study">Study</SelectItem>
-                <SelectItem value="office">Office</SelectItem>
-                <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
-                <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
-                <SelectItem value="laundry">Laundry</SelectItem>
-                <SelectItem value="garden">Garden</SelectItem>
-                <SelectItem value="patio">Patio</SelectItem>
-                <SelectItem value="deck">Deck</SelectItem>
-                <SelectItem value="balcony">Balcony</SelectItem>
-                <SelectItem value="garage">Garage</SelectItem>
-                <SelectItem value="basement">Basement</SelectItem>
-                <SelectItem value="attic">Attic</SelectItem>
-                <SelectItem value="hallway">Hallway</SelectItem>
-                <SelectItem value="staircase">Staircase</SelectItem>
-                <SelectItem value="entryway">Entryway</SelectItem>
-                <SelectItem value="closet">Closet</SelectItem>
-                <SelectItem value="pantry">Pantry</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{safeDetectedRoomType || "Unknown"}</span>. You can override if needed.</p>
-          </div>
+          {/* Only one Room Type select should be rendered (required above) */}
 
           <div>
             <Label htmlFor="window-count" className="text-sm font-medium">
