@@ -37,7 +37,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
-  const [operation, setOperation] = useState<"add" | "remove" | "replace" | "enhance" | "restore" | "">("");
+  // Set default operation to 'enhance' to avoid empty string value
+  const [operation, setOperation] = useState<"add" | "remove" | "replace" | "enhance" | "restore">("enhance");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
   const [smartReinstate, setSmartReinstate] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -47,7 +48,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
   // Staging style is now batch-level only; removed from region editor
-  const [roomType, setRoomType] = useState<string>("");
+  const [roomType, setRoomType] = useState<string>("auto");
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
