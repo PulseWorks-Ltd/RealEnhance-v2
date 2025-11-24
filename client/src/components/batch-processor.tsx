@@ -1482,11 +1482,17 @@ export default function BatchProcessor() {
       
       // Use dedicated retry endpoint that bypasses batch lock
       const fd = new FormData();
-      
-      try {
-        // ...existing code for FormData construction...
-        // (Unchanged up to the fetch call)
+      fd.append("images", fileToRetry);
+      fd.append("goal", goalToSend);
+      // Add any other required fields as needed (sceneType, allowStaging, etc.)
+      if (sceneType) fd.append("sceneType", sceneType);
+      if (typeof allowStagingOverride === 'boolean') fd.append("allowStaging", String(allowStagingOverride));
+      if (typeof furnitureReplacementOverride === 'boolean') fd.append("furnitureReplacement", String(furnitureReplacementOverride));
+      if (roomType) fd.append("roomType", roomType);
+      if (windowCount !== undefined) fd.append("windowCount", String(windowCount));
+      if (referenceImage) fd.append("referenceImage", referenceImage);
 
+      try {
         const response = await fetch(api("/api/batch/retry-single"), withDevice({
           method: "POST",
           body: fd,
@@ -1587,13 +1593,10 @@ export default function BatchProcessor() {
                       qualityEnhancedUrl: preservedQualityEnhancedUrl
                     },
                     error: null,
-                    filename: fileToRetry.name
+                    filename: r?.filename
                   } : r
                 ));
-                setProcessedImagesByIndex(prev => ({
-                  ...prev,
-                  [imageIndex]: job.imageUrl
-                }));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: job.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
                   newSet.add(job.imageUrl);
@@ -2918,6 +2921,7 @@ export default function BatchProcessor() {
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
                     result: {
+                      ...(normalizeBatchItem(result) || {}),
                       image: result.imageUrl,
                       imageUrl: result.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
