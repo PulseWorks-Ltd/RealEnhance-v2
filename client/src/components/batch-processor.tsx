@@ -1602,80 +1602,63 @@ export default function BatchProcessor() {
         throw new Error(err.message || "Failed to retry image");
       }
       
+
       const data = await response.json();
-      
-      // Handle direct response from retry-single endpoint
-      if (data.success && data.imageUrl) {
-        // Version stamp for cache-busting and tracking retries
-        const stamp = Date.now();
-        
-        // Create properly normalized result for this retry
-        const retryResult = {
-          image: data.imageUrl,
-          imageUrl: data.imageUrl,
-          result: { imageUrl: data.imageUrl },
-          error: null,
-          ok: true
-        };
-        
-        // Normalize using existing function and maintain consistent structure
-        const normalizedResult = normalizeBatchItem(retryResult);
-        
-        // Preserve URLs from previous result (critical for "Restore Original" feature)
-        const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-        const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
-        
-        // Update the specific result with flattened structure and version stamp for cache-busting
-        setResults(prev => prev.map((r, i) => 
-          i === imageIndex ? {
-            ...r,
-            // Flatten important fields to top level for easy access
-            image: data.imageUrl,
-            imageUrl: data.imageUrl,
-            version: stamp, // Version stamp for cache-busting
-            mode: data.mode || "staged",
-            // CRITICAL: Preserve baseline URLs at top level for "Restore Original" feature
-            originalImageUrl: preservedOriginalUrl,
-            qualityEnhancedUrl: preservedQualityEnhancedUrl,
-            result: {
-              ...(normalizedResult || {}),
-              image: data.imageUrl,
-              imageUrl: data.imageUrl,
-              // CRITICAL: Also preserve in nested result object for consistent access
-              originalImageUrl: preservedOriginalUrl,
-              qualityEnhancedUrl: preservedQualityEnhancedUrl
-            },
+
+      // Handle new /api/status/batch response shape
+      if (data && data.success && Array.isArray(data.jobs)) {
+        // Find the job for this retry
+        const jobId = data.jobId || (data.jobs[0] && data.jobs[0].id);
+        const job = data.jobs.find((j: any) => j.id === jobId) || data.jobs[0];
+        if (job && job.success && job.imageUrl) {
+          const stamp = Date.now();
+          const retryResult = {
+            image: job.imageUrl,
+            imageUrl: job.imageUrl,
+            result: { imageUrl: job.imageUrl },
             error: null,
-            filename: fileToRetry.name
-          } : r
-        ));
-        
-        // Update processed images tracking for ZIP downloads
-        setProcessedImagesByIndex(prev => ({
-          ...prev,
-          [imageIndex]: data.imageUrl
-        }));
-        
-        // Update processed images tracking
-        setProcessedImages(prev => {
-          const newSet = new Set(prev);
-          newSet.add(data.imageUrl);
-          return Array.from(newSet);
-        });
-        
-        setProcessedImagesByIndex(prev => ({
-          ...prev,
-          [imageIndex]: data.imageUrl
-        }));
-        
-        // Refresh user credits
-        await refreshUser();
-        
-        // Success toast will be shown when image loads via onLoad handler
-        // Don't show immediately here to avoid timing issues
-        return;
+            ok: true
+          };
+          const normalizedResult = normalizeBatchItem(retryResult);
+          const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+          const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+          setResults(prev => prev.map((r, i) =>
+            i === imageIndex ? {
+              ...r,
+              image: job.imageUrl,
+              imageUrl: job.imageUrl,
+              version: stamp,
+              mode: job.mode || "staged",
+              originalImageUrl: preservedOriginalUrl,
+              qualityEnhancedUrl: preservedQualityEnhancedUrl,
+              result: {
+                ...(normalizedResult || {}),
+                image: job.imageUrl,
+                imageUrl: job.imageUrl,
+                originalImageUrl: preservedOriginalUrl,
+                qualityEnhancedUrl: preservedQualityEnhancedUrl
+              },
+              error: null,
+              filename: fileToRetry.name
+            } : r
+          ));
+          setProcessedImagesByIndex(prev => ({
+            ...prev,
+            [imageIndex]: job.imageUrl
+          }));
+          setProcessedImages(prev => {
+            const newSet = new Set(prev);
+            newSet.add(job.imageUrl);
+            return Array.from(newSet);
+          });
+          setProcessedImagesByIndex(prev => ({
+            ...prev,
+            [imageIndex]: job.imageUrl
+          }));
+          await refreshUser();
+          return;
+        }
       }
-      
       throw new Error("Unexpected response format from retry");
       
     } catch (error) {
