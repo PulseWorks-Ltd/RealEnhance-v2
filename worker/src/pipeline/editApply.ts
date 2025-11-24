@@ -10,13 +10,21 @@ function isDataUrl(s: any): s is string {
 export async function applyEdit(params: {
   baseImagePath: string;
   mask: unknown; // expected: data URL string (white=edit/restore region, black=preserve)
-  mode: "Add" | "Remove" | "Replace" | "Restore";
+  mode: "edit" | "restore_original" | "Add" | "Remove" | "Replace" | "Restore";
   instruction: string;
   restoreFromPath?: string;
   smartReinstate?: boolean;
   sensitivityPx?: number; // grow/feather radius in pixels
 }): Promise<string> {
-  const { baseImagePath, mask, mode, instruction, restoreFromPath, smartReinstate = true, sensitivityPx = 4 } = params;
+  let { baseImagePath, mask, mode, instruction, restoreFromPath, smartReinstate = true, sensitivityPx = 4 } = params;
+
+  // Map new modes to legacy for backward compatibility
+  if (mode === "edit") {
+    // For 'edit', default to Gemini logic (Add/Remove/Replace)
+    mode = "Add"; // Use Add as a placeholder; actual op is in instruction
+  } else if (mode === "restore_original") {
+    mode = "Restore";
+  }
 
   // Debug: log input params
   console.log('[applyEdit] Params:', { baseImagePath, mode, instruction, restoreFromPath, smartReinstate, sensitivityPx });

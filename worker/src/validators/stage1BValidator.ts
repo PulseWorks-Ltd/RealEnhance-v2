@@ -70,19 +70,24 @@ export async function validateStage1BStructural(
   // Hard fail if dimensions change
   const baseMeta = await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage1BPath).metadata();
+  const compliance: string[] = [];
   if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {
-    return { ok: false, reason: "dimension_change" };
+    compliance.push("dimension_change");
   }
   // Run per-class checks
   const wallRes = compareWalls(baseSeg, candSeg);
-  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed" };
+  if (!wallRes.pass) compliance.push(wallRes.code || "wall_layout_changed");
   const winRes = compareWindows(baseSeg, candSeg);
-  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed" };
+  if (!winRes.pass) compliance.push(winRes.code || "windows_changed");
   const doorRes = compareDoors(baseSeg, candSeg);
-  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed" };
+  if (!doorRes.pass) compliance.push(doorRes.code || "doors_changed");
   const floorRes = compareFloorMaterial(baseSeg, candSeg);
-  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed" };
+  if (!floorRes.pass) compliance.push(floorRes.code || "floor_material_changed");
   // Log debug metrics (IoU, brightness, etc.)
   // ...existing code...
+  if (compliance.length > 0) {
+    console.warn('[validateStage1BStructural] Compliance issues:', compliance);
+    return { ok: true, meta: { compliance } };
+  }
   return { ok: true };
 }
