@@ -37,8 +37,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
-  // Set default operation to 'enhance' to avoid empty string value
-  const [operation, setOperation] = useState<"add" | "remove" | "replace" | "enhance" | "restore">("enhance");
+  // Only two modes: 'edit' and 'restore_original'
+  const [mode, setMode] = useState<"edit" | "restore_original">("edit");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
   const [smartReinstate, setSmartReinstate] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -502,96 +502,49 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       toast({ title: "No image", description: "Please select an image first", variant: "destructive" });
       return;
     }
-    
-    // Operation-specific validation
-    const hasInstructions = instructions.trim().length > 0;
-    const hasMask = maskData !== null;
-    
-    // Validate based on operation type
-    if (operation === "enhance") {
-      // Enhance: instructions required, mask optional
-      if (!hasInstructions) {
-        toast({ title: "Instructions required", description: "Please provide enhancement instructions", variant: "destructive" });
-        return;
-      }
-    } else if (["add", "replace", "remove"].includes(operation)) {
-      // Add/Replace/Remove: both mask and instructions required
-      if (!hasMask) {
-        toast({ title: "Mask required", description: "Please draw a region to mark the area for this operation", variant: "destructive" });
-        return;
-      }
-      if (!hasInstructions) {
-        toast({ title: "Instructions required", description: "Please describe what you want to add, replace, or remove", variant: "destructive" });
-        return;
-      }
-    } else if (operation === "restore") {
-      // Restore: mask required to specify area to restore
-      if (!hasMask) {
-        toast({ title: "Mask required", description: "Please draw a region to mark the area to restore from the original image", variant: "destructive" });
-        return;
-      }
-    } else {
-      toast({ title: "Operation required", description: "Please select an operation type", variant: "destructive" });
+    if (mode === "edit" && !instructions.trim()) {
+      toast({ title: "Instructions required", description: "Please provide instructions for Add/Remove/Replace", variant: "destructive" });
       return;
     }
-    
-    // Room type is not required for edits
+    const hasMask = maskData !== null;
+    if (!hasMask) {
+      toast({ title: "Mask required", description: "Please draw a region to edit or restore", variant: "destructive" });
+      return;
+    }
     const formData = new FormData();
-    
-    // Only append file if we have selectedFile (for file uploads)
     if (selectedFile) {
       formData.append("image", selectedFile);
     } else if (initialImageUrl) {
-      // For gallery images, we'll pass the URL in the mutation
-      console.log('Preparing to edit gallery image:', initialImageUrl);
       formData.append("imageUrl", initialImageUrl);
-      
-      // Pass quality-enhanced baseline URL for pixel-level restoration
-      // The originalImageUrl prop is actually the quality-enhanced baseline (Stage 1 output)
-      // This ensures restored pixels match the color/exposure of staged content
-      // Send as both qualityEnhancedUrl (preferred) and originalUrl (fallback for legacy)
       if (originalImageUrl) {
-        // Always send as baseImageUrl for server compatibility
-        console.log('Using originalImageUrl for pixel-level restoration:', originalImageUrl);
         formData.append("baseImageUrl", originalImageUrl);
       }
     }
-    
-    // Use instructions directly as goal
-    formData.append("goal", instructions);
+    formData.append("mode", mode);
+    if (mode === "edit") {
+      formData.append("goal", instructions);
+    }
     formData.append("industry", industry);
     formData.append("sceneType", sceneType);
     if (roomType) {
       formData.append("roomType", roomType);
     }
     formData.append("preserveStructure", "true");
-    formData.append("allowStaging", "false"); // Always false in region editor
-    // Staging style is not settable here
+    formData.append("allowStaging", "false");
     formData.append("allowRetouch", "true");
-
-    if (hasMask) {
-      if (maskData) {
-        formData.append("regionMask", maskData);
-      }
-      formData.append("regionOperation", operation);
-      formData.append("smartReinstate", smartReinstate.toString());
+    if (hasMask && maskData) {
+      formData.append("regionMask", maskData);
     }
-
+    formData.append("smartReinstate", smartReinstate.toString());
     regionEditMutation.mutate(formData);
-  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, operation, smartReinstate, regionEditMutation, toast]);
+  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, smartReinstate, regionEditMutation, toast]);
 
   // Check if required fields are filled based on operation type
   const hasInstructions = instructions.trim().length > 0;
   const hasMask = maskData !== null;
-  const hasOperation = operation !== "";
-  
-  const isFormValid = hasOperation && (
-    // Enhance: instructions required, mask optional
-    (operation === "enhance" && hasInstructions) ||
-    // Add/Replace/Remove: both mask and instructions required
-    (["add", "replace", "remove"].includes(operation) && hasMask && hasInstructions) ||
-    // Restore: mask required, instructions optional (operation is self-explanatory)
-    (operation === "restore" && hasMask)
+  const isFormValid = (
+    (mode === "edit" && hasInstructions && hasMask) ||
+    (mode === "restore_original" && hasMask)
   );
   
   return (
@@ -716,50 +669,40 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       <div className="space-y-4">
         <div>
           <Label htmlFor="instructions" className="text-base font-medium">
-            Instructions <span className="text-red-500">*</span>
+            Instructions{mode === "edit" && <span className="text-red-500">*</span>}
           </Label>
           <Textarea
             id="instructions"
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Example: 'Add 2 stools at the island', 'Make lighting brighter', 'Remove clutter from counter'"
+            placeholder="Describe your edit (required for Add/Remove/Replace)"
             rows={2}
             data-testid="textarea-instructions"
-            className={!instructions.trim() ? "border-red-200 focus:border-red-300" : ""}
+            className={mode === "edit" && !instructions.trim() ? "border-red-200 focus:border-red-300" : ""}
           />
         </div>
 
         <div>
-          <Label htmlFor="operation" className="text-base font-medium">
+          <Label htmlFor="mode" className="text-base font-medium">
             Operation <span className="text-red-500">*</span>
           </Label>
-          <Select value={operation} onValueChange={(v) => setOperation(v as any)}>
-            <SelectTrigger data-testid="select-operation" className={operation === "" ? "border-red-200 focus:border-red-300" : ""}>
+          <Select value={mode} onValueChange={(v) => setMode(v as any)}>
+            <SelectTrigger data-testid="select-mode" className={mode === "" ? "border-red-200 focus:border-red-300" : ""}>
               <SelectValue placeholder="Choose Option" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="enhance">Polish (Enhance quality & lighting)</SelectItem>
-              <SelectItem value="add">Add (Place new objects/content)</SelectItem>
-              <SelectItem value="replace">Replace (Swap existing content)</SelectItem>
-              <SelectItem value="remove">Remove (AI-based removal of objects)</SelectItem>
-              <SelectItem value="restore">Restore Original (Pixel-level restoration)</SelectItem>
+              <SelectItem value="edit">Add / Remove / Replace (requires text)</SelectItem>
+              <SelectItem value="restore_original">Restore Original (no text required)</SelectItem>
             </SelectContent>
           </Select>
-          {/* Contextual guidance for operation requirements */}
-          {operation && (
+          {mode === "edit" && (
             <div className="mt-2 text-sm text-gray-600">
-              {operation === "enhance" && (
-                <p>✨ Polish mode: Enhance image quality, lighting, and colors. Instructions required, mask optional for targeted areas.</p>
-              )}
-              {operation === "add" && (
-                <p>➕ Add mode: Place new objects or content in the image. Requires both mask (target area) and instructions (what to add).</p>
-              )}
-              {operation === "replace" && (
-                <p>🔄 Replace mode: Swap existing content with something new. Requires both mask (what to replace) and instructions (replacement details).</p>
-              )}
-              {operation === "remove" && (
-                <p>🗑️ Remove mode: Delete objects and restore the original background. Requires both mask (what to remove) and instructions (removal details).</p>
-              )}
+              <p>Describe what to add, remove, or replace in the selected region. <b>Instructions are required.</b></p>
+            </div>
+          )}
+          {mode === "restore_original" && (
+            <div className="mt-2 text-sm text-gray-600">
+              <p>Restore the masked region to its previous state. <b>No instructions required.</b></p>
             </div>
           )}
         </div>

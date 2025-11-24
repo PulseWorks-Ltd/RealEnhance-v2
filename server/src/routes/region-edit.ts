@@ -59,7 +59,7 @@ export function regionEditRouter() {
       const body = (req.body || {}) as any;
 
       const imageUrl = body.imageUrl as string | undefined;
-      const operation = (body.regionOperation as string || '').toLowerCase();
+      const mode = body.mode;
       const goal = String(body.goal || '').trim();
       const smartReinstate = String(body.smartReinstate || 'true').toLowerCase() === 'true';
       const sensitivityPx = Number.isFinite(Number(body.sensitivityPx)) ? Number(body.sensitivityPx) : undefined;
@@ -67,7 +67,13 @@ export function regionEditRouter() {
       const stagingStyle = String(body.stagingStyle || '').trim();
 
       if (!maskFile) return res.status(400).json({ success: false, error: "missing_mask_file" });
-      if (!operation) return res.status(400).json({ success: false, error: "missing_operation" });
+      if (!mode) return res.status(400).json({ success: false, error: "missing_mode" });
+      if (!["edit", "restore_original"].includes(mode)) {
+        return res.status(400).json({ success: false, error: "invalid_mode" });
+      }
+      if (mode === "edit" && !goal) {
+        return res.status(400).json({ success: false, error: "instructions_required" });
+      }
 
       // Save mask file to disk and get its path
       const maskPath = maskFile.path;
@@ -98,8 +104,9 @@ export function regionEditRouter() {
         return res.status(400).json({ success: false, error: "missing_image_reference" });
       }
 
-      const mode = operation === 'add' ? 'Add' : operation === 'remove' ? 'Remove' : operation === 'replace' ? 'Replace' : operation === 'restore' ? 'Restore' : 'Replace';
-      const instruction = goal || (mode === 'Restore' ? 'Restore original pixels for the masked region.' : 'Apply requested edit in the masked region only.');
+      // Only two modes: 'edit' and 'restore_original'
+      // For 'edit', use provided goal; for 'restore_original', set a default instruction
+      const instruction = mode === 'edit' ? goal : 'Restore original pixels for the masked region.';
 
       // Resolve base version for edit - ensure it exists and has a valid path
       const history = (record as any).history || [];
@@ -108,9 +115,9 @@ export function regionEditRouter() {
         return res.status(404).json({ success: false, error: "base_version_not_found" });
       }
 
-      // For Restore mode, find the enhancement stage to restore from
+      // For restore_original mode, find the enhancement stage to restore from
       let restoreVersion: any = undefined;
-      if (mode === 'Restore') {
+      if (mode === 'restore_original') {
         const stage1B = history.find((v: any) => v.stageLabel === '1B');
         const stage1A = history.find((v: any) => v.stageLabel === '1A');
         restoreVersion = stage1B || stage1A;
