@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { createClient } from 'redis';
 import crypto from "crypto";
 import {
   JobRecord,
@@ -10,36 +9,35 @@ import {
   UserId
 } from "@realenhance/shared/dist/types";
 
-function dataDir() {
-  return process.env.DATA_DIR || path.resolve(process.cwd(), "..", "server", "data");
-}
+const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+const redisClient = createClient({ url: REDIS_URL });
+redisClient.connect().catch(() => {});
 
-function readJSON<T>(fileName: string, fallback: T): T {
-  const full = path.join(dataDir(), fileName);
-  if (!fs.existsSync(full)) return fallback;
+// Update job record in Redis
+export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
+  const key = `jobs:${jobId}`;
+  // Read current job record
+  let rec: any = {};
   try {
-    return JSON.parse(fs.readFileSync(full, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJSON<T>(fileName: string, data: T) {
-  const full = path.join(dataDir(), fileName);
-  fs.writeFileSync(full, JSON.stringify(data, null, 2), "utf8");
-}
-
-// Update job record
-export function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
-  const allJobs = readJSON<Record<JobId, JobRecord>>("jobs.json", {});
-  const rec = allJobs[jobId];
-  if (!rec) return;
-  allJobs[jobId] = {
+    const val = await redisClient.get(key);
+    if (val) rec = JSON.parse(val);
+  } catch {}
+  rec = {
     ...rec,
     ...patch,
     updatedAt: new Date().toISOString()
   };
-  writeJSON("jobs.json", allJobs);
+  await redisClient.set(key, JSON.stringify(rec));
+}
+
+// Get job record from Redis
+export async function getJob(jobId: JobId): Promise<JobRecord | undefined> {
+  const key = `jobs:${jobId}`;
+  try {
+    const val = await redisClient.get(key);
+    if (val) return JSON.parse(val);
+  } catch {}
+  return undefined;
 }
 
 // Append new image version
