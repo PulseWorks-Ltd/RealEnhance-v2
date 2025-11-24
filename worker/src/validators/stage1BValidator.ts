@@ -16,6 +16,10 @@ export type Stage1BValidationResult = {
   reason?: string;
   dims?: { baseW: number; baseH: number; outW: number; outH: number };
   structuralIoU?: number;
+  meta?: {
+    compliance?: string[];
+    [key: string]: any;
+  };
 };
 
 function computeIoU(a: Uint8Array, b: Uint8Array): number {
