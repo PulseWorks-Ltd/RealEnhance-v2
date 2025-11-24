@@ -136,6 +136,9 @@ export function statusRouter() {
           error: local.errorMessage || failedReason || undefined,
         };
 
+        // DEBUG: Log the merged status object for this job
+        console.log('[status/batch] Merged job status for', id, JSON.stringify(item, null, 2));
+
         items.push(item);
       }
 
