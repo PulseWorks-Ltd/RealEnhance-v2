@@ -938,32 +938,36 @@ const worker = new Worker(
 })();
 
 worker.on("completed", (job, result: any) => {
-  const url = (result && (result as any).resultUrl) ? String((result as any).resultUrl).slice(0, 120) : undefined;
-  console.log(`[worker] completed job ${job.id}${url ? ` → ${url}` : ""}`);
+  const url =
+    result && (result as any).resultUrl
+      ? String((result as any).resultUrl).slice(0, 120)
+      : undefined;
+
+  console.log(
+    `[worker] completed job ${job.id}${url ? ` -> ${url}` : ""}`
+  );
 
   // Write completion status for both normal and retry jobs
   try {
-    // Only allowed JobRecord fields and correct types
-    const patch: Partial<import("@realenhance/shared/dist/types").JobRecord> = {
+    // Always write the same simple shape that the API + UI expect
+    const status = {
       status: "complete",
-      errorMessage: undefined,
-      meta: result?.meta || undefined,
+      success: !!result?.resultUrl,
+      imageUrl: result?.resultUrl || null,
+      originalUrl: result?.originalUrl || null,
+      stageUrls: result?.stageUrls || null,
+      meta: result?.meta || null,
     };
-    // Attach enhancement results if present
-    if (result?.resultUrl) {
-      // For enhancement jobs, store as stageOutputs or resultVersionId as appropriate
-      patch.stageOutputs = result.stageUrls || undefined;
-      patch.meta = { ...(patch.meta || {}), ...((result && result.meta) || {}) };
-      // For edit jobs, store resultVersionId if present
-      if (result.resultVersionId) patch.resultVersionId = result.resultVersionId;
-    }
-    // Attach imageUrl/originalUrl for client polling (not part of JobRecord, but safe for now)
-    if (result?.resultUrl) (patch as any).imageUrl = result.resultUrl;
-    if (result?.originalUrl) (patch as any).originalUrl = result.originalUrl;
-    updateJob(job.id, patch);
+
+    // Persist to jobs.json / job store
+    updateJob(job.id, status as any);
+
     console.log(`[worker] ✅ jobs.json updated for job ${job.id}`);
   } catch (e) {
-    console.error(`[worker] ❌ Failed to update jobs.json for job ${job.id}:`, e);
+    console.error(
+      `[worker] ❌ Failed to update jobs.json for job ${job.id}:`,
+      e
+    );
   }
 });
 
