@@ -41,7 +41,6 @@ import type {
   JobKind,            // ⬅️ import JobKind from shared types
 } from "../shared/types.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
-import { REDIS_URL } from "../config.js";
 import { createClient } from 'redis';
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";

@@ -58,7 +58,7 @@ export function requeueRouter() {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
 
-    const prev = getJob(req.params.jobId);
+    const prev = await getJob(req.params.jobId);
     if (!prev) return res.status(404).json({ error: "not_found" });
     if (prev.userId !== sessUser.id) return res.status(403).json({ error: "forbidden" });
     if (prev.type !== "enhance") return res.status(400).json({ error: "only_enhance_supported" });
