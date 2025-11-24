@@ -133,31 +133,11 @@ export function retrySingleRouter() {
 
       const { jobId } = await enqueueEnhanceJob({ userId: sessUser.id, imageId: (rec as any).imageId, remoteOriginalUrl, options });
 
-      // Poll jobs.json for completion (up to ~120s)
-      const started = Date.now();
-      const timeoutMs = 120_000;
-      let last: any = undefined;
-      while (Date.now() - started < timeoutMs) {
-        await new Promise(r => setTimeout(r, 1000));
-        last = getJob(jobId);
-        if (last && (last as any).status === 'complete') {
-          const imageUrl = (last as any).resultUrl || (last as any).imageUrl || (last as any)?.stageUrls?.["2"] || (last as any)?.stageUrls?.["1B"] || (last as any)?.stageUrls?.["1A"];
-          return res.status(200).json({
-            success: true,
-            imageUrl,
-            originalUrl: (last as any).originalUrl ?? '',
-            stageUrls: (last as any).stageUrls ?? null,
-            meta: (last as any).meta ?? null,
-            mode: options.virtualStage ? 'staged' : 'polish-only'
-          });
-        }
-        if (last && (last as any).status === 'error') {
-          return res.status(500).json({ success: false, error: (last as any).errorMessage || 'Retry failed' });
-        }
-      }
+      // Set initial job status (optional, if not handled in enqueueEnhanceJob)
+      // You may want to call a jobStatusStore.set(jobId, { success: false, error: 'processing' }) here if not already done.
 
-      // Timed out - return 202 with job id for client to optionally poll via status API
-      return res.status(202).json({ success: false, jobId, error: 'processing' });
+      // Immediately return jobId for client polling
+      return res.status(200).json({ success: true, jobId });
     } catch (err: any) {
       console.error("[retry-single] ERROR:", err);
       return res.status(500).json({ success: false, error: err?.message || "Retry job failed" });
