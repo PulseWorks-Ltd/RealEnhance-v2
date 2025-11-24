@@ -1642,13 +1642,13 @@ export default function BatchProcessor() {
           description: error instanceof Error ? error.message : "Unknown error",
           variant: "destructive"
         });
-      finally {
-        setRetryingImages(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(imageIndex);
-          return newSet;
-        });
       }
+    } finally {
+      setRetryingImages(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(imageIndex);
+        return newSet;
+      });
     }
   };
 
