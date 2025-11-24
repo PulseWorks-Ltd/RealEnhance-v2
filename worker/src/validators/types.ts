@@ -14,6 +14,10 @@ export type StructuralValidationResult = {
   structuralChangeRatio?: number;
   windowIoU?: number;
   landcoverChangeRatio?: number;
+  meta?: {
+    compliance?: string[];
+    [key: string]: any;
+  };
 };
 
 export function isHardStructuralFailure(res: StructuralValidationResult | null | undefined): boolean {
