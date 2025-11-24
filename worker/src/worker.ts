@@ -943,17 +943,24 @@ worker.on("completed", (job, result: any) => {
 
   // Write completion status for both normal and retry jobs
   try {
-    // Use job.id as the key, and always write the same shape
-    const status = {
+    // Only allowed JobRecord fields and correct types
+    const patch: Partial<import("@realenhance/shared/dist/types").JobRecord> = {
       status: "complete",
-      success: !!result?.resultUrl,
-      imageUrl: result?.resultUrl || null,
-      originalUrl: result?.originalUrl || null,
-      stageUrls: result?.stageUrls || null,
-      meta: result?.meta || null
+      errorMessage: undefined,
+      meta: result?.meta || undefined,
     };
-    // Use updateJob from utils/persist
-    updateJob(job.id, status);
+    // Attach enhancement results if present
+    if (result?.resultUrl) {
+      // For enhancement jobs, store as stageOutputs or resultVersionId as appropriate
+      patch.stageOutputs = result.stageUrls || undefined;
+      patch.meta = { ...(patch.meta || {}), ...((result && result.meta) || {}) };
+      // For edit jobs, store resultVersionId if present
+      if (result.resultVersionId) patch.resultVersionId = result.resultVersionId;
+    }
+    // Attach imageUrl/originalUrl for client polling (not part of JobRecord, but safe for now)
+    if (result?.resultUrl) (patch as any).imageUrl = result.resultUrl;
+    if (result?.originalUrl) (patch as any).originalUrl = result.originalUrl;
+    updateJob(job.id, patch);
     console.log(`[worker] ✅ jobs.json updated for job ${job.id}`);
   } catch (e) {
     console.error(`[worker] ❌ Failed to update jobs.json for job ${job.id}:`, e);
