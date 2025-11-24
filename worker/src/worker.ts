@@ -946,29 +946,6 @@ worker.on("completed", (job, result: any) => {
   console.log(
     `[worker] completed job ${job.id}${url ? ` -> ${url}` : ""}`
   );
-
-  // Write completion status for both normal and retry jobs
-  try {
-    // Always write the same simple shape that the API + UI expect
-    const status = {
-      status: "complete",
-      success: !!result?.resultUrl,
-      imageUrl: result?.resultUrl || null,
-      originalUrl: result?.originalUrl || null,
-      stageUrls: result?.stageUrls || null,
-      meta: result?.meta || null,
-    };
-
-    // Persist to jobs.json / job store
-    updateJob(job.id, status as any);
-
-    console.log(`[worker] ✅ jobs.json updated for job ${job.id}`);
-  } catch (e) {
-    console.error(
-      `[worker] ❌ Failed to update jobs.json for job ${job.id}:`,
-      e
-    );
-  }
 });
 
 worker.on("failed", (job, err) => {
