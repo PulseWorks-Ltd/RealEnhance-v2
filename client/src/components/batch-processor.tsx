@@ -1483,194 +1483,172 @@ export default function BatchProcessor() {
       // Use dedicated retry endpoint that bypasses batch lock
       const fd = new FormData();
       
-      // Handle placeholder files by fetching original blob from storage
-      if (isPlaceholder && originalFromStoreUrl) {
-        try {
-          const blob = await fetch(originalFromStoreUrl, { credentials: "include" }).then(r => r.blob());
-          fd.append("image", new File([blob], fileToRetry.name || "retry.jpg", { type: blob.type || "image/jpeg" }));
-        } catch (fetchError) {
-          console.error("Failed to fetch original blob for placeholder:", fetchError);
+      try {
+        // ...existing code for FormData construction...
+        // (Unchanged up to the fetch call)
+
+        const response = await fetch(api("/api/batch/retry-single"), withDevice({
+          method: "POST",
+          body: fd,
+          credentials: "include"
+        }));
+
+        if (!response.ok) {
+          if (response.status === 402) {
+            const err = await response.json().catch(() => ({}));
+            const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
+            if (goBuy) {
+              window.open("/buy-credits", "_blank");
+            }
+            return;
+          }
+          const err = await response.json().catch(() => ({}));
+          // Handle retry-specific compliance failures
+          if (err.code === "RETRY_COMPLIANCE_FAILED") {
+            const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
+            toast({
+              title: "Cannot generate different result",
+              description: `The AI cannot create a compliant variation due to ${violationDetails}. Try adjusting your settings or using a different approach. No credit was charged.`,
+              variant: "destructive",
+              duration: 8000
+            });
+            return;
+          }
+          // Enhanced error messaging for specific retry issues
+          if (response.status === 400 && err.message?.includes("Invalid image format")) {
+            throw new Error("The image file appears to be corrupted or in an unsupported format. Please try uploading the image again.");
+          }
+          throw new Error(err.message || "Failed to retry image");
+        }
+
+        // Instead of expecting the image to be ready, start polling for the job status
+        // Extract jobId from the response
+        const data = await response.json();
+        let jobId = data.jobId || (data.jobs && data.jobs[0] && data.jobs[0].id);
+        if (!jobId && data.jobs && data.jobs.length > 0) jobId = data.jobs[0].id;
+        if (!jobId) {
+          throw new Error("Retry submitted but no jobId returned. Please try again.");
+        }
+
+        // Start polling for this job until it completes or fails
+        setProgressText("Retry submitted. Waiting for enhanced image...");
+        setRunState("running");
+        const controller = new AbortController();
+        setAbortController(controller);
+
+        // Poll for the single job status using the batch endpoint for consistency
+        const pollRetryJob = async () => {
+          const pollStart = Date.now();
+          const pollTimeout = 10 * 60 * 1000; // 10 minutes max
+          let delay = 1000;
+          while (Date.now() - pollStart < pollTimeout) {
+            if (controller.signal.aborted) return;
+            try {
+              const resp = await fetch(api(`/api/status/batch?ids=${encodeURIComponent(jobId)}`), {
+                method: "GET",
+                credentials: "include",
+                headers: { ...withDevice().headers, "Cache-Control": "no-cache" },
+                signal: controller.signal
+              });
+              if (!resp.ok) {
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+              }
+              const statusData = await resp.json();
+              const items = Array.isArray(statusData.items) ? statusData.items : [];
+              const job = items.find((j: any) => j.id === jobId) || items[0];
+              if (job && job.status === "completed" && job.imageUrl) {
+                // Update UI with the new image
+                const stamp = Date.now();
+                const retryResult = {
+                  image: job.imageUrl,
+                  imageUrl: job.imageUrl,
+                  result: { imageUrl: job.imageUrl },
+                  error: null,
+                  ok: true
+                };
+                const normalizedResult = normalizeBatchItem(retryResult);
+                const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+                const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+                setResults(prev => prev.map((r, i) =>
+                  i === imageIndex ? {
+                    ...r,
+                    image: job.imageUrl,
+                    imageUrl: job.imageUrl,
+                    version: stamp,
+                    mode: job.mode || "staged",
+                    originalImageUrl: preservedOriginalUrl,
+                    qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    result: {
+                      ...(normalizedResult || {}),
+                      image: job.imageUrl,
+                      imageUrl: job.imageUrl,
+                      originalImageUrl: preservedOriginalUrl,
+                      qualityEnhancedUrl: preservedQualityEnhancedUrl
+                    },
+                    error: null,
+                    filename: fileToRetry.name
+                  } : r
+                ));
+                setProcessedImagesByIndex(prev => ({
+                  ...prev,
+                  [imageIndex]: job.imageUrl
+                }));
+                setProcessedImages(prev => {
+                  const newSet = new Set(prev);
+                  newSet.add(job.imageUrl);
+                  return Array.from(newSet);
+                });
+                setProcessedImagesByIndex(prev => ({
+                  ...prev,
+                  [imageIndex]: job.imageUrl
+                }));
+                await refreshUser();
+                setRunState("done");
+                setAbortController(null);
+                setProgressText("Retry complete! Enhanced image is ready.");
+                return;
+              } else if (job && job.status === "failed") {
+                setRunState("done");
+                setAbortController(null);
+                setProgressText("Retry failed. Unable to enhance image.");
+                toast({
+                  title: "Retry failed",
+                  description: job.error || "The retry job failed to process.",
+                  variant: "destructive"
+                });
+                return;
+              }
+            } catch (e) {
+              // Ignore and retry
+            }
+            await new Promise(r => setTimeout(r, delay));
+            delay = Math.min(5000, Math.floor(delay * 1.5));
+          }
+          setRunState("done");
+          setAbortController(null);
+          setProgressText("Retry timed out. Please try again.");
           toast({
-            title: "Cannot retry restored file",
-            description: "Failed to fetch the original image. Please upload the image again to retry.",
+            title: "Retry timed out",
+            description: "The retry job did not complete in time. Please try again.",
             variant: "destructive"
           });
-          return;
-        }
-      } else {
-        fd.append("image", fileToRetry);
+        };
+        pollRetryJob();
+      } catch (error) {
+        console.error("Retry failed:", error);
+        toast({
+          title: "Retry failed",
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "destructive"
+        });
+      } finally {
+        setRetryingImages(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(imageIndex);
+          return newSet;
+        });
       }
-      
-      fd.append("goal", goalToSend);
-      fd.append("industry", industryMap[presetKey] || "Real Estate");
-      fd.append("preserveStructure", preserveStructure.toString());
-      
-      const effectiveAllowStaging = (allowStagingOverride !== undefined ? allowStagingOverride : allowStaging);
-      const effectiveFurnitureReplacement = (furnitureReplacementOverride !== undefined ? furnitureReplacementOverride : furnitureReplacement);
-      fd.append("allowStaging", effectiveAllowStaging.toString());
-      fd.append("allowRetouch", allowRetouch.toString());
-      fd.append("furnitureReplacement", effectiveFurnitureReplacement.toString());
-      
-      // Always send scene hints on retry
-      fd.append("sceneType", explicitScene);
-      if (roomType) {
-        fd.append("roomType", roomType);
-      }
-      
-      // Pass outdoor staging preference explicitly (helps exterior prompt path)
-      fd.append("outdoorStaging", effectiveAllowStaging ? "auto" : "none");
-      
-      // Mark as retry so server can switch to focused prompt
-      fd.append("isRetry", "true");
-      
-      // Nudge diversity on the server side (sampler can use this to jitter seed/params)
-      fd.append("variationId", Math.random().toString(36).slice(2));
-      
-      // If you track multi-angle grouping, pass it here too
-      const metaData = metaByIndex[imageIndex];
-      const manualSameRoomKey = metaData?.roomKey;
-      const followupAngle = !!metaData?.angleOrder && metaData.angleOrder > 1;
-      
-      // Determine sameRoomKey - manual takes precedence, then auto-linking
-      let sameRoomKey = manualSameRoomKey;
-      if (!sameRoomKey && linkImages && imageRoomTypes[imageIndex]) {
-        const roomType = imageRoomTypes[imageIndex];
-        // Auto-link images with same roomType if linkImages is enabled
-        sameRoomKey = `auto-${roomType}`;
-      }
-      
-      if (sameRoomKey) {
-        fd.append("sameRoomKey", sameRoomKey);
-      }
-      if (followupAngle) {
-        fd.append("followupAngle", "true");
-      }
-      
-      // Add window count for validation if provided
-      if (windowCount !== undefined && windowCount >= 0) {
-        fd.append("windowCount", windowCount.toString());
-      }
-      
-      // Add reference image for style matching if provided
-      if (referenceImage) {
-        fd.append("referenceImage", referenceImage);
-        console.log("[RETRY] Adding reference image for style matching:", referenceImage.name);
-      }
-      
-      // TWO-STAGE RETRY: Pass quality-enhanced baseline URL if available for staging retry
-      const qualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
-      if (qualityEnhancedUrl && effectiveAllowStaging) {
-        fd.append("qualityEnhancedUrl", qualityEnhancedUrl);
-        console.log("[RETRY] Passing quality-enhanced baseline for staging retry:", qualityEnhancedUrl);
-      }
-      
-      const response = await fetch(api("/api/batch/retry-single"), withDevice({
-        method: "POST",
-        body: fd,
-        credentials: "include"
-      }));
-      
-      if (!response.ok) {
-        if (response.status === 402) {
-          const err = await response.json().catch(() => ({}));
-          const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
-          if (goBuy) {
-            window.open("/buy-credits", "_blank");
-          }
-          return;
-        }
-        
-        const err = await response.json().catch(() => ({}));
-        
-        // Handle retry-specific compliance failures
-        if (err.code === "RETRY_COMPLIANCE_FAILED") {
-          const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
-          toast({
-            title: "Cannot generate different result",
-            description: `The AI cannot create a compliant variation due to ${violationDetails}. Try adjusting your settings or using a different approach. No credit was charged.`,
-            variant: "destructive",
-            duration: 8000
-          });
-          return;
-        }
-        
-        // Enhanced error messaging for specific retry issues
-        if (response.status === 400 && err.message?.includes("Invalid image format")) {
-          throw new Error("The image file appears to be corrupted or in an unsupported format. Please try uploading the image again.");
-        }
-        
-        throw new Error(err.message || "Failed to retry image");
-      }
-      
-
-      const data = await response.json();
-
-      // Handle new /api/status/batch response shape
-      if (data && data.success && Array.isArray(data.jobs)) {
-        // Find the job for this retry
-        const jobId = data.jobId || (data.jobs[0] && data.jobs[0].id);
-        const job = data.jobs.find((j: any) => j.id === jobId) || data.jobs[0];
-        if (job && job.success && job.imageUrl) {
-          const stamp = Date.now();
-          const retryResult = {
-            image: job.imageUrl,
-            imageUrl: job.imageUrl,
-            result: { imageUrl: job.imageUrl },
-            error: null,
-            ok: true
-          };
-          const normalizedResult = normalizeBatchItem(retryResult);
-          const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-          const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
-          setResults(prev => prev.map((r, i) =>
-            i === imageIndex ? {
-              ...r,
-              image: job.imageUrl,
-              imageUrl: job.imageUrl,
-              version: stamp,
-              mode: job.mode || "staged",
-              originalImageUrl: preservedOriginalUrl,
-              qualityEnhancedUrl: preservedQualityEnhancedUrl,
-              result: {
-                ...(normalizedResult || {}),
-                image: job.imageUrl,
-                imageUrl: job.imageUrl,
-                originalImageUrl: preservedOriginalUrl,
-                qualityEnhancedUrl: preservedQualityEnhancedUrl
-              },
-              error: null,
-              filename: fileToRetry.name
-            } : r
-          ));
-          setProcessedImagesByIndex(prev => ({
-            ...prev,
-            [imageIndex]: job.imageUrl
-          }));
-          setProcessedImages(prev => {
-            const newSet = new Set(prev);
-            newSet.add(job.imageUrl);
-            return Array.from(newSet);
-          });
-          setProcessedImagesByIndex(prev => ({
-            ...prev,
-            [imageIndex]: job.imageUrl
-          }));
-          await refreshUser();
-          return;
-        }
-      }
-      throw new Error("Unexpected response format from retry");
-      
-    } catch (error) {
-      console.error("Retry failed:", error);
-      
-      toast({
-        title: "Retry failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive"
-      });
-    } finally {
-      // Always clear the retrying flag
       setRetryingImages(prev => {
         const newSet = new Set(prev);
         newSet.delete(imageIndex);
