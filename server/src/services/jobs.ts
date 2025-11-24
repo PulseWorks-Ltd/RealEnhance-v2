@@ -53,15 +53,35 @@ import type {
 } from "../shared/types.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
-import { readJsonFile, writeJsonFile } from "./jsonStore.js";
+import { createClient } from 'redis';
 
-type JobsState = Record<JobId, JobRecord>;
+const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+const redisClient = createClient({ url: REDIS_URL });
+redisClient.connect().catch(() => {});
 
-function loadAll(): JobsState {
-  return readJsonFile<JobsState>("jobs.json", {});
+// Redis-based job record helpers
+export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
+  const key = `jobs:${jobId}`;
+  let rec: any = {};
+  try {
+    const val = await redisClient.get(key);
+    if (val) rec = JSON.parse(val);
+  } catch {}
+  rec = {
+    ...rec,
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  await redisClient.set(key, JSON.stringify(rec));
 }
-function saveAll(state: JobsState) {
-  writeJsonFile("jobs.json", state);
+
+export async function getJob(jobId: string): Promise<JobRecord | undefined> {
+  const key = `jobs:${jobId}`;
+  try {
+    const val = await redisClient.get(key);
+    if (val) return JSON.parse(val);
+  } catch {}
+  return undefined;
 }
 
 function queue() {
@@ -172,7 +192,4 @@ export async function enqueueEditJob(params: {
   return { jobId };
 }
 
-export function getJob(jobId: string): JobRecord | undefined {
-  const state = loadAll();
-  return state[jobId];
-}
+// (Legacy getJob removed; now async and Redis-based)
