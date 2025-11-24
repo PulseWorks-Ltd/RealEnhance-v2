@@ -1292,8 +1292,8 @@ export default function BatchProcessor() {
   };
 
   const handleRetryFailed = async () => {
-    // Find the failed images and retry with the same settings
-    const failedImages = results.filter(r => r.error); // Use error presence instead of undefined r.ok
+    // Only treat images as failed if they have a real error (not validator-failed)
+    const failedImages = results.filter(r => r && r.error && r.error !== 'validator_failed');
     if (failedImages.length === 0) {
       toast({ title: "No Failed Images", description: "All images processed successfully.", variant: "default" });
       return;
@@ -1312,16 +1312,6 @@ export default function BatchProcessor() {
       // Ensure user has sufficient credits
       await ensureLoggedInAndCredits(filesToRetry.length);
     } catch (e: any) {
-      if (e.code === "INSUFFICIENT_CREDITS") {
-        const more = e.needed || filesToRetry.length;
-        const goBuy = confirm(
-          `You need ${more} more credits to retry ${filesToRetry.length} images. Buy credits now?`
-        );
-        if (goBuy) {
-          window.open("/buy-credits", "_blank");
-        }
-        return;
-      }
       alert(e.message || "Unable to retry - please sign in and try again.");
       return;
     }
@@ -1340,7 +1330,7 @@ export default function BatchProcessor() {
     fd.append("stagingStyle", allowStaging ? stagingStyle : "");
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
-    // NEW: Manual room linking metadata (for retry)
+    // Manual room linking metadata (for retry)
     fd.append("metaJson", metaJson);
 
     try {
@@ -1352,16 +1342,8 @@ export default function BatchProcessor() {
       
       if (!res.ok) {
         setRunState("done");
-        if (res.status === 409) {
-          const err = await res.json().catch(() => ({}));
-          return toast({ 
-            title: "Batch already running", 
-            description: err.message || "Please wait for the current batch to complete before retrying.",
-            variant: "destructive"
-          });
-        }
-        const err = await res.json().catch(() => ({}));
-        return alert(err.message || "Failed to retry batch processing");
+        alert("Failed to retry batch processing");
+        return;
       }
       
       const data = await res.json();
@@ -2907,6 +2889,7 @@ export default function BatchProcessor() {
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
+              // Always update the image, no UI distinction for validator-failed edits
               if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
                 const preservedOriginalUrl = results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl;
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
