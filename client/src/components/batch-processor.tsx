@@ -1482,9 +1482,8 @@ export default function BatchProcessor() {
       
       // Use dedicated retry endpoint that bypasses batch lock
       const fd = new FormData();
-      fd.append("images", fileToRetry);
+      fd.append("image", fileToRetry); // Correct field name for retry-single
       fd.append("goal", goalToSend);
-      // Add any other required fields as needed (sceneType, allowStaging, etc.)
       if (sceneType) fd.append("sceneType", sceneType);
       if (typeof allowStagingOverride === 'boolean') fd.append("allowStaging", String(allowStagingOverride));
       if (typeof furnitureReplacementOverride === 'boolean') fd.append("furnitureReplacement", String(furnitureReplacementOverride));
