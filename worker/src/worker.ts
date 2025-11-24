@@ -940,17 +940,23 @@ const worker = new Worker(
 worker.on("completed", (job, result: any) => {
   const url = (result && (result as any).resultUrl) ? String((result as any).resultUrl).slice(0, 120) : undefined;
   console.log(`[worker] completed job ${job.id}${url ? ` → ${url}` : ""}`);
-  
-  // CRITICAL DEBUG: Verify result was captured
-  if (result) {
-    console.log(`[worker] ✅ Result captured by BullMQ:`, {
-      hasResultUrl: !!result.resultUrl,
-      hasOriginalUrl: !!result.originalUrl,
-      hasStageUrls: !!result.stageUrls,
-      keys: Object.keys(result)
-    });
-  } else {
-    console.error(`[worker] ❌ NO RESULT captured for job ${job.id} - BullMQ returnvalue will be empty!`);
+
+  // Write completion status for both normal and retry jobs
+  try {
+    // Use job.id as the key, and always write the same shape
+    const status = {
+      status: "complete",
+      success: !!result?.resultUrl,
+      imageUrl: result?.resultUrl || null,
+      originalUrl: result?.originalUrl || null,
+      stageUrls: result?.stageUrls || null,
+      meta: result?.meta || null
+    };
+    // Use updateJob from utils/persist
+    updateJob(job.id, status);
+    console.log(`[worker] ✅ jobs.json updated for job ${job.id}`);
+  } catch (e) {
+    console.error(`[worker] ❌ Failed to update jobs.json for job ${job.id}:`, e);
   }
 });
 
