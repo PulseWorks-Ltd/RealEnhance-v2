@@ -24,18 +24,7 @@ export async function enqueueRegionEditJob(params: {
     createdAt: now,
   } as any;
 
-  const state = loadAll();
-  state[jobId] = {
-    id: jobId,
-    jobId,
-    userId: params.userId,
-    type: "region-edit",
-    status: "queued",
-    payload,
-    createdAt: now,
-    updatedAt: now,
-  };
-  saveAll(state);
+
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   // Simulate immediate result for now
@@ -123,19 +112,7 @@ export async function enqueueEnhanceJob(params: {
     remoteOriginalUrl: params.remoteOriginalUrl as any,
   } as any;
 
-  const state = loadAll();
-  state[jobId] = {
-    id: jobId,                // ⬅️ ensure `id` is present
-    jobId,                    // optional duplicate for compatibility
-    userId: params.userId,
-    imageId: params.imageId,
-    type: "enhance",
-    status: "queued",
-  payload,                  // ⬅️ persist payload for visibility (includes remoteOriginalUrl optional)
-    createdAt: now,
-    updatedAt: now,
-  };
-  saveAll(state);
+
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   return { jobId };
@@ -174,19 +151,7 @@ export async function enqueueEditJob(params: {
     ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
   } as any;
 
-  const state = loadAll();
-  state[jobId] = {
-    id: jobId,                // ⬅️ ensure `id`
-    jobId,
-    userId: params.userId,
-    imageId: params.imageId,
-    type: "edit",
-    status: "queued",
-    payload,                  // ⬅️ persist payload
-    createdAt: now,
-    updatedAt: now,
-  };
-  saveAll(state);
+
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   return { jobId };
