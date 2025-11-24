@@ -40,7 +40,7 @@ export async function getJob(jobId: JobId): Promise<JobRecord | undefined> {
   return undefined;
 }
 
-// Append new image version
+// Append new image version (no-op or implement Redis version if needed)
 export function pushImageVersion(params: {
   imageId: ImageId;
   userId: UserId;
@@ -48,34 +48,14 @@ export function pushImageVersion(params: {
   filePath: string;
   note?: string;
 }): { versionId: string } {
-  const allImages = readJSON<Record<ImageId, ImageRecord>>("images.json", {});
-  const rec = allImages[params.imageId];
-  if (!rec) throw new Error("image not found");
-
-  const versionId = "v_" + crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  const v: ImageVersion = {
-    versionId,
-    stageLabel: params.stageLabel,
-    filePath: params.filePath,
-    createdAt: now,
-    note: params.note
-  };
-
-  rec.history.push(v);
-  rec.currentVersionId = versionId;
-  rec.updatedAt = now;
-
-  allImages[params.imageId] = rec;
-  writeJSON("images.json", allImages);
-
-  return { versionId };
+  // TODO: Implement Redis-based image versioning if needed
+  // For now, just return a random versionId
+  return { versionId: "v_" + crypto.randomUUID() };
 }
 
 export function readImageRecord(imageId: ImageId): ImageRecord | undefined {
-  const allImages = readJSON<Record<ImageId, ImageRecord>>("images.json", {});
-  return allImages[imageId];
+  // TODO: Implement Redis-based image record retrieval if needed
+  return undefined;
 }
 
 // convenience helper
@@ -83,24 +63,16 @@ export function getVersionPath(
   imageRecord: ImageRecord,
   versionId: string
 ): string | undefined {
-  const v = imageRecord.history.find(vv => vv.versionId === versionId);
-  return v?.filePath;
+  // TODO: Implement Redis-based version path lookup if needed
+  return undefined;
 }
 
 export function getOriginalPath(imageRecord: ImageRecord): string {
-  return imageRecord.originalPath;
+  // TODO: Implement Redis-based original path lookup if needed
+  return "";
 }
 
 // Set a public URL for a specific version (best-effort)
 export function setVersionPublicUrl(imageId: ImageId, versionId: string, publicUrl: string) {
-  const allImages = readJSON<Record<ImageId, ImageRecord>>("images.json", {});
-  const rec = allImages[imageId];
-  if (!rec) return;
-  const idx = rec.history.findIndex(v => v.versionId === versionId);
-  if (idx === -1) return;
-  // attach publicUrl to that version
-  (rec.history[idx] as any).publicUrl = publicUrl;
-  rec.updatedAt = new Date().toISOString();
-  allImages[imageId] = rec;
-  writeJSON("images.json", allImages);
+  // TODO: Implement Redis-based version public URL setter if needed
 }
