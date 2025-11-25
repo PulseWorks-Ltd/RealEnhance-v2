@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "../../shared/src/jsonStore.js";
+import { readJsonFile, writeJsonFile } from "../../../shared/dist/jsonStore.js";
 
 type ImagesState = Record<
   string,
