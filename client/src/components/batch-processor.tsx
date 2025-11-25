@@ -733,7 +733,11 @@ export default function BatchProcessor() {
         if (data.items) {
           const completed = data.items.filter((item: any) => item && (item.status === 'completed' || item.status === 'failed')).length;
           const total = data.count || data.items.length;
-          setProgressText(`Processing images: ${completed}/${total} completed`);
+          if (completed === total && total > 0) {
+            setProgressText('Completed');
+          } else {
+            setProgressText(`Processing images: ${completed}/${total} completed`);
+          }
 
           // Surface strict retry notifications as toasts (once per job)
           try {
