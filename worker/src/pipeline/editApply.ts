@@ -1,10 +1,29 @@
 import sharp from "sharp";
+import fs from "fs/promises";
+import path from "path";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { getGeminiClient } from "../ai/gemini";
 import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 
 function isDataUrl(s: any): s is string {
-  return typeof s === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(s);
+  return (
+    typeof s === "string" &&
+    /^data:image\/(png|jpeg|jpg|webp);base64,/.test(s)
+  );
+}
+
+function decodeDataUrl(dataUrl: string): Buffer {
+  const [, base64] = dataUrl.split(",");
+  return Buffer.from(base64, "base64");
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function applyEdit(params: {
@@ -14,167 +33,169 @@ export async function applyEdit(params: {
   instruction: string;
   restoreFromPath?: string;
   smartReinstate?: boolean;
-  sensitivityPx?: number; // grow/feather radius in pixels
 }): Promise<string> {
-  let { baseImagePath, mask, mode, instruction, restoreFromPath, smartReinstate = true, sensitivityPx = 4 } = params;
+  const {
+    baseImagePath,
+    mask,
+    mode,
+    instruction,
+    restoreFromPath,
+    smartReinstate,
+  } = params;
 
-  // Map new modes to legacy for backward compatibility
-  if (mode === "edit") {
-    // For 'edit', default to Gemini logic (Add/Remove/Replace)
-    mode = "Add"; // Use Add as a placeholder; actual op is in instruction
-  } else if (mode === "restore_original") {
-    mode = "Restore";
+  // 1. Validate base image path
+  if (!baseImagePath || !(await fileExists(baseImagePath))) {
+    console.error("[editApply] Base image missing:", baseImagePath);
+    throw new Error("Base image not found for edit");
   }
 
-  // Debug: log input params
-  console.log('[applyEdit] Params:', { baseImagePath, mode, instruction, restoreFromPath, smartReinstate, sensitivityPx });
-  if (!mask) {
-    console.warn('[applyEdit] No mask provided, returning original image.');
+  // 2. Handle restore-only modes early
+  if (mode === "restore_original" || mode === "Restore") {
+    // If a specific restore source is supplied, prefer that
+    if (restoreFromPath && (await fileExists(restoreFromPath))) {
+      console.log("[editApply] restore_original using restoreFromPath:", restoreFromPath);
+      return restoreFromPath;
+    }
+    console.log("[editApply] restore_original with no restoreFromPath, returning base image.");
     return baseImagePath;
   }
 
-  const meta = await sharp(baseImagePath).metadata();
-  const W = meta.width || 0;
-  const H = meta.height || 0;
-  if (!W || !H) return baseImagePath;
-
-  const maskBuf = isDataUrl(mask)
-    ? Buffer.from(String(mask).split(',')[1] || '', 'base64')
-    : (Buffer.isBuffer(mask) ? mask : Buffer.alloc(0));
-
-  if (!maskBuf || maskBuf.length === 0) {
-    console.warn('[applyEdit] Mask buffer is empty, returning original image.');
+  // 3. Validate instruction for edit modes
+  if (!instruction || !instruction.trim()) {
+    console.warn("[editApply] No instruction supplied for edit mode, returning base image.");
     return baseImagePath;
   }
 
-  // Normalize mask to match base size and generate solid alpha map (0 or 255)
-  let workingMask: Buffer;
+  // 4. Validate mask (must be a data URL image)
+  if (!isDataUrl(mask)) {
+    console.warn("[editApply] Mask is not a valid data URL, returning base image.");
+    return baseImagePath;
+  }
+
+  const maskBuf = decodeDataUrl(mask);
+
+  if (!maskBuf || maskBuf.length < 64) {
+    console.warn("[editApply] Mask buffer too small, returning base image.");
+    return baseImagePath;
+  }
+
+  // 5. Inspect mask with sharp – reject uniform / invalid masks
   try {
-    workingMask = await sharp(maskBuf)
-      .resize(W, H, { fit: 'fill' })
-      .greyscale()
-      .threshold(128)
-      .toBuffer();
-    // Debug: check mask stats
-    const maskStats = await sharp(workingMask).stats();
-    console.log(`[editApply] Mask stats: min=${maskStats.channels[0].min}, max=${maskStats.channels[0].max}, mean=${maskStats.channels[0].mean}`);
-    // Check for uniform mask
-    if (maskStats.channels[0].min === maskStats.channels[0].max) {
-      console.warn('[applyEdit] Mask is uniform (all black or all white).');
+    const stats = await sharp(maskBuf).stats();
+    const ch = stats.channels[0];
+    if (ch.min === ch.max) {
+      console.warn("[editApply] Mask is uniform (all black/white), skipping edit.");
       return baseImagePath;
     }
   } catch (err) {
-    console.error('[applyEdit] Error normalizing mask:', err);
+    console.warn("[editApply] Mask stats failed, treating mask as invalid:", err);
     return baseImagePath;
   }
 
-    // Debug: log mask type and size
-    console.log(`[editApply] Received mask, length=${maskBuf.length}, type=${typeof mask}`);
-    if (maskBuf.length < 100) {
-      console.warn(`[editApply] Mask buffer is suspiciously small (${maskBuf.length} bytes)`);
-      // Return error image or original
-      return baseImagePath;
-    }
-  const dilate = Math.max(0, Math.floor(sensitivityPx));
-  if (dilate > 0) {
-    try {
-      workingMask = await sharp(workingMask)
-        .blur(dilate)
-        .toBuffer();
-    } catch (err) {
-      console.error('[applyEdit] Error during mask dilation/blur:', err);
-      return baseImagePath;
-    }
-  }
-
-  if (mode === "Restore") {
-    // Smart Restore: take pixels from restoreFromPath (baseline) wherever mask=white
-    const srcPath = restoreFromPath || baseImagePath;
-    const overlay = await sharp(srcPath)
-      .resize(W, H)
-      .removeAlpha()
-      .joinChannel(workingMask) // add mask as alpha channel
-      .toBuffer();
-
-    const outPath = siblingOutPath(baseImagePath, "-edit-restore", ".png");
-    await sharp(baseImagePath)
-      .composite([{ input: overlay }])
-      .toFile(outPath);
-    console.log('[applyEdit] Restore mode output:', outPath);
-    return outPath;
-  }
-
-  // For Add/Remove/Replace: build guided input and call Gemini with explicit mask instruction
-  // 1) Guided input – darken outside mask region
-  let invertedMask: Buffer;
+  // 6. Read base image as buffer for Gemini
+  let baseBuf: Buffer;
   try {
-    invertedMask = await sharp(workingMask)
-      .negate()
-      .toColourspace('b-w')
-      .toBuffer();
+    baseBuf = await fs.readFile(baseImagePath);
   } catch (err) {
-    console.error('[applyEdit] Error inverting mask:', err);
-    return baseImagePath;
+    console.error("[editApply] Failed reading base image:", err);
+    throw new Error("Failed to read base image");
   }
 
-  // Create a black overlay with alpha = invertedMask to darken outside region
-  const blackout = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.45 } } })
-    .toBuffer();
+  const baseExt = path.extname(baseImagePath).toLowerCase();
+  const baseMime =
+    baseExt === ".png"
+      ? "image/png"
+      : baseExt === ".webp"
+      ? "image/webp"
+      : "image/jpeg";
 
-  const blackoutWithAlpha = await sharp(blackout)
-    .joinChannel(invertedMask) // use inverted mask as alpha to apply darkening where mask is black
-    .toBuffer();
+  const baseB64 = baseBuf.toString("base64");
+  const maskB64 = maskBuf.toString("base64");
 
-  const guidedBuf = await sharp(baseImagePath)
-    .composite([{ input: blackoutWithAlpha }])
-    .toFormat('png')
-    .toBuffer();
+  // 7. Build prompt based on mode
+  const modeLabel =
+    mode === "Add" || mode === "Remove" || mode === "Replace"
+      ? mode
+      : "Edit";
 
-  const guidedPath = siblingOutPath(baseImagePath, "-edit-guide", ".png");
-  await sharp(guidedBuf).toFile(guidedPath);
-  console.log('[applyEdit] Guided input saved:', guidedPath);
-
-  // 2) Gemini inpaint-style call
-  const ai = getGeminiClient();
-  const guidedB64 = guidedBuf.toString('base64');
-  const maskB64 = (await sharp(workingMask).png().toBuffer()).toString('base64');
-
-  const opHint = mode === 'Add' ? 'ADD new content' : mode === 'Remove' ? 'REMOVE content' : 'REPLACE content';
   const prompt = [
-    `[REGION EDIT – ${opHint}]`,
-    `- Only modify the WHITE area of the provided mask.`,
-    `- DO NOT change any pixels outside the mask.`,
-    `- Preserve walls/windows/doors and architectural elements.`,
-    `- Maintain camera viewpoint and perspective exactly.`,
-    `- Instruction: ${instruction}`,
-  ].join('\n');
+    "You are a professional real estate photo editor.",
+    "Perform a high-quality regional edit on the masked area of this image.",
+    "",
+    `Edit mode: ${modeLabel}.`,
+    "Masked region (white) is where you are allowed to change the image.",
+    "Unmasked region (black) must remain structurally identical.",
+    "",
+    "Rules:",
+    "- Do not change walls, ceilings, floors, windows, or doors outside the masked region.",
+    "- Do not change the room layout or camera perspective.",
+    "- Keep lighting, angles, and major architectural elements consistent.",
+    "",
+    "User instruction:",
+    instruction,
+  ].join("\n");
 
-  let resp;
+  // 8. Call Gemini with fallback wrapper
+  const client = getGeminiClient();
+
+  let resp: any;
   try {
-    resp = (await runWithImageModelFallback(ai as any, {
+  const { resp: geminiResp } = await runWithImageModelFallback(
+    client,
+    {
       contents: [
-        { inlineData: { mimeType: 'image/png', data: guidedB64 } },
-        { inlineData: { mimeType: 'image/png', data: maskB64 } },
-        { text: prompt }
-      ]
-    } as any, "region-edit")).resp;
-    console.log('[applyEdit] Gemini model response received.');
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: baseMime,
+                data: baseB64,
+              },
+            },
+            {
+              inlineData: {
+                mimeType: "image/png",
+                data: maskB64,
+              },
+            },
+          ],
+        },
+      ],
+    },
+    "editApply.regionEdit" // context label for logging
+  );
+
+  resp = geminiResp;
   } catch (err) {
-    console.error('[applyEdit] Gemini model call failed:', err);
+  console.error("[editApply] Gemini call failed:", err);
+  console.warn("[editApply] Falling back to original image due to model failure.");
+  return baseImagePath;
+  }
+
+  // 9. Extract image output from Gemini response
+  try {
+    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    const img = parts.find(
+      (p: any) =>
+        p?.inlineData?.data &&
+        /image\//.test((p.inlineData?.mimeType as string) || "")
+    );
+
+    if (img?.inlineData?.data) {
+      const outPath = siblingOutPath(baseImagePath, "-edit", ".webp");
+      writeImageDataUrl(outPath, `data:image/webp;base64,${img.inlineData.data}`);
+      console.log("[applyEdit] Edit output saved:", outPath);
+      return outPath;
+    }
+
+    console.warn(
+      "[editApply] No inline image data in Gemini response, returning original image."
+    );
+    return baseImagePath;
+  } catch (err) {
+    console.error("[editApply] Failed to parse Gemini response:", err);
     return baseImagePath;
   }
-
-  const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-  const img = parts.find(p => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
-    console.warn(`[editApply] Gemini region edit failed, returning original image`);
-  if (img?.inlineData?.data) {
-    const outPath = siblingOutPath(baseImagePath, "-edit", ".webp");
-    writeImageDataUrl(outPath, `data:image/webp;base64,${img.inlineData.data}`);
-    console.log('[applyEdit] Edit output saved:', outPath);
-    return outPath;
-  }
-
-  // Fallback: if model failed, return original
-  console.warn('[applyEdit] No valid output from Gemini, returning original image.');
-  return baseImagePath;
 }
