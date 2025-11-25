@@ -25,4 +25,4 @@ RUN pnpm -C shared build \
 
 WORKDIR /app/worker
 ENV NODE_ENV=production
-CMD ["node", "dist/worker.js"]
+CMD ["node", "dist/worker/src/worker.js"]
