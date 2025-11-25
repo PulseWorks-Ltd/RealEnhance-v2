@@ -3,6 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { readJsonFile } from "../services/jsonStore.js";
+import { findByPublicUrlRedis } from "../../../shared/src/imageStore.js";
 import { enqueueEditJob } from "../services/jobs.js";
 
 type ImagesState = Record<string, any>;
@@ -35,87 +36,13 @@ function parseRetryInfo(url: string) {
   return { noQuery, filename, baseKey, retry };
 }
 
-function findByPublicUrl(userId: string, url: string) {
-  const images = readJsonFile<ImagesState>("images.json", {});
-  const target = parseRetryInfo(url);
 
-  let exactOwnerMatch: { record: any; versionId: string } | null = null;
-  let exactAnyMatch: { record: any; versionId: string } | null = null;
-
-  type Candidate = { record: any; versionId: string; retry: number; owner: string };
-
-  const familyCandidates: Candidate[] = [];
-
-  for (const rec of Object.values(images) as any[]) {
-    if (!rec) continue;
-
-    const owner = rec.ownerUserId;
-    for (const v of rec.history || []) {
-      const pubUrl = String((v as any).publicUrl || "");
-      if (!pubUrl) continue;
-
-      const info = parseRetryInfo(pubUrl);
-
-      // 1) Exact URL match (no query)
-      if (info.noQuery === target.noQuery) {
-        const candidate = { record: rec, versionId: v.versionId };
-        if (owner === userId) {
-          exactOwnerMatch = candidate;
-          break;
-        }
-        if (!exactAnyMatch) {
-          exactAnyMatch = candidate;
-        }
-      }
-
-      // 2) Collect same-family candidates for possible fallback later
-      if (info.baseKey === target.baseKey) {
-        familyCandidates.push({
-          record: rec,
-          versionId: v.versionId,
-          retry: info.retry,
-          owner,
-        });
-      }
-    }
-
-    if (exactOwnerMatch) break;
-  }
-
-  // Prefer exact URL + owner match
-  if (exactOwnerMatch) return exactOwnerMatch;
-  // Then exact URL, any owner
-  if (exactAnyMatch) return exactAnyMatch;
-
-  // 3) Fallback: same baseKey family
-  if (familyCandidates.length > 0) {
-    // Prefer same owner, highest retry number (most recent)
-    const sameOwner = familyCandidates.filter((c) => c.owner === userId);
-    const pool = sameOwner.length > 0 ? sameOwner : familyCandidates;
-
-    const best = pool.reduce((best, cur) =>
-      !best || cur.retry > best.retry ? cur : best,
-      null as Candidate | null
-    );
-
-    if (best) {
-      console.warn("[region-edit] Using family fallback match", {
-        userId,
-        targetUrl: url,
-        baseKey: target.baseKey,
-        chosenRetry: best.retry,
-        owner: best.owner,
-      });
-      return { record: best.record, versionId: best.versionId };
-    }
-  }
-
-  console.warn("[region-edit] No image record found for user", {
-    userId,
-    url,
-    baseKey: target.baseKey,
-  });
-  return null;
+// Redis-based lookup
+async function findByPublicUrl(userId: string, url: string) {
+  const found = await findByPublicUrlRedis(userId, url);
+  if (!found) return null;
+  // For compatibility with legacy code, return a shape with 'record' and 'versionId'.
+  return { record: { imageId: found.imageId, ownerUserId: userId }, versionId: found.versionId };
 }
 
 export const regionEditRouter = Router();
@@ -174,7 +101,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(400).json({ success: false, error: "instructions_required" });
     }
 
-    const found = findByPublicUrl(sessUser.id, imageUrl);
+
+    const found = await findByPublicUrl(sessUser.id, imageUrl);
     if (!found) {
       return res.status(404).json({ success: false, error: "image_not_found" });
     }
