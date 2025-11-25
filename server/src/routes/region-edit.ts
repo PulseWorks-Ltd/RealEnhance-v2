@@ -49,6 +49,7 @@ export function regionEditRouter() {
 
   // POST /api/region-edit
   r.post("/region-edit", uploadMw, async (req: Request, res: Response) => {
+    console.log("[region-edit] POST hit");
     try {
       const sessUser = (req.session as any)?.user;
       if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });

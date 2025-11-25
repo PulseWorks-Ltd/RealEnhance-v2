@@ -2888,8 +2888,11 @@ export default function BatchProcessor() {
             originalImageUrl={results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl || results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
+            onStart={() => {
+              setIsEditingInProgress(true);
+            }}
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
-              // Always update the image, no UI distinction for validator-failed edits
+              setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
                 const preservedOriginalUrl = results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl;
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
@@ -2925,8 +2928,12 @@ export default function BatchProcessor() {
               setEditingImageIndex(null);
             }}
             onCancel={() => {
+              setIsEditingInProgress(false);
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
+            }}
+            onError={() => {
+              setIsEditingInProgress(false);
             }}
           />
         </Modal>
