@@ -1,4 +1,4 @@
-import { readJsonFile, writeJsonFile } from "./jsonStore.js";
+import { readJsonFile, writeJsonFile } from "../../shared/src/jsonStore.js";
 
 type ImagesState = Record<
   string,
@@ -38,7 +38,7 @@ export async function recordEnhancedImage(params: {
   }
 
   // Avoid duplicate entries for same URL/version
-  if (!rec.history.some((h) => h.publicUrl === publicUrl && h.versionId === versionId)) {
+  if (!rec.history.some((h: any) => h.publicUrl === publicUrl && h.versionId === versionId)) {
     rec.history.push({
       publicUrl,
       versionId,

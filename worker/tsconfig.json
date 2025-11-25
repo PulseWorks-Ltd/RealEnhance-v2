@@ -4,12 +4,17 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "./dist",
-    "rootDir": "./src",
     "esModuleInterop": true,
     "strict": false,
     "skipLibCheck": true,
     "types": ["node"]
   },
-    "include": ["src/**/*.ts"],
-    "exclude": ["src/ai/validators/__tests__/*", "**/*.test.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../shared/src/**/*.ts"
+  ],
+  "exclude": [
+    "src/ai/validators/__tests__/*",
+    "**/*.test.ts"
+  ]
 }
