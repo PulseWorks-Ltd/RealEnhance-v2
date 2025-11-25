@@ -2,7 +2,7 @@
   "name": "@realenhance/worker",
   "version": "1.0.0",
   "private": true,
-  "main": "dist/worker.js",
+  "main": "dist/worker/worker.js",
   "types": "dist/worker.d.ts",
   "scripts": {
     "dev": "NODE_ENV=development tsx src/worker.ts",
