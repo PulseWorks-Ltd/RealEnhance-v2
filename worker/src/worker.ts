@@ -30,6 +30,7 @@ import {
 } from "./utils/persist";
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
+import { recordEnhancedImageRedis } from "@realenhance/shared/src/imageStore";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
@@ -827,6 +828,17 @@ async function handleEditJob(payload: EditJobPayload) {
         // isRetry: retryCount > 0,
         // retryCount,
       },
+    });
+    await recordEnhancedImageRedis({
+      userId: payload.userId,
+      imageId: payload.imageId,
+      publicUrl: pub.url,
+      baseKey: key,
+      versionId: newVersion.versionId,
+      stage: "edit",
+      // If you have retryCount in payload or context, add it here
+      // isRetry: retryCount > 0,
+      // retryCount,
     });
     updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId, resultUrl: pub.url });
   } catch (e) {
