@@ -29,6 +29,7 @@ import {
   getOriginalPath
 } from "./utils/persist";
 import { setVersionPublicUrl } from "./utils/persist";
+import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
@@ -812,6 +813,21 @@ async function handleEditJob(payload: EditJobPayload) {
     try {
       setVersionPublicUrl(payload.imageId, newVersion.versionId, pub.url);
     } catch {}
+    // Record in images.json (including retries)
+    const key = pub.key ? pub.key.split("/").pop() : (pub.url.split("/").pop() || "");
+    await recordEnhancedImage({
+      userId: payload.userId,
+      imageId: payload.imageId,
+      publicUrl: pub.url,
+      baseKey: key,
+      versionId: newVersion.versionId,
+      extra: {
+        stage: "edit",
+        // If you have retryCount in payload or context, add it here
+        // isRetry: retryCount > 0,
+        // retryCount,
+      },
+    });
     updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId, resultUrl: pub.url });
   } catch (e) {
     updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
