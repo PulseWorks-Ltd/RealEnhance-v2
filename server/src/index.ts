@@ -1,4 +1,3 @@
-
 // server/src/index.ts
 import express, { type Express } from "express";
 import session, { type SessionOptions } from "express-session";
@@ -23,6 +22,7 @@ import { cancelRouter } from "./routes/cancel.js";
 import { groupsRouter } from "./routes/groups.js";
 import { healthRouter } from "./routes/health.js";
 import { undoRouter } from "./routes/undo.js";
+import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
