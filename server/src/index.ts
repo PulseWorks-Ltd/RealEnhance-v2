@@ -97,7 +97,7 @@ async function main() {
   app.use("/api", editRouter());
   app.use("/api", requeueRouter());
   app.use("/api", retrySingleRouter());
-  app.use("/api", regionEditRouter());
+  app.use("/api", regionEditRouter);
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
   app.use("/api", healthRouter());
