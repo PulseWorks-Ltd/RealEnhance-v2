@@ -26,7 +26,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 function findByPublicUrl(userId: string, url: string) {
-  // Try to match by stripping query params from S3 URLs
   const stripQuery = (u: string) => u.split("?")[0];
   const images = readJsonFile<ImagesState>("images.json", {});
   for (const rec of Object.values(images) as any[]) {
@@ -38,19 +37,14 @@ function findByPublicUrl(userId: string, url: string) {
       }
     }
   }
-  // Log more details if not found
   console.warn("[region-edit] No image record found for user", { userId, url });
   return null;
 }
 
 export const regionEditRouter = Router();
 
-// Multer fields middleware, typed for Express
-const uploadMw: RequestHandler = upload
-  .fields([
-    { name: "image", maxCount: 1 },
-    { name: "mask", maxCount: 1 },
-  ]) as unknown as RequestHandler;
+// ✅ accept ANY file fields (no more "Unexpected field")
+const uploadMw: RequestHandler = upload.any();
 
 regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Response) => {
   console.log("[region-edit] POST hit");
@@ -60,9 +54,16 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(401).json({ success: false, error: "not_authenticated" });
     }
 
-    const files = req.files as Record<string, Express.Multer.File[] | undefined>;
-    const imageFile = files?.image?.[0];
-    const maskFile = files?.mask?.[0];
+    // req.files is now an array from upload.any()
+    const filesArray = (req.files as Express.Multer.File[]) || [];
+
+    // Try the most likely fieldnames used by the client
+    const maskFile =
+      filesArray.find((f) => f.fieldname === "mask") ||
+      filesArray.find((f) => f.fieldname === "file") ||
+      filesArray.find((f) => f.fieldname === "image") ||
+      null;
+
     const body = (req.body || {}) as any;
 
     const imageUrl = body.imageUrl as string | undefined;
@@ -77,6 +78,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(400).json({ success: false, error: "missing_imageUrl" });
     }
     if (!maskFile) {
+      console.warn("[region-edit] No mask file found in upload. fields=", filesArray.map(f => f.fieldname));
       return res.status(400).json({ success: false, error: "missing_mask_file" });
     }
     if (!mode) {
@@ -89,21 +91,17 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(400).json({ success: false, error: "instructions_required" });
     }
 
-    // Find image record + base version
     const found = findByPublicUrl(sessUser.id, imageUrl);
     if (!found) {
-      console.warn("[region-edit] image not found", { userId: sessUser.id, imageUrl });
       return res.status(404).json({ success: false, error: "image_not_found" });
     }
 
     const record = found.record as any;
     const baseVersionId = found.versionId;
 
-    // Compose description for worker
     const instruction =
       mode === "edit" ? goal : "Restore original pixels for the masked region.";
 
-    // Map mode to worker enum
     let workerMode: "Add" | "Remove" | "Replace" | "Restore" = "Restore";
     if (mode === "edit") workerMode = "Replace";
 
@@ -123,9 +121,11 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const { jobId } = await enqueueEditJob(jobPayload);
     return res.status(200).json({ success: true, jobId });
   } catch (err: any) {
-    console.error("region-edit error", err);
-    return res
-      .status(500)
-      .json({ success: false, message: err.message, code: err.code });
+    console.error("[region-edit] error", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+      code: err.code,
+    });
   }
 });
