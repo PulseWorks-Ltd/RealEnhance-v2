@@ -4,6 +4,7 @@ import path from "path";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { getGeminiClient } from "../ai/gemini";
 import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
+import { readJsonFile, writeJsonFile } from "../../server/src/services/jsonStore.js";
 
 function isDataUrl(s: any): s is string {
   return (
