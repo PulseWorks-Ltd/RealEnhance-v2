@@ -85,7 +85,10 @@ export function regionEditRouter() {
 
       if (imageUrl) {
         const found = findByPublicUrl(sessUser.id, imageUrl);
-        if (!found) return res.status(404).json({ success: false, error: "image_not_found" });
+        if (!found) {
+          console.warn("[region-edit] image not found", { userId: sessUser.id, imageUrl });
+          return res.status(404).json({ success: false, error: "image_not_found" });
+        }
         record = found.record;
         baseVersionId = found.versionId;
       } else if (file) {
@@ -113,6 +116,7 @@ export function regionEditRouter() {
       const history = (record as any).history || [];
       const baseVersion = history.find((v: any) => v.versionId === baseVersionId);
       if (!baseVersion || !baseVersion.filePath) {
+        console.warn("[region-edit] base version not found", { userId: sessUser.id, imageUrl, baseVersionId });
         return res.status(404).json({ success: false, error: "base_version_not_found" });
       }
 
@@ -123,6 +127,7 @@ export function regionEditRouter() {
         const stage1A = history.find((v: any) => v.stageLabel === '1A');
         restoreVersion = stage1B || stage1A;
         if (!restoreVersion) {
+          console.warn("[region-edit] enhancement stage not found", { userId: sessUser.id, imageUrl, baseVersionId });
           return res.status(404).json({ success: false, error: "enhancement_stage_not_found" });
         }
       }
@@ -137,6 +142,7 @@ export function regionEditRouter() {
           const { uploadOriginalToS3 } = await import('../utils/s3.js');
           const basePath = path.join(uploadRoot, sessUser.id, baseVersion.filePath);
           if (!fss.existsSync(basePath)) {
+            console.warn("[region-edit] base file not found on disk", { userId: sessUser.id, basePath });
             return res.status(404).json({ success: false, error: "base_file_not_found_on_disk" });
           }
           const baseUpload = await uploadOriginalToS3(basePath);
