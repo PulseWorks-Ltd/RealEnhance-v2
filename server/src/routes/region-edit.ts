@@ -59,10 +59,20 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // Try the most likely fieldnames used by the client
     const maskFile =
+      filesArray.find((f) => f.fieldname === "regionMask") || // 👈 NEW
       filesArray.find((f) => f.fieldname === "mask") ||
       filesArray.find((f) => f.fieldname === "file") ||
       filesArray.find((f) => f.fieldname === "image") ||
+      filesArray[0] || // last-ditch fallback
       null;
+
+    if (!maskFile) {
+      console.warn(
+        "[region-edit] No mask file found in upload. fields=",
+        filesArray.map((f) => f.fieldname)
+      );
+      return res.status(400).json({ success: false, error: "missing_mask_file" });
+    }
 
     const body = (req.body || {}) as any;
 
@@ -76,10 +86,6 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     if (!imageUrl) {
       return res.status(400).json({ success: false, error: "missing_imageUrl" });
-    }
-    if (!maskFile) {
-      console.warn("[region-edit] No mask file found in upload. fields=", filesArray.map(f => f.fieldname));
-      return res.status(400).json({ success: false, error: "missing_mask_file" });
     }
     if (!mode) {
       return res.status(400).json({ success: false, error: "missing_mode" });
