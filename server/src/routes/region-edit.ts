@@ -28,15 +28,20 @@ const upload = multer({
 });
 
 function findByPublicUrl(userId: string, url: string) {
+  // Try to match by stripping query params from S3 URLs
+  const stripQuery = (u: string) => u.split('?')[0];
   const images = readJsonFile<ImagesState>("images.json", {});
   for (const rec of Object.values(images) as any[]) {
     if (!rec || rec.ownerUserId !== userId) continue;
-    const idx = (rec.history || []).findIndex((v: any) => String((v as any).publicUrl || '') === url);
-    if (idx !== -1) {
-      const versionId = rec.history[idx].versionId;
-      return { record: rec, versionId };
+    for (const v of rec.history || []) {
+      const pubUrl = String((v as any).publicUrl || '');
+      if (pubUrl === url || stripQuery(pubUrl) === stripQuery(url)) {
+        return { record: rec, versionId: v.versionId };
+      }
     }
   }
+  // Log more details if not found
+  console.warn('[region-edit] No image record found for user', { userId, url });
   return null;
 }
 
