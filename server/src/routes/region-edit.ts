@@ -27,17 +27,59 @@ const upload = multer({ storage });
 
 function findByPublicUrl(userId: string, url: string) {
   const stripQuery = (u: string) => u.split("?")[0];
+
   const images = readJsonFile<ImagesState>("images.json", {});
+  const target = stripQuery(url);
+
+  let ownerMatch: { record: any; versionId: string } | null = null;
+  let anyMatch: { record: any; versionId: string } | null = null;
+
   for (const rec of Object.values(images) as any[]) {
-    if (!rec || rec.ownerUserId !== userId) continue;
+    if (!rec) continue;
+
+    const owner = rec.ownerUserId;
     for (const v of rec.history || []) {
       const pubUrl = String((v as any).publicUrl || "");
-      if (pubUrl === url || stripQuery(pubUrl) === stripQuery(url)) {
-        return { record: rec, versionId: v.versionId };
+      if (!pubUrl) continue;
+
+      const stripped = stripQuery(pubUrl);
+      if (stripped !== target) continue;
+
+      const candidate = { record: rec, versionId: v.versionId };
+
+      // Perfect match: same user + same URL
+      if (owner === userId) {
+        ownerMatch = candidate;
+        break;
+      }
+
+      // URL matches but owner differs – keep as fallback
+      if (!anyMatch) {
+        anyMatch = candidate;
       }
     }
+
+    if (ownerMatch) break;
   }
-  console.warn("[region-edit] No image record found for user", { userId, url });
+
+  if (ownerMatch) {
+    return ownerMatch;
+  }
+
+  if (anyMatch) {
+    console.warn("[region-edit] Found image by URL but ownerUserId mismatch", {
+      expectedUserId: userId,
+      storedOwnerUserId: anyMatch.record.ownerUserId,
+      imageId: anyMatch.record.imageId || anyMatch.record.id,
+      versionId: anyMatch.versionId,
+    });
+    return anyMatch;
+  }
+
+  console.warn("[region-edit] No image record found for user", {
+    userId,
+    url,
+  });
   return null;
 }
 
