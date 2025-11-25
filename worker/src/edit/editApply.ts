@@ -1,62 +1,102 @@
-import sharp from 'sharp';
-import fs from 'fs/promises';
-import path from 'path';
+// server/worker/src/editApply.ts (or similar)
 
-export async function applyEdit(baseImagePath: string, maskPath: string): Promise<string | null> {
-  // 1. Load base image exactly as before
+import sharp from "sharp";
+import fs from "fs/promises";
+import path from "path";
+
+export async function applyEdit(
+  baseImagePath: string,
+  maskPath: string
+): Promise<string> {
+  // -------- 1) Validate base image --------
   const baseExists = await fs
     .access(baseImagePath)
     .then(() => true)
     .catch(() => false);
 
   if (!baseExists) {
-    console.error('[applyEdit] Base image missing:', baseImagePath);
-    throw new Error('Base image not found for edit');
+    console.error("[applyEdit] Base image missing:", baseImagePath);
+    throw new Error("Base image not found for edit");
   }
 
-  // 2. Load mask safely
-  let mask;
+  // Load base buffer
+  let baseBuf: Buffer;
   try {
-    mask = sharp(maskPath);
+    baseBuf = await fs.readFile(baseImagePath);
   } catch (err) {
-    console.error('[applyEdit] Failed to load mask file:', err);
-    throw new Error('Mask could not be read — aborting edit');
+    console.error("[applyEdit] Failed reading base image:", err);
+    throw new Error("Failed to read base image");
   }
 
-  const maskBuf = await mask.toBuffer().catch((err) => {
-    console.error('[applyEdit] Error converting mask to buffer:', err);
-    return null;
-  });
+  // -------- 2) Validate mask --------
+  let maskBuf: Buffer | null = null;
+  let maskValid = true;
 
-  if (!maskBuf || maskBuf.length === 0) {
-    console.warn('[applyEdit] Mask buffer empty — nothing to edit');
-    return null; // IMPORTANT: no fallback to baseImagePath
+  try {
+    maskBuf = await fs.readFile(maskPath);
+  } catch {
+    maskValid = false;
   }
 
-  const stats = await mask.stats();
-  const uniform =
-    stats.channels[0].min === stats.channels[0].max &&
-    stats.channels[1].min === stats.channels[1].max &&
-    stats.channels[2].min === stats.channels[2].max;
-
-  if (uniform) {
-    console.warn('[applyEdit] Mask is uniform; cancelling edit');
-    return null;
+  if (!maskValid || !maskBuf || maskBuf.length < 32) {
+    console.warn("[applyEdit] Mask missing or too small, returning base image.");
+    return baseImagePath;
   }
 
-  // 3. Do whatever your existing edit logic is here
-  // (blend, inpaint, etc – KEEP your current logic, just feed it baseImagePath + mask)
+  // Check if mask is actually an image
+  let maskMeta;
+  try {
+    maskMeta = await sharp(maskBuf).metadata();
+  } catch (err) {
+    console.warn("[applyEdit] Mask is not a readable image:", err);
+    return baseImagePath;
+  }
 
-  const outputPath = path.join(
-    path.dirname(baseImagePath),
-    path.basename(baseImagePath, path.extname(baseImagePath)) + '-edited.webp'
-  );
+  // -------- 3) Detect uniform mask (all black or all white) --------
+  try {
+    const stats = await sharp(maskBuf).stats();
+    const ch = stats.channels[0];
 
-  // Example: very simple compositing placeholder.
-  // Replace this body with your existing editing implementation.
-  await sharp(baseImagePath)
-    .composite([{ input: maskPath, blend: 'dest-in' }])
-    .toFile(outputPath);
+    if (ch.min === ch.max) {
+      console.warn("[applyEdit] Mask is uniform (black or white), skipping edit.");
+      return baseImagePath;
+    }
+  } catch (err) {
+    console.warn("[applyEdit] Mask stats failed, treating as invalid:", err);
+    return baseImagePath;
+  }
+
+  // -------- 4) Compute output path --------
+  const dir = path.dirname(baseImagePath);
+  const baseName = path.basename(baseImagePath, path.extname(baseImagePath));
+  const outputPath = path.join(dir, `${baseName}-edited.webp`);
+
+  // -------- 5) Composite safely --------
+  try {
+    await sharp(baseBuf)
+      .composite([
+        {
+          input: maskBuf,
+          blend: "dest-in",
+        },
+      ])
+      .toFormat("webp")
+      .toFile(outputPath);
+  } catch (err) {
+    console.error("[applyEdit] Sharp compositing failed:", err);
+    return baseImagePath; // fallback to base image instead of breaking
+  }
+
+  // -------- 6) Validate output image --------
+  try {
+    const test = await sharp(outputPath).metadata();
+    if (!test.width || !test.height) {
+      throw new Error("invalid output metadata");
+    }
+  } catch (err) {
+    console.error("[applyEdit] Output validation failed:", err);
+    return baseImagePath;
+  }
 
   return outputPath;
 }
