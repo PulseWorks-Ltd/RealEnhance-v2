@@ -25,14 +25,26 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+function parseRetryInfo(url: string) {
+  const noQuery = url.split("?")[0];
+  const filename = noQuery.split("/").pop() || "";
+  // retryN at the end of the filename before extension
+  const retryMatch = filename.match(/-retry(\d+)(?=\.[^.]+$)/);
+  const retry = retryMatch ? parseInt(retryMatch[1], 10) : 0;
+  const baseKey = filename.replace(/-retry\d+(?=\.[^.]+$)/, "");
+  return { noQuery, filename, baseKey, retry };
+}
+
 function findByPublicUrl(userId: string, url: string) {
-  const stripQuery = (u: string) => u.split("?")[0];
-
   const images = readJsonFile<ImagesState>("images.json", {});
-  const target = stripQuery(url);
+  const target = parseRetryInfo(url);
 
-  let ownerMatch: { record: any; versionId: string } | null = null;
-  let anyMatch: { record: any; versionId: string } | null = null;
+  let exactOwnerMatch: { record: any; versionId: string } | null = null;
+  let exactAnyMatch: { record: any; versionId: string } | null = null;
+
+  type Candidate = { record: any; versionId: string; retry: number; owner: string };
+
+  const familyCandidates: Candidate[] = [];
 
   for (const rec of Object.values(images) as any[]) {
     if (!rec) continue;
@@ -42,43 +54,66 @@ function findByPublicUrl(userId: string, url: string) {
       const pubUrl = String((v as any).publicUrl || "");
       if (!pubUrl) continue;
 
-      const stripped = stripQuery(pubUrl);
-      if (stripped !== target) continue;
+      const info = parseRetryInfo(pubUrl);
 
-      const candidate = { record: rec, versionId: v.versionId };
-
-      // Perfect match: same user + same URL
-      if (owner === userId) {
-        ownerMatch = candidate;
-        break;
+      // 1) Exact URL match (no query)
+      if (info.noQuery === target.noQuery) {
+        const candidate = { record: rec, versionId: v.versionId };
+        if (owner === userId) {
+          exactOwnerMatch = candidate;
+          break;
+        }
+        if (!exactAnyMatch) {
+          exactAnyMatch = candidate;
+        }
       }
 
-      // URL matches but owner differs – keep as fallback
-      if (!anyMatch) {
-        anyMatch = candidate;
+      // 2) Collect same-family candidates for possible fallback later
+      if (info.baseKey === target.baseKey) {
+        familyCandidates.push({
+          record: rec,
+          versionId: v.versionId,
+          retry: info.retry,
+          owner,
+        });
       }
     }
 
-    if (ownerMatch) break;
+    if (exactOwnerMatch) break;
   }
 
-  if (ownerMatch) {
-    return ownerMatch;
-  }
+  // Prefer exact URL + owner match
+  if (exactOwnerMatch) return exactOwnerMatch;
+  // Then exact URL, any owner
+  if (exactAnyMatch) return exactAnyMatch;
 
-  if (anyMatch) {
-    console.warn("[region-edit] Found image by URL but ownerUserId mismatch", {
-      expectedUserId: userId,
-      storedOwnerUserId: anyMatch.record.ownerUserId,
-      imageId: anyMatch.record.imageId || anyMatch.record.id,
-      versionId: anyMatch.versionId,
-    });
-    return anyMatch;
+  // 3) Fallback: same baseKey family
+  if (familyCandidates.length > 0) {
+    // Prefer same owner, highest retry number (most recent)
+    const sameOwner = familyCandidates.filter((c) => c.owner === userId);
+    const pool = sameOwner.length > 0 ? sameOwner : familyCandidates;
+
+    const best = pool.reduce((best, cur) =>
+      !best || cur.retry > best.retry ? cur : best,
+      null as Candidate | null
+    );
+
+    if (best) {
+      console.warn("[region-edit] Using family fallback match", {
+        userId,
+        targetUrl: url,
+        baseKey: target.baseKey,
+        chosenRetry: best.retry,
+        owner: best.owner,
+      });
+      return { record: best.record, versionId: best.versionId };
+    }
   }
 
   console.warn("[region-edit] No image record found for user", {
     userId,
     url,
+    baseKey: target.baseKey,
   });
   return null;
 }
