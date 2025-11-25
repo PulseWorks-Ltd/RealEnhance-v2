@@ -10,22 +10,24 @@ import { addImageVersion, createImageRecord, getImageRecord } from "../services/
 type ImagesState = Record<string, any>;
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: async (_req, _file, cb) => {
-      try {
-        await fs.mkdir(uploadRoot, { recursive: true });
-        cb(null, uploadRoot);
-      } catch (e) {
-        cb(e as Error, uploadRoot);
-      }
-    },
-    filename(_req, file, cb) {
-      cb(null, file.originalname);
-    },
-  }),
-  limits: { fileSize: 25 * 1024 * 1024 },
+const storage = multer.diskStorage({
+  destination: async (_req, _file, cb) => {
+    try {
+      await fs.mkdir(uploadRoot, { recursive: true });
+      cb(null, uploadRoot);
+    } catch (e) {
+      cb(e as Error, uploadRoot);
+    }
+  },
+  filename(_req, file, cb) {
+    cb(null, file.originalname);
+  },
 });
+const upload = multer({ storage });
+const uploadMw = upload.fields([
+  { name: "image", maxCount: 1 },
+  { name: "mask", maxCount: 1 }
+]);
 
 function findByPublicUrl(userId: string, url: string) {
   // Try to match by stripping query params from S3 URLs
@@ -58,8 +60,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const sessUser = (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });
 
-    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
-    const maskFile = files?.["mask"]?.[0];
+    const imageFile = req.files?.image?.[0];
+    const maskFile = req.files?.mask?.[0];
     const body = (req.body || {}) as any;
 
     const imageUrl = body.imageUrl as string | undefined;

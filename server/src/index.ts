@@ -1,3 +1,7 @@
+import { regionEditRouter } from "./routes/region-edit";
+
+// Register region-edit route at /api/region-edit
+app.use("/api/region-edit", regionEditRouter());
 import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
 // server/src/index.ts
 import express, { type Express } from "express";
