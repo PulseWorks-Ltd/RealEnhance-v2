@@ -1,11 +1,11 @@
 import { Worker, Job } from "bullmq";
-import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants";
+import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
   AnyJobPayload,
   EnhanceJobPayload,
   EditJobPayload,
   RegionEditJobPayload
-} from "@realenhance/shared/dist/types";
+} from "@realenhance/shared/types";
 
 import fs from "fs";
 import sharp from "sharp";
@@ -13,7 +13,7 @@ import sharp from "sharp";
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2 } from "./pipeline/stage2";
-import { computeStructuralEdgeMask } from "./validators/structuralMask";
+import { computeStructuralEdgeMask } from "./validators/structuralMask.js";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
@@ -30,10 +30,10 @@ import {
 } from "./utils/persist";
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
-import { recordEnhancedImageRedis } from "@realenhance/shared/src/imageStore";
-import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
+import { recordEnhancedImageRedis } from "@realenhance/shared/imageStore";
+import { getGeminiClient, enhanceWithGemini } from "./ai/gemini.js";
 import { checkCompliance } from "./ai/compliance";
-import { toBase64 } from "./utils/images";
+import { toBase64 } from "./utils/images.js";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
@@ -157,9 +157,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stagingRegion: any = null;
     if (sceneLabel === "exterior") {
       try {
-        const { getGeminiClient } = await import("./ai/gemini");
-        const { detectStagingArea } = await import("./ai/staging-area-detector");
-        const { detectStagingRegion } = await import("./ai/region-detector");
+        const { getGeminiClient } = await import("./ai/gemini.js");
+        const { detectStagingArea } = await import("./ai/staging-area-detector.js");
+        const { detectStagingRegion } = await import("./ai/region-detector.js");
         const sharpMod: any = await import("sharp");
         const ai = getGeminiClient();
         const base64 = toBase64(origPath).data;
@@ -898,7 +898,7 @@ const worker = new Worker(
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit
-          const outPath = await (await import("./pipeline/editApply")).applyEdit({
+          const outPath = await (await import("./pipeline/editApply.js")).applyEdit({
             baseImagePath: currentPath,
             mask: maskBuf,
             mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
@@ -917,7 +917,7 @@ const worker = new Worker(
           // Compliance/validator logic (log feedback, never block)
           let compliance = undefined;
           try {
-            const { checkCompliance } = await import("./ai/compliance");
+            const { checkCompliance } = await import("./ai/compliance.js");
             compliance = await checkCompliance(null, currentPath, outPath);
           } catch (e) {
             console.warn("[region-edit] Compliance check failed:", e);

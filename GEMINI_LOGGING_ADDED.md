@@ -6,12 +6,12 @@ Added comprehensive logging throughout the Gemini AI enhancement pipeline to dia
 ## Changes Made
 
 ### 1. Reverted Prompt Changes
-- **File**: `worker/src/ai/gemini.ts`
+- **File**: `worker/src/ai/gemini.js.ts`
 - **Action**: Reverted the "dramatic enhancement" prompt back to the original balanced version
 - **Reason**: User suspects the issue is not with the prompt, but with images not reaching Gemini at all
 
 ### 2. Enhanced Gemini Function Logging
-**File**: `worker/src/ai/gemini.ts` - `enhanceWithGemini()` function
+**File**: `worker/src/ai/gemini.js.ts` - `enhanceWithGemini()` function
 
 Added detailed logging at every step:
 - 🔵 **Start**: Input path and options

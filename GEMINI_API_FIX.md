@@ -31,7 +31,7 @@ const result = await client.models.generateContent({
 
 ## Changes Made
 
-### File: `worker/src/ai/gemini.ts`
+### File: `worker/src/ai/gemini.js.ts`
 
 1. **Removed model initialization step:**
    ```typescript

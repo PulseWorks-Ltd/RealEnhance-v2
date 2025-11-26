@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import { runWithImageModelFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
-import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images.js";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 
