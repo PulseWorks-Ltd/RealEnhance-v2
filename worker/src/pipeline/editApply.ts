@@ -44,7 +44,7 @@ export async function applyEdit(params: {
     smartReinstate,
   } = params;
 
-  // 1. Validate base image path
+  // 1. Validate base image path 
   if (!baseImagePath || !(await fileExists(baseImagePath))) {
     console.error("[editApply] Base image missing:", baseImagePath);
     throw new Error("Base image not found for edit");
