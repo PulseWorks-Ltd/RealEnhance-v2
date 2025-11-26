@@ -1,8 +1,8 @@
 import sharp from "sharp";
 import fs from "fs/promises";
 import path from "path";
-import { siblingOutPath, writeImageDataUrl } from "../utils/images";
-import { getGeminiClient } from "../ai/gemini";
+import { siblingOutPath, writeImageDataUrl } from "../utils/images.js";
+import { getGeminiClient } from "../ai/gemini.js";
 import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
 import { readJsonFile, writeJsonFile } from "../../../shared/src/jsonStore.js";
 

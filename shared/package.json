@@ -5,8 +5,13 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./*": "./dist/*"
+  ".": "./dist/index.js",
+  "./constants": "./dist/constants.js",
+  "./imageStore": "./dist/imageStore.js",
+  "./imageHistory": "./dist/imageHistory.js",
+  "./jsonStore": "./dist/jsonStore.js",
+  "./redisClient": "./dist/redisClient.js",
+  "./types": "./dist/types.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json"

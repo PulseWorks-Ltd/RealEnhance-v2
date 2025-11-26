@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { enhanceWithGemini } from "../ai/gemini";
+import { enhanceWithGemini } from "../ai/gemini.js";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
@@ -221,8 +221,8 @@ export async function runStage1A(
   // Otherwise, Sharp output is already at sharpOutputPath
   if (geminiOutputPath !== sharpOutputPath) {
     // Use structure-first validator
-    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask");
-    const { validateStage1AStructural } = await import("../validators/stage1AValidator");
+    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+    const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
     const jobId = (global as any).__jobId || "default";
     const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
     const masks = { structuralMask: maskPath };

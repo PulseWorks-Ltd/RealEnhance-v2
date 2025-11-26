@@ -2,11 +2,11 @@ export async function validateRealism(
   finalPath: string
 ): Promise<{ ok: boolean; notes?: string[] }> {
   // Use Gemini to check realism: furniture scale, lighting, floating objects
-  const { buildRealismPrompt } = await import('./realism-prompt');
-  const { getGeminiClient } = await import('../ai/gemini');
+  const { buildRealismPrompt } = await import('./realism-prompt.js');
+  const { getGeminiClient } = await import('../ai/gemini.js');
   const prompt = buildRealismPrompt();
   const ai = getGeminiClient();
-  const { toBase64 } = await import('../utils/images');
+  const { toBase64 } = await import('../utils/images.js');
   const { data, mime } = toBase64(finalPath);
   const resp = await ai.models.generateContent({
     model: "gemini-2.5-flash",

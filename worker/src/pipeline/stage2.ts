@@ -1,6 +1,6 @@
-import { getGeminiClient } from "../ai/gemini";
+import { getGeminiClient } from "../ai/gemini.js";
 import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
-import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images.js";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
