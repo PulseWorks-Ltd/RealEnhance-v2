@@ -27,9 +27,9 @@ FROM deps AS builder
 COPY . .
 
 
-# Build shared first (if needed), then the selected service
+# Build shared first, then the selected service (fail loudly if build fails)
 ARG SERVICE=server
-RUN pnpm --filter @realenhance/shared build || echo "no shared build script"
+RUN pnpm --filter @realenhance/shared build
 RUN pnpm --filter @realenhance/$SERVICE build
 
 # -----------------------------
