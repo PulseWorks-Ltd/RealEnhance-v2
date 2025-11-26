@@ -52,10 +52,12 @@ COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/${SERVICE} ./${SERVICE}
 COPY --from=builder /app/${SERVICE}/dist ./${SERVICE}/dist
 
-# Set working directory and expose port for server
+# Set working directory and expose port for server/worker
 WORKDIR /app/${SERVICE}
 
-EXPOSE 3000
+# Expose port 3000 only for server
+ARG SERVICE=server
+RUN if [ "$SERVICE" = "server" ]; then echo "EXPOSE 3000" > /tmp/expose; fi
 
 # Start the correct service
 CMD ["pnpm", "start"]
