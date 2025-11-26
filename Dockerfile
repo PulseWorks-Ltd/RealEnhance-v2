@@ -48,6 +48,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/server ./server
 
+# Copy built output for server and worker
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/worker/dist ./worker/dist
+
 WORKDIR /app/server
 
 EXPOSE 3000
