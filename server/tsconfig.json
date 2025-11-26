@@ -5,15 +5,13 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": [
-    "src/**/*",
-    "../shared/src/**/*.ts"
-  ],
+  "include": ["src/**/*"],
   "exclude": [
     "src/services/batchProcessor.ts",
     "src/services/compliance.ts",
