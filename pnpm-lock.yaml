@@ -118,6 +118,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.705.0
         version: 3.937.0
+      '@realenhance/shared':
+        specifier: workspace:*
+        version: link:../shared
       connect-redis:
         specifier: ^7.1.1
         version: 7.1.1(express-session@1.18.2)
