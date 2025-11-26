@@ -26,9 +26,11 @@ FROM deps AS builder
 # Now copy the full monorepo (server + shared + anything else)
 COPY . .
 
-# Build shared first (if needed), then server
+
+# Build shared first (if needed), then the selected service
+ARG SERVICE=server
 RUN pnpm --filter @realenhance/shared build || echo "no shared build script"
-RUN pnpm --filter @realenhance/server build
+RUN pnpm --filter @realenhance/$SERVICE build
 
 # -----------------------------
 # Runtime image
@@ -44,16 +46,16 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/node_modules ./node_modules
 
-# Copy only what the server needs at runtime
+# Copy only what the selected service needs at runtime
+ARG SERVICE=server
 COPY --from=builder /app/shared ./shared
-COPY --from=builder /app/server ./server
+COPY --from=builder /app/${SERVICE} ./${SERVICE}
+COPY --from=builder /app/${SERVICE}/dist ./${SERVICE}/dist
 
-# Copy built output for server and worker
-COPY --from=builder /app/server/dist ./server/dist
-COPY --from=builder /app/worker/dist ./worker/dist
-
-WORKDIR /app/server
+# Set working directory and expose port for server
+WORKDIR /app/${SERVICE}
 
 EXPOSE 3000
 
+# Start the correct service
 CMD ["pnpm", "start"]
