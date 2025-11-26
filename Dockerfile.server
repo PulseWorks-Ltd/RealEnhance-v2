@@ -14,10 +14,11 @@ COPY shared/package.json shared/package.json
 
 RUN pnpm install --frozen-lockfile
 
-# 2) Copy the rest of the repo
+
+# Copy the actual source code into the image
 COPY . .
 
-# 3) Build shared first, then server
+# Build shared + server
 RUN pnpm --filter @realenhance/shared build
 RUN pnpm --filter @realenhance/server build
 
