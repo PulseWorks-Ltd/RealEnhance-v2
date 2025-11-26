@@ -9,18 +9,30 @@ RUN corepack enable
 # Dependencies layer
 # -----------------------------
 FROM base AS deps
+
+# Root workspace manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Package manifests (needed so pnpm can resolve workspaces)
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
 COPY shared/package.json shared/package.json
+
+# Install all workspace deps (including worker + shared)
 RUN pnpm install --frozen-lockfile
 
 # -----------------------------
 # Build layer
 # -----------------------------
 FROM deps AS builder
+
+# 🔥 Copy the actual source code into the image
 COPY . .
+
+# Build shared first (if it has a build step)
 RUN pnpm --filter @realenhance/shared build
+
+# Build the worker (this should create dist/worker/src/worker.js)
 RUN pnpm --filter @realenhance/worker build
 
 # -----------------------------
@@ -31,12 +43,15 @@ WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
 
+# Root metadata + node_modules so workspaces resolve
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-workspace.yaml ./
 COPY --from=builder /app/node_modules ./node_modules
 
+# Copy built shared + worker code
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/worker ./worker
 
+# Run the worker package
 WORKDIR /app/worker
 CMD ["pnpm", "start"]
