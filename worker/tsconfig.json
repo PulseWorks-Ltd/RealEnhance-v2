@@ -1,11 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
     "outDir": "./dist",
+    "rootDir": "../",
+
+    "strict": true,
+    "noImplicitAny": false,
     "esModuleInterop": true,
-    "strict": false,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
@@ -15,6 +21,7 @@
   ],
   "exclude": [
     "src/ai/validators/__tests__/*",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "src/scripts/**/*"
   ]
 }

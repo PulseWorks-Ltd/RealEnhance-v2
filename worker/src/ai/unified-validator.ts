@@ -521,7 +521,7 @@ export async function validateStage(
 
     // 3) Realism check
     try {
-      const { validateRealism } = await import("../validators/realism");
+      const { validateRealism } = await import("../validators/realism.js");
       const realism = await validateRealism(cand.path);
       if (!realism.ok) {
         reasons.push(...(realism.notes || ["realism violation detected"]));
@@ -533,7 +533,7 @@ export async function validateStage(
     // 4) Exterior-specific surface/furniture checks
     try {
       if ((ctx.sceneType === 'exterior') && (process.env.EXTERIOR_SURFACE_CHECK !== '0')) {
-        const { validateExteriorEnhancement } = await import("../ai/exterior-validator");
+        const { validateExteriorEnhancement } = await import("../ai/exterior-validator.js");
         const ext = await validateExteriorEnhancement(ai as any, prevB64, candB64, 'staging');
         if (!ext.passed) {
           for (const v of ext.violations || []) {
@@ -555,7 +555,7 @@ export async function validateStage(
   // Local structural/egress check for Stage 2
   if (cand.stage === "2") {
     try {
-      const { validateStructure } = await import("../validators/structural");
+      const { validateStructure } = await import("../validators/structural.js");
       const struct = await validateStructure(prev.path, candNormPath);
       if (!struct.ok) {
         reasons.push(...(struct.notes || ["egress/fixture blocking detected"]));

@@ -1,11 +1,12 @@
+import type { ComplianceVerdict } from "./ai/compliance";
 import { Worker, Job } from "bullmq";
-import { JOB_QUEUE_NAME } from "@realenhance/shared/dist/constants";
+import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
   AnyJobPayload,
   EnhanceJobPayload,
   EditJobPayload,
   RegionEditJobPayload
-} from "@realenhance/shared/dist/types";
+} from "@realenhance/shared/types";
 
 import fs from "fs";
 import sharp from "sharp";
@@ -30,7 +31,7 @@ import {
 } from "./utils/persist";
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
-import { recordEnhancedImageRedis } from "@realenhance/shared/src/imageStore";
+import { recordEnhancedImageRedis } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
@@ -157,9 +158,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stagingRegion: any = null;
     if (sceneLabel === "exterior") {
       try {
-        const { getGeminiClient } = await import("./ai/gemini");
-        const { detectStagingArea } = await import("./ai/staging-area-detector");
-        const { detectStagingRegion } = await import("./ai/region-detector");
+        const { getGeminiClient } = await import("./ai/gemini.js");
+        const { detectStagingArea } = await import("./ai/staging-area-detector.js");
+        const { detectStagingRegion } = await import("./ai/region-detector.js");
         const sharpMod: any = await import("sharp");
         const ai = getGeminiClient();
         const base64 = toBase64(origPath).data;
@@ -562,9 +563,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.warn(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
       temperature = Math.max(0.1, temperature - 0.1);
       // Call Gemini enhancement directly with reduced temperature
-      retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
-      const baseFinalRetry = toBase64(retryPath2);
-      compliance = await checkCompliance(ai as any, base1A.data, baseFinalRetry.data);
+      if (!path1B) {
+        console.warn("[worker] path1B is undefined – skipping retry for 1B.");
+      } else {
+        retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
+        const baseFinalRetry = toBase64(retryPath2);
+        compliance = await checkCompliance(ai, base1A.data, baseFinalRetry.data);
+      }
       retries++;
     }
     if (compliance && compliance.ok === false) {
@@ -589,6 +594,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // stage 1B publishing was deferred until here; attach URL and surface progress
   // pub1BUrl already declared above; removed duplicate
   if (payload.options.declutter) {
+    if (!path1B) {
+      throw new Error("Stage 1B path is undefined");
+    }
     let v1B: any = null;
     try {
       v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
@@ -820,7 +828,7 @@ async function handleEditJob(payload: EditJobPayload) {
       userId: payload.userId,
       imageId: payload.imageId,
       publicUrl: pub.url,
-      baseKey: key,
+      baseKey: key ?? "",
       versionId: newVersion.versionId,
       extra: {
         stage: "edit",
@@ -833,7 +841,7 @@ async function handleEditJob(payload: EditJobPayload) {
       userId: payload.userId,
       imageId: payload.imageId,
       publicUrl: pub.url,
-      baseKey: key,
+      baseKey: key ?? "",
       versionId: newVersion.versionId,
       stage: "edit",
       // If you have retryCount in payload or context, add it here
@@ -898,7 +906,7 @@ const worker = new Worker(
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit
-          const outPath = await (await import("./pipeline/editApply")).applyEdit({
+          const outPath = await (await import("./pipeline/editApply.js")).applyEdit({
             baseImagePath: currentPath,
             mask: maskBuf,
             mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
@@ -915,15 +923,20 @@ const worker = new Worker(
             pub = { url: outPath };
           }
           // Compliance/validator logic (log feedback, never block)
-          let compliance = undefined;
+          let compliance: ComplianceVerdict | undefined = undefined;
           try {
-            const { checkCompliance } = await import("./ai/compliance");
-            compliance = await checkCompliance(null, currentPath, outPath);
+            const { checkCompliance } = await import("./ai/compliance.js");
+            const ai = getGeminiClient();
+            // Convert images to base64 for compliance check
+            const { toBase64 } = await import("./utils/images.js");
+            const origB64 = toBase64(currentPath).data;
+            const editB64 = toBase64(outPath).data;
+            compliance = await checkCompliance(ai, origB64, editB64);
           } catch (e) {
             console.warn("[region-edit] Compliance check failed:", e);
           }
-          if (compliance && compliance.ok === false) {
-            const lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+          if (compliance && (compliance as any).ok === false) {
+            const lastViolationMsg = `Structural violations detected: ${((compliance as any).reasons || ["Compliance check failed"]).join("; ")}`;
             updateJob(jobId, {
               status: "complete",
               resultUrl: pub.url,

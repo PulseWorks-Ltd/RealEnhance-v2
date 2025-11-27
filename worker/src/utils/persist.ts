@@ -7,7 +7,7 @@ import {
   ImageVersion,
   ImageId,
   UserId
-} from "@realenhance/shared/dist/types";
+} from "@realenhance/shared/types";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });

@@ -1,2 +1,2 @@
-import { recordEnhancedImageRedis } from "@realenhance/shared/src/imageStore";
+import { recordEnhancedImageRedis } from "@realenhance/shared";
 export { recordEnhancedImageRedis };
