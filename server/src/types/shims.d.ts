@@ -1,24 +1,9 @@
-// server/src/types/shims.d.ts
+// server/src/global-shared.d.ts
 
-// 1. Tell TS that these modules exist (we don't care about strong typing here)
-declare module '@realenhance/shared';
-declare module 'bullmq';
+// Minimal typings for the shared workspace package used by the server.
+// We only declare what the server actually imports right now.
 
-// 2. Augment Express Request for multer
-import 'express';
-
-declare global {
-  namespace Express {
-    interface Request {
-      file?: any;
-      files?: any;
-    }
-
-    // Some of your code references Express.Multer.* – define a minimal shape
-    namespace Multer {
-      interface File {
-        [key: string]: any;
-      }
-    }
-  }
+declare module '@realenhance/shared' {
+  // Loosely typed – enough for TS to be happy, runtime uses the real implementation
+  export function findByPublicUrlRedis(...args: any[]): Promise<any>;
 }
