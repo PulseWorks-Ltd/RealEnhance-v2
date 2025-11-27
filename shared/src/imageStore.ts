@@ -1,6 +1,22 @@
 import { getRedis } from "./redisClient";
 
-export function parseRetryInfo(url: string) {
+export type RetryInfo = {
+  noQuery: string;
+  filename: string;
+  baseKey: string;
+  retry: number;
+};
+
+/**
+ * Parse a public URL into a normalized "noQuery" URL, a baseKey
+ * (filename without retry suffix), and a numeric retry counter.
+ *
+ * Examples:
+ *  - https://.../abc.jpg            → baseKey "abc",   retry 0
+ *  - https://.../abc-retry1.jpg     → baseKey "abc",   retry 1
+ *  - https://.../abc-retry12.webp   → baseKey "abc",   retry 12
+ */
+export function parseRetryInfo(url: string): RetryInfo {
   const noQuery = url.split("?")[0];
   const filename = noQuery.split("/").pop() || "";
   const retryMatch = filename.match(/-retry(\d+)(?=\.[^.]+$)/);
@@ -8,28 +24,36 @@ export function parseRetryInfo(url: string) {
   const baseKey = filename.replace(/-retry\d+(?=\.[^.]+$)/, "");
   return { noQuery, filename, baseKey, retry };
 }
-const FAMILY_KEY_PREFIX = "image:family:"; // by baseKey
-const URL_KEY_PREFIX = "image:url:";       // by normalized URL
 
-type HistoryEntry = {
+const FAMILY_KEY_PREFIX = "image:family:"; // keyed by baseKey
+const URL_KEY_PREFIX = "image:url:"; // keyed by normalized URL
+
+export type HistoryEntry = {
   imageId: string;
   ownerUserId: string;
   publicUrl: string;
   baseKey: string;
   versionId: string;
   stage?: string;
+  stage2?: string;
   isRetry?: boolean;
   retryCount?: number;
   ts: number;
 };
 
-function familyKey(baseKey: string) {
+function familyKey(baseKey: string): string {
   return FAMILY_KEY_PREFIX + baseKey;
 }
-function urlKey(noQueryUrl: string) {
+
+function urlKey(noQueryUrl: string): string {
   return URL_KEY_PREFIX + noQueryUrl;
 }
 
+/**
+ * Record an enhanced image in Redis in two ways:
+ *  - by normalized URL (for exact lookups)
+ *  - by baseKey "family" list (to find images even after retries)
+ */
 export async function recordEnhancedImageRedis(opts: {
   userId: string;
   imageId: string;
@@ -37,12 +61,17 @@ export async function recordEnhancedImageRedis(opts: {
   baseKey?: string;
   versionId: string;
   stage?: string;
+  stage2?: string;
   isRetry?: boolean;
   retryCount?: number;
-}) {
-  const redis = getRedis();
-  const { noQuery, baseKey: parsedBase, retry } = parseRetryInfo(opts.publicUrl);
-  const baseKey = opts.baseKey || parsedBase;
+}): Promise<void> {
+  const redis = getRedis() as any;
+
+  const parsed = parseRetryInfo(opts.publicUrl);
+  const retryFromFilename =
+    typeof parsed.retry === "number" ? parsed.retry > 0 : undefined;
+
+  const baseKey = (opts.baseKey || parsed.baseKey || "") as string;
 
   const entry: HistoryEntry = {
     imageId: opts.imageId,
@@ -51,112 +80,121 @@ export async function recordEnhancedImageRedis(opts: {
     baseKey,
     versionId: opts.versionId,
     stage: opts.stage,
-    isRetry: opts.isRetry,
+    stage2: opts.stage2,
+    isRetry: opts.isRetry ?? retryFromFilename,
     retryCount: opts.retryCount,
     ts: Date.now(),
   };
 
-  const urlKeyStr = urlKey(noQuery);
+  const urlKeyStr = urlKey(parsed.noQuery);
   const familyKeyStr = familyKey(baseKey);
-
   const json = JSON.stringify(entry);
 
-  // 1) Direct lookup by exact URL
-  await redis.set(urlKeyStr, json, { EX: 60 * 60 * 24 * 90 }); // 90 days TTL
+  // 1) Exact URL → entry
+  try {
+    await redis.set(urlKeyStr, json);
+  } catch (err) {
+    console.warn("[imageStore] Failed to set URL key in redis", {
+      urlKey: urlKeyStr,
+      err,
+    });
+  }
 
-  // 2) Family list by baseKey (we'll choose best retry from here)
-  await redis.lPush(familyKeyStr, json);
-  await redis.expire(familyKeyStr, 60 * 60 * 24 * 90);
-
-  console.log("[recordEnhancedImageRedis] stored", {
-    imageId: opts.imageId,
-    userId: opts.userId,
-    baseKey,
-    retry,
-  });
+  // 2) Family list (baseKey) → [entries...], newest first
+  try {
+    await redis.lPush(familyKeyStr, json);
+    // Keep only the most recent N entries to avoid unbounded growth
+    await redis.lTrim(familyKeyStr, 0, 50);
+  } catch (err) {
+    console.warn("[imageStore] Failed to push family entry in redis", {
+      familyKey: familyKeyStr,
+      err,
+    });
+  }
 }
 
+/**
+ * Find an image by public URL + user.
+ *
+ * Preference order:
+ *  1. Exact URL match for this user.
+ *  2. Latest family entry for this user (same baseKey).
+ *  3. Latest family entry for any user with this baseKey.
+ */
 export async function findByPublicUrlRedis(
   userId: string,
   url: string
 ): Promise<{ imageId: string; versionId: string } | null> {
-  const redis = getRedis();
-  const target = parseRetryInfo(url);
+  const redis = getRedis() as any;
+  const parsed = parseRetryInfo(url);
+  const baseKey = parsed.baseKey;
+  const urlKeyStr = urlKey(parsed.noQuery);
+  const familyKeyStr = familyKey(baseKey);
 
-  // 1) Exact URL match first
-  const urlJson = await redis.get(urlKey(target.noQuery));
-  let exactOwnerMatch: HistoryEntry | null = null;
-  let exactAnyMatch: HistoryEntry | null = null;
-
-  if (urlJson) {
-    const entry = JSON.parse(urlJson) as HistoryEntry;
-    if (entry.ownerUserId === userId) {
-      exactOwnerMatch = entry;
-    } else {
-      exactAnyMatch = entry;
+  // 1) Exact URL match
+  try {
+    const byUrl = await redis.get(urlKeyStr);
+    if (byUrl) {
+      const entry = JSON.parse(byUrl) as HistoryEntry;
+      if (entry && entry.imageId && entry.versionId) {
+        if (entry.ownerUserId === userId) {
+          return { imageId: entry.imageId, versionId: entry.versionId };
+        }
+      }
     }
+  } catch (err) {
+    console.warn("[imageStore] Failed URL lookup in redis", {
+      urlKey: urlKeyStr,
+      err,
+    });
   }
 
-  // 2) Family scan by baseKey
-  const familyKeyStr = familyKey(target.baseKey);
-  const familyJson = await redis.lRange(familyKeyStr, 0, -1);
+  // 2) Family list lookups
+  let familyEntries: HistoryEntry[] = [];
+  try {
+    const familyJson: string[] = (await redis.lRange(
+      familyKeyStr,
+      0,
+      -1
+    )) as string[];
+    familyEntries = familyJson
+      .map((j) => {
+        try {
+          return JSON.parse(j) as HistoryEntry;
+        } catch {
+          return null;
+        }
+      })
+      .filter((e): e is HistoryEntry => !!e);
+  } catch (err) {
+    console.warn("[imageStore] Failed family lookup in redis", {
+      familyKey: familyKeyStr,
+      err,
+    });
+  }
 
-  const familyEntries: HistoryEntry[] = familyJson
-    .map((j: string) => {
-      try {
-        return JSON.parse(j) as HistoryEntry;
-      } catch {
-        return null;
-      }
-    })
-    .filter((x: HistoryEntry | null): x is HistoryEntry => !!x);
+  if (familyEntries.length > 0) {
+    // Prefer same user, newest first
+    const sameUser = familyEntries.find((e) => e.ownerUserId === userId);
+    if (sameUser) {
+      return { imageId: sameUser.imageId, versionId: sameUser.versionId };
+    }
 
-  const familyCandidates = familyEntries.map((e) => ({
-    entry: e,
-    retry: parseRetryInfo(e.publicUrl).retry,
-  }));
-
-  if (!exactOwnerMatch && !exactAnyMatch && familyCandidates.length > 0) {
-    const sameOwner = familyCandidates.filter(
-      (c) => c.entry.ownerUserId === userId
-    );
-    const pool = sameOwner.length > 0 ? sameOwner : familyCandidates;
-    const best = pool.reduce(
-      (best, cur) => (!best || cur.retry > best.retry ? cur : best),
-      null as (typeof familyCandidates)[0] | null
-    );
-    if (best) {
-      console.warn("[region-edit] Using family fallback match", {
-        userId,
-        targetUrl: url,
-        baseKey: target.baseKey,
-        chosenRetry: best.retry,
-        owner: best.entry.ownerUserId,
-      });
+    // Fallback to any entry in the family
+    const exactAnyMatch = familyEntries[0];
+    if (exactAnyMatch) {
       return {
-        imageId: best.entry.imageId,
-        versionId: best.entry.versionId,
+        imageId: exactAnyMatch.imageId,
+        versionId: exactAnyMatch.versionId,
       };
     }
-  }
-
-  if (exactOwnerMatch) {
-    return {
-      imageId: exactOwnerMatch.imageId,
-      versionId: exactOwnerMatch.versionId,
-    };
-  }
-  if (exactAnyMatch) {
-    return {
-      imageId: exactAnyMatch.imageId,
-      versionId: exactAnyMatch.versionId,
-    };
   }
 
   console.warn("[region-edit] No image record found for user", {
     userId,
     url,
-    baseKey: target.baseKey,
+    baseKey,
   });
+
   return null;
 }
