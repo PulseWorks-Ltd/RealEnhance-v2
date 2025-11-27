@@ -124,6 +124,21 @@ importers:
       '@realenhance/shared':
         specifier: workspace:*
         version: link:../shared
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
+      '@types/express-session':
+        specifier: 1.17.7
+        version: 1.17.7
+      '@types/node':
+        specifier: ^24.10.1
+        version: 24.10.1
+      '@types/passport':
+        specifier: ^1.0.17
+        version: 1.0.17
+      '@types/passport-google-oauth20':
+        specifier: 2.0.11
+        version: 2.0.11
       connect-redis:
         specifier: ^7.1.1
         version: 7.1.1(express-session@1.18.2)
@@ -176,27 +191,12 @@ importers:
       '@types/dotenv':
         specifier: ^8.2.3
         version: 8.2.3
-      '@types/express':
-        specifier: ^4.17.21
-        version: 4.17.25
-      '@types/express-session':
-        specifier: 1.17.7
-        version: 1.17.7
       '@types/morgan':
         specifier: ^1.9.10
         version: 1.9.10
       '@types/multer':
         specifier: ^1.4.13
         version: 1.4.13
-      '@types/node':
-        specifier: ^24.10.1
-        version: 24.10.1
-      '@types/passport':
-        specifier: ^1.0.17
-        version: 1.0.17
-      '@types/passport-google-oauth20':
-        specifier: 2.0.11
-        version: 2.0.11
       '@types/passport-oauth2':
         specifier: ^1.8.0
         version: 1.8.0
