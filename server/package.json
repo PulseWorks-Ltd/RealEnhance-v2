@@ -41,7 +41,6 @@
     "@types/passport-oauth2": "^1.8.0",
     "bullmq": "^5.63.0",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.0",
-    "typescript": "^5.9.3"
+    "tsx": "^4.20.0"
   }
 }
