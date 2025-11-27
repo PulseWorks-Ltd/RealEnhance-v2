@@ -13,7 +13,8 @@
     "resolveJsonModule": true
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "src/global-shared.d.ts"
   ],
   "exclude": [
     "src/services/batchProcessor.ts",
@@ -22,4 +23,3 @@
     "src/services/zipper.ts"
   ]
 }
- 
