@@ -2,11 +2,11 @@ export async function validateRealism(
   finalPath: string
 ): Promise<{ ok: boolean; notes?: string[] }> {
   // Use Gemini to check realism: furniture scale, lighting, floating objects
-  const { buildRealismPrompt } = await import('./realism-prompt');
-  const { getGeminiClient } = await import('../ai/gemini');
+  const { buildRealismPrompt } = await import('./realism-prompt.js');
+  const { getGeminiClient } = await import('../ai/gemini.js');
   const prompt = buildRealismPrompt();
   const ai = getGeminiClient();
-  const { toBase64 } = await import('../utils/images');
+  const { toBase64 } = await import('../utils/images.js');
   const { data, mime } = toBase64(finalPath);
   const resp = await ai.models.generateContent({
     model: "gemini-2.5-flash",
@@ -16,7 +16,12 @@ export async function validateRealism(
     ]
   });
   const parts = resp.candidates?.[0]?.content?.parts || [];
-  const textPart = parts.find((x: any) => x.text);
+    const textPart = parts.find((p) => p.text);
+    if (!textPart || !textPart.text) {
+      throw new Error(
+        "[realism] No text content returned from Gemini realism validator"
+      );
+    }
   if (!textPart) return { ok: true, notes: ["No AI response"] };
   let result: any = {};
   try {
