@@ -116,6 +116,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     let workerMode: "Add" | "Remove" | "Replace" | "Restore" = "Restore";
     if (mode === "edit") workerMode = "Replace";
 
+    // Use the looked-up imageUrl as remoteBaseUrl for multi-service edit jobs
     const jobPayload = {
       userId: sessUser.id,
       imageId: record.imageId || record.id,
@@ -127,6 +128,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       stagingStyle,
       sceneType,
       roomType,
+      remoteBaseUrl: imageUrl // <-- pass current image S3 URL to worker
     };
 
     const { jobId } = await enqueueEditJob(jobPayload);
