@@ -532,8 +532,19 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("preserveStructure", "true");
     formData.append("allowStaging", "false");
     formData.append("allowRetouch", "true");
+    // Always send mask as data URL string
     if (hasMask && maskData) {
-      formData.append("regionMask", maskData);
+      // Convert Blob to data URL
+      const maskAsDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("Failed to convert mask Blob to data URL"));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(maskData);
+      });
+      formData.append("regionMask", maskAsDataUrl);
     }
     formData.append("smartReinstate", smartReinstate.toString());
     regionEditMutation.mutate(formData);

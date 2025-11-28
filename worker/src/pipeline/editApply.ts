@@ -67,13 +67,36 @@ export async function applyEdit(params: {
     return baseImagePath;
   }
 
-  // 4. Validate mask (must be a data URL image)
-  if (!isDataUrl(mask)) {
-    console.warn("[editApply] Mask is not a valid data URL, returning base image.");
+
+  // 4. Robust mask handling: accept Buffer, data URL, file path, or raw base64
+  let maskBuf: Buffer | null = null;
+  if (!mask) {
+    console.warn("[editApply] No mask provided, returning base image.");
     return baseImagePath;
   }
-
-  const maskBuf = decodeDataUrl(mask);
+  if (Buffer.isBuffer(mask)) {
+    maskBuf = mask;
+  } else if (typeof mask === "string") {
+    if (isDataUrl(mask)) {
+      maskBuf = decodeDataUrl(mask);
+    } else {
+      // Try as file path
+      try {
+        if (await fileExists(mask)) {
+          maskBuf = await fs.readFile(mask);
+        } else {
+          // Try as raw base64
+          maskBuf = Buffer.from(mask, "base64");
+        }
+      } catch {
+        console.warn("[editApply] Mask string not data URL / path / base64; returning base.");
+        return baseImagePath;
+      }
+    }
+  } else {
+    console.warn("[editApply] Mask is not a string or Buffer; returning base image.");
+    return baseImagePath;
+  }
 
   if (!maskBuf || maskBuf.length < 64) {
     console.warn("[editApply] Mask buffer too small, returning base image.");
