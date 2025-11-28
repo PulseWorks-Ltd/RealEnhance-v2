@@ -641,23 +641,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Publish final for client consumption and attach to version
+
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
 
-  // Optimization: If final base is same as 1A and we already have 1A URL, reuse it
   if (finalBasePath === path1A && pub1AUrl) {
     process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
     pubFinalUrl = pub1AUrl;
     publishedFinal = { url: pub1AUrl, kind: 's3' };
     process.stdout.write(`[WORKER] Final URL (reused from 1A): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } else if (finalBasePath === path1B && pub1BUrl) {
-    // Declutter-only final and we already published 1B
     process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1B - reusing URL ═══════════\n`);
     pubFinalUrl = pub1BUrl;
     publishedFinal = { url: pub1BUrl, kind: 's3' };
     process.stdout.write(`[WORKER] Final URL (reused from 1B): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } else {
-    // Final is different (staging applied or declutter-only unpublished), publish it
     try {
       process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
       publishedFinal = await publishImage(path2);
@@ -678,6 +676,38 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
     }
   }
+
+  // 🔹 Record final output in Redis for later region-edit lookups
+  try {
+    if (pubFinalUrl) {
+      const baseKey = pubFinalUrl.split("?")[0].split("/").pop() || "";
+      await recordEnhancedImageRedis({
+        userId: payload.userId,
+        imageId: payload.imageId,
+        publicUrl: pubFinalUrl,
+        baseKey, // recordEnhancedImageRedis will normalize & log if it tweaks this
+        versionId: finalPathVersion?.versionId || "",
+        stage: ((): "1A" | "1B" | "2" | "final" => {
+          if (hasStage2) return "2";
+          if (payload.options.declutter) return "1B";
+          return "1A";
+        })(),
+      });
+      console.log("[worker] Redis image history recorded", {
+        userId: payload.userId,
+        baseKey,
+        imageId: payload.imageId,
+      });
+    } else {
+      console.warn("[worker] No pubFinalUrl, skipping Redis history record");
+    }
+  } catch (err) {
+    console.warn(
+      "[worker] Failed to record image history in Redis:",
+      (err as any)?.message || err
+    );
+  }
+
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
   const meta = {
