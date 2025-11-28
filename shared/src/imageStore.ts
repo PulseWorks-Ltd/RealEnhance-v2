@@ -17,11 +17,25 @@ export type RetryInfo = {
  *  - https://.../abc-retry12.webp   → baseKey "abc",   retry 12
  */
 export function parseRetryInfo(url: string): RetryInfo {
-  const noQuery = url.split("?")[0];
+  if (!url || typeof url !== "string") {
+    throw new Error("[keys] parseRetryInfo: unusable url input");
+  }
+  let noQuery = url;
+  let normalized = false;
+  let reason = "";
+  // Strip query string if present
+  if (url.includes("?")) {
+    noQuery = url.split("?")[0];
+    normalized = true;
+    reason = "had query string";
+  }
   const filename = noQuery.split("/").pop() || "";
   const retryMatch = filename.match(/-retry(\d+)(?=\.[^.]+$)/);
   const retry = retryMatch ? parseInt(retryMatch[1], 10) : 0;
   const baseKey = filename.replace(/-retry\d+(?=\.[^.]+$)/, "");
+  if (normalized) {
+    console.info(`[keys] normalized url from ${url} to ${noQuery} (reason: ${reason})`);
+  }
   return { noQuery, filename, baseKey, retry };
 }
 
@@ -67,11 +81,20 @@ export async function recordEnhancedImageRedis(opts: {
 }): Promise<void> {
   const redis = getRedis() as any;
 
+  if (!opts.userId || !opts.imageId || !opts.publicUrl || !opts.versionId) {
+    throw new Error("[imageStore] recordEnhancedImageRedis: unusable input (missing userId, imageId, publicUrl, or versionId)");
+  }
+
   const parsed = parseRetryInfo(opts.publicUrl);
   const retryFromFilename =
     typeof parsed.retry === "number" ? parsed.retry > 0 : undefined;
 
-  const baseKey = (opts.baseKey || parsed.baseKey || "") as string;
+  // Defensive: always use normalized baseKey
+  let baseKey = opts.baseKey || parsed.baseKey || "";
+  if (opts.baseKey && opts.baseKey !== parsed.baseKey) {
+    console.info(`[keys] normalized baseKey from ${opts.baseKey} to ${parsed.baseKey} (reason: mismatch with filename)`);
+    baseKey = parsed.baseKey;
+  }
 
   const entry: HistoryEntry = {
     imageId: opts.imageId,
@@ -126,6 +149,9 @@ export async function findByPublicUrlRedis(
   url: string
 ): Promise<{ imageId: string; versionId: string } | null> {
   const redis = getRedis() as any;
+  if (!userId || !url) {
+    throw new Error("[imageStore] findByPublicUrlRedis: unusable input (missing userId or url)");
+  }
   const parsed = parseRetryInfo(url);
   const baseKey = parsed.baseKey;
   const urlKeyStr = urlKey(parsed.noQuery);
@@ -190,10 +216,12 @@ export async function findByPublicUrlRedis(
     }
   }
 
+  // Distinguish not found (for API to return IMAGE_HISTORY_NOT_FOUND)
   console.warn("[region-edit] No image record found for user", {
     userId,
     url,
     baseKey,
+    reason: "IMAGE_HISTORY_NOT_FOUND"
   });
 
   return null;
