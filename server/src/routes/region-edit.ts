@@ -79,6 +79,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     const body = (req.body || {}) as any;
+    // Log mask info for debugging
+    const mask = body.regionMask || body.mask;
+    console.log("[region-edit] mask typeof:", typeof mask);
+    if (typeof mask === "string") {
+      console.log("[region-edit] mask length:", mask.length);
+      console.log("[region-edit] mask prefix:", mask.slice(0, 50));
+    }
 
     const imageUrl = body.imageUrl as string | undefined;
     const mode = body.mode as "edit" | "restore_original" | undefined;
