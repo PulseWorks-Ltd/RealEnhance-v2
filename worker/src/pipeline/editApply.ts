@@ -68,42 +68,32 @@ export async function applyEdit(params: {
   }
 
 
-  // 4. Robust mask handling: accept Buffer, data URL, file path, or raw base64
-  let maskBuf: Buffer | null = null;
-  if (!mask) {
-    console.warn("[editApply] No mask provided, returning base image.");
+  // 4. Robust mask handling: decode data URL or raw base64, log buffer length
+  let maskBuf: Buffer;
+  if (!mask || (typeof mask !== "string" && !Buffer.isBuffer(mask))) {
+    console.warn("[editApply] No mask or non-string mask, returning base image.");
     return baseImagePath;
   }
-  if (Buffer.isBuffer(mask)) {
-    maskBuf = mask;
-  } else if (typeof mask === "string") {
-    if (isDataUrl(mask)) {
-      maskBuf = decodeDataUrl(mask);
-    } else {
-      // Try as file path
-      try {
-        if (await fileExists(mask)) {
-          maskBuf = await fs.readFile(mask);
-        } else {
-          // Try as raw base64
-          maskBuf = Buffer.from(mask, "base64");
-        }
-      } catch {
-        console.warn("[editApply] Mask string not data URL / path / base64; returning base.");
+  if (typeof mask === "string") {
+    if (mask.startsWith("data:image/")) {
+      const comma = mask.indexOf(",");
+      if (comma === -1 || comma === mask.length - 1) {
+        console.warn("[editApply] Mask dataURL has no payload, returning base image.");
         return baseImagePath;
       }
+      const base64 = mask.slice(comma + 1);
+      maskBuf = Buffer.from(base64, "base64");
+    } else {
+      // If you're sending raw base64 instead of dataURL
+      maskBuf = Buffer.from(mask, "base64");
     }
   } else {
-    console.warn("[editApply] Mask is not a string or Buffer; returning base image.");
-    return baseImagePath;
+    maskBuf = mask;
   }
-
-
   if (!maskBuf || maskBuf.length === 0) {
     console.warn("[editApply] Mask buffer empty, returning base image.");
     return baseImagePath;
   }
-  // Log mask buffer length for debugging
   console.info("[editApply] mask buffer length:", maskBuf.length);
 
   // 5. Inspect mask with sharp – reject uniform / invalid masks
