@@ -98,10 +98,13 @@ export async function applyEdit(params: {
     return baseImagePath;
   }
 
-  if (!maskBuf || maskBuf.length < 64) {
-    console.warn("[editApply] Mask buffer too small, returning base image.");
+
+  if (!maskBuf || maskBuf.length === 0) {
+    console.warn("[editApply] Mask buffer empty, returning base image.");
     return baseImagePath;
   }
+  // Log mask buffer length for debugging
+  console.info("[editApply] mask buffer length:", maskBuf.length);
 
   // 5. Inspect mask with sharp – reject uniform / invalid masks
   try {
