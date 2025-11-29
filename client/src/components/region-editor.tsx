@@ -450,6 +450,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   }, []);
 
   // Region edit mutation
+  // Custom region edit mutation with polling for job status
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const response = await fetch(api("/api/region-edit"), {
@@ -462,38 +463,84 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
         console.error('Region edit error response:', errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      return (await response.json()) as RegionEditResult;
+      return (await response.json()) as { success: boolean; jobId?: string; error?: string };
     },
     onMutate: () => {
-      // Signal processing start (for immediate UI feedback)
       onStart?.();
-      // Close modal immediately when processing starts
       onCancel?.();
     },
-    onSuccess: (result) => {
-      if (result.success && result.imageUrl) {
-        onComplete?.({ 
-          imageUrl: result.imageUrl!, 
-          originalUrl: result.originalUrl || "", 
-          maskUrl: result.maskUrl || "", 
-          mode: result.mode || ""
+    onSuccess: async (result) => {
+      if (!result.success || !result.jobId) {
+        toast({
+          title: "Enhancement failed",
+          description: result.error || "Could not start edit",
+          variant: "destructive"
         });
-      } else {
-        toast({ 
-          title: "Enhancement failed", 
-          description: result.error || "Unknown error", 
-          variant: "destructive" 
+        onError?.();
+        return;
+      }
+      // Poll the edit job until success or error
+      let polling = true;
+      let pollCount = 0;
+      const pollJob = async () => {
+        try {
+          const res = await fetch(api(`/api/status/batch?ids=${result.jobId}`), { credentials: "include" });
+          const json = await res.json();
+          const item = json.items?.[0];
+          if (!item) return;
+          if (!item.success) {
+            polling = false;
+            toast({
+              title: "Enhancement failed",
+              description: item.error || "Edit failed",
+              variant: "destructive"
+            });
+            onError?.();
+            return;
+          }
+          if (item.state === "completed" && item.imageUrl) {
+            polling = false;
+            onComplete?.({
+              imageUrl: item.imageUrl,
+              originalUrl: item.originalUrl || "",
+              maskUrl: item.maskUrl || "",
+              mode: item.mode || ""
+            });
+            return;
+          }
+        } catch (e) {
+          polling = false;
+          toast({
+            title: "Enhancement failed",
+            description: e instanceof Error ? e.message : "Network error",
+            variant: "destructive"
+          });
+          onError?.();
+        }
+      };
+      // Poll every 1s up to 60s
+      while (polling && pollCount < 60) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await pollJob();
+        pollCount++;
+      }
+      if (polling) {
+        toast({
+          title: "Enhancement failed",
+          description: "Timed out waiting for edit job",
+          variant: "destructive"
         });
         onError?.();
       }
     },
     onError: (error) => {
-      toast({ 
-        title: "Enhancement failed", 
-        description: error instanceof Error ? error.message : "Network error", 
-        variant: "destructive" 
+      toast({
+        title: "Enhancement failed",
+        description: error instanceof Error ? error.message : "Network error",
+        variant: "destructive"
       });
-      onError?.(); // Signal processing failed
+      onError?.();
     }
   });
 
@@ -698,7 +745,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             Operation <span className="text-red-500">*</span>
           </Label>
           <Select value={mode} onValueChange={(v) => setMode(v as any)}>
-            <SelectTrigger data-testid="select-mode" className={mode === "" ? "border-red-200 focus:border-red-300" : ""}>
+            <SelectTrigger data-testid="select-mode">
               <SelectValue placeholder="Choose Option" />
             </SelectTrigger>
             <SelectContent>
