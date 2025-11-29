@@ -72,7 +72,7 @@ export async function recordEnhancedImageRedis(opts: {
   userId: string;
   imageId: string;
   publicUrl: string;
-  baseKey?: string;
+  baseKey: string; // now required
   versionId: string;
   stage?: string;
   stage2?: string;

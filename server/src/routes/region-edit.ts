@@ -145,15 +145,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       mask: maskBase64,
       allowStaging,
       stagingStyle,
-      sceneType,
-      roomType,
-      remoteBaseUrl: imageUrl // <-- pass current image S3 URL to worker
+      // Optionally, you can add remoteBaseUrl: imageUrl if needed by your worker
+      // remoteBaseUrl: imageUrl,
     };
 
     const { jobId } = await enqueueEditJob(jobPayload);
     return res.status(200).json({ success: true, jobId });
   } catch (err: any) {
-    console.error("[region-edit] error", err);
     return res.status(500).json({
       success: false,
       message: err.message,

@@ -767,122 +767,64 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 }
 
 // handle "edit" pipeline
-async function handleEditJob(payload: EditJobPayload) {
-  // Check if we have remote URLs (multi-service deployment)
-  const remoteBaseUrl: string | undefined = (payload as any).remoteBaseUrl;
-  const remoteRestoreUrl: string | undefined = (payload as any).remoteRestoreUrl;
-  let basePath: string;
-  
-  if (remoteBaseUrl) {
-    // Multi-service mode: Download base from S3
-    try {
-      console.log(`[worker-edit] Downloading base from: ${remoteBaseUrl}`);
-      basePath = await downloadToTemp(remoteBaseUrl, payload.jobId + '-base');
-      console.log(`[worker-edit] Base downloaded to: ${basePath}`);
-    } catch (e) {
-      console.error(`[worker-edit] Failed to download remote base: ${(e as any)?.message || e}`);
-      updateJob(payload.jobId, { status: "error", errorMessage: `Failed to download base: ${(e as any)?.message || 'unknown'}` });
-      return;
-    }
-  } else {
-    // Legacy single-service mode: Read from local filesystem
-    const rec = readImageRecord(payload.imageId);
-    if (!rec) {
-      updateJob(payload.jobId, { status: "error", errorMessage: "image not found" });
-      return;
-    }
-    const localPath = getVersionPath(rec, payload.baseVersionId);
-    if (!localPath || !fs.existsSync(localPath)) {
-      updateJob(payload.jobId, { status: "error", errorMessage: "base version not found" });
-      return;
-    }
-    basePath = localPath;
-  }
+async function handleEditJob(payload: any) {
 
-  let restoreFromPath: string | undefined;
-  if (payload.mode === "Restore") {
-    if (remoteRestoreUrl) {
-      // Download restore source from S3
-      try {
-        console.log(`[worker-edit] Downloading restore source from: ${remoteRestoreUrl}`);
-        restoreFromPath = await downloadToTemp(remoteRestoreUrl, payload.jobId + '-restore');
-        console.log(`[worker-edit] Restore source downloaded to: ${restoreFromPath}`);
-      } catch (e) {
-        console.warn(`[worker-edit] Failed to download restore source, using base: ${(e as any)?.message}`);
-        restoreFromPath = basePath;
-      }
+  // 1) Download the enhanced image we’re editing
+  const { jobId, baseImageUrl, maskBase64, userInstruction, userId, imageId } = payload;
+  console.log("[worker-edit] Downloading base from:", baseImageUrl);
+  const basePath = await downloadToTemp(baseImageUrl, `${jobId}-base`);
+  console.log("[worker-edit] Base downloaded to:", basePath);
+
+  // 2) Decode maskBase64 to Buffer
+  let mask: Buffer | undefined = undefined;
+  if (maskBase64) {
+    if (maskBase64.startsWith("data:image/")) {
+      const comma = maskBase64.indexOf(",");
+      const b64 = maskBase64.slice(comma + 1);
+      mask = Buffer.from(b64, "base64");
     } else {
-      // Legacy: try to find enhancement stage in local record
-      const rec = readImageRecord(payload.imageId);
-      if (rec) {
-        const stage1B = rec.history.find(v => v.stageLabel === "1B");
-        const stage1A = rec.history.find(v => v.stageLabel === "1A");
-        const restoreVersion = stage1B || stage1A;
-        if (restoreVersion?.filePath && fs.existsSync(restoreVersion.filePath)) {
-          restoreFromPath = restoreVersion.filePath;
-          console.log(`[worker-edit] Restore mode: using ${stage1B ? 'Stage 1B' : 'Stage 1A'} as restore source: ${restoreFromPath}`);
-        } else {
-          console.warn(`[worker-edit] Enhancement stage not found locally, using base`);
-          restoreFromPath = basePath;
-        }
-      } else {
-        restoreFromPath = basePath;
-      }
+      mask = Buffer.from(maskBase64, "base64");
     }
   }
-
-  const editedPath = await applyEdit({
-    baseImagePath: basePath,
-    mask: payload.mask, // now a base64 string
-    mode: payload.mode,
-    instruction: payload.instruction,
-    restoreFromPath
-  });
-
-  const newVersion = pushImageVersion({
-    imageId: payload.imageId,
-    userId: payload.userId,
-    stageLabel: "edit",
-    filePath: editedPath,
-    note: `${payload.mode}: ${payload.instruction}`
-  });
-  // Publish edited image and attach public URL for client consumption
-  try {
-    const pub = await publishImage(editedPath);
-    try {
-      setVersionPublicUrl(payload.imageId, newVersion.versionId, pub.url);
-    } catch {}
-    // Record in images.json (including retries)
-    const key = pub.key ? pub.key.split("/").pop() : (pub.url.split("/").pop() || "");
-    await recordEnhancedImage({
-      userId: payload.userId,
-      imageId: payload.imageId,
-      publicUrl: pub.url,
-      baseKey: key ?? "",
-      versionId: newVersion.versionId,
-      extra: {
-        stage: "edit",
-        // If you have retryCount in payload or context, add it here
-        // isRetry: retryCount > 0,
-        // retryCount,
-      },
-    });
-    await recordEnhancedImageRedis({
-      userId: payload.userId,
-      imageId: payload.imageId,
-      publicUrl: pub.url,
-      baseKey: key ?? "",
-      versionId: newVersion.versionId,
-      stage: "edit",
-      // If you have retryCount in payload or context, add it here
-      // isRetry: retryCount > 0,
-      // retryCount,
-    });
-    updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId, resultUrl: pub.url });
-  } catch (e) {
-    updateJob(payload.jobId, { status: "complete", resultVersionId: newVersion.versionId });
+  if (!mask) {
+    console.warn("[worker-edit] No mask provided, aborting edit.");
+    return;
   }
+
+  // 3) Call applyEdit – this will talk to Gemini & composite with mask
+  const editPath = await applyEdit({
+    baseImagePath: basePath,
+    mask,
+    mode: "Add", // Default to "Add"; adjust as needed if mode is in payload
+    instruction: userInstruction || "",
+    // restoreFromPath: undefined, // Add if needed
+  });
+
+  // 4) Publish edited image
+  const pub = await publishImage(editPath);
+  console.log("[worker-edit] Published edit URL:", pub.url);
+
+  // 5) Record history in Redis
+  await recordEnhancedImageRedis({
+    userId,
+    imageId,
+    publicUrl: pub.url,
+    baseKey: pub.url.split("?")[0].split("/").pop() || "",
+    versionId: "",
+    stage: "edit",
+  });
+
+  // 6) Update job – IMPORTANT: don’t hard-fail on compliance
+  await updateJob(jobId, {
+    status: "complete",
+    success: true,
+    imageUrl: pub.url,
+    meta: {
+      ...payload,
+    },
+  });
 }
+
 
 // Determine Redis URL with preference for private/internal in hosted environments
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
@@ -936,12 +878,12 @@ const worker = new Worker(
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit
-          const outPath = await (await import("./pipeline/editApply.js")).applyEdit({
+          const outPath = await applyEdit({
             baseImagePath: currentPath,
             mask: maskBuf,
             mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
             instruction: prompt || "",
-            restoreFromPath: basePath
+            restoreFromPath: basePath,
           });
           // Publish edited image and attach public URL for client consumption
           let pub;

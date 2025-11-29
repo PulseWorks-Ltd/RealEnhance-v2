@@ -133,8 +133,11 @@ export function statusRouter() {
           originalUrl,
           stageUrls,
           meta: local.meta ?? {},
-          error: local.errorMessage || failedReason || undefined,
         };
+        // Only set error if job is not successful
+        if (!success) {
+          item.error = local.errorMessage || failedReason || undefined;
+        }
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
         // Reduce log verbosity: Only log failed jobs or every 50th request
