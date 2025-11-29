@@ -123,14 +123,26 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     let workerMode: "Add" | "Remove" | "Replace" | "Restore" = "Restore";
     if (mode === "edit") workerMode = "Replace";
 
-    // Use the looked-up imageUrl as remoteBaseUrl for multi-service edit jobs
+    // Read the mask file as base64 (or data URL) for the worker
+    let maskBase64: string | undefined = undefined;
+    try {
+      if (maskFile && maskFile.path) {
+        const maskBuf = await fs.readFile(maskFile.path);
+        maskBase64 = maskBuf.toString("base64");
+        // If you want a data URL instead:
+        // maskBase64 = "data:image/png;base64," + maskBuf.toString("base64");
+      }
+    } catch (e) {
+      console.warn("[region-edit] Failed to read mask file for base64", e);
+    }
+
     const jobPayload = {
       userId: sessUser.id,
       imageId: record.imageId || record.id,
       baseVersionId,
       mode: workerMode,
       instruction,
-      mask: maskFile.path,
+      mask: maskBase64,
       allowStaging,
       stagingStyle,
       sceneType,

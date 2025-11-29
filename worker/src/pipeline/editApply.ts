@@ -68,27 +68,23 @@ export async function applyEdit(params: {
   }
 
 
-  // 4. Robust mask handling: decode data URL or raw base64, log buffer length
+  // 4. Mask handling: always decode as base64 string
   let maskBuf: Buffer;
-  if (!mask || (typeof mask !== "string" && !Buffer.isBuffer(mask))) {
+  if (!mask || typeof mask !== "string") {
     console.warn("[editApply] No mask or non-string mask, returning base image.");
     return baseImagePath;
   }
-  if (typeof mask === "string") {
-    if (mask.startsWith("data:image/")) {
-      const comma = mask.indexOf(",");
-      if (comma === -1 || comma === mask.length - 1) {
-        console.warn("[editApply] Mask dataURL has no payload, returning base image.");
-        return baseImagePath;
-      }
-      const base64 = mask.slice(comma + 1);
-      maskBuf = Buffer.from(base64, "base64");
-    } else {
-      // If you're sending raw base64 instead of dataURL
-      maskBuf = Buffer.from(mask, "base64");
+  // Accept either data URL or raw base64 string
+  if (mask.startsWith("data:image/")) {
+    const comma = mask.indexOf(",");
+    if (comma === -1 || comma === mask.length - 1) {
+      console.warn("[editApply] Mask dataURL has no payload, returning base image.");
+      return baseImagePath;
     }
+    const base64 = mask.slice(comma + 1);
+    maskBuf = Buffer.from(base64, "base64");
   } else {
-    maskBuf = mask;
+    maskBuf = Buffer.from(mask, "base64");
   }
   if (!maskBuf || maskBuf.length === 0) {
     console.warn("[editApply] Mask buffer empty, returning base image.");

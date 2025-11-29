@@ -833,7 +833,7 @@ async function handleEditJob(payload: EditJobPayload) {
 
   const editedPath = await applyEdit({
     baseImagePath: basePath,
-    mask: payload.mask,
+    mask: payload.mask, // now a base64 string
     mode: payload.mode,
     instruction: payload.instruction,
     restoreFromPath
