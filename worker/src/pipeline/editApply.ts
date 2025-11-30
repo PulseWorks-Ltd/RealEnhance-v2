@@ -79,7 +79,7 @@ export async function applyEdit({
   });
 
   // Step 6: Extract the edited image from Gemini response
-  const resultPart = response.response.candidates?.[0]?.content?.parts?.find(
+  const resultPart = response.candidates?.[0]?.content?.parts?.find(
     (p: any) => p.inlineData
   );
 
