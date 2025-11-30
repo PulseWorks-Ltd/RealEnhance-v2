@@ -394,17 +394,29 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const stopDrawing = useCallback(() => {
     setIsDrawing(false);
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    
+    if (!canvas) {
+      console.warn("[region-editor] stopDrawing: no canvas ref");
+      return;
+    }
+    console.log("[region-editor] stopDrawing: applying auto-fill...");
     // Apply auto-fill to detect and fill enclosed areas
     setTimeout(() => {
       autoFillEnclosedAreas(canvas);
-      
-      // Export mask at correct dimensions (not DPR-scaled)
+      console.log("[region-editor] stopDrawing: creating blob from canvas...");
+      // Export mask as Blob with comprehensive logging
       canvas.toBlob((blob) => {
-        setMaskData(blob);
+        if (blob) {
+          console.log("[region-editor] ✅ Mask blob created successfully!");
+          console.log("[region-editor]    - Size:", blob.size, "bytes");
+          console.log("[region-editor]    - Type:", blob.type);
+          setMaskData(blob);
+        } else {
+          console.error("[region-editor] ❌ canvas.toBlob returned null!");
+          console.error("[region-editor]    - This should never happen");
+          console.error("[region-editor]    - Canvas size:", canvas.width, "x", canvas.height);
+        }
       }, 'image/png');
-    }, 100); // Small delay to ensure drawing is complete
+    }, 100);
   }, [autoFillEnclosedAreas]);
 
   // Combined mouse event handler
@@ -467,7 +479,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     },
     onMutate: () => {
       onStart?.();
-      onCancel?.();
+      // Do NOT call onCancel here; only call after a successful region edit.
     },
     onSuccess: async (result) => {
       if (!result.success || !result.jobId) {
@@ -506,6 +518,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
               maskUrl: item.maskUrl || "",
               mode: item.mode || ""
             });
+            // Only now call onCancel to close the editor after a successful region edit
+            onCancel?.();
             return;
           }
         } catch (e) {
@@ -544,23 +558,29 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     }
   });
 
+  // Robust handleSubmit with full validation and debug logging
   const handleSubmit = useCallback(async () => {
+    // 1. Validate image selection
     if (!selectedFile && !initialImageUrl) {
       toast({ title: "No image", description: "Please select an image first", variant: "destructive" });
+      console.error("[region-editor] Submission blocked: No image selected.");
       return;
     }
+    // 2. Validate instructions for edit mode
     if (mode === "edit" && !instructions.trim()) {
       toast({ title: "Instructions required", description: "Please provide instructions for Add/Remove/Replace", variant: "destructive" });
+      console.error("[region-editor] Submission blocked: No instructions for edit mode.");
       return;
     }
-    const hasMask = maskData !== null;
-    if (!hasMask) {
+    // 3. Validate mask presence
+    if (!maskData) {
       toast({ title: "Mask required", description: "Please draw a region to edit or restore", variant: "destructive" });
+      console.error("[region-editor] Submission blocked: No mask drawn.");
       return;
     }
 
-    // ✅ Convert mask Blob to data URL BEFORE creating FormData
-    let maskAsDataUrl: string = "";
+    // 4. Convert mask Blob to data URL string
+    let maskAsDataUrl = "";
     try {
       maskAsDataUrl = await new Promise<string>((resolve, reject) => {
         if (!maskData) {
@@ -578,21 +598,26 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
         reader.onerror = reject;
         reader.readAsDataURL(maskData);
       });
-      console.log("[region-editor] Mask converted to data URL, length:", maskAsDataUrl.length);
-      console.log("[region-editor] Mask preview:", maskAsDataUrl.substring(0, 100) + "...");
+      console.log("[region-editor] ✅ Mask converted to data URL. Length:", maskAsDataUrl.length);
+      console.log("[region-editor]    Mask preview:", maskAsDataUrl.substring(0, 100) + "...");
     } catch (e) {
-      console.error("[region-editor] Failed to convert mask:", e);
+      console.error("[region-editor] ❌ Failed to convert mask Blob to data URL:", e);
       toast({ title: "Mask error", description: "Failed to process mask data", variant: "destructive" });
       return;
     }
 
+    // 5. Build FormData for submission
     const formData = new FormData();
     if (selectedFile) {
       formData.append("image", selectedFile);
+      console.log("[region-editor] Appended image file to FormData.");
     } else if (initialImageUrl) {
       formData.append("imageUrl", initialImageUrl);
       if (originalImageUrl) {
         formData.append("baseImageUrl", originalImageUrl);
+        console.log("[region-editor] Appended imageUrl and baseImageUrl to FormData.");
+      } else {
+        console.log("[region-editor] Appended imageUrl to FormData.");
       }
     }
     formData.append("mode", mode);
@@ -607,19 +632,22 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("preserveStructure", "true");
     formData.append("allowStaging", "false");
     formData.append("allowRetouch", "true");
-    // ✅ Send mask as data URL string (not Blob!)
-    formData.append("regionMask", maskAsDataUrl);
+    formData.append("regionMask", maskAsDataUrl); // Always as data URL string
     formData.append("smartReinstate", smartReinstate.toString());
 
-    // Debug log what we're sending
-    console.log("[region-editor] Submitting FormData with:", {
-      mode,
-      hasImage: !!(selectedFile || initialImageUrl),
-      hasMask: !!maskAsDataUrl,
-      maskLength: maskAsDataUrl.length,
-      instructions: instructions.substring(0, 50) + "...",
-    });
+    // 6. Debug log all FormData entries
+    console.log("[region-editor] Submitting FormData:");
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === "string") {
+        console.log(`  - ${key}:`, value.length > 120 ? value.substring(0, 120) + "..." : value);
+      } else if (value instanceof File) {
+        console.log(`  - ${key}: [File] name=${value.name}, size=${value.size}, type=${value.type}`);
+      } else {
+        console.log(`  - ${key}: [Unknown Type]`, value);
+      }
+    }
 
+    // 7. Submit mutation
     regionEditMutation.mutate(formData);
   }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast]);
 
