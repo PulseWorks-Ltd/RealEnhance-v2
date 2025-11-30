@@ -867,16 +867,17 @@ const worker = new Worker(
           return await handleEditJob(payload as EditJobPayload);
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
-          // Defensive base image URL selection
+          // Defensive base image URL selection using any-cast for extra fields
+          const regionAny = regionPayload as any;
           const baseImageUrl =
-            regionPayload.baseImageUrl ||
-            regionPayload.imageUrl ||
-            (regionPayload.stageUrls && (
-              regionPayload.stageUrls["2"] ||
-              regionPayload.stageUrls["1B"] ||
-              regionPayload.stageUrls["1A"]
+            regionAny.baseImageUrl ||
+            regionAny.imageUrl ||
+            (regionAny.stageUrls && (
+              regionAny.stageUrls["2"] ||
+              regionAny.stageUrls["1B"] ||
+              regionAny.stageUrls["1A"]
             )) ||
-            regionPayload.originalUrl ||
+            regionAny.originalUrl ||
             null;
 
           if (!baseImageUrl) {
@@ -893,7 +894,7 @@ const worker = new Worker(
             : await downloadToTemp(baseImageUrl, job.id + "-base");
 
           // Download images to temp files if URLs
-          const { currentImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
+          const { currentImageUrl, maskPath, mode, prompt, jobId } = regionAny;
           const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
