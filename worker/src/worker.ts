@@ -868,6 +868,20 @@ const worker = new Worker(
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
+          // ✅ ADD DETAILED DEBUG LOGGING
+          console.log("[worker-region-edit] Received payload:", JSON.stringify({
+            type: regionPayload.type,
+            jobId: regionPayload.jobId,
+            hasBaseImageUrl: !!regionAny.baseImageUrl,
+            hasCurrentImageUrl: !!regionAny.currentImageUrl,
+            hasImageUrl: !!regionAny.imageUrl,
+            hasMask: !!regionAny.mask,
+            allKeys: Object.keys(regionAny),
+            baseImageUrl: regionAny.baseImageUrl,
+            currentImageUrl: regionAny.currentImageUrl,
+            imageUrl: regionAny.imageUrl,
+            maskLength: regionAny.mask ? regionAny.mask.length : 0,
+          }, null, 2));
           console.log("[worker-region-edit] Processing job:", {
             jobId: regionPayload.jobId,
             mode: regionAny.mode,
