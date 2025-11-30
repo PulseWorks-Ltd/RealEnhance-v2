@@ -867,19 +867,34 @@ const worker = new Worker(
           return await handleEditJob(payload as EditJobPayload);
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
-          // Region edit job handler
-          const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
-          // Guard: ensure baseImageUrl is present
+          // Defensive base image URL selection
+          const baseImageUrl =
+            regionPayload.baseImageUrl ||
+            regionPayload.imageUrl ||
+            (regionPayload.stageUrls && (
+              regionPayload.stageUrls["2"] ||
+              regionPayload.stageUrls["1B"] ||
+              regionPayload.stageUrls["1A"]
+            )) ||
+            regionPayload.originalUrl ||
+            null;
+
           if (!baseImageUrl) {
-            console.error("[worker-edit] No baseImageUrl provided for region-edit job:", jobId);
-            throw new Error("Missing base image URL for region-edit job");
+            console.error("[worker-edit] No base image URL for edit job", {
+              jobId: job.id,
+              regionPayload,
+            });
+            throw new Error("Missing base image URL for edit job");
           }
+
+          console.log("[worker-edit] Downloading base from:", baseImageUrl);
+          const basePath = baseImageUrl.startsWith("/tmp/")
+            ? baseImageUrl
+            : await downloadToTemp(baseImageUrl, job.id + "-base");
+
           // Download images to temp files if URLs
+          const { currentImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
           const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
-          let basePath = baseImageUrl;
-          if (mode === "restore" && baseImageUrl) {
-            basePath = baseImageUrl.startsWith("/tmp/") ? baseImageUrl : await downloadToTemp(baseImageUrl, jobId + "-region-base");
-          }
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit

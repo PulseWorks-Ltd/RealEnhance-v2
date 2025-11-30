@@ -3,7 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { readJsonFile } from "../services/jsonStore.js";
-import { findByPublicUrlRedis } from "@realenhance/shared";
+import { findByPicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob } from "../services/jobs.js";
 
 type ImagesState = Record<string, any>;
