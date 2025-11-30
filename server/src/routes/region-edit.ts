@@ -58,35 +58,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(401).json({ success: false, error: "not_authenticated" });
     }
 
-    // req.files is now an array from upload.any()
-    const filesArray = (req.files as Express.Multer.File[]) || [];
-
-    // Try the most likely fieldnames used by the client
-    const maskFile =
-      filesArray.find((f) => f.fieldname === "regionMask") || // 👈 NEW
-      filesArray.find((f) => f.fieldname === "mask") ||
-      filesArray.find((f) => f.fieldname === "file") ||
-      filesArray.find((f) => f.fieldname === "image") ||
-      filesArray[0] || // last-ditch fallback
-      null;
-
-    if (!maskFile) {
-      console.warn(
-        "[region-edit] No mask file found in upload. fields=",
-        filesArray.map((f) => f.fieldname)
-      );
-      return res.status(400).json({ success: false, error: "missing_mask_file" });
-    }
-
     const body = (req.body || {}) as any;
-    // Log mask info for debugging
-    const mask = body.regionMask || body.mask;
-    console.log("[region-edit] mask typeof:", typeof mask);
-    if (typeof mask === "string") {
-      console.log("[region-edit] mask length:", mask.length);
-      console.log("[region-edit] mask prefix:", mask.slice(0, 50));
-    }
-
+    // Extract all fields from body
     const imageUrl = body.imageUrl as string | undefined;
     const mode = body.mode as "edit" | "restore_original" | undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";
@@ -95,10 +68,111 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const allowStaging = body.allowStaging === "true" || body.allowStaging === true;
     const stagingStyle = body.stagingStyle;
 
+    // ✅ FIX: Get mask from req.body (not req.files) since it's sent as a string
+    const maskDataUrl = body.regionMask || body.mask;
+
+    console.log("[region-edit] imageUrl:", imageUrl);
+    console.log("[region-edit] mode:", mode);
+    console.log("[region-edit] goal:", goal);
+    console.log("[region-edit] mask received:", !!maskDataUrl);
+    console.log("[region-edit] mask length:", maskDataUrl?.length || 0);
+
+    // Validation
     if (!imageUrl) {
+      console.error("[region-edit] Missing imageUrl");
       return res.status(400).json({ success: false, error: "missing_imageUrl" });
     }
     if (!mode) {
+      console.error("[region-edit] Missing mode");
+      return res.status(400).json({ success: false, error: "missing_mode" });
+    }
+    if (!["edit", "restore_original"].includes(mode)) {
+      console.error("[region-edit] Invalid mode:", mode);
+      return res.status(400).json({ success: false, error: "invalid_mode" });
+    }
+    if (mode === "edit" && !goal) {
+      console.error("[region-edit] Missing goal for edit mode");
+      return res.status(400).json({ success: false, error: "instructions_required" });
+    }
+    if (!maskDataUrl) {
+      console.error("[region-edit] Missing mask data");
+      return res.status(400).json({ success: false, error: "missing_mask" });
+    }
+
+    // Look up the image record
+    const found = await findByPublicUrl(sessUser.id, imageUrl);
+    if (!found) {
+      console.error("[region-edit] Image not found for URL:", imageUrl);
+      return res.status(404).json({ success: false, error: "image_not_found" });
+    }
+
+    const record = found.record as any;
+    const baseVersionId = found.versionId;
+
+    // Determine the base image URL to edit
+    let baseImageUrl: string = imageUrl; // Default to the provided imageUrl
+    if (record && record.latest && record.latest.publicUrl) {
+      baseImageUrl = record.latest.publicUrl;
+      console.log("[region-edit] Using latest version:", baseImageUrl);
+    }
+
+    // Convert mask data URL to base64 string (strip the data:image/png;base64, prefix)
+    let maskBase64: string;
+    if (maskDataUrl.startsWith("data:image/")) {
+      maskBase64 = maskDataUrl.split(",")[1];
+    } else {
+      maskBase64 = maskDataUrl;
+    }
+
+    const instruction = mode === "edit" 
+      ? goal 
+      : "Restore original pixels for the masked region.";
+
+    let workerMode: "Add" | "Remove" | "Replace" | "Restore" = "Restore";
+    if (mode === "edit") workerMode = "Replace";
+
+    // ✅ FIX: Create proper job payload with all required fields
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const jobPayload = {
+      type: "region-edit",
+      jobId,
+      userId: sessUser.id,
+      imageId: record.imageId || record.id,
+      baseVersionId,
+      baseImageUrl,        // ✅ The URL to download and edit
+      currentImageUrl: baseImageUrl, // ✅ Same as baseImageUrl for region edits
+      mode: workerMode,
+      prompt: instruction, // ✅ Use 'prompt' instead of 'instruction'
+      mask: maskBase64,    // ✅ Plain base64 string (no data URL prefix)
+      sceneType,
+      roomType,
+      allowStaging,
+      stagingStyle,
+    };
+
+    console.log("[region-edit] Enqueuing job:", {
+      jobId,
+      imageId: jobPayload.imageId,
+      mode: workerMode,
+      hasBaseImageUrl: !!baseImageUrl,
+      hasMask: !!maskBase64,
+      maskLength: maskBase64.length,
+    });
+
+    const result = await enqueueEditJob(jobPayload);
+    return res.status(200).json({ 
+      success: true, 
+      jobId: result.jobId 
+    });
+  } catch (err: any) {
+    console.error("[region-edit] Error:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message || "Internal server error",
+      code: err.code,
+    });
+  }
+});
       return res.status(400).json({ success: false, error: "missing_mode" });
     }
     if (!["edit", "restore_original"].includes(mode)) {
