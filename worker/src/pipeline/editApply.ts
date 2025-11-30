@@ -1,5 +1,9 @@
 
+
 import sharp from "sharp";
+import { getGeminiClient } from "../ai/gemini";
+import { buildRegionEditPrompt } from "./prompts";
+import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 
 export type EditMode = "Add" | "Remove" | "Restore";
 
@@ -22,27 +26,74 @@ export async function applyEdit({
   instruction,
   restoreFromPath,
 }: ApplyEditArgs): Promise<string> {
-  // 🔻🔻🔻 YOUR EXISTING LOGIC GOES HERE 🔻🔻🔻
-  //
-  // - Use `baseImagePath` as the image you download / pass to Gemini
-  // - Use `mask` as the region mask
-  // - Use `mode` to decide how to build the prompt ("Add", "Remove", "Restore")
-  // - Use `instruction` as the user’s edit text
-  // - Optionally use `restoreFromPath` if you support restore behaviour
-  //
-  // At the end, write the edited image to disk and return the path.
-  //
-  // For example:
+  console.log("[editApply] Starting edit", { baseImagePath, mode, instruction });
 
-  console.log("[editApply] Starting edit", { baseImagePath, mode, hasMask: !!mask });
+  // Step 1: Load base image and get its dimensions
+  const baseImage = sharp(baseImagePath);
+  const baseMetadata = await baseImage.metadata();
+  const { width, height } = baseMetadata;
+  if (!width || !height) {
+    throw new Error("Could not read base image dimensions");
+  }
 
-  // TODO: call Gemini, composite with mask, etc.
-  // const editedPath = await runGeminiAndComposite(baseImagePath, mask, mode, instruction, restoreFromPath);
+  // Step 2: Resize mask to match base image dimensions
+  const resizedMask = await sharp(mask)
+    .resize(width, height, { fit: 'fill' })
+    .toBuffer();
 
-  const editedPath = baseImagePath; // placeholder – replace with your real output path
+  // Step 3: Build the prompt for Gemini
+  const prompt = buildRegionEditPrompt({
+    userInstruction: instruction,
+    sceneType: "interior", // Optionally pass from job payload
+    preserveStructure: true,
+  });
 
-  console.log("[editApply] Edit output saved:", editedPath);
-  return editedPath;
+  // Step 4: Convert images to base64 for Gemini
+  const baseBase64 = toBase64(baseImagePath).data;
+  const maskBase64 = resizedMask.toString("base64");
 
-  // 🔺🔺🔺 END OF YOUR LOGIC 🔺🔺🔺
+  // Step 5: Call Gemini API with the prompt
+  const gemini = getGeminiClient();
+  const response = await gemini.models.generateContent({
+    model: "gemini-2.0-flash-exp",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: baseBase64,
+            },
+          },
+          {
+            inlineData: {
+              mimeType: "image/png",
+              data: maskBase64,
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  // Step 6: Extract the edited image from Gemini response
+  const resultPart = response.response.candidates?.[0]?.content?.parts?.find(
+    (p: any) => p.inlineData
+  );
+
+  if (!resultPart?.inlineData?.data) {
+    throw new Error("No image data in Gemini response");
+  }
+
+  // Step 7: Save the edited image
+  const editedImageBuffer = Buffer.from(resultPart.inlineData.data, "base64");
+  const outputPath = baseImagePath.replace(/\.(jpg|jpeg|png|webp)$/i, "-edited.webp");
+  await sharp(editedImageBuffer)
+    .webp({ quality: 90 })
+    .toFile(outputPath);
+
+  console.log("[editApply] Edit output saved:", outputPath);
+  return outputPath;
 }
