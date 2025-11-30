@@ -871,7 +871,7 @@ const worker = new Worker(
           // Try Redis history first, then fall back to job payload fields
           let history: any = null;
           try {
-            history = await readImageRecord(regionPayload.userId, regionPayload.imageId);
+            history = readImageRecord(regionPayload.imageId);
           } catch (e) {
             console.warn("[worker-edit] Failed to read Redis history:", e);
           }
@@ -900,11 +900,11 @@ const worker = new Worker(
           console.log("[worker-edit] Downloading base from:", baseImageUrl);
           const basePath = baseImageUrl.startsWith("/tmp/")
             ? baseImageUrl
-            : await downloadToTemp(baseImageUrl);
+            : await downloadToTemp(baseImageUrl, job.id + "-base");
 
           // Download images to temp files if URLs
           const { currentImageUrl, maskPath, mode, prompt, jobId } = regionAny;
-          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl);
+          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit
