@@ -60,8 +60,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const allowStaging = body.allowStaging === "true" || body.allowStaging === true;
     const stagingStyle = body.stagingStyle;
 
-    // Get mask from req.body (sent as string from frontend)
-    const maskDataUrl = body.regionMask || body.mask;
+
+    // Get mask from req.body (sent as string from frontend) or req.files (if sent as Blob)
+    let maskDataUrl = body.regionMask || body.mask;
+
+    // If not in body, check if it was uploaded as a file
+    if (!maskDataUrl && Array.isArray(req.files) && req.files.length > 0) {
+      const maskFile = req.files.find(
+        (f: any) => f.fieldname === 'regionMask' || f.fieldname === 'mask'
+      );
+      if (maskFile) {
+        console.log("[region-edit] Found mask as uploaded file, converting to base64...");
+        const maskBuf = await fs.readFile(maskFile.path);
+        maskDataUrl = `data:${maskFile.mimetype};base64,${maskBuf.toString('base64')}`;
+        console.log("[region-edit] Converted uploaded mask to data URL, length:", maskDataUrl.length);
+      }
+    }
 
     // Enhanced logging
     console.log("[region-edit] Request details:", {
