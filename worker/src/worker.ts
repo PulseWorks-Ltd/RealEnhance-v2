@@ -867,22 +867,31 @@ const worker = new Worker(
           return await handleEditJob(payload as EditJobPayload);
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
-          // Defensive base image URL selection using any-cast for extra fields
+
+          // Try Redis history first, then fall back to job payload fields
+          let history: any = null;
+          try {
+            history = await readImageRecord(regionPayload.userId, regionPayload.imageId);
+          } catch (e) {
+            console.warn("[worker-edit] Failed to read Redis history:", e);
+          }
+
           const regionAny = regionPayload as any;
           const baseImageUrl =
+            history?.latest?.publicUrl ||
+            history?.latest?.url ||
             regionAny.baseImageUrl ||
             regionAny.imageUrl ||
-            (regionAny.stageUrls && (
-              regionAny.stageUrls["2"] ||
-              regionAny.stageUrls["1B"] ||
-              regionAny.stageUrls["1A"]
-            )) ||
+            regionAny.stageUrls?.["2"] ||
+            regionAny.stageUrls?.["1B"] ||
+            regionAny.stageUrls?.["1A"] ||
             regionAny.originalUrl ||
             null;
 
           if (!baseImageUrl) {
             console.error("[worker-edit] No base image URL for edit job", {
               jobId: job.id,
+              history,
               regionPayload,
             });
             throw new Error("Missing base image URL for edit job");
