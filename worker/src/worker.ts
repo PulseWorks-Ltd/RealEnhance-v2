@@ -867,90 +867,79 @@ const worker = new Worker(
           return await handleEditJob(payload as EditJobPayload);
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
-
-          // Try Redis history first, then fall back to job payload fields
-          let history: any = null;
-          try {
-            history = readImageRecord(regionPayload.imageId);
-          } catch (e) {
-            console.warn("[worker-edit] Failed to read Redis history:", e);
-          }
-
           const regionAny = regionPayload as any;
-          const baseImageUrl =
-            history?.latest?.publicUrl ||
-            history?.latest?.url ||
-            regionAny.baseImageUrl ||
+          console.log("[worker-region-edit] Processing job:", {
+            jobId: regionPayload.jobId,
+            mode: regionAny.mode,
+            hasBaseImageUrl: !!regionAny.baseImageUrl,
+            hasMask: !!regionAny.mask,
+          });
+
+          // ✅ FIX: Get the correct URL field
+          const baseImageUrl = 
+            regionAny.baseImageUrl || 
+            regionAny.currentImageUrl ||
             regionAny.imageUrl ||
-            regionAny.stageUrls?.["2"] ||
-            regionAny.stageUrls?.["1B"] ||
-            regionAny.stageUrls?.["1A"] ||
-            regionAny.originalUrl ||
             null;
 
           if (!baseImageUrl) {
-            console.error("[worker-edit] No base image URL for edit job", {
-              jobId: job.id,
-              history,
-              regionPayload,
+            console.error("[worker-region-edit] No base image URL found in payload:", {
+              jobId: regionPayload.jobId,
+              payloadKeys: Object.keys(regionAny),
             });
-            throw new Error("Missing base image URL for edit job");
+            throw new Error("Missing base image URL for region-edit job");
           }
 
-          console.log("[worker-edit] Downloading base from:", baseImageUrl);
-          const basePath = baseImageUrl.startsWith("/tmp/")
-            ? baseImageUrl
-            : await downloadToTemp(baseImageUrl, job.id + "-base");
+          console.log("[worker-region-edit] Downloading base from:", baseImageUrl);
+          const basePath = await downloadToTemp(baseImageUrl, regionPayload.jobId + "-base");
+          console.log("[worker-region-edit] Downloaded to:", basePath);
 
-          // Download images to temp files if URLs
-          const { currentImageUrl, maskPath, mode, prompt, jobId } = regionAny;
-          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
-          // Read mask as buffer
-          const maskBuf = await fs.promises.readFile(maskPath);
+          // ✅ FIX: Get mask from payload (it's a base64 string)
+          const maskBase64 = regionAny.mask;
+          if (!maskBase64) {
+            console.error("[worker-region-edit] No mask data in payload");
+            throw new Error("Missing mask data for region-edit job");
+          }
+
+          // Convert mask base64 to Buffer
+          const maskBuf = Buffer.from(maskBase64, "base64");
+          console.log("[worker-region-edit] Mask buffer size:", maskBuf.length);
+
+          // Get the instruction/prompt
+          const prompt = regionAny.prompt || regionAny.instruction || "";
+          const mode = regionAny.mode || "Replace";
+
+          console.log("[worker-region-edit] Calling applyEdit with mode:", mode);
+
           // Call applyEdit
           const outPath = await applyEdit({
-            baseImagePath: currentPath,
+            baseImagePath: basePath,
             mask: maskBuf,
-            mode: mode === "add" ? "Add" : mode === "remove" ? "Remove" : "Restore",
-            instruction: prompt || "",
-            restoreFromPath: basePath,
+            mode: mode as any,
+            instruction: prompt,
+            restoreFromPath: basePath, // Use same base for restore
           });
-          // Publish edited image and attach public URL for client consumption
-          let pub;
-          try {
-            pub = await publishImage(outPath);
-            setVersionPublicUrl(regionPayload.imageId, regionPayload.jobId, pub.url);
-          } catch (e) {
-            console.warn("[region-edit] Failed to publish image:", e);
-            pub = { url: outPath };
-          }
-          // Compliance/validator logic (log feedback, never block)
-          let compliance: ComplianceVerdict | undefined = undefined;
-          try {
-            const { checkCompliance } = await import("./ai/compliance.js");
-            const ai = getGeminiClient();
-            // Convert images to base64 for compliance check
-            const { toBase64 } = await import("./utils/images.js");
-            const origB64 = toBase64(currentPath).data;
-            const editB64 = toBase64(outPath).data;
-            compliance = await checkCompliance(ai, origB64, editB64);
-          } catch (e) {
-            console.warn("[region-edit] Compliance check failed:", e);
-          }
-          if (compliance && (compliance as any).ok === false) {
-            const lastViolationMsg = `Structural violations detected: ${((compliance as any).reasons || ["Compliance check failed"]).join("; ")}`;
-            updateJob(jobId, {
-              status: "complete",
-              resultUrl: pub.url,
-              errorMessage: lastViolationMsg,
-              error: lastViolationMsg,
-              meta: { compliance, complianceFailed: true }
-            });
-            console.warn(`[region-edit] Compliance failed for job ${jobId}: ${lastViolationMsg} (image still published)`);
-          } else {
-            updateJob(jobId, { status: "complete", resultUrl: pub.url, meta: { compliance } });
-          }
-          return { ok: true, resultUrl: pub.url };
+
+          console.log("[worker-region-edit] Edit complete, publishing:", outPath);
+
+          // Publish the result
+          const pub = await publishImage(outPath);
+          
+          console.log("[worker-region-edit] Published to:", pub.url);
+
+          // Update job status
+          updateJob(regionPayload.jobId, {
+            status: "complete",
+            success: true,
+            resultUrl: pub.url,
+            imageUrl: pub.url,
+          });
+
+          return { 
+            ok: true, 
+            resultUrl: pub.url,
+            imageUrl: pub.url,
+          };
         } else {
           updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
         }
