@@ -900,11 +900,11 @@ const worker = new Worker(
           console.log("[worker-edit] Downloading base from:", baseImageUrl);
           const basePath = baseImageUrl.startsWith("/tmp/")
             ? baseImageUrl
-            : await downloadToTemp(baseImageUrl, job.id + "-base");
+            : await downloadToTemp(baseImageUrl);
 
           // Download images to temp files if URLs
           const { currentImageUrl, maskPath, mode, prompt, jobId } = regionAny;
-          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
+          const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl);
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
           // Call applyEdit
