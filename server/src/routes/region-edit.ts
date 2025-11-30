@@ -117,6 +117,21 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const record = found.record as any;
     const baseVersionId = found.versionId;
 
+    // Compute baseImageUrl: prefer latest enhanced/retry, fallback to imageUrl
+    let baseImageUrl: string | null = null;
+    if (record && record.latest && record.latest.publicUrl) {
+      baseImageUrl = record.latest.publicUrl;
+    } else if (imageUrl) {
+      baseImageUrl = imageUrl;
+    }
+
+    if (!baseImageUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "No base image URL available for edit.",
+      });
+    }
+
     const instruction =
       mode === "edit" ? goal : "Restore original pixels for the masked region.";
 
@@ -140,13 +155,12 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       userId: sessUser.id,
       imageId: record.imageId || record.id,
       baseVersionId,
+      baseImageUrl, // 👈 always send this
       mode: workerMode,
       instruction,
       mask: maskBase64,
       allowStaging,
       stagingStyle,
-      // Optionally, you can add remoteBaseUrl: imageUrl if needed by your worker
-      // remoteBaseUrl: imageUrl,
     };
 
     const { jobId } = await enqueueEditJob(jobPayload);

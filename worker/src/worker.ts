@@ -869,11 +869,17 @@ const worker = new Worker(
           const regionPayload = payload as RegionEditJobPayload;
           // Region edit job handler
           const { currentImageUrl, baseImageUrl, maskPath, mode, prompt, jobId } = regionPayload as any;
+          // Guard: ensure baseImageUrl is present
+          const resolvedBaseImageUrl = baseImageUrl || regionPayload.imageUrl || regionPayload.originalUrl || null;
+          if (!resolvedBaseImageUrl) {
+            console.error("[worker-edit] No baseImageUrl or imageUrl provided for region-edit job:", jobId);
+            throw new Error("Missing base image URL for region-edit job");
+          }
           // Download images to temp files if URLs
           const currentPath = currentImageUrl.startsWith("/tmp/") ? currentImageUrl : await downloadToTemp(currentImageUrl, jobId + "-region-current");
-          let basePath = baseImageUrl;
-          if (mode === "restore" && baseImageUrl) {
-            basePath = baseImageUrl.startsWith("/tmp/") ? baseImageUrl : await downloadToTemp(baseImageUrl, jobId + "-region-base");
+          let basePath = resolvedBaseImageUrl;
+          if (mode === "restore" && resolvedBaseImageUrl) {
+            basePath = resolvedBaseImageUrl.startsWith("/tmp/") ? resolvedBaseImageUrl : await downloadToTemp(resolvedBaseImageUrl, jobId + "-region-base");
           }
           // Read mask as buffer
           const maskBuf = await fs.promises.readFile(maskPath);
