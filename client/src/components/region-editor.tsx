@@ -558,6 +558,34 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       toast({ title: "Mask required", description: "Please draw a region to edit or restore", variant: "destructive" });
       return;
     }
+
+    // ✅ Convert mask Blob to data URL BEFORE creating FormData
+    let maskAsDataUrl: string = "";
+    try {
+      maskAsDataUrl = await new Promise<string>((resolve, reject) => {
+        if (!maskData) {
+          reject(new Error("No mask data"));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            resolve(reader.result);
+          } else {
+            reject(new Error("Failed to convert mask Blob to data URL"));
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(maskData);
+      });
+      console.log("[region-editor] Mask converted to data URL, length:", maskAsDataUrl.length);
+      console.log("[region-editor] Mask preview:", maskAsDataUrl.substring(0, 100) + "...");
+    } catch (e) {
+      console.error("[region-editor] Failed to convert mask:", e);
+      toast({ title: "Mask error", description: "Failed to process mask data", variant: "destructive" });
+      return;
+    }
+
     const formData = new FormData();
     if (selectedFile) {
       formData.append("image", selectedFile);
@@ -579,23 +607,21 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     formData.append("preserveStructure", "true");
     formData.append("allowStaging", "false");
     formData.append("allowRetouch", "true");
-    // Always send mask as data URL string
-    if (hasMask && maskData) {
-      // Convert Blob to data URL
-      const maskAsDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error("Failed to convert mask Blob to data URL"));
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(maskData);
-      });
-      formData.append("regionMask", maskAsDataUrl);
-    }
+    // ✅ Send mask as data URL string (not Blob!)
+    formData.append("regionMask", maskAsDataUrl);
     formData.append("smartReinstate", smartReinstate.toString());
+
+    // Debug log what we're sending
+    console.log("[region-editor] Submitting FormData with:", {
+      mode,
+      hasImage: !!(selectedFile || initialImageUrl),
+      hasMask: !!maskAsDataUrl,
+      maskLength: maskAsDataUrl.length,
+      instructions: instructions.substring(0, 50) + "...",
+    });
+
     regionEditMutation.mutate(formData);
-  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, smartReinstate, regionEditMutation, toast]);
+  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast]);
 
   // Check if required fields are filled based on operation type
   const hasInstructions = instructions.trim().length > 0;
