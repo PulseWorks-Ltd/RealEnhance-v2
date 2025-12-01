@@ -3,7 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { findByPublicUrlRedis } from "@realenhance/shared";
-import { enqueueEditJob } from "../services/jobs.js";
+import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
