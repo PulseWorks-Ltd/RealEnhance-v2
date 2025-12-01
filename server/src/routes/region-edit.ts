@@ -204,7 +204,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // Use enqueueRegionEditJob for correct payload structure
     const result = await enqueueRegionEditJob({
       userId: sessUser.id,
-      mode: (workerMode as string).toLowerCase(),
+      mode: workerMode === "Restore"
+        ? "restore"
+        : workerMode === "Replace" || workerMode === "Add"
+        ? "add"
+        : workerMode === "Remove"
+        ? "remove"
+        : "restore", // Default to "restore" to satisfy type
       prompt: instruction,
       currentImageUrl: baseImageUrl,
       baseImageUrl,
