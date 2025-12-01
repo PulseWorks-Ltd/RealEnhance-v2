@@ -164,37 +164,51 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       ? goal 
       : "Restore original pixels for the masked region.";
 
-    // ===== DETERMINE WORKER MODE =====
-    let workerMode: "Add" | "Remove" | "Replace" | "Restore" = "Restore";
-    if (mode === "edit") {
+    // ===== DETERMINE WORKER MODE (robust intent parsing) =====
+    let workerMode: "Add" | "Remove" | "Replace" | "Restore";
+    if (mode === "restore_original") {
+      // User wants to restore original pixels - no Gemini needed
+      workerMode = "Restore";
+    } else if (mode === "edit") {
+      // User wants to edit - parse their instruction
+      const goalLower = goal.toLowerCase();
+      if (goalLower.includes("add") || goalLower.includes("place") || goalLower.includes("insert")) {
+        workerMode = "Add";
+      } else if (goalLower.includes("remove") || goalLower.includes("delete") || goalLower.includes("take out")) {
+        workerMode = "Remove";
+      } else {
+        // Default to Replace for other edits (change, modify, etc.)
+        workerMode = "Replace";
+      }
+    } else {
+      // Fallback
       workerMode = "Replace";
     }
+
+    console.log("[region-edit] User goal:", goal);
+    console.log("[region-edit] Selected mode:", mode);
+    console.log("[region-edit] Worker mode:", workerMode);
 
     // ===== CREATE JOB PAYLOAD =====
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 
-    // Map workerMode to API mode
-    let apiMode: "add" | "remove" | "restore";
-    if (workerMode === "Replace") {
-      apiMode = "restore"; // fallback, or adjust as needed
-    } else if (workerMode === "Restore") {
-      apiMode = "restore";
-    } else if (workerMode === "Add") {
-      apiMode = "add";
-    } else if (workerMode === "Remove") {
-      apiMode = "remove";
-    } else {
-      apiMode = "restore";
+
+    // Determine restoreFromUrl for pixel-level restoration
+    let restoreFromUrl: string | undefined = undefined;
+    if (workerMode === "Restore") {
+      // Prefer Stage 1B or original image for restoration
+      restoreFromUrl = record.latest?.stage1BUrl || record.latest?.originalUrl || baseImageUrl;
     }
 
     const jobPayload = {
       userId: sessUser.id,
-      mode: apiMode,
+      mode: workerMode.toLowerCase(),
       prompt: instruction,
       currentImageUrl: baseImageUrl,
       baseImageUrl,
       mask: maskBase64,
+      ...(restoreFromUrl ? { restoreFromUrl } : {}),
     };
 
     console.log("[region-edit] Enqueuing job:", {
