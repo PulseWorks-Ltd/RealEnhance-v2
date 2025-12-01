@@ -5,7 +5,7 @@ export async function enqueueRegionEditJob(params: {
   prompt?: string;
   currentImageUrl: string;
   baseImageUrl?: string;
-  maskPath: string;
+  mask: string;
   imageIndex?: number;
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
@@ -19,12 +19,10 @@ export async function enqueueRegionEditJob(params: {
     prompt: params.prompt,
     currentImageUrl: params.currentImageUrl,
     baseImageUrl: params.baseImageUrl,
-    maskPath: params.maskPath,
+    mask: params.mask,
     imageIndex: params.imageIndex,
     createdAt: now,
   } as any;
-
-
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   // Simulate immediate result for now
