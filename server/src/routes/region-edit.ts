@@ -173,12 +173,6 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // ===== CREATE JOB PAYLOAD =====
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Save maskBase64 to a temporary file and get its path
-    const userDir = path.join(uploadRoot, sessUser.id);
-    await fs.mkdir(userDir, { recursive: true });
-    const maskPath = path.join(userDir, `${jobId}_mask.png`);
-    // Write the mask as a PNG file
-    await fs.writeFile(maskPath, Buffer.from(maskBase64, "base64"));
 
     // Map workerMode to API mode
     let apiMode: "add" | "remove" | "restore";
@@ -200,7 +194,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       prompt: instruction,
       currentImageUrl: baseImageUrl,
       baseImageUrl,
-      maskPath,
+      mask: maskBase64,
     };
 
     console.log("[region-edit] Enqueuing job:", {
@@ -208,15 +202,16 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       imageId: record.imageId || record.id,
       mode: apiMode,
       baseImageUrlLength: baseImageUrl.length,
-      maskPath,
+      maskLength: maskBase64.length,
       instructionLength: instruction.length,
     });
 
     // ===== ENQUEUE JOB =====
     // Debug: log payload fields before enqueuing
     console.log("[region-edit] Job payload keys:", Object.keys(jobPayload));
-    console.log("[region-edit] Has 'maskPath' field:", 'maskPath' in jobPayload);
-    console.log("[region-edit] MaskPath value:", jobPayload.maskPath);
+    console.log("[region-edit] Has 'mask' field:", 'mask' in jobPayload);
+    console.log("[region-edit] Mask field value type:", typeof jobPayload.mask);
+    console.log("[region-edit] Mask field value length:", jobPayload.mask?.length || 0);
 
     const result = await enqueueRegionEditJob(jobPayload);
 
