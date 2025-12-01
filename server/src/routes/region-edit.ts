@@ -201,14 +201,18 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       restoreFromUrl = record.latest?.stage1BUrl || record.latest?.originalUrl || baseImageUrl;
     }
 
-    // Map workerMode to API mode for enqueueRegionEditJob (must be 'add' | 'remove' | 'restore')
-    let apiMode: "add" | "remove" | "restore";
+    // Map workerMode to API mode for enqueueRegionEditJob
+    // Note: "Replace" mode should use Gemini, not pixel restoration
+    let apiMode: "add" | "remove" | "restore" | "replace";
     if (workerMode === "Add") {
       apiMode = "add";
     } else if (workerMode === "Remove") {
       apiMode = "remove";
-    } else {
+    } else if (workerMode === "Restore") {
       apiMode = "restore";
+    } else {
+      // "Replace" mode - modify the masked area
+      apiMode = "replace";
     }
 
     const jobPayload = {

@@ -2,7 +2,7 @@
 export async function enqueueRegionEditJob(params: {
   userId: UserId;
   imageId?: ImageId;
-  mode: "add" | "remove" | "restore";
+  mode: "add" | "remove" | "restore" | "replace";
   prompt?: string;
   currentImageUrl: string;
   baseImageUrl?: string;
