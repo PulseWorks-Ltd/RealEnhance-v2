@@ -201,9 +201,19 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       restoreFromUrl = record.latest?.stage1BUrl || record.latest?.originalUrl || baseImageUrl;
     }
 
+    // Map workerMode to API mode for enqueueRegionEditJob (must be 'add' | 'remove' | 'restore')
+    let apiMode: "add" | "remove" | "restore";
+    if (workerMode === "Add") {
+      apiMode = "add";
+    } else if (workerMode === "Remove") {
+      apiMode = "remove";
+    } else {
+      apiMode = "restore";
+    }
+
     const jobPayload = {
       userId: sessUser.id,
-      mode: workerMode.toLowerCase(),
+      mode: apiMode,
       prompt: instruction,
       currentImageUrl: baseImageUrl,
       baseImageUrl,
