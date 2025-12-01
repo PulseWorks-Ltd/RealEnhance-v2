@@ -74,7 +74,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     (p: any) => p.inlineData && p.inlineData.data
   );
 
-  if (!imagePart) {
+  if (!imagePart || !imagePart.inlineData) {
     console.error(
       "[gemini.regionEdit] no inlineData image part",
       JSON.stringify(usable.content.parts, null, 2)
