@@ -40,10 +40,19 @@ You are given:
 - A base image of the room.
 - A binary mask image that marks the region to edit: white = area to edit, black = area to keep unchanged.
 
-Your job is to apply ONLY the user's instruction, and ONLY inside the masked region.
+Your job is to apply ONLY the user's instruction, and ONLY inside the white masked region.
 
-USER INSTRUCTION (do exactly this and nothing more):
+USER INSTRUCTION (apply this ONLY to the white masked area):
 """${userInstruction}"""
+
+⚠️ CRITICAL MASK RULES - READ CAREFULLY:
+- The mask image shows WHITE pixels = area WHERE YOU MUST apply the edit
+- The mask image shows BLACK pixels = area YOU MUST NOT touch (keep pixel-perfect identical)
+- You may ONLY modify pixels where the mask is WHITE
+- Everything where the mask is BLACK must remain 100% unchanged from the base image
+- Do NOT apply the instruction to any black-masked areas
+- Do NOT change anything outside the white mask region, even if it seems like it should be changed
+- If you see multiple walls/areas in the image, ONLY edit the one(s) covered by WHITE mask pixels
 
 GENERAL RULES:
 - Do NOT invent new angles or viewpoints. Keep the same camera position and perspective.
@@ -52,11 +61,9 @@ GENERAL RULES:
 
 ${structuralRules}
 
-MASK RULES (CRITICAL):
-- You may ONLY modify pixels that are inside the mask region.
-- Everything outside the mask region must look identical to the base image.
-- Do NOT change the floor, walls, windows, doors, ceilings, or any structure outside the mask.
-- If the mask covers a structural element (for example a window), you may only change its surface treatment (curtains, blinds, reflections) while keeping its size and position identical.
+QUALITY RULES:
+- Do NOT change the floor, walls, windows, doors, ceilings, or any structure outside the white mask area.
+- If the white mask covers a structural element (for example a window), you may only change its surface treatment (curtains, blinds, reflections) while keeping its size and position identical.
 
 Your output should look like the original photo, but with the user instruction perfectly applied inside the mask region and no unintended changes anywhere else.`;
 }
