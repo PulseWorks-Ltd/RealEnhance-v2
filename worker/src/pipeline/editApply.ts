@@ -92,24 +92,25 @@ export async function applyEdit({
           },
         ],
       }],
-      // generationConfig removed: not supported by GenerateContentParameters type
     });
 
     console.log("[editApply] Gemini responded");
 
-    // Step 6: Extract image from response
-    const candidates = response.candidates;
-    if (!candidates || candidates.length === 0) {
-      console.error("[editApply] No candidates in Gemini response");
+    // Robustly extract candidates from response
+    const candidates = (response as any).candidates ?? (response as any).response?.candidates ?? [];
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      console.error("[editApply] Gemini response has no candidates", JSON.stringify(response, null, 2));
       throw new Error("No candidates in Gemini response");
     }
 
-    const parts = candidates[0]?.content?.parts;
-    if (!parts || parts.length === 0) {
-      console.error("[editApply] No parts in first candidate");
-      throw new Error("No parts in Gemini response");
+    // Optionally, ignore non-STOP finishes
+    const usable = candidates.find((c: any) => !c.finishReason || c.finishReason === "STOP") ?? candidates[0];
+    if (!usable?.content?.parts?.length) {
+      console.error("[editApply] No content parts in chosen candidate", JSON.stringify(usable, null, 2));
+      throw new Error("No image content in Gemini response");
     }
 
+    const parts = usable.content.parts;
     console.log("[editApply] Response has", parts.length, "parts");
     console.log("[editApply] Part types:", parts.map((p: any) => {
       if (p.text) return 'text';
@@ -118,16 +119,17 @@ export async function applyEdit({
     }));
 
     // Find the image part
-    const imagePart = parts.find((p: any) => p.inlineData);
+    const imagePart = parts.find((p: any) => p.inlineData && p.inlineData.data);
 
-    if (!imagePart?.inlineData?.data) {
+    if (!imagePart) {
       // Log what we got instead
       const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text);
       if (textParts.length > 0) {
         console.error("[editApply] Gemini returned text instead of image:");
         console.error(textParts.join('\n').substring(0, 500));
       }
-      throw new Error("No image data in Gemini response - it may have returned text instead");
+      console.error("[editApply] No inline_data image part in candidate", JSON.stringify(parts, null, 2));
+      throw new Error("No image data in Gemini response");
     }
 
     console.log("[editApply] Found image in response");
