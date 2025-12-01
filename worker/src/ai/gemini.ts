@@ -1,3 +1,90 @@
+export interface RegionEditArgs {
+  prompt: string;
+  baseImageBuffer: Buffer;
+  maskPngBuffer?: Buffer;
+  roomType?: string;
+  sceneType?: string;
+  preserveStructure?: boolean;
+}
+
+export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer> {
+  const {
+    prompt,
+    baseImageBuffer,
+    maskPngBuffer,
+    roomType,
+    sceneType,
+    preserveStructure,
+  } = args;
+
+  console.log("[gemini.regionEdit] starting", {
+    promptLength: prompt.length,
+    hasMask: !!maskPngBuffer,
+    baseSize: baseImageBuffer.length,
+    roomType,
+    sceneType,
+    preserveStructure,
+  });
+
+  const parts: any[] = [
+    { text: prompt },
+    {
+      inlineData: {
+        mimeType: "image/webp",
+        data: baseImageBuffer.toString("base64"),
+      },
+    },
+  ];
+  if (maskPngBuffer) {
+    parts.push({
+      inlineData: {
+        mimeType: "image/png",
+        data: maskPngBuffer.toString("base64"),
+      },
+    });
+  }
+  const contents = [
+    {
+      role: "user",
+      parts,
+    },
+  ];
+
+  // Use the same fallback helper as 1A/1B
+  const { resp } = await runWithImageModelFallback(getGeminiClient(), { contents }, "[gemini.regionEdit]");
+
+  const candidates = resp.candidates ?? [];
+  const usable =
+    candidates.find(
+      (c: any) =>
+        !c.finishReason ||
+        c.finishReason === "STOP" ||
+        c.finishReason === "FINISH_REASON_UNSPECIFIED"
+    ) ?? candidates[0];
+
+  if (!usable?.content?.parts?.length) {
+    console.error(
+      "[gemini.regionEdit] no usable content parts",
+      JSON.stringify(usable, null, 2)
+    );
+    throw new Error("No image content in Gemini region edit response");
+  }
+
+  const imagePart = usable.content.parts.find(
+    (p: any) => p.inlineData && p.inlineData.data
+  );
+
+  if (!imagePart) {
+    console.error(
+      "[gemini.regionEdit] no inlineData image part",
+      JSON.stringify(usable.content.parts, null, 2)
+    );
+    throw new Error("No image data in Gemini region edit response");
+  }
+
+  const base64Image = imagePart.inlineData.data as string;
+  return Buffer.from(base64Image, "base64");
+}
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";

@@ -1,7 +1,7 @@
 
 
 import sharp from "sharp";
-import { GoogleGenAI } from "@google/genai";
+import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 
@@ -26,93 +26,57 @@ export async function applyEdit({
   instruction,
   restoreFromPath,
 }: ApplyEditArgs): Promise<string> {
-    try {
-      console.log(`[Gemini] 🔵 [RegionEdit] Input path: ${baseImagePath}`);
-      console.log(`[Gemini] [RegionEdit] Mode: ${mode}, Instruction: ${instruction}`);
-      // Step 1: Load base image and get dimensions
-      const baseImage = sharp(baseImagePath);
-      const meta = await baseImage.metadata();
-      if (!meta.width || !meta.height) {
-        throw new Error("Could not read base image dimensions");
-      }
-      const { size: imageSize } = await require('fs').promises.stat(baseImagePath);
-      const imageSizeKB = Math.round(imageSize / 1024);
-      console.log(`[Gemini] 🖼️ [RegionEdit] Loaded image from disk: ${imageSizeKB} KB (${meta.width}x${meta.height})`);
+    console.log("[editApply] Starting edit", {
+      baseImagePath,
+      mode,
+      instruction,
+      hasMask: !!mask,
+      maskSize: mask?.length ?? 0,
+    });
 
-      // Step 2: Resize mask to match image and encode as PNG for Gemini
-      let maskPngBuffer: Buffer | undefined;
-      if (mask) {
-        maskPngBuffer = await sharp(mask)
-          .resize(meta.width, meta.height, { fit: "fill" })
-          .png()
-          .toBuffer();
-        console.log(`[Gemini] [RegionEdit] Mask resized to match image (${maskPngBuffer.length} bytes)`);
-      }
+    const baseImage = sharp(baseImagePath);
+    const meta = await baseImage.metadata();
+    console.log("[editApply] Base image dimensions:", {
+      width: meta.width,
+      height: meta.height,
+    });
 
-      // Step 3: Read base image buffer (send as webp)
-      const baseImageBuffer = await sharp(baseImagePath).webp().toBuffer();
-      const base64Base = baseImageBuffer.toString("base64");
-      const base64Mask = maskPngBuffer?.toString("base64");
-      const base64SizeKB = Math.round(base64Base.length / 1024);
-      console.log(`[Gemini] 📦 [RegionEdit] Encoded to base64: ${base64SizeKB} KB`);
-
-      // Step 4: Build the prompt
-      const prompt = buildRegionEditPrompt({
-        userInstruction: instruction,
-        sceneType: "interior",
-        preserveStructure: true,
-      });
-      console.log(`[Gemini] 📝 [RegionEdit] Prompt built, length: ${prompt.length}`);
-
-      // Step 5: Build Gemini request (use correct field names for SDK)
-      const parts: any[] = [
-        { text: prompt },
-        {
-          inlineData: {
-            mimeType: "image/webp",
-            data: base64Base,
-          },
-        },
-      ];
-      if (base64Mask) {
-        parts.push({
-          inlineData: {
-            mimeType: "image/png",
-            data: base64Mask,
-          },
-        });
-      }
-      const request = {
-        contents: [
-          {
-            role: "user",
-            parts,
-          },
-        ],
-      };
-
-      // Step 6: Call Gemini and extract image
-      const t0 = Date.now();
-      const editedBuffer = await runRegionEditWithGemini(request, {
-        hasBaseImageUrl: true,
-        hasMask: !!mask,
-      });
-      const elapsedMs = Date.now() - t0;
-      console.log(`[Gemini] ✅ [RegionEdit] Gemini API responded in ${elapsedMs} ms`);
-
-      // Step 7: Save to temp output path
-      const dir = require("path").dirname(baseImagePath);
-      const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
-      const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
-      await sharp(editedBuffer).toFile(outPath);
-      const outSize = (await require('fs').promises.stat(outPath)).size;
-      console.log(`[Gemini] 💾 [RegionEdit] Saved edited image to: ${outPath} (${Math.round(outSize/1024)} KB)`);
-      console.log(`[Gemini] 🎉 [RegionEdit] SUCCESS - Region edit complete`);
-      return outPath;
-    } catch (err) {
-      console.error(`[Gemini] ❌ [RegionEdit] ERROR:`, err);
-      throw err;
+    // Resize mask to match and encode as PNG
+    let maskPngBuffer: Buffer | undefined;
+    if (mask) {
+      maskPngBuffer = await sharp(mask)
+        .resize(meta.width!, meta.height!, { fit: "fill" })
+        .png()
+        .toBuffer();
+      console.log("[editApply] Mask resized to match image");
     }
+
+    // Normalize base image to the same format you use in 1A/1B
+    const baseImageBuffer = await sharp(baseImagePath).webp().toBuffer();
+    console.log("[editApply] Images converted to base64 (implicit)");
+
+    const prompt = buildRegionEditPrompt({
+      mode,
+      instruction,
+      // Optionally pass roomType, sceneType, preserveStructure if needed
+    });
+    console.log("[editApply] Prompt built, length:", prompt.length);
+
+    // 🚀 Call shared Gemini helper
+    const editedBuffer = await regionEditWithGemini({
+      prompt,
+      baseImageBuffer,
+      maskPngBuffer,
+      // Optionally pass roomType, sceneType, preserveStructure if needed
+    });
+
+    // Save temp file
+    const dir = require("path").dirname(baseImagePath);
+    const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
+    const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
+    await sharp(editedBuffer).toFile(outPath);
+    console.log("[editApply] Saved edited image to", outPath);
+    return outPath;
 
   // Step 1: Load base image and get dimensions
   const baseImage = sharp(baseImagePath);
