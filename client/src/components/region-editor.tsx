@@ -500,7 +500,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           const json = await res.json();
           const item = json.items?.[0];
           if (!item) return;
-          if (!item.success) {
+
+          // Check for failed status
+          if (item.status === "failed") {
             polling = false;
             toast({
               title: "Enhancement failed",
@@ -510,7 +512,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             onError?.();
             return;
           }
-          if (item.state === "completed" && item.imageUrl) {
+
+          // Check for completion
+          if (item.status === "completed" && item.imageUrl) {
             polling = false;
             onComplete?.({
               imageUrl: item.imageUrl,
@@ -522,6 +526,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             onCancel?.();
             return;
           }
+
+          // Otherwise still processing (queued or active) - continue polling
         } catch (e) {
           polling = false;
           toast({

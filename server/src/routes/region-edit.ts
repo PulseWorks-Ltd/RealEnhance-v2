@@ -213,6 +213,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     const jobPayload = {
       userId: sessUser.id,
+      imageId: record.imageId || record.id,
       mode: apiMode,
       prompt: instruction,
       currentImageUrl: baseImageUrl,
