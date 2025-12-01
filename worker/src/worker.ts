@@ -921,9 +921,20 @@ const worker = new Worker(
 
           // Get the instruction/prompt
           const prompt = regionAny.prompt || regionAny.instruction || "";
-          const mode = regionAny.mode || "Replace";
+
+          // Normalize mode to capitalized form ("add" -> "Add", "remove" -> "Remove", etc.)
+          const rawMode = regionAny.mode || "replace";
+          const mode = rawMode.charAt(0).toUpperCase() + rawMode.slice(1).toLowerCase();
 
           console.log("[worker-region-edit] Calling applyEdit with mode:", mode);
+
+          // Download restore source if provided (for pixel-level restoration)
+          let restoreFromPath: string | undefined;
+          if (mode === "Restore" && regionAny.restoreFromUrl) {
+            console.log("[worker-region-edit] Downloading restore source from:", regionAny.restoreFromUrl);
+            restoreFromPath = await downloadToTemp(regionAny.restoreFromUrl, regionPayload.jobId + "-restore");
+            console.log("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
+          }
 
           // Call applyEdit
           const outPath = await applyEdit({
@@ -931,15 +942,30 @@ const worker = new Worker(
             mask: maskBuf,
             mode: mode as any,
             instruction: prompt,
-            restoreFromPath: basePath, // Use same base for restore
+            restoreFromPath: restoreFromPath || basePath, // Use restore source or fallback to base
           });
 
           console.log("[worker-region-edit] Edit complete, publishing:", outPath);
 
           // Publish the result
           const pub = await publishImage(outPath);
-          
+
           console.log("[worker-region-edit] Published to:", pub.url);
+
+          // Record in Redis for image history lookups (enables future edits on this result)
+          try {
+            await recordEnhancedImageRedis({
+              userId: regionPayload.userId,
+              imageId: regionAny.imageId || regionPayload.userId, // Use userId as fallback if imageId missing
+              publicUrl: pub.url,
+              baseKey: pub.url.split("?")[0].split("/").pop() || "",
+              versionId: "", // Region edits don't have version IDs
+              stage: "region-edit",
+            });
+            console.log("[worker-region-edit] Redis image history recorded");
+          } catch (err) {
+            console.warn("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
+          }
 
           // Update job status
           updateJob(regionPayload.jobId, {
@@ -949,8 +975,8 @@ const worker = new Worker(
             imageUrl: pub.url,
           });
 
-          return { 
-            ok: true, 
+          return {
+            ok: true,
             resultUrl: pub.url,
             imageUrl: pub.url,
           };

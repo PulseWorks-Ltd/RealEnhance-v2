@@ -32,6 +32,7 @@ export async function applyEdit({
       instruction,
       hasMask: !!mask,
       maskSize: mask?.length ?? 0,
+      hasRestoreFrom: !!restoreFromPath,
     });
 
     const baseImage = sharp(baseImagePath);
@@ -51,6 +52,80 @@ export async function applyEdit({
       console.log("[editApply] Mask resized to match image");
     }
 
+    const dir = require("path").dirname(baseImagePath);
+    const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
+    const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
+
+    // 🔹 Handle "Restore" mode with pixel-level copying (no Gemini)
+    if (mode === "Restore" && restoreFromPath && maskPngBuffer) {
+      console.log("[editApply] Restore mode: copying pixels from", restoreFromPath);
+
+      try {
+        // Load the restore source image
+        const restoreImage = sharp(restoreFromPath);
+        const restoreMeta = await restoreImage.metadata();
+
+        // Ensure restore image matches base dimensions
+        let restoreBuffer: Buffer;
+        if (restoreMeta.width !== meta.width || restoreMeta.height !== meta.height) {
+          console.log("[editApply] Resizing restore image to match base");
+          restoreBuffer = await restoreImage
+            .resize(meta.width!, meta.height!, { fit: "fill" })
+            .toBuffer();
+        } else {
+          restoreBuffer = await restoreImage.toBuffer();
+        }
+
+        // Create inverted mask (for keeping non-masked areas from base)
+        const invertedMask = await sharp(maskPngBuffer)
+          .negate()
+          .toBuffer();
+
+        // Composite: base with inverted mask + restore with original mask
+        const baseImageBuffer = await sharp(baseImagePath).toBuffer();
+
+        // Step 1: Apply inverted mask to base (keep non-masked areas)
+        const maskedBase = await sharp(baseImageBuffer)
+          .composite([
+            {
+              input: invertedMask,
+              blend: "dest-in",
+            },
+          ])
+          .toBuffer();
+
+        // Step 2: Apply mask to restore source (get masked areas)
+        const maskedRestore = await sharp(restoreBuffer)
+          .composite([
+            {
+              input: maskPngBuffer,
+              blend: "dest-in",
+            },
+          ])
+          .toBuffer();
+
+        // Step 3: Combine both (overlay masked restore on top of masked base)
+        await sharp(maskedBase)
+          .composite([
+            {
+              input: maskedRestore,
+              blend: "over",
+            },
+          ])
+          .webp()
+          .toFile(outPath);
+
+        console.log("[editApply] Restore complete (pixel-level), saved to", outPath);
+        return outPath;
+      } catch (err) {
+        console.error("[editApply] Pixel-level restore failed:", err);
+        // Fall through to Gemini as fallback
+      }
+    }
+
+    // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini
+    console.log("[editApply] Using Gemini for mode:", mode);
+
     // Normalize base image to the same format you use in 1A/1B
     const baseImageBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
@@ -69,10 +144,6 @@ export async function applyEdit({
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
 
-    // Save temp file
-    const dir = require("path").dirname(baseImagePath);
-    const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
-    const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
     await sharp(editedBuffer).toFile(outPath);
     console.log("[editApply] Saved edited image to", outPath);
     return outPath;
