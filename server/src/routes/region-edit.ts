@@ -241,17 +241,11 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const result = await enqueueRegionEditJob(jobPayload);
 
     console.log("[region-edit] Job enqueued successfully:", result.jobId);
+    console.log("[region-edit] Returning response:", { success: true, jobId: result.jobId });
 
-    return res.status(200).json({ 
-        success: true, 
-        jobId: result.jobId 
-    });
-
-    console.log("[region-edit] Job enqueued successfully:", result.jobId);
-
-    return res.status(200).json({ 
-      success: true, 
-      jobId: result.jobId 
+    return res.status(200).json({
+      success: true,
+      jobId: result.jobId
     });
     
   } catch (err: any) {

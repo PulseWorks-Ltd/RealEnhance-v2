@@ -465,24 +465,32 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   // Custom region edit mutation with polling for job status
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
+      console.log('[region-editor] Submitting region-edit request...');
       const response = await fetch(api("/api/region-edit"), {
         method: "POST",
         body: data,
         credentials: "include"
       });
+      console.log('[region-editor] Response status:', response.status);
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Region edit error response:', errorText);
+        console.error('[region-editor] Error response:', errorText);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      return (await response.json()) as { success: boolean; jobId?: string; error?: string };
+      const result = (await response.json()) as { success: boolean; jobId?: string; error?: string };
+      console.log('[region-editor] Response JSON:', result);
+      return result;
     },
     onMutate: () => {
       onStart?.();
       // Do NOT call onCancel here; only call after a successful region edit.
     },
     onSuccess: async (result) => {
+      console.log('[region-editor] onSuccess called with result:', result);
+      console.log('[region-editor] Checking: success=', result.success, 'jobId=', result.jobId);
+
       if (!result.success || !result.jobId) {
+        console.error('[region-editor] ❌ Invalid response - missing success or jobId');
         toast({
           title: "Enhancement failed",
           description: result.error || "Could not start edit",
@@ -491,19 +499,29 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
         onError?.();
         return;
       }
+
+      console.log('[region-editor] ✅ Starting to poll job:', result.jobId);
       // Poll the edit job until success or error
       let polling = true;
       let pollCount = 0;
       const pollJob = async () => {
         try {
+          console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
           const res = await fetch(api(`/api/status/batch?ids=${result.jobId}`), { credentials: "include" });
           const json = await res.json();
+          console.log('[region-editor] Poll response:', json);
           const item = json.items?.[0];
-          if (!item) return;
+          if (!item) {
+            console.log('[region-editor] No item in response, continuing...');
+            return;
+          }
+
+          console.log('[region-editor] Job status:', item.status, 'hasImageUrl:', !!item.imageUrl);
 
           // Check for failed status
           if (item.status === "failed") {
             polling = false;
+            console.error('[region-editor] ❌ Job failed:', item.error);
             toast({
               title: "Enhancement failed",
               description: item.error || "Edit failed",
@@ -516,6 +534,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           // Check for completion
           if (item.status === "completed" && item.imageUrl) {
             polling = false;
+            console.log('[region-editor] ✅ Job completed! Image URL:', item.imageUrl);
             onComplete?.({
               imageUrl: item.imageUrl,
               originalUrl: item.originalUrl || "",
@@ -527,9 +546,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             return;
           }
 
+          console.log('[region-editor] Still processing, will poll again...');
           // Otherwise still processing (queued or active) - continue polling
         } catch (e) {
           polling = false;
+          console.error('[region-editor] ❌ Poll error:', e);
           toast({
             title: "Enhancement failed",
             description: e instanceof Error ? e.message : "Network error",
@@ -555,9 +576,24 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       }
     },
     onError: (error) => {
+      console.error('[region-editor] ❌ Mutation onError called with:', error);
+      console.error('[region-editor] Error type:', typeof error);
+      console.error('[region-editor] Error keys:', error ? Object.keys(error) : 'null');
+
+      let errorMessage = "Network error";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object') {
+        errorMessage = JSON.stringify(error);
+      }
+
+      console.error('[region-editor] Final error message:', errorMessage);
+
       toast({
         title: "Enhancement failed",
-        description: error instanceof Error ? error.message : "Network error",
+        description: errorMessage,
         variant: "destructive"
       });
       onError?.();
