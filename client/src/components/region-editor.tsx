@@ -602,6 +602,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
 
   // Robust handleSubmit with full validation and debug logging
   const handleSubmit = useCallback(async () => {
+    console.log('[region-editor] ========== handleSubmit CALLED ==========');
+    console.log('[region-editor] Mode:', mode);
+    console.log('[region-editor] Has mask:', !!maskData);
+    console.log('[region-editor] Instructions:', instructions);
+
     // 1. Validate image selection
     if (!selectedFile && !initialImageUrl) {
       toast({ title: "No image", description: "Please select an image first", variant: "destructive" });

@@ -5,7 +5,7 @@ import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 
-export type EditMode = "Add" | "Remove" | "Restore";
+export type EditMode = "Add" | "Remove" | "Replace" | "Restore";
 
 export interface ApplyEditArgs {
   baseImagePath: string;      // path to the enhanced image we’re editing
