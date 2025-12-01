@@ -172,50 +172,59 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // ===== CREATE JOB PAYLOAD =====
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
+    // Save maskBase64 to a temporary file and get its path
+    const userDir = path.join(uploadRoot, sessUser.id);
+    await fs.mkdir(userDir, { recursive: true });
+    const maskPath = path.join(userDir, `${jobId}_mask.png`);
+    // Write the mask as a PNG file
+    await fs.writeFile(maskPath, Buffer.from(maskBase64, "base64"));
+
+    // Map workerMode to API mode
+    let apiMode: "add" | "remove" | "restore";
+    if (workerMode === "Replace") {
+      apiMode = "restore"; // fallback, or adjust as needed
+    } else if (workerMode === "Restore") {
+      apiMode = "restore";
+    } else if (workerMode === "Add") {
+      apiMode = "add";
+    } else if (workerMode === "Remove") {
+      apiMode = "remove";
+    } else {
+      apiMode = "restore";
+    }
+
     const jobPayload = {
-      type: "region-edit",        // Required for worker routing
-      jobId,
       userId: sessUser.id,
-      imageId: record.imageId || record.id,
-      baseVersionId,
-      baseImageUrl,               // The image to download and edit
-      currentImageUrl: baseImageUrl, // Same as baseImageUrl for region edits
-      mode: workerMode,
-      prompt: instruction,        // Worker expects "prompt" field
-      instruction,                // Also send as "instruction" for compatibility
-      mask: maskBase64,           // Plain base64 string (no data URL prefix)
-      sceneType,
-      roomType,
-      allowStaging,
-      stagingStyle,
+      mode: apiMode,
+      prompt: instruction,
+      currentImageUrl: baseImageUrl,
+      baseImageUrl,
+      maskPath,
     };
 
     console.log("[region-edit] Enqueuing job:", {
       jobId,
-      imageId: jobPayload.imageId,
-      mode: workerMode,
+      imageId: record.imageId || record.id,
+      mode: apiMode,
       baseImageUrlLength: baseImageUrl.length,
-      maskLength: maskBase64.length,
+      maskPath,
       instructionLength: instruction.length,
     });
 
     // ===== ENQUEUE JOB =====
-    // Use enqueueRegionEditJob for correct payload structure
-    const result = await enqueueRegionEditJob({
-      userId: sessUser.id,
-      mode: workerMode === "Restore"
-        ? "restore"
-        : workerMode === "Replace" || workerMode === "Add"
-        ? "add"
-        : workerMode === "Remove"
-        ? "remove"
-        : "restore", // Default to "restore" to satisfy type
-      prompt: instruction,
-      currentImageUrl: baseImageUrl,
-      baseImageUrl,
-      maskPath: maskBase64,
-      imageIndex: undefined // Not used, but required by signature
+    // Debug: log payload fields before enqueuing
+    console.log("[region-edit] Job payload keys:", Object.keys(jobPayload));
+    console.log("[region-edit] Has 'maskPath' field:", 'maskPath' in jobPayload);
+    console.log("[region-edit] MaskPath value:", jobPayload.maskPath);
+
+    const result = await enqueueRegionEditJob(jobPayload);
+
+    console.log("[region-edit] Job enqueued successfully:", result.jobId);
+
+    return res.status(200).json({ 
+        success: true, 
+        jobId: result.jobId 
     });
 
     console.log("[region-edit] Job enqueued successfully:", result.jobId);
