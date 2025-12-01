@@ -201,10 +201,19 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     });
 
     // ===== ENQUEUE JOB =====
-    const result = await enqueueEditJob(jobPayload);
-    
+    // Use enqueueRegionEditJob for correct payload structure
+    const result = await enqueueRegionEditJob({
+      userId: sessUser.id,
+      mode: (workerMode as string).toLowerCase(),
+      prompt: instruction,
+      currentImageUrl: baseImageUrl,
+      baseImageUrl,
+      maskPath: maskBase64,
+      imageIndex: undefined // Not used, but required by signature
+    });
+
     console.log("[region-edit] Job enqueued successfully:", result.jobId);
-    
+
     return res.status(200).json({ 
       success: true, 
       jobId: result.jobId 
