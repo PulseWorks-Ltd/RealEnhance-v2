@@ -56,8 +56,7 @@ export async function applyEdit({
     console.log("[editApply] Images converted to base64 (implicit)");
 
     const prompt = buildRegionEditPrompt({
-      mode,
-      instruction,
+      userInstruction: instruction,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
     console.log("[editApply] Prompt built, length:", prompt.length);
@@ -77,4 +76,4 @@ export async function applyEdit({
     await sharp(editedBuffer).toFile(outPath);
     console.log("[editApply] Saved edited image to", outPath);
     return outPath;
-
+  }
