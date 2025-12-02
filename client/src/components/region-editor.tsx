@@ -694,10 +694,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
 
   // Robust handleSubmit with full validation and debug logging
   const handleSubmit = useCallback(async () => {
-    console.log('[region-editor] ========== handleSubmit CALLED ==========');
-    console.log('[region-editor] Mode:', mode);
-    console.log('[region-editor] Has mask:', !!maskData);
-    console.log('[region-editor] Instructions:', instructions);
+    try {
+      console.log('[region-editor] ========== handleSubmit CALLED ==========');
+      console.log('[region-editor] Mode:', mode);
+      console.log('[region-editor] Has mask:', !!maskData);
+      console.log('[region-editor] Instructions:', instructions);
 
     // 1. Validate image selection
     if (!selectedFile && !initialImageUrl) {
@@ -794,9 +795,19 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       isError: regionEditMutation.isError,
       isSuccess: regionEditMutation.isSuccess
     });
-    regionEditMutation.mutate(formData);
-    console.log('[region-editor] ✅ Mutation.mutate() called');
-  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast]);
+      regionEditMutation.mutate(formData);
+      console.log('[region-editor] ✅ Mutation.mutate() called');
+    } catch (error) {
+      console.error('[region-editor] ❌❌❌ UNCAUGHT ERROR in handleSubmit:', error);
+      console.error('[region-editor] Error stack:', error instanceof Error ? error.stack : 'N/A');
+      toast({
+        title: "Enhancement failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive"
+      });
+      onError?.();
+    }
+  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast, onError]);
 
   // Check if required fields are filled based on operation type
   const hasInstructions = instructions.trim().length > 0;
