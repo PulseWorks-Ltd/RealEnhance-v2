@@ -158,6 +158,10 @@ export function statusRouter() {
           console.log('[status/batch] Merged job status for', id, JSON.stringify(item, null, 2));
         }
 
+        // Always log the final response shape for debugging
+        // (only once per request, after all items are built)
+        // We'll log this just before sending the response below
+
         items.push(item);
       }
 
@@ -183,6 +187,15 @@ export function statusRouter() {
       };
 
       if (items.length === 1) {
+              // Debug: log the final response shape for all items
+              console.log('[status/batch] response items:',
+                items.map(i => ({
+                  id: i.id,
+                  status: i.status,
+                  imageUrl: i.imageUrl,
+                  type: i.type,
+                }))
+              );
         const j = items[0];
         base.jobId = j.id;
         base.imageUrl = j.imageUrl;
