@@ -981,6 +981,7 @@ const worker = new Worker(
             imageUrl: pub.url,
             originalUrl: baseImageUrl, // Return the original input URL
             maskUrl: pubMask.url, // Return the published mask URL
+            mode: regionAny.mode, // Include mode for client polling
           });
 
           return {

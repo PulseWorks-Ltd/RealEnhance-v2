@@ -20,6 +20,7 @@ type StatusItem = {
   maskUrl: string | null;
   stageUrls: Record<string, string> | null;
   meta: any;
+  mode?: string;
   error?: string;
 };
 
@@ -122,6 +123,9 @@ export function statusRouter() {
         const imageId: string | null =
           payload?.imageId || local.imageId || null;
 
+        const mode: string | null =
+          payload?.mode || local.mode || null;
+
         const success =
           status === "completed" && typeof resultUrl === "string";
 
@@ -139,6 +143,10 @@ export function statusRouter() {
           stageUrls,
           meta: local.meta ?? {},
         };
+        // Add mode if it exists
+        if (mode) {
+          item.mode = mode;
+        }
         // Only set error if job is not successful
         if (!success) {
           item.error = local.errorMessage || failedReason || undefined;
