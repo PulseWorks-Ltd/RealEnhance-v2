@@ -535,20 +535,42 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   // Custom region edit mutation with polling for job status
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      console.log('[region-editor] Submitting region-edit request...');
-      const response = await fetch(api("/api/region-edit"), {
-        method: "POST",
-        body: data,
-        credentials: "include"
-      });
-      console.log('[region-editor] Response status:', response.status);
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[region-editor] Error response:', errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      console.log('[region-editor] 🚀 START: Submitting region-edit request...');
+      console.log('[region-editor] API endpoint:', api("/api/region-edit"));
+
+      let response: Response;
+      try {
+        response = await fetch(api("/api/region-edit"), {
+          method: "POST",
+          body: data,
+          credentials: "include"
+        });
+        console.log('[region-editor] ✅ Fetch completed. Response status:', response.status, response.statusText);
+      } catch (fetchError) {
+        console.error('[region-editor] ❌ FETCH FAILED:', fetchError);
+        throw new Error(`Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
       }
-      const result = (await response.json()) as { success: boolean; jobId?: string; error?: string };
-      console.log('[region-editor] Response JSON:', result);
+
+      if (!response.ok) {
+        let errorText = '';
+        try {
+          errorText = await response.text();
+          console.error('[region-editor] ❌ HTTP ERROR - Status:', response.status, 'Response:', errorText);
+        } catch (e) {
+          console.error('[region-editor] ❌ HTTP ERROR - Could not read response body');
+        }
+        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+      }
+
+      let result: { success: boolean; jobId?: string; error?: string };
+      try {
+        result = await response.json();
+        console.log('[region-editor] ✅ Response JSON parsed:', result);
+      } catch (jsonError) {
+        console.error('[region-editor] ❌ JSON PARSE ERROR:', jsonError);
+        throw new Error('Failed to parse server response');
+      }
+
       return result;
     },
     onMutate: () => {
@@ -765,7 +787,15 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     }
 
     // 7. Submit mutation
+    console.log('[region-editor] 🎯 CALLING regionEditMutation.mutate()');
+    console.log('[region-editor] Mutation state before call:', {
+      isIdle: regionEditMutation.isIdle,
+      isPending: regionEditMutation.isPending,
+      isError: regionEditMutation.isError,
+      isSuccess: regionEditMutation.isSuccess
+    });
     regionEditMutation.mutate(formData);
+    console.log('[region-editor] ✅ Mutation.mutate() called');
   }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast]);
 
   // Check if required fields are filled based on operation type
