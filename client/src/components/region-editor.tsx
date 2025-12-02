@@ -544,6 +544,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   // Custom region edit mutation with polling for job status
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
+      console.log('[region-editor] ========== MUTATION FUNCTION STARTED ==========');
       console.log('[region-editor] 🚀 START: Submitting region-edit request...');
       console.log('[region-editor] API endpoint:', api("/api/region-edit"));
 
@@ -554,9 +555,13 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           body: data,
           credentials: "include"
         });
-        console.log('[region-editor] ✅ Fetch completed. Response status:', response.status, response.statusText);
+        console.log('[region-editor] ✅ Fetch completed successfully');
+        console.log('[region-editor]   - Status:', response.status, response.statusText);
+        console.log('[region-editor]   - response.ok:', response.ok);
       } catch (fetchError) {
-        console.error('[region-editor] ❌ FETCH FAILED:', fetchError);
+        console.error('[region-editor] ❌ FETCH FAILED (network error):', fetchError);
+        console.error('[region-editor] Error type:', typeof fetchError);
+        console.error('[region-editor] Error message:', fetchError instanceof Error ? fetchError.message : String(fetchError));
         throw new Error(`Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
       }
 
@@ -564,7 +569,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
         let errorText = '';
         try {
           errorText = await response.text();
-          console.error('[region-editor] ❌ HTTP ERROR - Status:', response.status, 'Response:', errorText);
+          console.error('[region-editor] ❌ HTTP ERROR - Response not OK');
+          console.error('[region-editor]   - Status:', response.status);
+          console.error('[region-editor]   - Response body:', errorText);
         } catch (e) {
           console.error('[region-editor] ❌ HTTP ERROR - Could not read response body');
         }
@@ -574,12 +581,19 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       let result: { success: boolean; jobId?: string; error?: string };
       try {
         result = await response.json();
-        console.log('[region-editor] ✅ Response JSON parsed:', result);
+        console.log('[region-editor] ✅ Response JSON parsed successfully');
+        console.log('[region-editor] Result keys:', Object.keys(result));
+        console.log('[region-editor] Result.success:', result.success, '(type:', typeof result.success, ')');
+        console.log('[region-editor] Result.jobId:', result.jobId, '(type:', typeof result.jobId, ')');
+        console.log('[region-editor] Full result:', JSON.stringify(result, null, 2));
+        console.log('[region-editor] About to return result to React Query...');
       } catch (jsonError) {
         console.error('[region-editor] ❌ JSON PARSE ERROR:', jsonError);
+        console.error('[region-editor] JSON parse failed, cannot continue');
         throw new Error('Failed to parse server response');
       }
 
+      console.log('[region-editor] ========== MUTATION FUNCTION RETURNING ==========');
       return result;
     },
     onMutate: () => {
@@ -594,11 +608,17 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       // Do NOT call onCancel here; only call after a successful region edit.
     },
     onSuccess: async (result) => {
-      console.log('[region-editor] onSuccess called with result:', result);
+      console.log('[region-editor] ========== onSuccess HANDLER CALLED ==========');
+      console.log('[region-editor] Full result object:', JSON.stringify(result, null, 2));
+      console.log('[region-editor] result.success type:', typeof result.success, 'value:', result.success);
+      console.log('[region-editor] result.jobId type:', typeof result.jobId, 'value:', result.jobId);
       console.log('[region-editor] Checking: success=', result.success, 'jobId=', result.jobId);
 
       if (!result.success || !result.jobId) {
         console.error('[region-editor] ❌ Invalid response - missing success or jobId');
+        console.error('[region-editor] This check failed because:');
+        console.error('[region-editor]   - result.success is:', result.success, '(truthy?', !!result.success, ')');
+        console.error('[region-editor]   - result.jobId is:', result.jobId, '(truthy?', !!result.jobId, ')');
         toast({
           title: "Enhancement failed",
           description: result.error || "Could not start edit",
@@ -722,11 +742,18 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
 
   // Robust handleSubmit with full validation and debug logging
   const handleSubmit = useCallback(async () => {
+    console.log('[region-editor] ========================================');
+    console.log('[region-editor] ========== handleSubmit CALLED ==========');
+    console.log('[region-editor] ========================================');
+    console.log('[region-editor] Current time:', new Date().toISOString());
+    console.log('[region-editor] Mode:', mode);
+    console.log('[region-editor] Has mask:', !!maskData);
+    console.log('[region-editor] Instructions:', instructions);
+    console.log('[region-editor] selectedFile:', !!selectedFile);
+    console.log('[region-editor] initialImageUrl:', initialImageUrl?.substring(0, 80));
+
     try {
-      console.log('[region-editor] ========== handleSubmit CALLED ==========');
-      console.log('[region-editor] Mode:', mode);
-      console.log('[region-editor] Has mask:', !!maskData);
-      console.log('[region-editor] Instructions:', instructions);
+      console.log('[region-editor] ✅ Entered try block');
 
     // 1. Validate image selection
     if (!selectedFile && !initialImageUrl) {
@@ -816,17 +843,33 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     }
 
     // 7. Submit mutation
-    console.log('[region-editor] 🎯 CALLING regionEditMutation.mutate()');
+    console.log('[region-editor] 🎯 About to call regionEditMutation.mutate()');
+    console.log('[region-editor] regionEditMutation exists?', !!regionEditMutation);
+    console.log('[region-editor] regionEditMutation.mutate exists?', !!regionEditMutation?.mutate);
     console.log('[region-editor] Mutation state before call:', {
       isIdle: regionEditMutation.isIdle,
       isPending: regionEditMutation.isPending,
       isError: regionEditMutation.isError,
       isSuccess: regionEditMutation.isSuccess
     });
-      regionEditMutation.mutate(formData);
-      console.log('[region-editor] ✅ Mutation.mutate() called');
+
+    if (!regionEditMutation || !regionEditMutation.mutate) {
+      console.error('[region-editor] ❌ regionEditMutation or .mutate is undefined!');
+      toast({
+        title: "Enhancement failed",
+        description: "Internal error: mutation not initialized",
+        variant: "destructive"
+      });
+      onError?.();
+      return;
+    }
+
+    regionEditMutation.mutate(formData);
+    console.log('[region-editor] ✅ Mutation.mutate() called successfully (returned to caller)');
     } catch (error) {
       console.error('[region-editor] ❌❌❌ UNCAUGHT ERROR in handleSubmit:', error);
+      console.error('[region-editor] Error type:', typeof error);
+      console.error('[region-editor] Error instanceof Error?', error instanceof Error);
       console.error('[region-editor] Error stack:', error instanceof Error ? error.stack : 'N/A');
       toast({
         title: "Enhancement failed",
