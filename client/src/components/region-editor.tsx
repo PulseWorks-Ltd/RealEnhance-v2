@@ -54,6 +54,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
 
   const { toast } = useToast();
 
@@ -574,6 +575,13 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       return result;
     },
     onMutate: () => {
+      // Abort any previous polling
+      console.log('[region-editor] 🛑 Aborting any previous polling...');
+      pollingAbortRef.current.abort = true;
+      // Reset for this new request
+      setTimeout(() => {
+        pollingAbortRef.current = { abort: false };
+      }, 100);
       onStart?.();
       // Do NOT call onCancel here; only call after a successful region edit.
     },
@@ -596,7 +604,15 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       // Poll the edit job until success or error
       let polling = true;
       let pollCount = 0;
+      // Create a local reference to track if THIS specific polling should be aborted
+      const localAbortRef = pollingAbortRef.current;
       const pollJob = async () => {
+        // Check if this polling has been aborted
+        if (localAbortRef.abort) {
+          polling = false;
+          console.log('[region-editor] 🛑 Polling aborted (new request started)');
+          return;
+        }
         try {
           console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
           const res = await fetch(api(`/api/status/batch?ids=${result.jobId}`), { credentials: "include" });
@@ -652,13 +668,17 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
         }
       };
       // Poll every 1s up to 60s
-      while (polling && pollCount < 60) {
+      while (polling && pollCount < 60 && !localAbortRef.abort) {
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (localAbortRef.abort) {
+          console.log('[region-editor] 🛑 Polling aborted during wait');
+          break;
+        }
         await pollJob();
         pollCount++;
       }
-      if (polling) {
+      if (polling && !localAbortRef.abort) {
         toast({
           title: "Enhancement failed",
           description: "Timed out waiting for edit job",
