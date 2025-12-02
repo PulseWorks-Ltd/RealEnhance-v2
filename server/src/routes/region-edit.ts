@@ -41,11 +41,15 @@ const uploadMw: RequestHandler = upload.any();
 
 regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Response) => {
   console.log("[region-edit] POST hit");
-  
+  console.log("[region-edit] Session ID:", req.session.id);
+  console.log("[region-edit] Session user:", (req.session as any)?.user ? 'exists' : 'MISSING');
+  console.log("[region-edit] Cookie:", req.headers.cookie ? 'present' : 'MISSING');
+
   try {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) {
-      console.error("[region-edit] Not authenticated");
+      console.error("[region-edit] Not authenticated - session user is missing");
+      console.error("[region-edit] Full session:", JSON.stringify(req.session, null, 2));
       return res.status(401).json({ success: false, error: "not_authenticated" });
     }
 
