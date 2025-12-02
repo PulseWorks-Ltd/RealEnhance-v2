@@ -827,7 +827,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       });
       onError?.();
     }
-  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, regionEditMutation, toast, onError]);
+  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, toast, onError]);
+  // Note: regionEditMutation removed from deps - useMutation returns stable mutate function
 
   // Check if required fields are filled based on operation type
   const hasInstructions = instructions.trim().length > 0;
