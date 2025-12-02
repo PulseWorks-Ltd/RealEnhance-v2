@@ -14,7 +14,7 @@ interface RegionEditorProps {
   onComplete?: (result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => void;
   onCancel?: () => void;
   onStart?: () => void;  // Called when processing starts (for immediate UI feedback)
-  onError?: () => void;  // Called when processing fails
+  onError?: (errorMessage?: string) => void;  // Called when processing fails
   initialImageUrl?: string;
   originalImageUrl?: string;  // URL to original image for pixel-level restoration
   initialGoal?: string;
@@ -57,6 +57,14 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
 
   const { toast } = useToast();
+
+  // Cleanup: Abort polling when component unmounts or modal closes
+  useEffect(() => {
+    return () => {
+      console.log('[region-editor] 🧹 Component unmounting - aborting any active polling');
+      pollingAbortRef.current.abort = true;
+    };
+  }, []);
 
   // Handle file selection
   const onFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
