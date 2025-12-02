@@ -49,11 +49,12 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
   // Staging style is now batch-level only; removed from region editor
   const [roomType, setRoomType] = useState<string>("auto");
-  
+  const [imageLoading, setImageLoading] = useState(false);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  
+
   const { toast } = useToast();
 
   // Handle file selection
@@ -117,55 +118,79 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   useEffect(() => {
     if (initialImageUrl && !selectedFile) {
       console.log('Loading initial image URL:', initialImageUrl);
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        console.log('Image loaded successfully:', img.width, 'x', img.height);
-        const canvas = canvasRef.current;
-        const previewCanvas = previewCanvasRef.current;
-        if (canvas && previewCanvas) {
-          // Calculate display size - scale up to 1.75x for easier marking
-          const displayScale = 1.75;
-          const displayWidth = img.width * displayScale;
-          const displayHeight = img.height * displayScale;
-          
-          // Setup main canvas for mask drawing with device pixel ratio
-          const dpr = window.devicePixelRatio || 1;
-          canvas.width = img.width * dpr;
-          canvas.height = img.height * dpr;
-          canvas.style.width = `${displayWidth}px`;
-          canvas.style.height = `${displayHeight}px`;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.scale(dpr, dpr);
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, img.width, img.height);
+      setImageLoading(true);
+
+      // Retry logic for image loading (handles S3 eventual consistency and network issues)
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      const loadImage = () => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+
+        img.onload = () => {
+          console.log('Image loaded successfully:', img.width, 'x', img.height);
+          setImageLoading(false);
+          const canvas = canvasRef.current;
+          const previewCanvas = previewCanvasRef.current;
+          if (canvas && previewCanvas) {
+            // Calculate display size - scale up to 1.75x for easier marking
+            const displayScale = 1.75;
+            const displayWidth = img.width * displayScale;
+            const displayHeight = img.height * displayScale;
+
+            // Setup main canvas for mask drawing with device pixel ratio
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = img.width * dpr;
+            canvas.height = img.height * dpr;
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = `${displayHeight}px`;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.scale(dpr, dpr);
+              ctx.fillStyle = 'black';
+              ctx.fillRect(0, 0, img.width, img.height);
+            }
+
+            // Setup preview canvas with device pixel ratio
+            previewCanvas.width = img.width * dpr;
+            previewCanvas.height = img.height * dpr;
+            previewCanvas.style.width = `${displayWidth}px`;
+            previewCanvas.style.height = `${displayHeight}px`;
+            const previewCtx = previewCanvas.getContext('2d');
+            if (previewCtx) {
+              previewCtx.scale(dpr, dpr);
+              previewCtx.drawImage(img, 0, 0, img.width, img.height);
+            }
           }
-          
-          // Setup preview canvas with device pixel ratio
-          previewCanvas.width = img.width * dpr;
-          previewCanvas.height = img.height * dpr;
-          previewCanvas.style.width = `${displayWidth}px`;
-          previewCanvas.style.height = `${displayHeight}px`;
-          const previewCtx = previewCanvas.getContext('2d');
-          if (previewCtx) {
-            previewCtx.scale(dpr, dpr);
-            previewCtx.drawImage(img, 0, 0, img.width, img.height);
+          if (imageRef.current) {
+            imageRef.current.src = initialImageUrl;
           }
-        }
-        if (imageRef.current) {
-          imageRef.current.src = initialImageUrl;
-        }
+        };
+
+        img.onerror = (error) => {
+          retryCount++;
+          console.error(`Failed to load initial image (attempt ${retryCount}/${maxRetries}):`, initialImageUrl, error);
+
+          if (retryCount < maxRetries) {
+            // Exponential backoff: 500ms, 1000ms, 2000ms
+            const retryDelay = 500 * Math.pow(2, retryCount - 1);
+            console.log(`Retrying in ${retryDelay}ms...`);
+            setTimeout(loadImage, retryDelay);
+          } else {
+            setImageLoading(false);
+            toast({
+              title: "Image Load Error",
+              description: "Failed to load the image after multiple attempts. Please close and try again.",
+              variant: "destructive"
+            });
+          }
+        };
+
+        img.src = initialImageUrl;
       };
-      img.onerror = (error) => {
-        console.error('Failed to load initial image:', initialImageUrl, error);
-        toast({
-          title: "Image Load Error",
-          description: "Failed to load the image. Please try uploading it again.",
-          variant: "destructive"
-        });
-      };
-      img.src = initialImageUrl;
+
+      loadImage();
     }
   }, [initialImageUrl, selectedFile, toast]);
 
@@ -394,7 +419,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
   const stopDrawing = useCallback(() => {
     setIsDrawing(false);
     const canvas = canvasRef.current;
-    if (!canvas) {
+    const previewCanvas = previewCanvasRef.current;
+    if (!canvas || !previewCanvas) {
       console.warn("[region-editor] stopDrawing: no canvas ref");
       return;
     }
@@ -403,19 +429,55 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     setTimeout(() => {
       autoFillEnclosedAreas(canvas);
       console.log("[region-editor] stopDrawing: creating blob from canvas...");
-      // Export mask as Blob with comprehensive logging
-      canvas.toBlob((blob) => {
-        if (blob) {
-          console.log("[region-editor] ✅ Mask blob created successfully!");
-          console.log("[region-editor]    - Size:", blob.size, "bytes");
-          console.log("[region-editor]    - Type:", blob.type);
-          setMaskData(blob);
-        } else {
-          console.error("[region-editor] ❌ canvas.toBlob returned null!");
-          console.error("[region-editor]    - This should never happen");
-          console.error("[region-editor]    - Canvas size:", canvas.width, "x", canvas.height);
+
+      // IMPORTANT: Export mask at original image dimensions (not DPR-scaled)
+      // The mask canvas is DPR-scaled, but we need to export at original image size
+      const dpr = window.devicePixelRatio || 1;
+      const originalWidth = canvas.width / dpr;
+      const originalHeight = canvas.height / dpr;
+
+      console.log("[region-editor] Mask dimensions:", {
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        dpr,
+        originalWidth,
+        originalHeight
+      });
+
+      // Create offscreen canvas at original (non-DPR) dimensions
+      const offscreenCanvas = document.createElement('canvas');
+      offscreenCanvas.width = originalWidth;
+      offscreenCanvas.height = originalHeight;
+      const offscreenCtx = offscreenCanvas.getContext('2d');
+
+      if (offscreenCtx) {
+        // Reset transform for pixel operations
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
-      }, 'image/png');
+
+        // Draw DPR-scaled canvas to offscreen canvas at original size
+        offscreenCtx.drawImage(canvas, 0, 0, originalWidth, originalHeight);
+
+        // Restore DPR scale for future drawing
+        if (ctx) {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        // Export from offscreen canvas
+        offscreenCanvas.toBlob((blob) => {
+          if (blob) {
+            console.log("[region-editor] ✅ Mask blob created successfully!");
+            console.log("[region-editor]    - Size:", blob.size, "bytes");
+            console.log("[region-editor]    - Type:", blob.type);
+            console.log("[region-editor]    - Exported at:", originalWidth, "x", originalHeight);
+            setMaskData(blob);
+          } else {
+            console.error("[region-editor] ❌ offscreenCanvas.toBlob returned null!");
+          }
+        }, 'image/png');
+      }
     }, 100);
   }, [autoFillEnclosedAreas]);
 
@@ -777,7 +839,15 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             </div>
             
             <div className="relative border rounded-lg overflow-hidden bg-brand-light" style={{ minHeight: '600px' }}>
-              <div 
+              {imageLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-brand-light/80 z-10">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-2"></div>
+                    <p className="text-gray-600">Loading image...</p>
+                  </div>
+                </div>
+              )}
+              <div
                 className="relative w-full h-full"
                 style={{
                   minHeight: '600px',
@@ -785,7 +855,7 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
                   transformOrigin: 'top left'
                 }}
               >
-                {!previewUrl && (
+                {!previewUrl && !imageLoading && (
                   <div className="absolute inset-0 flex items-center justify-center text-gray-500">
                     <p>No image loaded. Please select an image file above.</p>
                   </div>
