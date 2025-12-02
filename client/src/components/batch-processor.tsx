@@ -2936,8 +2936,12 @@ export default function BatchProcessor() {
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
             }}
-            onError={() => {
+            onError={(errorMessage?: string) => {
+              console.error('[batch-processor] Region edit error:', errorMessage);
               setIsEditingInProgress(false);
+              setRegionEditorOpen(false);
+              setEditingImageIndex(null);
+              // The error toast is already shown by RegionEditor, so we don't duplicate it here
             }}
           />
         </Modal>
