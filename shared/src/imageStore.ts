@@ -81,7 +81,9 @@ export async function recordEnhancedImageRedis(opts: {
 }): Promise<void> {
   const redis = getRedis() as any;
 
-  if (!opts.userId || !opts.imageId || !opts.publicUrl || !opts.versionId) {
+  // Allow empty versionId for region-edit and edit stages which don't have S3 versions
+  const isEditStage = opts.stage === "region-edit" || opts.stage === "edit";
+  if (!opts.userId || !opts.imageId || !opts.publicUrl || (!opts.versionId && !isEditStage)) {
     throw new Error("[imageStore] recordEnhancedImageRedis: unusable input (missing userId, imageId, publicUrl, or versionId)");
   }
 
