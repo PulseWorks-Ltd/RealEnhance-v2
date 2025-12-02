@@ -156,14 +156,22 @@ export function statusRouter() {
       // Top-level shape:
       //  - items / jobs: full list
       //  - completed, total
+      //  - done: true when all jobs are completed or failed (no more processing)
       //  - For convenience / backwards-compat, if there's exactly one job,
       //    also expose jobId/imageUrl/originalUrl/stageUrls at the top level.
+
+      // Check if all jobs are in a terminal state (completed or failed)
+      const allDone = items.every((item: StatusItem) =>
+        item.status === 'completed' || item.status === 'failed'
+      );
+
       const base: any = {
         success: true,
         items,
         jobs: items,
         completed,
         total: items.length,
+        done: allDone,  // Signal to client that polling can stop
       };
 
       if (items.length === 1) {
