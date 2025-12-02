@@ -380,13 +380,14 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
     // Apply result to working canvas
     const resultData = new ImageData(filled, workWidth, workHeight);
     workCtx.putImageData(resultData, 0, 0);
-    
+
     // Scale back up to original canvas
+    // IMPORTANT: Don't clear the canvas - we want to ADD the filled areas to existing white strokes
     ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, originalWidth, originalHeight);
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, originalWidth, originalHeight);
+    // Draw the autofilled areas on top of existing canvas (additive)
+    ctx.globalCompositeOperation = 'lighten'; // Only add white pixels, don't remove existing white
     ctx.drawImage(workCanvas, 0, 0, originalWidth, originalHeight);
+    ctx.globalCompositeOperation = 'source-over'; // Reset to default
     
     // Restore DPR scale for drawing
     const dpr = window.devicePixelRatio || 1;
@@ -472,6 +473,13 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
             console.log("[region-editor]    - Size:", blob.size, "bytes");
             console.log("[region-editor]    - Type:", blob.type);
             console.log("[region-editor]    - Exported at:", originalWidth, "x", originalHeight);
+
+            // DIAGNOSTIC: Log mask preview as data URL for debugging
+            const maskPreview = offscreenCanvas.toDataURL('image/png');
+            console.log("[region-editor] 📸 Mask preview (first 200 chars):", maskPreview.substring(0, 200));
+            console.log("[region-editor] 💾 To download mask for inspection, run:");
+            console.log(`      const a = document.createElement('a'); a.href = '${maskPreview.substring(0, 100)}...'; a.download = 'mask-debug.png'; a.click();`);
+
             setMaskData(blob);
           } else {
             console.error("[region-editor] ❌ offscreenCanvas.toBlob returned null!");
