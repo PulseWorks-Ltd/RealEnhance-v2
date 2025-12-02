@@ -974,10 +974,10 @@ const worker = new Worker(
           }
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
-          updateJob(regionPayload.jobId, {
-            status: "complete",
+          await updateJob(regionPayload.jobId, {
+            status: "completed",
             success: true,
-            resultUrl: pub.url,
+            type: "region-edit",
             imageUrl: pub.url,
             originalUrl: baseImageUrl, // Return the original input URL
             maskUrl: pubMask.url, // Return the published mask URL
@@ -988,6 +988,11 @@ const worker = new Worker(
               mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
               instruction: prompt,
             },
+          });
+          console.log('[worker-region-edit] updateJob called', {
+            jobId: regionPayload.jobId,
+            imageUrl: pub.url,
+            maskUrl: pubMask.url,
           });
 
           return {
