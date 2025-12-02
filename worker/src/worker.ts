@@ -952,6 +952,12 @@ const worker = new Worker(
 
           console.log("[worker-region-edit] Published to:", pub.url);
 
+          // Publish the mask for reference
+          const maskPath = `/tmp/${regionPayload.jobId}-mask.png`;
+          await sharp(maskBuf).toFile(maskPath);
+          const pubMask = await publishImage(maskPath);
+          console.log("[worker-region-edit] Mask published to:", pubMask.url);
+
           // Record in Redis for image history lookups (enables future edits on this result)
           try {
             await recordEnhancedImageRedis({
@@ -967,18 +973,22 @@ const worker = new Worker(
             console.warn("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
           }
 
-          // Update job status
+          // Update job status with all required fields
           updateJob(regionPayload.jobId, {
             status: "complete",
             success: true,
             resultUrl: pub.url,
             imageUrl: pub.url,
+            originalUrl: baseImageUrl, // Return the original input URL
+            maskUrl: pubMask.url, // Return the published mask URL
           });
 
           return {
             ok: true,
             resultUrl: pub.url,
             imageUrl: pub.url,
+            originalUrl: baseImageUrl,
+            maskUrl: pubMask.url,
           };
         } else {
           updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });

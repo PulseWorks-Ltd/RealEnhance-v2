@@ -17,6 +17,7 @@ type StatusItem = {
   imageId: string | null;
   imageUrl: string | null;
   originalUrl: string | null;
+  maskUrl: string | null;
   stageUrls: Record<string, string> | null;
   meta: any;
   error?: string;
@@ -112,6 +113,9 @@ export function statusRouter() {
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
 
+        const maskUrl: string | null =
+          (rv && rv.maskUrl) || local.maskUrl || null;
+
         const stageUrls: Record<string, string> | null =
           (rv && rv.stageUrls) || local.stageUrls || null;
 
@@ -131,6 +135,7 @@ export function statusRouter() {
           imageId,
           imageUrl: resultUrl,
           originalUrl,
+          maskUrl,
           stageUrls,
           meta: local.meta ?? {},
         };
@@ -223,6 +228,8 @@ export function statusRouter() {
         null;
       const originalUrl: string | null =
         (rv && rv.originalUrl) || local.originalUrl || null;
+      const maskUrl: string | null =
+        (rv && rv.maskUrl) || local.maskUrl || null;
       const stageUrls: Record<string, string> | null =
         (rv && rv.stageUrls) || local.stageUrls || null;
       const imageId: string | null =
@@ -237,6 +244,7 @@ export function statusRouter() {
         imageId,
         imageUrl: resultUrl,
         originalUrl,
+        maskUrl,
         stageUrls,
         meta: local.meta ?? {},
         error: local.errorMessage || failedReason || undefined,
