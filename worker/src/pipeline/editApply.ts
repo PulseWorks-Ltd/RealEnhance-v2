@@ -56,8 +56,23 @@ export async function applyEdit({
     const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
     const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
 
-    // 🔹 Handle "Restore" mode with pixel-level copying (no Gemini)
-    if (mode === "Restore" && restoreFromPath && maskPngBuffer) {
+    // 🔹 Handle "Restore" mode with pixel-level copying (NEVER use Gemini)
+    if (mode === "Restore") {
+      console.log("[editApply] Restore mode check:", { mode, hasRestorePath: !!restoreFromPath, hasMask: !!maskPngBuffer });
+
+      // Validate required inputs for Restore mode
+      if (!restoreFromPath) {
+        const errMsg = "Restore mode requires restoreFromPath but none was provided";
+        console.error("[editApply]", errMsg);
+        throw new Error(errMsg);
+      }
+
+      if (!maskPngBuffer) {
+        const errMsg = "Restore mode requires a mask but none was provided";
+        console.error("[editApply]", errMsg);
+        throw new Error(errMsg);
+      }
+
       console.log("[editApply] Restore mode: copying pixels from", restoreFromPath);
 
       try {
@@ -118,8 +133,10 @@ export async function applyEdit({
         console.log("[editApply] Restore complete (pixel-level), saved to", outPath);
         return outPath;
       } catch (err) {
-        console.error("[editApply] Pixel-level restore failed:", err);
-        // Fall through to Gemini as fallback
+        // NEVER fall back to Gemini for Restore mode - throw error to notify user
+        const errMsg = `Restore operation failed: ${err instanceof Error ? err.message : String(err)}`;
+        console.error("[editApply]", errMsg);
+        throw new Error(errMsg);
       }
     }
 

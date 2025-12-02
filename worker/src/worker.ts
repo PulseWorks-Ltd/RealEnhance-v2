@@ -973,7 +973,7 @@ const worker = new Worker(
             console.warn("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
           }
 
-          // Update job status with all required fields
+          // Update job status with all required fields (matches enhance job format for /api/status/batch)
           updateJob(regionPayload.jobId, {
             status: "complete",
             success: true,
@@ -981,7 +981,13 @@ const worker = new Worker(
             imageUrl: pub.url,
             originalUrl: baseImageUrl, // Return the original input URL
             maskUrl: pubMask.url, // Return the published mask URL
-            mode: mode, // Include normalized mode for client polling (capitalized: Add/Remove/Replace/Restore)
+            imageId: regionPayload.imageId, // Include imageId for tracking
+            mode: regionAny.mode, // Include original mode from payload (add/remove/replace/restore)
+            meta: {
+              type: "region-edit",
+              mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
+              instruction: prompt,
+            },
           });
 
           return {
