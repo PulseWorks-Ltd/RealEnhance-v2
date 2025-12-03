@@ -788,8 +788,8 @@ export function RegionEditor({
 
               // 🔥 Cache-bust *for the preview only* so React + the browser
               // see a new image every time, even if the S3 key is reused
-              const cacheBuster =
-                item.versionId || item.jobId || `${Date.now()}`;
+              // Always use Date.now() for cache-busting so every edit swaps the preview
+              const cacheBuster = `${Date.now()}`;
               const previewUrlWithVersion =
                 item.imageUrl +
                 (item.imageUrl.includes("?") ? "&" : "?") +
