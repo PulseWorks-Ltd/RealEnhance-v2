@@ -983,6 +983,26 @@ export default function BatchProcessor() {
     }
   };
 
+  // Helper: start polling a single region-edit job via the global batch status endpoint
+  const startRegionEditPolling = async (jobId: string, imageIndex: number) => {
+    console.log('[BatchProcessor] startRegionEditPolling', { jobId, imageIndex });
+
+    // Map this jobId to the relevant image index so pollForBatch knows where to route results
+    jobIdToIndexRef.current[jobId] = imageIndex;
+
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    try {
+      await pollForBatch([jobId], controller);
+    } finally {
+      // Regardless of outcome, clear editing UI state
+      setIsEditingInProgress(false);
+      setRegionEditorOpen(false);
+      setEditingImageIndex(null);
+    }
+  };
+
   // Legacy per-id polling fallback if /api/status/batch is unavailable
   const pollForBatchLegacy = async (ids: string[], controller: AbortController) => {
     const MAX_POLL_MS = 45 * 60 * 1000;
@@ -2894,6 +2914,14 @@ export default function BatchProcessor() {
             initialIndustry={industryMap[presetKey] || "Real Estate"}
             onStart={() => {
               setIsEditingInProgress(true);
+            }}
+            onJobStarted={(jobId: string) => {
+              if (editingImageIndex == null) {
+                console.warn('[BatchProcessor] onJobStarted called but editingImageIndex is null');
+                return;
+              }
+              console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex });
+              startRegionEditPolling(jobId, editingImageIndex);
             }}
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
               setIsEditingInProgress(false);
