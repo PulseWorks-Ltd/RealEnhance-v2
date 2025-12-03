@@ -1,5 +1,6 @@
+
 [phases.setup]
-nixPkgs = ["nodejs_20", "pnpm"]
+nixPkgs = ["nodejs_20", "pnpm", "nodePackages.typescript"]
 
 [phases.install]
 cmd = "pnpm install --filter @realenhance/worker... --no-frozen-lockfile --prefer-offline"
