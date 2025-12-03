@@ -57,8 +57,7 @@ export async function applyEdit({
       const maskStats = await sharp(maskPngBuffer).stats();
       console.log("[editApply] Mask stats:", {
         debugMaskPath,
-        width: maskStats.width,
-        height: maskStats.height,
+        // Use meta.width and meta.height for dimensions if needed
         channels: maskStats.channels,
         min: maskStats.channels.map((c:any)=>c.min),
         max: maskStats.channels.map((c:any)=>c.max),
