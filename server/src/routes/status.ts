@@ -193,7 +193,7 @@ export function statusRouter() {
                   id: i.id,
                   status: i.status,
                   imageUrl: i.imageUrl,
-                  type: i.type,
+                  // type: i.type, // Removed: not present on StatusItem
                 }))
               );
         const j = items[0];

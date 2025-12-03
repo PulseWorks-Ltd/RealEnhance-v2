@@ -975,9 +975,8 @@ const worker = new Worker(
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
           await updateJob(regionPayload.jobId, {
-            status: "completed",
+            status: "complete",
             success: true,
-            type: "region-edit",
             imageUrl: pub.url,
             originalUrl: baseImageUrl, // Return the original input URL
             maskUrl: pubMask.url, // Return the published mask URL
