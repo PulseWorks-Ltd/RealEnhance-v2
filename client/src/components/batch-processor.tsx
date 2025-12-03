@@ -876,7 +876,9 @@ export default function BatchProcessor() {
       try {
         if (controller.signal.aborted) return;
         const qs = encodeURIComponent(ids.join(","));
-        const resp = await fetch(api(`/api/status/batch?ids=${qs}`), {
+        const pollUrl = api(`/api/status/batch?ids=${qs}`);
+        console.log('[BATCH] Polling URL:', pollUrl);
+        const resp = await fetch(pollUrl, {
           method: "GET",
           credentials: "include",
           headers: { ...withDevice().headers, "Cache-Control": "no-cache" },
