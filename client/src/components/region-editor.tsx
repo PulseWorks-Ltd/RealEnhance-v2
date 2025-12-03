@@ -673,13 +673,20 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
             if ((item.status === 'completed' || item.status === 'done' || item.status === 'complete') && item.imageUrl) {
               polling = false;
               console.log('[region-editor] ✅ Job completed with imageUrl:', item.imageUrl);
+              // Update preview to show the new edited image
+              setPreviewUrl(item.imageUrl);
+              setSelectedFile(null);
+              setMaskData(null);
+              // Optionally, reset zoom/pan
+              setZoomLevel(1);
+              setPanOffset({ x: 0, y: 0 });
               onComplete?.({
                 imageUrl: item.imageUrl,
                 originalUrl: item.originalUrl || '',
                 maskUrl: item.maskUrl || '',
                 mode: item.mode || '',
               });
-              onCancel?.();
+              // Do not call onCancel here, so the editor stays open for further edits/download
               return;
             }
           }
