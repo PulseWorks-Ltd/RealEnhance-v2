@@ -2926,7 +2926,9 @@ export default function BatchProcessor() {
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={(() => {
-              const item = results[editingImageIndex];
+              const activeItem = results[editingImageIndex];
+              console.log('[BatchProcessor] RAW ITEM FOR REGION EDIT', activeItem);
+              const item = activeItem;
               // Prefer Stage 2 (current/enhanced) as the initial preview. If missing, fall back to Stage1 (quality) and lastly to display URL
               const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
               const stage2 = stageUrls?.['2'] || stageUrls?.[2] || undefined;
