@@ -22,10 +22,24 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     const val = await redisClient.get(key);
     if (val) rec = JSON.parse(val);
   } catch {}
+  // If caller is updating stageUrls, merge with existing stageUrls instead of overwriting
+  if (patch && typeof patch === 'object' && patch.stageUrls) {
+    try {
+      const existing = rec && rec.stageUrls ? rec.stageUrls : {};
+      patch = {
+        ...patch,
+        stageUrls: {
+          ...existing,
+          ...patch.stageUrls,
+        },
+      };
+    } catch {}
+  }
+
   rec = {
     ...rec,
     ...patch,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
   await redisClient.set(key, JSON.stringify(rec));
 }
