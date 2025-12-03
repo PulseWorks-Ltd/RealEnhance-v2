@@ -2926,19 +2926,28 @@ export default function BatchProcessor() {
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={getDisplayUrl(results[editingImageIndex]) || undefined}
-            // Always pass the correct base image for restore: prefer Stage 1/quality (never Stage 2/final)
+            // Prefer Stage 1B (decluttered), then Stage 1A (enhanced), then qualityEnhanced, then original upload. Never pass Stage 2.
             originalImageUrl={(() => {
-              const result = results[editingImageIndex];
-              // Prefer qualityEnhancedUrl (Stage 1B), then originalImageUrl (Stage 1A), never Stage 2/final
-              const url = result?.result?.qualityEnhancedUrl
-                || result?.qualityEnhancedUrl
-                || result?.result?.originalImageUrl
-                || result?.originalImageUrl
+              const item = results[editingImageIndex];
+              const stageUrls = item?.stageUrls as Record<string, string> | undefined;
+              const url = stageUrls?.["1B"]
+                || stageUrls?.["1A"]
+                || item?.result?.declutteredUrl
+                || item?.declutteredUrl
+                || item?.result?.qualityEnhancedUrl
+                || item?.qualityEnhancedUrl
+                || item?.result?.originalImageUrl
+                || item?.originalUrl
+                || item?.originalImageUrl
                 || undefined;
-              console.log('[BatchProcessor] Passing to RegionEditor:', {
+              console.log('[BatchProcessor] RegionEditor props (restore base selection):', {
                 editingImageIndex,
-                originalImageUrl: url,
-                fullResult: result,
+                selectedRestoreBaseUrl: url,
+                stageUrls,
+                qualityEnhancedUrl: item?.qualityEnhancedUrl || item?.result?.qualityEnhancedUrl,
+                declutteredUrl: item?.declutteredUrl || item?.result?.declutteredUrl,
+                originalUrl: item?.originalUrl || item?.result?.originalImageUrl,
+                finalImageUrl: item?.imageUrl,
               });
               return url;
             })()}
