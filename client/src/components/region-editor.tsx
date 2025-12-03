@@ -787,7 +787,8 @@ export function RegionEditor({
               );
 
               // 🔥 This is the key: replace the preview image with the edited image
-              setPreviewUrl(item.imageUrl);
+              // Add cache-busting to force browser to reload the new image
+              setPreviewUrl(item.imageUrl + '?t=' + Date.now());
               setSelectedFile(null);
               setMaskData(null);
               setZoomLevel(1);
