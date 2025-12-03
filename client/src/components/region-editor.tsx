@@ -33,6 +33,54 @@ interface RegionEditResult {
 }
 
 export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStarted, initialImageUrl, originalImageUrl, initialGoal, initialIndustry }: RegionEditorProps) {
+    // Redraw preview and mask canvases when previewUrl changes (e.g., after edit)
+    useEffect(() => {
+      if (!previewUrl) return;
+      setImageLoading(true);
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        setImageLoading(false);
+        const canvas = canvasRef.current;
+        const previewCanvas = previewCanvasRef.current;
+        if (canvas && previewCanvas) {
+          const displayScale = 1.75;
+          const displayWidth = img.width * displayScale;
+          const displayHeight = img.height * displayScale;
+          const dpr = window.devicePixelRatio || 1;
+          // Mask canvas
+          canvas.width = img.width * dpr;
+          canvas.height = img.height * dpr;
+          canvas.style.width = `${displayWidth}px`;
+          canvas.style.height = `${displayHeight}px`;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, img.width, img.height);
+          }
+          // Preview canvas
+          previewCanvas.width = img.width * dpr;
+          previewCanvas.height = img.height * dpr;
+          previewCanvas.style.width = `${displayWidth}px`;
+          previewCanvas.style.height = `${displayHeight}px`;
+          const previewCtx = previewCanvas.getContext('2d');
+          if (previewCtx) {
+            previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+            previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            previewCtx.scale(dpr, dpr);
+            previewCtx.drawImage(img, 0, 0, img.width, img.height);
+          }
+        }
+        if (imageRef.current) {
+          imageRef.current.src = previewUrl;
+        }
+      };
+      img.onerror = () => setImageLoading(false);
+      img.src = previewUrl;
+    }, [previewUrl]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl || null);
   const [maskData, setMaskData] = useState<Blob | null>(null);
@@ -677,9 +725,12 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
               setPreviewUrl(item.imageUrl);
               setSelectedFile(null);
               setMaskData(null);
-              // Optionally, reset zoom/pan
               setZoomLevel(1);
               setPanOffset({ x: 0, y: 0 });
+              // Reset mutation state so spinner disappears
+              if (regionEditMutation.reset) {
+                setTimeout(() => regionEditMutation.reset(), 0);
+              }
               onComplete?.({
                 imageUrl: item.imageUrl,
                 originalUrl: item.originalUrl || '',
