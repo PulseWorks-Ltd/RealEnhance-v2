@@ -267,8 +267,14 @@ export function statusRouter() {
         (rv && rv.originalUrl) || local.originalUrl || null;
       const maskUrl: string | null =
         (rv && rv.maskUrl) || local.maskUrl || null;
-      const stageUrls: Record<string, string> | null =
+      const stageUrlsRaw: Record<string, string> | null =
         (rv && rv.stageUrls) || local.stageUrls || null;
+
+      const stageUrls: Record<string, string | null> = {
+        '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+        '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+        '2': stageUrlsRaw?.['2'] ?? null,
+      };
       const imageId: string | null =
         payload?.imageId || local.imageId || null;
       const success =
@@ -282,7 +288,7 @@ export function statusRouter() {
         imageUrl: resultUrl,
         originalUrl,
         maskUrl,
-        stageUrls,
+        stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
         error: local.errorMessage || failedReason || undefined,
       };
