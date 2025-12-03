@@ -723,7 +723,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
               polling = false;
               console.log('[region-editor] ✅ Job completed with imageUrl:', item.imageUrl);
               // Update preview to show the new edited image
-              setPreviewUrl(item.imageUrl);
+              // Add cache-busting query string to force reload
+              const cacheBustedUrl = item.imageUrl ? `${item.imageUrl}${item.imageUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : item.imageUrl;
+              setPreviewUrl(cacheBustedUrl);
               setSelectedFile(null);
               setMaskData(null);
               setZoomLevel(1);
