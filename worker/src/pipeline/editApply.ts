@@ -50,6 +50,20 @@ export async function applyEdit({
         .png()
         .toBuffer();
       console.log("[editApply] Mask resized to match image");
+      // Save debug PNG
+      const debugMaskPath = require("path").join(require("path").dirname(baseImagePath), "debug-mask.png");
+      await sharp(maskPngBuffer).toFile(debugMaskPath);
+      // Log mask stats
+      const maskStats = await sharp(maskPngBuffer).stats();
+      console.log("[editApply] Mask stats:", {
+        debugMaskPath,
+        width: maskStats.width,
+        height: maskStats.height,
+        channels: maskStats.channels,
+        min: maskStats.channels.map((c:any)=>c.min),
+        max: maskStats.channels.map((c:any)=>c.max),
+        sum: maskStats.channels.map((c:any)=>c.sum),
+      });
     }
 
     const dir = require("path").dirname(baseImagePath);
