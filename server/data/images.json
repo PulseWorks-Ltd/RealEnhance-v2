@@ -388,5 +388,15 @@
     },
     "createdAt": "2025-11-17T07:56:06.218Z",
     "updatedAt": "2025-11-17T07:56:06.218Z"
+  },
+  "img_test_1764797781939": {
+    "id": "img_test_1764797781939",
+    "userId": "user_test",
+    "originalPath": "/workspaces/RealEnhance-v2/server/data/uploads/user_test/sample.png",
+    "history": [],
+    "currentVersionId": null,
+    "meta": {},
+    "createdAt": "2025-12-03T21:36:21.939Z",
+    "updatedAt": "2025-12-03T21:36:21.939Z"
   }
 }

@@ -47,16 +47,25 @@ export function RegionEditor({
     initialImageUrl || null,
   );
 
+  // Only two modes: 'edit' and 'restore_original'
+  const [mode, setMode] = useState<"edit" | "restore_original">("edit");
+
   // Debug: Log incoming props on mount and when they change
   useEffect(() => {
     console.log('[RegionEditor] initialImageUrl:', initialImageUrl);
     console.log('[RegionEditor] originalImageUrl:', originalImageUrl);
   }, [initialImageUrl, originalImageUrl]);
+  // Quick high-level prop + derived base log for easier debugging of restore flow
+  useEffect(() => {
+    const derivedBase =
+      mode === "restore_original"
+        ? (originalImageUrl || "")
+        : (originalImageUrl || initialImageUrl || "");
+    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedBase });
+  }, [mode, initialImageUrl, originalImageUrl]);
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
-  // Only two modes: 'edit' and 'restore_original'
-  const [mode, setMode] = useState<"edit" | "restore_original">("edit");
   const [sceneType, setSceneType] = useState<
     "auto" | "interior" | "exterior"
   >("auto");

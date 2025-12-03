@@ -2925,35 +2925,28 @@ export default function BatchProcessor() {
       {regionEditorOpen && editingImageIndex !== null && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
-            initialImageUrl={getDisplayUrl(results[editingImageIndex]) || undefined}
-            // Exhaustively select restore base URL from all plausible locations, log full item and selection
+            initialImageUrl={(() => {
+              const item = results[editingImageIndex];
+              // Prefer Stage 2 (current/enhanced) as the initial preview. If missing, fall back to Stage1 (quality) and lastly to display URL
+              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
+              const stage2 = stageUrls?.['2'] || stageUrls?.[2] || undefined;
+              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
+              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
+              const quality = stage1b || stage1a || undefined;
+              const fallback = getDisplayUrl(results[editingImageIndex]) || undefined;
+              const initial = stage2 || quality || fallback;
+              console.log('[BatchProcessor] Resolved initialImageUrl (stage2||quality||fallback):', { stage2, stage1b, stage1a, initial, fallback });
+              return initial;
+            })()}
+            // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
             originalImageUrl={(() => {
               const item = results[editingImageIndex];
-              console.log('[BatchProcessor] Editing item (full):', item);
-              const restoreCandidates = [
-                item?.stageUrls?.['1B'],
-                item?.stageUrls?.['1b'],
-                item?.stageUrls?.['1A'],
-                item?.stageUrls?.['1a'],
-                item?.stageUrls?.['1'],
-                item?.stageUrls?.[1],
-                item?.result?.stageUrls?.['1B'],
-                item?.result?.stageUrls?.['1'],
-                item?.result?.stageUrls?.['1A'],
-                item?.result?.stageUrls?.[1],
-                item?.result?.declutteredUrl,
-                item?.declutteredUrl,
-                item?.result?.qualityEnhancedUrl,
-                item?.qualityEnhancedUrl,
-                item?.result?.originalImageUrl,
-                item?.originalImageUrl,
-                item?.originalUrl,
-                item?.result?.originalUrl,
-              ];
-              const restoreBaseUrl = restoreCandidates.find((v) => typeof v === 'string' && v.length > 0) || undefined;
-              console.log('[BatchProcessor] Resolved restoreBaseUrl:', restoreBaseUrl);
-              console.log('[BatchProcessor] stageUrls keys:', item?.stageUrls, 'result.stageUrls:', item?.result?.stageUrls, 'qualityEnhancedUrl:', item?.qualityEnhancedUrl || item?.result?.qualityEnhancedUrl);
-              return restoreBaseUrl;
+              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
+              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
+              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
+              const resolved = stage1b || stage1a || undefined;
+              console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A):', { stage1b, stage1a, resolved });
+              return resolved;
             })()}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
