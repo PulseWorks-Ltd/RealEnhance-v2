@@ -925,6 +925,17 @@ export function RegionEditor({
         return;
       }
 
+      // For restore_original, ensure we have a base image to restore from
+      if (mode === "restore_original" && !originalImageUrl) {
+        toast({
+          title: "Restore base missing",
+          description:
+            "No base image available for restore. Please ensure the correct Stage output is passed in.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (!maskData) {
         toast({
           title: "Mask required",
@@ -976,9 +987,10 @@ export function RegionEditor({
         formData.append("image", selectedFile);
       } else if (initialImageUrl) {
         formData.append("imageUrl", initialImageUrl);
-        if (originalImageUrl) {
-          formData.append("baseImageUrl", originalImageUrl);
-        }
+      }
+      // Always append baseImageUrl when provided so backend can restore
+      if (originalImageUrl) {
+        formData.append("baseImageUrl", originalImageUrl);
       }
       formData.append("mode", mode);
       if (mode === "edit") {
