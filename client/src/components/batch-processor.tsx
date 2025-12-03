@@ -947,21 +947,36 @@ export default function BatchProcessor() {
         const total = ids.length;
         setProgressText(`Processing images: ${completed}/${total} completed`);
 
-        // surface completed items
+        // surface completed items (fix: resolve job index using id || jobId || job_id)
         for (const it of items) {
-          const idx = jobIdToIndexRef.current[it.id];
+          const key = it?.id || it?.jobId || it?.job_id;
+          const idx = key ? jobIdToIndexRef.current[key] : undefined;
           const url = it?.imageUrl || it?.resultUrl || it?.image || null;
-          if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
+          const status = String(it?.status || "").toLowerCase();
+          const isCompleted = status === "completed" || status === "complete" || status === "done";
+
+          if (typeof idx === "number" && isCompleted && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
             queueRef.current.push({
               index: idx,
-              result: { imageUrl: url, originalImageUrl: it.originalImageUrl || null, qualityEnhancedUrl: null, mode: 'enhanced' },
-              filename: files[idx]?.name || `image-${idx+1}`
+              result: {
+                imageUrl: url,
+                originalImageUrl: it.originalImageUrl || null,
+                qualityEnhancedUrl: null,
+                mode: it.mode || "enhanced"
+              },
+              filename: files[idx]?.name || `image-${idx + 1}`
             });
           }
-          if (typeof idx === 'number' && it.status === 'failed' && !processedSetRef.current.has(idx)) {
+
+          if (typeof idx === "number" && status === "failed" && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, error: it.error || 'Processing failed', filename: files[idx]?.name || `image-${idx+1}` });
+            queueRef.current.push({
+              index: idx,
+              result: null,
+              error: it.error || it.message || "Edit failed",
+              filename: files[idx]?.name || `image-${idx + 1}`
+            });
           }
         }
         schedule();
