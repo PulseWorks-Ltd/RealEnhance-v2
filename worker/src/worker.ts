@@ -744,27 +744,37 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Write a compact final snapshot into Redis so /api/status can rely on it.
   try {
     const jobId = payload.jobId;
-    const pubOriginalUrl = publishedOriginal?.url || null;
-    const pub1A = pub1AUrl ?? null;
-    const pub1B = pub1BUrl ?? null;
-    const pub2 = pub2Url ?? null;
 
-    if (jobId && (pub2 || pubFinalUrl)) {
+    // Explicit per-stage URLs — ensure we don't accidentally reuse the same variable
+    const originalUrl = publishedOriginal?.url ?? null;
+    const stage1AUrl = pub1AUrl ?? null;
+    const stage1BUrl = pub1BUrl ?? null;
+    // pub2Url is set only when Stage 2 was published; fall back to pubFinalUrl if needed
+    const stage2Url = pub2Url ?? (hasStage2 ? (pubFinalUrl ?? null) : null);
+
+    // One-off debug dump to confirm distinct values are present
+    console.log('[WORKER SNAPSHOT]', JSON.stringify({ jobId, originalUrl, stage1AUrl, stage1BUrl, stage2Url, pubFinalUrl: pubFinalUrl ?? null, hasStage2 }, null, 2));
+
+    if (jobId && (stage2Url || pubFinalUrl || stage1AUrl || stage1BUrl || originalUrl)) {
       const prev: any = (await getJob(jobId)) || {};
+
+      // Prefer stage2 as the canonical imageUrl when available (Stage 2 is the visible UI image)
+      const canonicalImageUrl = stage2Url ?? pubFinalUrl ?? prev.imageUrl ?? null;
+
       await updateJob(jobId, {
         ...prev,
         id: jobId,
         success: true,
         status: "complete",
         imageId: payload.imageId ?? prev.imageId ?? null,
-        imageUrl: pubFinalUrl ?? prev.imageUrl ?? null,
-        originalUrl: pubOriginalUrl ?? prev.originalUrl ?? null,
+        imageUrl: canonicalImageUrl,
+        originalUrl: originalUrl ?? prev.originalUrl ?? null,
         stageUrls: {
           ...(prev.stageUrls || {}),
-          original: pubOriginalUrl ?? (prev.stageUrls?.original ?? null),
-          "1A": pub1A ?? (prev.stageUrls?.["1A"] ?? null),
-          "1B": pub1B ?? (prev.stageUrls?.["1B"] ?? null),
-          "2": pub2 ?? (prev.stageUrls?.["2"] ?? null),
+          original: originalUrl ?? (prev.stageUrls?.original ?? null),
+          "1A": stage1AUrl ?? (prev.stageUrls?.["1A"] ?? null),
+          "1B": stage1BUrl ?? (prev.stageUrls?.["1B"] ?? null),
+          "2": stage2Url ?? (prev.stageUrls?.["2"] ?? null),
         },
         meta: {
           ...(prev.meta || {}),
