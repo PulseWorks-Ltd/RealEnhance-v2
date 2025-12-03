@@ -613,6 +613,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       console.log('[region-editor] result.success type:', typeof result.success, 'value:', result.success);
       console.log('[region-editor] result.jobId type:', typeof result.jobId, 'value:', result.jobId);
       console.log('[region-editor] Checking: success=', result.success, 'jobId=', result.jobId);
+      if (!result.jobId) {
+        console.error('[region-editor] ❌ No jobId returned from /api/region-edit!');
+      } else {
+        console.log(`[region-editor] Will poll: /api/status/batch?ids=${encodeURIComponent(result.jobId)}`);
+      }
 
       if (!result.success || !result.jobId) {
         console.error('[region-editor] ❌ Invalid response - missing success or jobId');
@@ -642,8 +647,10 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           return;
         }
         try {
+          const pollUrl = api(`/api/status/batch?ids=${result.jobId}`);
           console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
-          const res = await fetch(api(`/api/status/batch?ids=${result.jobId}`), { credentials: "include" });
+          console.log(`[region-editor] Polling URL:`, pollUrl);
+          const res = await fetch(pollUrl, { credentials: "include" });
           const json = await res.json();
           console.log('[region-editor] Poll response:', json);
           const item = json.items?.[0];
@@ -668,9 +675,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
           }
 
           // Check for completion
-          if (item.status === "completed" && item.imageUrl) {
+          if ((item.status === "completed" || item.status === "complete") && item.imageUrl) {
             polling = false;
-            console.log('[region-editor] ✅ Job completed! Image URL:', item.imageUrl);
+            console.log(`[region-editor] ✅ Job complete! Status: ${item.status} Image URL:`, item.imageUrl);
             onComplete?.({
               imageUrl: item.imageUrl,
               originalUrl: item.originalUrl || "",

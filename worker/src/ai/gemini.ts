@@ -61,6 +61,18 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
         c.finishReason === "STOP" ||
         c.finishReason === "FINISH_REASON_UNSPECIFIED"
     ) ?? candidates[0];
+  // Debug: log mask buffer stats
+  if (maskPngBuffer) {
+    const sharpStats = await require('sharp')(maskPngBuffer).stats();
+    console.log('[regionEditWithGemini] Received maskPngBuffer:', {
+      width: sharpStats.width,
+      height: sharpStats.height,
+      channels: sharpStats.channels,
+      min: sharpStats.channels.map((c:any)=>c.min),
+      max: sharpStats.channels.map((c:any)=>c.max),
+      sum: sharpStats.channels.map((c:any)=>c.sum),
+    });
+  }
 
   if (!usable?.content?.parts?.length) {
     console.error(
