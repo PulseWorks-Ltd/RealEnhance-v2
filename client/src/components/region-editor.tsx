@@ -913,8 +913,18 @@ export function RegionEditor({
       initialImageUrl?.substring(0, 80),
     );
 
-    // Compute robust baseImageUrl for restore
-    const baseImageUrl = originalImageUrl || initialImageUrl || "";
+    // Compute baseImageUrl with strictness for restore_original
+    // - restore_original: require Stage 1/quality (originalImageUrl); no fallback
+    // - other modes: allow fallback to initialImageUrl
+    const baseImageUrl =
+      mode === "restore_original"
+        ? (originalImageUrl || "")
+        : (originalImageUrl || initialImageUrl || "");
+
+    console.log("[region-editor] Mode:", mode);
+    console.log("[region-editor] baseImageUrl:", baseImageUrl);
+    console.log("[region-editor] initialImageUrl:", initialImageUrl);
+    console.log("[region-editor] originalImageUrl:", originalImageUrl);
 
     try {
       if (!selectedFile && !initialImageUrl) {
@@ -935,12 +945,12 @@ export function RegionEditor({
         return;
       }
 
-      // For restore_original, ensure we have a base image to restore from
-      if (mode === "restore_original" && !baseImageUrl) {
+      // For restore_original, require a proper base (no fallback to Stage 2)
+      if (mode === "restore_original" && !originalImageUrl) {
         toast({
           title: "Restore base missing",
           description:
-            "No base image available for restore. Please ensure the correct Stage output is passed in.",
+            "No Stage 1 / quality image is available to restore from. Please re-run enhancement first.",
           variant: "destructive",
         });
         return;
