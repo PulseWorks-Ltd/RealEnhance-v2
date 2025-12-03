@@ -2926,7 +2926,14 @@ export default function BatchProcessor() {
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={getDisplayUrl(results[editingImageIndex]) || undefined}
-            originalImageUrl={results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl || results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl}
+            // Always pass the correct base image for restore: prefer qualityEnhancedUrl, then originalImageUrl, in both .result and root
+            originalImageUrl={
+              results[editingImageIndex]?.result?.qualityEnhancedUrl
+              || results[editingImageIndex]?.qualityEnhancedUrl
+              || results[editingImageIndex]?.result?.originalImageUrl
+              || results[editingImageIndex]?.originalImageUrl
+              || undefined
+            }
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
             onStart={() => {
