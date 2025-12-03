@@ -117,8 +117,15 @@ export function statusRouter() {
         const maskUrl: string | null =
           (rv && rv.maskUrl) || local.maskUrl || null;
 
-        const stageUrls: Record<string, string> | null =
+        const stageUrlsRaw: Record<string, string> | null =
           (rv && rv.stageUrls) || local.stageUrls || null;
+
+        // Normalize stageUrls into a predictable shape so clients can rely on keys
+        const stageUrls: Record<string, string | null> = {
+          '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+          '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+          '2': stageUrlsRaw?.['2'] ?? null,
+        };
 
         const imageId: string | null =
           payload?.imageId || local.imageId || null;
@@ -140,7 +147,8 @@ export function statusRouter() {
           imageUrl: resultUrl,
           originalUrl,
           maskUrl,
-          stageUrls,
+          // ensure stageUrls is either an object map or null
+          stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           meta: local.meta ?? {},
         };
         // Add mode if it exists
