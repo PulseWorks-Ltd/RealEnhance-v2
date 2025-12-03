@@ -5,7 +5,7 @@
     "nixpacksPlan": {
       "providers": ["node"],
       "phases": {
-        "setup": { "nixPkgs": ["nodejs_22", "pnpm"] },
+        "setup": { "nixPkgs": ["nodejs", "pnpm"] },
         "install": { "cmds": ["pnpm install --no-frozen-lockfile --force"] },
         "build":   { "cmds": ["pnpm run build"] }
       }
