@@ -15,6 +15,7 @@ interface RegionEditorProps {
   onCancel?: () => void;
   onStart?: () => void;  // Called when processing starts (for immediate UI feedback)
   onError?: (errorMessage?: string) => void;  // Called when processing fails
+  onJobStarted?: (jobId: string) => void; // Optional: delegate polling to parent
   initialImageUrl?: string;
   originalImageUrl?: string;  // URL to original image for pixel-level restoration
   initialGoal?: string;
@@ -31,7 +32,7 @@ interface RegionEditResult {
   mode?: string;
 }
 
-export function RegionEditor({ onComplete, onCancel, onStart, onError, initialImageUrl, originalImageUrl, initialGoal, initialIndustry }: RegionEditorProps) {
+export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStarted, initialImageUrl, originalImageUrl, initialGoal, initialIndustry }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl || null);
   const [maskData, setMaskData] = useState<Blob | null>(null);
@@ -597,123 +598,114 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, initialIm
       return result;
     },
     onMutate: () => {
-      // Abort any previous polling
-      console.log('[region-editor] 🛑 Aborting any previous polling...');
+      console.log('[region-editor] onMutate: aborting any previous polling and signaling start');
+      // Abort any previous polling loop
       pollingAbortRef.current.abort = true;
-        onSuccess: async (result) => {
-          console.log('[region-editor] ========== onSuccess HANDLER CALLED ==========');
-          console.log('[region-editor] Full result object:', JSON.stringify(result, null, 2));
-          console.log('[region-editor] result.success type:', typeof result.success, 'value:', result.success);
-          console.log('[region-editor] result.jobId type:', typeof result.jobId, 'value:', result.jobId);
+      // Let parent know work has started (for spinner/alert)
+      onStart?.();
+    },
+    onSuccess: async (result: { success: boolean; jobId?: string; error?: string }) => {
+      console.log('[region-editor] ========== onSuccess HANDLER CALLED ==========');
+      console.log('[region-editor] Full result object:', JSON.stringify(result, null, 2));
+      console.log('[region-editor] result.success type:', typeof result.success, 'value:', result.success);
+      console.log('[region-editor] result.jobId type:', typeof result.jobId, 'value:', result.jobId);
 
-          if (!result.success || !result.jobId) {
-            console.error('[region-editor] ❌ Invalid response - missing success or jobId');
-            toast({
-              title: "Enhancement failed",
-              description: result.error || "Could not start edit",
-              variant: "destructive",
-            });
-            onError?.();
-            return;
-          }
+      if (!result.success || !result.jobId) {
+        console.error('[region-editor] ❌ Invalid response - missing success or jobId');
+        toast({
+          title: "Enhancement failed",
+          description: result.error || "Could not start edit",
+          variant: "destructive",
+        });
+        onError?.();
+        return;
+      }
 
-          console.log('[region-editor] ✅ Got jobId from /api/region-edit:', result.jobId);
-          console.log(`[region-editor] Batch status endpoint will be /api/status/batch?ids=${encodeURIComponent(result.jobId)}`);
+      console.log('[region-editor] ✅ Got jobId from /api/region-edit:', result.jobId);
+      console.log(`[region-editor] Batch status endpoint will be /api/status/batch?ids=${encodeURIComponent(result.jobId)}`);
 
-          // 🔗 NEW: if parent provided a batch polling controller, hand off the jobId and EXIT.
-          if (onJobStarted) {
-            console.log('[region-editor] 🧩 Delegating polling to parent via onJobStarted');
-            onJobStarted(result.jobId);
-            return;
-          }
+      // If parent supplied a polling handler, delegate and exit
+      if (onJobStarted) {
+        console.log('[region-editor] 🧩 Delegating polling to parent via onJobStarted');
+        onJobStarted(result.jobId);
+        return;
+      }
 
-          // 🧵 FALLBACK: if no onJobStarted is provided, keep the existing local polling logic
-          console.log('[region-editor] ℹ️ No onJobStarted provided - using local polling as fallback');
+      // Fallback: perform local polling directly from RegionEditor
+      console.log('[region-editor] ℹ️ No onJobStarted provided - using local polling as fallback');
+      console.log('[region-editor] ✅ Starting to poll job locally:', result.jobId);
 
-          console.log('[region-editor] ✅ Starting to poll job locally:', result.jobId);
-          let polling = true;
-          let pollCount = 0;
-          const localAbortRef = pollingAbortRef.current;
+      let polling = true;
+      let pollCount = 0;
+      const localAbortRef = pollingAbortRef.current;
 
-          const pollJob = async () => {
-            if (localAbortRef.abort) {
+      const pollJob = async () => {
+        if (localAbortRef.abort) {
+          polling = false;
+          console.log('[region-editor] 🛑 Polling aborted (new request started or component unmounted)');
+          return;
+        }
+        try {
+          const pollUrl = api(`/api/status/batch?ids=${result.jobId}`);
+          console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
+          console.log('[region-editor] Polling URL:', pollUrl);
+          const res = await fetch(pollUrl, { credentials: "include" });
+          const json = await res.json();
+          console.log('[region-editor] Poll response:', json);
+          const item = json.items?.[0];
+          if (!item) {
+            console.log('[region-editor] No item in response, continuing...');
+          } else {
+            console.log('[region-editor] Job status:', item.status, 'hasImageUrl:', !!item.imageUrl);
+
+            if (item.status === 'failed') {
               polling = false;
-              console.log('[region-editor] 🛑 Polling aborted (new request started)');
-              return;
-            }
-            try {
-              const pollUrl = api(`/api/status/batch?ids=${result.jobId}`);
-              console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
-              console.log('[region-editor] Polling URL:', pollUrl);
-              const res = await fetch(pollUrl, { credentials: "include" });
-              const json = await res.json();
-              console.log('[region-editor] Poll response:', json);
-              const item = json.items?.[0];
-              if (!item) {
-                console.log('[region-editor] No item in response, continuing...');
-                return;
-              }
-
-              console.log('[region-editor] Job status:', item.status, 'hasImageUrl:', !!item.imageUrl);
-
-              if (item.status === 'failed') {
-                polling = false;
-                console.error('[region-editor] ❌ Job failed:', item.error);
-                toast({
-                  title: 'Enhancement failed',
-                  description: item.error || 'Edit failed',
-                  variant: 'destructive',
-                });
-                onError?.();
-                return;
-              }
-
-              if ((item.status === 'completed' || item.status === 'done' || item.status === 'complete') && item.imageUrl) {
-                polling = false;
-                console.log('[region-editor] ✅ Job completed with imageUrl:', item.imageUrl);
-                onComplete?.({
-                  imageUrl: item.imageUrl,
-                  originalUrl: item.originalUrl || '',
-                  maskUrl: item.maskUrl || '',
-                  mode: item.mode || '',
-                });
-                onCancel?.();
-                return;
-              }
-
-              console.log('[region-editor] Still processing, will poll again...');
-            } catch (e) {
-              polling = false;
-              console.error('[region-editor] ❌ Poll error:', e);
+              console.error('[region-editor] ❌ Job failed:', item.error);
               toast({
                 title: 'Enhancement failed',
-                description: e instanceof Error ? e.message : 'Network error while polling edit job',
+                description: item.error || 'Edit failed',
                 variant: 'destructive',
               });
               onError?.();
               return;
             }
 
-            pollCount++;
-            if (polling) {
-              setTimeout(pollJob, Math.min(2000 + pollCount * 500, 5000));
+            if ((item.status === 'completed' || item.status === 'done' || item.status === 'complete') && item.imageUrl) {
+              polling = false;
+              console.log('[region-editor] ✅ Job completed with imageUrl:', item.imageUrl);
+              onComplete?.({
+                imageUrl: item.imageUrl,
+                originalUrl: item.originalUrl || '',
+                maskUrl: item.maskUrl || '',
+                mode: item.mode || '',
+              });
+              onCancel?.();
+              return;
             }
-          };
+          }
 
-          pollingAbortRef.current.abort = false;
-          pollJob();
-        },
-        await pollJob();
+          console.log('[region-editor] Still processing, will poll again...');
+        } catch (e) {
+          polling = false;
+          console.error('[region-editor] ❌ Poll error:', e);
+          toast({
+            title: 'Enhancement failed',
+            description: e instanceof Error ? e.message : 'Network error while polling edit job',
+            variant: 'destructive',
+          });
+          onError?.();
+          return;
+        }
+
         pollCount++;
-      }
-      if (polling && !localAbortRef.abort) {
-        toast({
-          title: "Enhancement failed",
-          description: "Timed out waiting for edit job",
-          variant: "destructive"
-        });
-        onError?.();
-      }
+        if (polling) {
+          setTimeout(pollJob, Math.min(2000 + pollCount * 500, 5000));
+        }
+      };
+
+      // Reset abort flag and begin polling loop
+      pollingAbortRef.current.abort = false;
+      pollJob();
     },
     onError: (error) => {
       console.error('[region-editor] ❌ Mutation onError called with:', error);
