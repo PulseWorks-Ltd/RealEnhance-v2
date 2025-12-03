@@ -195,15 +195,14 @@ export function statusRouter() {
       };
 
       if (items.length === 1) {
-              // Debug: log the final response shape for all items
-              console.log('[status/batch] response items:',
-                items.map(i => ({
-                  id: i.id,
-                  status: i.status,
-                  imageUrl: i.imageUrl,
-                  // type: i.type, // Removed: not present on StatusItem
-                }))
-              );
+        // Debug: log the final response shape for all items
+        console.log('[status/batch] response items:',
+          items.map(i => ({
+            id: i.id,
+            status: i.status,
+            imageUrl: i.imageUrl,
+          }))
+        );
         const j = items[0];
         base.jobId = j.id;
         base.imageUrl = j.imageUrl;
@@ -212,6 +211,13 @@ export function statusRouter() {
         base.state = j.state;
         base.status = j.status;
         base.job = j;
+      }
+
+      // DEBUG: dump the full payload being sent to clients for inspection
+      try {
+        console.log('[status/batch] JOB STATUS SENT TO CLIENT:', JSON.stringify(base, null, 2));
+      } catch (e) {
+        console.log('[status/batch] JOB STATUS SENT TO CLIENT: <unable to stringify>', e);
       }
 
       return res.json(base);
@@ -306,6 +312,11 @@ export function statusRouter() {
         status: item.status,
         job: item,
       };
+      try {
+        console.log('[status/:jobId] JOB STATUS SENT TO CLIENT:', JSON.stringify(base, null, 2));
+      } catch (e) {
+        console.log('[status/:jobId] JOB STATUS SENT TO CLIENT: <unable to stringify>', e);
+      }
       return res.json(base);
     } catch (e: any) {
       console.error("[status/:jobId] ERROR:", e);
