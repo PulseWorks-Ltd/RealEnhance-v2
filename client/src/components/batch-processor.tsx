@@ -2926,30 +2926,34 @@ export default function BatchProcessor() {
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={getDisplayUrl(results[editingImageIndex]) || undefined}
-            // Prefer Stage 1B (decluttered), then Stage 1A (enhanced), then qualityEnhanced, then original upload. Never pass Stage 2.
+            // Exhaustively select restore base URL from all plausible locations, log full item and selection
             originalImageUrl={(() => {
               const item = results[editingImageIndex];
-              const stageUrls = item?.stageUrls as Record<string, string> | undefined;
-              const url = stageUrls?.["1B"]
-                || stageUrls?.["1A"]
-                || item?.result?.declutteredUrl
-                || item?.declutteredUrl
-                || item?.result?.qualityEnhancedUrl
-                || item?.qualityEnhancedUrl
-                || item?.result?.originalImageUrl
-                || item?.originalUrl
-                || item?.originalImageUrl
-                || undefined;
-              console.log('[BatchProcessor] RegionEditor props (restore base selection):', {
-                editingImageIndex,
-                selectedRestoreBaseUrl: url,
-                stageUrls,
-                qualityEnhancedUrl: item?.qualityEnhancedUrl || item?.result?.qualityEnhancedUrl,
-                declutteredUrl: item?.declutteredUrl || item?.result?.declutteredUrl,
-                originalUrl: item?.originalUrl || item?.result?.originalImageUrl,
-                finalImageUrl: item?.imageUrl,
-              });
-              return url;
+              console.log('[BatchProcessor] Editing item (full):', item);
+              const restoreCandidates = [
+                item?.stageUrls?.['1B'],
+                item?.stageUrls?.['1b'],
+                item?.stageUrls?.['1A'],
+                item?.stageUrls?.['1a'],
+                item?.stageUrls?.['1'],
+                item?.stageUrls?.[1],
+                item?.result?.stageUrls?.['1B'],
+                item?.result?.stageUrls?.['1'],
+                item?.result?.stageUrls?.['1A'],
+                item?.result?.stageUrls?.[1],
+                item?.result?.declutteredUrl,
+                item?.declutteredUrl,
+                item?.result?.qualityEnhancedUrl,
+                item?.qualityEnhancedUrl,
+                item?.result?.originalImageUrl,
+                item?.originalImageUrl,
+                item?.originalUrl,
+                item?.result?.originalUrl,
+              ];
+              const restoreBaseUrl = restoreCandidates.find((v) => typeof v === 'string' && v.length > 0) || undefined;
+              console.log('[BatchProcessor] Resolved restoreBaseUrl:', restoreBaseUrl);
+              console.log('[BatchProcessor] stageUrls keys:', item?.stageUrls, 'result.stageUrls:', item?.result?.stageUrls, 'qualityEnhancedUrl:', item?.qualityEnhancedUrl || item?.result?.qualityEnhancedUrl);
+              return restoreBaseUrl;
             })()}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
