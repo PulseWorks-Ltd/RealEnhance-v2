@@ -216,8 +216,8 @@ export default function BatchProcessor() {
   async function detectSceneFromFile(f: File): Promise<"interior" | "exterior"> {
     try {
       const bmp = await createImageBitmap(f);
-      const cnv = document.createElement("canvas");
       // Normalize width to 256 while preserving aspect
+      const cnv = document.createElement("canvas");
       cnv.width = 256; cnv.height = Math.max(1, Math.round(256 * (bmp.height / Math.max(1, bmp.width))));
       const ctx = cnv.getContext("2d", { willReadFrequently: true })!;
       ctx.drawImage(bmp, 0, 0, cnv.width, cnv.height);
