@@ -37,7 +37,7 @@ export default function Home() {
         </div>
   </main>
   </div>
-
+ 
       {/* Footer */}
       <footer className="border-t border-border bg-card/50 mt-16" data-testid="footer">
         <div className="container mx-auto px-4 py-8">
