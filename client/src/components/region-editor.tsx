@@ -1,47 +1,59 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 interface RegionEditorProps {
-  onComplete?: (result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => void;
+  onComplete?: (result: {
+    imageUrl: string;
+    originalUrl: string;
+    maskUrl: string;
+    mode?: string;
+  }) => void;
   onCancel?: () => void;
-  onStart?: () => void;  // Called when processing starts (for immediate UI feedback)
-  onError?: (errorMessage?: string) => void;  // Called when processing fails
+  onStart?: () => void; // Called when processing starts (for immediate UI feedback)
+  onError?: (errorMessage?: string) => void; // Called when processing fails
   onJobStarted?: (jobId: string) => void; // Optional: delegate polling to parent
   initialImageUrl?: string;
-  originalImageUrl?: string;  // URL to original image for pixel-level restoration
+  originalImageUrl?: string; // URL to original image for pixel-level restoration
   initialGoal?: string;
   initialIndustry?: string;
 }
 
-interface RegionEditResult {
-  success: boolean;
-  imageUrl?: string;
-  originalUrl?: string;
-  maskUrl?: string;
-  creditsUsed: number;
-  error?: string;
-  mode?: string;
-}
-
-export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStarted, initialImageUrl, originalImageUrl, initialGoal, initialIndustry }: RegionEditorProps) {
-
+export function RegionEditor({
+  onComplete,
+  onCancel,
+  onStart,
+  onError,
+  onJobStarted,
+  initialImageUrl,
+  originalImageUrl,
+  initialGoal,
+  initialIndustry,
+}: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl || null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    initialImageUrl || null,
+  );
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
   // Only two modes: 'edit' and 'restore_original'
   const [mode, setMode] = useState<"edit" | "restore_original">("edit");
-  const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
+  const [sceneType, setSceneType] = useState<
+    "auto" | "interior" | "exterior"
+  >("auto");
   const [smartReinstate, setSmartReinstate] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
@@ -59,7 +71,8 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
   const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
 
   const { toast } = useToast();
-  // Redraw preview and mask canvases when previewUrl changes (e.g., after edit)
+
+  // Redraw preview and mask canvases whenever previewUrl changes
   useEffect(() => {
     if (!previewUrl) return;
     setImageLoading(true);
@@ -74,25 +87,27 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         const displayWidth = img.width * displayScale;
         const displayHeight = img.height * displayScale;
         const dpr = window.devicePixelRatio || 1;
+
         // Mask canvas
         canvas.width = img.width * dpr;
         canvas.height = img.height * dpr;
         canvas.style.width = `${displayWidth}px`;
         canvas.style.height = `${displayHeight}px`;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.scale(dpr, dpr);
-          ctx.fillStyle = 'black';
+          ctx.fillStyle = "black";
           ctx.fillRect(0, 0, img.width, img.height);
         }
+
         // Preview canvas
         previewCanvas.width = img.width * dpr;
         previewCanvas.height = img.height * dpr;
         previewCanvas.style.width = `${displayWidth}px`;
         previewCanvas.style.height = `${displayHeight}px`;
-        const previewCtx = previewCanvas.getContext('2d');
+        const previewCtx = previewCanvas.getContext("2d");
         if (previewCtx) {
           previewCtx.setTransform(1, 0, 0, 1, 0, 0);
           previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -108,78 +123,82 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
     img.src = previewUrl;
   }, [previewUrl]);
 
-  // Cleanup: Abort polling when component unmounts or modal closes
+  // Cleanup: Abort local polling when component unmounts or modal closes
   useEffect(() => {
     return () => {
-      console.log('[region-editor] 🧹 Component unmounting - aborting any active polling');
+      console.log(
+        "[region-editor] 🧹 Component unmounting - aborting any active polling",
+      );
       pollingAbortRef.current.abort = true;
     };
   }, []);
 
   // Handle file selection
-  const onFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    if (!file.type.startsWith('image/')) {
-      toast({ title: "Invalid file", description: "Please select an image file", variant: "destructive" });
-      return;
-    }
+  const onFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    setMaskData(null);
-    
-    // Load image and setup canvas
-    const img = new Image();
-    img.onload = () => {
-      const canvas = canvasRef.current;
-      const previewCanvas = previewCanvasRef.current;
-      if (canvas && previewCanvas) {
-        // Calculate display size - scale up to 1.75x for easier marking
-        const displayScale = 1.75;
-        const displayWidth = img.width * displayScale;
-        const displayHeight = img.height * displayScale;
-        
-        // Setup main canvas for mask drawing with device pixel ratio
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = img.width * dpr;
-        canvas.height = img.height * dpr;
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.scale(dpr, dpr);
-          ctx.fillStyle = 'black';
-          ctx.fillRect(0, 0, img.width, img.height);
-        }
-        
-        // Setup preview canvas with device pixel ratio
-        previewCanvas.width = img.width * dpr;
-        previewCanvas.height = img.height * dpr;
-        previewCanvas.style.width = `${displayWidth}px`;
-        previewCanvas.style.height = `${displayHeight}px`;
-        const previewCtx = previewCanvas.getContext('2d');
-        if (previewCtx) {
-          previewCtx.scale(dpr, dpr);
-          previewCtx.drawImage(img, 0, 0, img.width, img.height);
-        }
+      if (!file.type.startsWith("image/")) {
+        toast({
+          title: "Invalid file",
+          description: "Please select an image file",
+          variant: "destructive",
+        });
+        return;
       }
-    };
-    img.src = url;
-    if (imageRef.current) {
-      imageRef.current.src = url;
-    }
-  }, [toast]);
 
-  // Load initial image URL if provided
+      setSelectedFile(file);
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      setMaskData(null);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        const previewCanvas = previewCanvasRef.current;
+        if (canvas && previewCanvas) {
+          const displayScale = 1.75;
+          const displayWidth = img.width * displayScale;
+          const displayHeight = img.height * displayScale;
+          const dpr = window.devicePixelRatio || 1;
+
+          canvas.width = img.width * dpr;
+          canvas.height = img.height * dpr;
+          canvas.style.width = `${displayWidth}px`;
+          canvas.style.height = `${displayHeight}px`;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = "black";
+            ctx.fillRect(0, 0, img.width, img.height);
+          }
+
+          previewCanvas.width = img.width * dpr;
+          previewCanvas.height = img.height * dpr;
+          previewCanvas.style.width = `${displayWidth}px`;
+          previewCanvas.style.height = `${displayHeight}px`;
+          const previewCtx = previewCanvas.getContext("2d");
+          if (previewCtx) {
+            previewCtx.scale(dpr, dpr);
+            previewCtx.drawImage(img, 0, 0, img.width, img.height);
+          }
+        }
+      };
+      img.src = url;
+      if (imageRef.current) {
+        imageRef.current.src = url;
+      }
+    },
+    [toast],
+  );
+
+  // Load initial image URL if provided (first open) – drawing canvas setup
   useEffect(() => {
     if (initialImageUrl && !selectedFile) {
-      console.log('Loading initial image URL:', initialImageUrl);
+      console.log("Loading initial image URL:", initialImageUrl);
       setImageLoading(true);
 
-      // Retry logic for image loading (handles S3 eventual consistency and network issues)
       let retryCount = 0;
       const maxRetries = 3;
 
@@ -188,35 +207,37 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         img.crossOrigin = "anonymous";
 
         img.onload = () => {
-          console.log('Image loaded successfully:', img.width, 'x', img.height);
+          console.log(
+            "Image loaded successfully:",
+            img.width,
+            "x",
+            img.height,
+          );
           setImageLoading(false);
           const canvas = canvasRef.current;
           const previewCanvas = previewCanvasRef.current;
           if (canvas && previewCanvas) {
-            // Calculate display size - scale up to 1.75x for easier marking
             const displayScale = 1.75;
             const displayWidth = img.width * displayScale;
             const displayHeight = img.height * displayScale;
-
-            // Setup main canvas for mask drawing with device pixel ratio
             const dpr = window.devicePixelRatio || 1;
+
             canvas.width = img.width * dpr;
             canvas.height = img.height * dpr;
             canvas.style.width = `${displayWidth}px`;
             canvas.style.height = `${displayHeight}px`;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext("2d");
             if (ctx) {
               ctx.scale(dpr, dpr);
-              ctx.fillStyle = 'black';
+              ctx.fillStyle = "black";
               ctx.fillRect(0, 0, img.width, img.height);
             }
 
-            // Setup preview canvas with device pixel ratio
             previewCanvas.width = img.width * dpr;
             previewCanvas.height = img.height * dpr;
             previewCanvas.style.width = `${displayWidth}px`;
             previewCanvas.style.height = `${displayHeight}px`;
-            const previewCtx = previewCanvas.getContext('2d');
+            const previewCtx = previewCanvas.getContext("2d");
             if (previewCtx) {
               previewCtx.scale(dpr, dpr);
               previewCtx.drawImage(img, 0, 0, img.width, img.height);
@@ -229,10 +250,13 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
 
         img.onerror = (error) => {
           retryCount++;
-          console.error(`Failed to load initial image (attempt ${retryCount}/${maxRetries}):`, initialImageUrl, error);
+          console.error(
+            `Failed to load initial image (attempt ${retryCount}/${maxRetries}):`,
+            initialImageUrl,
+            error,
+          );
 
           if (retryCount < maxRetries) {
-            // Exponential backoff: 500ms, 1000ms, 2000ms
             const retryDelay = 500 * Math.pow(2, retryCount - 1);
             console.log(`Retrying in ${retryDelay}ms...`);
             setTimeout(loadImage, retryDelay);
@@ -240,8 +264,9 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
             setImageLoading(false);
             toast({
               title: "Image Load Error",
-              description: "Failed to load the image after multiple attempts. Please close and try again.",
-              variant: "destructive"
+              description:
+                "Failed to load the image after multiple attempts. Please close and try again.",
+              variant: "destructive",
             });
           }
         };
@@ -253,60 +278,61 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
     }
   }, [initialImageUrl, selectedFile, toast]);
 
-  // Helper function for proper screen-to-canvas coordinate mapping
-  const screenToCanvas = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    
-    const displayScale = 1.75; // Must match the scale used in canvas setup
-    
-    // Get the container rect (includes CSS transforms)
-    const rect = canvas.getBoundingClientRect();
-    
-    // Convert screen coordinates to CSS coordinates relative to canvas
-    const cssX = e.clientX - rect.left;
-    const cssY = e.clientY - rect.top;
-    
-    // Convert from CSS display coordinates to canvas coordinates
-    // 1. Account for displayScale (canvas CSS size is 1.75x the pixel size)
-    // 2. Account for zoom level
-    const x = (cssX / displayScale) / zoomLevel;
-    const y = (cssY / displayScale) / zoomLevel;
-    
-    return { x, y };
-  }, [zoomLevel]);
+  // Helper: map mouse screen coords to canvas coords
+  const screenToCanvas = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+
+      const displayScale = 1.75;
+      const rect = canvas.getBoundingClientRect();
+
+      const cssX = e.clientX - rect.left;
+      const cssY = e.clientY - rect.top;
+
+      const x = (cssX / displayScale) / zoomLevel;
+      const y = (cssY / displayScale) / zoomLevel;
+
+      return { x, y };
+    },
+    [zoomLevel],
+  );
 
   // Drawing functions for mask creation
-  const startDrawing = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    const { x, y } = screenToCanvas(e);
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (ctx) {
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-    }
-  }, [screenToCanvas]);
+  const startDrawing = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      setIsDrawing(true);
+      const { x, y } = screenToCanvas(e);
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (ctx) {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      }
+    },
+    [screenToCanvas],
+  );
 
-  const draw = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    
-    const { x, y } = screenToCanvas(e);
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (ctx) {
-      ctx.lineWidth = brushSize;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = 'white';
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-    }
-  }, [isDrawing, brushSize, screenToCanvas]);
+  const draw = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isDrawing) return;
+      const { x, y } = screenToCanvas(e);
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (ctx) {
+        ctx.lineWidth = brushSize;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "white";
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+      }
+    },
+    [isDrawing, brushSize, screenToCanvas],
+  );
 
-  // Pan functionality
+  // Panning
   const startPanning = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.altKey || e.ctrlKey) {
       setIsPanning(true);
@@ -315,106 +341,107 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
     }
   }, []);
 
-  const panCanvas = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isPanning) return;
-    
-    const deltaX = e.clientX - lastPanPoint.x;
-    const deltaY = e.clientY - lastPanPoint.y;
-    
-    setPanOffset(prev => ({
-      x: prev.x + deltaX,
-      y: prev.y + deltaY
-    }));
-    
-    setLastPanPoint({ x: e.clientX, y: e.clientY });
-  }, [isPanning, lastPanPoint.x, lastPanPoint.y]);
+  const panCanvas = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!isPanning) return;
+
+      const deltaX = e.clientX - lastPanPoint.x;
+      const deltaY = e.clientY - lastPanPoint.y;
+
+      setPanOffset((prev) => ({
+        x: prev.x + deltaX,
+        y: prev.y + deltaY,
+      }));
+
+      setLastPanPoint({ x: e.clientX, y: e.clientY });
+    },
+    [isPanning, lastPanPoint.x, lastPanPoint.y],
+  );
 
   const stopPanning = useCallback(() => {
     setIsPanning(false);
   }, []);
 
-  // Zoom functionality
-  const handleZoom = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-    const newZoom = Math.max(0.5, Math.min(3, zoomLevel * zoomFactor));
-    setZoomLevel(newZoom);
-  }, [zoomLevel]);
+  // Zoom
+  const handleZoom = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.5, Math.min(3, zoomLevel * zoomFactor));
+      setZoomLevel(newZoom);
+    },
+    [zoomLevel],
+  );
 
-  // Optimized auto-fill algorithm using efficient flood fill approach
+  // --- autoFillEnclosedAreas and stopDrawing (unchanged, just kept as-is) ---
   const autoFillEnclosedAreas = useCallback((canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Reset transform for pixel operations
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const originalWidth = canvas.width;
     const originalHeight = canvas.height;
-    
-    // Work on a smaller version for performance, then scale up
+
     const maxDimension = 512;
-    const scale = Math.min(maxDimension / originalWidth, maxDimension / originalHeight, 1);
+    const scale = Math.min(
+      maxDimension / originalWidth,
+      maxDimension / originalHeight,
+      1,
+    );
     const workWidth = Math.floor(originalWidth * scale);
     const workHeight = Math.floor(originalHeight * scale);
-    
-    // Create working canvas
-    const workCanvas = document.createElement('canvas');
+
+    const workCanvas = document.createElement("canvas");
     workCanvas.width = workWidth;
     workCanvas.height = workHeight;
-    const workCtx = workCanvas.getContext('2d');
+    const workCtx = workCanvas.getContext("2d");
     if (!workCtx) return;
-    
-    // Draw scaled down version
+
     workCtx.imageSmoothingEnabled = false;
     workCtx.drawImage(canvas, 0, 0, workWidth, workHeight);
-    
-    // Close gaps by dilating white strokes
-    workCtx.globalCompositeOperation = 'source-over';
-    workCtx.filter = 'blur(2px)';
+
+    workCtx.globalCompositeOperation = "source-over";
+    workCtx.filter = "blur(2px)";
     workCtx.drawImage(workCanvas, 0, 0);
-    workCtx.filter = 'none';
-    
-    // Get image data for flood fill
+    workCtx.filter = "none";
+
     const imageData = workCtx.getImageData(0, 0, workWidth, workHeight);
     const pixels = imageData.data;
     const filled = new Uint8ClampedArray(pixels);
-    
-    // Mark exterior pixels using border flood fill (much faster)
+
     const visited = new Uint8Array(workWidth * workHeight);
     const queue: number[] = [];
-    
-    // Start from all border pixels
+
     for (let x = 0; x < workWidth; x++) {
-      // Top and bottom borders
       const topIndex = x;
       const bottomIndex = (workHeight - 1) * workWidth + x;
       if (pixels[topIndex * 4] < 128) queue.push(topIndex);
       if (pixels[bottomIndex * 4] < 128) queue.push(bottomIndex);
     }
     for (let y = 0; y < workHeight; y++) {
-      // Left and right borders
       const leftIndex = y * workWidth;
       const rightIndex = y * workWidth + (workWidth - 1);
       if (pixels[leftIndex * 4] < 128) queue.push(leftIndex);
       if (pixels[rightIndex * 4] < 128) queue.push(rightIndex);
     }
-    
-    // Flood fill from borders to mark all exterior black pixels
+
     let queueStart = 0;
     while (queueStart < queue.length) {
       const pixelIndex = queue[queueStart++];
       if (visited[pixelIndex]) continue;
       visited[pixelIndex] = 1;
-      
+
       const y = Math.floor(pixelIndex / workWidth);
       const x = pixelIndex % workWidth;
-      
-      // Check neighbors
+
       const neighbors = [
-        [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]
+        [x - 1, y],
+        [x + 1, y],
+        [x, y - 1],
+        [x, y + 1],
       ];
-      
+
       for (const [nx, ny] of neighbors) {
         if (nx >= 0 && nx < workWidth && ny >= 0 && ny < workHeight) {
           const nIndex = ny * workWidth + nx;
@@ -424,56 +451,26 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         }
       }
     }
-    
-    // Fill interior black pixels (not marked as exterior)
+
     for (let i = 0; i < workWidth * workHeight; i++) {
       const pixelIndex = i * 4;
       if (pixels[pixelIndex] < 128 && !visited[i]) {
-        // Interior black pixel - fill with white
-        filled[pixelIndex] = 255;     // R
-        filled[pixelIndex + 1] = 255; // G
-        filled[pixelIndex + 2] = 255; // B
+        filled[pixelIndex] = 255;
+        filled[pixelIndex + 1] = 255;
+        filled[pixelIndex + 2] = 255;
       }
     }
-    
-    // Apply result to working canvas
+
     const resultData = new ImageData(filled, workWidth, workHeight);
     workCtx.putImageData(resultData, 0, 0);
 
-    // Scale back up to original canvas
-    // IMPORTANT: Don't clear the canvas - we want to ADD the filled areas to existing white strokes
     ctx.imageSmoothingEnabled = false;
-    // Draw the autofilled areas on top of existing canvas (additive)
-    ctx.globalCompositeOperation = 'lighten'; // Only add white pixels, don't remove existing white
+    ctx.globalCompositeOperation = "lighten";
     ctx.drawImage(workCanvas, 0, 0, originalWidth, originalHeight);
-    ctx.globalCompositeOperation = 'source-over'; // Reset to default
-    
-    // Restore DPR scale for drawing
+    ctx.globalCompositeOperation = "source-over";
+
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }, []);
-
-  // Helper function to export mask at correct dimensions
-  const exportMaskAtCorrectSize = useCallback((maskCanvas: HTMLCanvasElement) => {
-    const previewCanvas = previewCanvasRef.current;
-    if (!previewCanvas) return null;
-    
-    // Get the original image dimensions (not DPR-scaled)
-    const originalWidth = previewCanvas.width / (window.devicePixelRatio || 1);
-    const originalHeight = previewCanvas.height / (window.devicePixelRatio || 1);
-    
-    // Create an offscreen canvas at the original image size
-    const offscreenCanvas = document.createElement('canvas');
-    offscreenCanvas.width = originalWidth;
-    offscreenCanvas.height = originalHeight;
-    
-    const offscreenCtx = offscreenCanvas.getContext('2d');
-    if (!offscreenCtx) return null;
-    
-    // Draw the mask canvas to the offscreen canvas, scaling it to match original size
-    offscreenCtx.drawImage(maskCanvas, 0, 0, originalWidth, originalHeight);
-    
-    return offscreenCanvas.toDataURL('image/png');
   }, []);
 
   const stopDrawing = useCallback(() => {
@@ -485,13 +482,10 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
       return;
     }
     console.log("[region-editor] stopDrawing: applying auto-fill...");
-    // Apply auto-fill to detect and fill enclosed areas
     setTimeout(() => {
       autoFillEnclosedAreas(canvas);
       console.log("[region-editor] stopDrawing: creating blob from canvas...");
 
-      // IMPORTANT: Export mask at original image dimensions (not DPR-scaled)
-      // The mask canvas is DPR-scaled, but we need to export at original image size
       const dpr = window.devicePixelRatio || 1;
       const originalWidth = canvas.width / dpr;
       const originalHeight = canvas.height / dpr;
@@ -501,129 +495,151 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         canvasHeight: canvas.height,
         dpr,
         originalWidth,
-        originalHeight
+        originalHeight,
       });
 
-      // Create offscreen canvas at original (non-DPR) dimensions
-      const offscreenCanvas = document.createElement('canvas');
+      const offscreenCanvas = document.createElement("canvas");
       offscreenCanvas.width = originalWidth;
       offscreenCanvas.height = originalHeight;
-      const offscreenCtx = offscreenCanvas.getContext('2d');
+      const offscreenCtx = offscreenCanvas.getContext("2d");
 
       if (offscreenCtx) {
-        // Reset transform for pixel operations
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
         }
 
-        // Draw DPR-scaled canvas to offscreen canvas at original size
         offscreenCtx.drawImage(canvas, 0, 0, originalWidth, originalHeight);
 
-        // Restore DPR scale for future drawing
         if (ctx) {
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
-        // Export from offscreen canvas
-        offscreenCanvas.toBlob((blob) => {
-          if (blob) {
-            console.log("[region-editor] ✅ Mask blob created successfully!");
-            console.log("[region-editor]    - Size:", blob.size, "bytes");
-            console.log("[region-editor]    - Type:", blob.type);
-            console.log("[region-editor]    - Exported at:", originalWidth, "x", originalHeight);
+        offscreenCanvas.toBlob(
+          (blob) => {
+            if (blob) {
+              console.log(
+                "[region-editor] ✅ Mask blob created successfully!",
+              );
+              console.log("[region-editor]    - Size:", blob.size, "bytes");
+              console.log("[region-editor]    - Type:", blob.type);
+              console.log(
+                "[region-editor]    - Exported at:",
+                originalWidth,
+                "x",
+                originalHeight,
+              );
 
-            // DIAGNOSTIC: Log mask preview as data URL for debugging
-            const maskPreview = offscreenCanvas.toDataURL('image/png');
-            console.log("[region-editor] 📸 Mask preview (first 200 chars):", maskPreview.substring(0, 200));
-            console.log("[region-editor] 💾 To download mask for inspection, run:");
-            console.log(`      const a = document.createElement('a'); a.href = '${maskPreview.substring(0, 100)}...'; a.download = 'mask-debug.png'; a.click();`);
+              const maskPreview = offscreenCanvas.toDataURL("image/png");
+              console.log(
+                "[region-editor] 📸 Mask preview (first 200 chars):",
+                maskPreview.substring(0, 200),
+              );
 
-            setMaskData(blob);
-          } else {
-            console.error("[region-editor] ❌ offscreenCanvas.toBlob returned null!");
-          }
-        }, 'image/png');
+              setMaskData(blob);
+            } else {
+              console.error(
+                "[region-editor] ❌ offscreenCanvas.toBlob returned null!",
+              );
+            }
+          },
+          "image/png",
+        );
       }
     }, 100);
   }, [autoFillEnclosedAreas]);
 
-  // Combined mouse event handler
-  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.altKey || e.ctrlKey) {
-      startPanning(e);
-    } else {
-      startDrawing(e);
-    }
-  }, [startPanning, startDrawing]);
+  // Combined mouse handler
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (e.altKey || e.ctrlKey) {
+        startPanning(e);
+      } else {
+        startDrawing(e);
+      }
+    },
+    [startPanning, startDrawing],
+  );
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning) {
-      panCanvas(e);
-    } else {
-      draw(e);
-    }
-  }, [isPanning, panCanvas, draw]);
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (isPanning) {
+        panCanvas(e);
+      } else {
+        draw(e);
+      }
+    },
+    [isPanning, panCanvas, draw],
+  );
 
   const handleMouseUp = useCallback(() => {
     stopDrawing();
     stopPanning();
   }, [stopDrawing, stopPanning]);
 
-
-
-
   const clearMask = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
+
+    const ctx = canvas.getContext("2d");
     if (ctx) {
-      // Reset transform for pixel operations
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = 'black';
+      ctx.fillStyle = "black";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Restore DPR scale for drawing
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     setMaskData(null);
   }, []);
 
-  // Region edit mutation
-  // Custom region edit mutation with polling for job status
+  // --- Region edit mutation with local polling (and optional parent hook) ---
   const regionEditMutation = useMutation({
     mutationFn: async (data: FormData) => {
-      console.log('[region-editor] ========== MUTATION FUNCTION STARTED ==========');
-      console.log('[region-editor] 🚀 START: Submitting region-edit request...');
-      console.log('[region-editor] API endpoint:', api("/api/region-edit"));
+      console.log(
+        "[region-editor] ========== MUTATION FUNCTION STARTED ==========",
+      );
+      console.log(
+        "[region-editor] 🚀 START: Submitting region-edit request...",
+      );
+      console.log("[region-editor] API endpoint:", api("/api/region-edit"));
 
       let response: Response;
       try {
         response = await fetch(api("/api/region-edit"), {
           method: "POST",
           body: data,
-          credentials: "include"
+          credentials: "include",
         });
-        console.log('[region-editor] ✅ Fetch completed successfully');
-        console.log('[region-editor]   - Status:', response.status, response.statusText);
-        console.log('[region-editor]   - response.ok:', response.ok);
+        console.log("[region-editor] ✅ Fetch completed successfully");
+        console.log(
+          "[region-editor]   - Status:",
+          response.status,
+          response.statusText,
+        );
+        console.log("[region-editor]   - response.ok:", response.ok);
       } catch (fetchError) {
-        console.error('[region-editor] ❌ FETCH FAILED (network error):', fetchError);
-        console.error('[region-editor] Error type:', typeof fetchError);
-        console.error('[region-editor] Error message:', fetchError instanceof Error ? fetchError.message : String(fetchError));
-        throw new Error(`Network error: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+        console.error(
+          "[region-editor] ❌ FETCH FAILED (network error):",
+          fetchError,
+        );
+        throw new Error(
+          `Network error: ${
+            fetchError instanceof Error ? fetchError.message : "Unknown error"
+          }`,
+        );
       }
 
       if (!response.ok) {
-        let errorText = '';
+        let errorText = "";
         try {
           errorText = await response.text();
-          console.error('[region-editor] ❌ HTTP ERROR - Response not OK');
-          console.error('[region-editor]   - Status:', response.status);
-          console.error('[region-editor]   - Response body:', errorText);
-        } catch (e) {
-          console.error('[region-editor] ❌ HTTP ERROR - Could not read response body');
+          console.error("[region-editor] ❌ HTTP ERROR - Response not OK");
+          console.error("[region-editor]   - Status:", response.status);
+          console.error("[region-editor]   - Response body:", errorText);
+        } catch {
+          console.error(
+            "[region-editor] ❌ HTTP ERROR - Could not read response body",
+          );
         }
         throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
       }
@@ -631,36 +647,56 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
       let result: { success: boolean; jobId?: string; error?: string };
       try {
         result = await response.json();
-        console.log('[region-editor] ✅ Response JSON parsed successfully');
-        console.log('[region-editor] Result keys:', Object.keys(result));
-        console.log('[region-editor] Result.success:', result.success, '(type:', typeof result.success, ')');
-        console.log('[region-editor] Result.jobId:', result.jobId, '(type:', typeof result.jobId, ')');
-        console.log('[region-editor] Full result:', JSON.stringify(result, null, 2));
-        console.log('[region-editor] About to return result to React Query...');
+        console.log("[region-editor] ✅ Response JSON parsed successfully");
+        console.log("[region-editor] Result keys:", Object.keys(result));
+        console.log(
+          "[region-editor] Result.success:",
+          result.success,
+          "(type:",
+          typeof result.success,
+          ")",
+        );
+        console.log(
+          "[region-editor] Result.jobId:",
+          result.jobId,
+          "(type:",
+          typeof result.jobId,
+          ")",
+        );
+        console.log(
+          "[region-editor] Full result:",
+          JSON.stringify(result, null, 2),
+        );
       } catch (jsonError) {
-        console.error('[region-editor] ❌ JSON PARSE ERROR:', jsonError);
-        console.error('[region-editor] JSON parse failed, cannot continue');
-        throw new Error('Failed to parse server response');
+        console.error("[region-editor] ❌ JSON PARSE ERROR:", jsonError);
+        throw new Error("Failed to parse server response");
       }
 
-      console.log('[region-editor] ========== MUTATION FUNCTION RETURNING ==========');
+      console.log(
+        "[region-editor] ========== MUTATION FUNCTION RETURNING ==========",
+      );
       return result;
     },
     onMutate: () => {
-      console.log('[region-editor] onMutate: aborting any previous polling and signaling start');
-      // Abort any previous polling loop
+      console.log(
+        "[region-editor] onMutate: aborting any previous polling and signaling start",
+      );
       pollingAbortRef.current.abort = true;
-      // Let parent know work has started (for spinner/alert)
       onStart?.();
     },
     onSuccess: async (result: { success: boolean; jobId?: string; error?: string }) => {
-      console.log('[region-editor] ========== onSuccess HANDLER CALLED ==========');
-      console.log('[region-editor] Full result object:', JSON.stringify(result, null, 2));
-      console.log('[region-editor] result.success type:', typeof result.success, 'value:', result.success);
-      console.log('[region-editor] result.jobId type:', typeof result.jobId, 'value:', result.jobId);
+      console.log(
+        "[region-editor] ========== onSuccess HANDLER CALLED ==========",
+      );
+      console.log(
+        "[region-editor] Full result object:",
+        JSON.stringify(result, null, 2),
+      );
 
       if (!result.success || !result.jobId) {
-        console.error('[region-editor] ❌ Invalid response - missing success or jobId');
+        console.error(
+          "[region-editor] ❌ Invalid response - missing success or jobId",
+        );
         toast({
           title: "Enhancement failed",
           description: result.error || "Could not start edit",
@@ -670,19 +706,28 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         return;
       }
 
-      console.log('[region-editor] ✅ Got jobId from /api/region-edit:', result.jobId);
-      console.log(`[region-editor] Batch status endpoint will be /api/status/batch?ids=${encodeURIComponent(result.jobId)}`);
+      console.log(
+        "[region-editor] ✅ Got jobId from /api/region-edit:",
+        result.jobId,
+      );
+      console.log(
+        `[region-editor] Batch status endpoint will be /api/status/batch?ids=${encodeURIComponent(
+          result.jobId,
+        )}`,
+      );
 
-      // If parent supplied a polling handler, delegate and exit
+      // Notify parent so global batch polling can track it,
+      // BUT DO NOT RETURN – we still run local polling to update the preview.
       if (onJobStarted) {
-        console.log('[region-editor] 🧩 Delegating polling to parent via onJobStarted');
+        console.log(
+          "[region-editor] 🧩 Notifying parent via onJobStarted (global batch will also track this job)",
+        );
         onJobStarted(result.jobId);
-        return;
       }
 
-      // Fallback: perform local polling directly from RegionEditor
-      console.log('[region-editor] ℹ️ No onJobStarted provided - using local polling as fallback');
-      console.log('[region-editor] ✅ Starting to poll job locally:', result.jobId);
+      console.log(
+        "[region-editor] ✅ Starting local polling so the preview updates when the edit completes",
+      );
 
       let polling = true;
       let pollCount = 0;
@@ -691,68 +736,89 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
       const pollJob = async () => {
         if (localAbortRef.abort) {
           polling = false;
-          console.log('[region-editor] 🛑 Polling aborted (new request started or component unmounted)');
+          console.log(
+            "[region-editor] 🛑 Polling aborted (new request started or component unmounted)",
+          );
           return;
         }
         try {
           const pollUrl = api(`/api/status/batch?ids=${result.jobId}`);
-          console.log(`[region-editor] Polling attempt ${pollCount + 1} for job:`, result.jobId);
-          console.log('[region-editor] Polling URL:', pollUrl);
+          console.log(
+            `[region-editor] Polling attempt ${pollCount + 1} for job:`,
+            result.jobId,
+          );
+          console.log("[region-editor] Polling URL:", pollUrl);
           const res = await fetch(pollUrl, { credentials: "include" });
           const json = await res.json();
-          console.log('[region-editor] Poll response:', json);
+          console.log("[region-editor] Poll response:", json);
           const item = json.items?.[0];
-          if (!item) {
-            console.log('[region-editor] No item in response, continuing...');
-          } else {
-            console.log('[region-editor] Job status:', item.status, 'hasImageUrl:', !!item.imageUrl);
+          if (item) {
+            console.log(
+              "[region-editor] Job status:",
+              item.status,
+              "hasImageUrl:",
+              !!item.imageUrl,
+            );
 
-            if (item.status === 'failed') {
+            const status = String(item.status || "").toLowerCase();
+            const isCompleted =
+              status === "completed" ||
+              status === "done" ||
+              status === "complete";
+
+            if (status === "failed") {
               polling = false;
-              console.error('[region-editor] ❌ Job failed:', item.error);
+              console.error("[region-editor] ❌ Job failed:", item.error);
               toast({
-                title: 'Enhancement failed',
-                description: item.error || 'Edit failed',
-                variant: 'destructive',
+                title: "Enhancement failed",
+                description: item.error || "Edit failed",
+                variant: "destructive",
               });
               onError?.();
               return;
             }
 
-            if ((item.status === 'completed' || item.status === 'done' || item.status === 'complete') && item.imageUrl) {
+            if (isCompleted && item.imageUrl) {
               polling = false;
-              console.log('[region-editor] ✅ Job completed with imageUrl:', item.imageUrl);
-              // Update preview to show the new edited image
-              // Add cache-busting query string to force reload
-              const cacheBustedUrl = item.imageUrl ? `${item.imageUrl}${item.imageUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : item.imageUrl;
-              setPreviewUrl(cacheBustedUrl);
+              console.log(
+                "[region-editor] ✅ Job completed with imageUrl:",
+                item.imageUrl,
+              );
+
+              // 🔥 This is the key: replace the preview image with the edited image
+              setPreviewUrl(item.imageUrl);
               setSelectedFile(null);
               setMaskData(null);
               setZoomLevel(1);
               setPanOffset({ x: 0, y: 0 });
-              // Reset mutation state so spinner disappears
+
               if (regionEditMutation.reset) {
                 setTimeout(() => regionEditMutation.reset(), 0);
               }
+
               onComplete?.({
                 imageUrl: item.imageUrl,
-                originalUrl: item.originalUrl || '',
-                maskUrl: item.maskUrl || '',
-                mode: item.mode || '',
+                originalUrl: item.originalUrl || "",
+                maskUrl: item.maskUrl || "",
+                mode: item.mode || "",
               });
-              // Do not call onCancel here, so the editor stays open for further edits/download
+
+              // Keep editor open so user can inspect or do further edits
               return;
             }
           }
 
-          console.log('[region-editor] Still processing, will poll again...');
+          console.log("[region-editor] Still processing, will poll again...");
         } catch (e) {
           polling = false;
-          console.error('[region-editor] ❌ Poll error:', e);
+          console.error("[region-editor] ❌ Poll error:", e);
           toast({
-            title: 'Enhancement failed',
-            description: e instanceof Error ? e.message : 'Network error while polling edit job',
-            variant: 'destructive',
+            title: "Enhancement failed",
+            description:
+              e instanceof Error
+                ? e.message
+                : "Network error while polling edit job",
+            variant: "destructive",
           });
           onError?.();
           return;
@@ -760,191 +826,205 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
 
         pollCount++;
         if (polling) {
-          setTimeout(pollJob, Math.min(2000 + pollCount * 500, 5000));
+          setTimeout(
+            pollJob,
+            Math.min(2000 + pollCount * 500, 5000),
+          );
         }
       };
 
-      // Reset abort flag and begin polling loop
       pollingAbortRef.current.abort = false;
       pollJob();
     },
     onError: (error) => {
-      console.error('[region-editor] ❌ Mutation onError called with:', error);
-      console.error('[region-editor] Error type:', typeof error);
-      console.error('[region-editor] Error keys:', error ? Object.keys(error) : 'null');
-
+      console.error("[region-editor] ❌ Mutation onError called with:", error);
       let errorMessage = "Network error";
       if (error instanceof Error) {
         errorMessage = error.message;
-      } else if (typeof error === 'string') {
+      } else if (typeof error === "string") {
         errorMessage = error;
-      } else if (error && typeof error === 'object') {
+      } else if (error && typeof error === "object") {
         errorMessage = JSON.stringify(error);
       }
-
-      console.error('[region-editor] Final error message:', errorMessage);
 
       toast({
         title: "Enhancement failed",
         description: errorMessage,
-        variant: "destructive"
+        variant: "destructive",
       });
       onError?.();
-    }
+    },
   });
 
-  // Robust handleSubmit with full validation and debug logging
+  // handleSubmit (unchanged logic, just formatting)
   const handleSubmit = useCallback(async () => {
-    console.log('[region-editor] ========================================');
-    console.log('[region-editor] ========== handleSubmit CALLED ==========');
-    console.log('[region-editor] ========================================');
-    console.log('[region-editor] Current time:', new Date().toISOString());
-    console.log('[region-editor] Mode:', mode);
-    console.log('[region-editor] Has mask:', !!maskData);
-    console.log('[region-editor] Instructions:', instructions);
-    console.log('[region-editor] selectedFile:', !!selectedFile);
-    console.log('[region-editor] initialImageUrl:', initialImageUrl?.substring(0, 80));
+    console.log("[region-editor] ========== handleSubmit CALLED ==========");
+    console.log("[region-editor] Mode:", mode);
+    console.log("[region-editor] Has mask:", !!maskData);
+    console.log("[region-editor] Instructions:", instructions);
+    console.log("[region-editor] selectedFile:", !!selectedFile);
+    console.log(
+      "[region-editor] initialImageUrl:",
+      initialImageUrl?.substring(0, 80),
+    );
 
     try {
-      console.log('[region-editor] ✅ Entered try block');
+      if (!selectedFile && !initialImageUrl) {
+        toast({
+          title: "No image",
+          description: "Please select an image first",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    // 1. Validate image selection
-    if (!selectedFile && !initialImageUrl) {
-      toast({ title: "No image", description: "Please select an image first", variant: "destructive" });
-      console.error("[region-editor] Submission blocked: No image selected.");
-      return;
-    }
-    // 2. Validate instructions for edit mode
-    if (mode === "edit" && !instructions.trim()) {
-      toast({ title: "Instructions required", description: "Please provide instructions for Add/Remove/Replace", variant: "destructive" });
-      console.error("[region-editor] Submission blocked: No instructions for edit mode.");
-      return;
-    }
-    // 3. Validate mask presence
-    if (!maskData) {
-      toast({ title: "Mask required", description: "Please draw a region to edit or restore", variant: "destructive" });
-      console.error("[region-editor] Submission blocked: No mask drawn.");
-      return;
-    }
+      if (mode === "edit" && !instructions.trim()) {
+        toast({
+          title: "Instructions required",
+          description: "Please provide instructions for Add/Remove/Replace",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    // 4. Convert mask Blob to data URL string
-    let maskAsDataUrl = "";
-    try {
-      maskAsDataUrl = await new Promise<string>((resolve, reject) => {
-        if (!maskData) {
-          reject(new Error("No mask data"));
-          return;
-        }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === "string") {
-            resolve(reader.result);
-          } else {
-            reject(new Error("Failed to convert mask Blob to data URL"));
+      if (!maskData) {
+        toast({
+          title: "Mask required",
+          description: "Please draw a region to edit or restore",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      let maskAsDataUrl = "";
+      try {
+        maskAsDataUrl = await new Promise<string>((resolve, reject) => {
+          if (!maskData) {
+            reject(new Error("No mask data"));
+            return;
           }
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(maskData);
-      });
-      console.log("[region-editor] ✅ Mask converted to data URL. Length:", maskAsDataUrl.length);
-      console.log("[region-editor]    Mask preview:", maskAsDataUrl.substring(0, 100) + "...");
-    } catch (e) {
-      console.error("[region-editor] ❌ Failed to convert mask Blob to data URL:", e);
-      toast({ title: "Mask error", description: "Failed to process mask data", variant: "destructive" });
-      return;
-    }
-
-    // 5. Build FormData for submission
-    const formData = new FormData();
-    if (selectedFile) {
-      formData.append("image", selectedFile);
-      console.log("[region-editor] Appended image file to FormData.");
-    } else if (initialImageUrl) {
-      formData.append("imageUrl", initialImageUrl);
-      if (originalImageUrl) {
-        formData.append("baseImageUrl", originalImageUrl);
-        console.log("[region-editor] Appended imageUrl and baseImageUrl to FormData.");
-      } else {
-        console.log("[region-editor] Appended imageUrl to FormData.");
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+            } else {
+              reject(
+                new Error("Failed to convert mask Blob to data URL"),
+              );
+            }
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(maskData);
+        });
+        console.log(
+          "[region-editor] ✅ Mask converted to data URL. Length:",
+          maskAsDataUrl.length,
+        );
+      } catch (e) {
+        console.error(
+          "[region-editor] ❌ Failed to convert mask Blob to data URL:",
+          e,
+        );
+        toast({
+          title: "Mask error",
+          description: "Failed to process mask data",
+          variant: "destructive",
+        });
+        return;
       }
-    }
-    formData.append("mode", mode);
-    if (mode === "edit") {
-      formData.append("goal", instructions);
-    }
-    formData.append("industry", industry);
-    formData.append("sceneType", sceneType);
-    if (roomType) {
-      formData.append("roomType", roomType);
-    }
-    formData.append("preserveStructure", "true");
-    formData.append("allowStaging", "false");
-    formData.append("allowRetouch", "true");
-    formData.append("regionMask", maskAsDataUrl); // Always as data URL string
-    formData.append("smartReinstate", smartReinstate.toString());
 
-    // 6. Debug log all FormData entries
-    console.log("[region-editor] Submitting FormData:");
-    for (const [key, value] of formData.entries()) {
-      if (typeof value === "string") {
-        console.log(`  - ${key}:`, value.length > 120 ? value.substring(0, 120) + "..." : value);
-      } else if (value instanceof File) {
-        console.log(`  - ${key}: [File] name=${value.name}, size=${value.size}, type=${value.type}`);
-      } else {
-        console.log(`  - ${key}: [Unknown Type]`, value);
+      const formData = new FormData();
+      if (selectedFile) {
+        formData.append("image", selectedFile);
+      } else if (initialImageUrl) {
+        formData.append("imageUrl", initialImageUrl);
+        if (originalImageUrl) {
+          formData.append("baseImageUrl", originalImageUrl);
+        }
       }
-    }
+      formData.append("mode", mode);
+      if (mode === "edit") {
+        formData.append("goal", instructions);
+      }
+      formData.append("industry", industry);
+      formData.append("sceneType", sceneType);
+      if (roomType) {
+        formData.append("roomType", roomType);
+      }
+      formData.append("preserveStructure", "true");
+      formData.append("allowStaging", "false");
+      formData.append("allowRetouch", "true");
+      formData.append("regionMask", maskAsDataUrl);
+      formData.append("smartReinstate", smartReinstate.toString());
 
-    // 7. Submit mutation
-    console.log('[region-editor] 🎯 About to call regionEditMutation.mutate()');
-    console.log('[region-editor] regionEditMutation exists?', !!regionEditMutation);
-    console.log('[region-editor] regionEditMutation.mutate exists?', !!regionEditMutation?.mutate);
-    console.log('[region-editor] Mutation state before call:', {
-      isIdle: regionEditMutation.isIdle,
-      isPending: regionEditMutation.isPending,
-      isError: regionEditMutation.isError,
-      isSuccess: regionEditMutation.isSuccess
-    });
+      console.log("[region-editor] Submitting FormData:");
+      for (const [key, value] of formData.entries()) {
+        if (typeof value === "string") {
+          console.log(
+            `  - ${key}:`,
+            value.length > 120 ? value.substring(0, 120) + "..." : value,
+          );
+        } else if (value instanceof File) {
+          console.log(
+            `  - ${key}: [File] name=${value.name}, size=${value.size}, type=${value.type}`,
+          );
+        }
+      }
 
-    if (!regionEditMutation || !regionEditMutation.mutate) {
-      console.error('[region-editor] ❌ regionEditMutation or .mutate is undefined!');
-      toast({
-        title: "Enhancement failed",
-        description: "Internal error: mutation not initialized",
-        variant: "destructive"
-      });
-      onError?.();
-      return;
-    }
+      if (!regionEditMutation || !regionEditMutation.mutate) {
+        console.error(
+          "[region-editor] ❌ regionEditMutation or .mutate is undefined!",
+        );
+        toast({
+          title: "Enhancement failed",
+          description: "Internal error: mutation not initialized",
+          variant: "destructive",
+        });
+        onError?.();
+        return;
+      }
 
-    regionEditMutation.mutate(formData);
-    console.log('[region-editor] ✅ Mutation.mutate() called successfully (returned to caller)');
+      regionEditMutation.mutate(formData);
+      console.log(
+        "[region-editor] ✅ Mutation.mutate() called successfully",
+      );
     } catch (error) {
-      console.error('[region-editor] ❌❌❌ UNCAUGHT ERROR in handleSubmit:', error);
-      console.error('[region-editor] Error type:', typeof error);
-      console.error('[region-editor] Error instanceof Error?', error instanceof Error);
-      console.error('[region-editor] Error stack:', error instanceof Error ? error.stack : 'N/A');
+      console.error(
+        "[region-editor] ❌❌❌ UNCAUGHT ERROR in handleSubmit:",
+        error,
+      );
       toast({
         title: "Enhancement failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "destructive"
+        description:
+          error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
       });
       onError?.();
     }
-  }, [selectedFile, initialImageUrl, originalImageUrl, maskData, instructions, industry, mode, sceneType, roomType, smartReinstate, toast, onError]);
-  // Note: regionEditMutation removed from deps - useMutation returns stable mutate function
+  }, [
+    selectedFile,
+    initialImageUrl,
+    originalImageUrl,
+    maskData,
+    instructions,
+    industry,
+    mode,
+    sceneType,
+    roomType,
+    smartReinstate,
+    toast,
+    onError,
+    regionEditMutation,
+  ]);
 
-  // Check if required fields are filled based on operation type
   const hasInstructions = instructions.trim().length > 0;
   const hasMask = maskData !== null;
-  const isFormValid = (
+  const isFormValid =
     (mode === "edit" && hasInstructions && hasMask) ||
-    (mode === "restore_original" && hasMask)
-  );
-  
+    (mode === "restore_original" && hasMask);
+
   return (
     <div className="space-y-6">
-      {/* File Upload - only show if no initial image */}
       {!initialImageUrl && (
         <div>
           <Label htmlFor="image-upload">Select Image</Label>
@@ -958,17 +1038,18 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         </div>
       )}
 
-      {/* Image Canvas for Mask Drawing - now at the top */}
       {previewUrl && (
         <div className="space-y-4">
           <div>
-            <Label className="text-base font-medium">Draw Region Mask (white = selected area)</Label>
-            <p className="text-sm text-gray-600 mt-1 mb-3">
-              Draw on the image to mark the region. Use Alt/Ctrl + drag to pan, mouse wheel to zoom.
+            <Label className="text-base font-medium">
+              Draw Region Mask (white = selected area)
+            </Label>
+            <p className="mt-1 mb-3 text-sm text-gray-600">
+              Draw on the image to mark the region. Use Alt/Ctrl + drag to pan,
+              mouse wheel to zoom.
             </p>
-            
-            {/* Drawing Controls */}
-            <div className="flex flex-wrap items-center gap-3 p-2 bg-brand-light rounded-lg mb-3">
+
+            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg bg-brand-light p-2">
               <div className="flex items-center gap-1.5">
                 <Label className="text-xs">Brush:</Label>
                 <input
@@ -980,53 +1061,68 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
                   className="w-16"
                   data-testid="slider-brush-size"
                 />
-                <span className="text-xs text-gray-600 w-7">{brushSize}px</span>
+                <span className="w-7 text-xs text-gray-600">
+                  {brushSize}px
+                </span>
               </div>
-              
+
               <div className="flex items-center gap-1.5">
                 <Label className="text-xs">Zoom:</Label>
                 <button
-                  onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
+                  onClick={() =>
+                    setZoomLevel(Math.max(0.5, zoomLevel - 0.25))
+                  }
                   disabled={zoomLevel <= 0.5}
-                  className="px-1.5 py-0.5 text-xs bg-white border rounded disabled:opacity-50"
+                  className="rounded border bg-white px-1.5 py-0.5 text-xs disabled:opacity-50"
                   data-testid="button-zoom-out"
                 >
                   -
                 </button>
-                <span className="text-xs text-gray-600 w-9 text-center">{Math.round(zoomLevel * 100)}%</span>
+                <span className="w-9 text-center text-xs text-gray-600">
+                  {Math.round(zoomLevel * 100)}%
+                </span>
                 <button
-                  onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
+                  onClick={() =>
+                    setZoomLevel(Math.min(3, zoomLevel + 0.25))
+                  }
                   disabled={zoomLevel >= 3}
-                  className="px-1.5 py-0.5 text-xs bg-white border rounded disabled:opacity-50"
+                  className="rounded border bg-white px-1.5 py-0.5 text-xs disabled:opacity-50"
                   data-testid="button-zoom-in"
                 >
                   +
                 </button>
                 <button
-                  onClick={() => { setZoomLevel(1); setPanOffset({ x: 0, y: 0 }); }}
-                  className="px-1.5 py-0.5 text-xs bg-white border rounded"
+                  onClick={() => {
+                    setZoomLevel(1);
+                    setPanOffset({ x: 0, y: 0 });
+                  }}
+                  className="rounded border bg-white px-1.5 py-0.5 text-xs"
                   data-testid="button-reset-view"
                 >
                   Reset
                 </button>
               </div>
             </div>
-            
-            <div className="relative border rounded-lg overflow-hidden bg-brand-light" style={{ minHeight: '600px' }}>
+
+            <div
+              className="relative overflow-hidden rounded-lg border bg-brand-light"
+              style={{ minHeight: "600px" }}
+            >
               {imageLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-brand-light/80 z-10">
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-brand-light/80">
                   <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary mx-auto mb-2"></div>
+                    <div className="mx-auto mb-2 h-12 w-12 animate-spin rounded-full border-b-2 border-brand-primary" />
                     <p className="text-gray-600">Loading image...</p>
                   </div>
                 </div>
               )}
+
               <div
-                className="relative w-full h-full"
+                className="relative h-full w-full"
                 style={{
-                  minHeight: '600px',
+                  minHeight: "600px",
                   transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-                  transformOrigin: 'top left'
+                  transformOrigin: "top left",
                 }}
               >
                 {!previewUrl && !imageLoading && (
@@ -1036,27 +1132,31 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
                 )}
                 <canvas
                   ref={previewCanvasRef}
-                  className="absolute inset-0 w-full h-full object-contain"
-                  style={{ display: previewUrl ? 'block' : 'none' }}
+                  className="absolute inset-0 h-full w-full object-contain"
+                  style={{ display: previewUrl ? "block" : "none" }}
                 />
                 <canvas
                   ref={canvasRef}
-                  className="absolute inset-0 w-full h-full object-contain opacity-60"
+                  className="absolute inset-0 h-full w-full object-contain opacity-60"
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
                   onMouseLeave={handleMouseUp}
                   onWheel={handleZoom}
                   style={{
-                    cursor: isPanning ? 'grabbing' : isDrawing ? 'crosshair' : 'crosshair',
-                    display: previewUrl ? 'block' : 'none'
+                    cursor: isPanning
+                      ? "grabbing"
+                      : isDrawing
+                        ? "crosshair"
+                        : "crosshair",
+                    display: previewUrl ? "block" : "none",
                   }}
                   data-testid="canvas-mask-drawing"
                 />
               </div>
             </div>
           </div>
-          
+
           <Button
             onClick={clearMask}
             variant="outline"
@@ -1068,11 +1168,13 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
         </div>
       )}
 
-      {/* Required Fields Section */}
+      {/* Required Fields */}
       <div className="space-y-4">
         <div>
           <Label htmlFor="instructions" className="text-base font-medium">
-            Instructions{mode === "edit" && <span className="text-red-500">*</span>}
+            Instructions{mode === "edit" && (
+              <span className="text-red-500">*</span>
+            )}
           </Label>
           <Textarea
             id="instructions"
@@ -1081,7 +1183,11 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
             placeholder="Describe your edit (required for Add/Remove/Replace)"
             rows={2}
             data-testid="textarea-instructions"
-            className={mode === "edit" && !instructions.trim() ? "border-red-200 focus:border-red-300" : ""}
+            className={
+              mode === "edit" && !instructions.trim()
+                ? "border-red-200 focus:border-red-300"
+                : ""
+            }
           />
         </div>
 
@@ -1089,85 +1195,126 @@ export function RegionEditor({ onComplete, onCancel, onStart, onError, onJobStar
           <Label htmlFor="mode" className="text-base font-medium">
             Operation <span className="text-red-500">*</span>
           </Label>
-          <Select value={mode} onValueChange={(v) => setMode(v as any)}>
+          <Select
+            value={mode}
+            onValueChange={(v) => setMode(v as "edit" | "restore_original")}
+          >
             <SelectTrigger data-testid="select-mode">
               <SelectValue placeholder="Choose Option" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="edit">Add / Remove / Replace (requires text)</SelectItem>
-              <SelectItem value="restore_original">Restore Original (no text required)</SelectItem>
+              <SelectItem value="edit">
+                Add / Remove / Replace (requires text)
+              </SelectItem>
+              <SelectItem value="restore_original">
+                Restore Original (no text required)
+              </SelectItem>
             </SelectContent>
           </Select>
-          {mode === "edit" && (
-            <div className="mt-2 text-sm text-gray-600">
-              <p>Describe what to add, remove, or replace in the selected region. <b>Instructions are required.</b></p>
-            </div>
-          )}
-          {mode === "restore_original" && (
-            <div className="mt-2 text-sm text-gray-600">
-              <p>Restore the masked region to its previous state. <b>No instructions required.</b></p>
-            </div>
-          )}
+        </div>
+
+                <div>
+          <Label htmlFor="scene-type" className="text-base font-medium">
+            Scene Type
+          </Label>
+          <Select
+            value={sceneType}
+            onValueChange={(v) =>
+              setSceneType(v as "auto" | "interior" | "exterior")
+            }
+          >
+            <SelectTrigger id="scene-type" data-testid="select-scene-type">
+              <SelectValue placeholder="Auto-detect" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="interior">Interior</SelectItem>
+              <SelectItem value="exterior">Exterior</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div>
-          <Label htmlFor="scene-type" className="text-base font-medium">Scene Type</Label>
-          <Select value={sceneType} onValueChange={(v) => setSceneType(v as any)}>
-            <SelectTrigger data-testid="select-scene-type">
-              <SelectValue />
+          <Label htmlFor="room-type" className="text-base font-medium">
+            Room Type
+          </Label>
+          <Select
+            value={roomType}
+            onValueChange={(v) => setRoomType(v)}
+          >
+            <SelectTrigger id="room-type" data-testid="select-room-type">
+              <SelectValue placeholder="Auto-detect" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">Auto Detect</SelectItem>
-              <SelectItem value="interior">Interior (furniture staging, lighting)</SelectItem>
-              <SelectItem value="exterior">Exterior (sky, grass, deck staging)</SelectItem>
+              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="living_room">Living Room</SelectItem>
+              <SelectItem value="bedroom">Bedroom</SelectItem>
+              <SelectItem value="kitchen">Kitchen</SelectItem>
+              <SelectItem value="bathroom">Bathroom</SelectItem>
+              <SelectItem value="dining">Dining</SelectItem>
+              <SelectItem value="exterior">Exterior</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2">
+          <Input
             id="smart-reinstate"
+            type="checkbox"
             checked={smartReinstate}
             onChange={(e) => setSmartReinstate(e.target.checked)}
-            className="rounded"
-            data-testid="checkbox-smart-reinstate"
+            className="h-4 w-4"
           />
-          <Label htmlFor="smart-reinstate">Enable Smart Reinstate</Label>
+          <Label
+            htmlFor="smart-reinstate"
+            className="text-sm text-gray-700 cursor-pointer"
+          >
+            Smart Reinstate (keep structure & boundaries tight)
+          </Label>
         </div>
-
-        {/* Validation Message */}
-        {!isFormValid && (
-          <div className="flex items-center gap-2 text-red-600 text-sm">
-            <span className="text-red-500">*</span>
-            <span>Required for enhancing to commence</span>
-          </div>
-        )}
-
-        {/* Staging style selection removed: now batch-level only */}
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex gap-2">
-        {onCancel && (
+      {/* Footer buttons */}
+      <div className="flex items-center justify-between pt-4 border-t">
+        <div className="text-xs text-gray-500">
+          {mode === "edit" ? (
+            <span>
+              Requires <span className="font-semibold">instructions</span> and a{" "}
+              <span className="font-semibold">mask</span>.
+            </span>
+          ) : (
+            <span>
+              Restore Original requires only a{" "}
+              <span className="font-semibold">mask</span>.
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
           <Button
-            onClick={onCancel}
+            type="button"
             variant="outline"
-            disabled={regionEditMutation.isPending}
-            data-testid="button-cancel-edit"
+            onClick={() => {
+              pollingAbortRef.current.abort = true;
+              onCancel?.();
+            }}
+            data-testid="button-cancel-region-edit"
           >
             Cancel
           </Button>
-        )}
-        <Button
-          onClick={handleSubmit}
-          disabled={(!selectedFile && !initialImageUrl) || regionEditMutation.isPending || !isFormValid}
-          className="flex-1"
-          data-testid="button-process-region"
-        >
-          {regionEditMutation.isPending ? "Editing image as requested..." : "Enhance"}
-        </Button>
+
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!isFormValid || regionEditMutation.isPending}
+            data-testid="button-apply-region-edit"
+          >
+            {regionEditMutation.isPending ? "Applying edit..." : "Apply Edit"}
+          </Button>
+        </div>
       </div>
     </div>
   );
 }
+
