@@ -123,13 +123,14 @@ export function RegionEditor({
     img.src = previewUrl;
   }, [previewUrl]);
 
-  // Cleanup: Abort local polling when component unmounts or modal closes
+  // Cleanup: Do not toggle abort on unmount; allow in-flight polling to finish
   useEffect(() => {
     return () => {
       console.log(
-        "[region-editor] 🧹 Component unmounting - aborting any active polling",
+        "[region-editor] 🧹 Component unmounting (no longer toggling abort flag here)",
       );
-      pollingAbortRef.current.abort = true;
+      // IMPORTANT: Do NOT set pollingAbortRef.current.abort here.
+      // Abort is only toggled in onMutate to cancel superseded jobs when a NEW edit starts.
     };
   }, []);
 
