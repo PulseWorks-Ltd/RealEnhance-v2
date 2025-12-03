@@ -716,17 +716,18 @@ export function RegionEditor({
         )}`,
       );
 
-      // Notify parent so global batch polling can track it,
-      // BUT DO NOT RETURN – we still run local polling to update the preview.
+      // Inform parent, but DO NOT exit – local polling still runs
       if (onJobStarted) {
         console.log(
-          "[region-editor] 🧩 Notifying parent via onJobStarted (global batch will also track this job)",
+          "[region-editor] 🧩 Notifying parent via onJobStarted (global batch polling will also track this job)",
         );
         onJobStarted(result.jobId);
       }
 
+      // Always run local polling so the modal can update its preview image
       console.log(
-        "[region-editor] ✅ Starting local polling so the preview updates when the edit completes",
+        "[region-editor] ✅ Starting local polling so the edit modal can update the preview:",
+        result.jobId,
       );
 
       let polling = true;
