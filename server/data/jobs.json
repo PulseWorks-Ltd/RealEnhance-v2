@@ -493,5 +493,14 @@
     "progress": 10,
     "originalUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQdySpAAAACklEQVR4nGNgAAACAAEA//8DAAAGAAVXvyoAAAAASUVORK5CYII=",
     "errorMessage": "Input file has corrupt header: pngload: invalid chunk checksum"
+  },
+  "job_test_1764797781939": {
+    "id": "job_test_1764797781939",
+    "jobId": "job_test_1764797781939",
+    "userId": "user_test",
+    "imageId": "img_test_1764797781939",
+    "status": "enqueued",
+    "createdAt": "2025-12-03T21:36:21.939Z",
+    "updatedAt": "2025-12-03T21:36:21.939Z"
   }
 }
