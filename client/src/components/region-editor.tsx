@@ -754,18 +754,32 @@ export function RegionEditor({
           console.log("[region-editor] Poll response:", json);
           const item = json.items?.[0];
           if (item) {
-            console.log(
-              "[region-editor] Job status:",
-              item.status,
-              "hasImageUrl:",
-              !!item.imageUrl,
-            );
+            // PATCH 1: High-visibility log for item
+            console.log("[DEBUG][region-editor] Item received:", {
+              status: item.status,
+              imageUrl: item.imageUrl,
+              hasImageUrl: !!item.imageUrl,
+              itemRaw: item,
+            });
 
             const status = String(item.status || "").toLowerCase();
             const isCompleted =
               status === "completed" ||
               status === "done" ||
               status === "complete";
+
+            // PATCH 2: Log status evaluation
+            console.log("[DEBUG][region-editor] Status evaluation:", {
+              status,
+              isCompleted,
+              abortFlag: localAbortRef.abort,
+            });
+
+            // PATCH 3: Log before completion condition
+            console.log("[DEBUG][region-editor] Checking completion condition:", {
+              isCompleted,
+              hasImageUrl: !!item.imageUrl,
+            });
 
             if (status === "failed") {
               polling = false;
@@ -827,6 +841,11 @@ export function RegionEditor({
           }
 
           console.log("[region-editor] Still processing, will poll again...");
+          // PATCH 4: Poll state
+          console.log("[DEBUG][region-editor] Poll state:", {
+            pollCount,
+            abortFlag: localAbortRef.abort,
+          });
         } catch (e) {
           polling = false;
           console.error("[region-editor] ❌ Poll error:", e);
