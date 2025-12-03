@@ -56,6 +56,12 @@ USER INSTRUCTION (apply this ONLY where IMAGE 2 shows WHITE pixels):
 - Do NOT edit ANY area where IMAGE 2 is black, no matter what the instruction says
 - If you see multiple walls/surfaces in IMAGE 1, ONLY edit the specific wall/surface that has WHITE pixels in IMAGE 2
 
+BLENDING / OUTSKIRTS RULES (IMPORTANT):
+- You may perform minimal blending or anti-aliasing around the WHITE mask boundary to ensure seamless transitions, but this must be strictly limited to a very small margin (suggested: no more than a few pixels relative to the image resolution). Use the smallest feather that preserves visual continuity.
+- You MUST NOT use this allowance to modify distinct nearby surfaces, different walls, or objects that are clearly outside the masked area. For example, if the mask covers the RIGHT wall, do not change the LEFT wall or any other wall's color, texture, or content.
+- Do NOT expand edits to cover additional structural elements (windows, doors, mouldings) that are outside the white mask even partially; instead, if a feature crosses the mask boundary, prefer surface-level treatments (e.g., paint, curtain, patch) that preserve geometry and position.
+- If the required edit would necessarily change structure beyond this tiny blending margin (for example moving a window or altering wall shape), refuse and suggest an alternative that preserves structure (e.g., apply a surface treatment or decorative solution).
+
 GENERAL RULES:
 - Do NOT invent new angles or viewpoints. Keep the same camera position and perspective.
 - Keep lighting direction and overall brightness consistent with the base image.

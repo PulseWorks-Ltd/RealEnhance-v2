@@ -14,6 +14,70 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
+/**
+ * Derive the Stage 1 base image URL from a Stage 2 filename.
+ *
+ * Examples:
+ *   ...1764...-canonical-1A-1B-2-retry1.webp → ...1764...-canonical-1A-1B.webp
+ *   ...1764...-canonical-1A-2.webp → ...1764...-canonical-1A.webp
+ *
+ * Returns null if the URL doesn't match the expected Stage 2 pattern.
+ */
+function deriveBaseFromInitial(initialUrl?: string | null): string | null {
+  if (!initialUrl) return null;
+
+  try {
+    const url = new URL(initialUrl);
+    const pathParts = url.pathname.split("/");
+    const filename = pathParts.pop();
+    if (!filename) return null;
+
+    // Split name and extension (e.g., "1764...-canonical-1A-1B-2-retry1.webp")
+    const match = filename.match(/^(.+)\.([^.]+)$/);
+    if (!match) return null;
+    const [, stem, ext] = match; // stem: "1764...-canonical-1A-1B-2-retry1"
+    const tokens = stem.split("-");
+
+    // Find the '2' token (indicates Stage 2) if present
+    const idx2 = tokens.lastIndexOf("2");
+    if (idx2 === -1) {
+      // Not a Stage 2 filename → nothing to derive
+      return null;
+    }
+
+    // Look for 1B or 1A before the '2'
+    const idx1B = tokens.lastIndexOf("1B", idx2);
+    const idx1A = tokens.lastIndexOf("1A", idx2);
+
+    let baseTokens: string[] | null = null;
+
+    if (idx1B !== -1) {
+      // Pattern: ...-1A-1B-2[-retryX] → keep up to 1B
+      baseTokens = tokens.slice(0, idx1B + 1);
+    } else if (idx1A !== -1) {
+      // Pattern: ...-1A-2[-retryX] → keep up to 1A
+      baseTokens = tokens.slice(0, idx1A + 1);
+    } else {
+      // No 1A/1B markers → can't infer Stage 1
+      return null;
+    }
+
+    const baseFilename = `${baseTokens.join("-")}.${ext}`;
+    pathParts.push(baseFilename);
+    url.pathname = pathParts.join("/");
+
+    console.log("[deriveBaseFromInitial] Derived base URL:", {
+      original: initialUrl,
+      derived: url.toString(),
+    });
+
+    return url.toString();
+  } catch (err) {
+    console.warn("[deriveBaseFromInitial] Failed to parse URL:", err);
+    return null;
+  }
+}
+
 interface RegionEditorProps {
   onComplete?: (result: {
     imageUrl: string;
@@ -57,11 +121,12 @@ export function RegionEditor({
   }, [initialImageUrl, originalImageUrl]);
   // Quick high-level prop + derived base log for easier debugging of restore flow
   useEffect(() => {
+    const derivedFromInitial = !originalImageUrl ? deriveBaseFromInitial(initialImageUrl) : null;
     const derivedBase =
       mode === "restore_original"
-        ? (originalImageUrl || "")
+        ? (originalImageUrl || derivedFromInitial || "")
         : (originalImageUrl || initialImageUrl || "");
-    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedBase });
+    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedFromInitial, derivedBase });
   }, [mode, initialImageUrl, originalImageUrl]);
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
@@ -922,18 +987,24 @@ export function RegionEditor({
       initialImageUrl?.substring(0, 80),
     );
 
-    // Compute baseImageUrl with strictness for restore_original
-    // - restore_original: require Stage 1/quality (originalImageUrl); no fallback
-    // - other modes: allow fallback to initialImageUrl
+    // Derive Stage 1 base URL from Stage 2 filename if originalImageUrl not provided
+    const derivedBaseFromInitial = !originalImageUrl
+      ? deriveBaseFromInitial(initialImageUrl)
+      : null;
+
+    // Compute baseImageUrl:
+    // - For restore_original: use originalImageUrl (Stage 1) or derived base, never Stage 2
+    // - For other modes: prefer originalImageUrl, fall back to initialImageUrl
     const baseImageUrl =
       mode === "restore_original"
-        ? (originalImageUrl || "")
+        ? (originalImageUrl || derivedBaseFromInitial || "")
         : (originalImageUrl || initialImageUrl || "");
 
     console.log("[region-editor] Mode:", mode);
-    console.log("[region-editor] baseImageUrl:", baseImageUrl);
-    console.log("[region-editor] initialImageUrl:", initialImageUrl);
     console.log("[region-editor] originalImageUrl:", originalImageUrl);
+    console.log("[region-editor] initialImageUrl:", initialImageUrl);
+    console.log("[region-editor] derivedBaseFromInitial:", derivedBaseFromInitial);
+    console.log("[region-editor] Final baseImageUrl:", baseImageUrl);
 
     try {
       if (!selectedFile && !initialImageUrl) {
@@ -954,12 +1025,12 @@ export function RegionEditor({
         return;
       }
 
-      // For restore_original, require a proper base (no fallback to Stage 2)
-      if (mode === "restore_original" && !originalImageUrl) {
+      // For restore_original, require a proper base (Stage 1 explicit or derived)
+      if (mode === "restore_original" && !originalImageUrl && !derivedBaseFromInitial) {
         toast({
           title: "Restore base missing",
           description:
-            "No Stage 1 / quality image is available to restore from. Please re-run enhancement first.",
+            "No Stage 1 image is available to restore from. This image may not have Stage 1 data. Please re-run enhancement first.",
           variant: "destructive",
         });
         return;
