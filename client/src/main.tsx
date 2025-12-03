@@ -26,5 +26,5 @@ createRoot(rootEl).render(
       </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>
-);
+); 
 
