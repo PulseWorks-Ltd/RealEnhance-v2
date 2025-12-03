@@ -101,10 +101,35 @@ export function statusRouter() {
 
         const status = normalizeStateToStatus(state);
 
-        // Merge in Redis job record (written by worker via updateJob)
+        // Prefer the Redis snapshot written by the worker when present.
+        // If it contains useful output (imageUrl or stageUrls) trust it and return it directly.
         const local = await getJob(id) || ({} as any);
 
-        // Resolve URLs from BullMQ returnvalue first, then Redis job record
+        if (local && (local.imageUrl || local.stageUrls)) {
+          const item: StatusItem = {
+            id,
+            state: local.state ?? state ?? null,
+            status: (local.status as any) ?? (state ? normalizeStateToStatus(state) : (local.status as any)) ?? "completed",
+            success: typeof local.success === 'boolean' ? local.success : true,
+            imageId: local.imageId ?? payload?.imageId ?? null,
+            imageUrl: local.imageUrl ?? local.resultUrl ?? null,
+            originalUrl: local.originalUrl ?? null,
+            maskUrl: local.maskUrl ?? null,
+            stageUrls: local.stageUrls ?? null,
+            meta: local.meta ?? {},
+          } as any;
+
+          if (local.mode) item.mode = local.mode;
+          if (!item.success) item.error = local.errorMessage || failedReason || undefined;
+          if (item.status === 'completed') completed++;
+          if (item.status === 'failed') {
+            console.log('[status/batch] Merged job (local snapshot) failed for', id, JSON.stringify(item, null, 2));
+          }
+          items.push(item);
+          continue;
+        }
+
+        // Fallback: resolve URLs from BullMQ returnvalue first, then Redis job record
         const resultUrl: string | null =
           (rv && rv.resultUrl) ||
           local.resultUrl ||
@@ -160,15 +185,10 @@ export function statusRouter() {
           item.error = local.errorMessage || failedReason || undefined;
         }
 
-        // Reduce log verbosity: Only log failed jobs or every 10th request
         // Reduce log verbosity: Only log failed jobs or every 50th request
         if (item.status === 'failed' || Math.floor(Math.random() * 50) === 0) {
           console.log('[status/batch] Merged job status for', id, JSON.stringify(item, null, 2));
         }
-
-        // Always log the final response shape for debugging
-        // (only once per request, after all items are built)
-        // We'll log this just before sending the response below
 
         items.push(item);
       }

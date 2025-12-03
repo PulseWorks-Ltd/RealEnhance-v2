@@ -27,9 +27,11 @@ import {
   pushImageVersion,
   readImageRecord,
   getVersionPath,
-  getOriginalPath
+  getOriginalPath,
+  setVersionPublicUrl,
+  getJob,
+  expireJob,
 } from "./utils/persist";
-import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
@@ -738,6 +740,49 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": hasStage2 ? pub2Url : null
     }
   });
+
+  // Write a compact final snapshot into Redis so /api/status can rely on it.
+  try {
+    const jobId = payload.jobId;
+    const pubOriginalUrl = publishedOriginal?.url || null;
+    const pub1A = pub1AUrl ?? null;
+    const pub1B = pub1BUrl ?? null;
+    const pub2 = pub2Url ?? null;
+
+    if (jobId && (pub2 || pubFinalUrl)) {
+      const prev: any = (await getJob(jobId)) || {};
+      await updateJob(jobId, {
+        ...prev,
+        id: jobId,
+        success: true,
+        status: "complete",
+        imageId: payload.imageId ?? prev.imageId ?? null,
+        imageUrl: pubFinalUrl ?? prev.imageUrl ?? null,
+        originalUrl: pubOriginalUrl ?? prev.originalUrl ?? null,
+        stageUrls: {
+          ...(prev.stageUrls || {}),
+          original: pubOriginalUrl ?? (prev.stageUrls?.original ?? null),
+          "1A": pub1A ?? (prev.stageUrls?.["1A"] ?? null),
+          "1B": pub1B ?? (prev.stageUrls?.["1B"] ?? null),
+          "2": pub2 ?? (prev.stageUrls?.["2"] ?? null),
+        },
+        meta: {
+          ...(prev.meta || {}),
+          roomType: payload.options?.roomType ?? prev.meta?.roomType ?? null,
+          declutter: payload.options?.declutter ?? prev.meta?.declutter ?? null,
+        },
+      });
+
+      // Set TTL to 24h to avoid indefinite accumulation
+      try {
+        await expireJob(jobId, 60 * 60 * 24);
+      } catch {}
+
+      console.log(`[worker] Final job snapshot written to Redis for ${jobId}`);
+    }
+  } catch (e) {
+    console.warn('[worker] Failed to write final snapshot:', (e as any)?.message || e);
+  }
 
   // Return value for BullMQ status consumers
   const returnValue = {

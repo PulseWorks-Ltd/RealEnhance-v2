@@ -54,6 +54,16 @@ export async function getJob(jobId: JobId): Promise<JobRecord | undefined> {
   return undefined;
 }
 
+// Set expiry on a job key (seconds)
+export async function expireJob(jobId: JobId, seconds: number) {
+  const key = `jobs:${jobId}`;
+  try {
+    await redisClient.expire(key, seconds);
+  } catch (e) {
+    // ignore expiry failures
+  }
+}
+
 // Append new image version (no-op or implement Redis version if needed)
 export function pushImageVersion(params: {
   imageId: ImageId;

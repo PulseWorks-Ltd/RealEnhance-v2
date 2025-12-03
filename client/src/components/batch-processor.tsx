@@ -1929,6 +1929,81 @@ export default function BatchProcessor() {
   // Dummy state to force re-render when room type detection updates
   const [roomTypeDetectionTick, setRoomTypeDetectionTick] = useState(0);
 
+  // Adaptive URL extractor for RegionEditor callers
+  const regionEditorUrls = React.useMemo(() => {
+    if (editingImageIndex === null) return { initial: undefined as string | undefined, original: undefined as string | undefined };
+    const item = results[editingImageIndex];
+    if (!item) return { initial: undefined as string | undefined, original: undefined as string | undefined };
+
+    // Helper: gather candidate URLs from object recursively
+    const candidates: Array<{ keyPath: string; url: string }> = [];
+    const seen = new Set<string>();
+    function gather(obj: any, prefix = "") {
+      if (!obj || typeof obj !== 'object') return;
+      for (const k of Object.keys(obj)) {
+        try {
+          const v = obj[k];
+          const path = prefix ? `${prefix}.${k}` : String(k);
+          if (typeof v === 'string') {
+            const s = v.trim();
+            if (s.startsWith('http') || s.startsWith('data:') || /\.(jpg|jpeg|png|webp|gif)/i.test(s)) {
+              if (!seen.has(s)) {
+                candidates.push({ keyPath: path, url: s });
+                seen.add(s);
+              }
+            }
+          } else if (typeof v === 'object' && v !== null) {
+            gather(v, path);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Prefer explicit normalized stageUrls when available
+    const stageUrls = (item?.stageUrls || item?.result?.stageUrls) as Record<string, string> | undefined;
+    if (stageUrls && Object.keys(stageUrls).length) {
+      const s1b = stageUrls['1B'] || stageUrls['1b'] || undefined;
+      const s1a = stageUrls['1A'] || stageUrls['1a'] || undefined;
+      const s2 = stageUrls['2'] || undefined;
+      const initial = s2 || s1b || s1a || undefined;
+      const original = s1b || s1a || undefined;
+      return { initial, original };
+    }
+
+    // Otherwise, scan the whole item for URL-like strings
+    gather(item);
+
+    // Heuristics for selection: prefer keys that indicate stage or original/quality
+    let original: string | undefined;
+    let initial: string | undefined;
+
+    // 1) look for explicit 'original' or 'quality' keys
+    for (const c of candidates) {
+      const k = c.keyPath.toLowerCase();
+      if (!original && (k.includes('original') || k.includes('quality') || k.includes('declutter') || k.includes('stage1') || /1a|1b/.test(k))) {
+        original = c.url;
+      }
+    }
+
+    // 2) look for '2' or 'stage2' or 'enhanced' for initial
+    for (const c of candidates) {
+      const k = c.keyPath.toLowerCase();
+      if (!initial && (k.includes('stage2') || k.includes('.2') || k.includes('enhanced') || k.includes('result') || k.includes('imageurl') || k.includes('image'))) {
+        initial = c.url;
+      }
+    }
+
+    // 3) fallbacks: first candidate for initial, first candidate for original
+    if (!initial && candidates.length) initial = candidates[0].url;
+    if (!original) {
+      original = candidates.find(c => c.url === initial)?.url || candidates[0]?.url;
+    }
+
+    console.log('[BatchProcessor] adaptive region-editor URLs:', { idx: editingImageIndex, original, initial, candidates });
+    return { initial, original };
+  }, [editingImageIndex, results]);
   return (
   <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
@@ -2925,31 +3000,9 @@ export default function BatchProcessor() {
       {regionEditorOpen && editingImageIndex !== null && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
-            initialImageUrl={(() => {
-              const activeItem = results[editingImageIndex];
-              console.log('[BatchProcessor] RAW ITEM FOR REGION EDIT', activeItem);
-              const item = activeItem;
-              // Prefer Stage 2 (current/enhanced) as the initial preview. If missing, fall back to Stage1 (quality) and lastly to display URL
-              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
-              const stage2 = stageUrls?.['2'] || stageUrls?.[2] || undefined;
-              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
-              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const quality = stage1b || stage1a || undefined;
-              const fallback = getDisplayUrl(results[editingImageIndex]) || undefined;
-              const initial = stage2 || quality || fallback;
-              console.log('[BatchProcessor] Resolved initialImageUrl (stage2||quality||fallback):', { stage2, stage1b, stage1a, initial, fallback });
-              return initial;
-            })()}
-            // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
-            originalImageUrl={(() => {
-              const item = results[editingImageIndex];
-              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
-              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
-              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const resolved = stage1b || stage1a || undefined;
-              console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A):', { stage1b, stage1a, resolved });
-              return resolved;
-            })()}
+            initialImageUrl={regionEditorUrls.initial}
+            // Explicit mapping for restore base: prefer Stage 1B then Stage 1A when available; otherwise adaptive fallback.
+            originalImageUrl={regionEditorUrls.original}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
             onStart={() => {
