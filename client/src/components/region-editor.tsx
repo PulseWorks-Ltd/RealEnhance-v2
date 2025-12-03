@@ -46,6 +46,12 @@ export function RegionEditor({
   const [previewUrl, setPreviewUrl] = useState<string | null>(
     initialImageUrl || null,
   );
+
+  // Debug: Log incoming props on mount and when they change
+  useEffect(() => {
+    console.log('[RegionEditor] initialImageUrl:', initialImageUrl);
+    console.log('[RegionEditor] originalImageUrl:', originalImageUrl);
+  }, [initialImageUrl, originalImageUrl]);
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
@@ -895,6 +901,7 @@ export function RegionEditor({
   });
 
   // handleSubmit (unchanged logic, just formatting)
+
   const handleSubmit = useCallback(async () => {
     console.log("[region-editor] ========== handleSubmit CALLED ==========");
     console.log("[region-editor] Mode:", mode);
@@ -905,6 +912,9 @@ export function RegionEditor({
       "[region-editor] initialImageUrl:",
       initialImageUrl?.substring(0, 80),
     );
+
+    // Compute robust baseImageUrl for restore
+    const baseImageUrl = originalImageUrl || initialImageUrl || "";
 
     try {
       if (!selectedFile && !initialImageUrl) {
@@ -926,7 +936,7 @@ export function RegionEditor({
       }
 
       // For restore_original, ensure we have a base image to restore from
-      if (mode === "restore_original" && !originalImageUrl) {
+      if (mode === "restore_original" && !baseImageUrl) {
         toast({
           title: "Restore base missing",
           description:
@@ -988,9 +998,9 @@ export function RegionEditor({
       } else if (initialImageUrl) {
         formData.append("imageUrl", initialImageUrl);
       }
-      // Always append baseImageUrl when provided so backend can restore
-      if (originalImageUrl) {
-        formData.append("baseImageUrl", originalImageUrl);
+      // Always append baseImageUrl if present
+      if (baseImageUrl) {
+        formData.append("baseImageUrl", baseImageUrl);
       }
       formData.append("mode", mode);
       if (mode === "edit") {
