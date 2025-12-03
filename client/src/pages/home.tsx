@@ -26,7 +26,7 @@ export default function Home() {
             Upload your images and let our AI enhance them with professional-quality
             improvements. Perfect for real estate and professional photography.
           </p>
-        </section>
+        </section> 
 
         {/* Batch Processor - Main Interface */}
         <BatchProcessor />
