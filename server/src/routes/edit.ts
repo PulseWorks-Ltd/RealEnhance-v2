@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { getImageRecord } from "../services/images.js";
 import { enqueueEditJob } from "../services/jobs.js";
+import { saveJobMetadata } from "@realenhance/shared/imageStore";
 
 export function editRouter() {
   const r = Router();
@@ -40,14 +41,31 @@ export function editRouter() {
       return res.status(400).json({ error: "invalid_base_version" });
     }
 
-    const { jobId } = await enqueueEditJob({
+    const enqueueParams = {
       userId: sessUser.id,
       imageId,
       baseVersionId,
       mode,
       instruction,
       mask
-    });
+    };
+    const { jobId } = await enqueueEditJob(enqueueParams);
+
+    // Persist minimal job metadata for retry
+    const meta: any = {
+      jobId,
+      userId: sessUser.id,
+      operation: "edit",
+      imageId,
+      instruction,
+      mask: (enqueueParams.mask as any) ?? null,
+      options: {
+        baseVersionId,
+        mode,
+      },
+      createdAt: new Date().toISOString(),
+    };
+    await saveJobMetadata(meta);
 
     res.json({ jobId });
   });

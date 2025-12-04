@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
+import { saveJobMetadata } from "@realenhance/shared/imageStore";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -257,6 +258,27 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     console.log("[region-edit] Mask field value length:", jobPayload.mask?.length || 0);
 
     const result = await enqueueRegionEditJob(jobPayload);
+
+    // Persist job metadata for retry
+    const meta: any = {
+      jobId: result.jobId,
+      userId: sessUser.id,
+      operation: "region-edit",
+      imageId: record.imageId || record.id,
+      originalImageUrl: baseImageUrl,
+      prompt: instruction,
+      mask: maskBase64 || null,
+      options: {
+        mode: apiMode,
+        restoreFromUrl,
+        sceneType,
+        roomType,
+        allowStaging,
+        stagingStyle,
+      },
+      createdAt: new Date().toISOString(),
+    };
+    await saveJobMetadata(meta);
 
     console.log("[region-edit] Job enqueued successfully:", result.jobId);
     console.log("[region-edit] Returning response:", { success: true, jobId: result.jobId });
