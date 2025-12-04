@@ -39,6 +39,7 @@ import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
+import { validateLineStructure } from "./validators/lineEdgeValidator";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -650,6 +651,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
+
+  // 🔍 LINE-EDGE STRUCTURAL VALIDATOR (LOG-ONLY MODE)
+  // Run structural validation on the final output image
+  try {
+    const validation = await validateLineStructure({
+      originalPath: origPath,
+      enhancedPath: finalBasePath,
+      sensitivity: 0.75,
+    });
+
+    // ALWAYS log results
+    console.log("[validator] Line-Edge Structural Analysis:", {
+      passed: validation.passed,
+      score: validation.score,
+      edgeLoss: validation.edgeLoss,
+      edgeShift: validation.edgeShift,
+      verticalDeviation: validation.verticalDeviation,
+      horizontalDeviation: validation.horizontalDeviation,
+      message: validation.message,
+    });
+
+    if (validation.details) {
+      console.log("[validator] Detailed metrics:", validation.details);
+    }
+
+    // LOG-ONLY MODE: DO NOT BLOCK IMAGES
+    // Set to true once tuning is complete to enable blocking
+    const BLOCKING_ENABLED = false;
+
+    if (BLOCKING_ENABLED && !validation.passed) {
+      console.warn("[validator] ⚠️ Image WOULD BE BLOCKED:", validation.message);
+      console.warn("[validator] Set BLOCKING_ENABLED=false to allow image through");
+      // Future blocking logic would go here:
+      // throw new Error(`Structural validation failed: ${validation.message}`);
+    } else if (!validation.passed) {
+      console.log("[validator] ℹ️ Image allowed to proceed (blocking disabled)");
+    }
+  } catch (err) {
+    console.warn("[validator] Line-edge validation skipped due to error:", err);
+    // Never block on validator errors - fail open
+  }
 
   if (finalBasePath === path1A && pub1AUrl) {
     process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
