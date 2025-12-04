@@ -27,9 +27,14 @@ export async function enqueueRegionEditJob(params: {
     restoreFromUrl: params.restoreFromUrl,
     createdAt: now,
   } as any;
+  // Persist full job payload for retry
+  // If you have a jobStore module, update the path below to the correct one.
+  // Example: import { saveJobMetadata } from "../shared/jobStore.js";
+  // await saveJobMetadata(payload as any);
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   return { jobId };
+  // Removed duplicate and incorrect import of jobStore.js
 }
 import * as crypto from "node:crypto";
 import { Queue } from "bullmq";

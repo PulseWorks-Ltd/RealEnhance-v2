@@ -1465,8 +1465,8 @@ export default function BatchProcessor() {
     const originalFromStoreUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
     
     try {
-      // Check credits and authentication
-      await ensureLoggedInAndCredits(1);
+      // Authentication only; credits handled server-side for retries
+      await ensureLoggedInAndCredits(0);
     } catch (e: any) {
       if (e.code === "INSUFFICIENT_CREDITS") {
         const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
@@ -1487,76 +1487,29 @@ export default function BatchProcessor() {
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     
     try {
-      // Determine explicit scene type - prefer provided, then metadata, then auto
-      const explicitScene = sceneType || imageSceneTypes[imageIndex] || "auto";
-      
-      // Build retry-focused goal based on scene
-      const baseGoal = (globalGoal?.trim() || "General, realistic enhancement for the selected industry.").trim();
-      
-      const retryFocus = explicitScene === "exterior"
-        ? " [RETRY FOCUS] Prioritize clear blue sky with soft clouds, subtle grass revival (natural), strong dehaze/contrast/sharpness. Keep staging only on decks/patios; skip if uncertain."
-        : explicitScene === "interior"
-        ? " [RETRY FOCUS] Maintain realistic furniture scale, doorway/window clearance, and modern cohesive styling. Improve exposure/white balance/sharpness."
-        : "";
-      
-      const goalToSend = customInstructions
-        ? [baseGoal, customInstructions.trim(), retryFocus].filter(Boolean).join(" ")
-        : [baseGoal, retryFocus].filter(Boolean).join(" ");
-      
-      // Use dedicated retry endpoint that bypasses batch lock
-      const fd = new FormData();
-      fd.append("image", fileToRetry); // Correct field name for retry-single
-      fd.append("goal", goalToSend);
-      if (sceneType) fd.append("sceneType", sceneType);
-      if (typeof allowStagingOverride === 'boolean') fd.append("allowStaging", String(allowStagingOverride));
-      if (typeof furnitureReplacementOverride === 'boolean') fd.append("furnitureReplacement", String(furnitureReplacementOverride));
-      if (roomType) fd.append("roomType", roomType);
-      if (windowCount !== undefined) fd.append("windowCount", String(windowCount));
-      if (referenceImage) fd.append("referenceImage", referenceImage);
+      // Identify latest jobId for this image index
+      const latestJobId = Object.entries(jobIdToIndexRef.current)
+        .filter(([jid, idx]) => idx === imageIndex)
+        .map(([jid]) => jid)
+        .pop();
+      if (!latestJobId) {
+        throw new Error("No existing jobId found to retry for this image.");
+      }
 
-      try {
-        const response = await fetch(api("/api/batch/retry-single"), withDevice({
-          method: "POST",
-          body: fd,
-          credentials: "include"
-        }));
-
-        if (!response.ok) {
-          if (response.status === 402) {
-            const err = await response.json().catch(() => ({}));
-            const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
-            if (goBuy) {
-              window.open("/buy-credits", "_blank");
-            }
-            return;
-          }
-          const err = await response.json().catch(() => ({}));
-          // Handle retry-specific compliance failures
-          if (err.code === "RETRY_COMPLIANCE_FAILED") {
-            const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
-            toast({
-              title: "Cannot generate different result",
-              description: `The AI cannot create a compliant variation due to ${violationDetails}. Try adjusting your settings or using a different approach. No credit was charged.`,
-              variant: "destructive",
-              duration: 8000
-            });
-            return;
-          }
-          // Enhanced error messaging for specific retry issues
-          if (response.status === 400 && err.message?.includes("Invalid image format")) {
-            throw new Error("The image file appears to be corrupted or in an unsupported format. Please try uploading the image again.");
-          }
-          throw new Error(err.message || "Failed to retry image");
-        }
-
-        // Instead of expecting the image to be ready, start polling for the job status
-        // Extract jobId from the response
-        const data = await response.json();
-        let jobId = data.jobId || (data.jobs && data.jobs[0] && data.jobs[0].id);
-        if (!jobId && data.jobs && data.jobs.length > 0) jobId = data.jobs[0].id;
-        if (!jobId) {
-          throw new Error("Retry submitted but no jobId returned. Please try again.");
-        }
+      // Call generic retry endpoint
+      const response = await fetch(api("/api/retry"), withDevice({
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: latestJobId })
+      }));
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "Retry request failed");
+      }
+      const data = await response.json();
+      const jobId = data.newJobId as string;
+      if (!jobId) throw new Error("Retry accepted but newJobId missing");
 
         // Start polling for this job until it completes or fails
         setProgressText("Retry submitted. Waiting for enhanced image...");
