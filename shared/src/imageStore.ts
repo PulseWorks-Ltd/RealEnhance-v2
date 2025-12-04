@@ -1,4 +1,5 @@
 import { getRedis } from "./redisClient";
+import type { JobMetadata } from "./jobTypes";
 
 export type RetryInfo = {
   noQuery: string;
@@ -228,3 +229,26 @@ export async function findByPublicUrlRedis(
 
   return null;
 }
+
+// === Job metadata helpers (for Retry) ===
+const JOB_META_PREFIX = "jobmeta:";
+function jobMetaKey(jobId: string): string { return JOB_META_PREFIX + jobId; }
+
+export async function saveJobMetadata(meta: JobMetadata): Promise<void> {
+  const redis = getRedis() as any;
+  if (!meta || !meta.jobId) throw new Error("[jobmeta] save: missing jobId");
+  const json = JSON.stringify(meta);
+  await redis.set(jobMetaKey(meta.jobId), json);
+}
+
+export async function getJobMetadata(jobId: string): Promise<JobMetadata | null> {
+  const redis = getRedis() as any;
+  const val = await redis.get(jobMetaKey(jobId));
+  if (!val) return null;
+  try {
+    return JSON.parse(val) as JobMetadata;
+  } catch {
+    return null;
+  }
+}
+

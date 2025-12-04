@@ -17,6 +17,7 @@ import { statusRouter, debugStatusRouter } from "./routes/status.js";
 import { editRouter } from "./routes/edit.js";
 import { requeueRouter } from "./routes/requeue.js";
 import { retrySingleRouter } from "./routes/retrySingle.js";
+import { retryRouter } from "./routes/retry.js";
 import { regionEditRouter } from "./routes/region-edit.js";
 import { cancelRouter } from "./routes/cancel.js";
 import { groupsRouter } from "./routes/groups.js";
@@ -97,6 +98,7 @@ async function main() {
   app.use("/api", editRouter());
   app.use("/api", requeueRouter());
   app.use("/api", retrySingleRouter());
+  app.use("/api", retryRouter());
   app.use("/api", regionEditRouter);
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
