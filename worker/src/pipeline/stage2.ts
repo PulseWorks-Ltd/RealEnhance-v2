@@ -7,6 +7,7 @@ import { validateStage2Structural } from "../validators/stage2StructuralValidato
 import { runOpenCVStructuralValidator } from "../validators/index";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
 
@@ -110,9 +111,8 @@ export async function runStage2(
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
       : buildStage2PromptNZStyle(opts.roomType, scene);
-    if (opts.stagingStyle) {
-      textPrompt += `\n\n[STAGING STYLE: ${opts.stagingStyle}] Please apply a ${opts.stagingStyle} style to the staged furniture and decor.`;
-    }
+    // Build a high-priority staging style directive (system-like block)
+    const styleDirective = opts.stagingStyle ? getStagingStyleDirective(opts.stagingStyle) : "";
     if (useTest) {
       textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
     }
@@ -122,10 +122,23 @@ export async function runStage2(
       tempMultiplier = 0.8;
       strictPrompt = true;
     }
-    const requestParts: any[] = [{ inlineData: { mimeType: mime, data } }, { text: textPrompt }];
+    const requestParts: any[] = [];
+    // Always include the primary input image first
+    requestParts.push({ inlineData: { mimeType: mime, data } });
+    // Optional reference image (kept immediately after the primary image)
     if (opts.referenceImagePath) {
       const ref = toBase64(opts.referenceImagePath);
-      requestParts.splice(1, 0, { inlineData: { mimeType: ref.mime, data: ref.data } });
+      requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
+    }
+    // Insert the style directive as a separate text part before the main prompt
+    if (styleDirective) {
+      requestParts.push({ text: styleDirective });
+    }
+    // Finally, add the main prompt
+    requestParts.push({ text: textPrompt });
+    if (dbg) {
+      const preview = (styleDirective + "\n\n" + textPrompt).slice(0, 1000);
+      console.log(`[stage2] [PROMPT_ASSEMBLED] stagingStyle=${opts.stagingStyle || 'none'} len=${(styleDirective + textPrompt).length}\n${preview}${(styleDirective + textPrompt).length > 1000 ? '\n...[truncated]' : ''}`);
     }
     if (dbg) console.log("[stage2] invoking Gemini with roomType=%s", opts.roomType);
     console.log(`[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
