@@ -21,18 +21,32 @@ function buildStage1AExteriorPromptNZStyle(): string {
     return `\nYour task: produce a completely empty version of the EXACT same ${roomType || "room"} interior shown in this photograph.\n\nCRITICAL OUTPUT REQUIREMENTS:\n• Output MUST be the EXACT same room from the EXACT same camera position, angle, and frame.\n• Output MUST show the SAME walls, SAME floor, SAME windows, SAME doors, SAME built-ins — only with ALL movable furniture and decor removed.\n• Do NOT change the scene, do NOT switch to a different room, do NOT generate a new space.\n• Do NOT add ANY new objects, furniture, or decor. ONLY remove existing movable items.\n• This is a DELETION-ONLY operation. No additions, no scene changes, no creative reinterpretation.\n\nREMOVE — FULL LIST (if ANY part is visible, remove ALL visible pixels):\n• Sofas, armchairs, ottomans, coffee/side tables, dining tables, chairs, consoles, TV units\n• Beds, headboards, nightstands, dressers, wardrobes, bookcases, shelving units, desks\n• Rugs, cushions, blankets/throws, baskets\n• Portable lamps (floor/table), freestanding mirrors, sculptures, plants (real/fake)\n• ALL wall decor: artwork, frames, pictures, clocks, mirrors, decorative plates\n• ALL loose items on ANY surface (kitchen/bath/laundry/office): appliances, bottles, jars, trays, soap, fruit bowls, dishes, spices, utensils, toiletries, toys, paperwork, magnets, notes\n\nKEEP EXACTLY — DO NOT REMOVE OR MODIFY:\n• BUILT‑INS & FIXTURES: cabinets, countertops, islands/peninsulas, sinks, taps, fixed shelving, fireplaces, mantels, recessed/hardwired lighting, ceiling fans, switches, outlets\n• APPLIANCES: built‑in stoves/ovens and range hoods (preserve explicitly)\n• ARCHITECTURE: walls, ceilings, floors, trims, skirting/baseboards, doors, door frames, window frames, sills\n• WINDOW TREATMENTS (CRITICAL): Do NOT remove, alter, hide, or occlude curtains, blinds, or ANY window treatments. They MUST remain fully intact and 100% visible.\n\nABSOLUTE RULES — ZERO TOLERANCE:\n• SCENE LOCK: Output MUST be the exact same room from the exact same camera viewpoint. Do NOT generate a different room, different angle, or different property.\n• CAMERA LOCK: Do NOT rotate, crop, reframe, zoom, or change perspective/angle.\n• DELETION ONLY: Do NOT add furniture, decor, objects, or architectural elements. Only remove movable items.\n• STRUCTURE LOCK: Do NOT add/remove/move/reshape any architectural element.\n• SURFACE LOCK: Do NOT repaint, recolor, or re‑texture walls/ceilings/floors.\n• NO NEW STRUCTURE: Do NOT create built‑ins or modify existing counters/cabinetry.\n\nQUALITY: Remove cleanly with no smudges/ghosting; preserve shadows/reflections of kept items; maintain natural edges and textures.\n\nFinal output requirement: A completely empty version of THIS EXACT room with ONLY permanent architecture, built‑ins, built‑in stove/hood, and ALL window treatments preserved and fully visible. Same room, same view, just empty.`.trim();
   }
 
-export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
+export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior", opts?: { stagingStyle?: string | null }): string {
   if (sceneType === "exterior") return buildStage2ExteriorPromptNZStyle();
   // Require roomType for interior staging
   if (!roomType || typeof roomType !== 'string' || !roomType.trim()) {
     // Fail gracefully: return a prompt indicating missing roomType
     return '[ERROR] Room type is required for interior staging. Please select a valid room type.';
   }
-  return buildStage2InteriorPromptNZStyle(roomType);
+  return buildStage2InteriorPromptNZStyle(roomType, opts);
 }
 
-function buildStage2InteriorPromptNZStyle(roomType: string): string {
-  return `\nStage this ${roomType || "room"} interior in the style of high-end New Zealand real estate\nphotography and staging as seen on modern Trade Me listings.\n\nStaging style:\n• NZ contemporary / coastal / Scandi minimalist.\n• Light wood (oak/beech) furniture with soft white or warm grey upholstery.\n• Clean, natural fabrics (linen, cotton) with minimal patterns.\n• Simple rugs, light-toned or natural fiber.\n• Art that is subtle, minimal, coastal, neutral, or abstract.\n• 1–2 small accents only (no clutter, heavy décor, or bold colours).\n\nLighting:\n• Bright, airy, natural daylight with lifted midtones and softened shadows.\n• Match the lighting direction and warmth of the base interior.\n• Slightly warm real-estate aesthetic (+3–5% warmth).\n\nSTRICT STRUCTURAL RULES:\n• Use the image EXACTLY as provided; do NOT rotate, crop, straighten, reframe,\n  zoom, or modify the camera angle or perspective.\n• Do NOT change ANY architecture: windows, doors, walls, ceilings, trims, floors,\n  cabinetry, or built-in features.\n• Do NOT cover or partially block windows, doors, or cupboards.\n• Do NOT modify or repaint walls, ceilings, floors, or surfaces.\n• Do NOT add built-ins or structural elements.\n• Do NOT alter the view outside the windows.\n\nOnly ADD virtual furniture that fits the style above. Do not change the room itself.`.trim();
+function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyle?: string | null }): string {
+  // Check if an explicit staging style is provided
+  const hasExplicitStyle = !!opts?.stagingStyle && opts.stagingStyle !== "none";
+
+  // Base introduction - neutral, no style specification when explicit style is provided
+  let prompt = `\nStage this ${roomType || "room"} interior for high-end real estate marketing.`;
+
+  // Only include NZ style block when NO explicit stagingStyle is provided
+  if (!hasExplicitStyle) {
+    prompt += `\n\nStaging style:\n• NZ contemporary / coastal / Scandi minimalist.\n• Light wood (oak/beech) furniture with soft white or warm grey upholstery.\n• Clean, natural fabrics (linen, cotton) with minimal patterns.\n• Simple rugs, light-toned or natural fiber.\n• Art that is subtle, minimal, coastal, neutral, or abstract.\n• 1–2 small accents only (no clutter, heavy décor, or bold colours).`;
+  }
+
+  // Lighting and structural rules apply to all styles
+  prompt += `\n\nLighting:\n• Bright, airy, natural daylight with lifted midtones and softened shadows.\n• Match the lighting direction and warmth of the base interior.\n• Slightly warm real-estate aesthetic (+3–5% warmth).\n\nSTRICT STRUCTURAL RULES:\n• Use the image EXACTLY as provided; do NOT rotate, crop, straighten, reframe,\n  zoom, or modify the camera angle or perspective.\n• Do NOT change ANY architecture: windows, doors, walls, ceilings, trims, floors,\n  cabinetry, or built-in features.\n• Do NOT cover or partially block windows, doors, or cupboards.\n• Do NOT modify or repaint walls, ceilings, floors, or surfaces.\n• Do NOT add built-ins or structural elements.\n• Do NOT alter the view outside the windows.\n\nOnly ADD virtual furniture that fits the style above. Do not change the room itself.`;
+
+  return prompt.trim();
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {

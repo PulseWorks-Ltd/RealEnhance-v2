@@ -117,7 +117,7 @@ export async function runStage2(
 
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
-      : buildStage2PromptNZStyle(opts.roomType, scene);
+      : buildStage2PromptNZStyle(opts.roomType, scene, { stagingStyle: stagingStyleNorm });
     // Build a high-priority staging style directive (system-like block)
     const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
