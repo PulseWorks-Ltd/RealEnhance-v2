@@ -2992,10 +2992,14 @@ export default function BatchProcessor() {
                   newSet.add(result.imageUrl);
                   return Array.from(newSet);
                 });
+                toast({
+                  title: 'Region edit complete',
+                  description: `Image ${editingImageIndex + 1} edited successfully. You can do more edits or close the modal.`,
+                });
               }
               refreshUser();
-              setRegionEditorOpen(false);
-              setEditingImageIndex(null);
+              // DON'T close modal - keep it open so user can do more edits
+              // User can manually close with the Cancel button
             }}
             onCancel={() => {
               setIsEditingInProgress(false);
