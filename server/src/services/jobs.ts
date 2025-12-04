@@ -96,6 +96,7 @@ export async function enqueueEnhanceJob(params: {
       topK?: number;
     };
     declutterIntensity?: "light" | "standard" | "heavy";
+    stagingStyle?: string;
   };
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
