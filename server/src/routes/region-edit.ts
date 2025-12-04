@@ -57,6 +57,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     
     // Extract all fields from body
     const imageUrl = body.imageUrl as string | undefined;
+    const clientBaseImageUrl = body.baseImageUrl as string | undefined;
     const mode = body.mode as "edit" | "restore_original" | undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";
     const sceneType = body.sceneType;
@@ -84,6 +85,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // Enhanced logging
     console.log("[region-edit] Request details:", {
       imageUrl: imageUrl ? imageUrl.substring(0, 80) + "..." : "MISSING",
+      clientBaseImageUrl: clientBaseImageUrl ? clientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
       mode,
       goal: goal ? goal.substring(0, 50) + "..." : "MISSING",
       hasMask: !!maskDataUrl,
@@ -136,14 +138,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     });
 
     // ===== DETERMINE BASE IMAGE URL =====
-    let baseImageUrl: string = imageUrl; // Default to provided URL
-    
-    // If there's a newer version in the record, use that
-    if (record && record.latest && record.latest.publicUrl) {
-      baseImageUrl = record.latest.publicUrl;
-      console.log("[region-edit] Using latest version:", baseImageUrl.substring(0, 80) + "...");
+    // For restore_original we want to honor the Stage 1 URL that the
+    // client derived (baseImageUrl). For edit mode we keep the previous
+    // behavior of preferring the latest stored version.
+    let baseImageUrl: string;
+
+    if (mode === "restore_original") {
+      baseImageUrl = clientBaseImageUrl || imageUrl;
+      console.log("[region-edit] restore_original baseImageUrl:", baseImageUrl ? baseImageUrl.substring(0, 80) + "..." : "MISSING");
     } else {
-      console.log("[region-edit] Using provided URL:", baseImageUrl.substring(0, 80) + "...");
+      baseImageUrl = imageUrl;
+      if (record && record.latest && record.latest.publicUrl) {
+        baseImageUrl = record.latest.publicUrl;
+        console.log("[region-edit] Using latest version (edit mode):", baseImageUrl.substring(0, 80) + "...");
+      } else {
+        console.log("[region-edit] Using provided URL (edit mode):", baseImageUrl.substring(0, 80) + "...");
+      }
     }
 
     // ===== PROCESS MASK =====
