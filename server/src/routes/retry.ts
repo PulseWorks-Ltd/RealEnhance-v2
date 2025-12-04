@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import * as crypto from "node:crypto";
-import { getJobMetadata, saveJobMetadata } from "../../shared/src/jobStore.js";
+import * as shared from "@realenhance/shared";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { Queue } from "bullmq";
 
@@ -21,7 +21,7 @@ export function retryRouter() {
       return res.status(400).json({ error: "missing_jobId" });
     }
 
-    const meta = await getJobMetadata(jobId);
+    const meta = await shared.getJobMetadata(jobId);
     if (!meta) {
       return res.status(404).json({ error: "job_metadata_not_found" });
     }
@@ -35,7 +35,7 @@ export function retryRouter() {
     const cloned: any = { ...meta, jobId: newJobId, createdAt: nowIso, retryOf: jobId };
 
     // Persist cloned metadata and enqueue
-    await saveJobMetadata(cloned);
+    await shared.saveJobMetadata(cloned);
     await queue().add(JOB_QUEUE_NAME, cloned, { jobId: newJobId });
 
     return res.json({ newJobId, status: "retry_accepted" });
