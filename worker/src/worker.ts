@@ -977,7 +977,8 @@ const worker = new Worker(
           await updateJob(regionPayload.jobId, {
             status: "complete",
             success: true,
-            imageUrl: pub.url,
+            resultUrl: pub.url, // Primary result URL (checked by status endpoint)
+            imageUrl: pub.url, // Fallback field
             originalUrl: baseImageUrl, // Return the original input URL
             maskUrl: pubMask.url, // Return the published mask URL
             imageId: regionPayload.imageId, // Include imageId for tracking
