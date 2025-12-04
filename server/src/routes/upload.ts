@@ -117,12 +117,19 @@ export function uploadRouter() {
         roomType: "unknown",
         sceneType: "auto",
       };
+            // Staging style: read from per-item options or metaJson
+            if (typeof (optionsList[i] || {}).stagingStyle === 'string') {
+              opts.stagingStyle = String((optionsList[i] as any).stagingStyle).trim();
+            }
       // Merge metadata from metaJson if available
       const meta = metaByIndex[i] || {};
       if (meta.sceneType) opts.sceneType = meta.sceneType;
       if (meta.roomType) opts.roomType = meta.roomType;
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
+        opts.stagingStyle = String(meta.stagingStyle).trim();
+      }
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
       const topP = Number.isFinite(meta.topP) ? Number(meta.topP) : undefined;
@@ -226,6 +233,7 @@ export function uploadRouter() {
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
+          stagingStyle: opts.stagingStyle,
         },
       });
 

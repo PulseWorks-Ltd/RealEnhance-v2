@@ -86,11 +86,18 @@ Décor: framed landscape or classic art, matching lamps, cushions with subtle pa
       return build(
         "Industrial",
         `
-Colour palette: charcoal, black, raw timber, concrete-inspired neutrals.
-Furniture: black or dark metal frames, reclaimed or rough wood tops.
-Materials: steel, dark wood, exposed textures.
-Décor: Edison-bulb or metal lamps, monochrome or urban abstract art, minimal but masculine.
-      `
+Colour palette: charcoal, black, dark wood, raw timber and concrete neutrals.
+Furniture: the bedframe MUST be black metal or very dark wood. Nightstands and tables MUST be dark timber or metal. Do NOT use pale or blonde wood.
+Materials: steel, black metal, reclaimed or rough timber, concrete or stone textures.
+Textiles: bedding MUST be charcoal or dark grey; white may only appear as a minor accent, never dominant.
+Décor: Edison-bulb or metal lamps, monochrome or urban abstract art.
+Prohibitions:
+- Do NOT use light oak or Scandinavian-style furniture.
+- Do NOT use jute or woven coastal rugs.
+- Do NOT use bright white bedding as primary colour.
+- Do NOT use coastal or soft Scandinavian décor.
+If any real-estate convention conflicts with these rules, ALWAYS choose the Industrial option.
+    `
       );
 
     case "coastal":

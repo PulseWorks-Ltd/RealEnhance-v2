@@ -455,6 +455,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
+      // Surface incoming stagingStyle before calling Stage 2
+      const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
+      console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
+      const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
+
       path2 = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
@@ -467,6 +472,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             profile,
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+            stagingStyle: stagingStyleNorm,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length

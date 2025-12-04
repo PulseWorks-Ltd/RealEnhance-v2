@@ -108,11 +108,18 @@ export async function runStage2(
     const { data, mime } = toBase64(inputForStage2);
     const profile = opts.profile;
     const useTest = process.env.USE_TEST_PROMPTS === "1";
+    // Log incoming staging style from options (before prompt assembly)
+    const stagingStyleRaw: any = (opts as any)?.stagingStyle;
+    console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
+    const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === "string"
+      ? stagingStyleRaw.trim()
+      : "none";
+
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
       : buildStage2PromptNZStyle(opts.roomType, scene);
     // Build a high-priority staging style directive (system-like block)
-    const styleDirective = opts.stagingStyle ? getStagingStyleDirective(opts.stagingStyle) : "";
+    const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
       textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
     }
@@ -137,8 +144,14 @@ export async function runStage2(
     // Finally, add the main prompt
     requestParts.push({ text: textPrompt });
     if (dbg) {
-      const preview = (styleDirective + "\n\n" + textPrompt).slice(0, 1000);
-      console.log(`[stage2] [PROMPT_ASSEMBLED] stagingStyle=${opts.stagingStyle || 'none'} len=${(styleDirective + textPrompt).length}\n${preview}${(styleDirective + textPrompt).length > 1000 ? '\n...[truncated]' : ''}`);
+      const combinedPrompt = styleDirective + "\n\n" + textPrompt;
+      const preview = combinedPrompt.slice(0, 1000);
+      console.log(`[stage2] [PROMPT_ASSEMBLED] stagingStyle=${stagingStyleNorm} len=${combinedPrompt.length}\n${preview}${combinedPrompt.length > 1000 ? '\n...[truncated]' : ''}`);
+      console.info("[stage2][PROMPT_ASSEMBLED]", {
+        stagingStyle: stagingStyleNorm,
+        len: combinedPrompt.length,
+        preview: combinedPrompt.slice(0, 400),
+      });
     }
     if (dbg) console.log("[stage2] invoking Gemini with roomType=%s", opts.roomType);
     console.log(`[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
