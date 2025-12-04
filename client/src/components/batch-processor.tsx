@@ -2153,12 +2153,19 @@ export default function BatchProcessor() {
                         onChange={e => setStagingStyle(e.target.value)}
                         data-testid="select-staging-style"
                       >
-                        <option value="Modern">Modern</option>
+                        <option value="Coastal">Coastal</option>
                         <option value="Contemporary">Contemporary</option>
+                        <option value="Hamptons">Hamptons</option>
+                        <option value="Industrial">Industrial</option>
+                        <option value="Japandi">Japandi</option>
+                        <option value="Luxe Contemporary">Luxe Contemporary</option>
                         <option value="Minimalist">Minimalist</option>
+                        <option value="Modern">Modern</option>
+                        <option value="Modern Farmhouse">Modern Farmhouse</option>
+                        <option value="NZ Modern">NZ Modern</option>
                         <option value="Scandinavian">Scandinavian</option>
                         <option value="Traditional">Traditional</option>
-                        <option value="Industrial">Industrial</option>
+                        <option value="Urban Loft">Urban Loft</option>
                       </select>
                     </div>
                   )}
