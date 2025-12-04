@@ -113,6 +113,8 @@ export function RegionEditor({
 
   // Only two modes: 'edit' and 'restore_original'
   const [mode, setMode] = useState<"edit" | "restore_original">("edit");
+  // NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
+  // This mode will be re-enabled in v3.0 when the multi-stage pipeline is finalized.
 
   // Debug: Log incoming props on mount and when they change
   useEffect(() => {
@@ -987,6 +989,16 @@ export function RegionEditor({
       initialImageUrl?.substring(0, 80),
     );
 
+    if (mode === "restore_original") {
+      console.warn("[RegionEditor] 'restore_original' mode is disabled for v2.0");
+      toast({
+        title: "Feature disabled",
+        description: "Restore Original will return in a future update.",
+        variant: "default",
+      });
+      return;
+    }
+
     // Derive Stage 1 base URL from Stage 2 filename if originalImageUrl not provided
     const derivedBaseFromInitial = !originalImageUrl
       ? deriveBaseFromInitial(initialImageUrl)
@@ -1020,17 +1032,6 @@ export function RegionEditor({
         toast({
           title: "Instructions required",
           description: "Please provide instructions for Add/Remove/Replace",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // For restore_original, require a proper base (Stage 1 explicit or derived)
-      if (mode === "restore_original" && !originalImageUrl && !derivedBaseFromInitial) {
-        toast({
-          title: "Restore base missing",
-          description:
-            "No Stage 1 image is available to restore from. This image may not have Stage 1 data. Please re-run enhancement first.",
           variant: "destructive",
         });
         return;
@@ -1347,7 +1348,9 @@ export function RegionEditor({
           </Label>
           <Select
             value={mode}
-            onValueChange={(v) => setMode(v as "edit" | "restore_original")}
+            // NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
+            // This mode will be re-enabled in v3.0 when the multi-stage pipeline is finalized.
+            onValueChange={(v) => setMode("edit")}
           >
             <SelectTrigger data-testid="select-mode">
               <SelectValue placeholder="Choose Option" />
@@ -1356,9 +1359,15 @@ export function RegionEditor({
               <SelectItem value="edit">
                 Add / Remove / Replace (requires text)
               </SelectItem>
-              <SelectItem value="restore_original">
-                Restore Original (no text required)
-              </SelectItem>
+              {/**
+               * NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
+               * This mode will be re-enabled in v3.0 when the multi-stage pipeline is finalized.
+               */}
+              {false && (
+                <SelectItem value="restore_original">
+                  Restore Original (no text required)
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
@@ -1434,10 +1443,7 @@ export function RegionEditor({
               <span className="font-semibold">mask</span>.
             </span>
           ) : (
-            <span>
-              Restore Original requires only a{" "}
-              <span className="font-semibold">mask</span>.
-            </span>
+            <span>Restore Original is temporarily disabled.</span>
           )}
         </div>
 
