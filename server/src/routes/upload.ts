@@ -54,6 +54,7 @@ export function uploadRouter() {
     // Read high-level form toggles (string booleans)
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
+    const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter);
       console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s', String(allowStagingForm), String(declutterForm));
@@ -129,6 +130,10 @@ export function uploadRouter() {
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
       if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
         opts.stagingStyle = String(meta.stagingStyle).trim();
+      }
+      // Apply form-level stagingStyle if no per-item style is set
+      if (!opts.stagingStyle && stagingStyleForm) {
+        opts.stagingStyle = stagingStyleForm;
       }
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
@@ -207,13 +212,14 @@ export function uploadRouter() {
 
       // Debug summary for this item
       try {
-        console.log('[upload] item %d → sceneType=%s roomType=%s replaceSky=%s virtualStage=%s declutter=%s',
+        console.log('[upload] item %d → sceneType=%s roomType=%s replaceSky=%s virtualStage=%s declutter=%s stagingStyle=%s',
           i,
           String(opts.sceneType),
           String(opts.roomType),
           String(opts.replaceSky),
           String(opts.virtualStage),
-          String(opts.declutter)
+          String(opts.declutter),
+          String(opts.stagingStyle || 'none')
         );
       } catch {}
 
