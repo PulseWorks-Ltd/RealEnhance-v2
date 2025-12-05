@@ -27,8 +27,61 @@ export function getRedis(): RedisClientType {
     return client;
   }
 
+  // ✅ If no REDIS_URL set, use mock client (for services that don't need Redis)
+  const url = process.env.REDIS_URL;
+
+  if (!url) {
+    console.log("[redis] MOCK MODE – no REDIS_URL set, using in-memory stub");
+    const store = new Map<string, string>();
+    const hashStore = new Map<string, Map<string, string>>();
+    const listStore = new Map<string, string[]>();
+
+    const mock: Partial<RedisClientType> = {
+      // Hash operations
+      // @ts-ignore - Mock signature doesn't match all overloads
+      hSet: async (key: any, field: any, value: any) => {
+        const k = String(key);
+        const f = String(field);
+        const v = String(value);
+        if (!hashStore.has(k)) hashStore.set(k, new Map());
+        hashStore.get(k)!.set(f, v);
+        return 1;
+      },
+      hGet: async (key: any, field: any) => {
+        const k = String(key);
+        const f = String(field);
+        return hashStore.get(k)?.get(f) ?? null;
+      },
+      // Key expiry (no-op in mock)
+      expire: async () => 1,
+      // Simple string operations
+      set: async (key: any, value: any) => {
+        store.set(String(key), String(value));
+        return "OK" as any;
+      },
+      get: async (key: any) => {
+        return store.get(String(key)) ?? null;
+      },
+      del: async (key: any) => {
+        const existed = store.delete(String(key));
+        return existed ? 1 : 0;
+      },
+      // List operations
+      // @ts-ignore - Mock signature doesn't match all overloads
+      lPush: async (key: any, ...values: any[]) => {
+        const k = String(key);
+        if (!listStore.has(k)) listStore.set(k, []);
+        listStore.get(k)!.unshift(...values.map(String));
+        return listStore.get(k)!.length as any;
+      },
+      lTrim: async () => "OK" as any,
+    };
+
+    client = mock as RedisClientType;
+    return client;
+  }
+
   // ✅ Normal behaviour (server/worker in dev/prod)
-  const url = process.env.REDIS_URL || "redis://localhost:6379";
   client = createClient({ url });
 
   client.on("error", (err: any) => {
