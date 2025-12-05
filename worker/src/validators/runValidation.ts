@@ -1,67 +1,330 @@
-import { VALIDATION_PROFILES, ValidationResult, StageId, SceneType } from "./config";
-import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
-import { computeStructuralEdgeMask } from "./structuralMask";
-import { validateStage2Structural } from "./stage2StructuralValidator";
+/**
+ * Unified Structural Validation Pipeline for RealEnhance v2.0
+ *
+ * This module provides a single entry point for all structural validation,
+ * aggregating results from multiple validators into a unified verdict.
+ *
+ * Design:
+ * - Runs selected structural validators (window, wall, edge, line detection)
+ * - Skips cosmetic validators (brightness, size, landcover)
+ * - Aggregates results into pass/fail + score
+ * - Operates in log-only mode by default (never blocks images)
+ * - Easy to enable blocking later with one-line change
+ */
+
 import { validateWindows } from "./windowValidator";
-import { checkSizeMatch } from "./sizeValidator";
-import { computeBrightnessDiff } from "./brightnessValidator";
+import { validateWallStructure } from "./wallValidator";
+import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
+import { validateStage2Structural } from "./stage2StructuralValidator";
+import { validateLineStructure } from "./lineEdgeValidator";
+import { loadOrComputeStructuralMask } from "./structuralMask";
+import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
 
-export async function validateStageOutput(
-  stage: StageId,
-  sceneType: SceneType,
-  basePath: string,
-  candidatePath: string
-): Promise<ValidationResult> {
-  const profile = VALIDATION_PROFILES.find(p => p.stage === stage && (p.sceneType === sceneType || p.sceneType === "any"));
-  if (!profile) {
-    return { ok: true, stage, sceneType, reason: "ok", message: "No validation profile configured; treating as pass" };
+/**
+ * Result from a single validator
+ */
+export type ValidatorResult = {
+  name: string;
+  passed: boolean;
+  score?: number;        // 0.0-1.0 if available
+  message?: string;
+  details?: any;
+};
+
+/**
+ * Unified validation result
+ */
+export type UnifiedValidationResult = {
+  passed: boolean;
+  score: number;             // aggregate structural score 0–1
+  reasons: string[];         // human-readable reasons / warnings
+  raw: Record<string, ValidatorResult>;  // per-validator raw results
+};
+
+/**
+ * Parameters for unified validation
+ */
+export interface UnifiedValidationParams {
+  originalPath: string;
+  enhancedPath: string;
+  stage: "1A" | "1B" | "2";
+  sceneType?: "interior" | "exterior";
+  roomType?: string;
+  mode?: "log" | "enforce";
+  jobId?: string;
+}
+
+/**
+ * Run unified structural validation across multiple validators
+ *
+ * This is the single entry point for all structural validation.
+ * It runs a curated set of structural validators and aggregates their results.
+ *
+ * Validators included:
+ * - Window validation (window/door obstruction, blocking natural light)
+ * - Wall validation (wall geometry, openings)
+ * - Global edge IoU (overall geometry consistency)
+ * - Structural IoU with mask (Stage 2 only)
+ * - Line/edge detection (Hough-based structural deviation)
+ *
+ * Validators excluded (cosmetic, not structural):
+ * - Brightness validator
+ * - Size validator
+ * - Landcover validator
+ *
+ * @param params Validation parameters
+ * @returns Unified validation result with aggregate score and per-validator details
+ */
+export async function runUnifiedValidation(
+  params: UnifiedValidationParams
+): Promise<UnifiedValidationResult> {
+  const {
+    originalPath,
+    enhancedPath,
+    stage,
+    sceneType = "interior",
+    roomType,
+    mode = "log",
+    jobId,
+  } = params;
+
+  const validatorMode = getValidatorMode("structure");
+
+  console.log(`[unified-validator] === Starting Unified Structural Validation ===`);
+  console.log(`[unified-validator] Stage: ${stage}`);
+  console.log(`[unified-validator] Scene: ${sceneType}`);
+  console.log(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
+  console.log(`[unified-validator] Original: ${originalPath}`);
+  console.log(`[unified-validator] Enhanced: ${enhancedPath}`);
+
+  // Check if validators are enabled
+  if (!isValidatorEnabled("structure")) {
+    console.log(`[unified-validator] Structural validators disabled (mode=off)`);
+    return {
+      passed: true,
+      score: 1.0,
+      reasons: ["Validators disabled"],
+      raw: {},
+    };
   }
+
+  const results: Record<string, ValidatorResult> = {};
+  const reasons: string[] = [];
+
+  // ===== 1. WINDOW VALIDATION =====
+  // Critical for real estate: windows must not be blocked or altered
+  if (stage === "1B" || stage === "2") {
+    try {
+      const windowResult = await validateWindows(originalPath, enhancedPath);
+      const passed = windowResult.ok;
+      results.windows = {
+        name: "windows",
+        passed,
+        score: passed ? 1.0 : 0.0,
+        message: windowResult.reason || (passed ? "Windows preserved" : "Window issues detected"),
+        details: windowResult,
+      };
+      if (!passed) {
+        reasons.push(`Window validation failed: ${windowResult.reason}`);
+      }
+    } catch (err) {
+      console.warn("[unified-validator] Window validation error:", err);
+      results.windows = {
+        name: "windows",
+        passed: true, // Fail-open
+        score: 0.5,
+        message: "Window validator error (fail-open)",
+        details: { error: String(err) },
+      };
+    }
+  }
+
+  // ===== 2. WALL VALIDATION =====
+  // Validates wall structure and openings
   try {
-    if (profile.enforceSizeMatch) {
-      const sizeOk = await checkSizeMatch(basePath, candidatePath);
-      if (!sizeOk) {
-        return { ok: false, stage, sceneType, reason: "size_mismatch", message: "Image dimensions do not match base." };
-      }
+    const wallResult = await validateWallStructure(originalPath, enhancedPath);
+    const passed = wallResult.ok;
+    results.walls = {
+      name: "walls",
+      passed,
+      score: passed ? 1.0 : 0.0,
+      message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
+      details: wallResult,
+    };
+    if (!passed) {
+      reasons.push(`Wall validation failed: ${wallResult.reason}`);
     }
-
-    let globalEdgeIoU: number | undefined;
-    let structuralIoU: number | undefined;
-
-    if (profile.minGlobalEdgeIoU !== undefined) {
-      const m = await runGlobalEdgeMetrics(basePath, candidatePath);
-      globalEdgeIoU = m.edgeIoU;
-      if (globalEdgeIoU < profile.minGlobalEdgeIoU) {
-        return { ok: false, stage, sceneType, globalEdgeIoU, reason: "structural_geometry", message: `Global edge IoU too low (${globalEdgeIoU.toFixed(3)}).` };
-      }
-    }
-
-    if (profile.minStructuralIoU !== undefined) {
-      // Build structural mask from base and compute masked IoU
-      const mask = await computeStructuralEdgeMask(basePath);
-      const m = await validateStage2Structural(basePath, candidatePath, { structuralMask: mask });
-      structuralIoU = m.structuralIoU;
-      if (structuralIoU !== undefined && profile.minStructuralIoU !== undefined && structuralIoU < profile.minStructuralIoU) {
-        return { ok: false, stage, sceneType, structuralIoU, reason: "structural_geometry" };
-      }
-    }
-
-    let brightnessDiff: number | undefined;
-    if (profile.maxBrightnessDiff !== undefined) {
-      brightnessDiff = await computeBrightnessDiff(basePath, candidatePath);
-      if (Math.abs(brightnessDiff) > profile.maxBrightnessDiff) {
-        return { ok: false, stage, sceneType, brightnessDiff, reason: "brightness_out_of_range", message: `Brightness change too large (${brightnessDiff.toFixed(3)}).` };
-      }
-    }
-
-    if (profile.enforceWindowIoU) {
-      const winRes = await validateWindows(basePath, candidatePath);
-      if (!winRes.ok) {
-        return { ok: false, stage, sceneType, reason: (winRes.reason as any) };
-      }
-    }
-
-    return { ok: true, stage, sceneType, structuralIoU, globalEdgeIoU, brightnessDiff, reason: "ok" };
-  } catch (err: any) {
-    return { ok: false, stage, sceneType, reason: "validator_error" };
+  } catch (err) {
+    console.warn("[unified-validator] Wall validation error:", err);
+    results.walls = {
+      name: "walls",
+      passed: true, // Fail-open
+      score: 0.5,
+      message: "Wall validator error (fail-open)",
+      details: { error: String(err) },
+    };
   }
+
+  // ===== 3. GLOBAL EDGE IoU =====
+  // Overall geometry consistency check
+  try {
+    const edgeResult = await runGlobalEdgeMetrics(originalPath, enhancedPath);
+    const edgeIoU = edgeResult.edgeIoU;
+
+    // Thresholds by stage
+    const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
+    const passed = edgeIoU >= minEdgeIoU;
+
+    results.globalEdge = {
+      name: "globalEdge",
+      passed,
+      score: edgeIoU,
+      message: `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`,
+      details: { edgeIoU, minEdgeIoU },
+    };
+    if (!passed) {
+      reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
+    }
+  } catch (err) {
+    console.warn("[unified-validator] Global edge validation error:", err);
+    results.globalEdge = {
+      name: "globalEdge",
+      passed: true, // Fail-open
+      score: 0.5,
+      message: "Global edge validator error (fail-open)",
+      details: { error: String(err) },
+    };
+  }
+
+  // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
+  // Focused check on architectural elements during staging
+  if (stage === "2") {
+    try {
+      const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath);
+      const structResult = await validateStage2Structural(originalPath, enhancedPath, {
+        structuralMask: mask,
+      });
+      const structIoU = structResult.structuralIoU || 0;
+      const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
+      const passed = structResult.ok && structIoU >= minStructIoU;
+
+      results.structuralMask = {
+        name: "structuralMask",
+        passed,
+        score: structIoU,
+        message: `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`,
+        details: { structIoU, minStructIoU, reason: structResult.reason },
+      };
+      if (!passed) {
+        reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
+        if (structResult.reason) {
+          reasons.push(`Reason: ${structResult.reason}`);
+        }
+      }
+    } catch (err) {
+      console.warn("[unified-validator] Structural mask validation error:", err);
+      results.structuralMask = {
+        name: "structuralMask",
+        passed: true, // Fail-open
+        score: 0.5,
+        message: "Structural mask validator error (fail-open)",
+        details: { error: String(err) },
+      };
+    }
+  }
+
+  // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
+  // Detects line shifts using Hough transform
+  try {
+    const lineResult = await validateLineStructure({
+      originalPath,
+      enhancedPath,
+      sensitivity: 0.70, // 70% similarity threshold
+    });
+
+    results.lineEdge = {
+      name: "lineEdge",
+      passed: lineResult.passed,
+      score: lineResult.score,
+      message: lineResult.message,
+      details: {
+        edgeLoss: lineResult.edgeLoss,
+        edgeShift: lineResult.edgeShift,
+        verticalDeviation: lineResult.verticalDeviation,
+        horizontalDeviation: lineResult.horizontalDeviation,
+        ...lineResult.details,
+      },
+    };
+    if (!lineResult.passed) {
+      reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+    }
+  } catch (err) {
+    console.warn("[unified-validator] Line/edge validation error:", err);
+    results.lineEdge = {
+      name: "lineEdge",
+      passed: true, // Fail-open
+      score: 0.5,
+      message: "Line/edge validator error (fail-open)",
+      details: { error: String(err) },
+    };
+  }
+
+  // ===== AGGREGATE RESULTS =====
+
+  // Compute weighted aggregate score
+  // Weights prioritize critical structural elements
+  const weights = {
+    windows: 0.25,        // Critical: must not block windows/doors
+    walls: 0.20,          // Important: wall structure must be preserved
+    globalEdge: 0.20,     // Important: overall geometry consistency
+    structuralMask: 0.20, // Important: architectural elements (Stage 2)
+    lineEdge: 0.15,       // Useful: line deviation detection
+  };
+
+  let totalScore = 0;
+  let totalWeight = 0;
+
+  for (const [key, result] of Object.entries(results)) {
+    const weight = weights[key as keyof typeof weights] || 0.1;
+    const score = result.score !== undefined ? result.score : (result.passed ? 1.0 : 0.0);
+    totalScore += score * weight;
+    totalWeight += weight;
+  }
+
+  const aggregateScore = totalWeight > 0 ? totalScore / totalWeight : 1.0;
+
+  // Determine overall pass/fail
+  // In log-only mode, we still compute passed for metric collection
+  const allPassed = Object.values(results).every(r => r.passed);
+
+  // Log detailed results
+  console.log(`[unified-validator] === Validation Results ===`);
+  for (const [key, result] of Object.entries(results)) {
+    const icon = result.passed ? "✓" : "✗";
+    const scoreStr = result.score !== undefined ? ` (score: ${result.score.toFixed(3)})` : "";
+    console.log(`[unified-validator]   ${icon} ${result.name}${scoreStr}: ${result.message}`);
+  }
+  console.log(`[unified-validator] Aggregate Score: ${aggregateScore.toFixed(3)}`);
+  console.log(`[unified-validator] Overall: ${allPassed ? "PASSED" : "FAILED"}`);
+
+  if (reasons.length > 0) {
+    console.log(`[unified-validator] Failure Reasons:`);
+    reasons.forEach(reason => console.log(`[unified-validator]   - ${reason}`));
+  }
+
+  // Handle blocking logic
+  if (mode === "enforce" && !allPassed) {
+    console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (mode=enforce)`);
+  } else if (!allPassed) {
+    console.warn(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
+  }
+
+  console.log(`[unified-validator] ===============================`);
+
+  return {
+    passed: allPassed,
+    score: Math.round(aggregateScore * 1000) / 1000,
+    reasons,
+    raw: results,
+  };
 }
