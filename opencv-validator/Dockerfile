@@ -25,4 +25,5 @@ COPY app.py .
 EXPOSE 8000
 
 # Run FastAPI with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Railway provides dynamic PORT env var - must use shell form to expand it
+CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
