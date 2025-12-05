@@ -130,7 +130,7 @@ export async function validateStructure(
         sensitivity,
       },
       {
-        timeout: 30000, // 30 second timeout
+        timeout: 90000, // 90 second timeout (Railway has 30s limit, but we give it time)
         headers: {
           "Content-Type": "application/json",
         },

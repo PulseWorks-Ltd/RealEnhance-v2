@@ -102,6 +102,16 @@ def detect_lines(img: np.ndarray) -> np.ndarray:
     Returns:
         Array of lines, shape (N, 4) where each line is [x1, y1, x2, y2]
     """
+    # Resize large images to prevent memory issues and speed up processing
+    max_dimension = 1920  # Max width or height
+    h, w = img.shape[:2]
+    if max(h, w) > max_dimension:
+        scale = max_dimension / max(h, w)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        logger.info(f"Resized image from {w}x{h} to {new_w}x{new_h} for processing")
+
     # Convert to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -236,12 +246,22 @@ def validate_structure(request: ValidationRequest) -> ValidationResponse:
 
     try:
         # Download images
+        logger.info(f"Downloading original image: {request.originalUrl[:100]}...")
         original_img = download_image(request.originalUrl)
+        logger.info(f"✓ Original downloaded successfully: shape={original_img.shape}, size={original_img.nbytes} bytes")
+
+        logger.info(f"Downloading enhanced image: {request.enhancedUrl[:100]}...")
         enhanced_img = download_image(request.enhancedUrl)
+        logger.info(f"✓ Enhanced downloaded successfully: shape={enhanced_img.shape}, size={enhanced_img.nbytes} bytes")
 
         # Detect lines
+        logger.info("Detecting lines in original image...")
         original_lines = detect_lines(original_img)
+        logger.info(f"✓ Detected {len(original_lines)} lines in original")
+
+        logger.info("Detecting lines in enhanced image...")
         enhanced_lines = detect_lines(enhanced_img)
+        logger.info(f"✓ Detected {len(enhanced_lines)} lines in enhanced")
 
         # Classify lines
         original_summary = classify_lines(original_lines)
@@ -283,7 +303,15 @@ def validate_structure(request: ValidationRequest) -> ValidationResponse:
         )
 
     except Exception as e:
-        logger.error(f"Validation failed: {e}")
+        logger.error(f"Validation failed: {e}", exc_info=True)
+        # Return detailed error information
+        import traceback
+        error_detail = {
+            "error": str(e),
+            "type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        logger.error(f"Full error details: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
 
 
