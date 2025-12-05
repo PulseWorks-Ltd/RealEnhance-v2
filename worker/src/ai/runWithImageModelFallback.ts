@@ -4,7 +4,6 @@ import { logGeminiError } from "../utils/logGeminiError";
 // Prefer full image model first, then preview/cheaper variant
 const MODEL_FALLBACKS = [
   "gemini-2.5-flash-image",
-  "gemini-2.5-flash-image-preview",
 ];
 
 type GenerateContentParams = Parameters<GoogleGenAI['models']['generateContent']>[0];

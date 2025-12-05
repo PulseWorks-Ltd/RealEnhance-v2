@@ -39,7 +39,7 @@ import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
-import { validateLineStructure } from "./validators/lineEdgeValidator";
+import { runStructuralCheck } from "./validators/structureValidatorClient";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -652,46 +652,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
 
-  // 🔍 LINE-EDGE STRUCTURAL VALIDATOR (LOG-ONLY MODE)
-  // Run structural validation on the final output image
-  try {
-    const validation = await validateLineStructure({
-      originalPath: origPath,
-      enhancedPath: finalBasePath,
-      sensitivity: 0.75,
-    });
-
-    // ALWAYS log results
-    console.log("[validator] Line-Edge Structural Analysis:", {
-      passed: validation.passed,
-      score: validation.score,
-      edgeLoss: validation.edgeLoss,
-      edgeShift: validation.edgeShift,
-      verticalDeviation: validation.verticalDeviation,
-      horizontalDeviation: validation.horizontalDeviation,
-      message: validation.message,
-    });
-
-    if (validation.details) {
-      console.log("[validator] Detailed metrics:", validation.details);
-    }
-
-    // LOG-ONLY MODE: DO NOT BLOCK IMAGES
-    // Set to true once tuning is complete to enable blocking
-    const BLOCKING_ENABLED = false;
-
-    if (BLOCKING_ENABLED && !validation.passed) {
-      console.warn("[validator] ⚠️ Image WOULD BE BLOCKED:", validation.message);
-      console.warn("[validator] Set BLOCKING_ENABLED=false to allow image through");
-      // Future blocking logic would go here:
-      // throw new Error(`Structural validation failed: ${validation.message}`);
-    } else if (!validation.passed) {
-      console.log("[validator] ℹ️ Image allowed to proceed (blocking disabled)");
-    }
-  } catch (err) {
-    console.warn("[validator] Line-edge validation skipped due to error:", err);
-    // Never block on validator errors - fail open
-  }
+  // 🔍 OPENCV STRUCTURAL VALIDATOR
+  // Run OpenCV-based structural validation before publishing final output
+  // This must happen AFTER we know what the final output will be but BEFORE publishing
+  // Note: We'll call it after publishing to get the public URL for the OpenCV service
+  let structuralValidationResult: any = null;
 
   if (finalBasePath === path1A && pub1AUrl) {
     process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
@@ -723,6 +688,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
       process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
     }
+  }
+
+  // 🔍 RUN OPENCV STRUCTURAL VALIDATION
+  // Now that we have public URLs for both original and final, validate structure
+  // This uses the Python OpenCV microservice for proper line detection
+  if (pubFinalUrl && publishedOriginal?.url) {
+    try {
+      structuralValidationResult = await runStructuralCheck(
+        publishedOriginal.url,
+        pubFinalUrl
+      );
+      // Validation result is logged inside runStructuralCheck
+      // If mode="block" and isSuspicious=true, it will throw and abort the job
+    } catch (validationError: any) {
+      // If validator throws (blocking mode), propagate the error
+      if (validationError.message?.includes("Structural validation failed")) {
+        console.error("[worker] Structural validation blocked the image");
+        throw validationError;
+      }
+      // Otherwise just log and continue (fail open)
+      console.warn("[worker] Structural validation error (non-blocking):", validationError.message);
+    }
+  } else {
+    console.log("[worker] Skipping structural validation (no public URLs available)");
   }
 
   // 🔹 Record final output in Redis for later region-edit lookups
