@@ -25,4 +25,5 @@ COPY app.py .
 EXPOSE 8000
 
 # Run FastAPI with Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use shell form to allow environment variable expansion
+CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
