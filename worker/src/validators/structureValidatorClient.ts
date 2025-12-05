@@ -25,11 +25,13 @@ export interface LineSummary {
   avgHorizontalAngle: number;
 }
 
+import { ValidatorMode, getValidatorMode, isValidatorEnabled } from "./validatorMode";
+
 /**
  * Structural validation result
  */
 export interface StructureValidationResult {
-  mode: "off" | "log" | "block";
+  mode: ValidatorMode;
   isSuspicious: boolean;
   deviationScore: number;
   verticalShift: number;
@@ -45,7 +47,7 @@ export interface StructureValidationResult {
  */
 function getValidatorConfig() {
   const url = process.env.STRUCTURE_VALIDATOR_URL;
-  const mode = (process.env.STRUCTURE_VALIDATOR_MODE ?? "log") as "off" | "log" | "block";
+  const mode = getValidatorMode("structure");
   const sensitivity = parseFloat(process.env.STRUCTURE_VALIDATOR_SENSITIVITY ?? "5.0");
 
   return { url, mode, sensitivity };
