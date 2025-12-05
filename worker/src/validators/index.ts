@@ -229,5 +229,13 @@ export async function validateStageOutput(
   return result;
 }
 
+// Export unified validation pipeline
+export {
+  runUnifiedValidation,
+  type UnifiedValidationResult,
+  type UnifiedValidationParams,
+  type ValidatorResult,
+} from "./runValidation";
+
 // Export helpers for potential debugging / metrics collection.
 export const _internal = { normalizeDimensions, aspectRatioApproximatelyEqual };

@@ -41,6 +41,7 @@ import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
 import { logValidatorConfig } from "./validators/validatorMode";
+import { runUnifiedValidation, type UnifiedValidationResult } from "./validators/runValidation";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -127,6 +128,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const timings: Record<string, number> = {};
   const t0 = Date.now();
+
+  // UNIFIED VALIDATION CONFIGURATION
+  // Set to true to enable blocking on validation failures
+  // For now: LOG-ONLY MODE (never blocks images)
+  const VALIDATION_BLOCKING_ENABLED = false;
 
   // Publish original so client can render before/after across services
   process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
@@ -539,6 +545,82 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // ===== UNIFIED STRUCTURAL VALIDATION =====
+  // Run unified validation pipeline for Stage 2
+  let unifiedValidation: UnifiedValidationResult | undefined = undefined;
+  if (path2 && payload.options.virtualStage) {
+    try {
+      const validationStartTime = Date.now();
+
+      // Determine which stage to validate
+      const validationStage: "1A" | "1B" | "2" = payload.options.virtualStage ? "2" :
+                                                 (payload.options.declutter ? "1B" : "1A");
+
+      // Get the base path (original or Stage 1A for comparison)
+      const validationBasePath = path1A;
+
+      console.log(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
+
+      unifiedValidation = await runUnifiedValidation({
+        originalPath: validationBasePath,
+        enhancedPath: path2,
+        stage: validationStage,
+        sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        roomType: payload.options.roomType,
+        mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
+        jobId: payload.jobId,
+      });
+
+      const validationElapsed = Date.now() - validationStartTime;
+      console.log(`[worker] Unified validation completed in ${validationElapsed}ms`);
+      console.log(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
+
+      // Store validation results in job metadata
+      updateJob(payload.jobId, {
+        meta: {
+          ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
+          scenePrimary,
+          unifiedValidation: {
+            passed: unifiedValidation.passed,
+            score: unifiedValidation.score,
+            reasons: unifiedValidation.reasons,
+          },
+        },
+      });
+
+      // Handle blocking logic (currently disabled)
+      if (VALIDATION_BLOCKING_ENABLED && !unifiedValidation.passed) {
+        const failureMsg = `Structural validation failed: ${unifiedValidation.reasons.join("; ")}`;
+        console.error(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
+        console.error(`[worker] Validation score: ${unifiedValidation.score}`);
+        console.error(`[worker] Reasons: ${unifiedValidation.reasons.join("; ")}`);
+
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: failureMsg,
+          error: failureMsg,
+          message: `Image failed structural validation (score: ${unifiedValidation.score})`,
+          meta: {
+            scene: { label: sceneLabel as any, confidence: 0.5 },
+            scenePrimary,
+            unifiedValidation,
+            structuralValidationFailed: true,
+          },
+        });
+
+        // In blocking mode, stop here and don't publish
+        // For now this code path never runs (VALIDATION_BLOCKING_ENABLED = false)
+        return;
+      }
+
+    } catch (validationError: any) {
+      // Validation errors should never crash the job
+      console.error(`[worker] Unified validation error (non-fatal):`, validationError);
+      console.error(`[worker] Stack:`, validationError?.stack);
+      // Continue processing - fail-open behavior
+    }
+  }
+
   // COMPLIANCE VALIDATION (best-effort)
   let compliance: any = undefined;
   const tVal = Date.now();
@@ -598,6 +680,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // console.warn("[worker] compliance check skipped:", (e as any)?.message || e);
   }
   timings.validateMs = Date.now() - tVal;
+
+  // Log combined validation summary
+  if (unifiedValidation || compliance) {
+    console.log(`[worker] ═══════════ Validation Summary ═══════════`);
+    if (unifiedValidation) {
+      console.log(`[worker] Unified Structural: ${unifiedValidation.passed ? "✓ PASSED" : "✗ FAILED"} (score: ${unifiedValidation.score})`);
+      if (!unifiedValidation.passed && unifiedValidation.reasons.length > 0) {
+        console.log(`[worker] Structural issues: ${unifiedValidation.reasons.join("; ")}`);
+      }
+    }
+    if (compliance) {
+      console.log(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"}`);
+      if (!compliance.ok && compliance.reasons) {
+        console.log(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
+      }
+    }
+    console.log(`[worker] Blocking mode: ${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED (log-only)"}`);
+    console.log(`[worker] ═══════════════════════════════════════════`);
+  }
 
   // stage 1B publishing was deferred until here; attach URL and surface progress
   // pub1BUrl already declared above; removed duplicate
