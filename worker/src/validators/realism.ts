@@ -1,6 +1,31 @@
+import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
+
 export async function validateRealism(
   finalPath: string
-): Promise<{ ok: boolean; notes?: string[] }> {
+): Promise<{ ok: boolean; notes?: string[]; disabled?: boolean }> {
+  // Check if realism validator is enabled
+  const mode = getValidatorMode("realism");
+
+  if (!isValidatorEnabled("realism")) {
+    console.log("[realism-validator] Realism validator disabled (mode=off)");
+    return {
+      ok: true,
+      notes: ["Realism validator disabled - skipping Gemini check"],
+      disabled: true,
+    };
+  }
+
+  // IMPORTANT: Gemini-based validators must remain disabled for now
+  // This is a safety measure to prevent Gemini API calls during log-only testing
+  console.warn("[realism-validator] Gemini-based realism validator is DISABLED by design");
+  console.warn("[realism-validator] This validator will be re-enabled after log-only testing phase");
+  return {
+    ok: true,
+    notes: ["Gemini-based realism validator temporarily disabled"],
+    disabled: true,
+  };
+
+  /* DISABLED CODE - Will be re-enabled after log-only testing
   // Use Gemini to check realism: furniture scale, lighting, floating objects
   const { buildRealismPrompt } = await import('./realism-prompt.js');
   const { getGeminiClient } = await import('../ai/gemini.js');
@@ -37,4 +62,5 @@ export async function validateRealism(
     ...(Array.isArray(result.notes) ? result.notes : [])
   ].filter(Boolean);
   return { ok, notes };
+  */
 }

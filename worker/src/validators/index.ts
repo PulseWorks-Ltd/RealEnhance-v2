@@ -4,6 +4,13 @@ import { computeBrightnessDiff } from "./brightnessValidator";
 import { StructuralMask, loadOrComputeStructuralMask } from "./structuralMask";
 import { validateStage1BStructural } from "./stage1BValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
+import {
+  getValidatorMode,
+  isValidatorEnabled,
+  shouldValidatorBlock,
+  isLogOnlyMode,
+  ValidatorMode,
+} from "./validatorMode";
 
 // OpenCV-based structural validator
 import { validateStructureWithOpenCV } from "../ai/validators/structural-opencv";
@@ -22,6 +29,8 @@ export type ValidationResult = {
   ok: boolean;
   reason?: string; // structural_change | dimension_change | validator_error
   details?: Record<string, unknown>;
+  mode?: ValidatorMode; // The mode used for this validation
+  blocked?: boolean; // true if validation blocked the image
 };
 
 type NormalizeResult = {
@@ -155,12 +164,69 @@ export async function validateStageOutput(
   stage: StageName,
   basePath: string,
   outputPath: string,
-  context: { sceneType: "interior" | "exterior"; roomType?: string }
+  context: { sceneType: "interior" | "exterior"; roomType?: string; jobId?: string }
 ): Promise<ValidationResult> {
+  const mode = getValidatorMode("structure");
+
+  // Check if validator is enabled
+  if (!isValidatorEnabled("structure")) {
+    console.log(`[validator:${stage}] Structural validator disabled (mode=off)`);
+    return {
+      ok: true,
+      reason: "validator_disabled",
+      mode,
+      blocked: false,
+      details: { stage, sceneType: context.sceneType },
+    };
+  }
+
+  console.log(`[validator:${stage}] Running structural validation (mode=${mode}, scene=${context.sceneType})`);
+
   const { fixedOutputPath, sizeMismatch } = await normalizeDimensions(basePath, outputPath);
-  if (stage === "stage1A") return validateStage1A(basePath, fixedOutputPath, context, sizeMismatch);
-  if (stage === "stage1B") return validateStage1B(basePath, fixedOutputPath, context, sizeMismatch);
-  return validateStage2(basePath, fixedOutputPath, context, sizeMismatch);
+
+  let result: ValidationResult;
+  if (stage === "stage1A") {
+    result = await validateStage1A(basePath, fixedOutputPath, context, sizeMismatch);
+  } else if (stage === "stage1B") {
+    result = await validateStage1B(basePath, fixedOutputPath, context, sizeMismatch);
+  } else {
+    result = await validateStage2(basePath, fixedOutputPath, context, sizeMismatch);
+  }
+
+  // Attach mode info
+  result.mode = mode;
+
+  // Log validation result
+  console.log(`[validator:${stage}] === Validation Result ===`);
+  console.log(`[validator:${stage}] Stage: ${stage}`);
+  console.log(`[validator:${stage}] Scene: ${context.sceneType}`);
+  console.log(`[validator:${stage}] Mode: ${mode}`);
+  console.log(`[validator:${stage}] OK: ${result.ok}`);
+  if (result.reason) {
+    console.log(`[validator:${stage}] Reason: ${result.reason}`);
+  }
+  if (result.details) {
+    console.log(`[validator:${stage}] Details: ${JSON.stringify(result.details, null, 2)}`);
+  }
+
+  // Determine if we should block based on mode
+  const shouldBlock = !result.ok && shouldValidatorBlock("structure");
+  result.blocked = shouldBlock;
+
+  if (!result.ok && isLogOnlyMode("structure")) {
+    console.warn(`[validator:${stage}] ⚠️ Validation failed but not blocking (log-only mode)`);
+    console.warn(`[validator:${stage}] Failure reason: ${result.reason}`);
+    // Override to ok=true in log-only mode so the image continues
+    result.ok = true;
+  } else if (shouldBlock) {
+    console.error(`[validator:${stage}] ❌ Validation failed - BLOCKING image`);
+  } else if (result.ok) {
+    console.log(`[validator:${stage}] ✓ Validation passed`);
+  }
+
+  console.log(`[validator:${stage}] =======================`);
+
+  return result;
 }
 
 // Export helpers for potential debugging / metrics collection.

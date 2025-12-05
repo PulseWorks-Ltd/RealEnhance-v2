@@ -40,6 +40,7 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
+import { logValidatorConfig } from "./validators/validatorMode";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -888,6 +889,10 @@ console.log('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (w
 const s3Enabled = !!(process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
 console.log('  📊 Status:', s3Enabled ? '✅ ENABLED - Images will upload to S3' : '❌ DISABLED - Will use data URLs');
 console.log('╚════════════════════════════════════════════════════════════════╝');
+process.stdout.write('\n'); // Force flush
+
+// Log validator configuration on startup
+logValidatorConfig();
 process.stdout.write('\n'); // Force flush
 
 // BullMQ worker
