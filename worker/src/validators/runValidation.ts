@@ -19,6 +19,7 @@ import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
 import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
+import { vLog, nLog } from "../logger";
 
 /**
  * Result from a single validator
@@ -90,16 +91,16 @@ export async function runUnifiedValidation(
 
   const validatorMode = getValidatorMode("structure");
 
-  console.log(`[unified-validator] === Starting Unified Structural Validation ===`);
-  console.log(`[unified-validator] Stage: ${stage}`);
-  console.log(`[unified-validator] Scene: ${sceneType}`);
-  console.log(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
-  console.log(`[unified-validator] Original: ${originalPath}`);
-  console.log(`[unified-validator] Enhanced: ${enhancedPath}`);
+  nLog(`[unified-validator] === Starting Unified Structural Validation ===`);
+  nLog(`[unified-validator] Stage: ${stage}`);
+  nLog(`[unified-validator] Scene: ${sceneType}`);
+  nLog(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
+  nLog(`[unified-validator] Original: ${originalPath}`);
+  nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
 
   // Check if validators are enabled
   if (!isValidatorEnabled("structure")) {
-    console.log(`[unified-validator] Structural validators disabled (mode=off)`);
+    nLog(`[unified-validator] Structural validators disabled (mode=off)`);
     return {
       passed: true,
       score: 1.0,
@@ -297,34 +298,110 @@ export async function runUnifiedValidation(
   // In log-only mode, we still compute passed for metric collection
   const allPassed = Object.values(results).every(r => r.passed);
 
-  // Log detailed results
-  console.log(`[unified-validator] === Validation Results ===`);
+  // Log detailed results (normal mode)
+  nLog(`[unified-validator] === Validation Results ===`);
   for (const [key, result] of Object.entries(results)) {
     const icon = result.passed ? "✓" : "✗";
     const scoreStr = result.score !== undefined ? ` (score: ${result.score.toFixed(3)})` : "";
-    console.log(`[unified-validator]   ${icon} ${result.name}${scoreStr}: ${result.message}`);
+    nLog(`[unified-validator]   ${icon} ${result.name}${scoreStr}: ${result.message}`);
   }
-  console.log(`[unified-validator] Aggregate Score: ${aggregateScore.toFixed(3)}`);
-  console.log(`[unified-validator] Overall: ${allPassed ? "PASSED" : "FAILED"}`);
+  nLog(`[unified-validator] Aggregate Score: ${aggregateScore.toFixed(3)}`);
+  nLog(`[unified-validator] Overall: ${allPassed ? "PASSED" : "FAILED"}`);
 
   if (reasons.length > 0) {
-    console.log(`[unified-validator] Failure Reasons:`);
-    reasons.forEach(reason => console.log(`[unified-validator]   - ${reason}`));
+    nLog(`[unified-validator] Failure Reasons:`);
+    reasons.forEach(reason => nLog(`[unified-validator]   - ${reason}`));
   }
 
   // Handle blocking logic
   if (mode === "enforce" && !allPassed) {
     console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (mode=enforce)`);
   } else if (!allPassed) {
-    console.warn(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
+    nLog(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
   }
 
-  console.log(`[unified-validator] ===============================`);
+  nLog(`[unified-validator] ===============================`);
 
-  return {
+  const finalResult: UnifiedValidationResult = {
     passed: allPassed,
     score: Math.round(aggregateScore * 1000) / 1000,
     reasons,
     raw: results,
   };
+
+  return finalResult;
+}
+
+/**
+ * Output compact unified validation logs for VALIDATOR_FOCUS mode
+ *
+ * This function is called from worker.ts when VALIDATOR_FOCUS is enabled.
+ * It produces concise, structured output matching the specified format.
+ *
+ * @param jobId Job ID for log prefix
+ * @param result Unified validation result
+ * @param stage Stage being validated
+ * @param sceneType Scene type
+ */
+export function logUnifiedValidationCompact(
+  jobId: string,
+  result: UnifiedValidationResult,
+  stage: string,
+  sceneType: string
+) {
+  vLog(
+    `[VAL][job=${jobId}] UnifiedStructural: ${result.passed ? "PASSED" : "FAILED"} ` +
+    `(score=${result.score.toFixed(3)})`
+  );
+
+  vLog(`[VAL][job=${jobId}]   stage=${stage} scene=${sceneType}`);
+
+  // Windows
+  const windows = result.raw.windows;
+  if (windows) {
+    const windowsScore = windows.score !== undefined ? windows.score.toFixed(3) : "N/A";
+    const windowsReason = windows.passed ? "(ok)" : `(${windows.details?.reason || "failed"})`;
+    vLog(`[VAL][job=${jobId}]   windows=${windowsScore} ${windowsReason}`);
+  }
+
+  // Walls
+  const walls = result.raw.walls;
+  if (walls) {
+    const wallsScore = walls.score !== undefined ? walls.score.toFixed(3) : "N/A";
+    const wallsReason = walls.passed ? "(ok)" : `(${walls.details?.reason || "failed"})`;
+    vLog(`[VAL][job=${jobId}]   walls=${wallsScore} ${wallsReason}`);
+  }
+
+  // Global Edge
+  const globalEdge = result.raw.globalEdge;
+  if (globalEdge) {
+    const edgeScore = globalEdge.score !== undefined ? globalEdge.score.toFixed(3) : "N/A";
+    const edgeThreshold = globalEdge.details?.minEdgeIoU !== undefined
+      ? globalEdge.details.minEdgeIoU.toFixed(3)
+      : "N/A";
+    vLog(`[VAL][job=${jobId}]   globalEdge=${edgeScore}/${edgeThreshold}`);
+  }
+
+  // Structural IoU with Mask
+  const structuralMask = result.raw.structuralMask;
+  if (structuralMask) {
+    const structScore = structuralMask.score !== undefined ? structuralMask.score.toFixed(3) : "N/A";
+    const structThreshold = structuralMask.details?.minStructIoU !== undefined
+      ? structuralMask.details.minStructIoU.toFixed(3)
+      : "N/A";
+    vLog(`[VAL][job=${jobId}]   structuralIoU=${structScore}/${structThreshold}`);
+  }
+
+  // Line/Edge
+  const lineEdge = result.raw.lineEdge;
+  if (lineEdge) {
+    const lineScore = lineEdge.score !== undefined ? lineEdge.score.toFixed(3) : "N/A";
+    const lineMsg = lineEdge.message || "N/A";
+    vLog(`[VAL][job=${jobId}]   lineEdgeScore=${lineScore} – ${lineMsg}`);
+  }
+
+  // Failures
+  if (!result.passed && result.reasons.length > 0) {
+    vLog(`[VAL][job=${jobId}]   failures=${result.reasons.join("; ")}`);
+  }
 }

@@ -41,7 +41,13 @@ import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
 import { logValidatorConfig } from "./validators/validatorMode";
-import { runUnifiedValidation, type UnifiedValidationResult } from "./validators/runValidation";
+import {
+  runUnifiedValidation,
+  logUnifiedValidationCompact,
+  type UnifiedValidationResult
+} from "./validators/runValidation";
+import { vLog, nLog } from "./logger";
+import { VALIDATOR_FOCUS } from "./config";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -134,8 +140,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // For now: LOG-ONLY MODE (never blocks images)
   const VALIDATION_BLOCKING_ENABLED = false;
 
+  // VALIDATOR FOCUS MODE: Print session header
+  if (VALIDATOR_FOCUS) {
+    vLog("════════ IMAGE VALIDATION SESSION ════════");
+    const imageLabel = (payload as any).label || (payload as any).originalFilename || payload.imageId || 'unknown';
+    vLog(`[VAL][job=${payload.jobId}] label="${imageLabel}"`);
+    vLog(`[VAL][job=${payload.jobId}] originalUrl=${remoteUrl || origPath}`);
+  }
+
   // Publish original so client can render before/after across services
-  process.stdout.write(`\n[WORKER] ═══════════ Publishing original image ═══════════\n`);
+  nLog(`\n[WORKER] ═══════════ Publishing original image ═══════════`);
   const publishedOriginal = await publishImage(origPath);
   process.stdout.write(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
   // surface early so UI can show before/after immediately
@@ -386,8 +400,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         // Ignore - images.json not accessible in multi-service mode
       }
     }
+    // VALIDATOR FOCUS: Log Stage 1A URL
+    vLog(`[VAL][job=${payload.jobId}] stage1AUrl=${pub1AUrl}`);
   } catch (e) {
-    console.warn('[worker] failed to publish 1A', e);
+    nLog('[worker] failed to publish 1A', e);
   }
   updateJob(payload.jobId, { stage: "1A", progress: 35, stageUrls: { "1A": pub1AUrl } });
   if (await isCancelled(payload.jobId)) {
@@ -539,7 +555,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
       updateJob(payload.jobId, { stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
-      console.log(`[worker] ✅ Stage 2 published: ${pub2Url}`);
+      // VALIDATOR FOCUS: Log Stage 2 URL
+      vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
+      nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
     } catch (e) {
       console.warn('[worker] failed to publish Stage 2', e);
     }
@@ -559,7 +577,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Get the base path (original or Stage 1A for comparison)
       const validationBasePath = path1A;
 
-      console.log(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
+      nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
 
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
@@ -572,8 +590,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       const validationElapsed = Date.now() - validationStartTime;
-      console.log(`[worker] Unified validation completed in ${validationElapsed}ms`);
-      console.log(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
+      nLog(`[worker] Unified validation completed in ${validationElapsed}ms`);
+      nLog(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
+
+      // VALIDATOR FOCUS: Compact unified validation output
+      if (VALIDATOR_FOCUS && unifiedValidation) {
+        vLog(""); // Blank line for readability
+        logUnifiedValidationCompact(
+          payload.jobId,
+          unifiedValidation,
+          validationStage,
+          sceneLabel === "exterior" ? "exterior" : "interior"
+        );
+      }
 
       // Store validation results in job metadata
       updateJob(payload.jobId, {
@@ -681,23 +710,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   timings.validateMs = Date.now() - tVal;
 
-  // Log combined validation summary
+  // Log combined validation summary (normal mode)
   if (unifiedValidation || compliance) {
-    console.log(`[worker] ═══════════ Validation Summary ═══════════`);
+    nLog(`[worker] ═══════════ Validation Summary ═══════════`);
     if (unifiedValidation) {
-      console.log(`[worker] Unified Structural: ${unifiedValidation.passed ? "✓ PASSED" : "✗ FAILED"} (score: ${unifiedValidation.score})`);
+      nLog(`[worker] Unified Structural: ${unifiedValidation.passed ? "✓ PASSED" : "✗ FAILED"} (score: ${unifiedValidation.score})`);
       if (!unifiedValidation.passed && unifiedValidation.reasons.length > 0) {
-        console.log(`[worker] Structural issues: ${unifiedValidation.reasons.join("; ")}`);
+        nLog(`[worker] Structural issues: ${unifiedValidation.reasons.join("; ")}`);
       }
     }
     if (compliance) {
-      console.log(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"}`);
+      nLog(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"}`);
       if (!compliance.ok && compliance.reasons) {
-        console.log(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
+        nLog(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
       }
     }
-    console.log(`[worker] Blocking mode: ${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED (log-only)"}`);
-    console.log(`[worker] ═══════════════════════════════════════════`);
+    nLog(`[worker] Blocking mode: ${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED (log-only)"}`);
+    nLog(`[worker] ═══════════════════════════════════════════`);
   }
 
   // stage 1B publishing was deferred until here; attach URL and surface progress
@@ -723,8 +752,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
       updateJob(payload.jobId, { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } });
+      // VALIDATOR FOCUS: Log Stage 1B URL
+      vLog(`[VAL][job=${payload.jobId}] stage1BUrl=${pub1BUrl}`);
     } catch (e) {
-      console.warn('[worker] failed to publish 1B', e);
+      nLog('[worker] failed to publish 1B', e);
     }
   }
 
@@ -785,11 +816,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // Ignore - images.json not accessible in multi-service mode
         }
       }
-      process.stdout.write(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+      nLog(`[WORKER] Final published: kind=${publishedFinal?.kind} url=${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+      // VALIDATOR FOCUS: Log final URL
+      vLog(`[VAL][job=${payload.jobId}] finalUrl=${pubFinalUrl}`);
     } catch (e) {
       process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
       process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
     }
+  }
+
+  // VALIDATOR FOCUS: Log final URL if reused from earlier stage
+  if (pubFinalUrl && !publishedFinal) {
+    vLog(`[VAL][job=${payload.jobId}] finalUrl=${pubFinalUrl}`);
   }
 
   // 🔍 RUN OPENCV STRUCTURAL VALIDATION
