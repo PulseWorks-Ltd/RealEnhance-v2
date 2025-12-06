@@ -232,6 +232,7 @@ export async function validateStageOutput(
 // Export unified validation pipeline
 export {
   runUnifiedValidation,
+  logUnifiedValidationCompact,
   type UnifiedValidationResult,
   type UnifiedValidationParams,
   type ValidatorResult,
