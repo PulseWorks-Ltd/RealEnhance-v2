@@ -2454,6 +2454,7 @@ export default function BatchProcessor() {
                         <option value="bedroom-1">Bedroom 1</option>
                         <option value="bedroom-2">Bedroom 2</option>
                         <option value="bedroom-3">Bedroom 3</option>
+                        <option value="bedroom-4">Bedroom 4</option>
                         <option value="kitchen">Kitchen</option>
                         <option value="living-room">Living Room</option>
                         <option value="multi-living">Multiple Living Areas</option>
@@ -2463,10 +2464,6 @@ export default function BatchProcessor() {
                         <option value="bathroom-1">Bathroom 1</option>
                         <option value="bathroom-2">Bathroom 2</option>
                         <option value="laundry">Laundry</option>
-                        <option value="garden">Garden</option>
-                        <option value="patio">Patio</option>
-                        <option value="deck">Deck</option>
-                        <option value="balcony">Balcony</option>
                         <option value="garage">Garage</option>
                         <option value="basement">Basement</option>
                         <option value="attic">Attic</option>
