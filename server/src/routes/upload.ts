@@ -135,6 +135,10 @@ export function uploadRouter() {
       if (!opts.stagingStyle && stagingStyleForm) {
         opts.stagingStyle = stagingStyleForm;
       }
+      // CRITICAL: Default to NZ Standard Real Estate if no style specified
+      if (!opts.stagingStyle || opts.stagingStyle.trim() === '') {
+        opts.stagingStyle = 'nz_standard';
+      }
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
       const topP = Number.isFinite(meta.topP) ? Number(meta.topP) : undefined;

@@ -587,6 +587,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         roomType: payload.options.roomType,
         mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
         jobId: payload.jobId,
+        stagingStyle: payload.options.stagingStyle || "nz_standard",
       });
 
       const validationElapsed = Date.now() - validationStartTime;

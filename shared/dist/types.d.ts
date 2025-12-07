@@ -52,6 +52,7 @@ export interface EnhanceJobPayload {
         roomType: string;
         sceneType: string | "auto";
         replaceSky?: boolean;
+        stagingStyle?: string;
         sampling?: {
             temperature?: number;
             topP?: number;
