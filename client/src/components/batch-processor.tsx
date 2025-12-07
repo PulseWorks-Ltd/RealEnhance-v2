@@ -1,6 +1,7 @@
 // Client-side stub for room type detection (replace with real logic as needed)
   // Replaced by backend ML API call below
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -2530,46 +2531,50 @@ export default function BatchProcessor() {
                     </div>
                   )}
 
-                  {/* Room Type Dropdown */}
                   {/* Room Type Dropdown – only for interior images when staging is enabled */}
                   {allowStaging && (imageSceneTypes[index] || "interior") !== "exterior" && (
-                    <div className="mb-4">
+                    <div className="mb-4 relative overflow-visible">
                       <label className="block text-gray-300 text-xs font-medium mb-2">
                         Room Type
                       </label>
-                      <select
+                      <Select
                         value={imageRoomTypes[index] || ""}
-                        onChange={(e) =>
-                          setImageRoomTypes((prev) => ({ ...prev, [index]: e.target.value }))
-                        }
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        data-testid={`select-room-${index}`}
+                        onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [index]: v }))}
                       >
-                        <option value="" disabled>
-                          Select room type…
-                        </option>
-                        <option value="bedroom-1">Bedroom 1</option>
-                        <option value="bedroom-2">Bedroom 2</option>
-                        <option value="bedroom-3">Bedroom 3</option>
-                        <option value="bedroom-4">Bedroom 4</option>
-                        <option value="kitchen">Kitchen</option>
-                        <option value="living-room">Living Room</option>
-                        <option value="multi-living">Multiple Living Areas</option>
-                        <option value="dining-room">Dining Room</option>
-                        <option value="study">Study</option>
-                        <option value="office">Office</option>
-                        <option value="bathroom-1">Bathroom 1</option>
-                        <option value="bathroom-2">Bathroom 2</option>
-                        <option value="laundry">Laundry</option>
-                        <option value="garage">Garage</option>
-                        <option value="basement">Basement</option>
-                        <option value="attic">Attic</option>
-                        <option value="hallway">Hallway</option>
-                        <option value="staircase">Staircase</option>
-                        <option value="entryway">Entryway</option>
-                        <option value="closet">Closet</option>
-                        <option value="pantry">Pantry</option>
-                      </select>
+                        <SelectTrigger className="relative z-10 w-full bg-gray-700 border border-gray-600 rounded-md text-white text-sm">
+                          <SelectValue placeholder="Select room type…" />
+                        </SelectTrigger>
+                        <SelectContent
+                          side="bottom"
+                          sideOffset={6}
+                          align="start"
+                          position="popper"
+                          avoidCollisions={false}
+                          className="z-[9999] max-h-[260px] overflow-y-auto"
+                        >
+                          <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
+                          <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
+                          <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
+                          <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
+                          <SelectItem value="kitchen">Kitchen</SelectItem>
+                          <SelectItem value="living-room">Living Room</SelectItem>
+                          <SelectItem value="multi-living">Multiple Living Areas</SelectItem>
+                          <SelectItem value="dining-room">Dining Room</SelectItem>
+                          <SelectItem value="study">Study</SelectItem>
+                          <SelectItem value="office">Office</SelectItem>
+                          <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
+                          <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
+                          <SelectItem value="laundry">Laundry</SelectItem>
+                          <SelectItem value="garage">Garage</SelectItem>
+                          <SelectItem value="basement">Basement</SelectItem>
+                          <SelectItem value="attic">Attic</SelectItem>
+                          <SelectItem value="hallway">Hallway</SelectItem>
+                          <SelectItem value="staircase">Staircase</SelectItem>
+                          <SelectItem value="entryway">Entryway</SelectItem>
+                          <SelectItem value="closet">Closet</SelectItem>
+                          <SelectItem value="pantry">Pantry</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   )}
                 </div>
