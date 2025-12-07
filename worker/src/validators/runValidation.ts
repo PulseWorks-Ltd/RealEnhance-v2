@@ -40,6 +40,7 @@ export type UnifiedValidationResult = {
   score: number;             // aggregate structural score 0–1
   reasons: string[];         // human-readable reasons / warnings
   raw: Record<string, ValidatorResult>;  // per-validator raw results
+  profile?: "SOFT" | "STRICT";  // Geometry profile used
 };
 
 /**
@@ -54,6 +55,34 @@ export interface UnifiedValidationParams {
   mode?: "log" | "enforce";
   jobId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
+}
+
+/**
+ * Soft Geometry Detection Helper
+ *
+ * Detects bedroom-type scenes with soft geometry that should use relaxed thresholds.
+ * Prevents false failures in bedroom/study scenes with fewer structural lines.
+ *
+ * Scoring criteria (need 2+ to qualify as soft):
+ * - Low original line count (< 90)
+ * - Low enhanced line count (< 120)
+ * - Bedroom-type room (bedroom, study, nursery)
+ * - Single window (typical bedroom)
+ */
+function isSoftGeometryScene(meta: {
+  roomType?: string;
+  originalLineCount?: number;
+  enhancedLineCount?: number;
+  windowCount?: number;
+}): boolean {
+  let score = 0;
+
+  if ((meta.originalLineCount ?? 999) < 90) score++;
+  if ((meta.enhancedLineCount ?? 999) < 120) score++;
+  if (["bedroom", "study", "nursery"].includes((meta.roomType || "").toLowerCase())) score++;
+  if (meta.windowCount === 1) score++;
+
+  return score >= 2;
 }
 
 /**
@@ -124,18 +153,32 @@ export async function runUnifiedValidation(
   const results: Record<string, ValidatorResult> = {};
   const reasons: string[] = [];
 
+  // ===== SOFT GEOMETRY DETECTION =====
+  // We'll collect metadata as we run validators, then determine soft/strict mode
+  let windowCount = 0;
+  let originalLineCount = 0;
+  let enhancedLineCount = 0;
+
   // ===== 1. WINDOW VALIDATION =====
   // Critical for real estate: windows must not be blocked or altered
   if (stage === "1B" || stage === "2") {
     try {
       const windowResult = await validateWindows(originalPath, enhancedPath);
+
+      // Capture window count for soft geometry detection
+      if ((windowResult as any).windowCount !== undefined) {
+        windowCount = (windowResult as any).windowCount;
+      } else if ((windowResult as any).baseWindowCount !== undefined) {
+        windowCount = (windowResult as any).baseWindowCount;
+      }
+
       const passed = windowResult.ok;
       results.windows = {
         name: "windows",
         passed,
         score: passed ? 1.0 : 0.0,
         message: windowResult.reason || (passed ? "Windows preserved" : "Window issues detected"),
-        details: windowResult,
+        details: { ...windowResult, windowCount },
       };
       if (!passed) {
         reasons.push(`Window validation failed: ${windowResult.reason}`);
@@ -255,6 +298,14 @@ export async function runUnifiedValidation(
       sensitivity: 0.70, // 70% similarity threshold
     });
 
+    // Capture line counts for soft geometry detection
+    if (lineResult.details?.originalEdgeCount) {
+      originalLineCount = lineResult.details.originalEdgeCount;
+    }
+    if (lineResult.details?.enhancedEdgeCount) {
+      enhancedLineCount = lineResult.details.enhancedEdgeCount;
+    }
+
     results.lineEdge = {
       name: "lineEdge",
       passed: lineResult.passed,
@@ -280,6 +331,42 @@ export async function runUnifiedValidation(
       message: "Line/edge validator error (fail-open)",
       details: { error: String(err) },
     };
+  }
+
+  // ===== SOFT GEOMETRY PROFILE DETECTION =====
+  // Determine if this scene should use relaxed thresholds (bedroom-type scenes)
+  const softScene = isSoftGeometryScene({
+    roomType,
+    originalLineCount,
+    enhancedLineCount,
+    windowCount,
+  });
+
+  nLog(`[unified-validator] Geometry Profile: ${softScene ? "SOFT" : "STRICT"}`);
+  if (softScene) {
+    nLog(`[unified-validator] Soft geometry detected - applying relaxed thresholds for bedroom-type scene`);
+    nLog(`[unified-validator]   - roomType: ${roomType}`);
+    nLog(`[unified-validator]   - windowCount: ${windowCount}`);
+    nLog(`[unified-validator]   - originalLineCount: ${originalLineCount}`);
+    nLog(`[unified-validator]   - enhancedLineCount: ${enhancedLineCount}`);
+  }
+
+  // ===== APPLY SOFT GEOMETRY OVERRIDES =====
+  // For soft geometry scenes (bedrooms, studies), downgrade certain failures to warnings
+  if (softScene) {
+    // Window size changes in bedrooms are often acceptable (curtains, furniture partially blocking)
+    if (results.windows && !results.windows.passed) {
+      const reason = results.windows.details?.reason;
+      if (reason === "window_size_change") {
+        nLog(`[unified-validator] Soft geometry override: downgrading window_size_change to warning`);
+        results.windows.passed = true;
+        results.windows.score = 0.8; // Slight penalty but not a failure
+        results.windows.message = "Window size variation (acceptable for bedroom)";
+        // Remove from failure reasons
+        const idx = reasons.findIndex(r => r.includes("Window validation failed"));
+        if (idx !== -1) reasons.splice(idx, 1);
+      }
+    }
   }
 
   // ===== AGGREGATE RESULTS =====
@@ -339,6 +426,7 @@ export async function runUnifiedValidation(
     score: Math.round(aggregateScore * 1000) / 1000,
     reasons,
     raw: results,
+    profile: softScene ? "SOFT" : "STRICT",
   };
 
   return finalResult;
@@ -361,9 +449,10 @@ export function logUnifiedValidationCompact(
   stage: string,
   sceneType: string
 ) {
+  const profile = result.profile || "STRICT";
   vLog(
     `[VAL][job=${jobId}] UnifiedStructural: ${result.passed ? "PASSED" : "FAILED"} ` +
-    `(score=${result.score.toFixed(3)})`
+    `(score=${result.score.toFixed(3)}, profile=${profile})`
   );
 
   vLog(`[VAL][job=${jobId}]   stage=${stage} scene=${sceneType}`);
