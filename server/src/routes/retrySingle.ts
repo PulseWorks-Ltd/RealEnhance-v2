@@ -66,6 +66,7 @@ export function retrySingleRouter() {
       const allowStaging = toBool(body.allowStaging, true);
       const stagingStyle = String(body.stagingStyle || '').trim();
       const declutter = toBool(body.declutter, false);
+      const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       // Optional tuning
       const temperature = parseNumber(body.temperature);
@@ -122,6 +123,7 @@ export function retrySingleRouter() {
         sceneType,
         replaceSky,
         stagingStyle,
+        manualSceneOverride,
       };
       if (temperature !== undefined || topP !== undefined || topK !== undefined) {
         options.sampling = {

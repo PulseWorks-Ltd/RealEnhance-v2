@@ -55,6 +55,7 @@ export function uploadRouter() {
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
+    const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter);
       console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s', String(allowStagingForm), String(declutterForm));
@@ -128,12 +129,17 @@ export function uploadRouter() {
       if (meta.roomType) opts.roomType = meta.roomType;
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
       if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
         opts.stagingStyle = String(meta.stagingStyle).trim();
       }
       // Apply form-level stagingStyle if no per-item style is set
       if (!opts.stagingStyle && stagingStyleForm) {
         opts.stagingStyle = stagingStyleForm;
+      }
+      // Apply form-level manualSceneOverride if set globally and not present per-item
+      if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
+        opts.manualSceneOverride = true;
       }
       // CRITICAL: Default to NZ Standard Real Estate if no style specified
       if (!opts.stagingStyle || opts.stagingStyle.trim() === '') {
@@ -241,6 +247,7 @@ export function uploadRouter() {
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
+          manualSceneOverride: opts.manualSceneOverride,
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,

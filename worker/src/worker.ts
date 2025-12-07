@@ -242,6 +242,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let scenePrimary: any = undefined;
   let allowStaging = true;
   let stagingRegionGlobal: any = null;
+  // Manual scene override flag passed from client/server
+  const manualSceneOverride = strictBool((payload as any).manualSceneOverride) || strictBool(((payload as any).options || {}).manualSceneOverride);
   const tScene = Date.now();
   try {
     const buf = fs.readFileSync(origPath);
@@ -448,8 +450,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
+  // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection
+  let safeReplaceSky: boolean = ((): boolean => {
+    const explicit = (payload.options.replaceSky as any);
+    const explicitBool = typeof explicit === 'boolean' ? explicit : undefined;
+    const defaultExterior = sceneLabel === "exterior";
+    return explicitBool === undefined ? defaultExterior : explicitBool;
+  })();
+  if (manualSceneOverride) {
+    safeReplaceSky = false;
+    nLog(`[WORKER] Sky Safeguard: manualSceneOverride=1 → disable sky replacement`);
+  }
+  if (sceneLabel === "exterior") {
+    try {
+      const { detectRoofOrPergola } = await import("./validators/pergolaGuard.js");
+      const hasRoof = await detectRoofOrPergola(origPath);
+      if (hasRoof) {
+        safeReplaceSky = false;
+        nLog(`[WORKER] Sky Safeguard: pergola/roof detected → disable sky replacement`);
+      }
+    } catch (e) {
+      nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
+    }
+  }
   path1A = await runStage1A(canonicalPath, {
-    replaceSky: payload.options.replaceSky ?? (sceneLabel === "exterior"),
+    replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
     sceneType: sceneLabel,
     interiorProfile: ((): any => {

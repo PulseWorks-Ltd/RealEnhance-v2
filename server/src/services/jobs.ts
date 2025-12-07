@@ -90,6 +90,7 @@ export async function enqueueEnhanceJob(params: {
     roomType: string;
     sceneType: string;
     replaceSky?: boolean;  // Sky replacement toggle
+    manualSceneOverride?: boolean; // Manual scene override flag (client -> server -> worker)
     sampling?: {
       temperature?: number;
       topP?: number;
