@@ -159,7 +159,11 @@ export default function BatchProcessor() {
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
-  
+
+  // Retry timeout safety (60 seconds max)
+  const RETRY_TIMEOUT_MS = 60_000;
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Retry dialog state
   const [retryDialog, setRetryDialog] = useState<{ isOpen: boolean; imageIndex: number | null }>({
     isOpen: false,
@@ -328,6 +332,16 @@ export default function BatchProcessor() {
       filesFingerprintRef.current = fp;
     }
   }, [files]);
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // When user enters the Images tab, prefill scene types using client-side detector
   useEffect(() => {
@@ -1456,15 +1470,16 @@ export default function BatchProcessor() {
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
+    // ✅ Prevent double retry on same image
     if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
-    
+
     const fileToRetry = files[imageIndex];
     if (!fileToRetry) return;
-    
+
     // Check if this is a synthetic placeholder file created from batch persistence
     const isPlaceholder = (fileToRetry as any).__restored === true;
     const originalFromStoreUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
-    
+
     try {
       // Check credits and authentication
       await ensureLoggedInAndCredits(1);
@@ -1483,8 +1498,14 @@ export default function BatchProcessor() {
       });
       return;
     }
-    
-    // Mark this image as retrying
+
+    // ✅ Clear any previous timeout
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+
+    // ✅ Mark this image as retrying (IMAGE-ONLY SPINNER)
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     
     try {
@@ -1559,25 +1580,43 @@ export default function BatchProcessor() {
           throw new Error("Retry submitted but no jobId returned. Please try again.");
         }
 
-        // Start polling for this job until it completes or fails
-        setProgressText("Retry submitted. Waiting for enhanced image...");
-        setRunState("running");
-        const controller = new AbortController();
-        setAbortController(controller);
+        // ✅ DO NOT set global progress - retry is image-only operation
+        // ❌ setProgressText("Retry submitted. Waiting for enhanced image...");
+        // ❌ setRunState("running");
+        // ❌ setAbortController(controller);
+
+        // ✅ Start safety timeout (auto-reset after 60 seconds)
+        retryTimeoutRef.current = setTimeout(() => {
+          console.warn("[retry-timeout] Retry timed out for image:", imageIndex);
+
+          setRetryingImages(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(imageIndex);
+            return newSet;
+          });
+
+          retryTimeoutRef.current = null;
+
+          toast({
+            title: "Retry timed out",
+            description: "The retry took too long. Please try again.",
+            variant: "destructive"
+          });
+        }, RETRY_TIMEOUT_MS);
 
         // Poll for the single job status using the batch endpoint for consistency
         const pollRetryJob = async () => {
           const pollStart = Date.now();
-          const pollTimeout = 10 * 60 * 1000; // 10 minutes max
+          const pollTimeout = 10 * 60 * 1000; // 10 minutes max (but timeout will trigger at 60s)
           let delay = 1000;
           while (Date.now() - pollStart < pollTimeout) {
-            if (controller.signal.aborted) return;
+            // ✅ No abort controller for retry - image-only operation
             try {
               const resp = await fetch(api(`/api/status/batch?ids=${encodeURIComponent(jobId)}`), {
                 method: "GET",
                 credentials: "include",
-                headers: { ...withDevice().headers, "Cache-Control": "no-cache" },
-                signal: controller.signal
+                headers: { ...withDevice().headers, "Cache-Control": "no-cache" }
+                // ✅ No signal - image-only operation
               });
               if (!resp.ok) {
                 await new Promise(r => setTimeout(r, delay));
@@ -1587,6 +1626,12 @@ export default function BatchProcessor() {
               const items = Array.isArray(statusData.items) ? statusData.items : [];
               const job = items.find((j: any) => j.id === jobId) || items[0];
               if (job && job.status === "completed" && job.imageUrl) {
+                // ✅ Clear timeout on success
+                if (retryTimeoutRef.current) {
+                  clearTimeout(retryTimeoutRef.current);
+                  retryTimeoutRef.current = null;
+                }
+
                 // Update UI with the new image
                 const stamp = Date.now();
                 const retryResult = {
@@ -1630,14 +1675,25 @@ export default function BatchProcessor() {
                   [imageIndex]: job.imageUrl
                 }));
                 await refreshUser();
-                setRunState("done");
-                setAbortController(null);
-                setProgressText("Retry complete! Enhanced image is ready.");
+
+                // ✅ DO NOT set global progress state
+                // ❌ setRunState("done");
+                // ❌ setAbortController(null);
+                // ❌ setProgressText("Retry complete! Enhanced image is ready.");
+
                 return;
               } else if (job && job.status === "failed") {
-                setRunState("done");
-                setAbortController(null);
-                setProgressText("Retry failed. Unable to enhance image.");
+                // ✅ Clear timeout on failure
+                if (retryTimeoutRef.current) {
+                  clearTimeout(retryTimeoutRef.current);
+                  retryTimeoutRef.current = null;
+                }
+
+                // ✅ DO NOT set global progress state
+                // ❌ setRunState("done");
+                // ❌ setAbortController(null);
+                // ❌ setProgressText("Retry failed. Unable to enhance image.");
+
                 toast({
                   title: "Retry failed",
                   description: job.error || "The retry job failed to process.",
@@ -1651,18 +1707,26 @@ export default function BatchProcessor() {
             await new Promise(r => setTimeout(r, delay));
             delay = Math.min(5000, Math.floor(delay * 1.5));
           }
-          setRunState("done");
-          setAbortController(null);
-          setProgressText("Retry timed out. Please try again.");
-          toast({
-            title: "Retry timed out",
-            description: "The retry job did not complete in time. Please try again.",
-            variant: "destructive"
-          });
+
+          // ✅ Poll timeout reached (but timeout ref will have already fired at 60s)
+          // ✅ DO NOT set global progress state
+          // ❌ setRunState("done");
+          // ❌ setAbortController(null);
+          // ❌ setProgressText("Retry timed out. Please try again.");
+
+          // Note: timeout toast already shown by timeout handler above
+          console.warn("[retry-poll] Poll timeout reached for image:", imageIndex);
         };
         pollRetryJob();
       } catch (error) {
         console.error("Retry failed:", error);
+
+        // ✅ Clear timeout on error
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
+        }
+
         toast({
           title: "Retry failed",
           description: error instanceof Error ? error.message : "Unknown error",
@@ -1670,6 +1734,12 @@ export default function BatchProcessor() {
         });
       }
     } finally {
+      // ✅ Always clear timeout and spinner
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+
       setRetryingImages(prev => {
         const newSet = new Set(prev);
         newSet.delete(imageIndex);
@@ -2537,7 +2607,8 @@ export default function BatchProcessor() {
             )}
 
             {/* Progress Display */}
-            {runState === "running" && progressText && (
+            {/* ✅ HARD GUARD: Do NOT show global progress during retry operations */}
+            {runState === "running" && progressText && retryingImages.size === 0 && (
               <div className="bg-brand-light border border-blue-200 rounded-lg p-6 mb-6">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center">

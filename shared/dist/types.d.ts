@@ -60,6 +60,10 @@ export interface EnhanceJobPayload {
         };
         declutterIntensity?: "light" | "standard" | "heavy";
     };
+    stage2OnlyMode?: {
+        enabled: boolean;
+        base1BUrl: string;
+    };
     createdAt: string;
 }
 export interface EditJobPayload {

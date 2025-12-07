@@ -47,6 +47,7 @@ import {
   type UnifiedValidationResult
 } from "./validators/runValidation";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
+import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 
@@ -130,6 +131,85 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
       updateJob(payload.jobId, { status: "error", errorMessage: "original file not accessible in this container" });
       return;
+    }
+  }
+
+  // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
+  // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
+  if (payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
+    nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
+    nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
+
+    try {
+      const timings: Record<string, number> = {};
+      const t0 = Date.now();
+      const t2 = Date.now();
+
+      // Download Stage-1B base image
+      const basePath = await downloadToTemp(payload.stage2OnlyMode.base1BUrl, `${payload.jobId}-stage1B`);
+      nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
+
+      // Run Stage-2 only (using 1B as base)
+      const path2 = await runStage2(basePath, "1B", {
+        stagingStyle: payload.options.stagingStyle || "nz_standard",
+        roomType: payload.options.roomType,
+        sceneType: payload.options.sceneType as any,
+        angleHint: undefined,
+        profile: undefined,
+        stagingRegion: undefined,
+      });
+
+      timings.stage2Ms = Date.now() - t2;
+      nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
+
+      // Run validators on Stage-2 output (log-only)
+      const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
+
+      // Note: runStructuralCheck requires URLs, but we'll skip geometry for stage2-only for now
+      // The semantic and masked edge validators are the key ones for Stage-2
+
+      await runSemanticStructureValidator({
+        originalImagePath: basePath,
+        enhancedImagePath: path2,
+        scene: sceneLabel as any,
+        mode: "log",
+      });
+
+      await runMaskedEdgeValidator({
+        originalImagePath: basePath,
+        enhancedImagePath: path2,
+        scene: sceneLabel as any,
+        mode: "log",
+      });
+
+      // Publish Stage-2 result
+      const pub2 = await publishImage(path2);
+      const pub2Url = pub2.url;
+
+      timings.totalMs = Date.now() - t0;
+
+      updateJob(payload.jobId, {
+        status: "complete",
+        resultUrl: pub2Url,
+        stageUrls: {
+          "1A": null,
+          "1B": payload.stage2OnlyMode.base1BUrl,
+          "2": pub2Url
+        },
+        meta: {
+          stage2OnlyRetry: true,
+          timings,
+          scene: { label: sceneLabel as any, confidence: 0.5 }
+        }
+      });
+
+      nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
+      return; // ✅ Exit early - full pipeline not needed
+
+    } catch (err: any) {
+      nLog(`[worker] ❌ Stage-2-only retry failed: ${err?.message || err}`);
+      nLog(`[worker] Falling back to full pipeline retry`);
+      // Continue to full pipeline below
     }
   }
 
@@ -455,6 +535,49 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // ═══════════ Post-1B Structural Validation (LOG-ONLY) ═══════════
+  let stage1BStructuralSafe = true;
+
+  if (path1B && pub1AUrl && pub1BUrl) {
+    try {
+      nLog(`[worker] ═══════════ Running Post-1B Structural Validators ═══════════`);
+
+      // Geometry validator (requires published URLs)
+      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl);
+
+      const sem = await runSemanticStructureValidator({
+        originalImagePath: path1A,
+        enhancedImagePath: path1B,
+        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        mode: "log",
+      });
+
+      const mask = await runMaskedEdgeValidator({
+        originalImagePath: path1A,
+        enhancedImagePath: path1B,
+        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        mode: "log",
+      });
+
+      // ✅ Aggregate structural safety decision
+      stage1BStructuralSafe =
+        geo?.isSuspicious !== true &&
+        sem?.passed === true &&
+        mask?.createdOpenings === 0 &&
+        mask?.closedOpenings === 0;
+
+      nLog(
+        `[worker] Post-1B Structural Safety: ${
+          stage1BStructuralSafe ? "SAFE ✅" : "UNSAFE ❌"
+        }`
+      );
+
+    } catch (err) {
+      nLog(`[worker] Post-1B validation error (fail-open):`, err);
+      stage1BStructuralSafe = false;
+    }
+  }
+
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
     return;
@@ -672,6 +795,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Semantic validation errors should never crash the job
       nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
       nLog(`[worker] Stack:`, semanticError?.stack);
+      // Continue processing - fail-open behavior
+    }
+  }
+
+  // ===== MASKED EDGE GEOMETRY VALIDATOR (Stage-2 ONLY) =====
+  // Run masked edge validator ONLY after Stage-2 virtual staging
+  // This validator focuses on architectural lines only (walls, doors, windows)
+  // Ignores furniture, curtains, plants, and other non-structural elements
+  // MODE: LOG-ONLY (non-blocking)
+  if (path2 && payload.options.virtualStage) {
+    try {
+      nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
+
+      await runMaskedEdgeValidator({
+        originalImagePath: path1A,  // Pre-staging baseline
+        enhancedImagePath: path2,   // Final staged output
+        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        mode: "log",
+      });
+
+      nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
+    } catch (maskedEdgeError: any) {
+      // Masked edge validation errors should never crash the job
+      nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
+      nLog(`[worker] Stack:`, maskedEdgeError?.stack);
       // Continue processing - fail-open behavior
     }
   }
@@ -921,7 +1069,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     allowStaging,
     stagingRegion: stagingRegionGlobal,
     timings: { ...timings, totalMs: Date.now() - t0 },
-    ...(compliance ? { compliance } : {})
+    ...(compliance ? { compliance } : {}),
+    // ✅ Save Stage-1B structural safety flag for smart retry routing
+    ...(path1B ? { stage1BStructuralSafe } : {})
   };
 
   updateJob(payload.jobId, {

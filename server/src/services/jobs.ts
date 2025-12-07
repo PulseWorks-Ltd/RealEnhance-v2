@@ -98,6 +98,11 @@ export async function enqueueEnhanceJob(params: {
     declutterIntensity?: "light" | "standard" | "heavy";
     stagingStyle?: string;
   };
+  // ✅ Smart Stage-2-only retry mode
+  stage2OnlyMode?: {
+    enabled: boolean;
+    base1BUrl: string;
+  };
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
@@ -111,6 +116,8 @@ export async function enqueueEnhanceJob(params: {
     createdAt: now,
     // add non-typed extension field for worker consumption
     remoteOriginalUrl: params.remoteOriginalUrl as any,
+    // ✅ Pass stage2OnlyMode to worker
+    stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;
 
 
