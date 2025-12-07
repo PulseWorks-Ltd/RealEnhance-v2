@@ -81,6 +81,11 @@ export interface EnhanceJobPayload {
     };
     declutterIntensity?: "light" | "standard" | "heavy";
   };
+  // ✅ Smart Stage-2-only retry mode
+  stage2OnlyMode?: {
+    enabled: boolean;
+    base1BUrl: string;  // URL of Stage-1B output to reuse
+  };
   createdAt: string;
 }
 
