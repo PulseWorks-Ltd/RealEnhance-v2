@@ -137,11 +137,12 @@ export default function SmartIntake({
             onValueChange={setRoomTypeOverride}
           >
             <SelectTrigger data-testid="select-room-type"><SelectValue placeholder={detectedRoomType || "Auto Detect"} /></SelectTrigger>
-            <SelectContent className="bg-black border-gray-700">
+            <SelectContent className="bg-black border-gray-700" side="bottom" align="start" sideOffset={8} avoidCollisions={false}>
               <SelectItem value="auto">Auto Detect{detectedRoomType ? ` (${detectedRoomType})` : ""}</SelectItem>
               <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
               <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
               <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
+              <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
               <SelectItem value="kitchen">Kitchen</SelectItem>
               <SelectItem value="living-room">Living Room</SelectItem>
               <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
@@ -151,10 +152,6 @@ export default function SmartIntake({
               <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
               <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
               <SelectItem value="laundry">Laundry</SelectItem>
-              <SelectItem value="garden">Garden</SelectItem>
-              <SelectItem value="patio">Patio</SelectItem>
-              <SelectItem value="deck">Deck</SelectItem>
-              <SelectItem value="balcony">Balcony</SelectItem>
               <SelectItem value="garage">Garage</SelectItem>
               <SelectItem value="basement">Basement</SelectItem>
               <SelectItem value="attic">Attic</SelectItem>
