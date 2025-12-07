@@ -75,7 +75,7 @@ import { VALIDATOR_FOCUS } from "./config";
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
-  console.log(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
   const strictBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v;
@@ -92,10 +92,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   (payload as any).options.declutter = strictBool(rawDeclutter);
   (payload as any).options.virtualStage = strictBool(rawVirtualStage);
   if (typeof rawDeclutter !== 'boolean') {
-    console.log(`[WORKER] Normalized declutter '${rawDeclutter}' → ${payload.options.declutter}`);
+    nLog(`[WORKER] Normalized declutter '${rawDeclutter}' → ${payload.options.declutter}`);
   }
   if (typeof rawVirtualStage !== 'boolean') {
-    console.log(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
+    nLog(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
   }
   
   // Check if we have a remote original URL (multi-service deployment)
@@ -105,28 +105,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (remoteUrl) {
     // Multi-service mode: Download original from S3
     try {
-      process.stdout.write(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+      nLog(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
       origPath = await downloadToTemp(remoteUrl, payload.jobId);
-      process.stdout.write(`[WORKER] Remote original downloaded to: ${origPath}\n`);
+      nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
     } catch (e) {
-      process.stderr.write(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
+      nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
       updateJob(payload.jobId, { status: "error", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` });
       return;
     }
   } else {
     // Legacy single-service mode: Read from local filesystem
-    process.stderr.write("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
-    process.stderr.write("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
+    nLog("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
+    nLog("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
     
     const rec = readImageRecord(payload.imageId);
     if (!rec) {
-      process.stderr.write(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
+      nLog(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
       updateJob(payload.jobId, { status: "error", errorMessage: "image not found - no remote URL and local record missing" });
       return;
     }
     origPath = getOriginalPath(rec);
     if (!fs.existsSync(origPath)) {
-      process.stderr.write(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
+      nLog(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
       updateJob(payload.jobId, { status: "error", errorMessage: "original file not accessible in this container" });
       return;
     }
@@ -151,7 +151,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish original so client can render before/after across services
   nLog(`\n[WORKER] ═══════════ Publishing original image ═══════════`);
   const publishedOriginal = await publishImage(origPath);
-  process.stdout.write(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
+  nLog(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
   // surface early so UI can show before/after immediately
   updateJob(payload.jobId, { stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
 
@@ -201,13 +201,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const areaType = String(stagingResult.areaType || 'none').toLowerCase();
         if (!allowedTypes.includes(areaType)) {
           allowStaging = false;
-          console.log(`[WORKER] Exterior gating: areaType='${areaType}' not in allowedTypes=[${allowedTypes.join(', ')}] → disallow staging`);
+          nLog(`[WORKER] Exterior gating: areaType='${areaType}' not in allowedTypes=[${allowedTypes.join(', ')}] → disallow staging`);
         }
         // Confidence gate
         const level = String(stagingResult.confidence || 'low').toLowerCase();
         if (confRank(level) < minRank) {
           allowStaging = false;
-          console.log(`[WORKER] Exterior gating: confidence='${level}' < minLevel='${minConfLevel}' → disallow staging`);
+          nLog(`[WORKER] Exterior gating: confidence='${level}' < minLevel='${minConfLevel}' → disallow staging`);
         }
 
         // Region detection only if preliminarily allowed
@@ -226,19 +226,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               const requireRegion = (process.env.EXTERIOR_STAGING_REQUIRE_REGION || '1') === '1';
               if (coverage < minCoverage) {
                 allowStaging = false;
-                console.log(`[WORKER] Exterior staging region below threshold: ${(coverage*100).toFixed(1)}% < ${(minCoverage*100).toFixed(0)}% → disallow staging`);
+                nLog(`[WORKER] Exterior staging region below threshold: ${(coverage*100).toFixed(1)}% < ${(minCoverage*100).toFixed(0)}% → disallow staging`);
               } else {
-                console.log(`[WORKER] Exterior staging region coverage: ${(coverage*100).toFixed(1)}% (>= ${(minCoverage*100).toFixed(0)}%)`);
+                nLog(`[WORKER] Exterior staging region coverage: ${(coverage*100).toFixed(1)}% (>= ${(minCoverage*100).toFixed(0)}%)`);
               }
               if (requireRegion && !stagingRegion) {
                 allowStaging = false;
-                console.log(`[WORKER] Exterior gating: requireRegion=1 but no region detected → disallow staging`);
+                nLog(`[WORKER] Exterior gating: requireRegion=1 but no region detected → disallow staging`);
               }
               // If region has areaType metadata, ensure it matches allowed types
               const regionType = String((stagingRegion as any)?.areaType || areaType).toLowerCase();
               if (!allowedTypes.includes(regionType)) {
                 allowStaging = false;
-                console.log(`[WORKER] Exterior gating: region.areaType='${regionType}' not allowed → disallow staging`);
+                nLog(`[WORKER] Exterior gating: region.areaType='${regionType}' not allowed → disallow staging`);
               }
               // Green dominance sanity check inside region (avoid staging on lawns)
               const greenCheck = (process.env.EXTERIOR_REGION_GREEN_CHECK || '1') === '1';
@@ -283,32 +283,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   }
                   const greenRatio = green / Math.max(1, total);
                   const decision = greenRatio <= maxGreen;
-                  console.log(`[WORKER] Exterior region green check: green=${(greenRatio*100).toFixed(1)}% max=${(maxGreen*100).toFixed(0)}% → ${decision ? 'allow' : 'disallow'}`);
+                  nLog(`[WORKER] Exterior region green check: green=${(greenRatio*100).toFixed(1)}% max=${(maxGreen*100).toFixed(0)}% → ${decision ? 'allow' : 'disallow'}`);
                   if (!decision) {
                     allowStaging = false;
                   }
                 } catch (e) {
-                  console.warn('[WORKER] Green-region check failed; proceeding without this gate', e);
+                  nLog('[WORKER] Green-region check failed; proceeding without this gate', e);
                 }
               }
               // attach coverage for meta/debugging
               (stagingRegion as any).coverage = coverage;
             }
           } catch (e) {
-            console.warn('[WORKER] Failed to compute staging coverage; proceeding without area gate', e);
+            nLog('[WORKER] Failed to compute staging coverage; proceeding without area gate', e);
           }
         }
-        console.log(`[WORKER] Outdoor staging area: has=${stagingResult.hasStagingArea}, type=${stagingResult.areaType}, conf=${stagingResult.confidence}`);
-        console.log(`[WORKER] Exterior staging decision: allowStaging=${allowStaging} (minConf=${minConfLevel}, minCoverage=${Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2)})`);
+        nLog(`[WORKER] Outdoor staging area: has=${stagingResult.hasStagingArea}, type=${stagingResult.areaType}, conf=${stagingResult.confidence}`);
+        nLog(`[WORKER] Exterior staging decision: allowStaging=${allowStaging} (minConf=${minConfLevel}, minCoverage=${Number(process.env.EXTERIOR_STAGING_MIN_COVERAGE || 0.2)})`);
         if (stagingRegion) {
-          console.log(`[WORKER] Staging region:`, stagingRegion);
+          nLog(`[WORKER] Staging region:`, stagingRegion);
         }
         stagingRegionGlobal = stagingRegion;
       } catch (e) {
         allowStaging = false;
         stagingRegion = null;
         stagingRegionGlobal = null;
-        console.warn(`[WORKER] Outdoor staging area/region detection failed, defaulting to no staging:`, e);
+        nLog(`[WORKER] Outdoor staging area/region detection failed, defaulting to no staging:`, e);
       }
     }
     // store interim meta (non-fatal if write fails)
@@ -321,7 +321,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       roomType: payload.options.roomType || undefined
     } });
     try {
-      console.log(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
+      nLog(`[WORKER] Scene resolved: primary=${primary?.label}(${(primary?.confidence??0).toFixed(2)}) → resolved=${sceneLabel}, room=${room.label}`);
     } catch {}
   } catch {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = "other" as any;
@@ -343,12 +343,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       const mask = await computeStructuralEdgeMask(canonicalPath);
       (global as any).__structuralMask = mask;
-      console.log(`[WORKER] Structural mask computed: ${mask.width}x${mask.height}`);
+      nLog(`[WORKER] Structural mask computed: ${mask.width}x${mask.height}`);
     } catch (e) {
-      console.warn('[WORKER] Failed to compute structural mask:', e);
+      nLog('[WORKER] Failed to compute structural mask:', e);
     }
   } catch (e) {
-    console.warn('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
+    nLog('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
     canonicalPath = origPath; // fallback
     (global as any).__canonicalPath = canonicalPath;
   }
@@ -414,9 +414,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
   let path1B: string | undefined = undefined;
-  console.log(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
+  nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   if (payload.options.declutter) {
-    console.log(`[WORKER] ✅ Stage 1B ENABLED - will remove furniture from enhanced 1A output`);
+    nLog(`[WORKER] ✅ Stage 1B ENABLED - will remove furniture from enhanced 1A output`);
     try {
       // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
       path1B = await runStage1B(path1A, {
@@ -426,7 +426,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
     } catch (e: any) {
       const errMsg = e?.message || String(e);
-      console.error(`[worker] Stage 1B failed: ${errMsg}`);
+      nLog(`[worker] Stage 1B failed: ${errMsg}`);
       updateJob(payload.jobId, {
         status: "error",
         errorMessage: errMsg,
@@ -450,7 +450,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       pub1BUrl = pub1B.url;
       updateJob(payload.jobId, { stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl });
     } catch (e) {
-      console.warn('[worker] failed to publish 1B', e);
+      nLog('[worker] failed to publish 1B', e);
     }
   }
 
@@ -464,19 +464,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
-  console.log(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
+  nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
   const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
-  console.log(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
+  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
   try {
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
-      console.log(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
+      nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       // Surface incoming stagingStyle before calling Stage 2
@@ -518,7 +518,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   } catch (e: any) {
     const errMsg = e?.message || String(e);
-    console.error(`[worker] Stage 2 failed: ${errMsg}`);
+    nLog(`[worker] Stage 2 failed: ${errMsg}`);
     updateJob(payload.jobId, {
       status: "error",
       errorMessage: errMsg,
@@ -542,7 +542,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       v2 = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "2", filePath: path2, note: "Virtual staging" });
     } catch (e) {
-      process.stderr.write(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
+      nLog(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
     }
     try {
       const pub2 = await publishImage(path2);
@@ -559,7 +559,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
       nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
     } catch (e) {
-      console.warn('[worker] failed to publish Stage 2', e);
+      nLog('[worker] failed to publish Stage 2', e);
     }
   }
 
@@ -620,9 +620,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Handle blocking logic (currently disabled)
       if (VALIDATION_BLOCKING_ENABLED && !unifiedValidation.passed) {
         const failureMsg = `Structural validation failed: ${unifiedValidation.reasons.join("; ")}`;
-        console.error(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
-        console.error(`[worker] Validation score: ${unifiedValidation.score}`);
-        console.error(`[worker] Reasons: ${unifiedValidation.reasons.join("; ")}`);
+        nLog(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
+        nLog(`[worker] Validation score: ${unifiedValidation.score}`);
+        nLog(`[worker] Reasons: ${unifiedValidation.reasons.join("; ")}`);
 
         updateJob(payload.jobId, {
           status: "error",
@@ -644,8 +644,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     } catch (validationError: any) {
       // Validation errors should never crash the job
-      console.error(`[worker] Unified validation error (non-fatal):`, validationError);
-      console.error(`[worker] Stack:`, validationError?.stack);
+      nLog(`[worker] Unified validation error (non-fatal):`, validationError);
+      nLog(`[worker] Stack:`, validationError?.stack);
       // Continue processing - fail-open behavior
     }
   }
@@ -679,11 +679,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           strictRetryPhase: "compliance"
         }
       });
-      console.warn(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
+      nLog(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
       temperature = Math.max(0.1, temperature - 0.1);
       // Call Gemini enhancement directly with reduced temperature
       if (!path1B) {
-        console.warn("[worker] path1B is undefined – skipping retry for 1B.");
+        nLog("[worker] path1B is undefined – skipping retry for 1B.");
       } else {
         retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
         const baseFinalRetry = toBase64(retryPath2);
@@ -701,12 +701,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         message: "Image enhancement completed after 1 retry, but failed compliance validation.",
         meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance, complianceFailed: true }
       });
-      console.warn(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
+      nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
       // Do NOT return; continue so image is published
     }
   } catch (e) {
     // proceed if Gemini not configured or any error
-    // console.warn("[worker] compliance check skipped:", (e as any)?.message || e);
+    // nLog("[worker] compliance check skipped:", (e as any)?.message || e);
   }
   timings.validateMs = Date.now() - tVal;
 
@@ -792,18 +792,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let structuralValidationResult: any = null;
 
   if (finalBasePath === path1A && pub1AUrl) {
-    process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
+    nLog(`\n[WORKER] ═══════════ Final image same as 1A - reusing URL ═══════════\n`);
     pubFinalUrl = pub1AUrl;
     publishedFinal = { url: pub1AUrl, kind: 's3' };
-    process.stdout.write(`[WORKER] Final URL (reused from 1A): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+    nLog(`[WORKER] Final URL (reused from 1A): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } else if (finalBasePath === path1B && pub1BUrl) {
-    process.stdout.write(`\n[WORKER] ═══════════ Final image same as 1B - reusing URL ═══════════\n`);
+    nLog(`\n[WORKER] ═══════════ Final image same as 1B - reusing URL ═══════════\n`);
     pubFinalUrl = pub1BUrl;
     publishedFinal = { url: pub1BUrl, kind: 's3' };
-    process.stdout.write(`[WORKER] Final URL (reused from 1B): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+    nLog(`[WORKER] Final URL (reused from 1B): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
   } else {
     try {
-      process.stdout.write(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
+      nLog(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
       publishedFinal = await publishImage(path2);
       pubFinalUrl = publishedFinal?.url;
       if (!pubFinalUrl) {
@@ -820,8 +820,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // VALIDATOR FOCUS: Log final URL
       vLog(`[VAL][job=${payload.jobId}] finalUrl=${pubFinalUrl}`);
     } catch (e) {
-      process.stderr.write(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
-      process.stderr.write(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
+      nLog(`[WORKER] CRITICAL: Failed to publish final image: ${e}\n`);
+      nLog(`[WORKER] publishedFinal: ${JSON.stringify(publishedFinal)}\n`);
     }
   }
 
@@ -844,14 +844,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (validationError: any) {
       // If validator throws (blocking mode), propagate the error
       if (validationError.message?.includes("Structural validation failed")) {
-        console.error("[worker] Structural validation blocked the image");
+        nLog("[worker] Structural validation blocked the image");
         throw validationError;
       }
       // Otherwise just log and continue (fail open)
-      console.warn("[worker] Structural validation error (non-blocking):", validationError.message);
+      nLog("[worker] Structural validation error (non-blocking):", validationError.message);
     }
   } else {
-    console.log("[worker] Skipping structural validation (no public URLs available)");
+    nLog("[worker] Skipping structural validation (no public URLs available)");
   }
 
   // 🔹 Record final output in Redis for later region-edit lookups
@@ -870,16 +870,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           return "1A";
         })(),
       });
-      console.log("[worker] Redis image history recorded", {
+      nLog("[worker] Redis image history recorded", {
         userId: payload.userId,
         baseKey,
         imageId: payload.imageId,
       });
     } else {
-      console.warn("[worker] No pubFinalUrl, skipping Redis history record");
+      nLog("[worker] No pubFinalUrl, skipping Redis history record");
     }
   } catch (err) {
-    console.warn(
+    nLog(
       "[worker] Failed to record image history in Redis:",
       (err as any)?.message || err
     );
@@ -933,12 +933,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
   
   // Log the return value for debugging
-  process.stdout.write('\n[WORKER] ═══════════ JOB RETURN VALUE ═══════════\n');
-  process.stdout.write(`[WORKER] imageId: ${returnValue.imageId}\n`);
-  process.stdout.write(`[WORKER] originalUrl: ${returnValue.originalUrl ? (String(returnValue.originalUrl).substring(0, 80) + '...') : 'NULL'}\n`);
-  process.stdout.write(`[WORKER] resultUrl: ${returnValue.resultUrl ? (String(returnValue.resultUrl).substring(0, 80) + '...') : 'NULL'}\n`);
-  process.stdout.write(`[WORKER] stageUrls.2: ${returnValue.stageUrls["2"] ? (String(returnValue.stageUrls["2"]).substring(0, 80) + '...') : 'NULL'}\n`);
-  process.stdout.write('═══════════════════════════════════════════════\n\n');
+  nLog('\n[WORKER] ═══════════ JOB RETURN VALUE ═══════════\n');
+  nLog(`[WORKER] imageId: ${returnValue.imageId}\n`);
+  nLog(`[WORKER] originalUrl: ${returnValue.originalUrl ? (String(returnValue.originalUrl).substring(0, 80) + '...') : 'NULL'}\n`);
+  nLog(`[WORKER] resultUrl: ${returnValue.resultUrl ? (String(returnValue.resultUrl).substring(0, 80) + '...') : 'NULL'}\n`);
+  nLog(`[WORKER] stageUrls.2: ${returnValue.stageUrls["2"] ? (String(returnValue.stageUrls["2"]).substring(0, 80) + '...') : 'NULL'}\n`);
+  nLog('═══════════════════════════════════════════════\n\n');
   
   return returnValue;
 }
@@ -948,9 +948,9 @@ async function handleEditJob(payload: any) {
 
   // 1) Download the enhanced image we’re editing
   const { jobId, baseImageUrl, maskBase64, userInstruction, userId, imageId } = payload;
-  console.log("[worker-edit] Downloading base from:", baseImageUrl);
+  nLog("[worker-edit] Downloading base from:", baseImageUrl);
   const basePath = await downloadToTemp(baseImageUrl, `${jobId}-base`);
-  console.log("[worker-edit] Base downloaded to:", basePath);
+  nLog("[worker-edit] Base downloaded to:", basePath);
 
   // 2) Decode maskBase64 to Buffer
   let mask: Buffer | undefined = undefined;
@@ -964,7 +964,7 @@ async function handleEditJob(payload: any) {
     }
   }
   if (!mask) {
-    console.warn("[worker-edit] No mask provided, aborting edit.");
+    nLog("[worker-edit] No mask provided, aborting edit.");
     return;
   }
 
@@ -979,7 +979,7 @@ async function handleEditJob(payload: any) {
 
   // 4) Publish edited image
   const pub = await publishImage(editPath);
-  console.log("[worker-edit] Published edit URL:", pub.url);
+  nLog("[worker-edit] Published edit URL:", pub.url);
 
   // 5) Record history in Redis
   await recordEnhancedImageRedis({
@@ -1008,31 +1008,31 @@ const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "red
 
 // DEPLOYMENT VERIFICATION
 const BUILD_VERSION = "2025-11-07_16:00_S3_VERBOSE_LOGS";
-console.log('╔════════════════════════════════════════════════════════════════╗');
-console.log('║                   WORKER STARTING                              ║');
-console.log('╚════════════════════════════════════════════════════════════════╝');
-console.log(`[WORKER] BUILD: ${BUILD_VERSION}`);
-console.log(`[WORKER] Queue: ${JOB_QUEUE_NAME}`);
-console.log(`[WORKER] Redis: ${REDIS_URL}`);
-process.stdout.write('\n'); // Force flush
+nLog('╔════════════════════════════════════════════════════════════════╗');
+nLog('║                   WORKER STARTING                              ║');
+nLog('╚════════════════════════════════════════════════════════════════╝');
+nLog(`[WORKER] BUILD: ${BUILD_VERSION}`);
+nLog(`[WORKER] Queue: ${JOB_QUEUE_NAME}`);
+nLog(`[WORKER] Redis: ${REDIS_URL}`);
+nLog('\n'); // Force flush
 
 // Log S3 configuration on startup
-console.log('╔════════════════════════════════════════════════════════════════╗');
-console.log('║                   S3 CONFIGURATION                             ║');
-console.log('╚════════════════════════════════════════════════════════════════╝');
-console.log('  S3_BUCKET:', process.env.S3_BUCKET || '❌ NOT SET');
-console.log('  AWS_REGION:', process.env.AWS_REGION || '❌ NOT SET');
-console.log('  AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `✅ SET (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : '❌ NOT SET');
-console.log('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '✅ SET' : '❌ NOT SET');
-console.log('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (will use S3 direct URLs)');
+nLog('╔════════════════════════════════════════════════════════════════╗');
+nLog('║                   S3 CONFIGURATION                             ║');
+nLog('╚════════════════════════════════════════════════════════════════╝');
+nLog('  S3_BUCKET:', process.env.S3_BUCKET || '❌ NOT SET');
+nLog('  AWS_REGION:', process.env.AWS_REGION || '❌ NOT SET');
+nLog('  AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `✅ SET (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : '❌ NOT SET');
+nLog('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '✅ SET' : '❌ NOT SET');
+nLog('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (will use S3 direct URLs)');
 const s3Enabled = !!(process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
-console.log('  📊 Status:', s3Enabled ? '✅ ENABLED - Images will upload to S3' : '❌ DISABLED - Will use data URLs');
-console.log('╚════════════════════════════════════════════════════════════════╝');
-process.stdout.write('\n'); // Force flush
+nLog('  📊 Status:', s3Enabled ? '✅ ENABLED - Images will upload to S3' : '❌ DISABLED - Will use data URLs');
+nLog('╚════════════════════════════════════════════════════════════════╝');
+nLog('\n'); // Force flush
 
 // Log validator configuration on startup
 logValidatorConfig();
-process.stdout.write('\n'); // Force flush
+nLog('\n'); // Force flush
 
 // BullMQ worker
 const worker = new Worker(
@@ -1050,7 +1050,7 @@ const worker = new Worker(
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
           // ✅ ADD DETAILED DEBUG LOGGING
-          console.log("[worker-region-edit] Received payload:", JSON.stringify({
+          nLog("[worker-region-edit] Received payload:", JSON.stringify({
             type: regionPayload.type,
             jobId: regionPayload.jobId,
             hasBaseImageUrl: !!regionAny.baseImageUrl,
@@ -1063,7 +1063,7 @@ const worker = new Worker(
             imageUrl: regionAny.imageUrl,
             maskLength: regionAny.mask ? regionAny.mask.length : 0,
           }, null, 2));
-          console.log("[worker-region-edit] Processing job:", {
+          nLog("[worker-region-edit] Processing job:", {
             jobId: regionPayload.jobId,
             mode: regionAny.mode,
             hasBaseImageUrl: !!regionAny.baseImageUrl,
@@ -1078,27 +1078,27 @@ const worker = new Worker(
             null;
 
           if (!baseImageUrl) {
-            console.error("[worker-region-edit] No base image URL found in payload:", {
+            nLog("[worker-region-edit] No base image URL found in payload:", {
               jobId: regionPayload.jobId,
               payloadKeys: Object.keys(regionAny),
             });
             throw new Error("Missing base image URL for region-edit job");
           }
 
-          console.log("[worker-region-edit] Downloading base from:", baseImageUrl);
+          nLog("[worker-region-edit] Downloading base from:", baseImageUrl);
           const basePath = await downloadToTemp(baseImageUrl, regionPayload.jobId + "-base");
-          console.log("[worker-region-edit] Downloaded to:", basePath);
+          nLog("[worker-region-edit] Downloaded to:", basePath);
 
           // ✅ FIX: Get mask from payload (it's a base64 string)
           const maskBase64 = regionAny.mask;
           if (!maskBase64) {
-            console.error("[worker-region-edit] No mask data in payload");
+            nLog("[worker-region-edit] No mask data in payload");
             throw new Error("Missing mask data for region-edit job");
           }
 
           // Convert mask base64 to Buffer
           const maskBuf = Buffer.from(maskBase64, "base64");
-          console.log("[worker-region-edit] Mask buffer size:", maskBuf.length);
+          nLog("[worker-region-edit] Mask buffer size:", maskBuf.length);
 
           // Get the instruction/prompt
           const prompt = regionAny.prompt || regionAny.instruction || "";
@@ -1107,14 +1107,14 @@ const worker = new Worker(
           const rawMode = regionAny.mode || "replace";
           const mode = rawMode.charAt(0).toUpperCase() + rawMode.slice(1).toLowerCase();
 
-          console.log("[worker-region-edit] Calling applyEdit with mode:", mode);
+          nLog("[worker-region-edit] Calling applyEdit with mode:", mode);
 
           // Download restore source if provided (for pixel-level restoration)
           let restoreFromPath: string | undefined;
           if (mode === "Restore" && regionAny.restoreFromUrl) {
-            console.log("[worker-region-edit] Downloading restore source from:", regionAny.restoreFromUrl);
+            nLog("[worker-region-edit] Downloading restore source from:", regionAny.restoreFromUrl);
             restoreFromPath = await downloadToTemp(regionAny.restoreFromUrl, regionPayload.jobId + "-restore");
-            console.log("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
+            nLog("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
           }
 
           // Call applyEdit
@@ -1126,18 +1126,18 @@ const worker = new Worker(
             restoreFromPath: restoreFromPath || basePath, // Use restore source or fallback to base
           });
 
-          console.log("[worker-region-edit] Edit complete, publishing:", outPath);
+          nLog("[worker-region-edit] Edit complete, publishing:", outPath);
 
           // Publish the result
           const pub = await publishImage(outPath);
 
-          console.log("[worker-region-edit] Published to:", pub.url);
+          nLog("[worker-region-edit] Published to:", pub.url);
 
           // Publish the mask for reference
           const maskPath = `/tmp/${regionPayload.jobId}-mask.png`;
           await sharp(maskBuf).toFile(maskPath);
           const pubMask = await publishImage(maskPath);
-          console.log("[worker-region-edit] Mask published to:", pubMask.url);
+          nLog("[worker-region-edit] Mask published to:", pubMask.url);
 
           // Record in Redis for image history lookups (enables future edits on this result)
           try {
@@ -1149,9 +1149,9 @@ const worker = new Worker(
               versionId: "", // Region edits don't have version IDs
               stage: "region-edit",
             });
-            console.log("[worker-region-edit] Redis image history recorded");
+            nLog("[worker-region-edit] Redis image history recorded");
           } catch (err) {
-            console.warn("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
+            nLog("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
           }
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
@@ -1170,7 +1170,7 @@ const worker = new Worker(
               instruction: prompt,
             },
           });
-          console.log('[worker-region-edit] updateJob called', {
+          nLog('[worker-region-edit] updateJob called', {
             jobId: regionPayload.jobId,
             imageUrl: pub.url,
             maskUrl: pubMask.url,
@@ -1190,7 +1190,7 @@ const worker = new Worker(
         throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
-      console.error("[worker] job failed", err);
+      nLog("[worker] job failed", err);
       updateJob((payload as any).jobId, { status: "error", errorMessage: err?.message || "unhandled worker error" });
       throw err;
     }
@@ -1206,9 +1206,9 @@ const worker = new Worker(
   try {
     // @ts-ignore
     await worker.waitUntilReady?.();
-    console.log("[worker] ready and listening");
+    nLog("[worker] ready and listening");
   } catch (e) {
-    console.error("[worker] failed to initialize", e);
+    nLog("[worker] failed to initialize", e);
   }
 })();
 
@@ -1218,11 +1218,11 @@ worker.on("completed", (job, result: any) => {
       ? String((result as any).resultUrl).slice(0, 120)
       : undefined;
 
-  console.log(
+  nLog(
     `[worker] completed job ${job.id}${url ? ` -> ${url}` : ""}`
   );
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`[worker] failed job ${job?.id}`, err);
+  nLog(`[worker] failed job ${job?.id}`, err);
 });

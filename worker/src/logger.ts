@@ -2,6 +2,14 @@
  * Validator-Focused Logging Utilities
  *
  * Provides logging functions that respect the VALIDATOR_FOCUS mode.
+ *
+ * When VALIDATOR_FOCUS=1:
+ * - vLog() outputs → validator logs only
+ * - nLog() is MUTED → all other logs suppressed
+ *
+ * When VALIDATOR_FOCUS=0 or unset:
+ * - vLog() is MUTED → validator logs suppressed
+ * - nLog() outputs → normal worker logs appear
  */
 
 import { VALIDATOR_FOCUS } from "./config";
@@ -21,28 +29,16 @@ export function vLog(...args: any[]) {
 }
 
 /**
- * Normal log
+ * Normal log - HARD MUTE when validator focus enabled
  *
  * Only outputs when VALIDATOR_FOCUS is disabled.
- * Used for regular worker logs.
+ * Used for ALL non-validation logs (S3, Gemini, Redis, file paths, etc.)
+ *
+ * IMPORTANT: This provides HARD SUPPRESSION of noisy logs in validator focus mode.
  *
  * @param args Log arguments
  */
 export function nLog(...args: any[]) {
-  if (!VALIDATOR_FOCUS) {
-    console.log(...args);
-  }
-}
-
-/**
- * Conditional log
- *
- * Wraps console.log to respect VALIDATOR_FOCUS mode.
- * Alias for nLog.
- *
- * @param args Log arguments
- */
-export function cLog(...args: any[]) {
   if (!VALIDATOR_FOCUS) {
     console.log(...args);
   }
