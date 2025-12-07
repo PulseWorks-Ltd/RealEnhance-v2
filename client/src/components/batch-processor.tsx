@@ -187,6 +187,8 @@ export default function BatchProcessor() {
   const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
   const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
   const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
+  // Track manual scene overrides per-image (when user changes scene dropdown)
+  const [manualSceneOverrideByIndex, setManualSceneOverrideByIndex] = useState<Record<number, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
 
   // Tuning controls (apply to all images in this batch; optional)
@@ -427,6 +429,7 @@ export default function BatchProcessor() {
       // Scene type
       const sceneType = imageSceneTypes[i] || "auto";
       if (sceneType !== "auto") metaItem.sceneType = sceneType;
+      if (manualSceneOverrideByIndex[i]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
       if (allowStaging && (sceneType !== "exterior")) {
         const roomType = imageRoomTypes[i];
@@ -448,7 +451,7 @@ export default function BatchProcessor() {
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled]);
+  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, manualSceneOverrideByIndex, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -1532,6 +1535,7 @@ export default function BatchProcessor() {
       fd.append("image", fileToRetry); // Correct field name for retry-single
       fd.append("goal", goalToSend);
       if (sceneType) fd.append("sceneType", sceneType);
+      if (sceneType && sceneType !== 'auto') fd.append("manualSceneOverride", "true");
       if (typeof allowStagingOverride === 'boolean') fd.append("allowStaging", String(allowStagingOverride));
       if (typeof furnitureReplacementOverride === 'boolean') fd.append("furnitureReplacement", String(furnitureReplacementOverride));
       if (roomType) fd.append("roomType", roomType);
@@ -2472,7 +2476,16 @@ export default function BatchProcessor() {
                     </label>
                     <select
                       value={imageSceneTypes[index] || "auto"}
-                      onChange={(e) => setImageSceneTypes(prev => ({ ...prev, [index]: e.target.value }))}
+                      onChange={(e) => {
+                        const nextVal = e.target.value as "auto" | "interior" | "exterior";
+                        setImageSceneTypes(prev => ({ ...prev, [index]: nextVal }));
+                        // Mark manual scene override when user selects anything other than auto
+                        setManualSceneOverrideByIndex(prev => ({ ...prev, [index]: nextVal !== "auto" }));
+                        // SKY SAFEGUARD (UX): If user manually sets scene, disable sky replacement
+                        if (nextVal !== "auto") {
+                          setImageSkyReplacement(prev => ({ ...prev, [index]: false }));
+                        }
+                      }}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                       data-testid={`select-scene-${index}`}
                     >
@@ -2496,12 +2509,24 @@ export default function BatchProcessor() {
                         </div>
                         <input
                           type="checkbox"
-                          checked={imageSkyReplacement[index] !== undefined ? imageSkyReplacement[index] : true}
-                          onChange={(e) => setImageSkyReplacement(prev => ({ ...prev, [index]: e.target.checked }))}
+                          checked={(() => {
+                            const val = imageSkyReplacement[index] !== undefined ? imageSkyReplacement[index] : true;
+                            // If manual override is set, force unchecked
+                            return manualSceneOverrideByIndex[index] ? false : val;
+                          })()}
+                          onChange={(e) => {
+                            if (manualSceneOverrideByIndex[index]) return; // disabled logically
+                            setImageSkyReplacement(prev => ({ ...prev, [index]: e.target.checked }));
+                          }}
                           className="ml-3 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
                           data-testid={`toggle-sky-${index}`}
+                          disabled={!!manualSceneOverrideByIndex[index]}
+                          title={manualSceneOverrideByIndex[index] ? "Disabled due to manual scene override" : "Replace cloudy skies with clear blue"}
                         />
                       </label>
+                      {manualSceneOverrideByIndex[index] && (
+                        <p className="mt-2 text-xs text-yellow-400">Sky replacement is disabled because the scene was manually overridden.</p>
+                      )}
                     </div>
                   )}
 

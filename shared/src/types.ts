@@ -66,6 +66,7 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  manualSceneOverride?: boolean;
   options: {
     declutter: boolean;
     virtualStage: boolean;
