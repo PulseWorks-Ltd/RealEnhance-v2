@@ -46,6 +46,7 @@ import {
   logUnifiedValidationCompact,
   type UnifiedValidationResult
 } from "./validators/runValidation";
+import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 
@@ -647,6 +648,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Validation errors should never crash the job
       nLog(`[worker] Unified validation error (non-fatal):`, validationError);
       nLog(`[worker] Stack:`, validationError?.stack);
+      // Continue processing - fail-open behavior
+    }
+  }
+
+  // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====
+  // Run semantic structure validator ONLY after Stage-2 virtual staging
+  // This validator detects window/door count changes, wall drift, and opening modifications
+  // MODE: LOG-ONLY (non-blocking)
+  if (path2 && payload.options.virtualStage) {
+    try {
+      nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════`);
+
+      await runSemanticStructureValidator({
+        originalImagePath: path1A,  // Pre-staging baseline
+        enhancedImagePath: path2,   // Final staged output
+        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        mode: "log",
+      });
+
+      nLog(`[worker] Semantic validation completed (log-only, non-blocking)`);
+    } catch (semanticError: any) {
+      // Semantic validation errors should never crash the job
+      nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
+      nLog(`[worker] Stack:`, semanticError?.stack);
       // Continue processing - fail-open behavior
     }
   }
