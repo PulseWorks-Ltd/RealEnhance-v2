@@ -1742,6 +1742,11 @@ export default function BatchProcessor() {
       } finally {
         // Keep spinner until image onLoad; do not clear here
       }
+    } catch (e) {
+      console.error("[handleRetryImage] Outer retry process error:", e);
+      // Do not clear spinner here; timeout/onLoad handlers manage UI state
+    } finally {
+      // Outer try-finally: intentionally leave spinner until onLoad/timeout
     }
   };
 
