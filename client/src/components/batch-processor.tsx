@@ -1739,6 +1739,8 @@ export default function BatchProcessor() {
           description: error instanceof Error ? error.message : "Unknown error",
           variant: "destructive"
         });
+      } finally {
+        // Keep spinner until image onLoad; do not clear here
       }
     }
   };
