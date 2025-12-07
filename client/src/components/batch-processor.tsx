@@ -158,6 +158,7 @@ export default function BatchProcessor() {
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
+  const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
 
   // Retry timeout safety (60 seconds max)
@@ -1505,8 +1506,9 @@ export default function BatchProcessor() {
       retryTimeoutRef.current = null;
     }
 
-    // ✅ Mark this image as retrying (IMAGE-ONLY SPINNER)
+    // ✅ Mark retry active and loading
     setRetryingImages(prev => new Set(prev).add(imageIndex));
+    setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
     
     try {
       // Determine explicit scene type - prefer provided, then metadata, then auto
@@ -1589,10 +1591,15 @@ export default function BatchProcessor() {
         retryTimeoutRef.current = setTimeout(() => {
           console.warn("[retry-timeout] Retry timed out for image:", imageIndex);
 
+          setRetryLoadingImages(prev => {
+            const next = new Set(prev);
+            next.delete(imageIndex);
+            return next;
+          });
           setRetryingImages(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(imageIndex);
-            return newSet;
+            const next = new Set(prev);
+            next.delete(imageIndex);
+            return next;
           });
 
           retryTimeoutRef.current = null;
@@ -1626,7 +1633,7 @@ export default function BatchProcessor() {
               const items = Array.isArray(statusData.items) ? statusData.items : [];
               const job = items.find((j: any) => j.id === jobId) || items[0];
               if (job && job.status === "completed" && job.imageUrl) {
-                // ✅ Clear timeout on success
+                // ✅ Clear timeout on success (spinner stays until onLoad)
                 if (retryTimeoutRef.current) {
                   clearTimeout(retryTimeoutRef.current);
                   retryTimeoutRef.current = null;
@@ -1733,18 +1740,6 @@ export default function BatchProcessor() {
           variant: "destructive"
         });
       }
-    } finally {
-      // ✅ Always clear timeout and spinner
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
-      }
-
-      setRetryingImages(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(imageIndex);
-        return newSet;
-      });
     }
   };
 
@@ -2688,12 +2683,17 @@ export default function BatchProcessor() {
                               }}
                               onLoad={() => {
                                 // Show success toast only when new image loads during retry or edit
-                                if (retryingImages.has(i)) {
+                                if (retryingImages.has(i) || retryLoadingImages.has(i)) {
                                   toast({
                                     title: "Retry complete",
                                     description: `${displayName} has been successfully enhanced.`
                                   });
-                                  // Remove from retrying set
+                                  // Clear spinner only when image fully loads
+                                  setRetryLoadingImages(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(i);
+                                    return next;
+                                  });
                                   setRetryingImages(prev => {
                                     const next = new Set(prev);
                                     next.delete(i);
@@ -2715,12 +2715,12 @@ export default function BatchProcessor() {
                               data-testid={`img-result-${i}`}
                             />
                             {/* Loading overlay during retry or edit */}
-                            {(retryingImages.has(i) || editingImages.has(i)) && (
+                            {(retryLoadingImages.has(i) || editingImages.has(i)) && (
                               <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
                                 <div className="text-center text-white">
                                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-2"></div>
                                   <div className="text-xs font-medium">
-                                    {retryingImages.has(i) ? "Enhancing..." : "Editing..."}
+                                    {retryLoadingImages.has(i) ? "Enhancing..." : "Editing..."}
                                   </div>
                                 </div>
                               </div>
@@ -2780,18 +2780,36 @@ export default function BatchProcessor() {
                               >
                                 Download
                               </a>
+                                  <button
+                                    onClick={() => {
+                                      if (retryingImages.has(i)) {
+                                        toast({
+                                          title: "Retry in progress",
+                                          description: "This image is currently retrying.",
+                                          variant: "destructive"
+                                        });
+                                        return;
+                                      }
+                                      handleOpenRetryDialog(i);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                    data-testid={`button-retry-${i}`}
+                                  >
+                                    {retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                  </button>
                               <button
-                                onClick={() => handleOpenRetryDialog(i)}
-                                disabled={retryingImages.has(i) || editingImages.has(i)}
-                                className="text-blue-600 hover:text-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                data-testid={`button-retry-${i}`}
-                              >
-                                {retryingImages.has(i) ? "Retrying..." : "Retry"}
-                              </button>
-                              <button
-                                onClick={() => handleEditImage(i)}
-                                disabled={retryingImages.has(i) || editingImages.has(i)}
-                                className="text-blue-600 hover:text-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => {
+                                  if (retryingImages.has(i)) {
+                                    toast({
+                                      title: "Retry in progress",
+                                      description: "Please wait for the retry to complete before editing.",
+                                      variant: "destructive"
+                                    });
+                                    return;
+                                  }
+                                  handleEditImage(i);
+                                }}
+                                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                                 data-testid={`button-edit-${i}`}
                               >
                                 {editingImages.has(i) ? "Editing..." : "Edit"}

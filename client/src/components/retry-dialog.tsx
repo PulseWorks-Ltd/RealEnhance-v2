@@ -142,7 +142,13 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
               <SelectTrigger data-testid="select-retry-room-type">
                 <SelectValue placeholder="Select room type" />
               </SelectTrigger>
-              <SelectContent side="bottom" align="start" sideOffset={8} avoidCollisions={false}>
+              <SelectContent
+                side="bottom"
+                align="start"
+                sideOffset={8}
+                avoidCollisions={false}
+                className="max-h-[260px] overflow-y-auto z-[999]"
+              >
                 <SelectItem value="auto">Auto Detect{safeDetectedRoomType ? ` (${safeDetectedRoomType})` : ""}</SelectItem>
                 <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
                 <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
