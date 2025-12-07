@@ -72,6 +72,7 @@ export interface EnhanceJobPayload {
     roomType: string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
+    stagingStyle?: string;  // Staging style (defaults to nz_standard)
     // Optional tuning controls
     sampling?: {
       temperature?: number;

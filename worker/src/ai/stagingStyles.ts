@@ -10,6 +10,38 @@ General rules:
 - Do not mix styles; follow ONLY the specified style.
 `.trim();
 
+/**
+ * NZ Standard Real Estate Staging - The TRUE DEFAULT
+ * This is the safest, most conservative staging style.
+ * Always revert to this when in doubt.
+ */
+export const NZ_STANDARD_STAGING = {
+  key: "nz_standard",
+  label: "NZ Standard Real Estate",
+  description: "Neutral, conservative NZ real estate photo staging",
+  prompt: `
+You are a professional New Zealand real estate photo retoucher and virtual stager.
+
+Rules:
+- Maintain exact architectural structure
+- Do NOT add or remove doors or windows
+- Do NOT change wall positions, ceiling height, or floor layout
+- Do NOT introduce unrealistic furniture
+- Do NOT block natural light sources
+
+Style:
+- Clean, neutral, lived-in but uncluttered look
+- Soft natural lighting
+- Subtle warmth (not over-stylised)
+- Realistic, modest furniture only where context-appropriate
+- No dramatic shadows, no editorial lighting
+
+Purpose:
+- This image must remain believable as a real NZ residential property listing photo.
+- Enhancements must appear subtle, professional, and agency-safe.
+`.trim()
+};
+
 function build(styleName: string, body: string): string {
   return [
     `You are an interior stylist staging a room for real-estate photos.`,
@@ -180,20 +212,18 @@ Décor: understated New Zealand landscape art or pottery, relaxed but refined co
       `
       );
 
+    case "nz_standard":
+    case "nz standard":
+    case "nz standard real estate":
+      // NZ Standard Real Estate - The TRUE DEFAULT
+      return NZ_STANDARD_STAGING.prompt;
+
     default: {
-      // Safe, conservative fallback – neutral, widely appealing staging.
+      // Safe, conservative fallback – use NZ Standard
       console.warn(
-        `[stagingStyles] Unknown staging style "${style}", using neutral fallback directive.`
+        `[stagingStyles] Unknown staging style "${style}", defaulting to NZ Standard Real Estate.`
       );
-      return build(
-        "Neutral Minimal-Contemporary",
-        `
-Colour palette: light neutrals (white, beige, soft grey) with light wood accents.
-Furniture: simple modern forms that are neither strongly traditional nor industrial.
-Materials: light timber, plain textiles, subtle texture only.
-Décor: very limited neutral artwork and décor, universally appealing and unobtrusive.
-        `
-      );
+      return NZ_STANDARD_STAGING.prompt;
     }
   }
 }

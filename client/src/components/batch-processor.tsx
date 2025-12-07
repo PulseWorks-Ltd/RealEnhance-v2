@@ -111,8 +111,8 @@ function clearBatchJobState() {
 }
 
 export default function BatchProcessor() {
-    // Staging style preset for the batch
-    const [stagingStyle, setStagingStyle] = useState<string>("Modern");
+    // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
+    const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
   // Tab state for clean UI flow
   const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">("upload");
   
@@ -556,7 +556,8 @@ export default function BatchProcessor() {
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
-      if (savedState.settings.stagingStyle) setStagingStyle(savedState.settings.stagingStyle);
+      // DO NOT restore stagingStyle - always default to NZ Standard Real Estate
+      // User must explicitly select a different style for each new session
       
       // Restore file metadata if available
       if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
@@ -2153,6 +2154,7 @@ export default function BatchProcessor() {
                         onChange={e => setStagingStyle(e.target.value)}
                         data-testid="select-staging-style"
                       >
+                        <option value="NZ Standard Real Estate">NZ Standard Real Estate</option>
                         <option value="Coastal">Coastal</option>
                         <option value="Contemporary">Contemporary</option>
                         <option value="Hamptons">Hamptons</option>
@@ -2167,6 +2169,13 @@ export default function BatchProcessor() {
                         <option value="Traditional">Traditional</option>
                         <option value="Urban Loft">Urban Loft</option>
                       </select>
+                      <button
+                        onClick={() => setStagingStyle("NZ Standard Real Estate")}
+                        className="text-xs text-blue-400 hover:text-blue-300 underline mt-1"
+                        type="button"
+                      >
+                        Reset to NZ Standard
+                      </button>
                     </div>
                   )}
 

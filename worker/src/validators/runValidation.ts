@@ -53,6 +53,7 @@ export interface UnifiedValidationParams {
   roomType?: string;
   mode?: "log" | "enforce";
   jobId?: string;
+  stagingStyle?: string;  // Staging style used (for safety coupling)
 }
 
 /**
@@ -87,14 +88,25 @@ export async function runUnifiedValidation(
     roomType,
     mode = "log",
     jobId,
+    stagingStyle,
   } = params;
 
   const validatorMode = getValidatorMode("structure");
+
+  // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
+  const isNZStandard = !stagingStyle ||
+    stagingStyle.toLowerCase().includes('nz_standard') ||
+    stagingStyle.toLowerCase().includes('nz standard');
+
+  if (isNZStandard) {
+    nLog(`[unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection`);
+  }
 
   nLog(`[unified-validator] === Starting Unified Structural Validation ===`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
   nLog(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
+  nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
 
