@@ -137,7 +137,13 @@ export default function SmartIntake({
             onValueChange={setRoomTypeOverride}
           >
             <SelectTrigger data-testid="select-room-type"><SelectValue placeholder={detectedRoomType || "Auto Detect"} /></SelectTrigger>
-            <SelectContent className="bg-black border-gray-700" side="bottom" align="start" sideOffset={8} avoidCollisions={false}>
+            <SelectContent
+              className="bg-black border-gray-700 max-h-[260px] overflow-y-auto z-[999]"
+              side="bottom"
+              align="start"
+              sideOffset={8}
+              avoidCollisions={false}
+            >
               <SelectItem value="auto">Auto Detect{detectedRoomType ? ` (${detectedRoomType})` : ""}</SelectItem>
               <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
               <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
