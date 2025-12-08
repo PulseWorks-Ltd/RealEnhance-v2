@@ -38,7 +38,12 @@ export async function runStage1B(
 
   try {
     // ✅ Stage 1B-A: Main Furniture Removal (always runs first)
-    console.log(`[stage1B] 🪑 STAGE 1B-A: Removing main furniture...`);
+    const jobId = (global as any).__jobId || 'unknown';
+    console.log(`[stage1B-1] 🚪 PRIMARY furniture removal started`, {
+      jobId,
+      mode: 'main-only',
+      input: stage1APath
+    });
     const stage1BAPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
       replaceSky,
@@ -55,7 +60,10 @@ export async function runStage1B(
       ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
     });
 
-    console.log(`[stage1B] 📊 Stage 1B-A returned: ${stage1BAPath}`);
+    console.log(`[stage1B-1] ✅ PRIMARY furniture removal complete`, {
+      jobId,
+      output: stage1BAPath
+    });
 
     // Validate 1B-A
     if (stage1BAPath !== stage1APath) {
@@ -94,7 +102,11 @@ export async function runStage1B(
 
     // ✅ Stage 1B-B: Heavy Declutter (conditional)
     if (needsStage1BB && stage1BAPath !== stage1APath) {
-      console.log(`[stage1B] 🧹 STAGE 1B-B: Removing all remaining clutter...`);
+      console.log(`[stage1B-2] 🧹 SECONDARY declutter pass started`, {
+        jobId,
+        mode: 'heavy',
+        input: stage1BAPath
+      });
       const stage1BBPath = await enhanceWithGemini(stage1BAPath, {
         skipIfNoApiKey: true,
         replaceSky: false, // Already done in 1A
@@ -111,7 +123,10 @@ export async function runStage1B(
         ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
       });
 
-      console.log(`[stage1B] 📊 Stage 1B-B returned: ${stage1BBPath}`);
+      console.log(`[stage1B-2] ✅ SECONDARY declutter pass complete`, {
+        jobId,
+        output: stage1BBPath
+      });
 
       // Validate 1B-B
       if (stage1BBPath !== stage1BAPath) {
