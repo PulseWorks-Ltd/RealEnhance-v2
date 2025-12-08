@@ -84,20 +84,17 @@ export async function runStage1B(
       }
     }
 
-    // Decision: Do we need Stage 1B-B?
-    // SAFETY: Also check declutterIntensity as a backup (belt-and-suspenders)
+    // Decision: Do we need Stage 1B-B (second pass)?
+    // SIMPLIFIED LOGIC: Only Heavy mode runs twice
+    // Light/Auto/Main all run FULL DECLUTTER once
     const declutterIntensity = (global as any).__jobDeclutterIntensity;
     let needsStage1BB = false;
 
     if (furnitureRemovalMode === 'heavy' || declutterIntensity === 'heavy') {
-      console.log(`[stage1B] 🎯 Mode is 'heavy' - will run Stage 1B-B`);
+      console.log(`[STAGE1B] MODE=${furnitureRemovalMode} HEAVY - will run PASS B`);
       needsStage1BB = true;
-    } else if (furnitureRemovalMode === 'auto') {
-      console.log(`[stage1B] 🤖 Mode is 'auto' - evaluating clutter density...`);
-      needsStage1BB = await shouldRunStage1BB(stage1BAPath);
-      console.log(`[stage1B] ${needsStage1BB ? '✅ High clutter detected - proceeding to Stage 1B-B' : '✅ Low clutter - skipping Stage 1B-B'}`);
     } else {
-      console.log(`[stage1B] ℹ️ Mode is 'main' - skipping Stage 1B-B`);
+      console.log(`[STAGE1B] MODE=${furnitureRemovalMode} LIGHT/AUTO - single pass only`);
       needsStage1BB = false;
     }
 
@@ -160,24 +157,27 @@ export async function runStage1B(
       }
     }
 
-    // Rename final output to -1B with appropriate pass indicator
+    // Rename final output with proper Stage 1B suffix
+    // CRITICAL: Use -1B-A or -1B-B to avoid collision with Stage 2
     if (finalPath !== stage1APath) {
       const fs = await import("fs/promises");
 
       // Determine which pass completed and use appropriate filename
       let stageSuffix: string;
       if (needsStage1BB && finalPath === stage1BBPath) {
-        // Dual-pass completed: use -1B(2) to indicate Pass 2 ran
-        stageSuffix = "-1B(2)";
+        // Dual-pass completed: use -1B-B
+        stageSuffix = "-1B-B";
+        console.log(`[STAGE1B] MODE=${furnitureRemovalMode} PASS=B → OUTPUT=${finalPath.split('/').pop()}`);
       } else {
-        // Single-pass only: use -1B(1) to indicate only Pass 1 ran
-        stageSuffix = "-1B(1)";
+        // Single-pass only: use -1B-A
+        stageSuffix = "-1B-A";
+        console.log(`[STAGE1B] MODE=${furnitureRemovalMode} PASS=A → OUTPUT=${finalPath.split('/').pop()}`);
       }
 
       const outputPath = siblingOutPath(stage1APath, stageSuffix, ".webp");
       console.log(`[stage1B] 💾 Renaming final output to Stage1B: ${finalPath} → ${outputPath}`);
       await fs.rename(finalPath, outputPath);
-      console.log(`[stage1B] ✅ SUCCESS - Two-stage furniture removal complete: ${outputPath}`);
+      console.log(`[stage1B] ✅ SUCCESS - FULL DECLUTTER complete: ${outputPath}`);
       return outputPath;
     }
     

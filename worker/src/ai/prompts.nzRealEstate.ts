@@ -11,145 +11,58 @@ function buildStage1AExteriorPromptNZStyle(): string {
   return `\nEnhance this exterior property image in the style of top New Zealand real estate\nphotographs as commonly seen on professional Trade Me listings.\n\nYour goals:\n• Replace the sky with a bright New Zealand-blue sky and soft natural clouds.\n• Brighten the entire exterior scene with warm, sunny lighting.\n• Enhance all greens to look healthy, vibrant, and well-maintained.\n• Improve clarity and texture on cladding, roofing, decking, and hard surfaces.\n• Clean dirt, mould, and discoloration from driveways, decks, and fences while\n  preserving original material texture.\n• Apply strong professional-level tonal shaping: lifted shadows, warm midtones,\n  crisp highlights, and clean whites.\n\nHARD LANDCOVER RULES:\n• Do NOT add, remove, extend, shrink, recolor, or invent ANY driveway, path,\n  deck, patio, hard-surface area, or structure.\n• Grass must remain grass; hard surfaces must remain hard surfaces.\n• Do NOT reshape, redraw, or replace trees, shrubs, hedges, or plants.\n\nABSOLUTE GEOMETRY RULES:\n• Do NOT rotate, crop, straighten, zoom, or change the camera angle.\n• Do NOT change ANY structural element: walls, rooflines, windows, doors,\n  fences, balconies, gutters, or architectural edges.\n• Do NOT remove or add buildings, structures, or features.\n\nOnly enhance lighting, color, clarity, and cleanliness. No structural changes.`.trim();
 }
 
-  // Stage 1B-A: Main Furniture Removal (LIGHT MODE ONLY)
-  // Removes ONLY large core furniture, keeps small décor for warmth
-  export function buildStage1BALightPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
+  // Stage 1B: FULL DECLUTTER PROMPT (UNIFIED FOR ALL MODES)
+  // Used by Light (1x), Auto (1x), and Heavy (2x) modes
+  // Removes ALL furniture and clutter to create architecturally empty room
+  export function buildStage1BFullDeclutterPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      // Exteriors don't have furniture removal stages, use standard declutter
+      // Exteriors: Remove all transient items
       return `\nDeclutter this exterior property image for professional New Zealand real estate marketing.\n\nREMOVE (transient items ONLY):\n• Hoses, bins, toys, tools, tarps, ladders, bags, packaging, garden equipment\n• Loose debris: bark, stones, leaves, scattered items, dirt piles\n• Random accessories on decks/paths that are not permanently fixed\n\nKEEP EXACTLY (PERMANENT):\n• All buildings, windows, doors, rooflines, fences, gates, retaining walls\n• All permanent landscaping (trees, shrubs, hedges, garden beds)\n• All driveways, paths, decks, patios — preserve shape, size, materials, and patterns\n\nHARD RULES — NON‑NEGOTIABLE:\n• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.\n• Do NOT change, resize, move, or remove any permanent structure or landscaping.\n• Do NOT alter driveway, deck, or path geometry or surface type.\n\nGoal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.`.trim();
     }
 
     return `\nYou are a professional real-estate image editor.
 
 TASK:
-Remove ONLY the main large furniture items from this room while preserving all small decorative elements.
-
-REMOVE ONLY:
-- Beds
-- Sofas and couches
-- Armchairs
-- Dining tables
-- Desks
-- Large cabinets
-- Wardrobes
-- TV stands
-
-DO NOT REMOVE:
-- Lamps
-- Rugs
-- Wall art
-- Curtains
-- Cushions
-- Small décor
-- Plants
-- Kitchen bench items
-- Bathroom accessories
-
-STRICT RULES:
-- Do NOT change walls, doors, windows, floors, ceilings, or room shape.
-- Do NOT alter camera angle, lighting direction, or perspective.
-- Preserve window visibility and natural light.
-- Do not add any new objects.
-
-OUTPUT STYLE:
-- The room should look partially empty but still naturally styled.
-- High-end real estate quality.
-- Clean, bright, photorealistic.
-
-Return ONLY the edited image.`.trim();
-  }
-
-  // Stage 1B-A: Structural Clear (AUTO + HEAVY MODE - PASS 1)
-  // Clears room to reveal clean architectural structure and uninterrupted straight lines
-  export function buildStage1BAStructuralPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
-    if (sceneType === "exterior") {
-      return `\nDeclutter this exterior property image for professional New Zealand real estate marketing.\n\nREMOVE (transient items ONLY):\n• Hoses, bins, toys, tools, tarps, ladders, bags, packaging, garden equipment\n• Loose debris: bark, stones, leaves, scattered items, dirt piles\n• Random accessories on decks/paths that are not permanently fixed\n\nKEEP EXACTLY (PERMANENT):\n• All buildings, windows, doors, rooflines, fences, gates, retaining walls\n• All permanent landscaping (trees, shrubs, hedges, garden beds)\n• All driveways, paths, decks, patios — preserve shape, size, materials, and patterns\n\nHARD RULES — NON‑NEGOTIABLE:\n• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.\n• Do NOT change, resize, move, or remove any permanent structure or landscaping.\n• Do NOT alter driveway, deck, or path geometry or surface type.\n\nGoal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.`.trim();
-    }
-
-    return `\nYou are a professional real-estate image editor.
-
-TASK:
-Clear this room to reveal clean architectural structure and uninterrupted straight lines.
+Remove ALL furniture and ALL clutter from this room.
 
 REMOVE:
-- ALL large furniture
-- ALL lamps
-- ALL wall art
-- ALL decor attached to walls
-- ALL items touching walls, windows, corners, or floor edges
-- ALL visual obstructions to straight architectural lines
-
-DO NOT REMOVE:
-- Built-in fixtures
-- Windows
-- Doors
-- Floors
-- Ceilings
-- Lighting sources that are part of the room
-
-STRICT RULES:
-- Do NOT change walls, doors, windows, floors, ceilings, or room geometry.
-- Do NOT alter camera angle or perspective.
-- Do NOT add new objects.
-- Preserve natural light direction and intensity.
-
-OUTPUT REQUIREMENT:
-- The room must show clean, uninterrupted architectural lines.
-- Windows must be fully visible.
-- Floor/wall junctions must be unobstructed.
-- Photorealistic real-estate photography standard.
-
-Return ONLY the edited image.`.trim();
-  }
-
-  // Legacy wrapper for backwards compatibility
-  // Routes to correct prompt based on furniture removal mode
-  export function buildStage1BAPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
-    const furnitureRemovalMode = (global as any).__furnitureRemovalMode || 'auto';
-
-    // Light mode uses "Main Furniture Only" prompt
-    if (furnitureRemovalMode === 'main') {
-      return buildStage1BALightPromptNZStyle(roomType, sceneType);
-    }
-
-    // Auto and Heavy modes use "Structural Clear" prompt for Pass 1
-    return buildStage1BAStructuralPromptNZStyle(roomType, sceneType);
-  }
-
-  // Stage 1B-B: Micro Declutter (AUTO PASS 2 + HEAVY PASS 2)
-  // Removes ALL remaining small clutter and residual objects to create completely empty room
-  export function buildStage1BBPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
-    if (sceneType === "exterior") {
-      // Exteriors don't need heavy declutter, use standard
-      return `\nDeclutter this exterior property image for professional New Zealand real estate marketing.\n\nREMOVE (transient items ONLY):\n• Hoses, bins, toys, tools, tarps, ladders, bags, packaging, garden equipment\n• Loose debris: bark, stones, leaves, scattered items, dirt piles\n• Random accessories on decks/paths that are not permanently fixed\n\nKEEP EXACTLY (PERMANENT):\n• All buildings, windows, doors, rooflines, fences, gates, retaining walls\n• All permanent landscaping (trees, shrubs, hedges, garden beds)\n• All driveways, paths, decks, patios — preserve shape, size, materials, and patterns\n\nHARD RULES — NON‑NEGOTIABLE:\n• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.\n• Do NOT change, resize, move, or remove any permanent structure or landscaping.\n• Do NOT alter driveway, deck, or path geometry or surface type.\n\nGoal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.`.trim();
-    }
-
-    return `\nYou are a professional real-estate image editor.
-
-TASK:
-Remove all remaining small clutter and residual objects to create a completely empty, clean room.
-
-REMOVE:
-- All remaining rugs
+- All large furniture
+- All partial furniture
+- All small furniture
+- All wall art
+- All lamps
 - All plants
+- All rugs
 - All cushions
-- All small decor
-- All cables
-- All remaining edge objects
-- All bench or surface items
-- All loose accessories
+- All decor
+- All window-sill items
+- All counter and bench items
+- All loose objects
+- All visible storage contents
 
 STRICT RULES:
 - Do NOT change walls, doors, windows, floors, ceilings, or room geometry.
-- Do NOT alter perspective or lighting direction.
+- Do NOT change camera angle or perspective.
+- Do NOT alter lighting direction.
 - Do NOT add any new objects.
 
 OUTPUT STYLE:
-- The room must appear completely empty.
-- Clean, bright, photorealistic.
-- Professional real estate photography standard.
+- The room must appear architecturally empty.
+- Clean straight wall lines must be visible.
+- Windows must be fully unobstructed.
+- Professional real-estate photography standard.
 
 Return ONLY the edited image.`.trim();
+  }
+
+  // Legacy wrapper - now routes ALL modes to single FULL DECLUTTER prompt
+  export function buildStage1BAPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
+    return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
+  }
+
+  // Legacy wrapper - now routes ALL modes to single FULL DECLUTTER prompt
+  export function buildStage1BBPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
+    return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
   }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style) - LEGACY
