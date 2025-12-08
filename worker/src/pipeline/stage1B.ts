@@ -85,8 +85,11 @@ export async function runStage1B(
     }
 
     // Decision: Do we need Stage 1B-B?
+    // SAFETY: Also check declutterIntensity as a backup (belt-and-suspenders)
+    const declutterIntensity = (global as any).__jobDeclutterIntensity;
     let needsStage1BB = false;
-    if (furnitureRemovalMode === 'heavy') {
+
+    if (furnitureRemovalMode === 'heavy' || declutterIntensity === 'heavy') {
       console.log(`[stage1B] 🎯 Mode is 'heavy' - will run Stage 1B-B`);
       needsStage1BB = true;
     } else if (furnitureRemovalMode === 'auto') {

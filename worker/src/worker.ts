@@ -494,7 +494,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
-    (global as any).__furnitureRemovalMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
+
+    // Normalize furniture removal mode from declutterIntensity
+    // If declutterIntensity is "heavy", force furnitureRemovalMode to "heavy"
+    let normalizedFurnitureMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
+    if ((payload.options as any)?.declutterIntensity === 'heavy') {
+      normalizedFurnitureMode = 'heavy';
+      nLog(`[WORKER] 🔄 Normalized: declutterIntensity=heavy → furnitureRemovalMode=heavy`);
+    }
+    (global as any).__furnitureRemovalMode = normalizedFurnitureMode;
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
@@ -573,14 +581,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage1BPass2Complete = false;
   let stage1BPass2Path: string | undefined = undefined;
   
-  // Read furniture removal settings from payload
+  // Read furniture removal settings (use normalized values from global state)
   const declutter = payload?.options?.declutter === true;
-  const furnitureRemovalMode = (payload?.options?.furnitureRemovalMode || "auto") as "auto" | "main" | "heavy";
-  
+  const declutterIntensity = (payload?.options?.declutterIntensity || "standard") as "light" | "standard" | "heavy";
+  const furnitureRemovalMode = ((global as any).__furnitureRemovalMode || "auto") as "auto" | "main" | "heavy";
+
   // Derive requiresHeavyDeclutter based on user selection
+  // SAFETY: Check BOTH furnitureRemovalMode and declutterIntensity (belt-and-suspenders)
   // User explicitly selected "heavy" → always use heavy mode (dual-pass)
   // User selected "auto" or "main" → only use primary pass
-  const requiresHeavyDeclutter = declutter && furnitureRemovalMode === "heavy";
+  const requiresHeavyDeclutter = declutter && (furnitureRemovalMode === "heavy" || declutterIntensity === "heavy");
   
   // DECLUTTER TRACE LOGGING
   console.log('[DECLUTTER_TRACE]', {
