@@ -1,20 +1,20 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
 import { enhanceWithGemini } from "../ai/gemini";
-import { buildStage1BPromptNZStyle, buildStage1BAPromptNZStyle, buildStage1BBPromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildStage1BPromptNZStyle, buildStage1BAPromptNZStyle, buildStage1BBPromptNZStyle, buildStage1BTidyPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 import { runUnifiedValidation } from "../validators/runValidation";
 
 /**
- * Stage 1B: Two-Stage Furniture & Clutter Removal System
+ * Stage 1B: Furniture & Clutter Removal System
  *
- * Supports three modes:
- * - "main": Stage 1B-A only (remove large furniture, keep décor)
- * - "heavy": Stage 1B-A + 1B-B (remove all furniture and clutter)
- * - "auto": Stage 1B-A, evaluate clutter, conditionally run 1B-B
+ * Supports three public modes:
+ * - "tidy" (main): Micro declutter only - removes small clutter, keeps ALL furniture
+ * - "standard" (auto): Structural clear + conditional micro - removes furniture, auto-escalates to clutter cleanup if needed
+ * - "stage-ready" (heavy): Structural clear + forced micro - removes everything loose for staging
  *
- * Pipeline: Sharp → Stage 1A (enhance) → Stage 1B-A (main furniture) → [1B-B if needed] → Stage 2 (staging)
+ * Pipeline: Sharp → Stage 1A (enhance) → Stage 1B → [1B-B if needed] → Stage 2 (staging)
  */
 export async function runStage1B(
   stage1APath: string,
@@ -26,10 +26,21 @@ export async function runStage1B(
 ): Promise<string> {
   const { replaceSky = false, sceneType, roomType } = options;
   const furnitureRemovalMode = (global as any).__furnitureRemovalMode || 'auto';
+  const publicMode = (global as any).__publicMode || 'standard';
+  const declutterIntensity = (global as any).__jobDeclutterIntensity;
+  const jobId = (global as any).__jobId || 'unknown';
 
-  console.log(`[stage1B] 🔵 Starting two-stage furniture removal system...`);
+  console.log(`[stage1B] 🔵 Starting furniture removal system...`);
   console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
   console.log(`[stage1B] Options: sceneType=${sceneType}, furnitureRemovalMode=${furnitureRemovalMode}`);
+
+  // Log mode resolution (required by spec)
+  console.log(`[stage1B] Public mode resolved`, {
+    jobId,
+    furnitureRemovalMode,
+    declutterIntensity,
+    publicMode
+  });
 
   // For exteriors, bypass two-stage system (no furniture to remove)
   if (sceneType === 'exterior') {
@@ -38,13 +49,65 @@ export async function runStage1B(
   }
 
   try {
-    // ✅ Stage 1B-A: Main Furniture Removal (always runs first)
-    const jobId = (global as any).__jobId || 'unknown';
-    console.log(`[stage1B-1] 🚪 PRIMARY furniture removal started`, {
+    // Determine execution plan based on public mode
+    const willRunStructural = publicMode !== "tidy";
+    const willRunMicro = publicMode === "tidy" ||
+                         publicMode === "stage-ready" ||
+                         (publicMode === "standard"); // standard may run micro based on auto-escalation
+
+    console.log(`[stage1B] Execution plan locked`, {
       jobId,
-      mode: 'main-only',
+      publicMode,
+      willRunStructural,
+      willRunMicro: willRunMicro && publicMode !== "standard" ? true : "conditional"
+    });
+
+    // ✅ TIDY MODE: Run only micro declutter (no furniture removal)
+    if (publicMode === "tidy") {
+      console.log(`[stage1B-TIDY] 🧹 Tidy mode: micro declutter only (keeping furniture)`, {
+        jobId,
+        input: stage1APath
+      });
+
+      const tidyPath = await enhanceWithGemini(stage1APath, {
+        skipIfNoApiKey: true,
+        replaceSky,
+        declutter: true,
+        sceneType,
+        stage: "1B-A",
+        temperature: 0.30,
+        topP: 0.70,
+        topK: 32,
+        promptOverride: buildStage1BTidyPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
+        floorClean: sceneType === "interior",
+        hardscapeClean: sceneType === "exterior",
+        declutterIntensity: 'light',
+        ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+      });
+
+      console.log(`[stage1B-TIDY] ✅ Tidy complete (furniture preserved)`, {
+        jobId,
+        output: tidyPath
+      });
+
+      // Rename with -1B-A suffix
+      if (tidyPath !== stage1APath) {
+        const fs = await import("fs/promises");
+        const outputPath = siblingOutPath(stage1APath, "-1B-A", ".webp");
+        await fs.rename(tidyPath, outputPath);
+        console.log(`[stage1B] ✅ TIDY MODE complete: ${outputPath}`);
+        return outputPath;
+      }
+      return stage1APath;
+    }
+
+    // ✅ STANDARD & STAGE-READY: Run structural clear (1B-A) first
+    console.log(`[stage1B-1] 🚪 STRUCTURAL furniture removal started`, {
+      jobId,
+      mode: publicMode,
       input: stage1APath
     });
+
     const stage1BAPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
       replaceSky,
@@ -57,7 +120,7 @@ export async function runStage1B(
       promptOverride: buildStage1BAPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
       floorClean: sceneType === "interior",
       hardscapeClean: sceneType === "exterior",
-      declutterIntensity: 'standard', // 1B-A always uses standard intensity
+      declutterIntensity: 'standard',
       ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
     });
 
@@ -95,17 +158,23 @@ export async function runStage1B(
       });
     }
 
-    // Decision: Do we need Stage 1B-B (second pass)?
-    // SIMPLIFIED LOGIC: Only Heavy mode runs twice
-    // Light/Auto/Main all run FULL DECLUTTER once
-    const declutterIntensity = (global as any).__jobDeclutterIntensity;
+    // Decision: Do we need Stage 1B-B (micro declutter pass)?
+    // NEW LOGIC:
+    // - "tidy": Already handled above (returns early)
+    // - "standard" (auto): Auto-escalate to micro if clutter detected
+    // - "stage-ready" (heavy): ALWAYS run micro
     let needsStage1BB = false;
 
-    if (furnitureRemovalMode === 'heavy' || declutterIntensity === 'heavy') {
-      console.log(`[STAGE1B] MODE=${furnitureRemovalMode} HEAVY - will run PASS B`);
+    if (publicMode === "stage-ready") {
+      console.log(`[STAGE1B] MODE=stage-ready - will ALWAYS run micro declutter (PASS B)`);
       needsStage1BB = true;
+    } else if (publicMode === "standard") {
+      // Auto-escalation: check if clutter remains
+      const shouldEscalate = await shouldRunStage1BB(stage1BAPath);
+      needsStage1BB = shouldEscalate;
+      console.log(`[STAGE1B] MODE=standard - auto-escalation: ${shouldEscalate ? 'WILL' : 'WILL NOT'} run micro declutter`);
     } else {
-      console.log(`[STAGE1B] MODE=${furnitureRemovalMode} LIGHT/AUTO - single pass only`);
+      console.log(`[STAGE1B] MODE=${publicMode} - single pass only`);
       needsStage1BB = false;
     }
 

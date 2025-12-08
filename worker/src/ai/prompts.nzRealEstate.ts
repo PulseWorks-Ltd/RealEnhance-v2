@@ -11,6 +11,47 @@ function buildStage1AExteriorPromptNZStyle(): string {
   return `\nEnhance this exterior property image in the style of top New Zealand real estate\nphotographs as commonly seen on professional Trade Me listings.\n\nYour goals:\n• Replace the sky with a bright New Zealand-blue sky and soft natural clouds.\n• Brighten the entire exterior scene with warm, sunny lighting.\n• Enhance all greens to look healthy, vibrant, and well-maintained.\n• Improve clarity and texture on cladding, roofing, decking, and hard surfaces.\n• Clean dirt, mould, and discoloration from driveways, decks, and fences while\n  preserving original material texture.\n• Apply strong professional-level tonal shaping: lifted shadows, warm midtones,\n  crisp highlights, and clean whites.\n\nHARD LANDCOVER RULES:\n• Do NOT add, remove, extend, shrink, recolor, or invent ANY driveway, path,\n  deck, patio, hard-surface area, or structure.\n• Grass must remain grass; hard surfaces must remain hard surfaces.\n• Do NOT reshape, redraw, or replace trees, shrubs, hedges, or plants.\n\nABSOLUTE GEOMETRY RULES:\n• Do NOT rotate, crop, straighten, zoom, or change the camera angle.\n• Do NOT change ANY structural element: walls, rooflines, windows, doors,\n  fences, balconies, gutters, or architectural edges.\n• Do NOT remove or add buildings, structures, or features.\n\nOnly enhance lighting, color, clarity, and cleanliness. No structural changes.`.trim();
 }
 
+  // Stage 1B-TIDY: TIDY ONLY (MICRO DECLUTTER - NO FURNITURE REMOVAL)
+  // Used by "tidy" mode (replaces old "main" mode)
+  // Removes ONLY small clutter, keeps ALL furniture in place
+  export function buildStage1BTidyPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
+    if (sceneType === "exterior") {
+      return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
+    }
+
+    return `You are a professional real-estate image editor.
+
+TASK:
+Neaten and tidy this room for listing photography while keeping ALL furniture in place.
+
+REMOVE ONLY:
+- Countertop clutter
+- Window sill items
+- Fridge magnets and papers
+- Photo frames and small wall decor
+- Bedside table clutter
+- Bathroom sink, shower, and bath clutter
+- Shoes on the floor
+- Clothes on the floor
+- Loose cables and chargers
+- Kids toys
+- Small loose decor items
+
+DO NOT REMOVE:
+- Beds
+- Sofas and couches
+- Dining tables
+- Desks
+- Chairs
+- Wardrobes
+- Cabinets
+- TV stands
+- Rugs
+- Curtains
+- Lamps
+- Built-in fixtures`;
+  }
+
   // Stage 1B: FULL DECLUTTER PROMPT (UNIFIED FOR ALL MODES)
   // Used by Light (1x), Auto (1x), and Heavy (2x) modes
   // Removes ALL furniture and clutter to create architecturally empty room
@@ -55,95 +96,64 @@ OUTPUT STYLE:
 Return ONLY the edited image.`.trim();
   }
 
-  // Stage 1B-A: FULL STRUCTURAL DECLUTTER (PASS A)
-  // Used by Light (1x), Auto (1x), and Heavy (1st pass)
-  // Curtain-safe full furniture removal
+  // Stage 1B-A: PRIMARY FURNITURE REMOVAL (PASS A)
+  // Used by "main" mode (1x only), "auto" (1x), and "heavy" (1st pass of 2)
+  // Removes ONLY large furniture, preserves decor for "main" mode
   export function buildStage1BAPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
     }
 
-    return `You are a professional real-estate image editor.
+    return `You are removing ALL large movable furniture only.
+Remove beds, couches, dining tables, chairs, wardrobes, desks, and freestanding shelving.
 
-TASK:
-Remove ALL movable furniture and ALL clutter from this room to reveal a clean, empty architectural shell.
+ABSOLUTE RULES:
+- DO NOT remove curtains, blinds, or drapes.
+- DO NOT alter windows, doors, walls, trim, ceilings, floors, or HVAC units.
+- DO NOT remove built-in cabinetry.
+- Preserve all lighting fixtures.
 
-REMOVE:
-- All large furniture
-- All partial furniture
-- All small furniture
-- All wall art
-- All lamps
-- All pot plants
-- All rugs and mats
-- All cushions
-- All decorative objects
-- All photo frames
-- All vases and ornaments
-- All window-sill items
-- All counter and bench items
-- All loose household items
+Leave:
+- Wall art
+- Small decor
+- Plants
+- Countertop items
 
-STRICT PROTECTIONS (MUST NEVER CHANGE):
-- Curtains, blinds, and drapes MUST NOT be removed or altered.
-- Windows MUST NOT be removed or blocked.
-- Doors MUST NOT be removed.
-- Built-in fixtures MUST NOT be removed.
-- Walls, floors, ceilings, trims, and skirting MUST NOT be altered.
-- Perspective, lens, and camera angle MUST NOT change.
-- Lighting direction MUST NOT change.
-- Do NOT add any new objects.
-
-OUTPUT REQUIREMENT:
-- The room must appear architecturally empty.
-- Straight wall lines must be fully visible.
-- Floor-to-wall junctions must be unobstructed.
-- Windows must be fully visible but curtains remain intact.
-- Professional real-estate photography standard.
-
-Return ONLY the edited image.`;
+This is NOT staging. This is ONLY furniture removal.`;
   }
 
-  // Stage 1B-B: RESIDUAL CLEANUP PASS (PASS B)
-  // Only runs in Heavy mode as second pass
-  // Targets missed items with stronger emphasis
+  // Stage 1B-B: RESIDUAL CLUTTER CLEANUP (PASS B)
+  // Only runs in "auto" and "heavy" modes as second pass
+  // Removes remaining clutter after primary furniture removal
   export function buildStage1BBPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
     }
 
-    return `You are a professional real-estate image editor.
+    return `This is PASS TWO declutter.
+Remove ALL remaining non-structural clutter including:
 
-TASK:
-This is a SECOND cleanup pass. Remove ANY remaining movable furniture or clutter that was missed in the first pass.
+- Wall art
+- Picture frames
+- Small decor
+- Plants
+- Window sill clutter
+- Countertop clutter
+- Partial edge furniture artifacts
 
-PRIORITY TARGETS:
-- Partially visible furniture
-- Furniture behind curtains
-- Furniture near walls and corners
-- Window-sill clutter
-- Counter and bench clutter
-- Wall art and hanging decor
-- Plants and small decorative objects
-- Any remaining loose items
+ABSOLUTE FORBIDDEN ITEMS:
+- Curtains
+- Blinds
+- Windows
+- Doors
+- Walls
+- Trim
+- HVAC
+- Built-in cabinetry
+- Lighting fixtures
 
-STRICT PROTECTIONS (MUST NEVER CHANGE):
-- Curtains, blinds, and drapes MUST NOT be removed or altered.
-- Windows MUST NOT be removed or blocked.
-- Doors MUST NOT be removed.
-- Built-in fixtures MUST NOT be removed.
-- Walls, floors, ceilings, trims, and skirting MUST NOT be altered.
-- Perspective, lens, and camera angle MUST NOT change.
-- Lighting direction MUST NOT change.
-- Do NOT add any new objects.
-
-OUTPUT REQUIREMENT:
-- The room must appear completely empty of all movable items.
-- Only fixed architectural features and curtains remain.
-- No clutter is permitted anywhere.
-- Professional real-estate photography standard.
-
-Return ONLY the edited image.`;
+DO NOT remove any large furniture (already removed in pass 1).
+DO NOT modify architecture.`;
   }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style) - LEGACY

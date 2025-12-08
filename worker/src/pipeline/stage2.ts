@@ -181,7 +181,8 @@ export async function runStage2(
         if (dbg) console.log("[stage2] no image in response → using previous output");
         break;
       }
-      const candidatePath = siblingOutPath(out, `-2-retry${attempt + 1}`, ".webp");
+      // Use -2.webp for final naming (no retry suffix to avoid confusion)
+      const candidatePath = siblingOutPath(basePath, `-2`, ".webp");
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       out = candidatePath;
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
