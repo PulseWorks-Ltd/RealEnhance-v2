@@ -1,13 +1,3 @@
-/* ✅ FORCE ALL ROOM TYPE DROPDOWNS TO ONLY EXPAND DOWNWARD */
-[data-radix-popper-content-wrapper] {
-  transform-origin: top !important;
-}
-
-[data-state="open"][data-side="top"] {
-  margin-bottom: 0 !important;
-  margin-top: 0 !important;
-}
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

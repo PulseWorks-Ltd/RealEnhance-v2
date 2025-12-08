@@ -2,6 +2,7 @@
   // Replaced by backend ML API call below
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FixedSelect, FixedSelectItem } from "@/components/ui/FixedSelect";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
@@ -2537,44 +2538,34 @@ export default function BatchProcessor() {
                       <label className="block text-gray-300 text-xs font-medium mb-2">
                         Room Type
                       </label>
-                      <Select
+                      <FixedSelect
                         value={imageRoomTypes[index] || ""}
                         onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [index]: v }))}
+                        placeholder="Select room type…"
+                        className="w-full"
                       >
-                        <SelectTrigger className="relative z-10 w-full bg-gray-700 border border-gray-600 rounded-md text-white text-sm">
-                          <SelectValue placeholder="Select room type…" />
-                        </SelectTrigger>
-                        <SelectContent
-                          side="bottom"
-                          sideOffset={6}
-                          align="start"
-                          position="popper"
-                          avoidCollisions={false}
-                          className="z-[9999] max-h-[260px] overflow-y-auto"
-                        >
-                          <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
-                          <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
-                          <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
-                          <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
-                          <SelectItem value="kitchen">Kitchen</SelectItem>
-                          <SelectItem value="living-room">Living Room</SelectItem>
-                          <SelectItem value="multi-living">Multiple Living Areas</SelectItem>
-                          <SelectItem value="dining-room">Dining Room</SelectItem>
-                          <SelectItem value="study">Study</SelectItem>
-                          <SelectItem value="office">Office</SelectItem>
-                          <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
-                          <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
-                          <SelectItem value="laundry">Laundry</SelectItem>
-                          <SelectItem value="garage">Garage</SelectItem>
-                          <SelectItem value="basement">Basement</SelectItem>
-                          <SelectItem value="attic">Attic</SelectItem>
-                          <SelectItem value="hallway">Hallway</SelectItem>
-                          <SelectItem value="staircase">Staircase</SelectItem>
-                          <SelectItem value="entryway">Entryway</SelectItem>
-                          <SelectItem value="closet">Closet</SelectItem>
-                          <SelectItem value="pantry">Pantry</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <FixedSelectItem value="bedroom-1">Bedroom 1</FixedSelectItem>
+                        <FixedSelectItem value="bedroom-2">Bedroom 2</FixedSelectItem>
+                        <FixedSelectItem value="bedroom-3">Bedroom 3</FixedSelectItem>
+                        <FixedSelectItem value="bedroom-4">Bedroom 4</FixedSelectItem>
+                        <FixedSelectItem value="kitchen">Kitchen</FixedSelectItem>
+                        <FixedSelectItem value="living-room">Living Room</FixedSelectItem>
+                        <FixedSelectItem value="multi-living">Multiple Living Areas</FixedSelectItem>
+                        <FixedSelectItem value="dining-room">Dining Room</FixedSelectItem>
+                        <FixedSelectItem value="study">Study</FixedSelectItem>
+                        <FixedSelectItem value="office">Office</FixedSelectItem>
+                        <FixedSelectItem value="bathroom-1">Bathroom 1</FixedSelectItem>
+                        <FixedSelectItem value="bathroom-2">Bathroom 2</FixedSelectItem>
+                        <FixedSelectItem value="laundry">Laundry</FixedSelectItem>
+                        <FixedSelectItem value="garage">Garage</FixedSelectItem>
+                        <FixedSelectItem value="basement">Basement</FixedSelectItem>
+                        <FixedSelectItem value="attic">Attic</FixedSelectItem>
+                        <FixedSelectItem value="hallway">Hallway</FixedSelectItem>
+                        <FixedSelectItem value="staircase">Staircase</FixedSelectItem>
+                        <FixedSelectItem value="entryway">Entryway</FixedSelectItem>
+                        <FixedSelectItem value="closet">Closet</FixedSelectItem>
+                        <FixedSelectItem value="pantry">Pantry</FixedSelectItem>
+                      </FixedSelect>
                     </div>
                   )}
                 </div>
