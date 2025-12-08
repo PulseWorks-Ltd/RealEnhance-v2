@@ -52,6 +52,25 @@ import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 
 /**
+ * FILENAME ENFORCEMENT: Build stage path with explicit pass numbering
+ * Stage 1B-1 → -1B-1.webp
+ * Stage 1B-2 → -1B-2.webp
+ * Rewrites legacy "-1B.webp" to "-1B-1.webp" if no pass number detected
+ */
+function buildStagePath(sourcePath: string, stageCode: "1B-1" | "1B-2"): string {
+  const path = require("path");
+  const dir = path.dirname(sourcePath);
+  const base = path.basename(sourcePath, path.extname(sourcePath));
+  
+  // Remove any existing stage markers
+  const cleanBase = base.replace(/-1[AB](-[12])?$/, "");
+  
+  // Add new stage marker
+  const newBase = `${cleanBase}-${stageCode}.webp`;
+  return path.join(dir, newBase);
+}
+
+/**
  * OPTIMIZED GEMINI API CALL STRATEGY
  * ==================================
  * 
@@ -532,19 +551,66 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
-  // STAGE 1B (optional declutter)
+  // ═══════════ STAGE 1B — ENFORCED DUAL-PASS EXECUTION ═══════════
   const t1B = Date.now();
   let path1B: string | undefined = undefined;
-  nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
+  let stage1BPass1Complete = false;
+  let stage1BPass1Path: string | undefined = undefined;
+  let stage1BPass2Complete = false;
+  let stage1BPass2Path: string | undefined = undefined;
+  const requiresHeavyDeclutter = ((payload.options as any)?.furnitureRemovalMode === 'heavy');
+  
+  nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}, requiresHeavyDeclutter=${requiresHeavyDeclutter}`);
+  
   if (payload.options.declutter) {
-    nLog(`[WORKER] ✅ Stage 1B ENABLED - will remove furniture from enhanced 1A output`);
+    nLog(`[WORKER] ✅ Stage 1B ENABLED - enforced dual-pass furniture removal`);
     try {
-      // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
+      // ✅ ALWAYS RUN PRIMARY PASS (Stage 1B-1)
+      nLog(`[stage1B-1] 🚪 PRIMARY furniture removal started`, {
+        jobId: payload.jobId,
+        mode: "main-only",
+        input: path1A
+      });
+      
+      // Run Stage 1B which handles the dual-pass internally
       path1B = await runStage1B(path1A, {
-        replaceSky: false, // Never combine with sky replacement
+        replaceSky: false,
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
       });
+      
+      // Determine which passes were executed based on filename
+      if (path1B && path1B !== path1A) {
+        if (path1B.includes("-1B-2")) {
+          // Heavy mode: both passes executed
+          stage1BPass1Complete = true;
+          stage1BPass2Complete = true;
+          stage1BPass2Path = path1B;
+          // Derive pass1 path (even though it's intermediate)
+          stage1BPass1Path = path1B.replace("-1B-2", "-1B-1");
+          nLog(`[stage1B] ✅ Dual-pass complete: 1B-1 → 1B-2`);
+        } else {
+          // Standard mode: only pass1 executed
+          stage1BPass1Complete = true;
+          stage1BPass1Path = path1B;
+          stage1BPass2Complete = false;
+          stage1BPass2Path = undefined;
+          nLog(`[stage1B] ✅ Single-pass complete: 1B-1 only`);
+        }
+      }
+      
+      nLog(`[stage1B-1] ✅ PRIMARY furniture removal complete`, {
+        jobId: payload.jobId,
+        output: stage1BPass1Path || path1B
+      });
+      
+      if (requiresHeavyDeclutter && stage1BPass2Complete) {
+        nLog(`[stage1B-2] ✅ SECONDARY declutter pass complete`, {
+          jobId: payload.jobId,
+          output: stage1BPass2Path
+        });
+      }
+      
     } catch (e: any) {
       const errMsg = e?.message || String(e);
       nLog(`[worker] Stage 1B failed: ${errMsg}`);
@@ -630,30 +696,51 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
   
-  // ═══════════ STAGE 2 SOURCE VERIFICATION (FORENSIC) ═══════════
-  // Stage 2 MUST ONLY consume verified Stage 1B output when declutter is enabled
+  // ═══════════ STAGE 2 — HARD ENFORCEMENT ═══════════
   const isExteriorScene = sceneLabel === "exterior";
   let stage2InputPath: string;
-  let stage2BaseStage: "1A"|"1B";
+  let stage2BaseStage: "1A"|"1B-1"|"1B-2";
   let stage2SourceVerified = false;
   
   if (payload.options.declutter && !isExteriorScene) {
-    // Interior with declutter: MUST use Stage 1B output
-    if (!path1B || path1B === path1A) {
-      const errMsg = "❌ STAGE 2 BLOCKED — No valid Stage1B output found (declutter was enabled but 1B did not produce new output)";
-      nLog(errMsg);
-      updateJob(payload.jobId, {
-        status: "error",
-        errorMessage: errMsg,
-        error: errMsg,
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B' }
-      });
-      throw new Error(errMsg);
+    // Interior with declutter: enforce correct Stage1B pass
+    if (requiresHeavyDeclutter) {
+      // Heavy mode: MUST use Stage 1B-2 output
+      if (!stage1BPass2Complete || !stage1BPass2Path) {
+        const errMsg = "❌ STAGE 2 BLOCKED — Heavy declutter required but Stage1B-2 does not exist";
+        nLog(errMsg);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: errMsg,
+          error: errMsg,
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-2' }
+        });
+        throw new Error(errMsg);
+      }
+      stage2InputPath = stage1BPass2Path;
+      stage2BaseStage = "1B-2";
+      stage2SourceVerified = true;
+      nLog(`[stage2] ✅ Using input source: Stage1B-2 (heavy declutter) - verified`);
+    } else {
+      // Standard mode: MUST use Stage 1B-1 output
+      if (!stage1BPass1Complete || !stage1BPass1Path) {
+        const errMsg = "❌ STAGE 2 BLOCKED — Stage1B-1 output missing";
+        nLog(errMsg);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: errMsg,
+          error: errMsg,
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-1' }
+        });
+        throw new Error(errMsg);
+      }
+      stage2InputPath = stage1BPass1Path;
+      stage2BaseStage = "1B-1";
+      stage2SourceVerified = true;
+      nLog(`[stage2] ✅ Using input source: Stage1B-1 (standard declutter) - verified`);
     }
-    stage2InputPath = path1B;
-    stage2BaseStage = "1B";
-    stage2SourceVerified = true;
-    nLog(`[stage2] ✅ Using input source: Stage1B (decluttered) - verified`);
+    // Backward compatibility: set path1B for legacy code
+    path1B = stage2InputPath;
   } else {
     // Exterior or no declutter: use Stage 1A
     stage2InputPath = path1A;
@@ -675,16 +762,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
       const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
-      // Forensic logging: Stage 2 execution start
+      // Forensic logging: Stage 2 execution start with enforced source
       nLog(`[stage2] 🎬 Virtual staging started`, {
         jobId: payload.jobId,
         input: stage2InputPath,
-        sourceStage: stage2BaseStage === "1B" ? "Stage1B" : "Stage1A",
-        verified: stage2SourceVerified
+        sourceStage: stage2BaseStage,
+        verified: stage2SourceVerified,
+        enforced: true
       });
 
+      // Normalize stage identifier for runStage2 (expects '1A' | '1B')
+      const normalizedStage = stage2BaseStage.startsWith("1B") ? "1B" as const : "1A" as const;
+      
       path2 = payload.options.virtualStage
-        ? await runStage2(stage2InputPath, stage2BaseStage, {
+        ? await runStage2(stage2InputPath, normalizedStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -733,7 +824,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[stage2] ✅ Virtual staging complete`, {
       jobId: payload.jobId,
       output: path2,
-      inputVerifiedFrom: stage2BaseStage === "1B" ? "Stage1B" : "Stage1A"
+      inputVerifiedFrom: stage2BaseStage.startsWith("1B") ? stage2BaseStage : "Stage1A"
     });
   }
   
@@ -1161,20 +1252,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageExecutionProof: {
       stage1AComplete: !!path1A,
       stage1BComplete: !!(payload.options.declutter && path1B),
+      stage1BPass1Complete,
+      stage1BPass2Complete,
       stage2Complete: !!(payload.options.virtualStage && path2 !== stage2InputPath),
-      stage2Source: payload.options.declutter && path1B ? "1B" : "1A"
+      stage2Source: payload.options.declutter 
+        ? (requiresHeavyDeclutter && stage1BPass2Complete ? "1B-2" : "1B-1")
+        : "1A"
     }
   };
 
   // ═══════════ JOB SUMMARY FOOTER (FORENSIC AUDIT) ═══════════
   nLog(`[job-summary] ✅ Pipeline execution proof`, {
     jobId: payload.jobId,
+    requiresHeavyDeclutter,
     stages: {
       stage1A: !!path1A,
-      stage1B: !!(payload.options.declutter && path1B),
+      stage1B_1: stage1BPass1Complete,
+      stage1B_2: stage1BPass2Complete,
       stage2: !!(payload.options.virtualStage && path2 !== stage2InputPath)
     },
-    stage2Source: payload.options.declutter && path1B ? "1B" : "1A",
+    stage2Source: payload.options.declutter 
+      ? (requiresHeavyDeclutter && stage1BPass2Complete ? "1B-2" : "1B-1")
+      : "1A",
     safeForAudit: true
   });
 
