@@ -503,6 +503,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] 🔄 Normalized: declutterIntensity=heavy → furnitureRemovalMode=heavy`);
     }
     (global as any).__furnitureRemovalMode = normalizedFurnitureMode;
+
+    // Map internal mode to public-facing mode names
+    // main → tidy (micro declutter, keep furniture)
+    // auto → standard (remove furniture + conditional micro)
+    // heavy → stage-ready (remove everything)
+    let publicMode: "tidy" | "standard" | "stage-ready";
+    if (normalizedFurnitureMode === 'main') {
+      publicMode = "tidy";
+    } else if (normalizedFurnitureMode === 'auto') {
+      publicMode = "standard";
+    } else if (normalizedFurnitureMode === 'heavy') {
+      publicMode = "stage-ready";
+    } else {
+      publicMode = "standard"; // default
+    }
+    (global as any).__publicMode = publicMode;
+    nLog(`[WORKER] 📋 Public mode: ${normalizedFurnitureMode} → ${publicMode}`);
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
