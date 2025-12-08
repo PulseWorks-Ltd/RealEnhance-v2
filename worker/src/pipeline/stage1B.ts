@@ -102,6 +102,7 @@ export async function runStage1B(
     }
 
     let finalPath = stage1BAPath;
+    let stage1BBPath: string | undefined = undefined;
 
     // Log final decision
     console.log(`[stage1B] Heavy declutter decision locked`, {
@@ -117,7 +118,7 @@ export async function runStage1B(
         mode: 'heavy',
         input: stage1BAPath
       });
-      const stage1BBPath = await enhanceWithGemini(stage1BAPath, {
+      stage1BBPath = await enhanceWithGemini(stage1BAPath, {
         skipIfNoApiKey: true,
         replaceSky: false, // Already done in 1A
         declutter: true,
@@ -159,10 +160,21 @@ export async function runStage1B(
       }
     }
 
-    // Rename final output to -1B
+    // Rename final output to -1B with appropriate pass indicator
     if (finalPath !== stage1APath) {
-      const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
+
+      // Determine which pass completed and use appropriate filename
+      let stageSuffix: string;
+      if (needsStage1BB && finalPath === stage1BBPath) {
+        // Dual-pass completed: use -1B(2) to indicate Pass 2 ran
+        stageSuffix = "-1B(2)";
+      } else {
+        // Single-pass only: use -1B(1) to indicate only Pass 1 ran
+        stageSuffix = "-1B(1)";
+      }
+
+      const outputPath = siblingOutPath(stage1APath, stageSuffix, ".webp");
       console.log(`[stage1B] 💾 Renaming final output to Stage1B: ${finalPath} → ${outputPath}`);
       await fs.rename(finalPath, outputPath);
       console.log(`[stage1B] ✅ SUCCESS - Two-stage furniture removal complete: ${outputPath}`);
