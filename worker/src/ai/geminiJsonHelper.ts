@@ -4,6 +4,7 @@ import fs from "fs/promises";
 /**
  * Helper function to call Gemini with an image and get JSON response
  * Uses Gemini 1.5 Flash for detection tasks (cost-effective, fast)
+ * Configuration: temperature=0 (deterministic), JSON-only output mode
  * Reuses existing Gemini pattern from other detectors
  */
 export async function callGeminiJsonOnImage(
@@ -22,14 +23,18 @@ export async function callGeminiJsonOnImage(
   const imageB64 = imageBuffer.toString("base64");
 
   try {
-    // Use Gemini 1.5 Flash for detection tasks
+    // Use Gemini 1.5 Flash for detection tasks with temperature 0 (deterministic)
     const resp = await ai.models.generateContent({
       model: "gemini-1.5-flash",
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { text: prompt },
       ],
-    });
+      generationConfig: {
+        temperature: 0,  // Deterministic, consistent responses
+        responseMimeType: "application/json",  // Force JSON-only output
+      },
+    } as any);
 
     const raw = resp.text || "";
 
