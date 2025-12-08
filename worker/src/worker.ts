@@ -447,6 +447,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+    (global as any).__furnitureRemovalMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)

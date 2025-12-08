@@ -54,6 +54,7 @@ export function uploadRouter() {
     // Read high-level form toggles (string booleans)
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
+    const furnitureRemovalModeForm = String((req.body as any)?.furnitureRemovalMode || "auto").trim();
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
@@ -157,10 +158,21 @@ export function uploadRouter() {
           ...(topK !== undefined ? { topK } : {}),
         };
       }
+      // Map furnitureRemovalMode to declutterIntensity if not explicitly set
       if (typeof meta.declutterIntensity === 'string') {
         const s = String(meta.declutterIntensity).toLowerCase();
         if (['light','standard','heavy'].includes(s)) {
           opts.declutterIntensity = s;
+        }
+      } else if (!opts.declutterIntensity && declutterForm) {
+        // Convert furnitureRemovalMode from form to declutterIntensity
+        const mode = furnitureRemovalModeForm.toLowerCase();
+        if (mode === 'auto' || mode === 'main') {
+          opts.declutterIntensity = 'standard'; // Stage 1B-A: main furniture only
+          opts.furnitureRemovalMode = mode as 'auto' | 'main'; // Store original mode for worker
+        } else if (mode === 'heavy') {
+          opts.declutterIntensity = 'heavy'; // Stage 1B-B: complete clear
+          opts.furnitureRemovalMode = 'heavy';
         }
       }
       // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging

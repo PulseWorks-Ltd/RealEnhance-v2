@@ -66,6 +66,7 @@ export function retrySingleRouter() {
       const allowStaging = toBool(body.allowStaging, true);
       const stagingStyle = String(body.stagingStyle || '').trim();
       const declutter = toBool(body.declutter, false);
+      const furnitureRemovalMode = String(body.furnitureRemovalMode || 'auto').trim();
       const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       // Optional tuning
@@ -116,6 +117,20 @@ export function retrySingleRouter() {
         }
       }
 
+      // Map furnitureRemovalMode to declutterIntensity
+      let declutterIntensity: 'light' | 'standard' | 'heavy' | undefined;
+      let actualFurnitureRemovalMode: 'auto' | 'main' | 'heavy' | undefined;
+      if (declutter) {
+        const mode = furnitureRemovalMode.toLowerCase();
+        if (mode === 'auto' || mode === 'main') {
+          declutterIntensity = 'standard'; // Stage 1B-A: main furniture only
+          actualFurnitureRemovalMode = mode as 'auto' | 'main';
+        } else if (mode === 'heavy') {
+          declutterIntensity = 'heavy'; // Stage 1B-B: complete clear
+          actualFurnitureRemovalMode = 'heavy';
+        }
+      }
+
       const options: any = {
         declutter,
         virtualStage: !!allowStaging,
@@ -124,6 +139,8 @@ export function retrySingleRouter() {
         replaceSky,
         stagingStyle,
         manualSceneOverride,
+        ...(declutterIntensity ? { declutterIntensity } : {}),
+        ...(actualFurnitureRemovalMode ? { furnitureRemovalMode: actualFurnitureRemovalMode } : {}),
       };
       if (temperature !== undefined || topP !== undefined || topK !== undefined) {
         options.sampling = {
