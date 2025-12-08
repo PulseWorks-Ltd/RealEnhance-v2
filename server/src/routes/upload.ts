@@ -167,11 +167,14 @@ export function uploadRouter() {
       } else if (!opts.declutterIntensity && declutterForm) {
         // Convert furnitureRemovalMode from form to declutterIntensity
         const mode = furnitureRemovalModeForm.toLowerCase();
-        if (mode === 'auto' || mode === 'main') {
-          opts.declutterIntensity = 'standard'; // Stage 1B-A: main furniture only
-          opts.furnitureRemovalMode = mode as 'auto' | 'main'; // Store original mode for worker
+        if (mode === 'main') {
+          opts.declutterIntensity = 'light'; // Tidy mode: micro declutter only
+          opts.furnitureRemovalMode = 'main'; // Store original mode for worker
+        } else if (mode === 'auto') {
+          opts.declutterIntensity = 'standard'; // Standard mode: furniture removal + conditional cleanup
+          opts.furnitureRemovalMode = 'auto'; // Store original mode for worker
         } else if (mode === 'heavy') {
-          opts.declutterIntensity = 'heavy'; // Stage 1B-B: complete clear
+          opts.declutterIntensity = 'heavy'; // Stage-Ready mode: complete clear
           opts.furnitureRemovalMode = 'heavy';
         }
       }
