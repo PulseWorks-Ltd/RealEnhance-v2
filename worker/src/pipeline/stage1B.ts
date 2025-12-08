@@ -100,6 +100,13 @@ export async function runStage1B(
 
     let finalPath = stage1BAPath;
 
+    // Log final decision
+    console.log(`[stage1B] Heavy declutter decision locked`, {
+      jobId,
+      furnitureRemovalMode,
+      requiresHeavyDeclutter: needsStage1BB
+    });
+
     // ✅ Stage 1B-B: Heavy Declutter (conditional)
     if (needsStage1BB && stage1BAPath !== stage1APath) {
       console.log(`[stage1B-2] 🧹 SECONDARY declutter pass started`, {
@@ -273,18 +280,22 @@ async function runLegacyStage1B(
  * Auto mode decision: Should we run Stage 1B-B?
  * Evaluates clutter density after Stage 1B-A (main furniture removal)
  * Returns true if significant clutter remains (lamps, rugs, wall art, small items)
+ *
+ * Decision criteria:
+ * - Edge noise after 1B(1) > 28% → high residual clutter
+ * - Small item density > 35% → many decorative objects remain
+ * - Removed object count > 6 → complex room with likely more items
  */
 async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
-  try {
-    // Simple heuristic: analyze image for remaining visual complexity
-    // In a full implementation, you would use the existing clutter detection framework
-    // from /workspaces/RealEnhance-v2/worker/src/ai/declutter.ts
+  const jobId = (global as any).__jobId || 'unknown';
 
+  try {
+    // Analyze image for remaining visual complexity
     const metadata = await sharp(stage1BAPath).metadata();
     const { width = 0, height = 0 } = metadata;
 
     if (width === 0 || height === 0) {
-      console.log(`[shouldRunStage1BB] Invalid image dimensions, defaulting to NO`);
+      console.log(`[AUTO-HEAVY] Invalid image dimensions, defaulting to LIGHT`, { jobId });
       return false;
     }
 
@@ -299,7 +310,9 @@ async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
     const h = info.height;
     const channels = info.channels;
 
-    // Count edge density (proxy for remaining clutter/décor)
+    // ========================================
+    // SIGNAL 1: Edge Noise (proxy for residual clutter)
+    // ========================================
     let edgeCount = 0;
     const EDGE_THRESH = 30;
 
@@ -328,19 +341,68 @@ async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
     }
 
     const totalPixels = w * h;
-    const edgeDensity = edgeCount / totalPixels;
+    const edgeNoise = edgeCount / totalPixels;
 
-    console.log(`[shouldRunStage1BB] Edge density: ${(edgeDensity * 100).toFixed(2)}%`);
+    // ========================================
+    // SIGNAL 2: Small Item Density (count high-frequency regions)
+    // ========================================
+    let smallItemRegions = 0;
+    const SMALL_ITEM_THRESH = 40;
 
-    // Threshold: if edge density > 12%, room likely still has significant clutter (lamps, rugs, wall art)
-    // This is a conservative heuristic - tune based on real-world testing
-    const HIGH_CLUTTER_THRESHOLD = 0.12;
+    for (let y = 2; y < h - 2; y += 2) {
+      for (let x = 2; x < w - 2; x += 2) {
+        // Sample 3x3 local variance
+        let localVariance = 0;
+        const centerI = (y * w + x) * channels;
+        const centerLuma = 0.299 * (data[centerI] || 0) + 0.587 * (data[centerI + 1] || 0) + 0.114 * (data[centerI + 2] || 0);
 
-    return edgeDensity >= HIGH_CLUTTER_THRESHOLD;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const ni = ((y + dy) * w + (x + dx)) * channels;
+            const nLuma = 0.299 * (data[ni] || 0) + 0.587 * (data[ni + 1] || 0) + 0.114 * (data[ni + 2] || 0);
+            localVariance += Math.abs(nLuma - centerLuma);
+          }
+        }
 
-  } catch (error) {
-    console.error(`[shouldRunStage1BB] Error analyzing clutter:`, error);
-    // Default to running 1B-B on error (safer to over-declutter in auto mode)
-    return true;
+        if (localVariance / 9 >= SMALL_ITEM_THRESH) {
+          smallItemRegions++;
+        }
+      }
+    }
+
+    const totalRegions = ((h - 4) / 2) * ((w - 4) / 2);
+    const smallItemDensity = smallItemRegions / Math.max(1, totalRegions);
+
+    // ========================================
+    // SIGNAL 3: Removed Object Count (from global state if available)
+    // ========================================
+    const imageStats = (global as any).__imageStats || {};
+    const removedCount = imageStats.removedObjectCount || 0;
+
+    // ========================================
+    // DECISION LOGIC
+    // ========================================
+    const decision =
+      removedCount > 6 ||
+      smallItemDensity > 0.35 ||
+      edgeNoise > 0.28;
+
+    console.log(`[AUTO-HEAVY] Escalation decision`, {
+      jobId,
+      removedCount,
+      smallItemDensity: smallItemDensity.toFixed(3),
+      edgeNoise: edgeNoise.toFixed(3),
+      decision
+    });
+
+    return decision;
+
+  } catch (error: any) {
+    console.warn(`[AUTO-HEAVY] Escalation failed — defaulting to LIGHT`, {
+      jobId,
+      error: error?.message || String(error)
+    });
+    // Default to LIGHT mode (1B(1) only) on error - safer to under-declutter
+    return false;
   }
 }
