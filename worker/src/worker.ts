@@ -53,20 +53,26 @@ import { VALIDATOR_FOCUS } from "./config";
 
 /**
  * FILENAME ENFORCEMENT: Build stage path with explicit pass numbering
- * Stage 1B-1 → -1B-1.webp
- * Stage 1B-2 → -1B-2.webp
- * Rewrites legacy "-1B.webp" to "-1B-1.webp" if no pass number detected
+ * Stage 1B(1) → -1B(1).webp (primary furniture removal)
+ * Stage 1B(2) → -1B(2).webp (heavy declutter)
+ * 
+ * Backward compatibility: Accepts legacy codes "1B-1" and "1B-2"
  */
-function buildStagePath(sourcePath: string, stageCode: "1B-1" | "1B-2"): string {
+function buildStagePath(sourcePath: string, stageCode: "1B-1" | "1B-2" | "1B(1)" | "1B(2)"): string {
   const path = require("path");
   const dir = path.dirname(sourcePath);
   const base = path.basename(sourcePath, path.extname(sourcePath));
   
-  // Remove any existing stage markers
-  const cleanBase = base.replace(/-1[AB](-[12])?$/, "");
+  // Remove any existing stage markers (including legacy formats)
+  const cleanBase = base.replace(/-1[AB](\(-?[12]\)|-[12])?$/, "");
+  
+  // Normalize stage code to new format
+  let normalizedCode = stageCode;
+  if (stageCode === "1B-1") normalizedCode = "1B(1)";
+  if (stageCode === "1B-2") normalizedCode = "1B(2)";
   
   // Add new stage marker
-  const newBase = `${cleanBase}-${stageCode}.webp`;
+  const newBase = `${cleanBase}-${normalizedCode}.webp`;
   return path.join(dir, newBase);
 }
 
@@ -159,9 +165,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
 
-    // ✅ RETRY SAFETY: Validate stage provenance
+    // ✅ RETRY SAFETY: Validate stage provenance (accept both old and new naming)
     const base1BUrl = payload.stage2OnlyMode.base1BUrl;
-    if (!base1BUrl.includes('-1B') && !base1BUrl.includes('stage1B') && !base1BUrl.includes('/1B/')) {
+    const hasValidStage1BMarker = 
+      base1BUrl.includes('-1B(1)') || 
+      base1BUrl.includes('-1B(2)') ||
+      base1BUrl.includes('-1B-1') ||  // Legacy support
+      base1BUrl.includes('-1B-2') ||  // Legacy support
+      base1BUrl.includes('stage1B') || 
+      base1BUrl.includes('/1B/');
+    
+    if (!hasValidStage1BMarker) {
       const errMsg = "❌ Retry blocked — invalid stage provenance (Stage2OnlyMode requires Stage1B source)";
       nLog(errMsg);
       updateJob(payload.jobId, {
@@ -558,14 +572,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage1BPass1Path: string | undefined = undefined;
   let stage1BPass2Complete = false;
   let stage1BPass2Path: string | undefined = undefined;
-  const requiresHeavyDeclutter = ((payload.options as any)?.furnitureRemovalMode === 'heavy');
   
-  nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}, requiresHeavyDeclutter=${requiresHeavyDeclutter}`);
+  // Read furniture removal settings from payload
+  const declutter = payload?.options?.declutter === true;
+  const furnitureRemovalMode = (payload?.options?.furnitureRemovalMode || "auto") as "auto" | "main" | "heavy";
   
-  if (payload.options.declutter) {
+  // Derive requiresHeavyDeclutter based on user selection
+  // User explicitly selected "heavy" → always use heavy mode (dual-pass)
+  // User selected "auto" or "main" → only use primary pass
+  const requiresHeavyDeclutter = declutter && furnitureRemovalMode === "heavy";
+  
+  // DECLUTTER TRACE LOGGING
+  console.log('[DECLUTTER_TRACE]', {
+    jobId: payload.jobId,
+    declutter,
+    furnitureRemovalMode,
+    requiresHeavyDeclutter,
+    payloadOptions: payload?.options
+  });
+  
+  nLog(`[WORKER] Checking Stage 1B: declutter=${declutter}, furnitureRemovalMode=${furnitureRemovalMode}, requiresHeavyDeclutter=${requiresHeavyDeclutter}`);
+  
+  if (declutter) {
     nLog(`[WORKER] ✅ Stage 1B ENABLED - enforced dual-pass furniture removal`);
     try {
-      // ✅ ALWAYS RUN PRIMARY PASS (Stage 1B-1)
+      // ✅ ALWAYS RUN PRIMARY PASS (Stage 1B(1))
       nLog(`[stage1B-1] 🚪 PRIMARY furniture removal started`, {
         jobId: payload.jobId,
         mode: "main-only",
@@ -581,21 +612,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // Determine which passes were executed based on filename
       if (path1B && path1B !== path1A) {
-        if (path1B.includes("-1B-2")) {
+        // Check for new naming convention first, then legacy
+        if (path1B.includes("-1B(2)") || path1B.includes("-1B-2")) {
           // Heavy mode: both passes executed
           stage1BPass1Complete = true;
           stage1BPass2Complete = true;
           stage1BPass2Path = path1B;
           // Derive pass1 path (even though it's intermediate)
-          stage1BPass1Path = path1B.replace("-1B-2", "-1B-1");
-          nLog(`[stage1B] ✅ Dual-pass complete: 1B-1 → 1B-2`);
+          stage1BPass1Path = path1B.replace("-1B(2)", "-1B(1)").replace("-1B-2", "-1B(1)");
+          nLog(`[stage1B] ✅ Dual-pass complete: 1B(1) → 1B(2)`);
         } else {
           // Standard mode: only pass1 executed
           stage1BPass1Complete = true;
           stage1BPass1Path = path1B;
           stage1BPass2Complete = false;
           stage1BPass2Path = undefined;
-          nLog(`[stage1B] ✅ Single-pass complete: 1B-1 only`);
+          nLog(`[stage1B] ✅ Single-pass complete: 1B(1) only`);
         }
       }
       
@@ -609,6 +641,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           output: stage1BPass2Path
         });
+      } else if (requiresHeavyDeclutter && !stage1BPass2Complete) {
+        nLog(`[stage1B] ⚠️ Warning: Heavy mode requested but only single-pass completed`);
       }
       
     } catch (e: any) {
@@ -699,45 +733,45 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ═══════════ STAGE 2 — HARD ENFORCEMENT ═══════════
   const isExteriorScene = sceneLabel === "exterior";
   let stage2InputPath: string;
-  let stage2BaseStage: "1A"|"1B-1"|"1B-2";
+  let stage2BaseStage: "1A"|"1B(1)"|"1B(2)";
   let stage2SourceVerified = false;
   
-  if (payload.options.declutter && !isExteriorScene) {
+  if (declutter && !isExteriorScene) {
     // Interior with declutter: enforce correct Stage1B pass
     if (requiresHeavyDeclutter) {
-      // Heavy mode: MUST use Stage 1B-2 output
+      // Heavy mode: MUST use Stage 1B(2) output
       if (!stage1BPass2Complete || !stage1BPass2Path) {
-        const errMsg = "❌ STAGE 2 BLOCKED — Heavy declutter required but Stage1B-2 does not exist";
+        const errMsg = "❌ STAGE 2 BLOCKED — Heavy declutter required but Stage1B(2) does not exist";
         nLog(errMsg);
         updateJob(payload.jobId, {
           status: "error",
           errorMessage: errMsg,
           error: errMsg,
-          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-2' }
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B(2)' }
         });
         throw new Error(errMsg);
       }
       stage2InputPath = stage1BPass2Path;
-      stage2BaseStage = "1B-2";
+      stage2BaseStage = "1B(2)";
       stage2SourceVerified = true;
-      nLog(`[stage2] ✅ Using input source: Stage1B-2 (heavy declutter) - verified`);
+      nLog(`[stage2] ✅ Using input source: Stage1B(2) (heavy declutter) - verified`);
     } else {
-      // Standard mode: MUST use Stage 1B-1 output
+      // Standard mode: MUST use Stage 1B(1) output
       if (!stage1BPass1Complete || !stage1BPass1Path) {
-        const errMsg = "❌ STAGE 2 BLOCKED — Stage1B-1 output missing";
+        const errMsg = "❌ STAGE 2 BLOCKED — Stage1B(1) output missing";
         nLog(errMsg);
         updateJob(payload.jobId, {
           status: "error",
           errorMessage: errMsg,
           error: errMsg,
-          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-1' }
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B(1)' }
         });
         throw new Error(errMsg);
       }
       stage2InputPath = stage1BPass1Path;
-      stage2BaseStage = "1B-1";
+      stage2BaseStage = "1B(1)";
       stage2SourceVerified = true;
-      nLog(`[stage2] ✅ Using input source: Stage1B-1 (standard declutter) - verified`);
+      nLog(`[stage2] ✅ Using input source: Stage1B(1) (standard declutter) - verified`);
     }
     // Backward compatibility: set path1B for legacy code
     path1B = stage2InputPath;
@@ -1265,15 +1299,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[job-summary] ✅ Pipeline execution proof`, {
     jobId: payload.jobId,
     requiresHeavyDeclutter,
+    declutter,
+    furnitureRemovalMode,
     stages: {
       stage1A: !!path1A,
-      stage1B_1: stage1BPass1Complete,
-      stage1B_2: stage1BPass2Complete,
+      "stage1B(1)": stage1BPass1Complete,
+      "stage1B(2)": stage1BPass2Complete,
       stage2: !!(payload.options.virtualStage && path2 !== stage2InputPath)
     },
-    stage2Source: payload.options.declutter 
-      ? (requiresHeavyDeclutter && stage1BPass2Complete ? "1B-2" : "1B-1")
+    stage2Source: declutter 
+      ? (requiresHeavyDeclutter && stage1BPass2Complete ? "1B(2)" : "1B(1)")
       : "1A",
+    stageExecutionProof: {
+      stage1BPass1Complete,
+      stage1BPass1Path,
+      stage1BPass2Complete,
+      stage1BPass2Path,
+      stage2InputPath
+    },
     safeForAudit: true
   });
 
@@ -1494,7 +1537,15 @@ const worker = new Worker(
             // RESTORE PROVENANCE GUARD: Restore operations MUST only use Stage 1A output (quality-enhanced original)
             // Block if restoreFromUrl contains Stage 1B or Stage 2 markers to prevent restoring to wrong pipeline stage
             const restoreUrl = regionAny.restoreFromUrl;
-            const hasStage1BMarker = restoreUrl.includes("-1B") || restoreUrl.includes("stage1B") || restoreUrl.includes("/1B/");
+            // Check for both new and legacy naming conventions
+            const hasStage1BMarker = 
+              restoreUrl.includes("-1B(1)") || 
+              restoreUrl.includes("-1B(2)") ||
+              restoreUrl.includes("-1B-1") ||  // Legacy
+              restoreUrl.includes("-1B-2") ||  // Legacy
+              restoreUrl.includes("-1B") || 
+              restoreUrl.includes("stage1B") || 
+              restoreUrl.includes("/1B/");
             const hasStage2Marker = restoreUrl.includes("-stage2") || restoreUrl.includes("stage2") || restoreUrl.includes("/stage2/");
             
             if (hasStage1BMarker || hasStage2Marker) {
