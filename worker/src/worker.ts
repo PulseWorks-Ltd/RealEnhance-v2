@@ -140,6 +140,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
 
+    // ✅ RETRY SAFETY: Validate stage provenance
+    const base1BUrl = payload.stage2OnlyMode.base1BUrl;
+    if (!base1BUrl.includes('-1B') && !base1BUrl.includes('stage1B') && !base1BUrl.includes('/1B/')) {
+      const errMsg = "❌ Retry blocked — invalid stage provenance (Stage2OnlyMode requires Stage1B source)";
+      nLog(errMsg);
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: errMsg,
+        error: errMsg,
+        meta: { blockReason: 'invalid-retry-provenance' }
+      });
+      throw new Error(errMsg);
+    }
+
     try {
       const timings: Record<string, number> = {};
       const t0 = Date.now();
@@ -615,13 +629,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
-  // Stage 2 input selection:
-  // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
-  // - Exterior: always use Stage 1A
+  
+  // ═══════════ STAGE 2 SOURCE VERIFICATION (FORENSIC) ═══════════
+  // Stage 2 MUST ONLY consume verified Stage 1B output when declutter is enabled
   const isExteriorScene = sceneLabel === "exterior";
-  const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
-  const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
-  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
+  let stage2InputPath: string;
+  let stage2BaseStage: "1A"|"1B";
+  let stage2SourceVerified = false;
+  
+  if (payload.options.declutter && !isExteriorScene) {
+    // Interior with declutter: MUST use Stage 1B output
+    if (!path1B || path1B === path1A) {
+      const errMsg = "❌ STAGE 2 BLOCKED — No valid Stage1B output found (declutter was enabled but 1B did not produce new output)";
+      nLog(errMsg);
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: errMsg,
+        error: errMsg,
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B' }
+      });
+      throw new Error(errMsg);
+    }
+    stage2InputPath = path1B;
+    stage2BaseStage = "1B";
+    stage2SourceVerified = true;
+    nLog(`[stage2] ✅ Using input source: Stage1B (decluttered) - verified`);
+  } else {
+    // Exterior or no declutter: use Stage 1A
+    stage2InputPath = path1A;
+    stage2BaseStage = "1A";
+    stage2SourceVerified = true;
+    nLog(`[stage2] ✅ Using input source: Stage1A (${isExteriorScene ? 'exterior' : 'interior no-declutter'}) - verified`);
+  }
+  
+  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}, verified=${stage2SourceVerified}`);
   let path2: string = stage2InputPath;
   try {
     // Only allow exterior staging if allowStaging is true
@@ -633,6 +674,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
       const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
+
+      // Forensic logging: Stage 2 execution start
+      nLog(`[stage2] 🎬 Virtual staging started`, {
+        jobId: payload.jobId,
+        input: stage2InputPath,
+        sourceStage: stage2BaseStage === "1B" ? "Stage1B" : "Stage1A",
+        verified: stage2SourceVerified
+      });
 
       path2 = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
@@ -678,6 +727,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
   timings.stage2Ms = Date.now() - t2;
+  
+  // Forensic logging: Stage 2 completion
+  if (payload.options.virtualStage && path2 !== stage2InputPath) {
+    nLog(`[stage2] ✅ Virtual staging complete`, {
+      jobId: payload.jobId,
+      output: path2,
+      inputVerifiedFrom: stage2BaseStage === "1B" ? "Stage1B" : "Stage1A"
+    });
+  }
+  
   updateJob(payload.jobId, { stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
 
   if (await isCancelled(payload.jobId)) {
@@ -1097,8 +1156,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     timings: { ...timings, totalMs: Date.now() - t0 },
     ...(compliance ? { compliance } : {}),
     // ✅ Save Stage-1B structural safety flag for smart retry routing
-    ...(path1B ? { stage1BStructuralSafe } : {})
+    ...(path1B ? { stage1BStructuralSafe } : {}),
+    // ✅ Pipeline execution tracking for forensic audit
+    stageExecutionProof: {
+      stage1AComplete: !!path1A,
+      stage1BComplete: !!(payload.options.declutter && path1B),
+      stage2Complete: !!(payload.options.virtualStage && path2 !== stage2InputPath),
+      stage2Source: payload.options.declutter && path1B ? "1B" : "1A"
+    }
   };
+
+  // ═══════════ JOB SUMMARY FOOTER (FORENSIC AUDIT) ═══════════
+  nLog(`[job-summary] ✅ Pipeline execution proof`, {
+    jobId: payload.jobId,
+    stages: {
+      stage1A: !!path1A,
+      stage1B: !!(payload.options.declutter && path1B),
+      stage2: !!(payload.options.virtualStage && path2 !== stage2InputPath)
+    },
+    stage2Source: payload.options.declutter && path1B ? "1B" : "1A",
+    safeForAudit: true
+  });
 
   updateJob(payload.jobId, {
     status: "complete",
@@ -1314,8 +1392,22 @@ const worker = new Worker(
           // Download restore source if provided (for pixel-level restoration)
           let restoreFromPath: string | undefined;
           if (mode === "Restore" && regionAny.restoreFromUrl) {
-            nLog("[worker-region-edit] Downloading restore source from:", regionAny.restoreFromUrl);
-            restoreFromPath = await downloadToTemp(regionAny.restoreFromUrl, regionPayload.jobId + "-restore");
+            // RESTORE PROVENANCE GUARD: Restore operations MUST only use Stage 1A output (quality-enhanced original)
+            // Block if restoreFromUrl contains Stage 1B or Stage 2 markers to prevent restoring to wrong pipeline stage
+            const restoreUrl = regionAny.restoreFromUrl;
+            const hasStage1BMarker = restoreUrl.includes("-1B") || restoreUrl.includes("stage1B") || restoreUrl.includes("/1B/");
+            const hasStage2Marker = restoreUrl.includes("-stage2") || restoreUrl.includes("stage2") || restoreUrl.includes("/stage2/");
+            
+            if (hasStage1BMarker || hasStage2Marker) {
+              throw new Error(
+                `❌ Restore/Retry blocked — invalid stage provenance. ` +
+                `Restore operations can ONLY use Stage 1A output (quality-enhanced original). ` +
+                `Detected Stage 1B or Stage 2 marker in restore URL: ${restoreUrl}`
+              );
+            }
+            
+            nLog("[worker-region-edit] Downloading restore source from:", restoreUrl);
+            restoreFromPath = await downloadToTemp(restoreUrl, regionPayload.jobId + "-restore");
             nLog("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
           }
 

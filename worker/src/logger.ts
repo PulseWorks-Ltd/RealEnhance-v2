@@ -36,10 +36,24 @@ export function vLog(...args: any[]) {
  *
  * IMPORTANT: This provides HARD SUPPRESSION of noisy logs in validator focus mode.
  *
+ * EXCEPTION: Forensic proof lines ALWAYS pass through regardless of mode:
+ * - [stage1B-1] ✅ PRIMARY furniture removal complete
+ * - [stage1B-2] ✅ SECONDARY declutter pass complete
+ * - [stage2] ✅ Using input source
+ * - [job-summary] ✅ Pipeline execution proof
+ *
  * @param args Log arguments
  */
 export function nLog(...args: any[]) {
-  if (!VALIDATOR_FOCUS) {
+  // Check if this is a forensic proof line
+  const msgStr = args.join(' ');
+  const isForensicProof = 
+    msgStr.includes('[stage1B-1] ✅ PRIMARY furniture removal complete') ||
+    msgStr.includes('[stage1B-2] ✅ SECONDARY declutter pass complete') ||
+    msgStr.includes('[stage2] ✅ Using input source') ||
+    msgStr.includes('[job-summary] ✅ Pipeline execution proof');
+  
+  if (!VALIDATOR_FOCUS || isForensicProof) {
     console.log(...args);
   }
 }
