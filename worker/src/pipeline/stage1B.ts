@@ -4,6 +4,7 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { buildStage1BPromptNZStyle, buildStage1BAPromptNZStyle, buildStage1BBPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
+import { runUnifiedValidation } from "../validators/runValidation";
 
 /**
  * Stage 1B: Two-Stage Furniture & Clutter Removal System
@@ -82,6 +83,16 @@ export async function runStage1B(
       if (!verdict2.ok) {
         console.warn(`[stage1B-A] STRUCTURAL FAIL: ${verdict2.reason}`);
       }
+
+      // Run unified structural validation (log-only)
+      console.log("[VALIDATOR] Running structural validation @ 1B-A");
+      await runUnifiedValidation({
+        originalPath: stage1APath,
+        enhancedPath: stage1BAPath,
+        stage: "1B",
+        roomType: roomType,
+        mode: "log"
+      });
     }
 
     // Decision: Do we need Stage 1B-B (second pass)?
@@ -153,6 +164,17 @@ export async function runStage1B(
         if (!verdict2.ok) {
           console.warn(`[stage1B-B] STRUCTURAL FAIL: ${verdict2.reason}`);
         }
+
+        // Run unified structural validation (log-only)
+        console.log("[VALIDATOR] Running structural validation @ 1B-B");
+        await runUnifiedValidation({
+          originalPath: stage1APath,
+          enhancedPath: stage1BBPath,
+          stage: "1B",
+          roomType: roomType,
+          mode: "log"
+        });
+
         finalPath = stage1BBPath;
       }
     }
