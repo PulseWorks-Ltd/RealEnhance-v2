@@ -17,13 +17,19 @@ export function FixedSelect({
   className?: string;
   disabled?: boolean;
 }) {
+  const [mounted, setMounted] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
+  // Ensure container is mounted before rendering content
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
-    <div ref={containerRef} className="relative overflow-visible">
+    <div ref={containerRef} className="relative" style={{ position: 'relative' }}>
       <SelectPrimitive.Root value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectPrimitive.Trigger
-          className={`relative z-50 flex w-full items-center justify-between rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-white shadow-sm hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+          className={`relative flex w-full items-center justify-between rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-sm text-white shadow-sm hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
         >
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon>
@@ -31,17 +37,19 @@ export function FixedSelect({
           </SelectPrimitive.Icon>
         </SelectPrimitive.Trigger>
 
-        <SelectPrimitive.Content
-          side="bottom"
-          sideOffset={6}
-          align="start"
-          position="popper"
-          avoidCollisions={false}
-          container={containerRef.current}
-          className="z-[99999] max-h-[260px] w-[--radix-select-trigger-width] overflow-y-auto rounded-md border border-gray-600 bg-gray-800 text-white shadow-xl"
-        >
-          <SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport>
-        </SelectPrimitive.Content>
+        <SelectPrimitive.Portal container={mounted ? containerRef.current : undefined}>
+          <SelectPrimitive.Content
+            side="bottom"
+            sideOffset={6}
+            align="start"
+            position="popper"
+            avoidCollisions={false}
+            className="z-[99999] max-h-[260px] w-[--radix-select-trigger-width] overflow-y-auto rounded-md border border-gray-600 bg-gray-800 text-white shadow-xl"
+            style={{ position: 'absolute' }}
+          >
+            <SelectPrimitive.Viewport>{children}</SelectPrimitive.Viewport>
+          </SelectPrimitive.Content>
+        </SelectPrimitive.Portal>
       </SelectPrimitive.Root>
     </div>
   );
