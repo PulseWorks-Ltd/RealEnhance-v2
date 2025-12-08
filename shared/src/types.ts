@@ -81,6 +81,7 @@ export interface EnhanceJobPayload {
       topK?: number;
     };
     declutterIntensity?: "light" | "standard" | "heavy";
+    furnitureRemovalMode?: "auto" | "main" | "heavy"; // Two-stage furniture removal system
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {

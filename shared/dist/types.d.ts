@@ -60,6 +60,7 @@ export interface EnhanceJobPayload {
             topK?: number;
         };
         declutterIntensity?: "light" | "standard" | "heavy";
+        furnitureRemovalMode?: "auto" | "main" | "heavy";
     };
     stage2OnlyMode?: {
         enabled: boolean;
