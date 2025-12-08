@@ -2219,14 +2219,14 @@ export default function BatchProcessor() {
                           <input
                             type="radio"
                             name="furnitureRemovalMode"
-                            value="auto"
-                            checked={furnitureRemovalMode === "auto"}
-                            onChange={(e) => setFurnitureRemovalMode(e.target.value as "auto")}
+                            value="main"
+                            checked={furnitureRemovalMode === "main"}
+                            onChange={(e) => setFurnitureRemovalMode(e.target.value as "main")}
                             className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
                           />
                           <div>
-                            <span className="text-sm text-white">Auto <span className="text-xs text-purple-400">(recommended)</span></span>
-                            <p className="text-xs text-gray-400">Removes main furniture, then evaluates if heavy declutter needed</p>
+                            <span className="text-sm text-white">Tidy Only</span>
+                            <p className="text-xs text-gray-400">Removes small clutter only, keeps ALL furniture in place</p>
                           </div>
                         </label>
 
@@ -2234,14 +2234,14 @@ export default function BatchProcessor() {
                           <input
                             type="radio"
                             name="furnitureRemovalMode"
-                            value="main"
-                            checked={furnitureRemovalMode === "main"}
-                            onChange={(e) => setFurnitureRemovalMode(e.target.value as "main")}
+                            value="auto"
+                            checked={furnitureRemovalMode === "auto"}
+                            onChange={(e) => setFurnitureRemovalMode(e.target.value as "auto")}
                             className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
                           />
                           <div>
-                            <span className="text-sm text-white">Main furniture only</span>
-                            <p className="text-xs text-gray-400">Removes large items (beds, sofas, tables) but keeps décor</p>
+                            <span className="text-sm text-white">Standard <span className="text-xs text-purple-400">(recommended)</span></span>
+                            <p className="text-xs text-gray-400">Removes large furniture + auto clutter cleanup if needed</p>
                           </div>
                         </label>
 
@@ -2255,8 +2255,8 @@ export default function BatchProcessor() {
                             className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
                           />
                           <div>
-                            <span className="text-sm text-white">Heavy declutter</span>
-                            <p className="text-xs text-gray-400">Complete room clearing - removes all furniture and items</p>
+                            <span className="text-sm text-white">Stage-Ready</span>
+                            <p className="text-xs text-gray-400">Removes everything loose - completely empty room for staging</p>
                           </div>
                         </label>
                       </div>
