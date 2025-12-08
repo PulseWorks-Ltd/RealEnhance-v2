@@ -114,10 +114,21 @@
 /* ✅ HARD FAILSAFE: Force room type dropdowns to ALWAYS open downward */
 /* Prevents Radix Select from auto-flipping upward over images */
 [data-radix-popper-content-wrapper] {
-  transform: translateY(0px) !important;
+  transform-origin: top center !important;
 }
 
-[data-side="top"] {
-  top: 100% !important;
-  bottom: auto !important;
+/* Force bottom positioning for all Radix Select content */
+[data-radix-select-content] {
+  transform-origin: top center !important;
+}
+
+/* Hide any content that tries to render on top */
+[data-radix-select-content][data-side="top"] {
+  display: none !important;
+}
+
+/* Ensure viewport doesn't cause positioning issues */
+[data-radix-select-viewport] {
+  overflow-y: auto;
+  max-height: 260px;
 }

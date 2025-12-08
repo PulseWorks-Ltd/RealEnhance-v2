@@ -2595,7 +2595,7 @@ export default function BatchProcessor() {
 
                   {/* Room Type Dropdown – only for interior images when staging is enabled */}
                   {allowStaging && (imageSceneTypes[index] || "interior") !== "exterior" && (
-                    <div className="mb-4 relative overflow-visible">
+                    <div className="mb-4">
                       <label className="block text-gray-300 text-xs font-medium mb-2">
                         Room Type
                       </label>
