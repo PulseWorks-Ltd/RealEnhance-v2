@@ -122,11 +122,14 @@ export function retrySingleRouter() {
       let actualFurnitureRemovalMode: 'auto' | 'main' | 'heavy' | undefined;
       if (declutter) {
         const mode = furnitureRemovalMode.toLowerCase();
-        if (mode === 'auto' || mode === 'main') {
-          declutterIntensity = 'standard'; // Stage 1B-A: main furniture only
-          actualFurnitureRemovalMode = mode as 'auto' | 'main';
+        if (mode === 'main') {
+          declutterIntensity = 'light'; // Tidy mode: micro declutter only
+          actualFurnitureRemovalMode = 'main';
+        } else if (mode === 'auto') {
+          declutterIntensity = 'standard'; // Standard mode: furniture removal + conditional cleanup
+          actualFurnitureRemovalMode = 'auto';
         } else if (mode === 'heavy') {
-          declutterIntensity = 'heavy'; // Stage 1B-B: complete clear
+          declutterIntensity = 'heavy'; // Stage-Ready mode: complete clear
           actualFurnitureRemovalMode = 'heavy';
         }
       }

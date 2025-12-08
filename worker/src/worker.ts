@@ -496,9 +496,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
 
     // Normalize furniture removal mode from declutterIntensity
-    // If declutterIntensity is "heavy", force furnitureRemovalMode to "heavy"
+    // Map declutterIntensity to furnitureRemovalMode for backwards compatibility
     let normalizedFurnitureMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
-    if ((payload.options as any)?.declutterIntensity === 'heavy') {
+    if ((payload.options as any)?.declutterIntensity === 'light') {
+      normalizedFurnitureMode = 'main';
+      nLog(`[WORKER] 🔄 Normalized: declutterIntensity=light → furnitureRemovalMode=main`);
+    } else if ((payload.options as any)?.declutterIntensity === 'heavy') {
       normalizedFurnitureMode = 'heavy';
       nLog(`[WORKER] 🔄 Normalized: declutterIntensity=heavy → furnitureRemovalMode=heavy`);
     }

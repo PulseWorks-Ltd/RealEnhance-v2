@@ -22,34 +22,42 @@ function buildStage1AExteriorPromptNZStyle(): string {
     return `You are a professional real-estate image editor.
 
 TASK:
-Neaten and tidy this room for listing photography while keeping ALL furniture in place.
+Clean and tidy this room for professional real estate photography while keeping ALL furniture in place.
 
-REMOVE ONLY:
-- Countertop clutter
-- Window sill items
+REMOVE ALL SMALL CLUTTER INCLUDING:
+- Items from display cabinets, shelves, and all surfaces
+- Items from all side tables (bedside tables, living room side tables)
+- Items from coffee tables
+- Items from dining tables
+- Items from window sills
+- Items from countertops and benches
+- Photo frames and trinkets from all surfaces
+- Wall art and decorative items
 - Fridge magnets and papers
-- Photo frames and small wall decor
-- Bedside table clutter
 - Bathroom sink, shower, and bath clutter
 - Shoes on the floor
 - Clothes on the floor
 - Loose cables and chargers
 - Kids toys
-- Small loose decor items
+- Any small cluttering items
 
-DO NOT REMOVE:
+DO NOT REMOVE (FURNITURE MUST STAY):
 - Beds
 - Sofas and couches
 - Dining tables
+- Coffee tables
+- Side tables
 - Desks
 - Chairs
 - Wardrobes
-- Cabinets
+- Dressers and drawers
+- Display cabinets
 - TV stands
+- Shelving units
 - Rugs
 - Curtains
 - Lamps
-- Built-in fixtures`;
+- Built-in fixtures and cabinetry`;
   }
 
   // Stage 1B: FULL DECLUTTER PROMPT (UNIFIED FOR ALL MODES)
@@ -96,64 +104,140 @@ OUTPUT STYLE:
 Return ONLY the edited image.`.trim();
   }
 
-  // Stage 1B-A: PRIMARY FURNITURE REMOVAL (PASS A)
-  // Used by "main" mode (1x only), "auto" (1x), and "heavy" (1st pass of 2)
-  // Removes ONLY large furniture, preserves decor for "main" mode
+  // Stage 1B-A: COMPREHENSIVE ROOM EMPTYING (PASS A)
+  // Used by "standard" (1x), and "stage-ready" (1st pass of 2)
+  // Removes ALL movable furniture AND all clutter in ONE comprehensive pass
   export function buildStage1BAPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
     }
 
-    return `You are removing ALL large movable furniture only.
-Remove beds, couches, dining tables, chairs, wardrobes, desks, and freestanding shelving.
+    // Build room-type specific furniture emphasis
+    let furnitureEmphasis = "";
+    if (roomType) {
+      const lowerRoom = roomType.toLowerCase();
+      if (lowerRoom.includes("bedroom") || lowerRoom.includes("bed")) {
+        furnitureEmphasis = "\nBEDROOM FOCUS: Beds, side tables/bedside tables, chairs, dressers, drawers, wardrobes";
+      } else if (lowerRoom.includes("living") || lowerRoom.includes("lounge")) {
+        furnitureEmphasis = "\nLIVING ROOM FOCUS: Sofas, couches, TV units, side tables, coffee tables, dining tables, display units, rugs";
+      }
+    }
 
-ABSOLUTE RULES:
-- DO NOT remove curtains, blinds, or drapes.
-- DO NOT alter windows, doors, walls, trim, ceilings, floors, or HVAC units.
-- DO NOT remove built-in cabinetry.
-- Preserve all lighting fixtures.
+    return `You are a professional real-estate image editor.
 
-Leave:
-- Wall art
-- Small decor
-- Plants
-- Countertop items
+TASK:
+Completely empty this room for real estate photography. Remove ALL movable furniture and items.
+${furnitureEmphasis}
 
-This is NOT staging. This is ONLY furniture removal.`;
+REMOVE EVERYTHING MOVABLE:
+
+FURNITURE (all types):
+- Beds, sofas, couches, armchairs, ottomans
+- Dining tables, coffee tables, side tables, consoles
+- Chairs, stools, benches
+- TV units, display cabinets, shelving units
+- Dressers, drawers, wardrobes, desks
+- Rugs and mats
+- Any freestanding furniture
+
+SMALL ITEMS & CLUTTER (remove ALL):
+- ALL wall art, paintings, photo frames, mirrors, clocks
+- ALL items from countertops, tables, window sills, display cabinets
+- ALL partially visible items and edge furniture artifacts
+- ALL trinkets, ornaments, fridge magnets, papers
+- ALL toys, shoes, clothes from floors
+- ALL plants (potted or decorative)
+- ALL freestanding lamps (not built-in ceiling fixtures)
+- ALL cushions, throws, blankets
+- ALL bathroom/kitchen clutter (bottles, jars, toiletries, utensils, appliances)
+
+ABSOLUTE PROTECTION (NEVER REMOVE):
+- Curtains, blinds, drapes, window treatments
+- Windows, doors, walls, trim, ceilings, floors
+- HVAC units, vents, thermostats
+- Built-in cabinetry, countertops, and fixtures
+- Built-in ceiling lighting fixtures (recessed lights, chandeliers)
+- Built-in appliances (ovens, range hoods, dishwashers)
+
+STRICT RULES:
+- Do NOT change walls, doors, windows, floors, ceilings, or room geometry.
+- Do NOT change camera angle or perspective.
+- Do NOT alter lighting direction.
+- Do NOT add any new objects.
+
+GOAL: Architecturally empty room showing only permanent structure, ready for virtual staging.`;
   }
 
-  // Stage 1B-B: RESIDUAL CLUTTER CLEANUP (PASS B)
-  // Only runs in "auto" and "heavy" modes as second pass
-  // Removes remaining clutter after primary furniture removal
+  // Stage 1B-B: COMPREHENSIVE CLEANUP (PASS B)
+  // Only runs in "standard" (conditional) and "stage-ready" (always) modes as second pass
+  // Same comprehensive removal as Pass 1, with emphasis on commonly missed items
   export function buildStage1BBPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
     }
 
-    return `This is PASS TWO declutter.
-Remove ALL remaining non-structural clutter including:
+    // Build room-type specific furniture emphasis
+    let furnitureEmphasis = "";
+    if (roomType) {
+      const lowerRoom = roomType.toLowerCase();
+      if (lowerRoom.includes("bedroom") || lowerRoom.includes("bed")) {
+        furnitureEmphasis = "\nBEDROOM FOCUS: Beds, side tables/bedside tables, chairs, dressers, drawers, wardrobes";
+      } else if (lowerRoom.includes("living") || lowerRoom.includes("lounge")) {
+        furnitureEmphasis = "\nLIVING ROOM FOCUS: Sofas, couches, TV units, side tables, coffee tables, dining tables, display units, rugs";
+      }
+    }
 
-- Wall art
-- Picture frames
-- Small decor
-- Plants
-- Window sill clutter
-- Countertop clutter
-- Partial edge furniture artifacts
+    return `You are a professional real-estate image editor.
 
-ABSOLUTE FORBIDDEN ITEMS:
-- Curtains
-- Blinds
-- Windows
-- Doors
-- Walls
-- Trim
-- HVAC
-- Built-in cabinetry
-- Lighting fixtures
+TASK:
+This is PASS TWO - final comprehensive cleanup. Remove ANY remaining movable items missed in the first pass.
+${furnitureEmphasis}
 
-DO NOT remove any large furniture (already removed in pass 1).
-DO NOT modify architecture.`;
+PRIORITY TARGETS (commonly missed):
+- Wall art, paintings, photo frames still visible
+- Partially visible furniture (behind curtains, in corners, at edges)
+- Items on window sills, tables, display units, countertops
+- Toys, shoes, clothes still on floors
+- Plants, trinkets, small decorative items
+- Any furniture missed in first pass
+
+COMPREHENSIVE REMOVAL (same as Pass 1):
+
+FURNITURE (all types - in case any missed):
+- Beds, sofas, couches, armchairs, ottomans
+- Dining tables, coffee tables, side tables, consoles
+- Chairs, stools, benches
+- TV units, display cabinets, shelving units
+- Dressers, drawers, wardrobes, desks
+- Rugs and mats
+- Any freestanding furniture
+
+SMALL ITEMS & CLUTTER (remove ALL):
+- ALL wall art, paintings, photo frames, mirrors, clocks
+- ALL items from countertops, tables, window sills, display cabinets
+- ALL partially visible items and edge furniture artifacts
+- ALL trinkets, ornaments, fridge magnets, papers
+- ALL toys, shoes, clothes from floors
+- ALL plants (potted or decorative)
+- ALL freestanding lamps (not built-in ceiling fixtures)
+- ALL cushions, throws, blankets
+- ALL bathroom/kitchen clutter (bottles, jars, toiletries, utensils, appliances)
+
+ABSOLUTE PROTECTION (NEVER REMOVE):
+- Curtains, blinds, drapes, window treatments
+- Windows, doors, walls, trim, ceilings, floors
+- HVAC units, vents, thermostats
+- Built-in cabinetry, countertops, and fixtures
+- Built-in ceiling lighting fixtures (recessed lights, chandeliers)
+- Built-in appliances (ovens, range hoods, dishwashers)
+
+STRICT RULES:
+- Do NOT change walls, doors, windows, floors, ceilings, or room geometry.
+- Do NOT change camera angle or perspective.
+- Do NOT alter lighting direction.
+- Do NOT add any new objects.
+
+GOAL: Completely empty room ready for virtual staging, with ALL movable items removed.`;
   }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style) - LEGACY
