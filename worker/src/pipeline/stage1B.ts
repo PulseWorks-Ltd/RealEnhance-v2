@@ -5,6 +5,7 @@ import { buildStage1BPromptNZStyle, buildStage1BAPromptNZStyle, buildStage1BBPro
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 import { runUnifiedValidation } from "../validators/runValidation";
+import { callGeminiJsonOnImage } from "../ai/geminiJsonHelper";
 
 /**
  * Stage 1B: Furniture & Clutter Removal System
@@ -158,23 +159,25 @@ export async function runStage1B(
       });
     }
 
-    // Decision: Do we need Stage 1B-B (micro declutter pass)?
+    // Decision: Do we need Stage 1B-B (second pass)?
     // NEW LOGIC:
     // - "tidy": Already handled above (returns early)
-    // - "standard" (auto): Auto-escalate to micro if clutter detected
-    // - "stage-ready" (heavy): ALWAYS run micro
+    // - "standard": Auto-detect residual furniture/items after 1B-A
+    // - "stage-ready": ALWAYS run second pass
     let needsStage1BB = false;
 
     if (publicMode === "stage-ready") {
-      console.log(`[STAGE1B] MODE=stage-ready - will ALWAYS run micro declutter (PASS B)`);
+      console.log("[stage1B] 🎯 Mode is 'stage-ready' - Stage 1B-B will ALWAYS run");
       needsStage1BB = true;
     } else if (publicMode === "standard") {
-      // Auto-escalation: check if clutter remains
-      const shouldEscalate = await shouldRunStage1BB(stage1BAPath);
-      needsStage1BB = shouldEscalate;
-      console.log(`[STAGE1B] MODE=standard - auto-escalation: ${shouldEscalate ? 'WILL' : 'WILL NOT'} run micro declutter`);
+      console.log("[stage1B] 🤖 Mode is 'standard' - evaluating Stage 1B-A output for residual objects...");
+      needsStage1BB = await shouldRunStage1BB(stage1BAPath, {
+        jobId,
+        roomType,
+      });
     } else {
-      console.log(`[STAGE1B] MODE=${publicMode} - single pass only`);
+      // tidy-only or other modes
+      console.log("[stage1B] ℹ️ Mode is 'tidy' - skipping Stage 1B-B");
       needsStage1BB = false;
     }
 
@@ -182,10 +185,10 @@ export async function runStage1B(
     let stage1BBPath: string | undefined = undefined;
 
     // Log final decision
-    console.log(`[stage1B] Heavy declutter decision locked`, {
+    console.log("[stage1B] Heavy declutter decision locked", {
       jobId,
-      furnitureRemovalMode,
-      requiresHeavyDeclutter: needsStage1BB
+      publicMode,
+      requiresSecondPass: needsStage1BB,
     });
 
     // ✅ Stage 1B-B: Heavy Declutter (conditional)
@@ -383,30 +386,136 @@ async function runLegacyStage1B(
 }
 
 /**
- * Auto mode decision: Should we run Stage 1B-B?
- * Evaluates clutter density after Stage 1B-A (main furniture removal)
- * Returns true if significant clutter remains (lamps, rugs, wall art, small items)
- *
- * Decision criteria:
- * - Edge noise after 1B(1) > 28% → high residual clutter
- * - Small item density > 35% → many decorative objects remain
- * - Removed object count > 6 → complex room with likely more items
+ * Detection context for Stage 1B-B decision
  */
-async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
-  const jobId = (global as any).__jobId || 'unknown';
+interface Stage1BBDecisionContext {
+  jobId?: string;
+  roomType?: string;
+}
+
+/**
+ * Furniture detection result
+ */
+interface FurnitureDetectionResult {
+  hasFurniture: boolean;
+  confidence: number;
+}
+
+/**
+ * Personal items detection result
+ */
+interface PersonalItemsDetectionResult {
+  hasPersonalItems: boolean;
+  confidence: number;
+}
+
+/**
+ * Empty room structural metrics
+ */
+interface EmptyRoomMetrics {
+  smallItemDensity: number;
+  edgeNoise: number;
+}
+
+/**
+ * Detect residual furniture using Gemini 1.5 Flash vision
+ * (Fast, cost-effective detection for decision-making)
+ */
+async function detectResidualFurniture(
+  imagePath: string,
+  ctx: Stage1BBDecisionContext
+): Promise<FurnitureDetectionResult> {
+  const prompt = `You are analyzing a real estate image AFTER an initial furniture removal pass.
+
+Question:
+Does this image still contain any visible furniture, partially removed furniture, or furniture fragments (such as couches, chairs, tables, beds, wardrobes, TV units, or headboards)?
+
+Return strict JSON ONLY in this exact format:
+{
+  "hasFurniture": true or false,
+  "confidence": number between 0 and 1
+}`;
 
   try {
-    // Analyze image for remaining visual complexity
-    const metadata = await sharp(stage1BAPath).metadata();
+    const { json } = await callGeminiJsonOnImage(imagePath, prompt);
+    const hasFurniture = !!json?.hasFurniture;
+    const confidence = typeof json?.confidence === "number" ? json.confidence : 0;
+
+    console.log("[AUTO-EMPTY] Furniture detection", {
+      jobId: ctx.jobId,
+      imagePath,
+      hasFurniture,
+      confidence,
+    });
+
+    return { hasFurniture, confidence };
+  } catch (error: any) {
+    console.warn("[AUTO-EMPTY] Furniture detection failed, assuming no furniture", {
+      jobId: ctx.jobId,
+      error: error?.message || String(error),
+    });
+    return { hasFurniture: false, confidence: 0 };
+  }
+}
+
+/**
+ * Detect personal items and clutter using Gemini 1.5 Flash vision
+ * (Fast, cost-effective detection for decision-making)
+ */
+async function detectPersonalItems(
+  imagePath: string,
+  ctx: Stage1BBDecisionContext
+): Promise<PersonalItemsDetectionResult> {
+  const prompt = `You are analyzing a real estate image that is being prepared for virtual staging.
+
+Question:
+Does this image still contain any personal items, artwork, photo frames, decorative wall art, plants, rugs, clutter, or loose objects (such as shoes, toys, clothes, bathroom items, bench items, cables, or small decor)?
+
+Return strict JSON ONLY in this exact format:
+{
+  "hasPersonalItems": true or false,
+  "confidence": number between 0 and 1
+}`;
+
+  try {
+    const { json } = await callGeminiJsonOnImage(imagePath, prompt);
+    const hasPersonalItems = !!json?.hasPersonalItems;
+    const confidence = typeof json?.confidence === "number" ? json.confidence : 0;
+
+    console.log("[AUTO-EMPTY] Personal items detection", {
+      jobId: ctx.jobId,
+      imagePath,
+      hasPersonalItems,
+      confidence,
+    });
+
+    return { hasPersonalItems, confidence };
+  } catch (error: any) {
+    console.warn("[AUTO-EMPTY] Personal items detection failed, assuming no items", {
+      jobId: ctx.jobId,
+      error: error?.message || String(error),
+    });
+    return { hasPersonalItems: false, confidence: 0 };
+  }
+}
+
+/**
+ * Analyze structural metrics for empty room validation (fallback)
+ */
+async function analyzeEmptyRoomMetrics(
+  imagePath: string,
+  ctx: Stage1BBDecisionContext
+): Promise<EmptyRoomMetrics> {
+  try {
+    const metadata = await sharp(imagePath).metadata();
     const { width = 0, height = 0 } = metadata;
 
     if (width === 0 || height === 0) {
-      console.log(`[AUTO-HEAVY] Invalid image dimensions, defaulting to LIGHT`, { jobId });
-      return false;
+      return { smallItemDensity: 0, edgeNoise: 0 };
     }
 
     // Read a downsampled version for faster analysis
-    const buffer = await sharp(stage1BAPath)
+    const buffer = await sharp(imagePath)
       .resize(256, 256, { fit: 'inside' })
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -416,9 +525,7 @@ async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
     const h = info.height;
     const channels = info.channels;
 
-    // ========================================
-    // SIGNAL 1: Edge Noise (proxy for residual clutter)
-    // ========================================
+    // Edge Noise (proxy for residual clutter)
     let edgeCount = 0;
     const EDGE_THRESH = 30;
 
@@ -449,15 +556,12 @@ async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
     const totalPixels = w * h;
     const edgeNoise = edgeCount / totalPixels;
 
-    // ========================================
-    // SIGNAL 2: Small Item Density (count high-frequency regions)
-    // ========================================
+    // Small Item Density (count high-frequency regions)
     let smallItemRegions = 0;
     const SMALL_ITEM_THRESH = 40;
 
     for (let y = 2; y < h - 2; y += 2) {
       for (let x = 2; x < w - 2; x += 2) {
-        // Sample 3x3 local variance
         let localVariance = 0;
         const centerI = (y * w + x) * channels;
         const centerLuma = 0.299 * (data[centerI] || 0) + 0.587 * (data[centerI + 1] || 0) + 0.114 * (data[centerI + 2] || 0);
@@ -479,36 +583,90 @@ async function shouldRunStage1BB(stage1BAPath: string): Promise<boolean> {
     const totalRegions = ((h - 4) / 2) * ((w - 4) / 2);
     const smallItemDensity = smallItemRegions / Math.max(1, totalRegions);
 
-    // ========================================
-    // SIGNAL 3: Removed Object Count (from global state if available)
-    // ========================================
-    const imageStats = (global as any).__imageStats || {};
-    const removedCount = imageStats.removedObjectCount || 0;
-
-    // ========================================
-    // DECISION LOGIC
-    // ========================================
-    const decision =
-      removedCount > 6 ||
-      smallItemDensity > 0.35 ||
-      edgeNoise > 0.28;
-
-    console.log(`[AUTO-HEAVY] Escalation decision`, {
-      jobId,
-      removedCount,
+    console.log("[AUTO-EMPTY] Structural metrics", {
+      jobId: ctx.jobId,
+      imagePath,
       smallItemDensity: smallItemDensity.toFixed(3),
       edgeNoise: edgeNoise.toFixed(3),
-      decision
+    });
+
+    return { smallItemDensity, edgeNoise };
+  } catch (error: any) {
+    console.warn("[AUTO-EMPTY] Metric analysis failed, defaulting to zeroes", {
+      jobId: ctx.jobId,
+      imagePath,
+      error: error?.message || String(error),
+    });
+    return { smallItemDensity: 0, edgeNoise: 0 };
+  }
+}
+
+/**
+ * Auto mode decision: Should we run Stage 1B-B?
+ *
+ * NEW IMPLEMENTATION: Uses Gemini 1.5 Flash vision to detect:
+ * 1. Residual furniture (primary trigger) - Gemini 1.5 Flash
+ * 2. Personal items / artwork / décor (secondary trigger) - Gemini 1.5 Flash
+ * 3. Fallback structural metrics (edge noise & clutter density) - Image processing
+ *
+ * NOTE: Stage 1B-A and 1B-B themselves use Gemini 2.x/2.5 for actual editing
+ * This detection uses Gemini 1.5 Flash for cost-effective decision-making
+ *
+ * Returns true if ANY residual furniture OR personal items OR clutter remains
+ * Only skips Stage 1B-B if the room is truly empty and stage-ready
+ */
+async function shouldRunStage1BB(
+  stage1BAPath: string,
+  ctx: Stage1BBDecisionContext = {}
+): Promise<boolean> {
+  const { jobId, roomType } = ctx;
+
+  try {
+    // 1) Detect residual furniture (primary trigger) - Gemini 1.5 Flash
+    const furniture = await detectResidualFurniture(stage1BAPath, { jobId, roomType });
+
+    // 2) Detect personal items / artwork / décor (secondary trigger) - Gemini 1.5 Flash
+    const personal = await detectPersonalItems(stage1BAPath, { jobId, roomType });
+
+    // 3) Fallback structural metrics (edge noise & clutter density) - Image processing
+    const metrics = await analyzeEmptyRoomMetrics(stage1BAPath, { jobId, roomType });
+
+    const hasFurniture = furniture?.hasFurniture ?? false;
+    const hasPersonalItems = personal?.hasPersonalItems ?? false;
+
+    const smallItemDensity = metrics?.smallItemDensity ?? 0;
+    const edgeNoise = metrics?.edgeNoise ?? 0;
+
+    // Thresholds – tuned for "ROOM IS EMPTY" vs "ROOM STILL HAS STUFF"
+    const densityThreshold = 0.25;
+    const edgeNoiseThreshold = 0.20;
+
+    const passesMetrics =
+      smallItemDensity > densityThreshold || edgeNoise > edgeNoiseThreshold;
+
+    const decision = hasFurniture || hasPersonalItems || passesMetrics;
+
+    console.log("[AUTO-EMPTY] Residual objects assessment", {
+      jobId,
+      stage1BAPath,
+      hasFurniture,
+      hasPersonalItems,
+      smallItemDensity: smallItemDensity.toFixed(3),
+      edgeNoise: edgeNoise.toFixed(3),
+      thresholds: {
+        smallItemDensity: densityThreshold,
+        edgeNoise: edgeNoiseThreshold,
+      },
+      decision,
     });
 
     return decision;
-
   } catch (error: any) {
-    console.warn(`[AUTO-HEAVY] Escalation failed — defaulting to LIGHT`, {
+    console.warn("[AUTO-EMPTY] Escalation failed — defaulting to run Stage 1B-B", {
       jobId,
-      error: error?.message || String(error)
+      error: error?.message || String(error),
     });
-    // Default to LIGHT mode (1B(1) only) on error - safer to under-declutter
-    return false;
+    // Default to running Stage 1B-B on error - safer to over-declutter for empty staging
+    return true;
   }
 }
