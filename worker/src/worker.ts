@@ -622,22 +622,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // Determine which passes were executed based on filename
       if (path1B && path1B !== path1A) {
-        // Check for new naming convention first, then legacy
-        if (path1B.includes("-1B(2)") || path1B.includes("-1B-2")) {
+        // Check for new naming convention: -1B-B (dual-pass) vs -1B-A (single-pass)
+        if (path1B.includes("-1B-B")) {
           // Heavy mode: both passes executed
           stage1BPass1Complete = true;
           stage1BPass2Complete = true;
           stage1BPass2Path = path1B;
           // Derive pass1 path (even though it's intermediate)
-          stage1BPass1Path = path1B.replace("-1B(2)", "-1B(1)").replace("-1B-2", "-1B(1)");
-          nLog(`[stage1B] ✅ Dual-pass complete: 1B(1) → 1B(2)`);
-        } else {
-          // Standard mode: only pass1 executed
+          stage1BPass1Path = path1B.replace("-1B-B", "-1B-A");
+          nLog(`[STAGE1B] ✅ Dual-pass complete: PASS A → PASS B`);
+        } else if (path1B.includes("-1B-A")) {
+          // Light/Auto mode: only pass A executed
           stage1BPass1Complete = true;
           stage1BPass1Path = path1B;
           stage1BPass2Complete = false;
           stage1BPass2Path = undefined;
-          nLog(`[stage1B] ✅ Single-pass complete: 1B(1) only`);
+          nLog(`[STAGE1B] ✅ Single-pass complete: PASS A only`);
+        } else {
+          // Legacy: fallback to old naming
+          stage1BPass1Complete = true;
+          stage1BPass1Path = path1B;
+          stage1BPass2Complete = false;
+          stage1BPass2Path = undefined;
+          nLog(`[STAGE1B] ✅ Legacy filename detected: ${path1B}`);
         }
       }
       
@@ -743,45 +750,45 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ═══════════ STAGE 2 — HARD ENFORCEMENT ═══════════
   const isExteriorScene = sceneLabel === "exterior";
   let stage2InputPath: string;
-  let stage2BaseStage: "1A"|"1B(1)"|"1B(2)";
+  let stage2BaseStage: "1A"|"1B-A"|"1B-B";
   let stage2SourceVerified = false;
-  
+
   if (declutter && !isExteriorScene) {
     // Interior with declutter: enforce correct Stage1B pass
     if (requiresHeavyDeclutter) {
-      // Heavy mode: MUST use Stage 1B(2) output
+      // Heavy mode: MUST use Stage 1B-B (PASS B) output
       if (!stage1BPass2Complete || !stage1BPass2Path) {
-        const errMsg = "❌ STAGE 2 BLOCKED — Heavy declutter required but Stage1B(2) does not exist";
+        const errMsg = "❌ STAGE 2 BLOCKED — Heavy declutter required but Stage 1B-B does not exist";
         nLog(errMsg);
         updateJob(payload.jobId, {
           status: "error",
           errorMessage: errMsg,
           error: errMsg,
-          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B(2)' }
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-B' }
         });
         throw new Error(errMsg);
       }
       stage2InputPath = stage1BPass2Path;
-      stage2BaseStage = "1B(2)";
+      stage2BaseStage = "1B-B";
       stage2SourceVerified = true;
-      nLog(`[stage2] ✅ Using input source: Stage1B(2) (heavy declutter) - verified`);
+      nLog(`[STAGE2] INPUT SOURCE = ${stage1BPass2Path.split('/').pop()} (PASS B - verified)`);
     } else {
-      // Standard mode: MUST use Stage 1B(1) output
+      // Light/Auto mode: MUST use Stage 1B-A (PASS A) output
       if (!stage1BPass1Complete || !stage1BPass1Path) {
-        const errMsg = "❌ STAGE 2 BLOCKED — Stage1B(1) output missing";
+        const errMsg = "❌ STAGE 2 BLOCKED — Stage 1B-A output missing";
         nLog(errMsg);
         updateJob(payload.jobId, {
           status: "error",
           errorMessage: errMsg,
           error: errMsg,
-          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B(1)' }
+          meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, blockReason: 'missing-stage1B-A' }
         });
         throw new Error(errMsg);
       }
       stage2InputPath = stage1BPass1Path;
-      stage2BaseStage = "1B(1)";
+      stage2BaseStage = "1B-A";
       stage2SourceVerified = true;
-      nLog(`[stage2] ✅ Using input source: Stage1B(1) (standard declutter) - verified`);
+      nLog(`[STAGE2] INPUT SOURCE = ${stage1BPass1Path.split('/').pop()} (PASS A - verified)`);
     }
     // Backward compatibility: set path1B for legacy code
     path1B = stage2InputPath;
@@ -790,78 +797,90 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage2InputPath = path1A;
     stage2BaseStage = "1A";
     stage2SourceVerified = true;
-    nLog(`[stage2] ✅ Using input source: Stage1A (${isExteriorScene ? 'exterior' : 'interior no-declutter'}) - verified`);
+    nLog(`[STAGE2] INPUT SOURCE = ${path1A.split('/').pop()} (${isExteriorScene ? 'exterior' : 'no-declutter'})`);
   }
-  
-  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}, verified=${stage2SourceVerified}`);
+
+  nLog(`[STAGE2] Source verified: baseStage=${stage2BaseStage}, verified=${stage2SourceVerified}`);
+
+  // ═══════════ STAGE 2 — USER-CONTROLLED EXECUTION GUARD ═══════════
+  // Stage 2 (AI staging) runs ONLY if user explicitly requested it
+  const shouldRunStage2 = payload.options?.virtualStage === true;
   let path2: string = stage2InputPath;
-  try {
-    // Only allow exterior staging if allowStaging is true
-    if (sceneLabel === "exterior" && !allowStaging) {
-      nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
-      path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
-    } else {
-      // Surface incoming stagingStyle before calling Stage 2
-      const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
-      console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
-      const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
-      // Forensic logging: Stage 2 execution start with enforced source
-      nLog(`[stage2] 🎬 Virtual staging started`, {
-        jobId: payload.jobId,
-        input: stage2InputPath,
-        sourceStage: stage2BaseStage,
-        verified: stage2SourceVerified,
-        enforced: true
+  if (!shouldRunStage2) {
+    // User did NOT request staging - return declutter output (or 1A if no declutter)
+    path2 = stage2InputPath;  // Already set to correct 1B-A, 1B-B, or 1A
+    nLog(`[STAGE2] Skipped — user did not request staging`);
+    nLog(`[STAGE2] Final output: ${stage2BaseStage} (${path2.split('/').pop()})`);
+    timings.stage2Ms = 0;
+  } else {
+    // User requested staging - proceed with Stage 2
+    try {
+      // Check exterior staging eligibility
+      if (sceneLabel === "exterior" && !allowStaging) {
+        nLog(`[STAGE2] Exterior staging blocked - no suitable outdoor area detected`);
+        path2 = stage2InputPath;
+      } else {
+        // Surface incoming stagingStyle
+        const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
+        const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
+
+        // Forensic logging: Stage 2 execution start
+        nLog(`[STAGE2] Running — input = ${stage2InputPath.split('/').pop()}`);
+        nLog(`[stage2] 🎬 Virtual staging started`, {
+          jobId: payload.jobId,
+          input: stage2InputPath,
+          sourceStage: stage2BaseStage,
+          verified: stage2SourceVerified,
+          enforced: true
+        });
+
+        // Normalize stage identifier for runStage2 (expects '1A' | '1B')
+        const normalizedStage = stage2BaseStage.startsWith("1B") ? "1B" as const : "1A" as const;
+
+        path2 = await runStage2(stage2InputPath, normalizedStage, {
+          roomType: (
+            !payload.options.roomType ||
+            ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+          )
+            ? String(detectedRoom || "living_room")
+            : payload.options.roomType,
+          sceneType: sceneLabel as any,
+          profile,
+          angleHint,
+          stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+          stagingStyle: stagingStyleNorm,
+          onStrictRetry: ({ reasons }) => {
+            try {
+              const msg = reasons && reasons.length
+                ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                : "Validation failed. Retrying with stricter settings...";
+              updateJob(payload.jobId, {
+                message: msg,
+                meta: {
+                  ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
+                  scenePrimary,
+                  strictRetry: true,
+                  strictRetryReasons: reasons || []
+                }
+              });
+            } catch {}
+          }
+        });
+      }
+    } catch (e: any) {
+      const errMsg = e?.message || String(e);
+      nLog(`[worker] Stage 2 failed: ${errMsg}`);
+      updateJob(payload.jobId, {
+        status: "error",
+        errorMessage: errMsg,
+        error: errMsg,
+        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
       });
-
-      // Normalize stage identifier for runStage2 (expects '1A' | '1B')
-      const normalizedStage = stage2BaseStage.startsWith("1B") ? "1B" as const : "1A" as const;
-      
-      path2 = payload.options.virtualStage
-        ? await runStage2(stage2InputPath, normalizedStage, {
-            roomType: (
-              !payload.options.roomType ||
-              ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
-            )
-              ? String(detectedRoom || "living_room")
-              : payload.options.roomType,
-            sceneType: sceneLabel as any,
-            profile,
-            angleHint,
-            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
-            stagingStyle: stagingStyleNorm,
-            onStrictRetry: ({ reasons }) => {
-              try {
-                const msg = reasons && reasons.length
-                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-                  : "Validation failed. Retrying with stricter settings...";
-                updateJob(payload.jobId, {
-                  message: msg,
-                  meta: {
-                    ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
-                    scenePrimary,
-                    strictRetry: true,
-                    strictRetryReasons: reasons || []
-                  }
-                });
-              } catch {}
-            }
-          })
-        : (payload.options.declutter && path1B ? path1B : path1A);
+      return;
     }
-  } catch (e: any) {
-    const errMsg = e?.message || String(e);
-    nLog(`[worker] Stage 2 failed: ${errMsg}`);
-    updateJob(payload.jobId, {
-      status: "error",
-      errorMessage: errMsg,
-      error: errMsg,
-      meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
-    });
-    return;
+    timings.stage2Ms = Date.now() - t2;
   }
-  timings.stage2Ms = Date.now() - t2;
   
   // Forensic logging: Stage 2 completion
   if (payload.options.virtualStage && path2 !== stage2InputPath) {
