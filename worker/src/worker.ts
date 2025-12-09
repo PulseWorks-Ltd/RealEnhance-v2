@@ -493,21 +493,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       topP: typeof s.topP === 'number' ? s.topP : undefined,
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
-    (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+    const declutterIntensity = (payload.options as any)?.declutterIntensity;
+    (global as any).__jobDeclutterIntensity = declutterIntensity;
 
-    // Normalize furniture removal mode from declutterIntensity
-    // Map declutterIntensity to furnitureRemovalMode for backwards compatibility
+    // HARD MAP declutterIntensity → furnitureRemovalMode FIRST
+    // This ensures Tidy/Light can NEVER degrade to Standard
     let normalizedFurnitureMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
-    if ((payload.options as any)?.declutterIntensity === 'light') {
-      normalizedFurnitureMode = 'main';
-      nLog(`[WORKER] 🔄 Normalized: declutterIntensity=light → furnitureRemovalMode=main`);
-    } else if ((payload.options as any)?.declutterIntensity === 'heavy') {
-      normalizedFurnitureMode = 'heavy';
-      nLog(`[WORKER] 🔄 Normalized: declutterIntensity=heavy → furnitureRemovalMode=heavy`);
+
+    if (declutterIntensity === 'heavy') {
+      normalizedFurnitureMode = 'heavy';  // Stage-Ready
+    } else if (declutterIntensity === 'light' || declutterIntensity === 'tidy') {
+      normalizedFurnitureMode = 'main';   // Tidy-Only
     }
+
     (global as any).__furnitureRemovalMode = normalizedFurnitureMode;
 
-    // Map internal mode to public-facing mode names
+    // Map furnitureRemovalMode to public-facing mode names
     // main → tidy (micro declutter, keep furniture)
     // auto → standard (remove furniture + conditional micro)
     // heavy → stage-ready (remove everything)
@@ -522,7 +523,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       publicMode = "standard"; // default
     }
     (global as any).__publicMode = publicMode;
-    nLog(`[WORKER] 📋 Public mode: ${normalizedFurnitureMode} → ${publicMode}`);
+
+    // Required mode mapping log
+    nLog(`[MODE-MAP] Final mode resolution`, {
+      jobId,
+      declutterIntensity,
+      furnitureRemovalMode: normalizedFurnitureMode,
+      publicMode
+    });
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)

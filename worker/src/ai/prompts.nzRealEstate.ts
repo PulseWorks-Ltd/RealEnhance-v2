@@ -146,7 +146,7 @@ SMALL ITEMS & CLUTTER (remove ALL):
 - ALL partially visible items and edge furniture artifacts
 - ALL trinkets, ornaments, fridge magnets, papers
 - ALL toys, shoes, clothes from floors
-- ALL plants (potted or decorative)
+- ALL plants: pot plants, indoor plants, potted plants, decorative plants, ferns, succulents, vases with flowers
 - ALL freestanding lamps (not built-in ceiling fixtures)
 - ALL cushions, throws, blankets
 - ALL bathroom/kitchen clutter (bottles, jars, toiletries, utensils, appliances)
@@ -218,7 +218,7 @@ SMALL ITEMS & CLUTTER (remove ALL):
 - ALL partially visible items and edge furniture artifacts
 - ALL trinkets, ornaments, fridge magnets, papers
 - ALL toys, shoes, clothes from floors
-- ALL plants (potted or decorative)
+- ALL plants: pot plants, indoor plants, potted plants, decorative plants, ferns, succulents, vases with flowers
 - ALL freestanding lamps (not built-in ceiling fixtures)
 - ALL cushions, throws, blankets
 - ALL bathroom/kitchen clutter (bottles, jars, toiletries, utensils, appliances)
