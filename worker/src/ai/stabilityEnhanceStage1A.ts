@@ -3,7 +3,7 @@ import path from "path";
 import fetch from "node-fetch";
 import FormData from "form-data";
 
-const STABILITY_API_URL = "https://api.stability.ai/v2beta/stable-image/edit";
+const STABILITY_API_URL = "https://api.stability.ai/v2/alpha/generation/stable-image/edit";
 const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
 
 if (!STABILITY_API_KEY) {
