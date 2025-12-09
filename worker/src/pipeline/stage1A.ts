@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { enhanceWithStabilityStage1A } from "../ai/stabilityEnhanceStage1A";
+import { buildStabilityStage1APrompt, buildStabilityStage1AShortPrompt } from "../ai/prompts.stabilityStage1A";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
@@ -174,24 +175,34 @@ export async function runStage1A(
   // Apply Stability AI enhancement with safe, realistic parameters
   console.log("[stage1A] ✅ Using Stability for enhancement");
 
-  // Build appropriate prompt based on scene type and profile
-  let prompt: string;
-  if (isNZStyleEnabled()) {
-    if (applyInteriorProfile) {
-      prompt = interiorProfileKey === "nz_high_end"
-        ? buildStage1AInteriorPromptNZHighEnd("room")
-        : buildStage1AInteriorPromptNZStandard("room");
-    } else {
-      prompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
-    }
-  } else {
-    // Default prompt for non-NZ style
-    prompt = sceneType === "interior"
-      ? "Professional real estate interior photo with natural lighting, clean walls, and realistic colors"
-      : "Professional real estate exterior photo with clear sky, natural lighting, and vibrant landscaping";
+  // Build comprehensive Stability-optimized prompt
+  // Use the comprehensive enhancement prompt that ensures structure preservation
+  const prompt = buildStabilityStage1APrompt(sceneType);
+
+  // Convert WebP to JPEG for Stability API (Stability prefers JPEG/PNG)
+  const jpegInputPath = sharpOutputPath.replace(".webp", "-stability-input.jpg");
+  await sharp(sharpOutputPath)
+    .jpeg({ quality: 95 })
+    .toFile(jpegInputPath);
+
+  // Call Stability AI enhancement
+  let stabilityJpegPath: string;
+  try {
+    stabilityJpegPath = await enhanceWithStabilityStage1A(jpegInputPath, prompt);
+    console.log("[stage1A] ✅ Stability enhancement complete:", stabilityJpegPath);
+  } catch (err) {
+    console.error("[stage1A] ❌ Stability failed, falling back to Sharp only", err);
+    // Fallback: use Sharp output
+    const fs = await import("fs/promises");
+    await fs.rename(sharpOutputPath, finalOutputPath);
+    return finalOutputPath;
   }
 
-  const stabilityOutputPath = await enhanceWithStabilityStage1A(sharpOutputPath, prompt);
+  // Convert Stability JPEG output back to WebP to maintain pipeline format
+  const stabilityOutputPath = sharpOutputPath.replace("-1A-sharp.webp", "-stability-1A.webp");
+  await sharp(stabilityJpegPath)
+    .webp({ quality: 95 })
+    .toFile(stabilityOutputPath);
 
   // Validate the Stability enhancement
   if (stabilityOutputPath !== sharpOutputPath) {
