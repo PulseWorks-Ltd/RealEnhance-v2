@@ -196,10 +196,10 @@ export async function runStage1A(
       const diffResult = await runStage1AContentDiff(sharpOutputPath, stabilityWebp);
 
       if (!diffResult.passed) {
-        console.warn("[stage1A] ⚠️ Stability content drift detected:", diffResult);
+        console.warn("[stage1A] 🚨 Content diff FAIL:", diffResult.reason);
         console.warn("[stage1A] 🔁 Re-routing to Gemini 2.5 Flash...");
-        // Don't return here - fall through to Gemini fallback
-        throw new Error("Stability content drift - re-routing to Gemini");
+        // Throw to trigger Gemini fallback
+        throw new Error(`Stability content drift: ${diffResult.reason}`);
       }
 
       console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");
