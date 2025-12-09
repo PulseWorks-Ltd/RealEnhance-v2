@@ -264,6 +264,12 @@ importers:
       bullmq:
         specifier: ^5.9.0
         version: 5.64.1
+      form-data:
+        specifier: ^4.0.0
+        version: 4.0.5
+      node-fetch:
+        specifier: ^2.7.0
+        version: 2.7.0
       opencv-ts:
         specifier: ^1.3.6
         version: 1.3.6
@@ -281,9 +287,15 @@ importers:
         specifier: ^3.705.0
         version: 3.937.0
     devDependencies:
+      '@types/form-data':
+        specifier: ^2.5.0
+        version: 2.5.2
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
+      '@types/node-fetch':
+        specifier: ^2.6.11
+        version: 2.6.13
       jest:
         specifier: ^30.2.0
         version: 30.2.0(@types/node@20.19.25)(ts-node@10.9.2(@swc/core@1.15.3)(@types/node@20.19.25)(typescript@5.9.3))
@@ -2176,6 +2188,10 @@ packages:
   '@types/express@4.17.25':
     resolution: {integrity: sha512-dVd04UKsfpINUnK0yBoYHDF3xu7xVH4BuDotC/xGuycx4CgbP48X/KF/586bcObxT0HENHXEU8Nqtu6NR+eKhw==}
 
+  '@types/form-data@2.5.2':
+    resolution: {integrity: sha512-tfmcyHn1Pp9YHAO5r40+UuZUPAZbUEgqTel3EuEKpmF9hPkXgR4l41853raliXnb4gwyPNoQOfvgGGlHN5WSog==}
+    deprecated: This is a stub types definition. form-data provides its own type definitions, so you do not need this installed.
+
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
 
@@ -2200,6 +2216,9 @@ packages:
 
   '@types/multer@1.4.13':
     resolution: {integrity: sha512-bhhdtPw7JqCiEfC9Jimx5LqX9BDIPJEh2q/fQ4bqbBPtyEZYr3cvF22NwG0DmPZNYA0CAf2CnqDB4KIGGpJcaw==}
+
+  '@types/node-fetch@2.6.13':
+    resolution: {integrity: sha512-QGpRVpzSaUs30JBSGPjOg4Uveu384erbHBoT1zeONvyCfwQxIkUshLAOqN/k9EjGviPRmWTTe6aH2qySWKTVSw==}
 
   '@types/node@20.19.25':
     resolution: {integrity: sha512-ZsJzA5thDQMSQO788d7IocwwQbI8B5OPzmqNvpf3NY/+MHDAS759Wo0gd2WQeXYt5AAAQjzcrTVC6SKCuYgoCQ==}
@@ -6629,6 +6648,10 @@ snapshots:
       '@types/qs': 6.14.0
       '@types/serve-static': 1.15.5
 
+  '@types/form-data@2.5.2':
+    dependencies:
+      form-data: 4.0.5
+
   '@types/http-errors@2.0.5': {}
 
   '@types/istanbul-lib-coverage@2.0.6': {}
@@ -6657,6 +6680,11 @@ snapshots:
   '@types/multer@1.4.13':
     dependencies:
       '@types/express': 4.17.25
+
+  '@types/node-fetch@2.6.13':
+    dependencies:
+      '@types/node': 24.10.1
+      form-data: 4.0.5
 
   '@types/node@20.19.25':
     dependencies:
