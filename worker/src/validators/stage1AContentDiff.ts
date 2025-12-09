@@ -1,5 +1,4 @@
 import sharp from "sharp";
-import pixelmatch from "pixelmatch";
 import { STAGE1A_VALIDATOR_LIMITS } from "./stage1ALimits";
 
 /**
@@ -30,6 +29,9 @@ export async function runStage1AContentDiff(
   enhancedPath: string
 ): Promise<Stage1AContentDiffResult> {
   try {
+    // Dynamic import for ESM module
+    const pixelmatch = (await import("pixelmatch")).default;
+
     // Load both images as raw buffers for pixel comparison
     const orig = await sharp(originalPath)
       .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
@@ -47,7 +49,7 @@ export async function runStage1AContentDiff(
     const diffPixels = pixelmatch(
       orig.data,
       enh.data,
-      null,
+      undefined,
       width,
       height,
       { threshold: 0.05 }
@@ -78,7 +80,7 @@ export async function runStage1AContentDiff(
         const tileDiff = pixelmatch(
           sliceOrig,
           sliceEnh,
-          null,
+          undefined,
           tileW,
           tileH,
           { threshold: 0.05 }
@@ -155,6 +157,9 @@ async function estimateFeatureMatchRatio(
   enhancedPath: string
 ): Promise<number> {
   try {
+    // Dynamic import for ESM module
+    const pixelmatch = (await import("pixelmatch")).default;
+
     // Extract edges from both images
     const origEdges = await sharp(originalPath)
       .resize(512, 512, { fit: "inside", withoutEnlargement: true })
@@ -184,7 +189,7 @@ async function estimateFeatureMatchRatio(
     const edgeDiff = pixelmatch(
       origEdges.data,
       enhEdges.data,
-      null,
+      undefined,
       width,
       height,
       { threshold: 0.1 }
