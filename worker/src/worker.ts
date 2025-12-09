@@ -493,45 +493,73 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       topP: typeof s.topP === 'number' ? s.topP : undefined,
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
-    const declutterIntensity = (payload.options as any)?.declutterIntensity;
-    (global as any).__jobDeclutterIntensity = declutterIntensity;
 
-    // HARD MAP declutterIntensity → furnitureRemovalMode FIRST
-    // This ensures Tidy/Light can NEVER degrade to Standard
-    let normalizedFurnitureMode = (payload.options as any)?.furnitureRemovalMode || 'auto';
+    // ✅ CANONICAL MODE AUTHORITY - publicMode is the ONLY source of truth
+    // All execution plan decisions are derived from this field ONLY
+    const publicMode = (payload.options as any)?.publicMode as "tidy" | "standard" | "stage-ready" | undefined;
 
-    if (declutterIntensity === 'heavy') {
-      normalizedFurnitureMode = 'heavy';  // Stage-Ready
-    } else if (declutterIntensity === 'light' || declutterIntensity === 'tidy') {
-      normalizedFurnitureMode = 'main';   // Tidy-Only
+    // ✅ HARD REQUIREMENT - publicMode MUST exist
+    if (!publicMode || !['tidy', 'standard', 'stage-ready'].includes(publicMode)) {
+      throw new Error(`[WORKER-FATAL] Invalid or missing publicMode: "${publicMode}". Job cannot be processed without valid mode.`);
     }
 
-    (global as any).__furnitureRemovalMode = normalizedFurnitureMode;
-
-    // Map furnitureRemovalMode to public-facing mode names
-    // main → tidy (micro declutter, keep furniture)
-    // auto → standard (remove furniture + conditional micro)
-    // heavy → stage-ready (remove everything)
-    let publicMode: "tidy" | "standard" | "stage-ready";
-    if (normalizedFurnitureMode === 'main') {
-      publicMode = "tidy";
-    } else if (normalizedFurnitureMode === 'auto') {
-      publicMode = "standard";
-    } else if (normalizedFurnitureMode === 'heavy') {
-      publicMode = "stage-ready";
-    } else {
-      publicMode = "standard"; // default
-    }
+    // Set global publicMode (single source of truth for ALL pipeline decisions)
     (global as any).__publicMode = publicMode;
 
-    // Required mode mapping log
-    nLog(`[MODE-MAP] Final mode resolution`, {
+    // ✅ DERIVE EXECUTION PLAN from publicMode ONLY
+    let willRunStructural: boolean;
+    let autoDetect: boolean;
+
+    switch (publicMode) {
+      case 'tidy':
+        // Tidy: Keep all furniture, remove only small clutter
+        willRunStructural = false;  // NO furniture removal
+        autoDetect = false;         // NO detection needed
+        break;
+
+      case 'standard':
+        // Standard: Remove furniture, auto-detect if micro cleanup needed
+        willRunStructural = true;   // YES furniture removal
+        autoDetect = true;          // YES detection needed for Stage 1B-B decision
+        break;
+
+      case 'stage-ready':
+        // Stage-Ready: Remove furniture, audit determines if Stage 1B-B needed
+        willRunStructural = true;   // YES furniture removal
+        autoDetect = true;          // YES detection needed to check if Stage 1B-B required
+        break;
+
+      default:
+        // This should never happen due to validation above
+        throw new Error(`[WORKER-FATAL] Unhandled publicMode: "${publicMode}"`);
+    }
+
+    // Store execution plan in global for pipeline access
+    (global as any).__willRunStructural = willRunStructural;
+    (global as any).__autoDetect = autoDetect;
+
+    // ✅ REQUIRED LOG - Shows mode → execution plan derivation
+    nLog(`[MODE-CONTRACT] Execution plan derived from publicMode`, {
       jobId: payload.jobId,
-      declutterIntensity,
-      furnitureRemovalMode: normalizedFurnitureMode,
-      publicMode
+      publicMode,
+      willRunStructural,
+      autoDetect,
     });
-  } catch {}
+
+    // ❌ DEPRECATED FIELDS - Kept for backwards compatibility logging only (NOT used in execution)
+    const legacyDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+    const legacyFurnitureRemovalMode = (payload.options as any)?.furnitureRemovalMode;
+    if (legacyDeclutterIntensity || legacyFurnitureRemovalMode) {
+      nLog(`[MODE-CONTRACT] Legacy fields ignored (publicMode is authoritative)`, {
+        jobId: payload.jobId,
+        ignored_declutterIntensity: legacyDeclutterIntensity,
+        ignored_furnitureRemovalMode: legacyFurnitureRemovalMode,
+      });
+    }
+  } catch (err) {
+    // Mode validation errors should be fatal
+    throw err;
+  }
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
   // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection

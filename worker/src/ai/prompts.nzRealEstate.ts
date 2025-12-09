@@ -11,12 +11,47 @@ function buildStage1AExteriorPromptNZStyle(): string {
   return `\nEnhance this exterior property image in the style of top New Zealand real estate\nphotographs as commonly seen on professional Trade Me listings.\n\nYour goals:\n• Replace the sky with a bright New Zealand-blue sky and soft natural clouds.\n• Brighten the entire exterior scene with warm, sunny lighting.\n• Enhance all greens to look healthy, vibrant, and well-maintained.\n• Improve clarity and texture on cladding, roofing, decking, and hard surfaces.\n• Clean dirt, mould, and discoloration from driveways, decks, and fences while\n  preserving original material texture.\n• Apply strong professional-level tonal shaping: lifted shadows, warm midtones,\n  crisp highlights, and clean whites.\n\nHARD LANDCOVER RULES:\n• Do NOT add, remove, extend, shrink, recolor, or invent ANY driveway, path,\n  deck, patio, hard-surface area, or structure.\n• Grass must remain grass; hard surfaces must remain hard surfaces.\n• Do NOT reshape, redraw, or replace trees, shrubs, hedges, or plants.\n\nABSOLUTE GEOMETRY RULES:\n• Do NOT rotate, crop, straighten, zoom, or change the camera angle.\n• Do NOT change ANY structural element: walls, rooflines, windows, doors,\n  fences, balconies, gutters, or architectural edges.\n• Do NOT remove or add buildings, structures, or features.\n\nOnly enhance lighting, color, clarity, and cleanliness. No structural changes.`.trim();
 }
 
+  // Stage 1B-TIDY-EXTERIOR: Tidy exterior (preserve outdoor furniture, remove clutter only)
+  function buildStage1BTidyExteriorPromptNZStyle(): string {
+    return `You are a professional real-estate image editor.
+
+TASK:
+Tidy this EXTERIOR property image by removing ONLY transient clutter and mess while preserving ALL outdoor furniture and permanent structures.
+
+REMOVE (transient clutter ONLY):
+- Hoses, bins, rubbish bags, trash, litter
+- Toys, sports equipment, children's items
+- Tools, ladders, tarps, building materials
+- Loose debris: leaves, dirt piles, scattered items, bark
+- Clothing items (towels, swimwear, etc.)
+- Visible mess, stains, mould, moss on surfaces
+- Garden equipment (lawnmowers, trimmers, wheelbarrows)
+- Blur/remove visible number plates on vehicles
+
+ABSOLUTE PROTECTION (NEVER REMOVE):
+- ALL outdoor furniture (chairs, tables, BBQs, outdoor sofas, benches, loungers)
+- ALL permanent structures (buildings, fences, gates, walls, decks, patios, pergolas)
+- ALL landscaping (trees, shrubs, hedges, garden beds, lawns, paths)
+- ALL driveways, walkways, retaining walls
+- ALL permanent fixtures (lights, mailboxes, house numbers)
+- ALL outdoor appliances permanently installed
+
+STRICT RULES:
+- Do NOT change camera angle, perspective, or framing
+- Do NOT remove, resize, or move any outdoor furniture
+- Do NOT alter driveway, deck, or path geometry
+- Do NOT change building structures or landscaping
+- Do NOT add any new objects
+
+GOAL: Clean, tidy exterior with only transient clutter removed while preserving the outdoor living space setup.`;
+  }
+
   // Stage 1B-TIDY: TIDY ONLY (MICRO DECLUTTER - NO FURNITURE REMOVAL)
   // Used by "tidy" mode (replaces old "main" mode)
   // Removes ONLY small clutter, keeps ALL furniture in place
   export function buildStage1BTidyPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
+      return buildStage1BTidyExteriorPromptNZStyle();
     }
 
     return `You are a professional real-estate image editor.

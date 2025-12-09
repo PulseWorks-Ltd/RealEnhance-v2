@@ -96,7 +96,9 @@ export async function enqueueEnhanceJob(params: {
       topP?: number;
       topK?: number;
     };
-    declutterIntensity?: "light" | "standard" | "heavy";
+    publicMode: "tidy" | "standard" | "stage-ready"; // ✅ CANONICAL MODE
+    declutterIntensity?: "light" | "standard" | "heavy"; // ❌ DEPRECATED
+    furnitureRemovalMode?: "auto" | "main" | "heavy"; // ❌ DEPRECATED
     stagingStyle?: string;
   };
   // ✅ Smart Stage-2-only retry mode

@@ -158,26 +158,64 @@ export function uploadRouter() {
           ...(topK !== undefined ? { topK } : {}),
         };
       }
-      // Map furnitureRemovalMode to declutterIntensity if not explicitly set
-      if (typeof meta.declutterIntensity === 'string') {
-        const s = String(meta.declutterIntensity).toLowerCase();
-        if (['light','standard','heavy'].includes(s)) {
-          opts.declutterIntensity = s;
-        }
-      } else if (!opts.declutterIntensity && declutterForm) {
-        // Convert furnitureRemovalMode from form to declutterIntensity
-        const mode = furnitureRemovalModeForm.toLowerCase();
-        if (mode === 'main') {
-          opts.declutterIntensity = 'light'; // Tidy mode: micro declutter only
-          opts.furnitureRemovalMode = 'main'; // Store original mode for worker
-        } else if (mode === 'auto') {
-          opts.declutterIntensity = 'standard'; // Standard mode: furniture removal + conditional cleanup
-          opts.furnitureRemovalMode = 'auto'; // Store original mode for worker
-        } else if (mode === 'heavy') {
-          opts.declutterIntensity = 'heavy'; // Stage-Ready mode: complete clear
-          opts.furnitureRemovalMode = 'heavy';
+      // ✅ CANONICAL MODE AUTHORITY - Map legacy fields to publicMode (single source of truth)
+      // This ensures NO SILENT FALLBACKS and NO AMBIGUITY
+      let publicMode: "tidy" | "standard" | "stage-ready" | undefined;
+
+      // Priority 1: Check if publicMode is directly provided (new clients)
+      if (typeof (meta as any).publicMode === 'string') {
+        const mode = String((meta as any).publicMode).toLowerCase();
+        if (mode === 'tidy' || mode === 'standard' || mode === 'stage-ready') {
+          publicMode = mode as "tidy" | "standard" | "stage-ready";
         }
       }
+
+      // Priority 2: Map from legacy declutterIntensity (backwards compatibility)
+      if (!publicMode && typeof meta.declutterIntensity === 'string') {
+        const intensity = String(meta.declutterIntensity).toLowerCase();
+        if (intensity === 'light' || intensity === 'tidy') {
+          publicMode = 'tidy';
+        } else if (intensity === 'standard') {
+          publicMode = 'standard';
+        } else if (intensity === 'heavy') {
+          publicMode = 'stage-ready';
+        }
+      }
+
+      // Priority 3: Map from legacy furnitureRemovalMode form (backwards compatibility)
+      if (!publicMode && declutterForm) {
+        const mode = furnitureRemovalModeForm.toLowerCase();
+        if (mode === 'main') {
+          publicMode = 'tidy';
+        } else if (mode === 'auto') {
+          publicMode = 'standard';
+        } else if (mode === 'heavy') {
+          publicMode = 'stage-ready';
+        }
+      }
+
+      // ✅ HARD REQUIREMENT - publicMode MUST be set
+      if (!publicMode) {
+        publicMode = 'standard'; // Safe default only if truly missing
+        console.warn(`[upload] No publicMode provided for image ${i}, defaulting to 'standard'`);
+      }
+
+      // Set the CANONICAL field
+      (opts as any).publicMode = publicMode;
+
+      // ✅ DEPRECATION - Set legacy fields for backwards compatibility (worker will ignore these)
+      if (publicMode === 'tidy') {
+        opts.declutterIntensity = 'light';
+        opts.furnitureRemovalMode = 'main';
+      } else if (publicMode === 'standard') {
+        opts.declutterIntensity = 'standard';
+        opts.furnitureRemovalMode = 'auto';
+      } else if (publicMode === 'stage-ready') {
+        opts.declutterIntensity = 'heavy';
+        opts.furnitureRemovalMode = 'heavy';
+      }
+
+      console.log(`[upload] Mode resolution for image ${i}:`, { publicMode, declutterIntensity: opts.declutterIntensity, furnitureRemovalMode: opts.furnitureRemovalMode });
       // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging
       if (!hasPerItemOptions || opts.virtualStage === undefined) {
         opts.virtualStage = allowStagingForm;
@@ -264,7 +302,9 @@ export function uploadRouter() {
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
           manualSceneOverride: opts.manualSceneOverride,
           sampling: opts.sampling,
-          declutterIntensity: opts.declutterIntensity,
+          publicMode: (opts as any).publicMode, // ✅ CANONICAL MODE
+          declutterIntensity: opts.declutterIntensity, // ❌ DEPRECATED
+          furnitureRemovalMode: opts.furnitureRemovalMode, // ❌ DEPRECATED
           stagingStyle: opts.stagingStyle,
         },
       });

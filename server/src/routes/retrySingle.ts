@@ -117,22 +117,29 @@ export function retrySingleRouter() {
         }
       }
 
-      // Map furnitureRemovalMode to declutterIntensity
+      // ✅ CANONICAL MODE AUTHORITY - Map legacy furnitureRemovalMode to publicMode
+      let publicMode: 'tidy' | 'standard' | 'stage-ready' = 'standard';
       let declutterIntensity: 'light' | 'standard' | 'heavy' | undefined;
       let actualFurnitureRemovalMode: 'auto' | 'main' | 'heavy' | undefined;
+
       if (declutter) {
         const mode = furnitureRemovalMode.toLowerCase();
         if (mode === 'main') {
-          declutterIntensity = 'light'; // Tidy mode: micro declutter only
-          actualFurnitureRemovalMode = 'main';
+          publicMode = 'tidy';
+          declutterIntensity = 'light'; // ❌ DEPRECATED
+          actualFurnitureRemovalMode = 'main'; // ❌ DEPRECATED
         } else if (mode === 'auto') {
-          declutterIntensity = 'standard'; // Standard mode: furniture removal + conditional cleanup
-          actualFurnitureRemovalMode = 'auto';
+          publicMode = 'standard';
+          declutterIntensity = 'standard'; // ❌ DEPRECATED
+          actualFurnitureRemovalMode = 'auto'; // ❌ DEPRECATED
         } else if (mode === 'heavy') {
-          declutterIntensity = 'heavy'; // Stage-Ready mode: complete clear
-          actualFurnitureRemovalMode = 'heavy';
+          publicMode = 'stage-ready';
+          declutterIntensity = 'heavy'; // ❌ DEPRECATED
+          actualFurnitureRemovalMode = 'heavy'; // ❌ DEPRECATED
         }
       }
+
+      console.log(`[retrySingle] Mode resolution:`, { publicMode, declutterIntensity, furnitureRemovalMode: actualFurnitureRemovalMode });
 
       const options: any = {
         declutter,
@@ -142,8 +149,9 @@ export function retrySingleRouter() {
         replaceSky,
         stagingStyle,
         manualSceneOverride,
-        ...(declutterIntensity ? { declutterIntensity } : {}),
-        ...(actualFurnitureRemovalMode ? { furnitureRemovalMode: actualFurnitureRemovalMode } : {}),
+        publicMode, // ✅ CANONICAL MODE
+        ...(declutterIntensity ? { declutterIntensity } : {}), // ❌ DEPRECATED
+        ...(actualFurnitureRemovalMode ? { furnitureRemovalMode: actualFurnitureRemovalMode } : {}), // ❌ DEPRECATED
       };
       if (temperature !== undefined || topP !== undefined || topK !== undefined) {
         options.sampling = {

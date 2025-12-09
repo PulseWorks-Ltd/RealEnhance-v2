@@ -59,6 +59,7 @@ export interface EnhanceJobPayload {
             topP?: number;
             topK?: number;
         };
+        publicMode: "tidy" | "standard" | "stage-ready";
         declutterIntensity?: "light" | "standard" | "heavy";
         furnitureRemovalMode?: "auto" | "main" | "heavy";
     };
