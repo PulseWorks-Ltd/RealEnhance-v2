@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { enhanceWithGemini } from "../ai/gemini";
+import { enhanceWithStabilityStage1A } from "../ai/stabilityEnhanceStage1A";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
@@ -10,7 +10,7 @@ import { validateStage } from "../ai/unified-validator";
 /**
  * Stage 1A: Professional real estate photo enhancement
  * Includes: HDR tone mapping, lens correction, sky enhancement, AI-ready quality
- * 
+ *
  * Enhancement pipeline:
  * 1. Auto-rotation (EXIF)
  * 2. Lens distortion correction (wide-angle)
@@ -20,7 +20,7 @@ import { validateStage } from "../ai/unified-validator";
  * 6. Sky enhancement (blue boost)
  * 7. Advanced sharpening
  * 8. Professional output quality
- * 9. Gemini AI enhancement (professional HDR + optional sky replacement)
+ * 9. Stability AI enhancement (professional, natural, realistic enhancement)
  */
 
 /**
@@ -170,71 +170,47 @@ export async function runStage1A(
     .toFile(sharpOutputPath);
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
-  
-  // Always apply Gemini AI enhancement with professional HDR quality
-  // (Stage 1B will handle furniture removal separately if declutter is enabled)
-  console.log(`[stage1A] Starting Gemini AI enhancement (replaceSky: ${replaceSky})...`);
-  // NZ real estate style sampling overrides (applied before env/config precedence inside enhanceWithGemini)
-  let nzTemp: number | undefined = undefined;
-  let nzTopP: number | undefined = undefined;
-  let nzTopK: number | undefined = undefined;
-  if (isNZStyleEnabled()) {
-    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
-    if (applyInteriorProfile) {
-      // Use profile-specific Gemini temperature for interior
-      nzTemp = interiorCfg.geminiTemperature;
-    } else {
-      nzTemp = preset.temperature;
-    }
-    nzTopP = preset.topP;
-    nzTopK = preset.topK;
-  }
-  // Inject custom prompt via global hook so buildGeminiPrompt can detect (simplest non-invasive approach)
-  let nzPrompt: string | undefined = undefined;
+
+  // Apply Stability AI enhancement with safe, realistic parameters
+  console.log("[stage1A] ✅ Using Stability for enhancement");
+
+  // Build appropriate prompt based on scene type and profile
+  let prompt: string;
   if (isNZStyleEnabled()) {
     if (applyInteriorProfile) {
-      nzPrompt = interiorProfileKey === "nz_high_end"
+      prompt = interiorProfileKey === "nz_high_end"
         ? buildStage1AInteriorPromptNZHighEnd("room")
         : buildStage1AInteriorPromptNZStandard("room");
     } else {
-      nzPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
+      prompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
     }
+  } else {
+    // Default prompt for non-NZ style
+    prompt = sceneType === "interior"
+      ? "Professional real estate interior photo with natural lighting, clean walls, and realistic colors"
+      : "Professional real estate exterior photo with clear sky, natural lighting, and vibrant landscaping";
   }
-  const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
-    replaceSky: replaceSky,
-    declutter: false,
-    sceneType: sceneType,
-    stage: "1A",
-    promptOverride: nzPrompt,
-    temperature: nzTemp,
-    topP: nzTopP,
-    topK: nzTopK,
-    // Apply light hardscape cleanup only for exteriors in Stage1A
-    floorClean: false,
-    hardscapeClean: sceneType === "exterior",
-    // Sampling overrides from job options if available (passed via context by worker)
-    ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
-  });
-  
-  // If Gemini enhancement succeeded (returned different path), use it
-  // Otherwise, Sharp output is already at sharpOutputPath
-  if (geminiOutputPath !== sharpOutputPath) {
+
+  const stabilityOutputPath = await enhanceWithStabilityStage1A(sharpOutputPath, prompt);
+
+  // Validate the Stability enhancement
+  if (stabilityOutputPath !== sharpOutputPath) {
     // Use structure-first validator
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
     const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
     const jobId = (global as any).__jobId || "default";
     const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
     const masks = { structuralMask: maskPath };
-    let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
+    let verdict = await validateStage1AStructural(sharpOutputPath, stabilityOutputPath, masks, sceneType as any);
     console.log(`[stage1A] Structural validator verdict:`, verdict);
     // Always proceed, but log if hardFail
     if (!verdict.ok) {
       console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
     }
     const fs = await import("fs/promises");
-    await fs.rename(geminiOutputPath, finalOutputPath);
+    await fs.rename(stabilityOutputPath, finalOutputPath);
   } else {
-    console.log(`[stage1A] ℹ️ Using Sharp enhancement only (Gemini skipped)`);
+    console.log(`[stage1A] ℹ️ Using Sharp enhancement only (Stability skipped)`);
     const fs = await import("fs/promises");
     await fs.rename(sharpOutputPath, finalOutputPath);
   }
