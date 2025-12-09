@@ -522,13 +522,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let path1B: string | undefined = undefined;
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   if (payload.options.declutter) {
-    nLog(`[WORKER] ✅ Stage 1B ENABLED - will remove furniture from enhanced 1A output`);
+    const declutterMode = (payload.options as any).declutterMode || "stage-ready";
+    nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
     try {
       // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
       path1B = await runStage1B(path1A, {
         replaceSky: false, // Never combine with sky replacement
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
+        declutterMode: declutterMode as "light" | "stage-ready",
       });
     } catch (e: any) {
       const errMsg = e?.message || String(e);

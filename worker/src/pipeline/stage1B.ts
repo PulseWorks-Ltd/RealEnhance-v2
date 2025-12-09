@@ -1,19 +1,20 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
 import { enhanceWithGemini } from "../ai/gemini";
-import { buildStage1BPromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
  * 
- * Takes the enhanced output from Stage 1A and removes ALL furniture, decor, and clutter
- * to create an empty room ready for virtual staging.
+ * Takes the enhanced output from Stage 1A and removes furniture/clutter based on mode:
+ * - "light": Removes clutter/mess only, keeps all main furniture
+ * - "stage-ready": Removes ALL furniture and clutter to create empty room
  * 
  * Pipeline: Sharp → Stage 1A (Gemini enhance) → Stage 1B (Gemini declutter) → Stage 2 (Gemini stage)
  * 
- * The output is an empty, decluttered room with preserved architecture, ready for Stage 2 staging.
+ * The output is either a tidied room (light) or empty room (stage-ready), ready for Stage 2 staging.
  */
 export async function runStage1B(
   stage1APath: string,
@@ -21,17 +22,23 @@ export async function runStage1B(
     replaceSky?: boolean;
     sceneType?: "interior" | "exterior" | string;
     roomType?: string;
+    declutterMode?: "light" | "stage-ready";
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode = "stage-ready" } = options;
   
   console.log(`[stage1B] 🔵 Starting furniture & clutter removal...`);
   console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
-  console.log(`[stage1B] Options: sceneType=${sceneType}`);
+  console.log(`[stage1B] Options: sceneType=${sceneType}, mode=${declutterMode}`);
   
   try {
+    // Select prompt based on declutter mode
+    const promptOverride = declutterMode === "light"
+      ? buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any)
+      : buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
+    
+    console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
-    console.log(`[stage1B] 🤖 Calling Gemini to remove furniture and clutter...`);
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       skipIfNoApiKey: true,
       replaceSky,
@@ -42,8 +49,8 @@ export async function runStage1B(
       temperature: 0.30,
       topP: 0.70,
       topK: 32,
-      // NZ explicit 1B prompt (preserves curtains/blinds)
-      promptOverride: buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
+      // NZ explicit 1B prompt (mode-specific)
+      promptOverride,
       // When decluttering, allow interior floor cleanup and exterior hardscape cleanup
       floorClean: sceneType === "interior",
       hardscapeClean: sceneType === "exterior",

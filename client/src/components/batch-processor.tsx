@@ -142,6 +142,7 @@ export default function BatchProcessor() {
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
+  const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -1191,6 +1192,9 @@ export default function BatchProcessor() {
     fd.append("allowRetouch", allowRetouch.toString());
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     fd.append("declutter", declutter.toString());
+    if (declutter) {
+      fd.append("declutterMode", declutterMode);
+    }
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);
@@ -2201,6 +2205,40 @@ export default function BatchProcessor() {
                       <p className="text-xs text-gray-400">Clean out existing furniture and clutter (Stage 1B)</p>
                     </div>
                   </label>
+
+                  {/* Declutter Mode Radio Buttons */}
+                  {declutter && (
+                    <div className="ml-8 space-y-2 mb-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="declutterMode"
+                          value="light"
+                          checked={declutterMode === "light"}
+                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
+                        />
+                        <div>
+                          <span className="text-sm text-white">Declutter Only (Remove Clutter)</span>
+                          <p className="text-xs text-gray-400">Keeps furniture, removes mess and clutter</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="declutterMode"
+                          value="stage-ready"
+                          checked={declutterMode === "stage-ready"}
+                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
+                        />
+                        <div>
+                          <span className="text-sm text-white">Stage Ready (Empty Room)</span>
+                          <p className="text-xs text-gray-400">Removes all furniture and clutter</p>
+                        </div>
+                      </label>
+                    </div>
+                  )}
 
                   <label className="flex items-center gap-3">
                     <input
