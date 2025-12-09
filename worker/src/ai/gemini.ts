@@ -145,8 +145,8 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * 2. Enhance + Declutter (combined in one call to save API costs)
  * 
  * Model selection:
- * - Stage 1A/1B: gemini-1.5-flash (fast, cost-effective for enhancement/declutter)
- * - Stage 2: gemini-2.5-flash (advanced capabilities for virtual staging)
+ * - Stage 1A: gemini-2.0-flash-exp-image (optimized for enhancement)
+ * - Stage 1B/2: gemini-2.5-flash-image (advanced capabilities for declutter/staging)
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -234,7 +234,7 @@ export async function enhanceWithGemini(
       { text: prompt },
     ];
 
-    console.log(`[Gemini] 🚀 Calling Gemini 2.5 Image model (with fallback)...`);
+    console.log(`[Gemini] 🚀 Calling Gemini ${stage === "1A" ? "2.0" : "2.5"} Flash Image model (with fallback)...`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
@@ -322,7 +322,7 @@ export async function enhanceWithGemini(
         topP: sampling.topP,
         topK: sampling.topK,
       }
-    } as any, declutter ? "enhance+declutter" : "enhance");
+    } as any, stage === "1A" ? "enhance-1A" : (declutter ? "enhance+declutter" : "enhance"));
     const apiMs = Date.now() - apiStart;
     console.log(`[Gemini] ✅ API responded in ${apiMs} ms (model=${modelUsed})`);
 
