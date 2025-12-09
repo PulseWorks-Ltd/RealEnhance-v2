@@ -145,8 +145,8 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * 2. Enhance + Declutter (combined in one call to save API costs)
  * 
  * Model selection:
- * - Stage 1A: gemini-2.5-flash-image (optimized for enhancement)
- * - Stage 1B/2: gemini-2.5-flash-image (advanced capabilities for declutter/staging)
+ * - All stages: gemini-2.5-flash-image (locked, no fallbacks)
+ * - Fails hard if model unavailable (no silent Sharp degradation)
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -174,11 +174,8 @@ export async function enhanceWithGemini(
   // Check if Gemini API key is available
   const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    if (skipIfNoApiKey) {
-      console.log("⚠️ Gemini API key not found, skipping AI enhancement");
-      return inputPath; // Return original path if no API key
-    }
-    throw new Error("GOOGLE_API_KEY missing for Gemini enhancement");
+    console.error("❌ FATAL: Gemini API key not configured — cannot continue AI pipeline.");
+    throw new Error("GOOGLE_API_KEY missing for Gemini enhancement — aborting job.");
   }
 
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
@@ -234,7 +231,7 @@ export async function enhanceWithGemini(
       { text: prompt },
     ];
 
-    console.log(`[Gemini] 🚀 Calling Gemini ${stage === "1A" ? "2.0" : "2.5"} Flash Image model (with fallback)...`);
+    console.log(`[Gemini] 🚀 Calling Gemini 2.5 Flash Image model...`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
@@ -330,8 +327,8 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 📊 Response parts: ${parts.length}`);
     const img = parts.find((p: any) => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
     if (!img?.inlineData?.data) {
-      console.error("❌ [Gemini] No image returned by model");
-      return inputPath;
+      console.error("❌ FATAL: Gemini 2.5 Flash returned no image data — cannot continue.");
+      throw new Error("Gemini 2.5 Flash Image model returned no image data – aborting job.");
     }
 
     const suffix = declutter ? "-gemini-1B" : "-gemini-1A";
@@ -340,11 +337,8 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
   } catch (error) {
-    console.error(`❌ [Gemini] ${operationType} failed:`, error);
-    if (skipIfNoApiKey) {
-      console.log("⚠️ Falling back to original image");
-      return inputPath;
-    }
+    console.error(`❌ FATAL: Gemini 2.5 Flash ${operationType} failed — cannot continue AI pipeline.`);
+    console.error(`Error details:`, error);
     throw error;
   }
 }

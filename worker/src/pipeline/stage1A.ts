@@ -201,7 +201,6 @@ export async function runStage1A(
     }
   }
   const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
-    skipIfNoApiKey: true,
     replaceSky: replaceSky,
     declutter: false,
     sceneType: sceneType,

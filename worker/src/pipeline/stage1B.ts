@@ -57,7 +57,6 @@ export async function runStage1B(
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
     const declutteredPath = await enhanceWithGemini(stage1APath, {
-      skipIfNoApiKey: true,
       replaceSky,
       declutter: true,
       sceneType,
