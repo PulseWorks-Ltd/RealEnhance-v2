@@ -33,7 +33,13 @@ async function main() {
   const { jobId } = await enqueueEnhanceJob({
     userId,
     imageId,
-    options: { declutter, virtualStage, roomType, sceneType }
+    options: {
+      declutter,
+      virtualStage,
+      roomType,
+      sceneType,
+      publicMode: "standard" // ✅ Default mode for test script
+    }
   });
 
   console.log(JSON.stringify({ ok: true, userId, imageId, jobId }, null, 2));

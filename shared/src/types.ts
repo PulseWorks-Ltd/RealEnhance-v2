@@ -80,8 +80,13 @@ export interface EnhanceJobPayload {
       topP?: number;
       topK?: number;
     };
+    // ✅ CANONICAL MODE AUTHORITY - Single source of truth for execution plan
+    // This field is REQUIRED and determines ALL behavior
+    publicMode: "tidy" | "standard" | "stage-ready";
+    // ❌ DEPRECATED - Do not use these fields (kept for backwards compatibility only)
+    // These will be IGNORED by the worker - publicMode is authoritative
     declutterIntensity?: "light" | "standard" | "heavy";
-    furnitureRemovalMode?: "auto" | "main" | "heavy"; // Two-stage furniture removal system
+    furnitureRemovalMode?: "auto" | "main" | "heavy";
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {

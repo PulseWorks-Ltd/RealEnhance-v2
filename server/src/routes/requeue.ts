@@ -39,6 +39,7 @@ export function requeueRouter() {
       virtualStage: parseStrictBool(typeof virtualStage !== 'undefined' ? virtualStage : prevOptions.virtualStage),
       roomType: (roomType as string) || prevOptions.roomType || "unknown",
       sceneType: (sceneType as string) || prevOptions.sceneType || "auto",
+      publicMode: (prevOptions.publicMode || "standard") as "tidy" | "standard" | "stage-ready", // ✅ Inherit from previous job
     };
 
     const imageId = (img.imageId || img.id) as string | undefined;
@@ -70,6 +71,7 @@ export function requeueRouter() {
       virtualStage: parseStrictBool(typeof virtualStage !== 'undefined' ? virtualStage : prevOpts.virtualStage),
       roomType: (roomType as string) || prevOpts.roomType || "unknown",
       sceneType: (sceneType as string) || prevOpts.sceneType || "auto",
+      publicMode: (prevOpts.publicMode || "standard") as "tidy" | "standard" | "stage-ready", // ✅ Inherit from previous job
     };
 
     const prevImageId = (prev as any).imageId as string | undefined;

@@ -11,11 +11,11 @@ import { callGeminiJsonOnImage } from "../ai/geminiJsonHelper";
  * Stage 1B: Furniture & Clutter Removal System
  *
  * Supports three public modes:
- * - "tidy" (main): Micro declutter only - removes small clutter, keeps ALL furniture
- * - "standard" (auto): Structural clear + conditional micro - removes furniture, auto-escalates to clutter cleanup if needed
- * - "stage-ready" (heavy): Structural clear + forced micro - removes everything loose for staging
+ * - "tidy": Micro declutter only (1 pass) - removes small clutter, keeps ALL furniture
+ * - "standard": Comprehensive furniture removal (1-2 passes) - Stage 1B-A removes all furniture, Stage 1B-B runs conditionally if Gemini audit detects residual items
+ * - "stage-ready": Comprehensive furniture removal (1-2 passes) - Stage 1B-A removes all furniture, Stage 1B-B runs unless Gemini audit confirms perfectly clean
  *
- * Pipeline: Sharp → Stage 1A (enhance) → Stage 1B → [1B-B if needed] → Stage 2 (staging)
+ * Pipeline: Sharp → Stage 1A (enhance) → Stage 1B-A → [Gemini audit] → [Stage 1B-B if needed] → Stage 2 (staging)
  */
 export async function runStage1B(
   stage1APath: string,
@@ -26,21 +26,27 @@ export async function runStage1B(
   } = {}
 ): Promise<string> {
   const { replaceSky = false, sceneType, roomType } = options;
-  const furnitureRemovalMode = (global as any).__furnitureRemovalMode || 'auto';
-  const publicMode = (global as any).__publicMode || 'standard';
-  const declutterIntensity = (global as any).__jobDeclutterIntensity;
   const jobId = (global as any).__jobId || 'unknown';
+
+  // ✅ CANONICAL MODE AUTHORITY - Read execution plan from global (set by worker)
+  const publicMode = (global as any).__publicMode as "tidy" | "standard" | "stage-ready" | undefined;
+  const willRunStructural = (global as any).__willRunStructural as boolean;
+  const autoDetect = (global as any).__autoDetect as boolean;
+
+  // ✅ FATAL GUARD - publicMode MUST exist
+  if (!publicMode || !['tidy', 'standard', 'stage-ready'].includes(publicMode)) {
+    throw new Error(`[STAGE1B-FATAL] Invalid or missing publicMode: "${publicMode}". Cannot execute Stage 1B without valid mode contract.`);
+  }
 
   console.log(`[stage1B] 🔵 Starting furniture removal system...`);
   console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
-  console.log(`[stage1B] Options: sceneType=${sceneType}, furnitureRemovalMode=${furnitureRemovalMode}`);
-
-  // Log mode resolution (required by spec)
-  console.log(`[stage1B] Public mode resolved`, {
+  console.log(`[stage1B] Execution plan enforced from publicMode`, {
     jobId,
-    furnitureRemovalMode,
-    declutterIntensity,
-    publicMode
+    publicMode,
+    willRunStructural,
+    autoDetect,
+    sceneType,
+    roomType
   });
 
   // For exteriors, bypass two-stage system (no furniture to remove)
@@ -50,21 +56,14 @@ export async function runStage1B(
   }
 
   try {
-    // Determine execution plan based on public mode
-    const willRunStructural = publicMode !== "tidy";
-    const willRunMicro = publicMode === "tidy" ||
-                         publicMode === "stage-ready" ||
-                         (publicMode === "standard"); // standard may run micro based on auto-escalation
-
-    console.log(`[stage1B] Execution plan locked`, {
-      jobId,
-      publicMode,
-      willRunStructural,
-      willRunMicro: willRunMicro && publicMode !== "standard" ? true : "conditional"
-    });
 
     // ✅ TIDY MODE: Run only micro declutter (no furniture removal)
     if (publicMode === "tidy") {
+      // ✅ FATAL GUARD - Tidy mode must NEVER run structural removal
+      if (willRunStructural) {
+        throw new Error(`[STAGE1B-FATAL] Mode contract violation: publicMode="tidy" but willRunStructural=true. This is a bug.`);
+      }
+
       console.log(`[stage1B-TIDY] 🧹 Tidy mode: micro declutter only (keeping furniture)`, {
         jobId,
         input: stage1APath
@@ -103,6 +102,10 @@ export async function runStage1B(
     }
 
     // ✅ STANDARD & STAGE-READY: Run structural clear (1B-A) first
+    // ✅ FATAL GUARD - These modes MUST run structural removal
+    if (!willRunStructural) {
+      throw new Error(`[STAGE1B-FATAL] Mode contract violation: publicMode="${publicMode}" but willRunStructural=false. This is a bug.`);
+    }
     console.log(`[stage1B-1] 🚪 STRUCTURAL furniture removal started`, {
       jobId,
       mode: publicMode,
@@ -163,12 +166,36 @@ export async function runStage1B(
     // NEW LOGIC:
     // - "tidy": Already handled above (returns early)
     // - "standard": Auto-detect residual furniture/items after 1B-A
-    // - "stage-ready": ALWAYS run second pass
+    // - "stage-ready": Auto-detect after 1B-A, skip ONLY if audit confirms perfectly clean
     let needsStage1BB = false;
 
     if (publicMode === "stage-ready") {
-      console.log("[stage1B] 🎯 Mode is 'stage-ready' - Stage 1B-B will ALWAYS run");
-      needsStage1BB = true;
+      console.log("[stage1B] 🎯 Mode is 'stage-ready' - checking if Stage 1B-B needed...");
+
+      // Run audit to check room status
+      const audit = await auditResidualObjects(stage1BAPath, { jobId, roomType });
+
+      // SKIP Stage 1B-B ONLY if audit confirms room is perfectly clean
+      const isPerfectlyClean =
+        !audit.hasFurniture &&
+        !audit.hasPersonalItems &&
+        audit.isStageReady === true;
+
+      needsStage1BB = !isPerfectlyClean;
+
+      console.log("[stage1B] Stage-Ready audit decision", {
+        jobId,
+        isPerfectlyClean,
+        needsStage1BB,
+        audit: {
+          hasFurniture: audit.hasFurniture,
+          residualFurniture: audit.residualFurniture,
+          hasPersonalItems: audit.hasPersonalItems,
+          residualPersonalItems: audit.residualPersonalItems,
+          isStageReady: audit.isStageReady,
+          confidence: audit.confidence
+        }
+      });
     } else if (publicMode === "standard") {
       console.log("[stage1B] 🤖 Mode is 'standard' - evaluating Stage 1B-A output for residual objects...");
       needsStage1BB = await shouldRunStage1BB(stage1BAPath, {
@@ -281,11 +308,11 @@ export async function runStage1B(
       if (needsStage1BB && finalPath === stage1BBPath) {
         // Dual-pass completed: use -1B-B
         stageSuffix = "-1B-B";
-        console.log(`[STAGE1B] MODE=${furnitureRemovalMode} PASS=B → OUTPUT=${finalPath.split('/').pop()}`);
+        console.log(`[STAGE1B] MODE=${publicMode} PASS=B → OUTPUT=${finalPath.split('/').pop()}`);
       } else {
         // Single-pass only: use -1B-A
         stageSuffix = "-1B-A";
-        console.log(`[STAGE1B] MODE=${furnitureRemovalMode} PASS=A → OUTPUT=${finalPath.split('/').pop()}`);
+        console.log(`[STAGE1B] MODE=${publicMode} PASS=A → OUTPUT=${finalPath.split('/').pop()}`);
       }
 
       const outputPath = siblingOutPath(stage1APath, stageSuffix, ".webp");
