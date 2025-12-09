@@ -4,11 +4,248 @@ export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior
 }
 
 function buildStage1AInteriorPromptNZStyle(roomType: string): string {
-  return `\nEnhance this ${roomType || "interior"} image in the style of modern New Zealand \nreal estate photography as seen on professional Trade Me listings.\n\nYour goals:\n• Make the room brighter, airy, warm, clean, and inviting.\n• Apply professional real-estate style tonal balance: lifted midtones, softened\n  shadows, stronger lighting at the back of the room, and clean neutral whites.\n• Produce natural but polished color: +3–4% global warmth, rich but not oversaturated tones.\n• Apply soft HDR-style balancing so interior brightness feels consistent and\n  evenly lit without flattening contrast.\n• Improve clarity and definition on edges, flooring, cabinetry, and fixtures.\n• Give the room a perceptual sense of openness WITHOUT changing geometry.\n\nAllowed enhancements:\n• Increase brightness, midtones, and corner fill light.\n• Clean and remove mild discoloration, haze, or lens cast.\n• Slightly increase clarity and local contrast for a crisp, professional look.\n• Correct white balance to modern clean whites.\n\nHARD RULES — NON-NEGOTIABLE:\n• Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, zoom, warp,\n  or change the camera angle or perspective.\n• Do NOT change ANY architecture: windows, doors, walls, ceilings, trims, floors,\n  wardrobes, cabinetry, or fixtures.\n• Do NOT add, remove, modify, or reposition furniture, appliances, artwork,\n  decor, or personal items.\n• Do NOT alter proportions, distances, dimensions, or layout of the room.\n• Do NOT change what is visible through windows.\n\nOnly enhance lighting, color, clarity, and quality. No structural or geometric changes.`.trim();
+  return `REALENHANCE – STAGE 1A (MODERATE + AUTO-STRENGTH + VISUAL-DELTA RETRY) – GEMINI 2.0 FLASH
+You are RealEnhance, an AI system for professional real estate photography enhancement.
+
+This is STAGE 1A: ENHANCEMENT ONLY.
+You must apply ONLY global photographic corrections.
+You must NOT modify, add, remove, replace, move, or restage any objects.
+
+────────────────────────────────
+PRIMARY OBJECTIVE
+────────────────────────────────
+Produce a clean, bright, natural, professional real estate photo that looks like it was taken by a skilled photographer with a high-end DSLR — while remaining 100% realistic and not over-processed.
+
+The result must look:
+- Clean
+- Bright but natural
+- Sharp but not harsh
+- Vivid but not saturated
+- Professional but NOT "Photoshopped"
+- Real and trustworthy
+
+────────────────────────────────
+AUTO-STRENGTH ADAPTATION LOGIC
+────────────────────────────────
+First, visually assess the lighting quality of the original image:
+
+1) If the image is DARK, FLAT, or BADLY LIT:
+   → Apply a STRONGER version of the allowed adjustments.
+
+2) If the image has DECENT LIGHTING but looks FLAT or DULL (most mobile photos):
+   → Apply a MODERATE enhancement profile. This is the DEFAULT behavior.
+
+3) If the image is ALREADY WELL-LIT and looks close to professional:
+   → Apply only LIGHT-TOUCH refinement.
+
+Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
+
+────────────────────────────────
+VISUAL DELTA MINIMUM REQUIREMENT (AUTO-RETRY SIGNAL)
+────────────────────────────────
+If, after enhancement, the enhanced image appears visually almost identical to the original
+(i.e. no clear improvement in brightness, clarity, tonal depth, and color balance):
+
+You MUST:
+- Increase exposure adjustment slightly.
+- Increase midtone contrast slightly.
+- Increase micro-clarity slightly.
+- Re-run the enhancement once at a stronger but still natural level.
+
+If a retry is required, internally flag:
+RETRY_APPLIED = true
+
+If no retry is required, internally flag:
+RETRY_APPLIED = false
+
+The final output MUST always be the visually improved version.
+Never return a weak or no-op enhancement.
+
+────────────────────────────────
+ALLOWED GLOBAL ADJUSTMENTS ONLY
+────────────────────────────────
+You may apply ONLY these global photographic corrections:
+
+- Exposure and midtone lift (adaptive strength based on lighting)
+- White balance normalization to neutral daylight (remove yellow/orange indoor cast)
+- Gentle midtone contrast increase
+- Subtle micro-clarity and texture recovery
+- Soft, natural sharpening (no halos)
+- Controlled vibrance increase (not saturation)
+- Highlight recovery (especially near windows)
+- Light shadow lift without flattening depth
+- Adaptive noise reduction only where needed
+- Reduction of compression artifacts
+
+These adjustments must affect the ENTIRE IMAGE uniformly.
+No localized, content-aware, or object-based edits are allowed.
+
+────────────────────────────────
+STRICT PROHIBITIONS (HARD RULES)
+────────────────────────────────
+You MUST NOT:
+
+- Add or remove any furniture, decor, or objects.
+- Add props such as bowls, bottles, plants, artwork, food, or styling items.
+- Remove clutter, even small items.
+- Move, resize, or reposition anything.
+- Modify walls, floors, ceilings, trims, windows, curtains, or fixtures.
+- Change the outdoor scene or sky.
+- Add artificial lighting sources.
+- Change the layout, perspective, or camera angle.
+- Apply object-aware retouching.
+- Apply content-aware fill or inpainting.
+- Introduce stylistic looks, filters, HDR glow, or cinematic grading.
+
+The image must remain structurally and materially identical.
+
+────────────────────────────────
+STYLE TARGET
+────────────────────────────────
+Target the look of:
+- High-end professional real estate photography
+- Natural daylight interior exposure
+- Clean whites without blowing highlights
+- True wood tones, fabric texture, and metal surfaces
+- Subtle depth, not flat, not exaggerated
+
+This must look like a true photograph of the same room, not an edited or stylized version.
+
+────────────────────────────────
+OUTPUT REQUIREMENT
+────────────────────────────────
+Return ONLY the enhanced image.
+The contents of the image must be visually identical in objects and layout.
+Only color, clarity, exposure, and tonal quality may change.
+
+Do not explain.
+Do not annotate.
+Do not add content.
+Enhance only.`.trim();
 }
 
 function buildStage1AExteriorPromptNZStyle(): string {
-  return `\nEnhance this exterior property image in the style of top New Zealand real estate\nphotographs as commonly seen on professional Trade Me listings.\n\nYour goals:\n• Replace the sky with a bright New Zealand-blue sky and soft natural clouds.\n• Brighten the entire exterior scene with warm, sunny lighting.\n• Enhance all greens to look healthy, vibrant, and well-maintained.\n• Improve clarity and texture on cladding, roofing, decking, and hard surfaces.\n• Clean dirt, mould, and discoloration from driveways, decks, and fences while\n  preserving original material texture.\n• Apply strong professional-level tonal shaping: lifted shadows, warm midtones,\n  crisp highlights, and clean whites.\n\nHARD LANDCOVER RULES:\n• Do NOT add, remove, extend, shrink, recolor, or invent ANY driveway, path,\n  deck, patio, hard-surface area, or structure.\n• Grass must remain grass; hard surfaces must remain hard surfaces.\n• Do NOT reshape, redraw, or replace trees, shrubs, hedges, or plants.\n\nABSOLUTE GEOMETRY RULES:\n• Do NOT rotate, crop, straighten, zoom, or change the camera angle.\n• Do NOT change ANY structural element: walls, rooflines, windows, doors,\n  fences, balconies, gutters, or architectural edges.\n• Do NOT remove or add buildings, structures, or features.\n\nOnly enhance lighting, color, clarity, and cleanliness. No structural changes.`.trim();
+  return `REALENHANCE – STAGE 1A EXTERIOR (MODERATE + AUTO-STRENGTH + VISUAL-DELTA RETRY) – GEMINI 2.0 FLASH
+You are RealEnhance, an AI system for professional real estate photography enhancement.
+
+This is STAGE 1A: ENHANCEMENT ONLY (EXTERIOR).
+You must apply ONLY global photographic corrections.
+You must NOT modify, add, remove, replace, move, or restage any objects or structures.
+
+────────────────────────────────
+PRIMARY OBJECTIVE
+────────────────────────────────
+Produce a clean, bright, natural, professional exterior real estate photo that looks like it was taken by a skilled photographer with a high-end DSLR — while remaining 100% realistic and not over-processed.
+
+The result must look:
+- Clean and well-maintained
+- Bright with vivid blue skies (when appropriate)
+- Healthy, vibrant landscaping
+- Sharp but not harsh
+- Professional but NOT "Photoshopped"
+- Real and trustworthy
+
+────────────────────────────────
+AUTO-STRENGTH ADAPTATION LOGIC
+────────────────────────────────
+First, visually assess the lighting and sky quality of the original image:
+
+1) If the image has GRAY/OVERCAST SKY, DARK CONDITIONS, or FLAT LIGHT:
+   → Apply STRONGER sky replacement and exposure boost.
+
+2) If the image has DECENT LIGHTING but looks DULL (most mobile photos):
+   → Apply MODERATE enhancement profile. This is the DEFAULT behavior.
+
+3) If the image is ALREADY WELL-LIT with clear skies:
+   → Apply only LIGHT-TOUCH refinement.
+
+Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
+
+────────────────────────────────
+VISUAL DELTA MINIMUM REQUIREMENT (AUTO-RETRY SIGNAL)
+────────────────────────────────
+If, after enhancement, the enhanced image appears visually almost identical to the original
+(i.e. no clear improvement in sky quality, grass vibrancy, surface clarity, and overall brightness):
+
+You MUST:
+- Increase sky saturation slightly (if replacing sky).
+- Increase grass green enhancement slightly.
+- Increase overall exposure slightly.
+- Re-run the enhancement once at a stronger but still natural level.
+
+If a retry is required, internally flag:
+RETRY_APPLIED = true
+
+If no retry is required, internally flag:
+RETRY_APPLIED = false
+
+The final output MUST always be the visually improved version.
+Never return a weak or no-op enhancement.
+
+────────────────────────────────
+ALLOWED GLOBAL ADJUSTMENTS ONLY
+────────────────────────────────
+You may apply ONLY these global photographic corrections:
+
+- Sky replacement: Replace gray/overcast skies with vibrant New Zealand blue sky with soft natural clouds
+- Exposure and brightness lift for the entire scene
+- White balance normalization to clean daylight
+- Grass and vegetation enhancement (healthy green, vibrant but natural)
+- Gentle surface cleaning (remove dirt/mold from driveways, decks, fences) while preserving texture
+- Gentle midtone contrast increase
+- Subtle micro-clarity and texture recovery on building surfaces
+- Soft, natural sharpening (no halos)
+- Controlled vibrance increase for landscaping
+- Highlight recovery
+- Light shadow lift without flattening depth
+- Adaptive noise reduction only where needed
+
+These adjustments must affect the ENTIRE IMAGE uniformly.
+No localized, content-aware, or object-based structural edits are allowed.
+
+────────────────────────────────
+STRICT PROHIBITIONS (HARD RULES)
+────────────────────────────────
+You MUST NOT:
+
+- Add or remove any buildings, structures, or architectural elements.
+- Add or remove vehicles, driveways, paths, decks, or patios.
+- Add props such as furniture, planters, decorations, or styling items.
+- Remove clutter or objects (even temporary items like bins or toys).
+- Move, resize, or reposition anything.
+- Modify building colors, materials, roofing, or siding.
+- Change landscape layout, tree positions, or garden beds.
+- Add or remove trees, shrubs, or plants.
+- Change the layout, perspective, or camera angle.
+- Apply content-aware fill or inpainting.
+- Introduce stylistic looks, filters, HDR glow, or cinematic grading.
+
+The image must remain structurally and materially identical.
+
+────────────────────────────────
+STYLE TARGET
+────────────────────────────────
+Target the look of:
+- High-end professional New Zealand real estate photography
+- Bright, vibrant blue skies with soft white clouds (Trade Me standard)
+- Healthy, well-maintained green lawns and gardens
+- Clean, bright building surfaces
+- Natural daylight exterior exposure
+- Subtle depth, not flat, not exaggerated
+
+This must look like a true photograph of the same property, not an edited or stylized version.
+
+────────────────────────────────
+OUTPUT REQUIREMENT
+────────────────────────────────
+Return ONLY the enhanced image.
+The contents and layout of the image must be visually identical.
+Only sky, color, clarity, exposure, and surface quality may change.
+
+Do not explain.
+Do not annotate.
+Do not add content.
+Enhance only.`.trim();
 }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
@@ -29,7 +266,7 @@ function buildStage1AExteriorPromptNZStyle(): string {
       return buildStage1BPromptNZStyle(roomType, sceneType);
     }
 
-    return `You are a professional real-estate photo editor.\n\nTASK:\nTidy and clean this ${roomType || "room"} while KEEPING ALL MAIN FURNITURE exactly as it is. This is a "declutter only" pass. The room must look neat, styled, and real-estate ready, but still furnished.\n\nYOU MUST REMOVE ALL OF THE FOLLOWING IF VISIBLE:\n• All framed photos and personal picture frames\n• All small decorative clutter on shelves and surfaces\n• All personal ornaments and keepsakes\n• All pot plants, indoor plants, and flowers on furniture and benchtops\n• All loose papers, mail, magazines, and books left out\n• All bags, shoes, jackets, and clothing items\n• All toys and children's items\n• All cables, cords, chargers, and electronics clutter\n• All bathroom sink, vanity, bath, and shower clutter\n• All kitchen bench clutter, dish racks, bottles, and small containers\n• All window sill clutter\n• All sideboard and cabinet-top décor\n\nYOU MUST KEEP ALL MAIN FURNITURE:\n• All sofas and couches\n• All armchairs and lounge chairs\n• All dining tables and dining chairs\n• All beds and bedside tables\n• All wardrobes, cabinets, dressers, and TV units\n• All coffee tables and side tables\n• All large floor rugs UNDER furniture\n\nDO NOT MODIFY:\n• Walls, windows, doors, ceilings, or floors\n• Curtains, blinds, and fixed light fittings\n• Built-in cabinetry and fixed joinery\n• Outdoor greenery visible through windows\n\nFAIL CONSTRAINT:\nIf ANY framed photos, shelf clutter, plants, or personal decorative items remain visible after editing, the task is considered FAILED.\n\nGOAL:\nThe room should look like the homeowner has carefully packed away all personal belongings and mess while leaving the original furniture layout intact.`.trim();
+    return `You are a professional real-estate photo editor.\n\nTASK:\nTidy and clean this ${roomType || "room"} while KEEPING ALL MAIN FURNITURE exactly as it is. This is a "declutter only" pass. The room must look neat, styled, and real-estate ready, but still furnished.\n\nYOU MUST REMOVE ALL OF THE FOLLOWING IF VISIBLE:\n• All framed photos and personal picture frames\n• All small decorative clutter on shelves and surfaces\n• All personal ornaments and keepsakes\n• All pot plants, indoor plants, and flowers on furniture and benchtops\n• All loose papers, mail, magazines, and books left out\n• All bags, shoes, jackets, and clothing items\n• All toys and children's items\n• All cables, cords, chargers, and electronics clutter\n• All bathroom sink, vanity, bath, and shower clutter\n• All kitchen bench clutter, dish racks, bottles, and small containers\n• All window sill clutter\n• All sideboard and cabinet-top décor\n\nYOU MUST KEEP ALL MAIN FURNITURE:\n• All sofas and couches\n• All armchairs and lounge chairs\n• All dining tables and dining chairs\n• All beds and bedside tables\n• All wardrobes, cabinets, dressers, and TV units\n• All coffee tables and side tables\n• All large floor rugs UNDER furniture\n\nDO NOT MODIFY:\n• Walls, windows, doors, ceilings, or floors\n• Curtains, blinds, and fixed light fittings\n• Built-in cabinetry and fixed joinery\n• Outdoor greenery visible through windows\n\nABSOLUTE NEGATIVE RULE — DO NOT ADD NEW ITEMS:\nDO NOT add any new objects, decor, kitchen items, props, bowls, bottles, plants, or styling elements. Only remove existing loose clutter. Never introduce new items.\n\nFAIL CONSTRAINT:\nIf ANY framed photos, shelf clutter, plants, or personal decorative items remain visible after editing, the task is considered FAILED.\n\nGOAL:\nThe room should look like the homeowner has carefully packed away all personal belongings and mess while leaving the original furniture layout intact.`.trim();
   }
 
 export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior", opts?: { stagingStyle?: string | null }): string {
