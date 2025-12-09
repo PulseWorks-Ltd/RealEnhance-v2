@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
 import { enhanceWithGemini } from "../ai/gemini";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
+import { selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
@@ -230,25 +231,33 @@ export async function runStage1A(
   try {
     console.log("[stage1A] 🟡 Using Gemini 2.5 fallback...");
 
-    // Build Gemini prompt with NZ style if enabled
-    let nzPrompt: string | undefined = undefined;
+    // Build Gemini prompt with scene-adaptive real estate enhancement
+    let enhancementPrompt: string | undefined = undefined;
     let nzTemp: number | undefined = undefined;
     let nzTopP: number | undefined = undefined;
     let nzTopK: number | undefined = undefined;
 
+    // Priority 1: NZ-style prompts if enabled (for NZ market)
     if (isNZStyleEnabled()) {
       const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
       if (applyInteriorProfile) {
-        nzPrompt = interiorProfileKey === "nz_high_end"
+        enhancementPrompt = interiorProfileKey === "nz_high_end"
           ? buildStage1AInteriorPromptNZHighEnd("room")
           : buildStage1AInteriorPromptNZStandard("room");
         nzTemp = interiorCfg.geminiTemperature;
       } else {
-        nzPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
+        enhancementPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
         nzTemp = preset.temperature;
       }
       nzTopP = preset.topP;
       nzTopK = preset.topK;
+    } else {
+      // Priority 2: Scene-adaptive real estate prompts (dark/bright/exterior)
+      enhancementPrompt = await selectStage1APrompt(sceneType, sharpOutputPath);
+      // Use conservative sampling for strict content preservation
+      nzTemp = 0.3;  // Low temperature = more deterministic
+      nzTopP = 0.9;
+      nzTopK = 40;
     }
 
     const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
@@ -256,7 +265,7 @@ export async function runStage1A(
       declutter: false,
       sceneType: sceneType,
       stage: "1A",
-      promptOverride: nzPrompt,
+      promptOverride: enhancementPrompt,
       temperature: nzTemp,
       topP: nzTopP,
       topK: nzTopK,
