@@ -37,6 +37,13 @@ export async function runStage1B(
       ? buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any)
       : buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
     
+    // Debug logging for mode resolution
+    console.log("[stage1B] Declutter mode resolved:", {
+      declutter: true,
+      declutterMode: declutterMode,
+      promptUsed: declutterMode === "light" ? "light" : "stage-ready"
+    });
+    
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
     const declutteredPath = await enhanceWithGemini(stage1APath, {
