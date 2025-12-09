@@ -13,13 +13,21 @@ if (!STABILITY_API_KEY) {
 }
 
 /**
- * Conservative Upscaler for Stage 1A — NO CONTENT REINTERPRETATION.
+ * Minimal prompt for Conservative Upscaler - focuses on quality enhancement only
+ * Conservative mode naturally preserves structure, this just guides the enhancement
+ */
+const STABILITY_STAGE1A_PROMPT = `Professional real estate photo quality enhancement. Improve clarity, lighting balance, and detail while preserving all structure, objects, and layout exactly as shown. No additions, removals, or modifications to content.`;
+
+/**
+ * Conservative Upscaler for Stage 1A
  *
- * This endpoint provides pure quality enhancement without any hallucinations,
- * object changes, or content reinterpretation. Perfect for real estate compliance.
+ * Uses conservative mode which naturally minimizes hallucinations and content changes.
+ * The prompt guides enhancement direction while the conservative algorithm ensures
+ * structural preservation.
  */
 export async function enhanceWithStabilityConservativeStage1A(
-  inputWebpPath: string
+  inputWebpPath: string,
+  sceneType?: "interior" | "exterior" | string
 ): Promise<string> {
   // 1. Convert input webp → JPEG for Stability
   const jpegInputPath = inputWebpPath.replace(".webp", "-stability-input.jpg");
@@ -31,6 +39,7 @@ export async function enhanceWithStabilityConservativeStage1A(
   // 2. Prepare multipart form
   const form = new FormData();
   form.append("image", fs.createReadStream(jpegInputPath));
+  form.append("prompt", STABILITY_STAGE1A_PROMPT);
   form.append("output_format", "jpeg");
 
   // 3. Send request
