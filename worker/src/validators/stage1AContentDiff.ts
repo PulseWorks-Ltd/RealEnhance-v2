@@ -26,7 +26,12 @@ export interface Stage1AContentDiffResult {
  * - Same raw buffer layout
  */
 async function normalizeForDiff(path: string) {
-  const img = sharp(path).removeAlpha().toColourspace("rgb");
+  // ✅ FORCE SAFE COLOURS + CHANNELS
+  const img = sharp(path)
+    .ensureAlpha()           // Always RGBA
+    .removeAlpha()           // Back to RGB safely
+    .toColourspace("srgb");  // ✅ Sharp-safe colourspace (NOT "rgb")
+
   const meta = await img.metadata();
 
   if (!meta.width || !meta.height) {
