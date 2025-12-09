@@ -58,8 +58,8 @@ export function uploadRouter() {
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
-      console.log('[upload] FORM raw allowStaging=%s declutter=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter);
-      console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s', String(allowStagingForm), String(declutterForm));
+      console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode);
+      console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm));
     } catch {}
     
     // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
@@ -165,22 +165,45 @@ export function uploadRouter() {
         }
       }
       // If no per-item options or virtualStage not explicitly set, inherit from form-level allowStaging
-      if (!hasPerItemOptions || opts.virtualStage === undefined) {
+      // Use typeof check to ensure false is not overridden by true default
+      if (!hasPerItemOptions || typeof opts.virtualStage !== 'boolean') {
         opts.virtualStage = allowStagingForm;
       }
       // If no per-item declutter provided, inherit from form-level declutter
+      // Use typeof check to ensure false is not overridden by true default
       try { console.log(`[upload] item ${i} before declutter assign: hasPerItemOptions=${hasPerItemOptions} opts.declutter=${opts.declutter} declutterForm=${declutterForm}`); } catch {}
-      if (!hasPerItemOptions || opts.declutter === undefined) {
+      if (!hasPerItemOptions || typeof opts.declutter !== 'boolean') {
         opts.declutter = declutterForm;
       }
       try { console.log(`[upload] item ${i} after declutter assign: opts.declutter=${opts.declutter}`); } catch {}
-      // If declutter is enabled and no mode specified, default to stage-ready for backward compatibility
-      if (opts.declutter && !opts.declutterMode) {
-        const mode = declutterModeForm && (declutterModeForm === "light" || declutterModeForm === "stage-ready")
-          ? declutterModeForm
-          : "stage-ready";
-        opts.declutterMode = mode;
+
+      // ✅ AUTHORITATIVE DECLUTTER MODE DERIVATION (DO NOT INFER IN WORKER)
+      // This is the single source of truth for declutter behavior
+      let derivedDeclutterMode: "light" | "stage-ready" | null = null;
+
+      if (opts.declutter === true && opts.virtualStage === false) {
+        // Declutter only: remove clutter/mess, keep furniture
+        derivedDeclutterMode = "light";
+        console.log(`[upload] item ${i} → DECLUTTER-ONLY mode (light): declutter=true, virtualStage=false`);
+      } else if (opts.declutter === true && opts.virtualStage === true) {
+        // Stage ready: remove everything for virtual staging
+        derivedDeclutterMode = "stage-ready";
+        console.log(`[upload] item ${i} → STAGE-READY mode: declutter=true, virtualStage=true`);
+      } else if (opts.declutter === false) {
+        // No declutter at all
+        derivedDeclutterMode = null;
+        console.log(`[upload] item ${i} → NO DECLUTTER: declutter=false`);
       }
+
+      // Override with derived mode (authoritative)
+      opts.declutterMode = derivedDeclutterMode;
+
+      // Safety logging before job creation
+      console.log(`[JOB ROUTING] item ${i} Declutter Mode: ${derivedDeclutterMode}`);
+      console.log(`[JOB ROUTING] item ${i} virtualStage: ${opts.virtualStage}`);
+      console.log(`[JOB ROUTING] item ${i} declutter: ${opts.declutter}`);
+      
+      try { console.log(`[upload] item ${i} after declutterMode assign: opts.declutterMode=${opts.declutterMode}`); } catch {}
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
       if (opts.sceneType === "exterior" && opts.replaceSky === undefined) {
@@ -243,7 +266,7 @@ export function uploadRouter() {
 
       const finalDeclutter = parseStrictBool(opts.declutter);
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s`, String(finalDeclutter), String(finalVirtualStage)); } catch {}
+      try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
@@ -251,6 +274,7 @@ export function uploadRouter() {
         remoteOriginalUrl,
         options: {
           declutter: finalDeclutter,
+          declutterMode: opts.declutterMode,
           virtualStage: finalVirtualStage,
           roomType: opts.roomType,
           sceneType: opts.sceneType,

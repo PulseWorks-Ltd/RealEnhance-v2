@@ -32,16 +32,26 @@ export async function runStage1B(
   console.log(`[stage1B] Options: sceneType=${sceneType}, mode=${declutterMode}`);
   
   try {
-    // Select prompt based on declutter mode
-    const promptOverride = declutterMode === "light"
-      ? buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any)
-      : buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
+    // ✅ PROMPT SELECTION SAFETY — Explicit mode-based routing
+    let promptOverride: string;
+    
+    if (declutterMode === "light") {
+      // Declutter-only: aggressive clutter removal, furniture preservation
+      promptOverride = buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
+      console.log("[stage1B] 📋 Using LIGHT (declutter-only) prompt");
+    } else if (declutterMode === "stage-ready") {
+      // Stage-ready: complete furniture removal for virtual staging
+      promptOverride = buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
+      console.log("[stage1B] 📋 Using STAGE-READY (full removal) prompt");
+    } else {
+      throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
+    }
     
     // Debug logging for mode resolution
     console.log("[stage1B] Declutter mode resolved:", {
       declutter: true,
       declutterMode: declutterMode,
-      promptUsed: declutterMode === "light" ? "light" : "stage-ready"
+      promptUsed: declutterMode === "light" ? "light (declutter-only)" : "stage-ready"
     });
     
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);

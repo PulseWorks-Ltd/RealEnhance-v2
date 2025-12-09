@@ -86,6 +86,7 @@ export async function enqueueEnhanceJob(params: {
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   options: {
     declutter: boolean;
+    declutterMode?: "light" | "stage-ready";
     virtualStage: boolean;
     roomType: string;
     sceneType: string;
