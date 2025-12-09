@@ -171,7 +171,11 @@ GOAL: Architecturally empty room showing only permanent structure, ready for vir
   // Stage 1B-B: COMPREHENSIVE CLEANUP (PASS B)
   // Only runs in "standard" (conditional) and "stage-ready" (always) modes as second pass
   // Same comprehensive removal as Pass 1, with emphasis on commonly missed items
-  export function buildStage1BBPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
+  export function buildStage1BBPromptNZStyle(
+    roomType?: string,
+    sceneType: "interior" | "exterior" = "interior",
+    targetedItems?: string[]
+  ): string {
     if (sceneType === "exterior") {
       return buildStage1BFullDeclutterPromptNZStyle(roomType, sceneType);
     }
@@ -186,6 +190,12 @@ GOAL: Architecturally empty room showing only permanent structure, ready for vir
         furnitureEmphasis = "\nLIVING ROOM FOCUS: Sofas, couches, TV units, side tables, coffee tables, dining tables, display units, rugs";
       }
     }
+
+    // Build targeted items focus section
+    const targetedFocus =
+      targetedItems && targetedItems.length > 0
+        ? `\n\nFOCUS SPECIFICALLY ON REMOVING THESE REMAINING ITEMS COMPLETELY:\n- ${targetedItems.join("\n- ")}`
+        : `\n\nFOCUS ON REMOVING ALL REMAINING ITEMS COMPLETELY.`;
 
     return `You are a professional real-estate image editor.
 
@@ -236,6 +246,7 @@ STRICT RULES:
 - Do NOT change camera angle or perspective.
 - Do NOT alter lighting direction.
 - Do NOT add any new objects.
+${targetedFocus}
 
 GOAL: Completely empty room ready for virtual staging, with ALL movable items removed.`;
   }
