@@ -54,6 +54,7 @@ export interface EnhanceJobPayload {
         sceneType: string | "auto";
         replaceSky?: boolean;
         stagingStyle?: string;
+        declutterMode?: "light" | "stage-ready";
         sampling?: {
             temperature?: number;
             topP?: number;

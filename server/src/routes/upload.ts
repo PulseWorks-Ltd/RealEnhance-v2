@@ -54,6 +54,7 @@ export function uploadRouter() {
     // Read high-level form toggles (string booleans)
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
+    const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
@@ -173,6 +174,13 @@ export function uploadRouter() {
         opts.declutter = declutterForm;
       }
       try { console.log(`[upload] item ${i} after declutter assign: opts.declutter=${opts.declutter}`); } catch {}
+      // If declutter is enabled and no mode specified, default to stage-ready for backward compatibility
+      if (opts.declutter && !opts.declutterMode) {
+        const mode = declutterModeForm && (declutterModeForm === "light" || declutterModeForm === "stage-ready")
+          ? declutterModeForm
+          : "stage-ready";
+        opts.declutterMode = mode;
+      }
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
       if (opts.sceneType === "exterior" && opts.replaceSky === undefined) {
