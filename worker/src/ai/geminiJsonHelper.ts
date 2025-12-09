@@ -1,9 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 
+// Gemini 2.0 Flash for vision detection tasks (replaces deprecated 1.5 Flash)
+const VISION_DETECTION_MODEL = "gemini-2.0-flash-001";
+
 /**
  * Helper function to call Gemini with an image and get JSON response
- * Uses Gemini 1.5 Flash for detection tasks (cost-effective, fast)
+ * Uses Gemini 2.0 Flash for detection tasks (fast, reliable, latest)
  * Configuration: temperature=0 (deterministic), JSON-only output mode
  * Reuses existing Gemini pattern from other detectors
  */
@@ -23,9 +26,9 @@ export async function callGeminiJsonOnImage(
   const imageB64 = imageBuffer.toString("base64");
 
   try {
-    // Use Gemini 1.5 Flash for detection tasks with temperature 0 (deterministic)
+    // Use Gemini 2.0 Flash for detection tasks with temperature 0 (deterministic)
     const resp = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: VISION_DETECTION_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { text: prompt },

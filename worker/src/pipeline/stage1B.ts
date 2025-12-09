@@ -418,8 +418,8 @@ interface EmptyRoomMetrics {
 }
 
 /**
- * Detect residual furniture using Gemini 1.5 Flash vision
- * (Fast, cost-effective detection for decision-making)
+ * Detect residual furniture using Gemini 2.0 Flash vision
+ * (Fast, reliable detection for decision-making)
  */
 async function detectResidualFurniture(
   imagePath: string,
@@ -450,17 +450,18 @@ Return strict JSON ONLY in this exact format:
 
     return { hasFurniture, confidence };
   } catch (error: any) {
-    console.warn("[AUTO-EMPTY] Furniture detection failed, assuming no furniture", {
+    // FAIL-OPEN: Assume furniture present on detection failure
+    console.error("[AUTO-EMPTY] Furniture detection failed, assuming furniture present (fail-open)", {
       jobId: ctx.jobId,
       error: error?.message || String(error),
     });
-    return { hasFurniture: false, confidence: 0 };
+    return { hasFurniture: true, confidence: 0 }; // Fail-open: assume items present
   }
 }
 
 /**
- * Detect personal items and clutter using Gemini 1.5 Flash vision
- * (Fast, cost-effective detection for decision-making)
+ * Detect personal items and clutter using Gemini 2.0 Flash vision
+ * (Fast, reliable detection for decision-making)
  */
 async function detectPersonalItems(
   imagePath: string,
@@ -491,11 +492,12 @@ Return strict JSON ONLY in this exact format:
 
     return { hasPersonalItems, confidence };
   } catch (error: any) {
-    console.warn("[AUTO-EMPTY] Personal items detection failed, assuming no items", {
+    // FAIL-OPEN: Assume personal items present on detection failure
+    console.error("[AUTO-EMPTY] Personal items detection failed, assuming items present (fail-open)", {
       jobId: ctx.jobId,
       error: error?.message || String(error),
     });
-    return { hasPersonalItems: false, confidence: 0 };
+    return { hasPersonalItems: true, confidence: 0 }; // Fail-open: assume items present
   }
 }
 
@@ -604,14 +606,15 @@ async function analyzeEmptyRoomMetrics(
 /**
  * Auto mode decision: Should we run Stage 1B-B?
  *
- * NEW IMPLEMENTATION: Uses Gemini 1.5 Flash vision to detect:
- * 1. Residual furniture (primary trigger) - Gemini 1.5 Flash
- * 2. Personal items / artwork / décor (secondary trigger) - Gemini 1.5 Flash
+ * NEW IMPLEMENTATION: Uses Gemini 2.0 Flash vision to detect:
+ * 1. Residual furniture (primary trigger) - Gemini 2.0 Flash
+ * 2. Personal items / artwork / décor (secondary trigger) - Gemini 2.0 Flash
  * 3. Fallback structural metrics (edge noise & clutter density) - Image processing
  *
  * NOTE: Stage 1B-A and 1B-B themselves use Gemini 2.x/2.5 for actual editing
- * This detection uses Gemini 1.5 Flash for cost-effective decision-making
+ * This detection uses Gemini 2.0 Flash for fast, reliable decision-making
  *
+ * FAIL-OPEN SAFETY: On any error, returns TRUE to force Stage 1B-B
  * Returns true if ANY residual furniture OR personal items OR clutter remains
  * Only skips Stage 1B-B if the room is truly empty and stage-ready
  */
@@ -622,10 +625,10 @@ async function shouldRunStage1BB(
   const { jobId, roomType } = ctx;
 
   try {
-    // 1) Detect residual furniture (primary trigger) - Gemini 1.5 Flash
+    // 1) Detect residual furniture (primary trigger) - Gemini 2.0 Flash
     const furniture = await detectResidualFurniture(stage1BAPath, { jobId, roomType });
 
-    // 2) Detect personal items / artwork / décor (secondary trigger) - Gemini 1.5 Flash
+    // 2) Detect personal items / artwork / décor (secondary trigger) - Gemini 2.0 Flash
     const personal = await detectPersonalItems(stage1BAPath, { jobId, roomType });
 
     // 3) Fallback structural metrics (edge noise & clutter density) - Image processing
@@ -641,10 +644,11 @@ async function shouldRunStage1BB(
     const densityThreshold = 0.25;
     const edgeNoiseThreshold = 0.20;
 
-    const passesMetrics =
-      smallItemDensity > densityThreshold || edgeNoise > edgeNoiseThreshold;
-
-    const decision = hasFurniture || hasPersonalItems || passesMetrics;
+    const decision =
+      hasFurniture ||
+      hasPersonalItems ||
+      smallItemDensity > densityThreshold ||
+      edgeNoise > edgeNoiseThreshold;
 
     console.log("[AUTO-EMPTY] Residual objects assessment", {
       jobId,
@@ -661,12 +665,15 @@ async function shouldRunStage1BB(
     });
 
     return decision;
-  } catch (error: any) {
-    console.warn("[AUTO-EMPTY] Escalation failed — defaulting to run Stage 1B-B", {
+
+  } catch (err) {
+    // 🔥 FAIL-OPEN SAFETY — NEVER silently skip 1B-B again
+    console.error("[AUTO-EMPTY] Detection failed — FORCING Stage 1B-B", {
       jobId,
-      error: error?.message || String(error),
+      stage1BAPath,
+      error: (err as Error)?.message || String(err),
     });
-    // Default to running Stage 1B-B on error - safer to over-declutter for empty staging
-    return true;
+
+    return true; // FORCE micro declutter when in doubt
   }
 }
