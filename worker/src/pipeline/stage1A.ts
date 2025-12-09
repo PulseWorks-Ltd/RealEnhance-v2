@@ -9,6 +9,8 @@ import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/en
 import type { EnhancementProfile } from "../config/enhancementProfiles";
 import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighEnd } from "../ai/prompts.nzInterior";
 import { validateStage } from "../ai/unified-validator";
+import { runLowQualityDetector } from "../ai/qualityDetector";
+import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -46,12 +48,12 @@ function applyHDRToneMapping(img: sharp.Sharp): sharp.Sharp {
 async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
   const metadata = await img.metadata();
   const aspectRatio = (metadata.width || 1) / (metadata.height || 1);
-  
+
   // Only apply to wide-angle shots (aspect ratio > 1.4)
   if (aspectRatio < 1.4) {
     return img;
   }
-  
+
   // Slight perspective correction using high-quality resampling
   return img.resize({
     width: metadata.width,
@@ -59,6 +61,61 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
     fit: 'inside',
     kernel: 'lanczos3',  // Best quality resampling
     withoutEnlargement: true
+  });
+}
+
+/**
+ * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
+ */
+async function enhanceWithGeminiStage1A(
+  sharpPath: string,
+  sceneType: string | undefined,
+  replaceSky: boolean,
+  applyInteriorProfile: boolean,
+  interiorProfileKey: EnhancementProfile
+): Promise<string> {
+  let enhancementPrompt: string | undefined = undefined;
+  let nzTemp: number | undefined = undefined;
+  let nzTopP: number | undefined = undefined;
+  let nzTopK: number | undefined = undefined;
+
+  // Priority 1: NZ-style prompts if enabled (for NZ market)
+  if (isNZStyleEnabled()) {
+    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
+    const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
+
+    if (applyInteriorProfile) {
+      enhancementPrompt = interiorProfileKey === "nz_high_end"
+        ? buildStage1AInteriorPromptNZHighEnd("room")
+        : buildStage1AInteriorPromptNZStandard("room");
+      nzTemp = interiorCfg.geminiTemperature;
+    } else {
+      enhancementPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
+      nzTemp = preset.temperature;
+    }
+    nzTopP = preset.topP;
+    nzTopK = preset.topK;
+  } else {
+    // Priority 2: Scene-adaptive real estate prompts (dark/bright/exterior)
+    enhancementPrompt = await selectStage1APrompt(sceneType, sharpPath);
+    // Use conservative sampling for strict content preservation
+    nzTemp = 0.3;  // Low temperature = more deterministic
+    nzTopP = 0.9;
+    nzTopK = 40;
+  }
+
+  return await enhanceWithGemini(sharpPath, {
+    replaceSky: replaceSky,
+    declutter: false,
+    sceneType: sceneType,
+    stage: "1A",
+    promptOverride: enhancementPrompt,
+    temperature: nzTemp,
+    topP: nzTopP,
+    topK: nzTopK,
+    floorClean: false,
+    hardscapeClean: sceneType === "exterior",
+    ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
   });
 }
 
@@ -177,102 +234,115 @@ export async function runStage1A(
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
-  // --- PRIMARY AI: Stability Conservative Upscaler ---
-  // NO prompts, NO hallucinations, NO content changes
+  // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
   if (USE_STABILITY_STAGE1A) {
-    try {
-      console.log("[stage1A] ✅ Using Stability Conservative Upscaler (primary AI)...");
+    const quality = await runLowQualityDetector(sharpOutputPath);
 
-      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath);
+    let forceGemini = false;
 
-      const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A.webp");
-      await sharp(stabilityJpeg)
-        .webp({ quality: 95 })
-        .toFile(stabilityWebp);
+    if (quality.meanBrightness < GEMINI_TRIGGER_THRESHOLDS.MIN_BRIGHTNESS)
+      forceGemini = true;
 
-      console.log("[stage1A] ✅ Stability Conservative applied:", stabilityWebp);
+    if (quality.noiseStdDev > GEMINI_TRIGGER_THRESHOLDS.MAX_NOISE_STDDEV)
+      forceGemini = true;
 
-      // Run content diff validation to ensure no hallucinations
-      const diffResult = await runStage1AContentDiff(sharpOutputPath, stabilityWebp);
+    if (quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE)
+      forceGemini = true;
 
-      if (!diffResult.passed) {
-        console.warn("[stage1A] 🚨 Content diff FAIL:", diffResult.reason);
-        console.warn("[stage1A] 🔁 Re-routing to Gemini 2.5 Flash...");
-        // Throw to trigger Gemini fallback
-        throw new Error(`Stability content drift: ${diffResult.reason}`);
+    if (quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE)
+      forceGemini = true;
+
+    console.log("[stage1A] Quality Scan:", {
+      ...quality,
+      forceGemini
+    });
+
+    let primary1AImage: string;
+
+    if (forceGemini) {
+      console.warn("[stage1A] ⚠️ Low quality detected — forcing Gemini as primary");
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey);
+    } else {
+      console.log("[stage1A] ✅ Quality acceptable — using Stability primary");
+      try {
+        const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
+        const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
+        await sharp(stabilityJpeg)
+          .webp({ quality: 95 })
+          .toFile(stabilityWebp);
+        primary1AImage = stabilityWebp;
+      } catch (err) {
+        console.error("[stage1A] ❌ Stability API failed:", err);
+        console.warn("[stage1A] 🔁 Falling back to Gemini...");
+        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey);
       }
-
-      console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");
-
-      // Run structural validator
-      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-      const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-      const jobId = (global as any).__jobId || "default";
-      const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
-      const masks = { structuralMask: maskPath };
-      let verdict = await validateStage1AStructural(sharpOutputPath, stabilityWebp, masks, sceneType as any);
-      console.log(`[stage1A] Structural validator verdict:`, verdict);
-
-      if (!verdict.ok) {
-        console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
-      }
-
-      const fs = await import("fs/promises");
-      await fs.rename(stabilityWebp, finalOutputPath);
-      console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-      return finalOutputPath;
-
-    } catch (err) {
-      console.error("[stage1A] ❌ Stability failed — falling back to Gemini...", err);
     }
+
+    // ✅ AUTHORITATIVE CONTENT VALIDATION
+    const diffResult = await runStage1AContentDiff(
+      sharpOutputPath,
+      primary1AImage
+    );
+
+    if (!diffResult.passed) {
+      console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini");
+
+      try {
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey);
+
+        // Run structural validator on Gemini output
+        const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+        const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
+        const jobId = (global as any).__jobId || "default";
+        const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+        const masks = { structuralMask: maskPath };
+        let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
+        console.log(`[stage1A] Structural validator verdict (Gemini):`, verdict);
+
+        if (!verdict.ok) {
+          console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+        }
+
+        const fs = await import("fs/promises");
+        await fs.rename(geminiImage, finalOutputPath);
+        console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+        return finalOutputPath;
+
+      } catch {
+        console.error("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only");
+        const fs = await import("fs/promises");
+        await fs.rename(sharpOutputPath, finalOutputPath);
+        console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+        return finalOutputPath;
+      }
+    }
+
+    console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");
+
+    // Run structural validator on primary output
+    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+    const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
+    const jobId = (global as any).__jobId || "default";
+    const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+    const masks = { structuralMask: maskPath };
+    let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
+    console.log(`[stage1A] Structural validator verdict:`, verdict);
+
+    if (!verdict.ok) {
+      console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+    }
+
+    const fs = await import("fs/promises");
+    await fs.rename(primary1AImage, finalOutputPath);
+    console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+    return finalOutputPath;
   }
 
-  // --- FALLBACK AI: Gemini 2.5 Flash ---
+  // --- LEGACY FALLBACK (if Stability disabled) ---
   try {
-    console.log("[stage1A] 🟡 Using Gemini 2.5 fallback...");
+    console.log("[stage1A] 🟡 Using Gemini (Stability disabled)...");
 
-    // Build Gemini prompt with scene-adaptive real estate enhancement
-    let enhancementPrompt: string | undefined = undefined;
-    let nzTemp: number | undefined = undefined;
-    let nzTopP: number | undefined = undefined;
-    let nzTopK: number | undefined = undefined;
-
-    // Priority 1: NZ-style prompts if enabled (for NZ market)
-    if (isNZStyleEnabled()) {
-      const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
-      if (applyInteriorProfile) {
-        enhancementPrompt = interiorProfileKey === "nz_high_end"
-          ? buildStage1AInteriorPromptNZHighEnd("room")
-          : buildStage1AInteriorPromptNZStandard("room");
-        nzTemp = interiorCfg.geminiTemperature;
-      } else {
-        enhancementPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
-        nzTemp = preset.temperature;
-      }
-      nzTopP = preset.topP;
-      nzTopK = preset.topK;
-    } else {
-      // Priority 2: Scene-adaptive real estate prompts (dark/bright/exterior)
-      enhancementPrompt = await selectStage1APrompt(sceneType, sharpOutputPath);
-      // Use conservative sampling for strict content preservation
-      nzTemp = 0.3;  // Low temperature = more deterministic
-      nzTopP = 0.9;
-      nzTopK = 40;
-    }
-
-    const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
-      replaceSky: replaceSky,
-      declutter: false,
-      sceneType: sceneType,
-      stage: "1A",
-      promptOverride: enhancementPrompt,
-      temperature: nzTemp,
-      topP: nzTopP,
-      topK: nzTopK,
-      floorClean: false,
-      hardscapeClean: sceneType === "exterior",
-      ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
-    });
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey);
 
     console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
