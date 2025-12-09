@@ -1,9 +1,8 @@
 import fs from "fs";
-import path from "path";
 import fetch from "node-fetch";
 import FormData from "form-data";
 
-const STABILITY_API_URL = "https://api.stability.ai/v2beta/image-to-image";
+const STABILITY_API_URL = "https://api.stability.ai/v2beta/stable-image/generate/sd3";
 const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
 
 if (!STABILITY_API_KEY) {
@@ -11,52 +10,45 @@ if (!STABILITY_API_KEY) {
 }
 
 export async function enhanceWithStabilityStage1A(
-  inputPath: string,
+  inputJpegPath: string,
   prompt: string
 ): Promise<string> {
-
   const form = new FormData();
 
-  // ✅ REQUIRED
-  form.append("image", fs.createReadStream(inputPath));
+  // 🔑 Required fields (per Stable Image docs)
   form.append("prompt", prompt);
+  form.append("output_format", "jpeg");
 
-  // ✅ CORE MODEL (standard access)
-  form.append("model", "sdxl");
+  // 🔑 Switch to image-to-image mode by providing an image
+  form.append("image", fs.createReadStream(inputJpegPath));
 
-  // ✅ SAFE REALISM PARAMETERS
-  form.append("strength", "0.28");     // low denoise = preserve structure
-  form.append("cfg_scale", "5.5");     // natural photographic output
-  form.append("steps", "20");
-  form.append("seed", "0");
+  // Recommended SD3 params
+  form.append("model", "sd3-medium");           // base SD3
+  form.append("mode", "image-to-image");        // crucial for img2img
+  form.append("seed", "0");                     // 0 = random
+  form.append("aspect_ratio", "16:9");          // standard real estate
+
+  // Gentle, realism-preserving enhancement
+  form.append("strength", "0.3");               // small changes
 
   const res = await fetch(STABILITY_API_URL, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${STABILITY_API_KEY}`,
-      "Accept": "application/json"
+      "Accept": "image/*"
     },
     body: form as any
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error("❌ Stability Stage 1A HTTP failure:", err);
+    console.error("[Stability Stage1A] HTTP error:", err);
     throw new Error("Stability Stage 1A enhancement failed");
   }
 
-  const json = await res.json();
+  const buffer = Buffer.from(await res.arrayBuffer());
+  const outPath = inputJpegPath.replace("-stability-input.jpg", "-stability-1A.jpg");
 
-  // ✅ STANDARD RESPONSE FORMAT FOR v2beta
-  if (!json?.artifacts?.[0]?.base64) {
-    console.error("❌ Stability response missing image:", json);
-    throw new Error("Stability returned no image data");
-  }
-
-  const buffer = Buffer.from(json.artifacts[0].base64, "base64");
-
-  const outPath = inputPath.replace(".webp", "-stability-1A.webp");
   fs.writeFileSync(outPath, buffer);
-
   return outPath;
 }
