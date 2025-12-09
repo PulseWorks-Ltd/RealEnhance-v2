@@ -1,12 +1,16 @@
 import sharp from "sharp";
-import { enhanceWithStabilityStage1A } from "../ai/stabilityEnhanceStage1A";
-import { buildStabilityStage1APrompt, buildStabilityStage1AShortPrompt } from "../ai/prompts.stabilityStage1A";
+import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
+import { enhanceWithGemini } from "../ai/gemini";
+import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
 import type { EnhancementProfile } from "../config/enhancementProfiles";
 import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighEnd } from "../ai/prompts.nzInterior";
 import { validateStage } from "../ai/unified-validator";
+
+// Feature flag: Enable Stability Conservative Upscaler (primary AI)
+const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -172,59 +176,124 @@ export async function runStage1A(
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
-  // Apply Stability AI enhancement with safe, realistic parameters
-  console.log("[stage1A] ✅ Using Stability for enhancement");
+  // --- PRIMARY AI: Stability Conservative Upscaler ---
+  // NO prompts, NO hallucinations, NO content changes
+  if (USE_STABILITY_STAGE1A) {
+    try {
+      console.log("[stage1A] ✅ Using Stability Conservative Upscaler (primary AI)...");
 
-  // Build comprehensive Stability-optimized prompt
-  // Use the comprehensive enhancement prompt that ensures structure preservation
-  const prompt = buildStabilityStage1APrompt(sceneType);
+      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath);
 
-  // Convert WebP to JPEG for Stability API (Stability prefers JPEG/PNG)
-  const jpegInputPath = sharpOutputPath.replace(".webp", "-stability-input.jpg");
-  await sharp(sharpOutputPath)
-    .jpeg({ quality: 95 })
-    .toFile(jpegInputPath);
+      const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A.webp");
+      await sharp(stabilityJpeg)
+        .webp({ quality: 95 })
+        .toFile(stabilityWebp);
 
-  // Call Stability AI enhancement
-  let stabilityJpegPath: string;
-  try {
-    stabilityJpegPath = await enhanceWithStabilityStage1A(jpegInputPath, prompt);
-    console.log("[stage1A] ✅ Stability enhancement complete:", stabilityJpegPath);
-  } catch (err) {
-    console.error("[stage1A] ❌ Stability failed, falling back to Sharp only", err);
-    // Fallback: use Sharp output
-    const fs = await import("fs/promises");
-    await fs.rename(sharpOutputPath, finalOutputPath);
-    return finalOutputPath;
-  }
+      console.log("[stage1A] ✅ Stability Conservative applied:", stabilityWebp);
 
-  // Convert Stability JPEG output back to WebP to maintain pipeline format
-  const stabilityOutputPath = sharpOutputPath.replace("-1A-sharp.webp", "-stability-1A.webp");
-  await sharp(stabilityJpegPath)
-    .webp({ quality: 95 })
-    .toFile(stabilityOutputPath);
+      // Run content diff validation to ensure no hallucinations
+      const diffResult = await runStage1AContentDiff(sharpOutputPath, stabilityWebp);
 
-  // Validate the Stability enhancement
-  if (stabilityOutputPath !== sharpOutputPath) {
-    // Use structure-first validator
-    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-    const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-    const jobId = (global as any).__jobId || "default";
-    const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
-    const masks = { structuralMask: maskPath };
-    let verdict = await validateStage1AStructural(sharpOutputPath, stabilityOutputPath, masks, sceneType as any);
-    console.log(`[stage1A] Structural validator verdict:`, verdict);
-    // Always proceed, but log if hardFail
-    if (!verdict.ok) {
-      console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+      if (!diffResult.passed) {
+        console.warn("[stage1A] ⚠️ Stability content drift detected:", diffResult);
+        console.warn("[stage1A] 🔁 Re-routing to Gemini 2.5 Flash...");
+        // Don't return here - fall through to Gemini fallback
+        throw new Error("Stability content drift - re-routing to Gemini");
+      }
+
+      console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");
+
+      // Run structural validator
+      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+      const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
+      const jobId = (global as any).__jobId || "default";
+      const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+      const masks = { structuralMask: maskPath };
+      let verdict = await validateStage1AStructural(sharpOutputPath, stabilityWebp, masks, sceneType as any);
+      console.log(`[stage1A] Structural validator verdict:`, verdict);
+
+      if (!verdict.ok) {
+        console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+      }
+
+      const fs = await import("fs/promises");
+      await fs.rename(stabilityWebp, finalOutputPath);
+      console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+      return finalOutputPath;
+
+    } catch (err) {
+      console.error("[stage1A] ❌ Stability failed — falling back to Gemini...", err);
     }
-    const fs = await import("fs/promises");
-    await fs.rename(stabilityOutputPath, finalOutputPath);
-  } else {
-    console.log(`[stage1A] ℹ️ Using Sharp enhancement only (Stability skipped)`);
-    const fs = await import("fs/promises");
-    await fs.rename(sharpOutputPath, finalOutputPath);
   }
+
+  // --- FALLBACK AI: Gemini 2.5 Flash ---
+  try {
+    console.log("[stage1A] 🟡 Using Gemini 2.5 fallback...");
+
+    // Build Gemini prompt with NZ style if enabled
+    let nzPrompt: string | undefined = undefined;
+    let nzTemp: number | undefined = undefined;
+    let nzTopP: number | undefined = undefined;
+    let nzTopK: number | undefined = undefined;
+
+    if (isNZStyleEnabled()) {
+      const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
+      if (applyInteriorProfile) {
+        nzPrompt = interiorProfileKey === "nz_high_end"
+          ? buildStage1AInteriorPromptNZHighEnd("room")
+          : buildStage1AInteriorPromptNZStandard("room");
+        nzTemp = interiorCfg.geminiTemperature;
+      } else {
+        nzPrompt = buildStage1APromptNZStyle("room", (sceneType === 'interior' ? 'interior' : 'exterior') as any);
+        nzTemp = preset.temperature;
+      }
+      nzTopP = preset.topP;
+      nzTopK = preset.topK;
+    }
+
+    const geminiOutputPath = await enhanceWithGemini(sharpOutputPath, {
+      replaceSky: replaceSky,
+      declutter: false,
+      sceneType: sceneType,
+      stage: "1A",
+      promptOverride: nzPrompt,
+      temperature: nzTemp,
+      topP: nzTopP,
+      topK: nzTopK,
+      floorClean: false,
+      hardscapeClean: sceneType === "exterior",
+      ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+    });
+
+    console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
+
+    if (geminiOutputPath !== sharpOutputPath) {
+      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+      const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
+      const jobId = (global as any).__jobId || "default";
+      const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+      const masks = { structuralMask: maskPath };
+      let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
+      console.log(`[stage1A] Structural validator verdict:`, verdict);
+
+      if (!verdict.ok) {
+        console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+      }
+
+      const fs = await import("fs/promises");
+      await fs.rename(geminiOutputPath, finalOutputPath);
+      console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+      return finalOutputPath;
+    }
+
+  } catch (err) {
+    console.error("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only!", err);
+  }
+
+  // --- FINAL EMERGENCY FALLBACK: Sharp Only ---
+  console.log("[stage1A] ℹ️ Using Sharp enhancement only (all AI failed)");
+  const fs = await import("fs/promises");
+  await fs.rename(sharpOutputPath, finalOutputPath);
   console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
   return finalOutputPath;
 }
