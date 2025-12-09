@@ -15,10 +15,37 @@ import { STAGE1A_VALIDATOR_LIMITS } from "./stage1ALimits";
 
 export interface Stage1AContentDiffResult {
   passed: boolean;
-  meanDiff: number;
-  maxLocalDiff: number;
-  featureMatchRatio: number;
+  meanDiff?: number;
+  maxLocalDiff?: number;
+  featureMatchRatio?: number;
   reason?: string;
+}
+
+/**
+ * Normalizes both images to:
+ * - Same width/height
+ * - Same RGB colour space
+ * - Same raw buffer layout
+ */
+async function normalizeForDiff(path: string) {
+  const img = sharp(path).removeAlpha().toColourspace("srgb");
+
+  const meta = await img.metadata();
+
+  if (!meta.width || !meta.height) {
+    throw new Error("Unable to read image dimensions for diff validation");
+  }
+
+  const data = await img
+    .resize(meta.width, meta.height) // force explicit size
+    .raw()
+    .toBuffer();
+
+  return {
+    data,
+    width: meta.width,
+    height: meta.height
+  };
 }
 
 /**
@@ -32,54 +59,58 @@ export async function runStage1AContentDiff(
     // Dynamic import for ESM module
     const pixelmatch = (await import("pixelmatch")).default;
 
-    // Load both images as raw buffers for pixel comparison
-    const orig = await sharp(originalPath)
-      .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    // ✅ Normalize both images to identical format
+    const orig = await normalizeForDiff(originalPath);
+    const enh = await normalizeForDiff(enhancedPath);
 
-    const enh = await sharp(enhancedPath)
-      .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    // ✅ HARD GUARANTEE MATCHED BUFFER SIZES
+    if (
+      orig.data.length !== enh.data.length ||
+      orig.width !== enh.width ||
+      orig.height !== enh.height
+    ) {
+      return {
+        passed: false,
+        reason: "Normalized buffer mismatch — automatic validator FAIL"
+      };
+    }
 
-    const { width, height } = orig.info;
+    const totalPixels = orig.width * orig.height;
 
-    // 1️⃣ Global pixel diff
+    // ✅ 1️⃣ GLOBAL PIXEL DIFF
     const diffPixels = pixelmatch(
       orig.data,
       enh.data,
       undefined,
-      width,
-      height,
+      orig.width,
+      orig.height,
       { threshold: 0.05 }
     );
 
-    const meanDiff = diffPixels / (width * height);
+    const meanDiff = diffPixels / totalPixels;
 
-    // 2️⃣ Local tiled diff (8x8 grid)
-    // This catches small object changes that might not show up in global diff
-    const tileW = Math.floor(width / 8);
-    const tileH = Math.floor(height / 8);
+    // ✅ 2️⃣ LOCAL TILE DIFF (8x8 GRID)
+    const tileW = Math.floor(orig.width / 8);
+    const tileH = Math.floor(orig.height / 8);
     let maxLocalDiff = 0;
 
     for (let y = 0; y < 8; y++) {
       for (let x = 0; x < 8; x++) {
-        const sliceOrig = await sharp(originalPath)
-          .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+        const tileOrig = await sharp(originalPath)
           .extract({ left: x * tileW, top: y * tileH, width: tileW, height: tileH })
+          .removeAlpha()
           .raw()
           .toBuffer();
 
-        const sliceEnh = await sharp(enhancedPath)
-          .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+        const tileEnh = await sharp(enhancedPath)
           .extract({ left: x * tileW, top: y * tileH, width: tileW, height: tileH })
+          .removeAlpha()
           .raw()
           .toBuffer();
 
         const tileDiff = pixelmatch(
-          sliceOrig,
-          sliceEnh,
+          tileOrig,
+          tileEnh,
           undefined,
           tileW,
           tileH,
@@ -91,40 +122,23 @@ export async function runStage1AContentDiff(
       }
     }
 
-    // 3️⃣ Feature match ratio
-    // Use existing structural validator if available, otherwise estimate from edge preservation
+    // ✅ 3️⃣ FEATURE MATCH (using existing edge detection)
     const featureMatchRatio = await estimateFeatureMatchRatio(originalPath, enhancedPath);
 
     console.log(`[Stage1A ContentDiff] meanDiff=${meanDiff.toFixed(4)}, maxLocal=${maxLocalDiff.toFixed(4)}, features=${featureMatchRatio.toFixed(4)}`);
 
-    // ✅ Decision logic
-    if (meanDiff > STAGE1A_VALIDATOR_LIMITS.MAX_MEAN_PIXEL_DIFF) {
+    // ✅ 4️⃣ AUTHORITATIVE DECISION
+    if (
+      meanDiff > STAGE1A_VALIDATOR_LIMITS.MAX_MEAN_PIXEL_DIFF ||
+      maxLocalDiff > STAGE1A_VALIDATOR_LIMITS.MAX_LOCAL_REGION_DIFF ||
+      featureMatchRatio < STAGE1A_VALIDATOR_LIMITS.MIN_FEATURE_MATCH_RATIO
+    ) {
       return {
         passed: false,
         meanDiff,
         maxLocalDiff,
         featureMatchRatio,
-        reason: `Global pixel diff ${(meanDiff * 100).toFixed(2)}% exceeds limit ${(STAGE1A_VALIDATOR_LIMITS.MAX_MEAN_PIXEL_DIFF * 100).toFixed(2)}%`
-      };
-    }
-
-    if (maxLocalDiff > STAGE1A_VALIDATOR_LIMITS.MAX_LOCAL_REGION_DIFF) {
-      return {
-        passed: false,
-        meanDiff,
-        maxLocalDiff,
-        featureMatchRatio,
-        reason: `Local region diff ${(maxLocalDiff * 100).toFixed(2)}% exceeds limit ${(STAGE1A_VALIDATOR_LIMITS.MAX_LOCAL_REGION_DIFF * 100).toFixed(2)}%`
-      };
-    }
-
-    if (featureMatchRatio < STAGE1A_VALIDATOR_LIMITS.MIN_FEATURE_MATCH_RATIO) {
-      return {
-        passed: false,
-        meanDiff,
-        maxLocalDiff,
-        featureMatchRatio,
-        reason: `Feature match ratio ${(featureMatchRatio * 100).toFixed(2)}% below minimum ${(STAGE1A_VALIDATOR_LIMITS.MIN_FEATURE_MATCH_RATIO * 100).toFixed(2)}%`
+        reason: "Stage 1A content drift detected"
       };
     }
 
@@ -136,14 +150,11 @@ export async function runStage1AContentDiff(
     };
 
   } catch (err) {
-    console.error("[Stage1A ContentDiff] Error during validation:", err);
-    // On validation error, assume pass (fail-open to avoid blocking valid enhancements)
+    console.error("[Stage1A ContentDiff] HARD FAIL:", err);
+    // Fail closed - treat validation errors as failures
     return {
-      passed: true,
-      meanDiff: 0,
-      maxLocalDiff: 0,
-      featureMatchRatio: 1.0,
-      reason: "Validation error - defaulting to pass"
+      passed: false,
+      reason: "Validator crash — treating as FAIL"
     };
   }
 }
