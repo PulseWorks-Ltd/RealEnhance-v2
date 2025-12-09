@@ -26,7 +26,7 @@ export async function enhanceWithStabilityStage1A(
   form.append("model", "sd3-medium");           // base SD3
   form.append("mode", "image-to-image");        // crucial for img2img
   form.append("seed", "0");                     // 0 = random
-  form.append("aspect_ratio", "16:9");          // standard real estate
+  // Note: aspect_ratio is NOT allowed in image-to-image mode (derived from input image)
 
   // Gentle, realism-preserving enhancement
   form.append("strength", "0.3");               // small changes
