@@ -23,7 +23,7 @@ The new v0.7.0 API uses:
 ```typescript
 // NEW API (v0.7.0+)
 const result = await client.models.generateContent({
-  model: "gemini-2.0-flash",
+  model: "gemini-2.5-flash",
   contents: [...]
 });
 // result is the response directly (no .response property)
@@ -42,7 +42,7 @@ const result = await client.models.generateContent({
 2. **Updated API call structure:**
    - Changed from `model.generateContent([...])` to `client.models.generateContent({ model, contents })`
    - Wrapped content in proper structure with `role: "user"` and `parts` array
-   - Updated model name from `gemini-1.5-pro-latest` to `gemini-2.0-flash`
+   - Updated model name from `gemini-1.5-pro-latest` to `gemini-2.5-flash`
 
 3. **Simplified response handling:**
    ```typescript
@@ -102,7 +102,7 @@ const text = response.text();
 import { GoogleGenAI } from '@google/genai';
 const ai = new GoogleGenAI({ apiKey });
 const result = await ai.models.generateContent({
-  model: 'gemini-2.0-flash',
+  model: 'gemini-2.5-flash',
   contents: prompt
 });
 const text = result.text;
@@ -110,6 +110,6 @@ const text = result.text;
 
 ## Additional Changes
 
-- Model name updated to `gemini-2.0-flash` (latest Gemini 2.0 model)
+- Model name updated to `gemini-2.5-flash` (latest Gemini 2.0 model)
 - Content structure now requires explicit `role` and `parts` structure
 - Response is returned directly (no intermediate `.response` property)
