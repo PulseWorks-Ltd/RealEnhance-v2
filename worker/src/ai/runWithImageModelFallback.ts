@@ -1,8 +1,14 @@
 import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 
-// Prefer full image model first, then preview/cheaper variant
-const MODEL_FALLBACKS = [
+// Model selection based on stage:
+// - Stage 1A: gemini-2.0-flash-exp-image (optimized for enhancement)
+// - Stage 1B/2: gemini-2.5-flash-image (advanced capabilities for declutter/staging)
+const MODEL_FALLBACKS_1A = [
+  "gemini-2.0-flash-exp-image",
+];
+
+const MODEL_FALLBACKS_DEFAULT = [
   "gemini-2.5-flash-image",
 ];
 
@@ -13,6 +19,9 @@ export async function runWithImageModelFallback(
   baseRequest: Omit<GenerateContentParams, "model">,
   context: string
 ) {
+  // Select model list based on context (Stage 1A uses 2.0 Flash)
+  const isStage1A = context.toLowerCase().includes("1a") || context.toLowerCase().includes("enhance");
+  const MODEL_FALLBACKS = isStage1A ? MODEL_FALLBACKS_1A : MODEL_FALLBACKS_DEFAULT;
   let lastErr: any;
   
   for (const model of MODEL_FALLBACKS) {
