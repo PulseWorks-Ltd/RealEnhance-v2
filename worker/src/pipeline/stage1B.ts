@@ -198,6 +198,22 @@ export async function runStage1B(
         mode: 'heavy',
         input: stage1BAPath
       });
+
+      // Get structured audit with specific items to target
+      const audit = await auditResidualObjects(stage1BAPath, { jobId, roomType });
+
+      // Extract targeted items for prompt injection
+      const targetedItems = [
+        ...audit.residualFurniture,
+        ...audit.residualPersonalItems
+      ].filter(Boolean);
+
+      console.log(`[stage1B-2] Targeted removal items`, {
+        jobId,
+        count: targetedItems.length,
+        items: targetedItems
+      });
+
       stage1BBPath = await enhanceWithGemini(stage1BAPath, {
         skipIfNoApiKey: true,
         replaceSky: false, // Already done in 1A
@@ -207,7 +223,11 @@ export async function runStage1B(
         temperature: 0.30,
         topP: 0.70,
         topK: 32,
-        promptOverride: buildStage1BBPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any),
+        promptOverride: buildStage1BBPromptNZStyle(
+          roomType,
+          (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any,
+          targetedItems
+        ),
         floorClean: sceneType === "interior",
         hardscapeClean: sceneType === "exterior",
         declutterIntensity: 'heavy',
@@ -394,286 +414,110 @@ interface Stage1BBDecisionContext {
 }
 
 /**
- * Furniture detection result
+ * Structured residual object audit result
  */
-interface FurnitureDetectionResult {
+interface ResidualObjectAudit {
   hasFurniture: boolean;
-  confidence: number;
-}
-
-/**
- * Personal items detection result
- */
-interface PersonalItemsDetectionResult {
+  residualFurniture: string[];
   hasPersonalItems: boolean;
+  residualPersonalItems: string[];
+  isStageReady: boolean;
   confidence: number;
 }
 
 /**
- * Empty room structural metrics
+ * Structured residual object audit using Gemini 2.0 Flash
+ * Identifies specific remaining items for targeted removal
  */
-interface EmptyRoomMetrics {
-  smallItemDensity: number;
-  edgeNoise: number;
-}
-
-/**
- * Detect residual furniture using Gemini 2.0 Flash vision
- * (Fast, reliable detection for decision-making)
- */
-async function detectResidualFurniture(
+async function auditResidualObjects(
   imagePath: string,
   ctx: Stage1BBDecisionContext
-): Promise<FurnitureDetectionResult> {
-  const prompt = `You are analyzing a real estate image AFTER an initial furniture removal pass.
+): Promise<ResidualObjectAudit> {
+  const prompt = `You are analyzing a real estate image AFTER a main furniture removal pass.
 
-Question:
-Does this image still contain any visible furniture, partially removed furniture, or furniture fragments (such as couches, chairs, tables, beds, wardrobes, TV units, or headboards)?
+Your task is to identify ANY remaining items that prevent this room from being completely EMPTY and stage-ready.
 
-Return strict JSON ONLY in this exact format:
+Focus on:
+- Furniture (couches, chairs, tables, beds, wardrobes, TV units)
+- Partial or ghost furniture fragments
+- Artwork, photo frames, wall decor
+- Rugs, loose curtains, plants
+- Personal items: shoes, clothes, toys, cables, bench clutter, bathroom items
+
+Return STRICT JSON ONLY in this exact format:
+
 {
   "hasFurniture": true or false,
-  "confidence": number between 0 and 1
-}`;
-
-  try {
-    const { json } = await callGeminiJsonOnImage(imagePath, prompt);
-    const hasFurniture = !!json?.hasFurniture;
-    const confidence = typeof json?.confidence === "number" ? json.confidence : 0;
-
-    console.log("[AUTO-EMPTY] Furniture detection", {
-      jobId: ctx.jobId,
-      imagePath,
-      hasFurniture,
-      confidence,
-    });
-
-    return { hasFurniture, confidence };
-  } catch (error: any) {
-    // FAIL-OPEN: Assume furniture present on detection failure
-    console.error("[AUTO-EMPTY] Furniture detection failed, assuming furniture present (fail-open)", {
-      jobId: ctx.jobId,
-      error: error?.message || String(error),
-    });
-    return { hasFurniture: true, confidence: 0 }; // Fail-open: assume items present
-  }
-}
-
-/**
- * Detect personal items and clutter using Gemini 2.0 Flash vision
- * (Fast, reliable detection for decision-making)
- */
-async function detectPersonalItems(
-  imagePath: string,
-  ctx: Stage1BBDecisionContext
-): Promise<PersonalItemsDetectionResult> {
-  const prompt = `You are analyzing a real estate image that is being prepared for virtual staging.
-
-Question:
-Does this image still contain any personal items, artwork, photo frames, decorative wall art, plants, rugs, clutter, or loose objects (such as shoes, toys, clothes, bathroom items, bench items, cables, or small decor)?
-
-Return strict JSON ONLY in this exact format:
-{
+  "residualFurniture": ["specific furniture item 1", "specific furniture item 2"],
   "hasPersonalItems": true or false,
-  "confidence": number between 0 and 1
+  "residualPersonalItems": ["specific item 1", "specific item 2"],
+  "isStageReady": true or false,
+  "confidence": 0.0 to 1.0
 }`;
 
   try {
     const { json } = await callGeminiJsonOnImage(imagePath, prompt);
-    const hasPersonalItems = !!json?.hasPersonalItems;
-    const confidence = typeof json?.confidence === "number" ? json.confidence : 0;
 
-    console.log("[AUTO-EMPTY] Personal items detection", {
+    const result: ResidualObjectAudit = {
+      hasFurniture: !!json?.hasFurniture,
+      residualFurniture: Array.isArray(json?.residualFurniture) ? json.residualFurniture : [],
+      hasPersonalItems: !!json?.hasPersonalItems,
+      residualPersonalItems: Array.isArray(json?.residualPersonalItems) ? json.residualPersonalItems : [],
+      isStageReady: !!json?.isStageReady,
+      confidence: typeof json?.confidence === "number" ? json.confidence : 0,
+    };
+
+    console.log("[AUTO-EMPTY] Residual object audit", {
       jobId: ctx.jobId,
       imagePath,
-      hasPersonalItems,
-      confidence,
+      ...result,
     });
 
-    return { hasPersonalItems, confidence };
-  } catch (error: any) {
-    // FAIL-OPEN: Assume personal items present on detection failure
-    console.error("[AUTO-EMPTY] Personal items detection failed, assuming items present (fail-open)", {
-      jobId: ctx.jobId,
-      error: error?.message || String(error),
-    });
-    return { hasPersonalItems: true, confidence: 0 }; // Fail-open: assume items present
-  }
-}
-
-/**
- * Analyze structural metrics for empty room validation (fallback)
- */
-async function analyzeEmptyRoomMetrics(
-  imagePath: string,
-  ctx: Stage1BBDecisionContext
-): Promise<EmptyRoomMetrics> {
-  try {
-    const metadata = await sharp(imagePath).metadata();
-    const { width = 0, height = 0 } = metadata;
-
-    if (width === 0 || height === 0) {
-      return { smallItemDensity: 0, edgeNoise: 0 };
-    }
-
-    // Read a downsampled version for faster analysis
-    const buffer = await sharp(imagePath)
-      .resize(256, 256, { fit: 'inside' })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
-
-    const { data, info } = buffer;
-    const w = info.width;
-    const h = info.height;
-    const channels = info.channels;
-
-    // Edge Noise (proxy for residual clutter)
-    let edgeCount = 0;
-    const EDGE_THRESH = 30;
-
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const i = (y * w + x) * channels;
-        const iUp = ((y - 1) * w + x) * channels;
-        const iLeft = (y * w + (x - 1)) * channels;
-
-        const r = data[i] || 0, g = data[i + 1] || 0, b = data[i + 2] || 0;
-        const rUp = data[iUp] || 0, gUp = data[iUp + 1] || 0, bUp = data[iUp + 2] || 0;
-        const rLeft = data[iLeft] || 0, gLeft = data[iLeft + 1] || 0, bLeft = data[iLeft + 2] || 0;
-
-        const lumaCenter = 0.299 * r + 0.587 * g + 0.114 * b;
-        const lumaUp = 0.299 * rUp + 0.587 * gUp + 0.114 * bUp;
-        const lumaLeft = 0.299 * rLeft + 0.587 * gLeft + 0.114 * bLeft;
-
-        const gradY = Math.abs(lumaCenter - lumaUp);
-        const gradX = Math.abs(lumaCenter - lumaLeft);
-        const gradMag = Math.sqrt(gradY * gradY + gradX * gradX);
-
-        if (gradMag >= EDGE_THRESH) {
-          edgeCount++;
-        }
-      }
-    }
-
-    const totalPixels = w * h;
-    const edgeNoise = edgeCount / totalPixels;
-
-    // Small Item Density (count high-frequency regions)
-    let smallItemRegions = 0;
-    const SMALL_ITEM_THRESH = 40;
-
-    for (let y = 2; y < h - 2; y += 2) {
-      for (let x = 2; x < w - 2; x += 2) {
-        let localVariance = 0;
-        const centerI = (y * w + x) * channels;
-        const centerLuma = 0.299 * (data[centerI] || 0) + 0.587 * (data[centerI + 1] || 0) + 0.114 * (data[centerI + 2] || 0);
-
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const ni = ((y + dy) * w + (x + dx)) * channels;
-            const nLuma = 0.299 * (data[ni] || 0) + 0.587 * (data[ni + 1] || 0) + 0.114 * (data[ni + 2] || 0);
-            localVariance += Math.abs(nLuma - centerLuma);
-          }
-        }
-
-        if (localVariance / 9 >= SMALL_ITEM_THRESH) {
-          smallItemRegions++;
-        }
-      }
-    }
-
-    const totalRegions = ((h - 4) / 2) * ((w - 4) / 2);
-    const smallItemDensity = smallItemRegions / Math.max(1, totalRegions);
-
-    console.log("[AUTO-EMPTY] Structural metrics", {
+    return result;
+  } catch (err) {
+    // FAIL-OPEN: Assume items present on detection failure
+    console.error("[AUTO-EMPTY] Residual audit FAILED — FAIL-OPEN → FORCE Stage 1B-B", {
       jobId: ctx.jobId,
       imagePath,
-      smallItemDensity: smallItemDensity.toFixed(3),
-      edgeNoise: edgeNoise.toFixed(3),
+      error: (err as Error)?.message || String(err),
     });
 
-    return { smallItemDensity, edgeNoise };
-  } catch (error: any) {
-    console.warn("[AUTO-EMPTY] Metric analysis failed, defaulting to zeroes", {
-      jobId: ctx.jobId,
-      imagePath,
-      error: error?.message || String(error),
-    });
-    return { smallItemDensity: 0, edgeNoise: 0 };
+    return {
+      hasFurniture: true,
+      residualFurniture: ["unknown furniture"],
+      hasPersonalItems: true,
+      residualPersonalItems: ["unknown personal items"],
+      isStageReady: false,
+      confidence: 0,
+    };
   }
 }
 
 /**
  * Auto mode decision: Should we run Stage 1B-B?
  *
- * NEW IMPLEMENTATION: Uses Gemini 2.0 Flash vision to detect:
- * 1. Residual furniture (primary trigger) - Gemini 2.0 Flash
- * 2. Personal items / artwork / décor (secondary trigger) - Gemini 2.0 Flash
- * 3. Fallback structural metrics (edge noise & clutter density) - Image processing
+ * NEW IMPLEMENTATION: Uses structured residual audit with Gemini 2.0 Flash vision
+ * Returns structured item-aware feedback for targeted removal
  *
- * NOTE: Stage 1B-A and 1B-B themselves use Gemini 2.x/2.5 for actual editing
- * This detection uses Gemini 2.0 Flash for fast, reliable decision-making
- *
- * FAIL-OPEN SAFETY: On any error, returns TRUE to force Stage 1B-B
- * Returns true if ANY residual furniture OR personal items OR clutter remains
- * Only skips Stage 1B-B if the room is truly empty and stage-ready
+ * FAIL-OPEN SAFETY: On any error in audit, forces Stage 1B-B to run
+ * Returns true if ANY residual furniture OR personal items detected OR room not stage-ready
+ * Only skips Stage 1B-B if audit confirms room is truly empty and stage-ready
  */
 async function shouldRunStage1BB(
   stage1BAPath: string,
   ctx: Stage1BBDecisionContext = {}
 ): Promise<boolean> {
-  const { jobId, roomType } = ctx;
+  const audit = await auditResidualObjects(stage1BAPath, ctx);
 
-  try {
-    // 1) Detect residual furniture (primary trigger) - Gemini 2.0 Flash
-    const furniture = await detectResidualFurniture(stage1BAPath, { jobId, roomType });
+  const decision =
+    audit.hasFurniture ||
+    audit.hasPersonalItems ||
+    audit.isStageReady === false;
 
-    // 2) Detect personal items / artwork / décor (secondary trigger) - Gemini 2.0 Flash
-    const personal = await detectPersonalItems(stage1BAPath, { jobId, roomType });
+  console.log("[AUTO-EMPTY] Stage 1B-B decision", {
+    jobId: ctx.jobId,
+    decision,
+  });
 
-    // 3) Fallback structural metrics (edge noise & clutter density) - Image processing
-    const metrics = await analyzeEmptyRoomMetrics(stage1BAPath, { jobId, roomType });
-
-    const hasFurniture = furniture?.hasFurniture ?? false;
-    const hasPersonalItems = personal?.hasPersonalItems ?? false;
-
-    const smallItemDensity = metrics?.smallItemDensity ?? 0;
-    const edgeNoise = metrics?.edgeNoise ?? 0;
-
-    // Thresholds – tuned for "ROOM IS EMPTY" vs "ROOM STILL HAS STUFF"
-    const densityThreshold = 0.25;
-    const edgeNoiseThreshold = 0.20;
-
-    const decision =
-      hasFurniture ||
-      hasPersonalItems ||
-      smallItemDensity > densityThreshold ||
-      edgeNoise > edgeNoiseThreshold;
-
-    console.log("[AUTO-EMPTY] Residual objects assessment", {
-      jobId,
-      stage1BAPath,
-      hasFurniture,
-      hasPersonalItems,
-      smallItemDensity: smallItemDensity.toFixed(3),
-      edgeNoise: edgeNoise.toFixed(3),
-      thresholds: {
-        smallItemDensity: densityThreshold,
-        edgeNoise: edgeNoiseThreshold,
-      },
-      decision,
-    });
-
-    return decision;
-
-  } catch (err) {
-    // 🔥 FAIL-OPEN SAFETY — NEVER silently skip 1B-B again
-    console.error("[AUTO-EMPTY] Detection failed — FORCING Stage 1B-B", {
-      jobId,
-      stage1BAPath,
-      error: (err as Error)?.message || String(err),
-    });
-
-    return true; // FORCE micro declutter when in doubt
-  }
+  return decision;
 }

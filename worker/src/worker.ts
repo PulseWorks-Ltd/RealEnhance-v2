@@ -526,7 +526,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     // Required mode mapping log
     nLog(`[MODE-MAP] Final mode resolution`, {
-      jobId,
+      jobId: payload.jobId,
       declutterIntensity,
       furnitureRemovalMode: normalizedFurnitureMode,
       publicMode
