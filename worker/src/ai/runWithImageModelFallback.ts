@@ -2,10 +2,10 @@ import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 
 // Model selection based on stage:
-// - Stage 1A: gemini-2.0-flash-exp-image (optimized for enhancement)
+// - Stage 1A: gemini-2.0-flash-image (optimized for enhancement)
 // - Stage 1B/2: gemini-2.5-flash-image (advanced capabilities for declutter/staging)
 const MODEL_FALLBACKS_1A = [
-  "gemini-2.0-flash-exp-image",
+  "gemini-2.0-flash-image",
 ];
 
 const MODEL_FALLBACKS_DEFAULT = [
