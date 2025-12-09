@@ -1,16 +1,15 @@
 import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 
-// Model selection based on stage:
-// - Stage 1A: gemini-2.5-flash-image (optimized for enhancement)
-// - Stage 1B/2: gemini-2.5-flash-image (advanced capabilities for declutter/staging)
-const MODEL_FALLBACKS_1A = [
+// ✅ HARD LOCK: Only supported Gemini image model
+// All stages (1A, 1B, 2) use gemini-2.5-flash-image
+// No fallbacks - fail loudly if unavailable
+const IMAGE_MODELS = [
   "gemini-2.5-flash-image",
 ];
 
-const MODEL_FALLBACKS_DEFAULT = [
-  "gemini-2.5-flash-image",
-];
+// ✅ No legacy fallbacks allowed — all deprecated
+const fallbackModels: string[] = [];
 
 type GenerateContentParams = Parameters<GoogleGenAI['models']['generateContent']>[0];
 
@@ -19,12 +18,10 @@ export async function runWithImageModelFallback(
   baseRequest: Omit<GenerateContentParams, "model">,
   context: string
 ) {
-  // Select model list based on context (Stage 1A uses 2.0 Flash)
-  const isStage1A = context.toLowerCase().includes("1a") || context.toLowerCase().includes("enhance");
-  const MODEL_FALLBACKS = isStage1A ? MODEL_FALLBACKS_1A : MODEL_FALLBACKS_DEFAULT;
+  // ✅ All stages use Gemini 2.5 Flash - no stage-specific logic needed
   let lastErr: any;
   
-  for (const model of MODEL_FALLBACKS) {
+  for (const model of IMAGE_MODELS) {
     try {
       const resp = await ai.models.generateContent({
         ...baseRequest,
@@ -44,5 +41,6 @@ export async function runWithImageModelFallback(
     }
   }
   
-  throw new Error(`[GEMINI][${context}] All fallbacks failed. Last error: ${lastErr?.message || lastErr}`);
+  console.error(`❌ FATAL: Gemini 2.5 Flash Image unavailable — cannot continue AI pipeline.`);
+  throw new Error(`[GEMINI][${context}] Gemini 2.5 Flash Image model unavailable – aborting job. Last error: ${lastErr?.message || lastErr}`);
 }

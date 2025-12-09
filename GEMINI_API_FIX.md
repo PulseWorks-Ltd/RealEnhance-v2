@@ -23,7 +23,7 @@ The new v0.7.0 API uses:
 ```typescript
 // NEW API (v0.7.0+)
 const result = await client.models.generateContent({
-  model: "gemini-2.5-flash",
+  model: "gemini-2.5-flash-image",
   contents: [...]
 });
 // result is the response directly (no .response property)
