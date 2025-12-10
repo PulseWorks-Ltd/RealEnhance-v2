@@ -742,7 +742,7 @@ CRITICAL VALIDATION RULES:
 Return ONLY the JSON, no explanatory text.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: gemini-2.0-flash,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },

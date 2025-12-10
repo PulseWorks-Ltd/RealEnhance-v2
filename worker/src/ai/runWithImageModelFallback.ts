@@ -2,10 +2,10 @@ import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 
 // ✅ HARD LOCK: Only supported Gemini image model
-// All stages (1A, 1B, 2) use gemini-2.5-flash-image
+// All stages (1A, 1B, 2) use gemini-3.0-flash-image
 // No fallbacks - fail loudly if unavailable
 const IMAGE_MODELS = [
-  "gemini-2.5-flash-image",
+  "gemini-3.0-flash-image",
 ];
 
 // ✅ No legacy fallbacks allowed — all deprecated

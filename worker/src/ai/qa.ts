@@ -13,7 +13,7 @@ Compare two images of the same room. Decide if the edited image contains impossi
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: gemini-2.0-flash,
       contents: [{
         role: "user",
         parts: [

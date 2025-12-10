@@ -11,7 +11,7 @@ export type ComplianceVerdict = {
 // Compact helper to ask Gemini in strict JSON
 async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
   const resp = await ai.models.generateContent({
-    model: "gemini-2.5-flash-image",
+    model: "gemini-2.0-flash",
     contents: [{
       role: "user",
       parts: [
