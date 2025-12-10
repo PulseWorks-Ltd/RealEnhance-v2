@@ -34,7 +34,7 @@ export async function validateRealism(
   const { toBase64 } = await import('../utils/images.js');
   const { data, mime } = toBase64(finalPath);
   const resp = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: gemini-2.0-flash,
     contents: [
       { inlineData: { mimeType: mime, data } },
       { text: prompt }

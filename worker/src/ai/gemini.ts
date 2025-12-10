@@ -145,7 +145,7 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * 2. Enhance + Declutter (combined in one call to save API costs)
  * 
  * Model selection:
- * - All stages: gemini-2.5-flash-image (locked, no fallbacks)
+ * - All stages: gemini-3.0-flash-image (locked, no fallbacks)
  * - Fails hard if model unavailable (no silent Sharp degradation)
  */
 export async function enhanceWithGemini(

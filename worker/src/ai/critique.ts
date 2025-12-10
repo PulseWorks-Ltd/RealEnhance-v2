@@ -3,7 +3,7 @@ import type { LayoutPlan } from "./planner";
 
 async function callGeminiText(ai: GoogleGenAI, prompt: string): Promise<string> {
   const resp = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: gemini-2.0-flash,
     contents: [{ role: "user", parts: [{ text: prompt }] }]
   });
   return resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "";
