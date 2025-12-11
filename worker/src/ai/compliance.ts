@@ -9,7 +9,7 @@ export type ComplianceVerdict = {
 
 async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
   const resp = await (ai as any).models.generateContent({
-    model: gemini-2.0-flash,
+    model: "gemini-2.0-flash",
     contents: [{
       role: "user",
       parts: [

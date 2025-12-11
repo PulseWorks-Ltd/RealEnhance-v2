@@ -160,7 +160,7 @@ ONLY JSON. No extra text.`;
 
   try {
     const resp = await ai.models.generateContent({
-      model: gemini-2.0-flash,
+      model: "gemini-2.0-flash",
       contents: [{
         role: "user",
         parts: [
