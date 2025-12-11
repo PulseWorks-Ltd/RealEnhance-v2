@@ -93,7 +93,7 @@ Enhanced: Tiny single bed that looks child-sized in the same space
 Verdict: ok=false, reason="Furniture appears miniaturized - bed scaled down unrealistically, looks dollhouse-scale in room"`;
 
     const resp = await ai.models.generateContent({
-      model: gemini-2.0-flash,
+      model: "gemini-2.0-flash",
       contents: [{
         role: "user",
         parts: [
