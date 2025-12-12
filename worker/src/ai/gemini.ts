@@ -145,7 +145,7 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * 2. Enhance + Declutter (combined in one call to save API costs)
  * 
  * Model selection:
- * - All stages: gemini-3.0-flash-image (locked, no fallbacks)
+ * - All stages: gemini-3-pro-image-preview (Gemini 3 Pro Image, locked, no fallbacks)
  * - Fails hard if model unavailable (no silent Sharp degradation)
  */
 export async function enhanceWithGemini(
@@ -231,7 +231,7 @@ export async function enhanceWithGemini(
       { text: prompt },
     ];
 
-    console.log(`[Gemini] 🚀 Calling Gemini 2.5 Flash Image model...`);
+    console.log(`[Gemini] 🚀 Calling Gemini 3 Pro Image model...`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
@@ -327,8 +327,8 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 📊 Response parts: ${parts.length}`);
     const img = parts.find((p: any) => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
     if (!img?.inlineData?.data) {
-      console.error("❌ FATAL: Gemini 2.5 Flash returned no image data — cannot continue.");
-      throw new Error("Gemini 2.5 Flash Image model returned no image data – aborting job.");
+      console.error("❌ FATAL: Gemini 3 Pro Image returned no image data — cannot continue.");
+      throw new Error("Gemini 3 Pro Image model returned no image data – aborting job.");
     }
 
     const suffix = declutter ? "-gemini-1B" : "-gemini-1A";
@@ -337,7 +337,7 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
   } catch (error) {
-    console.error(`❌ FATAL: Gemini 2.5 Flash ${operationType} failed — cannot continue AI pipeline.`);
+    console.error(`❌ FATAL: Gemini 3 Pro Image ${operationType} failed — cannot continue AI pipeline.`);
     console.error(`Error details:`, error);
     throw error;
   }
