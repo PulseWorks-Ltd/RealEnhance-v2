@@ -100,7 +100,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
-import { runWithImageModelFallback } from "./runWithImageModelFallback";
+import { runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
@@ -143,10 +143,16 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * Can perform either:
  * 1. Enhance-only (quality improvements, no structural changes)
  * 2. Enhance + Declutter (combined in one call to save API costs)
- * 
- * Model selection:
- * - All stages: gemini-3-pro-image-preview (Gemini 3 Pro Image, locked, no fallbacks)
- * - Fails hard if model unavailable (no silent Sharp degradation)
+ *
+ * Model selection (per-stage with safe fallback):
+ * - Stage 1A: gemini-2.5-flash-image (no fallback)
+ * - Stage 1B: gemini-3-pro-image-preview → fallback to gemini-2.5-flash-image
+ * - Stage 2:  gemini-3-pro-image-preview → fallback to gemini-2.5-flash-image
+ *
+ * Environment variables (optional overrides):
+ * - REALENHANCE_MODEL_STAGE1A_PRIMARY
+ * - REALENHANCE_MODEL_STAGE1B_PRIMARY, REALENHANCE_MODEL_STAGE1B_FALLBACK
+ * - REALENHANCE_MODEL_STAGE2_PRIMARY, REALENHANCE_MODEL_STAGE2_FALLBACK
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -182,6 +188,15 @@ export async function enhanceWithGemini(
   console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'})...`);
   console.log(`[Gemini] 🔵 Input path: ${inputPath}`);
   console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
+
+  // Log model selection strategy
+  if (stage === "1A") {
+    console.log(`[Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)`);
+  } else if (stage === "1B") {
+    console.log(`[Gemini] 📋 Model strategy: Stage 1B primary=Gemini 3, fallback=Gemini 2.5`);
+  } else if (stage === "2") {
+    console.log(`[Gemini] 📋 Model strategy: Stage 2 primary=Gemini 3, fallback=Gemini 2.5`);
+  }
 
   try {
     const client = getGeminiClient();
@@ -311,15 +326,51 @@ export async function enhanceWithGemini(
       console.log(`[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
     }
 
-    const { resp, modelUsed } = await runWithImageModelFallback(client as any, {
+    // ✅ PER-STAGE MODEL SELECTION WITH SAFE FALLBACK
+    let resp: any;
+    let modelUsed: string;
+
+    const baseRequest = {
       contents: requestParts,
       generationConfig: usingTest ? undefined : {
-        // Encourage high fidelity + keep dimensions
         temperature: sampling.temperature,
         topP: sampling.topP,
         topK: sampling.topK,
       }
-    } as any, stage === "1A" ? "enhance-1A" : (declutter ? "enhance+declutter" : "enhance"));
+    } as any;
+
+    if (stage === "1A") {
+      // Stage 1A: Gemini 2.5 only (no fallback)
+      const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A");
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    } else if (stage === "1B") {
+      // Stage 1B: Gemini 3 → fallback to 2.5
+      const result = await runWithPrimaryThenFallback({
+        stageLabel: "1B",
+        ai: client as any,
+        baseRequest,
+        context: "enhance-1B",
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    } else if (stage === "2") {
+      // Stage 2: Gemini 3 → fallback to 2.5
+      const result = await runWithPrimaryThenFallback({
+        stageLabel: "2",
+        ai: client as any,
+        baseRequest,
+        context: "stage2",
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    } else {
+      // Legacy: no stage specified, use Stage 1A behavior
+      const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance");
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    }
+
     const apiMs = Date.now() - apiStart;
     console.log(`[Gemini] ✅ API responded in ${apiMs} ms (model=${modelUsed})`);
 
@@ -327,8 +378,8 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 📊 Response parts: ${parts.length}`);
     const img = parts.find((p: any) => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
     if (!img?.inlineData?.data) {
-      console.error("❌ FATAL: Gemini 3 Pro Image returned no image data — cannot continue.");
-      throw new Error("Gemini 3 Pro Image model returned no image data – aborting job.");
+      console.error(`❌ FATAL: Gemini ${modelUsed} returned no image data — cannot continue.`);
+      throw new Error(`Gemini ${modelUsed} model returned no image data – aborting job.`);
     }
 
     const suffix = declutter ? "-gemini-1B" : "-gemini-1A";
@@ -337,7 +388,7 @@ export async function enhanceWithGemini(
     console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
   } catch (error) {
-    console.error(`❌ FATAL: Gemini 3 Pro Image ${operationType} failed — cannot continue AI pipeline.`);
+    console.error(`❌ FATAL: Gemini ${operationType} failed — cannot continue AI pipeline.`);
     console.error(`Error details:`, error);
     throw error;
   }
