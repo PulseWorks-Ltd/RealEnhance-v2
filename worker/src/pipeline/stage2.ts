@@ -1,5 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
-import { runWithImageModelFallback } from "../ai/runWithImageModelFallback";
+import { runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -167,12 +167,18 @@ export async function runStage2(
         if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
         generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
       }
-      const { resp } = await runWithImageModelFallback(ai as any, {
-        contents: requestParts,
-        generationConfig,
-      } as any, "stage2");
+      // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
+      const { resp, modelUsed } = await runWithPrimaryThenFallback({
+        stageLabel: "2",
+        ai: ai as any,
+        baseRequest: {
+          contents: requestParts,
+          generationConfig,
+        } as any,
+        context: "stage2",
+      });
       const apiElapsed = Date.now() - apiStartTime;
-      console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms`);
+      console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);
       const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
       console.log(`[stage2] 📊 Response parts: ${responseParts.length}`);
       const img = responseParts.find(p => p.inlineData);
