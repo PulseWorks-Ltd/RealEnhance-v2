@@ -1194,6 +1194,7 @@ export default function BatchProcessor() {
     fd.append("declutter", declutter.toString());
     if (declutter) {
       fd.append("declutterMode", declutterMode);
+      console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
