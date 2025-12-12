@@ -6,7 +6,7 @@ import { logGeminiError } from "../utils/logGeminiError";
  *
  * Stage 1A: Gemini 2.5 Flash Image (no fallback, standard quality enhancement)
  * Stage 1B: Gemini 3 Pro Image → fallback to 2.5 on failure (declutter/furniture removal)
- * Stage 2:  Gemini 3 Pro Image → fallback to 2.5 on failure (virtual staging)
+ * Stage 2:  Gemini 2.5 Flash Image (no fallback, virtual staging)
  */
 
 // ✅ ENVIRONMENT-DRIVEN MODEL CONFIGURATION (no hard-coded models)
@@ -20,7 +20,7 @@ const MODEL_CONFIG = {
     fallback: process.env.REALENHANCE_MODEL_STAGE1B_FALLBACK || "gemini-2.5-flash-image",
   },
   stage2: {
-    primary: process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || "gemini-3-pro-image-preview",
+    primary: process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || "gemini-2.5-flash-image",
     fallback: process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || "gemini-2.5-flash-image",
   },
 };

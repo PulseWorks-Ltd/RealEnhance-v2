@@ -147,12 +147,12 @@ function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; str
  * Model selection (per-stage with safe fallback):
  * - Stage 1A: gemini-2.5-flash-image (no fallback)
  * - Stage 1B: gemini-3-pro-image-preview → fallback to gemini-2.5-flash-image
- * - Stage 2:  gemini-3-pro-image-preview → fallback to gemini-2.5-flash-image
+ * - Stage 2:  gemini-2.5-flash-image (no fallback)
  *
  * Environment variables (optional overrides):
  * - REALENHANCE_MODEL_STAGE1A_PRIMARY
  * - REALENHANCE_MODEL_STAGE1B_PRIMARY, REALENHANCE_MODEL_STAGE1B_FALLBACK
- * - REALENHANCE_MODEL_STAGE2_PRIMARY, REALENHANCE_MODEL_STAGE2_FALLBACK
+ * - REALENHANCE_MODEL_STAGE2_PRIMARY
  */
 export async function enhanceWithGemini(
   inputPath: string,
@@ -195,7 +195,7 @@ export async function enhanceWithGemini(
   } else if (stage === "1B") {
     console.log(`[Gemini] 📋 Model strategy: Stage 1B primary=Gemini 3, fallback=Gemini 2.5`);
   } else if (stage === "2") {
-    console.log(`[Gemini] 📋 Model strategy: Stage 2 primary=Gemini 3, fallback=Gemini 2.5`);
+    console.log(`[Gemini] 📋 Model strategy: Stage 2 uses Gemini 2.5 (no fallback)`);
   }
 
   try {
@@ -355,7 +355,8 @@ export async function enhanceWithGemini(
       resp = result.resp;
       modelUsed = result.modelUsed;
     } else if (stage === "2") {
-      // Stage 2: Gemini 3 → fallback to 2.5
+      // Stage 2: Gemini 2.5 only (no fallback) - optimized for virtual staging
+      // Use the Stage 2 config which now points to Gemini 2.5
       const result = await runWithPrimaryThenFallback({
         stageLabel: "2",
         ai: client as any,
