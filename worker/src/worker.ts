@@ -521,18 +521,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t1B = Date.now();
   let path1B: string | undefined = undefined;
   
-  // ✅ STRICT PAYLOAD MODE ONLY — NO INFERENCE
+  // ✅ STRICT PAYLOAD MODE ONLY — NO INFERENCE OR DEFAULTS
   const declutterMode = (payload.options as any).declutterMode;
-  
+
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
-  
+  nLog(`[WORKER] Stage 1B virtualStage: ${payload.options.virtualStage}`);
+
   if (!declutterMode) {
     nLog(`[WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping`);
   } else {
-    // 🚨 HARD SAFETY ASSERTION — NEVER ALLOW STAGE-READY WITHOUT VIRTUAL STAGING
-    if (declutterMode === "stage-ready" && payload.options.virtualStage !== true) {
-      const errMsg = `CRITICAL ROUTING ERROR: stage-ready used while virtualStage=${payload.options.virtualStage}`;
+    // ✅ VALIDATE MODE
+    if (declutterMode !== "light" && declutterMode !== "stage-ready") {
+      const errMsg = `Invalid declutterMode: "${declutterMode}". Must be "light" or "stage-ready"`;
       console.error(`❌ ${errMsg}`);
       console.error(`Payload options:`, JSON.stringify(payload.options, null, 2));
       updateJob(payload.jobId, {
@@ -543,8 +544,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
       throw new Error(errMsg);
     }
-    
+
     nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
+    nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Remove clutter/mess, keep furniture" : "Remove ALL furniture (empty room ready for staging)"}`);
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
     try {
       // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal

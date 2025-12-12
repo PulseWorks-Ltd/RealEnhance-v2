@@ -25,11 +25,19 @@ export async function runStage1B(
     declutterMode?: "light" | "stage-ready";
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode = "stage-ready" } = options;
-  
+  const { replaceSky = false, sceneType, roomType, declutterMode } = options;
+
+  // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
+  if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
+    const errMsg = `[stage1B] FATAL: declutterMode is required and must be "light" or "stage-ready". Received: ${declutterMode}`;
+    console.error(errMsg);
+    throw new Error(errMsg);
+  }
+
   console.log(`[stage1B] 🔵 Starting furniture & clutter removal...`);
   console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
-  console.log(`[stage1B] Options: sceneType=${sceneType}, mode=${declutterMode}`);
+  console.log(`[stage1B] Declutter mode: ${declutterMode} (${declutterMode === "light" ? "keep furniture, remove clutter" : "remove ALL furniture"})`);
+  console.log(`[stage1B] Options: sceneType=${sceneType}, roomType=${roomType}`);
   
   try {
     // ✅ PROMPT SELECTION SAFETY — Explicit mode-based routing
@@ -47,12 +55,14 @@ export async function runStage1B(
       throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
     }
     
-    // Debug logging for mode resolution
+    // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
+    const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "full (stage-ready)";
     console.log("[stage1B] Declutter mode resolved:", {
       declutter: true,
       declutterMode: declutterMode,
-      promptUsed: declutterMode === "light" ? "light (declutter-only)" : "stage-ready"
+      promptUsed: promptUsed
     });
+    console.log(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
     
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)

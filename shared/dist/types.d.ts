@@ -40,6 +40,12 @@ export interface ImageRecord {
     updatedAt: string;
 }
 export type JobStatus = "queued" | "processing" | "complete" | "error";
+/**
+ * Declutter mode controls Stage 1B behavior:
+ * - "light": Remove clutter/mess only, preserve all main furniture
+ * - "stage-ready": Remove ALL furniture and clutter (empty room ready for staging)
+ */
+export type DeclutterMode = "light" | "stage-ready";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface EnhanceJobPayload {
     jobId: JobId;
@@ -54,7 +60,7 @@ export interface EnhanceJobPayload {
         sceneType: string | "auto";
         replaceSky?: boolean;
         stagingStyle?: string;
-        declutterMode?: "light" | "stage-ready";
+        declutterMode?: DeclutterMode;
         sampling?: {
             temperature?: number;
             topP?: number;

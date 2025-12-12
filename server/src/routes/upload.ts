@@ -177,32 +177,45 @@ export function uploadRouter() {
       }
       try { console.log(`[upload] item ${i} after declutter assign: opts.declutter=${opts.declutter}`); } catch {}
 
-      // ✅ AUTHORITATIVE DECLUTTER MODE DERIVATION (DO NOT INFER IN WORKER)
-      // This is the single source of truth for declutter behavior
-      let derivedDeclutterMode: "light" | "stage-ready" | null = null;
+      // ✅ AUTHORITATIVE DECLUTTER MODE DERIVATION
+      // Accept UI's explicit declutterMode if valid, otherwise derive from flags
+      let declutterMode: "light" | "stage-ready" | null = null;
 
-      if (opts.declutter === true && opts.virtualStage === false) {
-        // Declutter only: remove clutter/mess, keep furniture
-        derivedDeclutterMode = "light";
-        console.log(`[upload] item ${i} → DECLUTTER-ONLY mode (light): declutter=true, virtualStage=false`);
-      } else if (opts.declutter === true && opts.virtualStage === true) {
-        // Stage ready: remove everything for virtual staging
-        derivedDeclutterMode = "stage-ready";
-        console.log(`[upload] item ${i} → STAGE-READY mode: declutter=true, virtualStage=true`);
-      } else if (opts.declutter === false) {
-        // No declutter at all
-        derivedDeclutterMode = null;
+      // Priority 1: Check per-item metadata for explicit declutterMode
+      const metaDeclutterMode = meta.declutterMode;
+      if (metaDeclutterMode === "light" || metaDeclutterMode === "stage-ready") {
+        declutterMode = metaDeclutterMode;
+        console.log(`[upload] item ${i} → Using metadata declutterMode: ${declutterMode}`);
+      }
+      // Priority 2: Check form-level declutterMode
+      else if (declutterModeForm === "light" || declutterModeForm === "stage-ready") {
+        declutterMode = declutterModeForm as "light" | "stage-ready";
+        console.log(`[upload] item ${i} → Using form declutterMode: ${declutterMode}`);
+      }
+      // Priority 3: Derive from declutter + virtualStage flags (legacy compatibility)
+      else if (opts.declutter === true) {
+        if (opts.virtualStage === true) {
+          declutterMode = "stage-ready";
+          console.log(`[upload] item ${i} → Derived STAGE-READY mode: declutter=true, virtualStage=true`);
+        } else {
+          declutterMode = "light";
+          console.log(`[upload] item ${i} → Derived LIGHT mode: declutter=true, virtualStage=false`);
+        }
+      } else {
         console.log(`[upload] item ${i} → NO DECLUTTER: declutter=false`);
       }
 
-      // Override with derived mode (authoritative)
-      opts.declutterMode = derivedDeclutterMode;
+      // Set authoritative mode
+      opts.declutterMode = declutterMode;
 
-      // Safety logging before job creation
-      console.log(`[JOB ROUTING] item ${i} Declutter Mode: ${derivedDeclutterMode}`);
-      console.log(`[JOB ROUTING] item ${i} virtualStage: ${opts.virtualStage}`);
-      console.log(`[JOB ROUTING] item ${i} declutter: ${opts.declutter}`);
-      
+      // Logging for debugging
+      console.log(`[upload] item ${i} RESOLVED MODE:`, {
+        declutter: opts.declutter,
+        virtualStage: opts.virtualStage,
+        declutterMode: declutterMode,
+        source: metaDeclutterMode ? 'metadata' : (declutterModeForm ? 'form' : 'derived')
+      });
+
       try { console.log(`[upload] item ${i} after declutterMode assign: opts.declutterMode=${opts.declutterMode}`); } catch {}
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
