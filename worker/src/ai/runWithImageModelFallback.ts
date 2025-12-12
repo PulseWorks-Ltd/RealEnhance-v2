@@ -2,10 +2,10 @@ import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 
 // ✅ HARD LOCK: Only supported Gemini image model
-// All stages (1A, 1B, 2) use gemini-3.0-flash-image
+// All stages (1A, 1B, 2) use gemini-3-pro-image-preview (Gemini 3 Pro Image)
 // No fallbacks - fail loudly if unavailable
 const IMAGE_MODELS = [
-  "gemini-3.0-flash-image",
+  "gemini-3-pro-image-preview",
 ];
 
 // ✅ No legacy fallbacks allowed — all deprecated
@@ -18,7 +18,7 @@ export async function runWithImageModelFallback(
   baseRequest: Omit<GenerateContentParams, "model">,
   context: string
 ) {
-  // ✅ All stages use Gemini 2.5 Flash - no stage-specific logic needed
+  // ✅ All stages use Gemini 3 Pro Image - no stage-specific logic needed
   let lastErr: any;
   
   for (const model of IMAGE_MODELS) {
@@ -41,6 +41,6 @@ export async function runWithImageModelFallback(
     }
   }
   
-  console.error(`❌ FATAL: Gemini 2.5 Flash Image unavailable — cannot continue AI pipeline.`);
-  throw new Error(`[GEMINI][${context}] Gemini 2.5 Flash Image model unavailable – aborting job. Last error: ${lastErr?.message || lastErr}`);
+  console.error(`❌ FATAL: Gemini 3 Pro Image unavailable — cannot continue AI pipeline.`);
+  throw new Error(`[GEMINI][${context}] Gemini 3 Pro Image model unavailable – aborting job. Last error: ${lastErr?.message || lastErr}`);
 }
