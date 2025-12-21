@@ -3,6 +3,7 @@ export interface RegionEditJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "region-edit";
+  listingId?: string; // Optional: group multiple images under one listing for usage tracking
   baseVersionId: string;
   mode: "Add" | "Remove" | "Restore";
   instruction?: string;
@@ -21,6 +22,7 @@ export interface UserRecord {
   authProvider: "email" | "google";  // Track authentication method
   credits: number; // DEPRECATED: Kept for backward compatibility, not enforced
   imageIds: ImageId[];
+  agencyId?: string | null; // Optional: links user to an agency for usage tracking
   plan?: "free" | "individual" | "agency"; // Future: plan-based limits
   usageStats?: {
     monthlyImages: number;
@@ -80,6 +82,7 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  listingId?: string; // Optional: group multiple images under one listing for usage tracking
   manualSceneOverride?: boolean;
   options: {
     declutter: boolean;
@@ -110,6 +113,7 @@ export interface EditJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "edit";
+  listingId?: string; // Optional: group multiple images under one listing for usage tracking
   baseVersionId: string;
   mode: "Add" | "Remove" | "Replace" | "Restore";
   instruction: string;

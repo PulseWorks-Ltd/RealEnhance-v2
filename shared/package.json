@@ -24,6 +24,18 @@
     "./usageTracker": {
       "types": "./dist/usageTracker.d.ts",
       "default": "./dist/usageTracker.js"
+    },
+    "./agencyStore.js": {
+      "types": "./dist/agencyStore.d.ts",
+      "default": "./dist/agencyStore.js"
+    },
+    "./usage/usageStore.js": {
+      "types": "./dist/usage/usageStore.d.ts",
+      "default": "./dist/usage/usageStore.js"
+    },
+    "./types.js": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
     }
   },
   "scripts": {
@@ -38,7 +50,9 @@
   },
   "dependencies": {
     "@types/node": "^24.10.1",
+    "@types/uuid": "^11.0.0",
     "redis": "^5.10.0",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "uuid": "^13.0.0"
   }
 }
