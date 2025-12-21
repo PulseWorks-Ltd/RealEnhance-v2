@@ -1,27 +1,45 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import clientApi from "@/lib/api";
+import { useNavigate } from "react-router-dom";
 
 export function useAuthGuard() {
-  const { ensureSignedIn, refreshUser, user } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const [isReady, setIsReady] = useState(false);
 
+  useEffect(() => {
+    if (!loading) {
+      setIsReady(true);
+    }
+  }, [loading]);
+
+  const redirectToLogin = useCallback(() => {
+    const currentPath = window.location.pathname;
+    const redirectParam = currentPath !== "/" && currentPath !== "/login"
+      ? `?redirect=${encodeURIComponent(currentPath)}`
+      : "";
+    navigate(`/login${redirectParam}`);
+  }, [navigate]);
+
+  // DEPRECATED: Credits are no longer enforced
   const ensureLoggedInAndCredits = useCallback(
     async (needCredits: number) => {
-  const u = await ensureSignedIn();
-  // Always re-fetch credits just before charging
-  const latest = await clientApi.request<{ user: typeof u }>("/api/me");
-  if ((latest.user?.credits ?? 0) < needCredits) {
-        const short = needCredits - (latest.user?.credits ?? 0);
-        const message = short > 1
-          ? `You need ${short} more credits for this operation.`
-          : `You need ${short} more credit for this operation.`;
-        throw Object.assign(new Error(message), { code: "INSUFFICIENT_CREDITS", needed: short });
+      if (!user) {
+        redirectToLogin();
+        throw new Error("Please sign in to continue");
       }
-      await refreshUser(); // keep header in sync
-      return latest.user;
+      // Credits no longer checked - always allow
+      await refreshUser();
+      return user;
     },
-    [ensureSignedIn, refreshUser]
+    [user, refreshUser, redirectToLogin]
   );
 
-  return { user, ensureLoggedInAndCredits };
+  return {
+    user,
+    isReady,
+    isAuthed: !!user,
+    redirectToLogin,
+    ensureLoggedInAndCredits
+  };
 }

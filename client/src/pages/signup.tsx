@@ -6,15 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function Login() {
-  const [isSignUp, setIsSignUp] = useState(false);
+export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const { signInWithEmail, signUpWithEmail, ensureSignedIn } = useAuth();
+  const { signUpWithEmail, ensureSignedIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/home";
@@ -25,14 +24,10 @@ export default function Login() {
     setLoading(true);
 
     try {
-      if (isSignUp) {
-        await signUpWithEmail(email, password, name);
-      } else {
-        await signInWithEmail(email, password);
-      }
+      await signUpWithEmail(email, password, name);
       navigate(redirectTo);
     } catch (err: any) {
-      setError(err.message || (isSignUp ? "Signup failed" : "Login failed"));
+      setError(err.message || "Signup failed");
     } finally {
       setLoading(false);
     }
@@ -43,7 +38,7 @@ export default function Login() {
       await ensureSignedIn();
       navigate(redirectTo);
     } catch (err: any) {
-      setError(err.message || "Google login failed");
+      setError(err.message || "Google signup failed");
     }
   };
 
@@ -54,12 +49,10 @@ export default function Login() {
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">
-            {isSignUp ? "Create Account" : "Welcome Back"}
+            Create Account
           </CardTitle>
           <CardDescription className="text-center">
-            {isSignUp
-              ? "Sign up to start enhancing your photos"
-              : "Sign in to continue to RealEnhance"}
+            Sign up to start enhancing your photos
           </CardDescription>
         </CardHeader>
 
@@ -71,20 +64,18 @@ export default function Login() {
           )}
 
           <form onSubmit={handleEmailSubmit} className="space-y-4">
-            {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                type="text"
+                placeholder="John Doe"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -111,11 +102,9 @@ export default function Login() {
                 minLength={8}
                 disabled={loading}
               />
-              {isSignUp && (
-                <p className="text-xs text-muted-foreground">
-                  Must be at least 8 characters
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Must be at least 8 characters
+              </p>
             </div>
 
             <Button
@@ -123,7 +112,7 @@ export default function Login() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? "Loading..." : (isSignUp ? "Sign Up" : "Sign In")}
+              {loading ? "Creating account..." : "Create Account"}
             </Button>
           </form>
 
@@ -167,34 +156,18 @@ export default function Login() {
           </Button>
 
           <div className="text-center text-sm">
-            {isSignUp ? (
-              <>
-                Already have an account?{" "}
-                <a
-                  href="/login"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Sign in
-                </a>
-              </>
-            ) : (
-              <>
-                Don't have an account?{" "}
-                <a
-                  href="/signup"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Sign up
-                </a>
-              </>
-            )}
+            Already have an account?{" "}
+            <a
+              href="/login"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Sign in
+            </a>
           </div>
 
-          {isSignUp && (
-            <p className="text-xs text-center text-muted-foreground">
-              Free to get started - no credit card required
-            </p>
-          )}
+          <p className="text-xs text-center text-muted-foreground">
+            Free to get started - no credit card required
+          </p>
         </CardContent>
       </Card>
     </div>
