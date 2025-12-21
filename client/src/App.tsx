@@ -7,6 +7,7 @@ import AuthComplete from "@/pages/auth-complete";
 // Match the filenames exactly (case sensitive on Linux)
 const Landing        = lazy(() => import("@/pages/landing"));
 const Login          = lazy(() => import("@/pages/login"));
+const Signup         = lazy(() => import("@/pages/signup"));
 const Home           = lazy(() => import("@/pages/home"));
 const Editor         = lazy(() => import("@/pages/Editor"));
 const Results        = lazy(() => import("@/pages/Results"));
@@ -22,6 +23,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
           <Route path="/home" element={<Home />} />
           <Route path="/auth/complete" element={<AuthComplete />} />
           <Route path="/editor" element={<Editor />} />

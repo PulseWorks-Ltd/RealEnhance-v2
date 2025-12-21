@@ -7,7 +7,7 @@ import { apiFetch } from "@/lib/api";
 
 
 export function Header() {
-  const { ensureSignedIn, user: authUser } = useAuth();
+  const { user: authUser } = useAuth();
   const isAuthed = !!authUser;
 
   return (
@@ -37,12 +37,12 @@ export function Header() {
             <ProfileDropdown />
           ) : (
             <Button
-              onClick={() => ensureSignedIn()}
+              asChild
               variant="outline"
               className="border-brand-primary text-brand-primary hover:bg-brand-light"
               data-testid="button-signin-header"
           >
-            Sign In
+            <a href="/login">Sign In</a>
           </Button>
           )}
         </div>
