@@ -7,13 +7,8 @@ import { apiFetch } from "@/lib/api";
 
 
 export function Header() {
-  const { ensureSignedIn, user: authUser, loading } = useAuth();
-  const credits = authUser?.credits ?? 0;
+  const { ensureSignedIn, user: authUser } = useAuth();
   const isAuthed = !!authUser;
-
-  const handleBuyCredits = () => {
-    document.getElementById("credits-section")?.scrollIntoView({ behavior: "smooth" });
-  };
 
   return (
     <header
@@ -36,33 +31,8 @@ export function Header() {
           </div>
         </a>
 
-        {/* Right: credits + actions */}
+        {/* Right: actions */}
         <div className="flex items-center gap-4">
-          <div
-            className="flex items-center gap-2 rounded-lg border px-3 py-2 bg-white/60"
-            data-testid="credits-display"
-          >
-            <svg className="h-4 w-4 text-yellow-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-            </svg>
-            <span className="font-medium tabular-nums min-w-6 text-center" data-testid="credits-count">
-              {loading ? "…" : credits}
-            </span>
-            <span className="text-sm text-neutral-500">credits</span>
-          </div>
-
-          <Button
-            type="button"
-            onClick={handleBuyCredits}
-            className="bg-brand-accent text-white hover:opacity-90 shadow-sm"
-            data-testid="button-buy-credits"
-          >
-            <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
-            Buy Credits
-          </Button>
-
           {isAuthed ? (
             <ProfileDropdown />
           ) : (

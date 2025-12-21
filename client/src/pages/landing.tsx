@@ -19,7 +19,7 @@ export default function Landing() {
           </h1>
           <p className="text-base md:text-xl text-white/85 max-w-2xl mx-auto mb-8">
             Transform your images with professional-grade enhancement and optional virtual staging.
-            Get started with 5 free credits when you sign up.
+            Get started free - no credit card required.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3">

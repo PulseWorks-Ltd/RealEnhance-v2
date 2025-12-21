@@ -200,7 +200,7 @@ export default function Login() {
 
           {isSignUp && (
             <p className="text-xs text-center text-muted-foreground">
-              Get started with 50 free credits when you sign up
+              Free to get started - no credit card required
             </p>
           )}
         </CardContent>

@@ -20,6 +20,11 @@ export interface UserRecord {
     authProvider: "email" | "google";
     credits: number;
     imageIds: ImageId[];
+    plan?: "free" | "individual" | "agency";
+    usageStats?: {
+        monthlyImages: number;
+        monthlyListings: number;
+    };
     createdAt: string;
     updatedAt: string;
 }

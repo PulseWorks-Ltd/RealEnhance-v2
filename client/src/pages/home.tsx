@@ -1,6 +1,5 @@
 // client/src/pages/home.tsx
 import BatchProcessor from "@/components/batch-processor";
-import { CreditPacks } from "@/components/credit-packs";
 
 export default function Home() {
   return (
@@ -26,15 +25,10 @@ export default function Home() {
             Upload your images and let our AI enhance them with professional-quality
             improvements. Perfect for real estate and professional photography.
           </p>
-        </section> 
+        </section>
 
         {/* Batch Processor - Main Interface */}
         <BatchProcessor />
-
-        {/* Credit Packs */}
-        <div className="mt-24 pt-12 border-t border-border/50">
-          <CreditPacks />
-        </div>
   </main>
   </div>
  
