@@ -11,6 +11,7 @@ import cookieParser from "cookie-parser";
 import { attachGoogleAuth } from "./auth/google.js";
 import { setCreditsForEmail } from "./services/users.js";
 import { authUserRouter } from "./routes/authUser.js";
+import { emailAuthRouter } from "./routes/emailAuth.js";
 import { registerMeRoutes } from "./routes.me.js";
 import { uploadRouter } from "./routes/upload.js";
 import { statusRouter, debugStatusRouter } from "./routes/status.js";
@@ -89,6 +90,7 @@ async function main() {
 
   // Auth + API routes
   attachGoogleAuth(app);
+  app.use("/api/auth", emailAuthRouter());
   app.use("/api/auth-user", authUserRouter());
   registerMeRoutes(app);
   app.use("/api", uploadRouter());

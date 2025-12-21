@@ -35,6 +35,8 @@ export function upsertUserFromGoogle(params: {
       id,
       email: params.email,
       name: params.name,
+      authProvider: "google",
+      passwordHash: undefined,
       credits: 50,
       imageIds: [],
       createdAt: now,
@@ -44,10 +46,54 @@ export function upsertUserFromGoogle(params: {
   } else {
     found.name = params.name || found.name;
     found.updatedAt = new Date().toISOString();
+    // Link Google account if user originally signed up with email
+    if (!found.authProvider || found.authProvider === "email") {
+      // Keep authProvider as email if they have a password
+      if (!found.passwordHash) {
+        found.authProvider = "google";
+      }
+    }
   }
 
   saveAll(state);
   return found;
+}
+
+export function createUserWithPassword(params: {
+  email: string;
+  name: string;
+  passwordHash: string;
+}): UserRecord {
+  const state = loadAll();
+
+  // Check if user already exists
+  const existing = Object.values(state).find(u => u.email === params.email);
+  if (existing) {
+    throw new Error("User with this email already exists");
+  }
+
+  const id = "user_" + crypto.randomUUID();
+  const now = new Date().toISOString();
+  const newUser: UserRecord = {
+    id,
+    email: params.email,
+    name: params.name,
+    authProvider: "email",
+    passwordHash: params.passwordHash,
+    credits: 50,
+    imageIds: [],
+    createdAt: now,
+    updatedAt: now
+  };
+
+  state[id] = newUser;
+  saveAll(state);
+  return newUser;
+}
+
+export function getUserByEmail(email: string): UserRecord | undefined {
+  const state = loadAll();
+  return Object.values(state).find(u => u.email === email);
 }
 
 /** Admin utility: set or create a user by email with a fixed credit balance */
@@ -61,6 +107,8 @@ export function setCreditsForEmail(email: string, credits: number, name?: string
       id,
       email,
       name: name || email.split("@")[0],
+      authProvider: "email",
+      passwordHash: undefined,
       credits,
       imageIds: [],
       createdAt: now,

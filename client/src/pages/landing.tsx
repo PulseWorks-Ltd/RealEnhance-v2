@@ -1,10 +1,8 @@
 // client/src/pages/landing.tsx
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useAuth } from "@/context/AuthContext";
 
 export default function Landing() {
-  const { ensureSignedIn } = useAuth();
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
@@ -26,13 +24,13 @@ export default function Landing() {
 
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Button
-              onClick={() => ensureSignedIn()}
               size="lg"
               variant="brand"
               className="px-7 py-4 text-base md:text-lg shadow-sm"
               data-testid="button-login"
+              asChild
             >
-              Get Started — Sign In
+              <a href="/login">Get Started — Sign In</a>
             </Button>
 
             {/* asChild anchor wrapped inline to avoid whitespace */}
