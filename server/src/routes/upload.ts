@@ -7,7 +7,7 @@ import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
-import { recordUsageEvent } from "../../../shared/src/usageTracker.js";
+import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
