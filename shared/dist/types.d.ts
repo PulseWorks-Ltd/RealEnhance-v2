@@ -16,6 +16,8 @@ export interface UserRecord {
     id: UserId;
     email: string;
     name: string;
+    passwordHash?: string;
+    authProvider: "email" | "google";
     credits: number;
     imageIds: ImageId[];
     createdAt: string;

@@ -17,6 +17,8 @@ export interface UserRecord {
   id: UserId;
   email: string;
   name: string;
+  passwordHash?: string;  // Optional: undefined for OAuth-only users
+  authProvider: "email" | "google";  // Track authentication method
   credits: number;
   imageIds: ImageId[];
   createdAt: string;

@@ -18,6 +18,10 @@ export interface AuthUser {
 export interface UserRecord extends AuthUser {
   /** images owned by this user */
   imageIds: ImageId[];
+  /** Optional password hash for email/password authentication */
+  passwordHash?: string;
+  /** Authentication provider: "email" for email/password, "google" for OAuth */
+  authProvider: "email" | "google";
 }
 
 /* ---------- Images / Library ---------- */

@@ -16,6 +16,8 @@ type AuthState = {
   ensureSignedIn: (opts?: { reason?: string }) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
+  signInWithEmail: (email: string, password: string) => Promise<AuthUser>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<AuthUser>;
 };
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -153,12 +155,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return openPopupLogin();
   }, [loading, user, openPopupLogin]);
 
+  const signInWithEmail = useCallback(async (email: string, password: string): Promise<AuthUser> => {
+    try {
+      const response = await apiFetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Login failed" }));
+        throw new Error(errorData.error || "Login failed");
+      }
+
+      const userData = await response.json();
+      setUser(userData);
+      return userData;
+    } catch (error: any) {
+      throw new Error(error.message || "Login failed");
+    }
+  }, []);
+
+  const signUpWithEmail = useCallback(async (email: string, password: string, name: string): Promise<AuthUser> => {
+    try {
+      const response = await apiFetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, name }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Signup failed" }));
+        throw new Error(errorData.error || "Signup failed");
+      }
+
+      const userData = await response.json();
+      setUser(userData);
+      return userData;
+    } catch (error: any) {
+      throw new Error(error.message || "Signup failed");
+    }
+  }, []);
+
   const value: AuthState = {
     user,
     loading,
     ensureSignedIn,
     signOut,
     refreshUser,
+    signInWithEmail,
+    signUpWithEmail,
   };
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
