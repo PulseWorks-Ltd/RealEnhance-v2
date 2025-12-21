@@ -3,6 +3,7 @@ export interface RegionEditJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "region-edit";
+    listingId?: string;
     baseVersionId: string;
     mode: "Add" | "Remove" | "Restore";
     instruction?: string;
@@ -20,6 +21,7 @@ export interface UserRecord {
     authProvider: "email" | "google";
     credits: number;
     imageIds: ImageId[];
+    agencyId?: string | null;
     plan?: "free" | "individual" | "agency";
     usageStats?: {
         monthlyImages: number;
@@ -59,6 +61,7 @@ export interface EnhanceJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "enhance";
+    listingId?: string;
     manualSceneOverride?: boolean;
     options: {
         declutter: boolean;
@@ -86,6 +89,7 @@ export interface EditJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "edit";
+    listingId?: string;
     baseVersionId: string;
     mode: "Add" | "Remove" | "Replace" | "Restore";
     instruction: string;

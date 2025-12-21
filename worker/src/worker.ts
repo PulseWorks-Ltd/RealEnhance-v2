@@ -50,6 +50,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
+import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -1112,6 +1113,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
+  // ===== USAGE TRACKING (BEST-EFFORT, NON-BLOCKING) =====
+  // Record usage events for all completed stages
+  try {
+    const agencyId = (payload as any).agencyId || null;
+
+    // Always record Stage 1A
+    await recordEnhanceStageUsage(payload, "1A", agencyId);
+
+    // Record Stage 1B if it ran
+    if (path1B && payload.options.declutter) {
+      await recordEnhanceStageUsage(payload, "1B", agencyId);
+    }
+
+    // Record Stage 2 if it ran
+    if (hasStage2 && path2) {
+      await recordEnhanceStageUsage(payload, "2", agencyId);
+    }
+  } catch (usageErr) {
+    // Usage tracking must never block job completion
+    nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
+
   const meta = {
     scene: { label: sceneLabel as any, confidence: 0.5 },
     scenePrimary,
@@ -1218,7 +1241,15 @@ async function handleEditJob(payload: any) {
     stage: "edit",
   });
 
-  // 6) Update job – IMPORTANT: don’t hard-fail on compliance
+  // 6) Record usage tracking (best-effort, non-blocking)
+  try {
+    const agencyId = (payload as any).agencyId || null;
+    await recordEditUsage(payload, agencyId);
+  } catch (usageErr) {
+    nLog("[USAGE] Failed to record edit usage (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
+
+  // 7) Update job – IMPORTANT: don't hard-fail on compliance
   await updateJob(jobId, {
     status: "complete",
     success: true,
@@ -1379,6 +1410,14 @@ const worker = new Worker(
             nLog("[worker-region-edit] Redis image history recorded");
           } catch (err) {
             nLog("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
+          }
+
+          // Record usage tracking (best-effort, non-blocking)
+          try {
+            const agencyId = (regionPayload as any).agencyId || null;
+            await recordRegionEditUsage(regionPayload, agencyId);
+          } catch (usageErr) {
+            nLog("[USAGE] Failed to record region-edit usage (non-blocking):", (usageErr as any)?.message || usageErr);
           }
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
