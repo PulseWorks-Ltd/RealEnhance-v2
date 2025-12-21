@@ -4,9 +4,10 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
-import { addImageToUser, chargeForImages } from "../services/users.js";
+import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
+import { recordUsageEvent } from "../../../shared/src/usageTracker.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -80,8 +81,8 @@ export function uploadRouter() {
       console.warn('[upload] Failed to parse metaJson:', e);
     }
 
-    // charge credits (throws on insufficient)
-    await chargeForImages(sessUser.id, files.length);
+    // REMOVED: Credit gating - execution is now always allowed
+    // Usage tracking happens after job completion in worker
 
     const userDir = path.join(uploadRoot, sessUser.id);
     await fs.mkdir(userDir, { recursive: true });
@@ -300,6 +301,15 @@ export function uploadRouter() {
       });
 
       jobs.push({ jobId, imageId });
+
+      // Track usage for analytics (non-blocking)
+      recordUsageEvent({
+        userId: sessUser.id,
+        jobId,
+        imageId,
+        stage: "1A", // Upload always starts with stage 1A
+        imagesProcessed: 1,
+      });
     }
 
     return res.json({ ok: true, jobs });

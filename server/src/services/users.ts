@@ -146,21 +146,19 @@ export function getUserGallery(userId: string): ImageId[] {
   return u?.imageIds ?? [];
 }
 
+// DEPRECATED: Credits are no longer enforced, kept for backward compatibility
 export function getCredits(userId: UserId): number {
   return getUserById(userId)?.credits ?? 0;
 }
 
+// DEPRECATED: No-op - credits no longer deducted
 export function consumeCredits(userId: string, count: number) {
-  if (!CREDITS_ENABLED) return;
-  const state = loadAll();
-  const u = state[userId];
-  if (!u) return;
-  u.credits = Math.max(0, u.credits - count);
-  u.updatedAt = new Date().toISOString();
-  saveAll(state);
+  // No-op: Credits are deprecated, execution is always allowed
+  console.log(`[DEPRECATED] consumeCredits called for user ${userId}, count ${count} - ignoring (credits disabled)`);
 }
 
+// DEPRECATED: No-op - credits no longer charged
 export function chargeForImages(userId: string, numImages: number) {
-  if (!CREDITS_ENABLED) return;
-  consumeCredits(userId, numImages * CREDITS_PER_IMAGE);
+  // No-op: Credits are deprecated, execution is always allowed
+  console.log(`[DEPRECATED] chargeForImages called for user ${userId}, images ${numImages} - ignoring (credits disabled)`);
 }

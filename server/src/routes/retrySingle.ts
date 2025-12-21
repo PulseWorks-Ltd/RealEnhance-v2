@@ -4,9 +4,10 @@ import * as fs from "node:fs/promises";
 import * as fss from "node:fs";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
-import { addImageToUser, chargeForImages } from "../services/users.js";
+import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
+import { recordUsageEvent } from "../../../shared/src/usageTracker.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -52,12 +53,8 @@ export function retrySingleRouter() {
       const file = (req.file as Express.Multer.File | undefined);
       if (!file) return res.status(400).json({ success: false, error: "missing_image" });
 
-      // Charge 1 credit up-front (aligns with upload pipeline)
-      try {
-        await chargeForImages(sessUser.id, 1);
-      } catch (e: any) {
-        return res.status(402).json({ success: false, error: "insufficient_credits", message: e?.message || "insufficient credits" });
-      }
+      // REMOVED: Credit gating - execution is now always allowed
+      // Usage tracking happens after job enqueuing
 
       // Extract form fields
       const body = req.body || {} as any;
@@ -147,8 +144,14 @@ export function retrySingleRouter() {
         stage2OnlyMode
       });
 
-      // Set initial job status (optional, if not handled in enqueueEnhanceJob)
-      // You may want to call a jobStatusStore.set(jobId, { success: false, error: 'processing' }) here if not already done.
+      // Track usage for analytics (non-blocking)
+      recordUsageEvent({
+        userId: sessUser.id,
+        jobId,
+        imageId: (rec as any).imageId,
+        stage: "1A",
+        imagesProcessed: 1,
+      });
 
       // Immediately return jobId for client polling
       return res.status(200).json({ success: true, jobId });

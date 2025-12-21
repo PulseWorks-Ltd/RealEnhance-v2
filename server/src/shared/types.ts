@@ -22,6 +22,13 @@ export interface UserRecord extends AuthUser {
   passwordHash?: string;
   /** Authentication provider: "email" for email/password, "google" for OAuth */
   authProvider: "email" | "google";
+  /** Future: plan-based limits (not enforced yet) */
+  plan?: "free" | "individual" | "agency";
+  /** Usage tracking for analytics (not enforcement) */
+  usageStats?: {
+    monthlyImages: number;
+    monthlyListings: number;
+  };
 }
 
 /* ---------- Images / Library ---------- */

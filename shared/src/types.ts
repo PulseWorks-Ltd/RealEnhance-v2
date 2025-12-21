@@ -19,8 +19,13 @@ export interface UserRecord {
   name: string;
   passwordHash?: string;  // Optional: undefined for OAuth-only users
   authProvider: "email" | "google";  // Track authentication method
-  credits: number;
+  credits: number; // DEPRECATED: Kept for backward compatibility, not enforced
   imageIds: ImageId[];
+  plan?: "free" | "individual" | "agency"; // Future: plan-based limits
+  usageStats?: {
+    monthlyImages: number;
+    monthlyListings: number;
+  };
   createdAt: string;
   updatedAt: string;
 }
