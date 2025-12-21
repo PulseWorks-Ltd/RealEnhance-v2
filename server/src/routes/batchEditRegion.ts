@@ -3,7 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { enqueueRegionEditJob } from "../services/jobs.js";
-import { recordUsageEvent } from "../../../shared/src/usageTracker.js";
+import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 const upload = multer({

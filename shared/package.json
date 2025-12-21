@@ -20,6 +20,10 @@
     "./imageStore": {
       "types": "./dist/imageStore.d.ts",
       "default": "./dist/imageStore.js"
+    },
+    "./usageTracker": {
+      "types": "./dist/usageTracker.d.ts",
+      "default": "./dist/usageTracker.js"
     }
   },
   "scripts": {
