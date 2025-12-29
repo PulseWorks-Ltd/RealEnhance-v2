@@ -17,10 +17,12 @@ import {
 
 const router = Router();
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2025-12-15.clover",
-});
+// Initialize Stripe (only if API key is provided)
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: "2025-12-15.clover",
+    })
+  : null;
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 
@@ -41,6 +43,13 @@ function requireAuth(req: Request, res: Response, next: Function) {
  */
 router.post("/checkout-subscription", requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!stripe) {
+      return res.status(503).json({
+        error: "Stripe not configured",
+        message: "Stripe billing is not configured. Please contact support.",
+      });
+    }
+
     const sessUser = (req.session as any)?.user;
     const { planTier, country, currency } = req.body as {
       planTier: PlanTier;
@@ -174,6 +183,13 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
  */
 router.post("/portal", requireAuth, async (req: Request, res: Response) => {
   try {
+    if (!stripe) {
+      return res.status(503).json({
+        error: "Stripe not configured",
+        message: "Stripe billing is not configured. Please contact support.",
+      });
+    }
+
     const sessUser = (req.session as any)?.user;
 
     // Get user and agency
