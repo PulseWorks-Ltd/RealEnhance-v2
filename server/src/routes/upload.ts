@@ -142,7 +142,7 @@ export function uploadRouter() {
           return res.status(402).json({
             code: "USAGE_EXHAUSTED",
             error: "Plan limit reached",
-            message: `Your agency has reached its monthly image limit. Please upgrade your plan or wait until next month.`,
+            message: `Your agency has reached its monthly image limit. Please contact support to add capacity or wait until next month.`,
             monthKey,
             mainRemaining: exhaustedCheck.mainRemaining,
             stagingRemaining: exhaustedCheck.stagingRemaining,

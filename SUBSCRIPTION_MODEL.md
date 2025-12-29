@@ -220,12 +220,29 @@ All subscription events are logged with prefix `[SUBSCRIPTION GATE]`:
 
 ---
 
+## Data Storage Architecture
+
+**Subscription status is stored in Redis (authoritative) and may be mirrored to the database in future.**
+
+All agency data including subscription status, plan tier, and billing periods are currently stored exclusively in Redis:
+- Key pattern: `agency:{agencyId}`
+- No Postgres/database persistence yet
+- Redis is the single source of truth
+
+This means:
+- Fast access for subscription checks
+- Simple key-value operations
+- Requires Redis backup/persistence for production
+- Future: may add DB replication for reporting/analytics
+
+---
+
 ## Security Considerations
 
 ### ✅ Implemented
 
 1. **Fail-Closed Subscription Check** - blocks uploads if verification fails
-2. **Admin API Key Protection** - prevents unauthorized subscription changes
+2. **Admin API Key Protection** - timing-safe comparison prevents timing attacks
 3. **Audit Logging** - all subscription changes logged with timestamps
 4. **Backwards Compatibility** - safely handles legacy data
 
@@ -270,6 +287,28 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 ---
 
+## Disaster Recovery
+
+### If Redis is Wiped
+
+**What happens:**
+1. **Legacy agencies**: Default to `ACTIVE` status (backwards compatibility)
+2. **TRIAL agencies**: Must be manually re-enabled (default to ACTIVE, but require verification)
+3. **No free processing**: Fail-closed logic prevents unauthorized uploads during recovery
+
+**Recovery steps:**
+1. Restore Redis from backup (if available)
+2. If no backup: manually recreate agency records using CLI script
+3. Check logs for recent subscription changes to restore state
+4. Verify critical agencies with: `tsx server/scripts/manage-subscription.ts get <agencyId>`
+
+**Prevention:**
+- Enable Redis persistence (RDB snapshots or AOF)
+- Regular backups of Redis data
+- Consider future DB mirroring for redundancy
+
+---
+
 ## Support & Troubleshooting
 
 ### Common Issues
@@ -287,6 +326,11 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 **Issue**: Admin API returns 401
 - **Cause**: Missing or incorrect `ADMIN_API_KEY`
 - **Fix**: Set environment variable and restart server
+
+**Issue**: All agencies blocked after Redis restart
+- **Cause**: Redis data lost, no persistence configured
+- **Fix**: See [Disaster Recovery](#disaster-recovery) section above
+- **Prevention**: Enable Redis persistence in production
 
 ---
 
