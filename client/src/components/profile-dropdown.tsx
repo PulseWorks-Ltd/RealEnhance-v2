@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/context/AuthContext";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 
 interface AuthUser {
   id: string;
@@ -21,16 +21,16 @@ interface AuthUser {
 
 export function ProfileDropdown() {
   const { user, signOut } = useAuth();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   if (!user) return null;
 
   const authUser = user as AuthUser;
   const email = authUser.email || 'User';
-  
+
   // Better user display: handle edge cases more gracefully
   const initial = (authUser.firstName || authUser.lastName || email || "?").trim()[0]?.toUpperCase() ?? "U";
-  const initials = authUser.firstName && authUser.lastName 
+  const initials = authUser.firstName && authUser.lastName
     ? `${authUser.firstName[0]}${authUser.lastName[0]}`.toUpperCase()
     : initial;
 
@@ -39,11 +39,11 @@ export function ProfileDropdown() {
   };
 
   const handleViewHistory = () => {
-    setLocation("/my-photos");
+    navigate("/my-photos");
   };
 
   const handleAgencySettings = () => {
-    setLocation("/agency");
+    navigate("/agency");
   };
 
   return (
