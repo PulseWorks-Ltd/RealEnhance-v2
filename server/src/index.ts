@@ -30,6 +30,7 @@ import agencyRouter from "./routes/agency.js";
 import { usageRouter } from "./routes/usage.js";
 import stripeRouter from "./routes/stripe.js";
 import adminSubscriptionRouter from "./routes/adminSubscription.js";
+import { myImagesRouter } from "./routes/myImages.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -129,6 +130,8 @@ async function main() {
   app.use("/api/usage", usageRouter());
   // Stripe webhook endpoints
   app.use("/api/stripe", stripeRouter);
+  // User's enhanced images gallery
+  app.use("/api", myImagesRouter());
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

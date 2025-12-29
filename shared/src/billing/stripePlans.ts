@@ -1,0 +1,169 @@
+// shared/src/billing/stripePlans.ts
+// Stripe billing configuration with multi-currency support
+
+import type { PlanTier } from "../auth/types.js";
+
+export type BillingCountry = "NZ" | "AU" | "ZA";
+export type BillingCurrency = "nzd" | "aud" | "zar" | "usd";
+
+/**
+ * Currency mapping by country
+ */
+export const COUNTRY_CURRENCY_MAP: Record<BillingCountry, BillingCurrency> = {
+  NZ: "nzd",
+  AU: "aud",
+  ZA: "zar", // Can fallback to USD if needed
+};
+
+/**
+ * Currency display configuration
+ */
+export const CURRENCY_CONFIG: Record<BillingCurrency, { symbol: string; name: string }> = {
+  nzd: { symbol: "NZ$", name: "New Zealand Dollar" },
+  aud: { symbol: "A$", name: "Australian Dollar" },
+  zar: { symbol: "R", name: "South African Rand" },
+  usd: { symbol: "$", name: "US Dollar" },
+};
+
+/**
+ * Stripe plan configuration
+ * Prices are in cents (e.g., 12900 = $129.00)
+ */
+export interface StripePlanConfig {
+  planCode: PlanTier;
+  displayName: string;
+  mainAllowance: number;
+  stagingAllowance: number;
+  monthlyPriceByCurrency: Partial<Record<BillingCurrency, number>>;
+  stripePriceIdByCurrency: Partial<Record<BillingCurrency, string>>;
+}
+
+/**
+ * Exchange rate approximations for pricing (NZD base)
+ * Used for dynamic price calculation if Stripe Price IDs not set
+ * Update these periodically or fetch from API
+ */
+const EXCHANGE_RATES: Record<BillingCurrency, number> = {
+  nzd: 1.0,
+  aud: 0.92, // 1 NZD ≈ 0.92 AUD
+  zar: 10.5, // 1 NZD ≈ 10.5 ZAR
+  usd: 0.59, // 1 NZD ≈ 0.59 USD
+};
+
+/**
+ * Calculate price in target currency from NZD base price
+ */
+function calculatePrice(nzdPrice: number, currency: BillingCurrency): number {
+  const converted = Math.round(nzdPrice * EXCHANGE_RATES[currency]);
+  // Round to nearest 100 cents for cleaner pricing
+  return Math.round(converted / 100) * 100;
+}
+
+/**
+ * Stripe plan definitions
+ */
+export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
+  starter: {
+    planCode: "starter",
+    displayName: "Starter",
+    mainAllowance: 100,
+    stagingAllowance: 0,
+    monthlyPriceByCurrency: {
+      nzd: 12900, // $129 NZD
+      aud: 11900, // $119 AUD (calculated: ~11868)
+      zar: 135500, // R1355 ZAR (calculated: ~135450)
+      usd: 7600, // $76 USD (calculated: ~7611)
+    },
+    stripePriceIdByCurrency: {
+      // Production: Set these to pre-created Stripe Price IDs
+      // Development: Leave empty to use dynamic price_data
+      // Example:
+      // nzd: "price_1234567890abcdefghijklmn",
+      // aud: "price_abcdefghijklmn1234567890",
+    },
+  },
+  pro: {
+    planCode: "pro",
+    displayName: "Pro",
+    mainAllowance: 250,
+    stagingAllowance: 25,
+    monthlyPriceByCurrency: {
+      nzd: 24900, // $249 NZD
+      aud: 22900, // $229 AUD (calculated: ~22908)
+      zar: 261500, // R2615 ZAR (calculated: ~261450)
+      usd: 14700, // $147 USD (calculated: ~14691)
+    },
+    stripePriceIdByCurrency: {
+      // Production: Set these to pre-created Stripe Price IDs
+    },
+  },
+  agency: {
+    planCode: "agency",
+    displayName: "Studio",
+    mainAllowance: 500,
+    stagingAllowance: 75,
+    monthlyPriceByCurrency: {
+      nzd: 39900, // $399 NZD
+      aud: 36700, // $367 AUD (calculated: ~36708)
+      zar: 419000, // R4190 ZAR (calculated: ~418950)
+      usd: 23500, // $235 USD (calculated: ~23541)
+    },
+    stripePriceIdByCurrency: {
+      // Production: Set these to pre-created Stripe Price IDs
+    },
+  },
+};
+
+/**
+ * Get plan configuration by tier
+ */
+export function getStripePlan(planTier: PlanTier): StripePlanConfig {
+  return STRIPE_PLANS[planTier];
+}
+
+/**
+ * Get price in cents for a plan in a specific currency
+ */
+export function getPlanPrice(planTier: PlanTier, currency: BillingCurrency): number {
+  const plan = getStripePlan(planTier);
+  return plan.monthlyPriceByCurrency[currency] || plan.monthlyPriceByCurrency.nzd || 0;
+}
+
+/**
+ * Get Stripe Price ID for a plan in a specific currency
+ * Returns undefined if not configured (will use dynamic price_data)
+ */
+export function getStripePriceId(planTier: PlanTier, currency: BillingCurrency): string | undefined {
+  const plan = getStripePlan(planTier);
+  return plan.stripePriceIdByCurrency[currency];
+}
+
+/**
+ * Format price for display
+ */
+export function formatPrice(amountInCents: number, currency: BillingCurrency): string {
+  const config = CURRENCY_CONFIG[currency];
+  const amount = (amountInCents / 100).toFixed(2);
+  return `${config.symbol}${amount} ${currency.toUpperCase()}`;
+}
+
+/**
+ * Get currency for a country
+ */
+export function getCurrencyForCountry(country: BillingCountry): BillingCurrency {
+  return COUNTRY_CURRENCY_MAP[country];
+}
+
+/**
+ * Validate country code
+ */
+export function isValidCountry(country: string): country is BillingCountry {
+  return ["NZ", "AU", "ZA"].includes(country);
+}
+
+/**
+ * Validate currency code
+ */
+export function isValidCurrency(currency: string): currency is BillingCurrency {
+  return ["nzd", "aud", "zar", "usd"].includes(currency.toLowerCase());
+}

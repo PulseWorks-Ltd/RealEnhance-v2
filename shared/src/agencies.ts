@@ -64,8 +64,20 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
       name: data.name,
       planTier: data.planTier as PlanTier,
       subscriptionStatus: (data.subscriptionStatus as SubscriptionStatus) || "ACTIVE", // Default to ACTIVE for backwards compatibility
+      // Stripe billing fields
+      stripeCustomerId: data.stripeCustomerId,
+      stripeSubscriptionId: data.stripeSubscriptionId,
+      stripePriceId: data.stripePriceId,
+      // Billing region & currency
+      billingCountry: data.billingCountry as "NZ" | "AU" | "ZA" | undefined,
+      billingCurrency: data.billingCurrency as "nzd" | "aud" | "zar" | "usd" | undefined,
+      billingEmail: data.billingEmail,
+      // Subscription period
       currentPeriodStart: data.currentPeriodStart,
       currentPeriodEnd: data.currentPeriodEnd,
+      // Grandfather flag
+      billingGrandfatheredUntil: data.billingGrandfatheredUntil,
+      // Metadata
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
@@ -92,12 +104,22 @@ export async function updateAgency(agency: Agency): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
 
-    if (agency.currentPeriodStart) {
-      data.currentPeriodStart = agency.currentPeriodStart;
-    }
-    if (agency.currentPeriodEnd) {
-      data.currentPeriodEnd = agency.currentPeriodEnd;
-    }
+    // Stripe billing fields
+    if (agency.stripeCustomerId) data.stripeCustomerId = agency.stripeCustomerId;
+    if (agency.stripeSubscriptionId) data.stripeSubscriptionId = agency.stripeSubscriptionId;
+    if (agency.stripePriceId) data.stripePriceId = agency.stripePriceId;
+
+    // Billing region & currency
+    if (agency.billingCountry) data.billingCountry = agency.billingCountry;
+    if (agency.billingCurrency) data.billingCurrency = agency.billingCurrency;
+    if (agency.billingEmail) data.billingEmail = agency.billingEmail;
+
+    // Subscription period
+    if (agency.currentPeriodStart) data.currentPeriodStart = agency.currentPeriodStart;
+    if (agency.currentPeriodEnd) data.currentPeriodEnd = agency.currentPeriodEnd;
+
+    // Grandfather flag
+    if (agency.billingGrandfatheredUntil) data.billingGrandfatheredUntil = agency.billingGrandfatheredUntil;
 
     await client.hSet(key, data);
     console.log(`[AGENCY] Updated agency ${agency.agencyId} (status: ${agency.subscriptionStatus})`);
