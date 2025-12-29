@@ -29,6 +29,7 @@ import adminUsageRouter from "./routes/adminUsage.js";
 import agencyRouter from "./routes/agency.js";
 import { usageRouter } from "./routes/usage.js";
 import stripeRouter from "./routes/stripe.js";
+import adminSubscriptionRouter from "./routes/adminSubscription.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -120,6 +121,8 @@ async function main() {
   app.use("/api", visionRoomTypeRouter);
   // Admin usage tracking endpoints
   app.use("/api/admin/usage", adminUsageRouter);
+  // Admin subscription management (protected by API key)
+  app.use("/internal/admin", adminSubscriptionRouter);
   // Agency management endpoints
   app.use("/api/agency", agencyRouter);
   // Usage summary endpoints

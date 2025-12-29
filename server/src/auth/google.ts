@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-google-oauth20";
 import { upsertUserFromGoogle, getUserByEmail } from "../services/users.js";
-import { checkSeatLimitAtLogin } from "../middleware/seatLimitCheck.js";
+// Seat limits removed - unlimited users per agency
 
 /** Resolve public base URL safely (prod vs local) */
 function getBaseUrl(): string {
@@ -100,19 +100,6 @@ export function attachGoogleAuth(app: Express) {
     }) as unknown as (req: any, res: any, next: NextFunction) => void,
     async (req: Request, res: Response) => {
       const authed: any = (req as any).user;
-
-      // ENFORCE SEAT LIMIT AT GOOGLE OAUTH LOGIN
-      const fullUser = getUserByEmail(authed.email);
-      if (fullUser) {
-        const seatCheck = await checkSeatLimitAtLogin(fullUser);
-        if (!seatCheck.allowed) {
-          // Redirect to login with error
-          const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
-          const client = clientOrigins[0] || "http://localhost:3000";
-          const toClient = new URL("/login?error=seat_limit_exceeded", client).toString();
-          return res.redirect(toClient);
-        }
-      }
 
       (req.session as any).user = {
         id: authed.id,

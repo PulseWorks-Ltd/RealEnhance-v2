@@ -4,13 +4,12 @@
 import type { PlanTier } from "./auth/types.js";
 
 /**
- * New image-based usage model
+ * Image-based usage model (NO SEAT LIMITS - unlimited users per agency)
  * - mainAllowance: Monthly enhanced images (Stage 1 outputs)
  * - stagingAllowance: Monthly virtual staging images (Stage 2 outputs)
- * - price: Monthly cost in dollars
+ * - price: Monthly cost in dollars (paid via direct debit, not Stripe)
  */
 export interface PlanLimits {
-  maxSeats: number;
   mainAllowance: number;      // Monthly enhanced images
   stagingAllowance: number;   // Monthly virtual staging images (bundled)
   price: number;              // Monthly price in dollars
@@ -18,19 +17,16 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   starter: {
-    maxSeats: 2,
     mainAllowance: 100,
     stagingAllowance: 0,
     price: 129
   },
   pro: {
-    maxSeats: 5,
     mainAllowance: 250,
     stagingAllowance: 25,
     price: 249
   },
   agency: {
-    maxSeats: 10,
     mainAllowance: 500,
     stagingAllowance: 75,
     price: 399
@@ -50,10 +46,6 @@ export function planCodeToPlanTier(code: PlanCode): PlanTier {
   if (code === "STARTER") return "starter";
   if (code === "PRO") return "pro";
   return "agency"; // "STUDIO" code = "agency" tier internally
-}
-
-export function getMaxSeatsForPlan(planTier: PlanTier): number {
-  return PLAN_LIMITS[planTier].maxSeats;
 }
 
 export function getMainAllowance(planTier: PlanTier): number {

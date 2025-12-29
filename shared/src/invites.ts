@@ -1,10 +1,9 @@
 // shared/src/invites.ts
-// Invite management with seat limit enforcement
+// Invite management (no seat limits - unlimited users per agency)
 
 import { getRedis } from "./redisClient.js";
 import type { UserRole } from "./auth/types.js";
 import { v4 as uuidv4 } from "uuid";
-import { isAgencyOverSeatLimit } from "./agencies.js";
 
 export interface Invite {
   inviteId: string;
@@ -19,7 +18,7 @@ export interface Invite {
 }
 
 /**
- * Create an invite (with seat limit enforcement)
+ * Create an invite (NO SEAT LIMITS)
  */
 export async function createInvite(params: {
   agencyId: string;
@@ -28,14 +27,6 @@ export async function createInvite(params: {
   invitedByUserId: string;
 }): Promise<{ success: boolean; invite?: Invite; error?: string }> {
   try {
-    // ENFORCE SEAT LIMIT AT INVITE CREATION
-    const seatCheck = await isAgencyOverSeatLimit(params.agencyId);
-    if (seatCheck.over) {
-      return {
-        success: false,
-        error: `Seat limit reached (${seatCheck.active}/${seatCheck.maxSeats}). Upgrade your plan to add more users.`,
-      };
-    }
 
     const invite: Invite = {
       inviteId: `invite_${uuidv4()}`,
@@ -122,7 +113,7 @@ export async function getInviteByToken(token: string): Promise<Invite | null> {
 }
 
 /**
- * Mark invite as accepted (with seat limit re-check)
+ * Mark invite as accepted (NO SEAT LIMITS)
  */
 export async function acceptInvite(token: string): Promise<{
   success: boolean;
@@ -133,15 +124,6 @@ export async function acceptInvite(token: string): Promise<{
     const invite = await getInviteByToken(token);
     if (!invite) {
       return { success: false, error: "Invalid or expired invite" };
-    }
-
-    // RE-CHECK SEAT LIMIT AT ACCEPTANCE
-    const seatCheck = await isAgencyOverSeatLimit(invite.agencyId);
-    if (seatCheck.over) {
-      return {
-        success: false,
-        error: `Seat limit reached (${seatCheck.active}/${seatCheck.maxSeats}). Upgrade your plan to add more users.`,
-      };
     }
 
     // Mark as accepted

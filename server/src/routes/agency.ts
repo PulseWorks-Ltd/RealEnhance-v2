@@ -1,5 +1,5 @@
 // server/src/routes/agency.ts
-// Agency management routes with seat enforcement
+// Agency management routes (unlimited users per agency)
 
 import { Router, type Request, type Response } from "express";
 import Stripe from "stripe";
@@ -8,7 +8,7 @@ import {
   getAgency,
   updateAgency,
   listAgencyUsers,
-  isAgencyOverSeatLimit,
+  countActiveAgencyUsers,
 } from "@realenhance/shared/agencies.js";
 import {
   createInvite,
@@ -19,7 +19,6 @@ import {
 import { getUserById, updateUser, getUserByEmail, createUserWithPassword } from "../services/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { hashPassword } from "../utils/password.js";
-import { checkSeatLimitAtLogin } from "../middleware/seatLimitCheck.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
 
@@ -122,15 +121,11 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Agency not found" });
     }
 
-    const seatCheck = await isAgencyOverSeatLimit(user.agencyId);
+    const activeUsers = await countActiveAgencyUsers(user.agencyId);
 
     res.json({
       agency,
-      seatUsage: {
-        active: seatCheck.active,
-        maxSeats: seatCheck.maxSeats,
-        over: seatCheck.over,
-      },
+      activeUsers, // For informational purposes only - no limits
     });
   } catch (err) {
     console.error("[AGENCY] Get info error:", err);
@@ -265,16 +260,6 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
         role: invite.role,
       });
 
-      // Check seat limit before creating session
-      const seatCheck = await checkSeatLimitAtLogin(user);
-      if (!seatCheck.allowed) {
-        return res.status(403).json({
-          error: "Agency seat limit exceeded",
-          message: seatCheck.error,
-          code: "SEAT_LIMIT_EXCEEDED",
-        });
-      }
-
       // Create session
       (req.session as any).user = {
         id: user.id,
@@ -314,16 +299,6 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
       agencyId: invite.agencyId,
       role: invite.role,
     });
-
-    // Check seat limit before creating session
-    const seatCheck = await checkSeatLimitAtLogin(user);
-    if (!seatCheck.allowed) {
-      return res.status(403).json({
-        error: "Agency seat limit exceeded",
-        message: seatCheck.error,
-        code: "SEAT_LIMIT_EXCEEDED",
-      });
-    }
 
     // Create session
     (req.session as any).user = {
@@ -395,7 +370,7 @@ router.post("/users/:userId/disable", requireAuth, requireAgencyAdmin, async (re
 
 /**
  * POST /api/agency/users/:userId/enable
- * Re-enable a disabled user (admin only, seat limit enforced)
+ * Re-enable a disabled user (admin only, no seat limits)
  */
 router.post("/users/:userId/enable", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
   try {
@@ -412,15 +387,7 @@ router.post("/users/:userId/enable", requireAuth, requireAgencyAdmin, async (req
       return res.status(403).json({ error: "Cannot enable users from other agencies" });
     }
 
-    // Check seat limit before enabling
-    const seatCheck = await isAgencyOverSeatLimit(currentUser.agencyId!);
-    if (seatCheck.over) {
-      return res.status(409).json({
-        error: `Cannot enable user - seat limit reached (${seatCheck.active}/${seatCheck.maxSeats})`,
-      });
-    }
-
-    // Enable user
+    // Enable user (no seat limits)
     const updatedUser = await updateUser(userId, { isActive: true });
 
     res.json({
