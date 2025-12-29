@@ -101,6 +101,23 @@ export function uploadRouter() {
           });
         }
 
+        // Check if agency has Stripe subscription OR is grandfathered
+        const hasStripeSubscription = !!agency.stripeSubscriptionId;
+        const isGrandfathered = agency.billingGrandfatheredUntil
+          ? new Date(agency.billingGrandfatheredUntil) > new Date()
+          : false;
+
+        // New agencies without subscription need to subscribe
+        if (!hasStripeSubscription && !isGrandfathered && agency.subscriptionStatus !== "ACTIVE") {
+          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} requires Stripe subscription`);
+          return res.status(403).json({
+            code: "SUBSCRIPTION_REQUIRED",
+            error: "Subscription required",
+            message: "Please activate your subscription to begin enhancing images.",
+            requiresSubscription: true,
+          });
+        }
+
         // Allow both ACTIVE and TRIAL subscriptions
         const allowedStatuses = ["ACTIVE", "TRIAL"];
         if (!allowedStatuses.includes(agency.subscriptionStatus)) {
@@ -108,7 +125,7 @@ export function uploadRouter() {
           return res.status(403).json({
             code: "SUBSCRIPTION_INACTIVE",
             error: "Subscription inactive",
-            message: "Your subscription is inactive. Please contact support to reactivate your account.",
+            message: "Your subscription is inactive. Please update your payment method or contact support.",
             subscriptionStatus: agency.subscriptionStatus,
           });
         }
@@ -117,6 +134,10 @@ export function uploadRouter() {
         if (!agency.subscriptionStatus) {
           console.log(`[SUBSCRIPTION GATE] Writing back ACTIVE status for legacy agency ${fullUser.agencyId}`);
           agency.subscriptionStatus = "ACTIVE";
+          // Also set grandfather flag for legacy agencies (6 months)
+          const grandfatherDate = new Date();
+          grandfatherDate.setMonth(grandfatherDate.getMonth() + 6);
+          agency.billingGrandfatheredUntil = grandfatherDate.toISOString();
           await updateAgency(agency);
         }
 
