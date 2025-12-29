@@ -63,6 +63,8 @@ export function createUserWithPassword(params: {
   email: string;
   name: string;
   passwordHash: string;
+  agencyId?: string | null;
+  role?: "owner" | "admin" | "member";
 }): UserRecord {
   const state = loadAll();
 
@@ -82,6 +84,9 @@ export function createUserWithPassword(params: {
     passwordHash: params.passwordHash,
     credits: 50,
     imageIds: [],
+    agencyId: params.agencyId || null,
+    role: params.role || "member",
+    isActive: true,
     createdAt: now,
     updatedAt: now
   };
@@ -127,6 +132,24 @@ export function setCreditsForEmail(email: string, credits: number, name?: string
 export function getUserById(userId: UserId): UserRecord | undefined {
   const state = loadAll();
   return state[userId];
+}
+
+/**
+ * Update user fields
+ */
+export function updateUser(userId: UserId, updates: Partial<UserRecord>): UserRecord {
+  const state = loadAll();
+  const user = state[userId];
+  if (!user) {
+    throw new Error(`User ${userId} not found`);
+  }
+
+  // Apply updates
+  Object.assign(user, updates);
+  user.updatedAt = new Date().toISOString();
+
+  saveAll(state);
+  return user;
 }
 
 export function addImageToUser(userId: UserId, imageId: ImageId): void {

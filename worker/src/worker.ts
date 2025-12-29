@@ -51,6 +51,7 @@ import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
+import { chargeForStage1, chargeForStage2, getAgencyIdFromPayload } from "./utils/usageBilling";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -188,6 +189,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const pub2Url = pub2.url;
 
       timings.totalMs = Date.now() - t0;
+
+      // Charge for Stage 2 completion (Stage-2-only retry mode)
+      try {
+        const agencyId = getAgencyIdFromPayload(payload);
+        await chargeForStage2(payload, agencyId);
+      } catch (billingErr) {
+        nLog("[BILLING] Failed to charge Stage 2 in stage-2-only mode (non-blocking):", (billingErr as any)?.message || billingErr);
+      }
 
       updateJob(payload.jobId, {
         status: "complete",
@@ -1133,6 +1142,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (usageErr) {
     // Usage tracking must never block job completion
     nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
+
+  // ===== BILLABLE USAGE CHARGING (BEST-EFFORT, NON-BLOCKING) =====
+  // Charge for successful outputs only (Stage 1 + Stage 2 if applicable)
+  try {
+    const agencyId = getAgencyIdFromPayload(payload);
+
+    // Charge for Stage 1 (enhanced image)
+    // Only charge once for the final Stage 1 output (1B if declutter, 1A otherwise)
+    await chargeForStage1(payload, agencyId);
+
+    // Charge for Stage 2 (virtual staging) if it ran successfully
+    if (hasStage2 && path2) {
+      await chargeForStage2(payload, agencyId);
+    }
+  } catch (billingErr) {
+    // Billing must never block job completion, but log error for reconciliation
+    nLog("[BILLING] Failed to charge usage (non-blocking):", (billingErr as any)?.message || billingErr);
+    // In production, you might want to queue this for retry or manual reconciliation
   }
 
   const meta = {

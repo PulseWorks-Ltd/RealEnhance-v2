@@ -18,9 +18,11 @@ export function getRedis(): RedisClientType {
         expire: async () => 1,
         // simple string key
         set: async () => "OK" as any,
+        get: async () => null,
         // lists
         lPush: async () => 1 as any,
         lTrim: async () => "OK" as any,
+        lRange: async () => [] as any,
     };
 
     client = fake as RedisClientType;
@@ -75,6 +77,15 @@ export function getRedis(): RedisClientType {
         return listStore.get(k)!.length as any;
       },
       lTrim: async () => "OK" as any,
+      lRange: async (key: any, start: number, stop: number) => {
+        const k = String(key);
+        const list = listStore.get(k) || [];
+        // Handle negative indices like Redis
+        const len = list.length;
+        const startIdx = start < 0 ? Math.max(0, len + start) : Math.min(start, len);
+        const stopIdx = stop < 0 ? Math.max(0, len + stop + 1) : Math.min(stop + 1, len);
+        return list.slice(startIdx, stopIdx);
+      },
     };
 
     client = mock as RedisClientType;
