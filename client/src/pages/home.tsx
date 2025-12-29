@@ -1,7 +1,14 @@
 // client/src/pages/home.tsx
 import BatchProcessor from "@/components/batch-processor";
+import { UsageSummary } from "@/components/usage-bar";
+import { useUsage } from "@/hooks/use-usage";
+import { useAuth } from "@/context/AuthContext";
+import { Card, CardContent } from "@/components/ui/card";
 
 export default function Home() {
+  const { user } = useAuth();
+  const { usage, loading: usageLoading } = useUsage();
+
   return (
     <div className="min-h-screen bg-background text-foreground" data-testid="home-page">
       {/* Brand hero backdrop */}
@@ -26,6 +33,24 @@ export default function Home() {
             improvements. Perfect for real estate and professional photography.
           </p>
         </section>
+
+        {/* Usage Summary - Show if user has agency */}
+        {user && usage && usage.hasAgency && !usageLoading && (
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <UsageSummary
+                mainUsed={usage.mainUsed || 0}
+                mainTotal={usage.mainAllowance || 0}
+                mainWarning={usage.mainWarning || "none"}
+                stagingUsed={usage.stagingUsed}
+                stagingTotal={usage.stagingAllowance}
+                stagingWarning={usage.stagingWarning}
+                planName={usage.planName || ""}
+                monthKey={usage.monthKey}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Batch Processor - Main Interface */}
         <BatchProcessor />

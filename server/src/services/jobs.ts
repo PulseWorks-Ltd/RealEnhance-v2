@@ -83,6 +83,7 @@ function queue() {
 export async function enqueueEnhanceJob(params: {
   userId: UserId;
   imageId: ImageId;
+  agencyId?: string | null; // Optional: agency ID for usage billing
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   options: {
     declutter: boolean;
@@ -114,6 +115,7 @@ export async function enqueueEnhanceJob(params: {
     userId: params.userId,
     imageId: params.imageId,
     type: "enhance",
+    agencyId: params.agencyId, // Pass agencyId to worker for billing
     options: params.options,
     createdAt: now,
     // add non-typed extension field for worker consumption

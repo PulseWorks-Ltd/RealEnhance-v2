@@ -8,6 +8,8 @@ import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
+import { isUsageExhausted, getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
+import { getUserByEmail, getUserById } from "../services/users.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -81,8 +83,28 @@ export function uploadRouter() {
       console.warn('[upload] Failed to parse metaJson:', e);
     }
 
-    // REMOVED: Credit gating - execution is now always allowed
-    // Usage tracking happens after job completion in worker
+    // ===== USAGE GATING: Check if agency has exhausted monthly allowance =====
+    try {
+      const fullUser = getUserById(sessUser.id);
+      if (fullUser && fullUser.agencyId) {
+        const exhaustedCheck = await isUsageExhausted(fullUser.agencyId);
+        if (exhaustedCheck.exhausted) {
+          const monthKey = getCurrentMonthKey();
+          console.log(`[USAGE GATE] Agency ${fullUser.agencyId} exhausted usage for ${monthKey}`);
+          return res.status(402).json({
+            code: "USAGE_EXHAUSTED",
+            error: "Plan limit reached",
+            message: `Your agency has reached its monthly image limit. Please upgrade your plan or wait until next month.`,
+            monthKey,
+            mainRemaining: exhaustedCheck.mainRemaining,
+            stagingRemaining: exhaustedCheck.stagingRemaining,
+          });
+        }
+      }
+    } catch (usageGateErr) {
+      // Fail-open: if usage check fails, allow the request to proceed
+      console.error("[USAGE GATE] Error checking usage (fail-open):", usageGateErr);
+    }
 
     const userDir = path.join(uploadRoot, sessUser.id);
     await fs.mkdir(userDir, { recursive: true });
@@ -282,10 +304,15 @@ export function uploadRouter() {
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
+      // Get user's agencyId for billing
+      const fullUser = getUserById(sessUser.id);
+      const agencyId = fullUser?.agencyId || null;
+
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId,
         remoteOriginalUrl,
+        agencyId, // Pass agencyId for usage billing in worker
         options: {
           declutter: finalDeclutter,
           declutterMode: opts.declutterMode,

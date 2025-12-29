@@ -22,6 +22,8 @@ export interface UserRecord {
     credits: number;
     imageIds: ImageId[];
     agencyId?: string | null;
+    role?: "owner" | "admin" | "member";
+    isActive?: boolean;
     plan?: "free" | "individual" | "agency";
     usageStats?: {
         monthlyImages: number;
@@ -61,6 +63,7 @@ export interface EnhanceJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "enhance";
+    agencyId?: string | null;
     listingId?: string;
     manualSceneOverride?: boolean;
     options: {

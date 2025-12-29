@@ -11,8 +11,8 @@ export interface AuthUser {
   name: string;
   email: string;
   credits: number;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserRecord extends AuthUser {
@@ -22,6 +22,12 @@ export interface UserRecord extends AuthUser {
   passwordHash?: string;
   /** Authentication provider: "email" for email/password, "google" for OAuth */
   authProvider: "email" | "google";
+  /** Optional agency ID for multi-user agency accounts */
+  agencyId?: string | null;
+  /** Agency role: owner, admin, or member */
+  role?: "owner" | "admin" | "member";
+  /** Whether user account is active (can log in) */
+  isActive?: boolean;
   /** Future: plan-based limits (not enforced yet) */
   plan?: "free" | "individual" | "agency";
   /** Usage tracking for analytics (not enforcement) */

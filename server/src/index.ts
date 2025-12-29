@@ -26,6 +26,8 @@ import { healthRouter } from "./routes/health.js";
 import { undoRouter } from "./routes/undo.js";
 import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
 import adminUsageRouter from "./routes/adminUsage.js";
+import agencyRouter from "./routes/agency.js";
+import { usageRouter } from "./routes/usage.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -111,6 +113,10 @@ async function main() {
   app.use("/api", visionRoomTypeRouter);
   // Admin usage tracking endpoints
   app.use("/api/admin/usage", adminUsageRouter);
+  // Agency management endpoints
+  app.use("/api/agency", agencyRouter);
+  // Usage summary endpoints
+  app.use("/api/usage", usageRouter());
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

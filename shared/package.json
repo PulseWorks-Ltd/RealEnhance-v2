@@ -36,6 +36,34 @@
     "./types.js": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"
+    },
+    "./agencies.js": {
+      "types": "./dist/agencies.d.ts",
+      "default": "./dist/agencies.js"
+    },
+    "./invites.js": {
+      "types": "./dist/invites.d.ts",
+      "default": "./dist/invites.js"
+    },
+    "./auth/types.js": {
+      "types": "./dist/auth/types.d.ts",
+      "default": "./dist/auth/types.js"
+    },
+    "./plans.js": {
+      "types": "./dist/plans.d.ts",
+      "default": "./dist/plans.js"
+    },
+    "./usage/monthlyUsage.js": {
+      "types": "./dist/usage/monthlyUsage.d.ts",
+      "default": "./dist/usage/monthlyUsage.js"
+    },
+    "./usage/usageEvents.js": {
+      "types": "./dist/usage/usageEvents.d.ts",
+      "default": "./dist/usage/usageEvents.js"
+    },
+    "./usage/usageCharging.js": {
+      "types": "./dist/usage/usageCharging.d.ts",
+      "default": "./dist/usage/usageCharging.js"
     }
   },
   "scripts": {

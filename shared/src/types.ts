@@ -23,6 +23,8 @@ export interface UserRecord {
   credits: number; // DEPRECATED: Kept for backward compatibility, not enforced
   imageIds: ImageId[];
   agencyId?: string | null; // Optional: links user to an agency for usage tracking
+  role?: "owner" | "admin" | "member"; // Agency role, defaults to "member"
+  isActive?: boolean; // Whether user can log in, defaults to true
   plan?: "free" | "individual" | "agency"; // Future: plan-based limits
   usageStats?: {
     monthlyImages: number;
@@ -82,6 +84,7 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  agencyId?: string | null; // Optional: agency ID for usage billing
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   manualSceneOverride?: boolean;
   options: {

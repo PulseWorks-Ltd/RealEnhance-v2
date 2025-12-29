@@ -42,6 +42,10 @@ export function ProfileDropdown() {
     setLocation("/my-photos");
   };
 
+  const handleAgencySettings = () => {
+    setLocation("/agency");
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger data-testid="button-profile">
@@ -55,6 +59,9 @@ export function ProfileDropdown() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleViewHistory} data-testid="button-view-history">
           📸 Previously Enhanced Photos
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
+          🏢 Agency Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} data-testid="button-signout">
