@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { createUserWithPassword, getUserByEmail } from "../services/users.js";
 import { hashPassword, comparePassword, validatePassword, validateEmail } from "../utils/password.js";
-import { checkSeatLimitAtLogin } from "../middleware/seatLimitCheck.js";
+// Seat limits removed - unlimited users per agency
 
 export function emailAuthRouter() {
   const r = Router();
@@ -94,16 +94,6 @@ export function emailAuthRouter() {
       const isValidPassword = await comparePassword(password, user.passwordHash);
       if (!isValidPassword) {
         return res.status(401).json({ error: "Invalid email or password" });
-      }
-
-      // ENFORCE SEAT LIMIT AT LOGIN
-      const seatCheck = await checkSeatLimitAtLogin(user);
-      if (!seatCheck.allowed) {
-        return res.status(403).json({
-          error: "Agency seat limit exceeded",
-          message: seatCheck.error,
-          code: "SEAT_LIMIT_EXCEEDED"
-        });
       }
 
       // Create session (same as Google OAuth)

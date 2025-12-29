@@ -1,28 +1,28 @@
 // shared/src/agencies.ts
-// Agency management with seat tracking and role enforcement
+// Agency management (unlimited users per agency)
 
 import { getRedis } from "./redisClient.js";
-import type { Agency, PlanTier, SeatLimitCheck } from "./auth/types.js";
+import type { Agency, PlanTier, SubscriptionStatus } from "./auth/types.js";
 import type { UserRecord } from "./types.js";
-import { getMaxSeatsForPlan } from "./plans.js";
 import { v4 as uuidv4 } from "uuid";
 
 /**
- * Create a new agency
+ * Create a new agency (with unlimited users)
  */
 export async function createAgency(params: {
   name: string;
   planTier?: PlanTier;
   ownerId: string;
+  subscriptionStatus?: SubscriptionStatus;
 }): Promise<Agency> {
   const planTier = params.planTier || "starter";
-  const maxSeats = getMaxSeatsForPlan(planTier);
+  const subscriptionStatus = params.subscriptionStatus || "TRIAL"; // New agencies start as TRIAL
 
   const agency: Agency = {
     agencyId: `agency_${uuidv4()}`,
     name: params.name,
     planTier,
-    maxSeats,
+    subscriptionStatus,
     createdAt: new Date().toISOString(),
   };
 
@@ -34,11 +34,11 @@ export async function createAgency(params: {
       agencyId: agency.agencyId,
       name: agency.name,
       planTier: agency.planTier,
-      maxSeats: agency.maxSeats.toString(),
+      subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
     });
 
-    console.log(`[AGENCY] Created agency ${agency.agencyId} with ${maxSeats} seats`);
+    console.log(`[AGENCY] Created agency ${agency.agencyId} (plan: ${planTier}, status: ${subscriptionStatus})`);
     return agency;
   } catch (err) {
     console.error("[AGENCY] Failed to create agency:", err);
@@ -63,7 +63,9 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
       agencyId: data.agencyId,
       name: data.name,
       planTier: data.planTier as PlanTier,
-      maxSeats: parseInt(data.maxSeats, 10),
+      subscriptionStatus: (data.subscriptionStatus as SubscriptionStatus) || "ACTIVE", // Default to ACTIVE for backwards compatibility
+      currentPeriodStart: data.currentPeriodStart,
+      currentPeriodEnd: data.currentPeriodEnd,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
@@ -74,7 +76,7 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
 }
 
 /**
- * Update agency
+ * Update agency (including subscription status for admin use)
  */
 export async function updateAgency(agency: Agency): Promise<void> {
   try {
@@ -85,12 +87,20 @@ export async function updateAgency(agency: Agency): Promise<void> {
       agencyId: agency.agencyId,
       name: agency.name,
       planTier: agency.planTier,
-      maxSeats: agency.maxSeats.toString(),
+      subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
       updatedAt: new Date().toISOString(),
     };
 
+    if (agency.currentPeriodStart) {
+      data.currentPeriodStart = agency.currentPeriodStart;
+    }
+    if (agency.currentPeriodEnd) {
+      data.currentPeriodEnd = agency.currentPeriodEnd;
+    }
+
     await client.hSet(key, data);
+    console.log(`[AGENCY] Updated agency ${agency.agencyId} (status: ${agency.subscriptionStatus})`);
   } catch (err) {
     console.error("[AGENCY] Failed to update agency:", err);
     throw new Error("Failed to update agency");
@@ -98,7 +108,25 @@ export async function updateAgency(agency: Agency): Promise<void> {
 }
 
 /**
- * List all users for an agency
+ * Update agency subscription status (for admin/billing management)
+ */
+export async function updateAgencySubscriptionStatus(
+  agencyId: string,
+  subscriptionStatus: SubscriptionStatus
+): Promise<void> {
+  const agency = await getAgency(agencyId);
+  if (!agency) {
+    throw new Error(`Agency ${agencyId} not found`);
+  }
+
+  agency.subscriptionStatus = subscriptionStatus;
+  agency.updatedAt = new Date().toISOString();
+
+  await updateAgency(agency);
+}
+
+/**
+ * List all users for an agency (no limits)
  */
 export async function listAgencyUsers(agencyId: string): Promise<UserRecord[]> {
   try {
@@ -121,8 +149,7 @@ export async function listAgencyUsers(agencyId: string): Promise<UserRecord[]> {
 }
 
 /**
- * Count active users in an agency
- * Active = isActive !== false AND has agencyId
+ * Count active users in an agency (for informational purposes only - no limits enforced)
  */
 export async function countActiveAgencyUsers(agencyId: string): Promise<number> {
   try {
@@ -133,29 +160,6 @@ export async function countActiveAgencyUsers(agencyId: string): Promise<number> 
   } catch (err) {
     console.error("[AGENCY] Failed to count active users:", err);
     return 0;
-  }
-}
-
-/**
- * Check if agency is over its seat limit
- */
-export async function isAgencyOverSeatLimit(agencyId: string): Promise<SeatLimitCheck> {
-  try {
-    const agency = await getAgency(agencyId);
-    if (!agency) {
-      return { over: false, active: 0, maxSeats: 0 };
-    }
-
-    const activeCount = await countActiveAgencyUsers(agencyId);
-
-    return {
-      over: activeCount > agency.maxSeats,
-      active: activeCount,
-      maxSeats: agency.maxSeats,
-    };
-  } catch (err) {
-    console.error("[AGENCY] Failed to check seat limit:", err);
-    return { over: false, active: 0, maxSeats: 0 };
   }
 }
 

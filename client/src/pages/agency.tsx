@@ -30,8 +30,7 @@ interface AgencyInfo {
   agencyId: string;
   name: string;
   planTier: string;
-  maxSeats: number;
-  activeSeats: number;
+  activeUsers?: number; // For informational purposes only
   userRole: "owner" | "admin" | "member";
 }
 
@@ -211,12 +210,14 @@ export default function AgencyPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Seat Usage</span>
-              <Badge variant={agencyInfo.activeSeats > agencyInfo.maxSeats ? "destructive" : "secondary"}>
-                {agencyInfo.activeSeats} / {agencyInfo.maxSeats} seats
-              </Badge>
-            </div>
+            {agencyInfo.activeUsers !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Team Size</span>
+                <Badge variant="secondary">
+                  {agencyInfo.activeUsers} active users
+                </Badge>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Your Role</span>
               <Badge>{agencyInfo.userRole}</Badge>

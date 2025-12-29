@@ -9,6 +9,7 @@ import { enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { isUsageExhausted, getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
+import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -81,6 +82,53 @@ export function uploadRouter() {
       }
     } catch (e) {
       console.warn('[upload] Failed to parse metaJson:', e);
+    }
+
+    // ===== SUBSCRIPTION STATUS GATING: Check if agency subscription is active =====
+    // FAIL-CLOSED: block uploads if we can't verify subscription status
+    const fullUser = getUserById(sessUser.id);
+    if (fullUser && fullUser.agencyId) {
+      try {
+        const agency = await getAgency(fullUser.agencyId);
+
+        if (!agency) {
+          // Agency record missing - this is a critical error
+          console.error(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} not found`);
+          return res.status(503).json({
+            code: "SUBSCRIPTION_CHECK_FAILED",
+            error: "Service temporarily unavailable",
+            message: "Unable to verify your subscription. Please try again or contact support.",
+          });
+        }
+
+        // Allow both ACTIVE and TRIAL subscriptions
+        const allowedStatuses = ["ACTIVE", "TRIAL"];
+        if (!allowedStatuses.includes(agency.subscriptionStatus)) {
+          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} has inactive subscription: ${agency.subscriptionStatus}`);
+          return res.status(403).json({
+            code: "SUBSCRIPTION_INACTIVE",
+            error: "Subscription inactive",
+            message: "Your subscription is inactive. Please contact support to reactivate your account.",
+            subscriptionStatus: agency.subscriptionStatus,
+          });
+        }
+
+        // Backwards compatibility: write back ACTIVE if subscriptionStatus was missing
+        if (!agency.subscriptionStatus) {
+          console.log(`[SUBSCRIPTION GATE] Writing back ACTIVE status for legacy agency ${fullUser.agencyId}`);
+          agency.subscriptionStatus = "ACTIVE";
+          await updateAgency(agency);
+        }
+
+      } catch (subscriptionGateErr) {
+        // FAIL-CLOSED: If we can't check subscription, block the upload
+        console.error(`[SUBSCRIPTION GATE] Error checking subscription for agency ${fullUser.agencyId} (fail-closed):`, subscriptionGateErr);
+        return res.status(503).json({
+          code: "SUBSCRIPTION_CHECK_FAILED",
+          error: "Service temporarily unavailable",
+          message: "Unable to verify your subscription. Please try again or contact support.",
+        });
+      }
     }
 
     // ===== USAGE GATING: Check if agency has exhausted monthly allowance =====
