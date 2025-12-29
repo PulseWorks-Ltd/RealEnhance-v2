@@ -1,6 +1,6 @@
 // client/src/pages/MyPhotos.tsx
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
@@ -20,7 +20,7 @@ interface MyImagesResponse {
 }
 
 export default function MyPhotos() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
   const [imageLoadErrors, setImageLoadErrors] = useState<Record<string, boolean>>({});
@@ -44,13 +44,13 @@ export default function MyPhotos() {
 
   // Redirect if not authenticated
   if (!user) {
-    setLocation("/");
+    navigate("/");
     return null;
   }
 
   // Handle 401 errors
   if (error && (error as any)?.status === 401) {
-    setLocation("/");
+    navigate("/");
     return null;
   }
 
@@ -89,7 +89,7 @@ export default function MyPhotos() {
   };
 
   const handleBackToHome = () => {
-    setLocation("/");
+    navigate("/");
   };
 
   const formatDate = (dateString: string) => {

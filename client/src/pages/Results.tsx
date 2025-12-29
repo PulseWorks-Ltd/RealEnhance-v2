@@ -1,15 +1,15 @@
 // client/src/pages/Results.tsx
 import React, { useMemo } from "react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 
 function useQuery() {
-  // Works both in dev and prod without react-router-dom
+  // Works both in dev and prod
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   return params;
 }
 
 export default function Results() {
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const query = useQuery();
 
   // Example: read ?jobId=...&status=...
@@ -18,7 +18,7 @@ export default function Results() {
   const src = query.get("src") ?? "";  // e.g., original image
   const out = query.get("out") ?? "";  // e.g., processed image
 
-  const goHome = () => setLocation("/");
+  const goHome = () => navigate("/");
 
   return (
     <main className="min-h-screen w-full bg-brand-light text-slate-800 p-6">

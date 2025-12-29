@@ -1,15 +1,14 @@
 // client/src/pages/Editor.tsx
 import React, { useMemo, useState, useEffect } from "react";
-import { useLocation /*, Link as WLink */ } from "wouter"; // no react-router-dom
-// import { Link as WLink } from "wouter"; // if you want client-side links
+import { useNavigate } from "react-router-dom";
 
-// Small helper for query params (replaces useSearchParams)
+// Small helper for query params
 function useQuery() {
   return useMemo(() => new URLSearchParams(window.location.search), []);
 }
 
 export default function Editor() {
-  const [, setLocation] = useLocation(); // replaces useNavigate()
+  const navigate = useNavigate();
   const query = useQuery();
 
   // Example: read params from ?id=...&src=...
@@ -29,7 +28,7 @@ export default function Editor() {
     setError(null);
   }, [imageId, srcUrl]);
 
-  const goHome = () => setLocation("/");
+  const goHome = () => navigate("/");
 
   const handleProcess = async () => {
     try {
@@ -43,7 +42,7 @@ export default function Editor() {
       const params = new URLSearchParams();
       if (imageId) params.set("jobId", imageId);
       if (srcUrl) params.set("src", srcUrl);
-      setLocation(`/results?${params.toString()}`);
+      navigate(`/results?${params.toString()}`);
     } catch (e: any) {
       setError(e?.message ?? "Failed to process image");
     } finally {
