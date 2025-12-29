@@ -28,6 +28,7 @@ import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
 import adminUsageRouter from "./routes/adminUsage.js";
 import agencyRouter from "./routes/agency.js";
 import { usageRouter } from "./routes/usage.js";
+import stripeRouter from "./routes/stripe.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -67,6 +68,12 @@ async function main() {
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
+
+  // Stripe webhook needs raw body for signature verification
+  // Apply express.raw() only to the webhook endpoint
+  app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+
+  // Standard JSON parsing for all other routes
   app.use(express.json({ limit: '10mb' })); // Increased for data URLs from worker
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -117,6 +124,8 @@ async function main() {
   app.use("/api/agency", agencyRouter);
   // Usage summary endpoints
   app.use("/api/usage", usageRouter());
+  // Stripe webhook endpoints
+  app.use("/api/stripe", stripeRouter);
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

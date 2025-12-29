@@ -33,6 +33,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "redis": "^4.7.1",
+    "stripe": "^20.1.0",
     "typescript": "^5.9.3"
   },
   "devDependencies": {

@@ -64,6 +64,14 @@
     "./usage/usageCharging.js": {
       "types": "./dist/usage/usageCharging.d.ts",
       "default": "./dist/usage/usageCharging.js"
+    },
+    "./bundles.js": {
+      "types": "./dist/bundles.d.ts",
+      "default": "./dist/bundles.js"
+    },
+    "./usage/imageBundles.js": {
+      "types": "./dist/usage/imageBundles.d.ts",
+      "default": "./dist/usage/imageBundles.js"
     }
   },
   "scripts": {
