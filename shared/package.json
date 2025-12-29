@@ -72,6 +72,14 @@
     "./usage/imageBundles.js": {
       "types": "./dist/usage/imageBundles.d.ts",
       "default": "./dist/usage/imageBundles.js"
+    },
+    "./billing/stripePlans.js": {
+      "types": "./dist/billing/stripePlans.d.ts",
+      "default": "./dist/billing/stripePlans.js"
+    },
+    "./billing/stripeStatus.js": {
+      "types": "./dist/billing/stripeStatus.d.ts",
+      "default": "./dist/billing/stripeStatus.js"
     }
   },
   "scripts": {
