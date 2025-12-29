@@ -2,7 +2,7 @@
 // Admin-only subscription management (protected by API key)
 
 import { Router, type Request, type Response } from "express";
-import { getAgency, updateAgency, updateAgencySubscriptionStatus } from "@realenhance/shared/agencies.js";
+import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import type { SubscriptionStatus, PlanTier } from "@realenhance/shared/auth/types.js";
 
 const router = Router();
@@ -15,12 +15,10 @@ function requireAdminApiKey(req: Request, res: Response, next: Function) {
   const expectedKey = process.env.ADMIN_API_KEY;
 
   if (!expectedKey) {
-    console.error("[ADMIN] ADMIN_API_KEY not configured");
     return res.status(503).json({ error: "Admin API not configured" });
   }
 
   if (!apiKey || apiKey !== expectedKey) {
-    console.warn("[ADMIN] Unauthorized admin API access attempt");
     return res.status(401).json({ error: "Unauthorized" });
   }
 
@@ -34,22 +32,22 @@ function requireAdminApiKey(req: Request, res: Response, next: Function) {
 router.get("/agencies/:agencyId", requireAdminApiKey, async (req: Request, res: Response) => {
   try {
     const { agencyId } = req.params;
-
     const agency = await getAgency(agencyId);
+
     if (!agency) {
       return res.status(404).json({ error: "Agency not found" });
     }
 
     res.json({ agency });
-  } catch (err) {
-    console.error("[ADMIN] Get agency error:", err);
-    res.status(500).json({ error: "Failed to get agency" });
+  } catch (error) {
+    console.error("[ADMIN API] Error getting agency:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /**
  * POST /internal/admin/agencies/:agencyId/subscription
- * Update agency subscription status and plan
+ * Update subscription details
  */
 router.post("/agencies/:agencyId/subscription", requireAdminApiKey, async (req: Request, res: Response) => {
   try {
@@ -61,31 +59,31 @@ router.post("/agencies/:agencyId/subscription", requireAdminApiKey, async (req: 
       return res.status(404).json({ error: "Agency not found" });
     }
 
-    // Validate subscription status
-    const validStatuses: SubscriptionStatus[] = ["ACTIVE", "PAST_DUE", "CANCELLED", "TRIAL"];
-    if (subscriptionStatus && !validStatuses.includes(subscriptionStatus)) {
-      return res.status(400).json({
-        error: "Invalid subscription status",
-        validStatuses,
-      });
-    }
-
-    // Validate plan tier
-    const validTiers: PlanTier[] = ["starter", "pro", "agency"];
-    if (planTier && !validTiers.includes(planTier)) {
-      return res.status(400).json({
-        error: "Invalid plan tier",
-        validTiers,
-      });
-    }
-
-    // Update fields
+    // Validate subscriptionStatus if provided
     if (subscriptionStatus) {
+      const validStatuses: SubscriptionStatus[] = ["ACTIVE", "PAST_DUE", "CANCELLED", "TRIAL"];
+      if (!validStatuses.includes(subscriptionStatus)) {
+        return res.status(400).json({
+          error: "Invalid subscription status",
+          validStatuses
+        });
+      }
       agency.subscriptionStatus = subscriptionStatus;
     }
+
+    // Validate planTier if provided
     if (planTier) {
+      const validTiers: PlanTier[] = ["starter", "pro", "agency"];
+      if (!validTiers.includes(planTier)) {
+        return res.status(400).json({
+          error: "Invalid plan tier",
+          validTiers
+        });
+      }
       agency.planTier = planTier;
     }
+
+    // Update period dates if provided
     if (currentPeriodStart) {
       agency.currentPeriodStart = currentPeriodStart;
     }
@@ -93,6 +91,7 @@ router.post("/agencies/:agencyId/subscription", requireAdminApiKey, async (req: 
       agency.currentPeriodEnd = currentPeriodEnd;
     }
 
+    agency.updatedAt = new Date().toISOString();
     await updateAgency(agency);
 
     // Audit log
@@ -101,64 +100,65 @@ router.post("/agencies/:agencyId/subscription", requireAdminApiKey, async (req: 
       planTier: agency.planTier,
       currentPeriodStart: agency.currentPeriodStart,
       currentPeriodEnd: agency.currentPeriodEnd,
-      updatedAt: agency.updatedAt,
+      timestamp: agency.updatedAt,
     });
 
-    res.json({
-      success: true,
-      agency,
-    });
-  } catch (err) {
-    console.error("[ADMIN] Update subscription error:", err);
-    res.status(500).json({ error: "Failed to update subscription" });
+    res.json({ success: true, agency });
+  } catch (error) {
+    console.error("[ADMIN API] Error updating subscription:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /**
  * POST /internal/admin/agencies/:agencyId/activate
- * Quick helper to activate a subscription
+ * Quick activate subscription (sets to ACTIVE)
  */
 router.post("/agencies/:agencyId/activate", requireAdminApiKey, async (req: Request, res: Response) => {
   try {
     const { agencyId } = req.params;
-
-    await updateAgencySubscriptionStatus(agencyId, "ACTIVE");
-
     const agency = await getAgency(agencyId);
+
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    agency.subscriptionStatus = "ACTIVE";
+    agency.updatedAt = new Date().toISOString();
+    await updateAgency(agency);
 
     console.log(`[ADMIN] Activated subscription for agency ${agencyId}`);
 
-    res.json({
-      success: true,
-      agency,
-    });
-  } catch (err) {
-    console.error("[ADMIN] Activate error:", err);
-    res.status(500).json({ error: "Failed to activate subscription" });
+    res.json({ success: true, agency });
+  } catch (error) {
+    console.error("[ADMIN API] Error activating subscription:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /**
  * POST /internal/admin/agencies/:agencyId/cancel
- * Quick helper to cancel a subscription
+ * Quick cancel subscription (sets to CANCELLED)
  */
 router.post("/agencies/:agencyId/cancel", requireAdminApiKey, async (req: Request, res: Response) => {
   try {
     const { agencyId } = req.params;
-
-    await updateAgencySubscriptionStatus(agencyId, "CANCELLED");
-
     const agency = await getAgency(agencyId);
+
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    agency.subscriptionStatus = "CANCELLED";
+    agency.updatedAt = new Date().toISOString();
+    await updateAgency(agency);
 
     console.log(`[ADMIN] Cancelled subscription for agency ${agencyId}`);
 
-    res.json({
-      success: true,
-      agency,
-    });
-  } catch (err) {
-    console.error("[ADMIN] Cancel error:", err);
-    res.status(500).json({ error: "Failed to cancel subscription" });
+    res.json({ success: true, agency });
+  } catch (error) {
+    console.error("[ADMIN API] Error cancelling subscription:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
