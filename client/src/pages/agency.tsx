@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { UsageSummary } from "@/components/usage-bar";
 import { useUsage } from "@/hooks/use-usage";
 import { BundlePurchase } from "@/components/bundle-purchase";
+import { BillingSection } from "@/components/BillingSection";
 
 interface AgencyMember {
   id: string;
@@ -29,7 +30,13 @@ interface AgencyInvite {
 interface AgencyInfo {
   agencyId: string;
   name: string;
-  planTier: string;
+  planTier: "starter" | "pro" | "agency";
+  subscriptionStatus: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  billingCountry?: "NZ" | "AU" | "ZA";
+  billingCurrency?: "nzd" | "aud" | "zar" | "usd";
+  currentPeriodEnd?: string;
   activeUsers?: number; // For informational purposes only
   userRole: "owner" | "admin" | "member";
 }
@@ -197,6 +204,23 @@ export default function AgencyPage() {
             />
           </CardContent>
         </Card>
+      )}
+
+      {/* Billing & Subscription - Admin/Owner only */}
+      {isAdminOrOwner && (
+        <BillingSection
+          agency={{
+            agencyId: agencyInfo.agencyId,
+            name: agencyInfo.name,
+            planTier: agencyInfo.planTier,
+            subscriptionStatus: agencyInfo.subscriptionStatus,
+            stripeCustomerId: agencyInfo.stripeCustomerId,
+            stripeSubscriptionId: agencyInfo.stripeSubscriptionId,
+            billingCountry: agencyInfo.billingCountry,
+            billingCurrency: agencyInfo.billingCurrency,
+            currentPeriodEnd: agencyInfo.currentPeriodEnd,
+          }}
+        />
       )}
 
       {/* Bundle Purchase - Admin/Owner only */}
