@@ -2,13 +2,26 @@
 // Admin-only subscription management (protected by API key)
 
 import { Router, type Request, type Response } from "express";
+import crypto from "crypto";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import type { SubscriptionStatus, PlanTier } from "@realenhance/shared/auth/types.js";
 
 const router = Router();
 
 /**
- * Middleware to require admin API key
+ * Timing-safe string comparison to prevent timing attacks
+ */
+function timingSafeEqual(a: string, b: string): boolean {
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    // If lengths differ, timingSafeEqual throws - return false
+    return false;
+  }
+}
+
+/**
+ * Middleware to require admin API key (timing-safe comparison)
  */
 function requireAdminApiKey(req: Request, res: Response, next: Function) {
   const apiKey = req.headers["x-admin-api-key"];
@@ -18,7 +31,7 @@ function requireAdminApiKey(req: Request, res: Response, next: Function) {
     return res.status(503).json({ error: "Admin API not configured" });
   }
 
-  if (!apiKey || apiKey !== expectedKey) {
+  if (!apiKey || typeof apiKey !== "string" || !timingSafeEqual(apiKey, expectedKey)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
