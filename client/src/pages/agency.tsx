@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { UsageSummary } from "@/components/usage-bar";
 import { useUsage } from "@/hooks/use-usage";
+import { BundlePurchase } from "@/components/bundle-purchase";
 
 interface AgencyMember {
   id: string;
@@ -198,6 +199,9 @@ export default function AgencyPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Bundle Purchase - Admin/Owner only */}
+      {isAdminOrOwner && <BundlePurchase />}
 
       {/* Agency Info Card */}
       <Card>

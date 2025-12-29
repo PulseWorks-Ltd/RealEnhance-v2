@@ -5,6 +5,7 @@ import { getRedis } from "../redisClient.js";
 import { getAgency } from "../agencies.js";
 import { PLAN_LIMITS } from "../plans.js";
 import type { PlanTier } from "../auth/types.js";
+import { getTotalBundleRemaining, consumeBundleImages } from "./imageBundles.js";
 
 export interface AgencyUsageMonthly {
   agencyId: string;
@@ -110,6 +111,7 @@ export async function getOrCreateMonthlyUsage(
 
 /**
  * Get remaining usage for an agency
+ * Includes purchased bundle images in total remaining
  */
 export async function getRemainingUsage(
   agencyId: string,
@@ -117,8 +119,11 @@ export async function getRemainingUsage(
 ): Promise<UsageRemaining> {
   const usage = await getOrCreateMonthlyUsage(agencyId, monthKey);
 
+  // Get bundle images remaining
+  const bundleRemaining = await getTotalBundleRemaining(agencyId, monthKey);
+
   return {
-    mainRemaining: Math.max(0, usage.mainAllowance - usage.mainUsed),
+    mainRemaining: Math.max(0, usage.mainAllowance - usage.mainUsed) + bundleRemaining,
     stagingRemaining: Math.max(0, usage.stagingAllowance - usage.stagingUsed),
     mainAllowance: usage.mainAllowance,
     stagingAllowance: usage.stagingAllowance,
@@ -129,6 +134,10 @@ export async function getRemainingUsage(
 
 /**
  * Increment usage counters
+ * Implements consumption order:
+ * 1) Base monthly allowance
+ * 2) Staging bundle (Stage 2 only)
+ * 3) Purchased bundle images
  * Returns new usage counts
  */
 export async function incrementUsage(
@@ -144,20 +153,46 @@ export async function incrementUsage(
     // Get current usage
     const usage = await getOrCreateMonthlyUsage(agencyId, monthKey);
 
-    // Update counters
+    // Update counters based on consumption order
     if (type === "main") {
-      usage.mainUsed += amount;
+      // For main pool: Try base allowance first, then bundles
+      const baseRemaining = Math.max(0, usage.mainAllowance - usage.mainUsed);
+
+      if (baseRemaining >= amount) {
+        // Consume from base allowance
+        usage.mainUsed += amount;
+        console.log(
+          `[USAGE] ${agencyId} ${monthKey}: mainUsed +${amount} => ${usage.mainUsed} (from base allowance)`
+        );
+      } else {
+        // Base allowance exhausted, consume from bundles
+        const bundleRemaining = await getTotalBundleRemaining(agencyId, monthKey);
+
+        if (bundleRemaining >= amount) {
+          const consumed = await consumeBundleImages(agencyId, amount, monthKey);
+          console.log(
+            `[USAGE] ${agencyId} ${monthKey}: Consumed ${consumed} images from bundles (base exhausted)`
+          );
+        } else {
+          // Both exhausted - this shouldn't happen if gating works correctly
+          console.warn(
+            `[USAGE] ${agencyId} ${monthKey}: Both base and bundles exhausted, incrementing mainUsed anyway`
+          );
+          usage.mainUsed += amount;
+        }
+      }
     } else {
+      // For staging: Always increment staging counter
       usage.stagingUsed += amount;
+      console.log(
+        `[USAGE] ${agencyId} ${monthKey}: stagingUsed +${amount} => ${usage.stagingUsed}`
+      );
     }
+
     usage.updatedAt = new Date().toISOString();
 
     // Save back to Redis
     await redis.hSet(key, "data", JSON.stringify(usage));
-
-    console.log(
-      `[USAGE] ${agencyId} ${monthKey}: ${type}Used +${amount} => ${type === "main" ? usage.mainUsed : usage.stagingUsed}`
-    );
 
     return usage;
   } catch (err) {

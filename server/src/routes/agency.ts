@@ -2,6 +2,7 @@
 // Agency management routes with seat enforcement
 
 import { Router, type Request, type Response } from "express";
+import Stripe from "stripe";
 import {
   createAgency,
   getAgency,
@@ -19,8 +20,15 @@ import { getUserById, updateUser, getUserByEmail, createUserWithPassword } from 
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { hashPassword } from "../utils/password.js";
 import { checkSeatLimitAtLogin } from "../middleware/seatLimitCheck.js";
+import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
+import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
 
 const router = Router();
+
+// Initialize Stripe with secret key from environment
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2025-12-15.clover" })
+  : null;
 
 /**
  * Middleware to require authenticated user
@@ -425,6 +433,87 @@ router.post("/users/:userId/enable", requireAuth, requireAgencyAdmin, async (req
   } catch (err) {
     console.error("[AGENCY] Enable user error:", err);
     res.status(500).json({ error: "Failed to enable user" });
+  }
+});
+
+/**
+ * POST /api/agency/bundles/checkout
+ * Create Stripe checkout session for image bundle purchase (admin only)
+ */
+router.post("/bundles/checkout", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const user = (req as any).user as UserRecord;
+    const { bundleCode } = req.body;
+
+    if (!bundleCode || !(bundleCode in IMAGE_BUNDLES)) {
+      return res.status(400).json({ error: "Invalid bundle code" });
+    }
+
+    const bundle = IMAGE_BUNDLES[bundleCode as BundleCode];
+    const agency = await getAgency(user.agencyId!);
+
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    // Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "nzd",
+            product_data: {
+              name: bundle.name,
+              description: bundle.description,
+            },
+            unit_amount: bundle.priceNZD * 100, // Convert to cents
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        agencyId: user.agencyId!,
+        bundleCode: bundle.code,
+        images: bundle.images.toString(),
+        purchasedByUserId: user.id,
+        purchasedByEmail: user.email,
+      },
+      customer_email: user.email,
+      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/agency?bundle=success`,
+      cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/agency?bundle=cancelled`,
+    });
+
+    console.log(`[BUNDLES] Created checkout session ${session.id} for agency ${user.agencyId}`);
+
+    res.json({
+      checkoutUrl: session.url,
+      sessionId: session.id,
+    });
+  } catch (err) {
+    console.error("[BUNDLES] Checkout error:", err);
+    res.status(500).json({ error: "Failed to create checkout session" });
+  }
+});
+
+/**
+ * GET /api/agency/bundles/history
+ * Get bundle purchase history for the agency (admin only)
+ */
+router.get("/bundles/history", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user as UserRecord;
+
+    const bundles = await getBundleHistory(user.agencyId!);
+
+    res.json({ bundles });
+  } catch (err) {
+    console.error("[BUNDLES] History error:", err);
+    res.status(500).json({ error: "Failed to get bundle history" });
   }
 });
 
