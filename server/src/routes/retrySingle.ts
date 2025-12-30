@@ -87,7 +87,7 @@ export function retrySingleRouter() {
 
       // Create record and enqueue enhance job
       const rec = createImageRecord({ userId: sessUser.id, originalPath: finalPath, roomType, sceneType });
-      addImageToUser(sessUser.id, (rec as any).imageId);
+      await addImageToUser(sessUser.id, (rec as any).imageId);
 
       // Upload original to S3 so worker can download it (required for multi-service deployments)
       let remoteOriginalUrl: string | undefined = undefined;

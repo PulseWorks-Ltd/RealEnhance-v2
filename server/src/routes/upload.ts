@@ -86,7 +86,7 @@ export function uploadRouter() {
 
     // ===== SUBSCRIPTION STATUS GATING: Check if agency subscription is active =====
     // FAIL-CLOSED: block uploads if we can't verify subscription status
-    const fullUser = getUserById(sessUser.id);
+    const fullUser = await getUserById(sessUser.id);
     if (fullUser && fullUser.agencyId) {
       try {
         const agency = await getAgency(fullUser.agencyId);
@@ -154,7 +154,7 @@ export function uploadRouter() {
 
     // ===== USAGE GATING: Check if agency has exhausted monthly allowance =====
     try {
-      const fullUser = getUserById(sessUser.id);
+      const fullUser = await getUserById(sessUser.id);
       if (fullUser && fullUser.agencyId) {
         const exhaustedCheck = await isUsageExhausted(fullUser.agencyId);
         if (exhaustedCheck.exhausted) {
@@ -337,7 +337,7 @@ export function uploadRouter() {
       });
 
       const imageId = (rec as any).imageId ?? (rec as any).id;
-      addImageToUser(sessUser.id, imageId);
+      await addImageToUser(sessUser.id, imageId);
 
       // Upload original to S3.
       // In strict mode (production or REQUIRE_S3=1), failure will abort the request.
@@ -374,7 +374,7 @@ export function uploadRouter() {
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
       // Get user's agencyId for billing
-      const fullUser = getUserById(sessUser.id);
+      const fullUser = await getUserById(sessUser.id);
       const agencyId = fullUser?.agencyId || null;
 
       const { jobId } = await enqueueEnhanceJob({

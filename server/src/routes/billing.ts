@@ -66,7 +66,7 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
     }
 
     // Get user and agency
-    const user = getUserById(sessUser.id);
+    const user = await getUserById(sessUser.id);
     if (!user || !user.agencyId) {
       return res.status(400).json({
         error: "No agency",
@@ -193,7 +193,7 @@ router.post("/portal", requireAuth, async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
 
     // Get user and agency
-    const user = getUserById(sessUser.id);
+    const user = await getUserById(sessUser.id);
     if (!user || !user.agencyId) {
       return res.status(400).json({
         error: "No agency",

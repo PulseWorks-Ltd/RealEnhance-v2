@@ -12,7 +12,7 @@ async function main() {
   const roomType = process.env.TEST_ROOMTYPE || "living_room";
   const sceneType = process.env.TEST_SCENE || "auto";
 
-  const user = setCreditsForEmail(email, 1000, name);
+  const user = await setCreditsForEmail(email, 1000, name);
   const userId = user.id;
 
   const uploadsDir = path.join(process.cwd(), "server", "uploads", userId);
@@ -28,7 +28,7 @@ async function main() {
 
   const rec = createImageRecord({ userId, originalPath: imgPath, roomType, sceneType });
   const imageId = (rec as any).imageId || (rec as any).id;
-  addImageToUser(userId, imageId);
+  await addImageToUser(userId, imageId);
 
   const { jobId } = await enqueueEnhanceJob({
     userId,

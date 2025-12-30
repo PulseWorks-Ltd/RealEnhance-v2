@@ -41,6 +41,10 @@
       "types": "./dist/agencies.d.ts",
       "default": "./dist/agencies.js"
     },
+    "./users.js": {
+      "types": "./dist/users.d.ts",
+      "default": "./dist/users.js"
+    },
     "./invites.js": {
       "types": "./dist/invites.d.ts",
       "default": "./dist/invites.js"

@@ -23,7 +23,7 @@ export function usageRouter() {
 
     try {
       // Get user's agency
-      const user = getUserById(sessUser.id);
+      const user = await getUserById(sessUser.id);
       if (!user || !user.agencyId) {
         return res.json({
           hasAgency: false,
