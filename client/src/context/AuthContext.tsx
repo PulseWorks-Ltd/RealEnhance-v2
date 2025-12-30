@@ -8,6 +8,8 @@ type AuthUser = {
   deviceId?: string | null;
   credits: number;
   name?: string | null;
+  agencyId?: string | null;
+  role?: "owner" | "admin" | "member";
 };
 
 type AuthState = {

@@ -31,12 +31,22 @@ const stripe = process.env.STRIPE_SECRET_KEY
 
 /**
  * Middleware to require authenticated user
+ * Maps session user to req.user for consistency
  */
-function requireAuth(req: Request, res: Response, next: Function) {
-  const user = (req as any).user as UserRecord | undefined;
-  if (!user) {
+async function requireAuth(req: Request, res: Response, next: Function) {
+  const sessUser = (req.session as any)?.user;
+  if (!sessUser) {
     return res.status(401).json({ error: "Authentication required" });
   }
+
+  // Load full user record from database
+  const fullUser = await getUserById(sessUser.id);
+  if (!fullUser) {
+    return res.status(401).json({ error: "User not found" });
+  }
+
+  // Attach to request for downstream middleware
+  (req as any).user = fullUser;
   next();
 }
 

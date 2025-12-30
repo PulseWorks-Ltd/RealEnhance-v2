@@ -12,12 +12,12 @@
     "id": "user_pulseworkslimited",
     "name": "PulseWorks Limited",
     "email": "pulseworkslimited@gmail.com",
-    "agencyId": "agency_8a606588-26c0-4fd9-a7e8-3cd00cfeb175",
+    "agencyId": "agency_0c17ad22-edf9-4406-9e5b-7c525f7c7e4e",
     "role": "admin",
     "credits": 10000,
     "imageIds": [],
     "createdAt": "2025-11-03T00:00:00.000Z",
-    "updatedAt": "2025-12-29T00:00:00.000Z"
+    "updatedAt": "2025-12-30T09:48:42.717Z"
   },
   "user_propertybrokershaun": {
     "id": "user_propertybrokershaun",

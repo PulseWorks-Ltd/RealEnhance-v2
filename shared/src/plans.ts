@@ -25,15 +25,15 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     retentionLimit: 300
   },
   pro: {
-    mainAllowance: 250,
-    stagingAllowance: 25,
+    mainAllowance: 275,
+    stagingAllowance: 0,
     price: 249,
     retentionLimit: 800
   },
   agency: {
-    mainAllowance: 500,
-    stagingAllowance: 75,
-    price: 399,
+    mainAllowance: 600,
+    stagingAllowance: 0,
+    price: 499, // NZD base price (updated from $399)
     retentionLimit: 2000
   },
 };
