@@ -11,6 +11,7 @@ import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { isUsageExhausted, getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
+import { enforceRetentionLimit } from "../services/imageRetention.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -180,6 +181,8 @@ export function uploadRouter() {
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
 
+    // Get agencyId for image tracking and retention (reusing fullUser from subscription gate above)
+    const agencyId = fullUser?.agencyId || undefined;
 
     // Server-side validation: if staging is enabled, every interior image must have a valid roomType
     if (allowStagingForm) {
@@ -331,6 +334,7 @@ export function uploadRouter() {
 
       const rec = createImageRecord({
         userId: sessUser.id,
+        agencyId,
         originalPath: finalPath,
         roomType: opts.roomType,
         sceneType: opts.sceneType,
@@ -373,10 +377,6 @@ export function uploadRouter() {
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
-      // Get user's agencyId for billing
-      const fullUser = await getUserById(sessUser.id);
-      const agencyId = fullUser?.agencyId || null;
-
       const { jobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId,
@@ -406,6 +406,18 @@ export function uploadRouter() {
         stage: "1A", // Upload always starts with stage 1A
         imagesProcessed: 1,
       });
+    }
+
+    // Enforce retention limit for agency (silent, non-blocking)
+    // This runs after all uploads are processed to avoid blocking the response
+    if (agencyId) {
+      const agency = await getAgency(agencyId);
+      if (agency) {
+        enforceRetentionLimit(agencyId, agency.planTier).catch((err) => {
+          console.error(`[RETENTION] Failed to enforce retention for agency ${agencyId}:`, err);
+          // Do not fail the upload, just log the error
+        });
+      }
     }
 
     return res.json({ ok: true, jobs });

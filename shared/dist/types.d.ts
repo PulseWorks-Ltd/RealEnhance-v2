@@ -42,6 +42,7 @@ export interface ImageVersion {
 export interface ImageRecord {
     imageId: ImageId;
     ownerUserId: UserId;
+    agencyId?: string;
     originalPath: string;
     roomType?: string;
     sceneType?: string;

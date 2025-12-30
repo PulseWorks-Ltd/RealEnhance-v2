@@ -45,6 +45,7 @@ export interface ImageVersion {
 export interface ImageRecord {
   imageId: ImageId;
   ownerUserId: UserId;
+  agencyId?: string;     // Agency that owns this image (for retention tracking)
 
   originalPath: string;  // uploaded source
   roomType?: string;     // "bedroom" | "kitchen" | ...
