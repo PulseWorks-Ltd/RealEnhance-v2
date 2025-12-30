@@ -8,28 +8,33 @@ import type { PlanTier } from "./auth/types.js";
  * - mainAllowance: Monthly enhanced images (Stage 1 outputs)
  * - stagingAllowance: Monthly virtual staging images (Stage 2 outputs)
  * - price: Monthly cost in dollars (paid via direct debit, not Stripe)
+ * - retentionLimit: Maximum number of images retained per agency (rolling deletion)
  */
 export interface PlanLimits {
   mainAllowance: number;      // Monthly enhanced images
   stagingAllowance: number;   // Monthly virtual staging images (bundled)
   price: number;              // Monthly price in dollars
+  retentionLimit: number;     // Maximum retained images (oldest deleted when exceeded)
 }
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   starter: {
     mainAllowance: 100,
     stagingAllowance: 0,
-    price: 129
+    price: 129,
+    retentionLimit: 300
   },
   pro: {
     mainAllowance: 250,
     stagingAllowance: 25,
-    price: 249
+    price: 249,
+    retentionLimit: 800
   },
   agency: {
     mainAllowance: 500,
     stagingAllowance: 75,
-    price: 399
+    price: 399,
+    retentionLimit: 2000
   },
 };
 
@@ -54,4 +59,8 @@ export function getMainAllowance(planTier: PlanTier): number {
 
 export function getStagingAllowance(planTier: PlanTier): number {
   return PLAN_LIMITS[planTier].stagingAllowance;
+}
+
+export function getRetentionLimit(planTier: PlanTier): number {
+  return PLAN_LIMITS[planTier].retentionLimit;
 }

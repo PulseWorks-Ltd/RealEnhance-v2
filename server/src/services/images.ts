@@ -21,6 +21,7 @@ function saveAllImages(state: ImagesState): void {
 
 export function createImageRecord(params: {
   userId: UserId;
+  agencyId?: string;
   originalPath: string;
   roomType?: string;
   sceneType?: string;
@@ -43,6 +44,7 @@ export function createImageRecord(params: {
     id: imageId,
     imageId, // mirror id for legacy callers
     ownerUserId: params.userId,
+    agencyId: params.agencyId,
     currentVersionId: versionId,
     history: [version],
     originalPath: params.originalPath,
@@ -98,6 +100,13 @@ export function getImageRecord(imageId: ImageId): ImageRecord | undefined {
 export function listImagesForUser(userId: UserId): ImageRecord[] {
   const state = loadAllImages();
   return Object.values(state).filter((img) => img.ownerUserId === userId);
+}
+
+export function listImagesForAgency(agencyId: string): ImageRecord[] {
+  const state = loadAllImages();
+  return Object.values(state)
+    .filter((img) => img.agencyId === agencyId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); // Newest first for display
 }
 
 export function undoLastEdit(imageId: ImageId): ImageRecord | undefined {

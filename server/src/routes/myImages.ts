@@ -1,17 +1,18 @@
 // server/src/routes/myImages.ts
-// User's enhanced images gallery
+// Agency's enhanced images gallery
 
 import { Router, Request, Response } from "express";
-import { listImagesForUser } from "../services/images.js";
+import { listImagesForAgency } from "../services/images.js";
+import { getUserById } from "../services/users.js";
 
 export function myImagesRouter() {
   const r = Router();
 
   /**
    * GET /api/my-images
-   * Get all enhanced images for the authenticated user
+   * Get all enhanced images for the authenticated user's agency
    */
-  r.get("/my-images", (req: Request, res: Response) => {
+  r.get("/my-images", async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
 
     if (!sessUser) {
@@ -22,7 +23,15 @@ export function myImagesRouter() {
     }
 
     try {
-      const imgs = listImagesForUser(sessUser.id);
+      // Get user's agency
+      const user = await getUserById(sessUser.id);
+      if (!user?.agencyId) {
+        // User not in agency - return empty array
+        return res.json({ images: [] });
+      }
+
+      // Get all images for the agency
+      const imgs = listImagesForAgency(user.agencyId);
 
       res.json({
         images: imgs.map((img: any) => ({
@@ -33,8 +42,8 @@ export function myImagesRouter() {
           status: img.status || "completed",
           url: img.outputUrl || img.filePath || null,
           currentVersionId: img.currentVersionId,
-          roomType: img.roomType,
-          sceneType: img.sceneType,
+          roomType: img.meta?.roomType || img.roomType,
+          sceneType: img.meta?.sceneType || img.sceneType,
           history: img.history?.map((v: any) => ({
             versionId: v.versionId,
             stageLabel: v.stageLabel,

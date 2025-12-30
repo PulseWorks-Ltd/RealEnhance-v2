@@ -63,6 +63,9 @@ export interface ImageRecord {
   /** owner relationship used by filters and guards */
   ownerUserId: UserId;
 
+  /** agency that owns this image (for retention tracking) */
+  agencyId?: string;
+
   /** current active version id (points to an entry in `history`) */
   currentVersionId: string;
 
