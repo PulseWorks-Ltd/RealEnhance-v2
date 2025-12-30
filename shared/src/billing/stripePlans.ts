@@ -85,8 +85,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   pro: {
     planCode: "pro",
     displayName: "Pro",
-    mainAllowance: 250,
-    stagingAllowance: 25,
+    mainAllowance: 275,
+    stagingAllowance: 0,
     monthlyPriceByCurrency: {
       nzd: 24900, // $249 NZD
       aud: 22900, // $229 AUD (calculated: ~22908)
@@ -100,16 +100,18 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   agency: {
     planCode: "agency",
     displayName: "Studio",
-    mainAllowance: 500,
-    stagingAllowance: 75,
+    mainAllowance: 600,
+    stagingAllowance: 0,
     monthlyPriceByCurrency: {
-      nzd: 39900, // $399 NZD
-      aud: 36700, // $367 AUD (calculated: ~36708)
-      zar: 419000, // R4190 ZAR (calculated: ~418950)
-      usd: 23500, // $235 USD (calculated: ~23541)
+      nzd: 49900, // $499 NZD (updated from $399)
+      aud: 44900, // $449 AUD (specified requirement)
+      zar: 524000, // R5240 ZAR (calculated: ~523950)
+      usd: 29400, // $294 USD (calculated: ~29441)
     },
     stripePriceIdByCurrency: {
       // Production: Set these to pre-created Stripe Price IDs
+      // IMPORTANT: Create new Price IDs for updated pricing
+      // Existing subscriptions will keep their original Price IDs (grandfathered)
     },
   },
 };

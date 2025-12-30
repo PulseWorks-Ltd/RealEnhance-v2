@@ -45,6 +45,10 @@
       "types": "./dist/users.d.ts",
       "default": "./dist/users.js"
     },
+    "./redisClient.js": {
+      "types": "./dist/redisClient.d.ts",
+      "default": "./dist/redisClient.js"
+    },
     "./invites.js": {
       "types": "./dist/invites.d.ts",
       "default": "./dist/invites.js"

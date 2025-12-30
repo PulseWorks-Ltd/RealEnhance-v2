@@ -20,6 +20,8 @@ export function authUserRouter() {
       name: full.name,
       email: full.email,
       credits: full.credits,
+      agencyId: full.agencyId,
+      role: full.role,
       images: imgs.map((img: any) => ({
         imageId: img.imageId,
         currentVersionId: img.currentVersionId,
