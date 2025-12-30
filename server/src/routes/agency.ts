@@ -240,7 +240,7 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
     }
 
     // Check if user already exists
-    let user = getUserByEmail(invite.email);
+    let user = await getUserByEmail(invite.email);
 
     if (user) {
       // Existing user - just link to agency
@@ -292,7 +292,7 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
 
     // Create new user with password
     const passwordHash = await hashPassword(password);
-    user = createUserWithPassword({
+    user = await createUserWithPassword({
       email: invite.email,
       name: name.trim(),
       passwordHash,
@@ -332,7 +332,7 @@ router.post("/users/:userId/disable", requireAuth, requireAgencyAdmin, async (re
     const currentUser = (req as any).user as UserRecord;
     const { userId } = req.params;
 
-    const targetUser = getUserById(userId);
+    const targetUser = await getUserById(userId);
     if (!targetUser) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -377,7 +377,7 @@ router.post("/users/:userId/enable", requireAuth, requireAgencyAdmin, async (req
     const currentUser = (req as any).user as UserRecord;
     const { userId } = req.params;
 
-    const targetUser = getUserById(userId);
+    const targetUser = await getUserById(userId);
     if (!targetUser) {
       return res.status(404).json({ error: "User not found" });
     }

@@ -44,9 +44,7 @@ function initPassport() {
           const name = profile.displayName ?? "Unnamed User";
           if (!email) return done(new Error("No email returned from Google profile"));
 
-          const user = await Promise.resolve(
-            upsertUserFromGoogle({ email, name })
-          );
+          const user = await upsertUserFromGoogle({ email, name });
 
           const sessionUser = {
             id: (user as any).id,

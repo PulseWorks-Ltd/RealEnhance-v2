@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 // Quick dev script to set up a user account with an agency
 
-import { getUserByEmail } from "../src/services/users.js";
+import { getUserByEmail, updateUser } from "@realenhance/shared/users.js";
 import { createAgency, getAgency } from "@realenhance/shared/agencies.js";
 
 async function main() {
@@ -24,11 +24,11 @@ Example:
 
   try {
     // Get the user
-    const user = getUserByEmail(email);
+    const user = await getUserByEmail(email);
 
     if (!user) {
       console.error(`❌ User not found: ${email}`);
-      console.log('\nPlease sign up first at http://localhost:5173/signup');
+      console.log("\nPlease sign up first at http://localhost:5173/signup");
       process.exit(1);
     }
 
@@ -52,7 +52,7 @@ Example:
       name: "RealEnhance",
       planTier: "agency", // Studio plan
       ownerId: user.id,
-      subscriptionStatus: "ACTIVE" // Active for development
+      subscriptionStatus: "ACTIVE", // Active for development
     });
 
     console.log(`✅ Created agency: ${agency.name} (${agency.agencyId})`);
@@ -61,14 +61,8 @@ Example:
     user.agencyId = agency.agencyId;
     user.role = "admin";
 
-    // Save user (this depends on your user storage implementation)
-    // For now, just print what needs to be done
-    console.log(`\n⚠️  MANUAL STEP REQUIRED:`);
-    console.log(`   Please update user ${user.email} in your database:`);
-    console.log(`   - agencyId: ${agency.agencyId}`);
-    console.log(`   - role: admin`);
-    console.log(`\n   If using Redis, run:`);
-    console.log(`   redis-cli HSET user:${user.id} agencyId ${agency.agencyId} role admin`);
+    // Save user using new Redis storage
+    await updateUser(user);
 
     console.log(`\n✅ Setup complete!`);
     console.log(`\nAgency Details:`);
@@ -80,7 +74,7 @@ Example:
     console.log(`   Email: ${user.email}`);
     console.log(`   Role: admin`);
     console.log(`   Agency: ${agency.agencyId}`);
-
+    console.log(`\n🚀 The user can now log in and access agency features!`);
   } catch (error) {
     console.error(`\n❌ Error:`, error);
     process.exit(1);

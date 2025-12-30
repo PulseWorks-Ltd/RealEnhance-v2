@@ -29,7 +29,7 @@ export function emailAuthRouter() {
       }
 
       // Check if user already exists
-      const existingUser = getUserByEmail(email);
+      const existingUser = await getUserByEmail(email);
       if (existingUser) {
         return res.status(409).json({ error: "User with this email already exists" });
       }
@@ -38,7 +38,7 @@ export function emailAuthRouter() {
       const passwordHash = await hashPassword(password);
 
       // Create user
-      const newUser = createUserWithPassword({
+      const newUser = await createUserWithPassword({
         email: email.toLowerCase().trim(),
         name: name.trim(),
         passwordHash
@@ -77,7 +77,7 @@ export function emailAuthRouter() {
       }
 
       // Find user by email
-      const user = getUserByEmail(email.toLowerCase().trim());
+      const user = await getUserByEmail(email.toLowerCase().trim());
       if (!user) {
         return res.status(401).json({ error: "Invalid email or password" });
       }

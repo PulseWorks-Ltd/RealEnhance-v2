@@ -144,8 +144,8 @@ async function main() {
 
   // One-time admin seeding to guarantee partner accounts have 10k credits
   try {
-    const seededA = setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
-    const seededB = setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
+    const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
+    const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
     console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
   } catch (e) {
     console.warn("[seed] failed to ensure credits:", e);

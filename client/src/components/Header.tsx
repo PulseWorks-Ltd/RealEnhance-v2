@@ -4,11 +4,21 @@ import { useAuth } from "@/context/AuthContext";
 import { ProfileDropdown } from "@/components/profile-dropdown";
 import { withDevice } from "@/lib/withDevice";
 import { apiFetch } from "@/lib/api";
+import { useNavigate, useLocation } from "react-router-dom";
 
 
 export function Header() {
   const { user: authUser } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const isAuthed = !!authUser;
+
+  // Show "Enhance Images" button when not on home page
+  const showEnhanceButton = isAuthed && location.pathname !== "/home";
+
+  const handleEnhanceClick = () => {
+    navigate("/home");
+  };
 
   return (
     <header
@@ -34,7 +44,18 @@ export function Header() {
         {/* Right: actions */}
         <div className="flex items-center gap-4">
           {isAuthed ? (
-            <ProfileDropdown />
+            <>
+              {showEnhanceButton && (
+                <Button
+                  onClick={handleEnhanceClick}
+                  className="bg-brand-primary hover:bg-brand-accent"
+                  data-testid="button-enhance-images"
+                >
+                  ✨ Enhance Images
+                </Button>
+              )}
+              <ProfileDropdown />
+            </>
           ) : (
             <Button
               asChild

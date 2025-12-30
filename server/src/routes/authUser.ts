@@ -6,11 +6,11 @@ export function authUserRouter() {
   const r = Router();
 
   // Primary route expected by client: GET /api/auth-user
-  r.get("/", (req: Request, res: Response) => {
+  r.get("/", async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "Unauthorized" });
 
-    const full = getUserById(sessUser.id);
+    const full = await getUserById(sessUser.id);
     if (!full) return res.status(401).json({ error: "Unauthorized" });
 
     const imgs = listImagesForUser(full.id);
