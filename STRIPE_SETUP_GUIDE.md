@@ -103,9 +103,112 @@ For each product above, you'll create prices in different currencies. Start with
 
 ---
 
-## Step 4: Get Your API Keys
+## Step 4: Create Bundle Products (One-Time Purchases)
 
-### 4.1 Development Keys (Test Mode)
+In addition to recurring subscriptions, RealEnhance offers one-time image bundle add-ons for customers who need extra images.
+
+### 4.1 Bundle Product 1: 50 Image Bundle
+
+Navigate to: **Products** → **Add product**
+
+1. **Name:** RealEnhance 50 Image Bundle
+2. **Description:** 50 additional enhanced images. Expires at end of purchase month.
+3. **Pricing model:** One-time
+4. Click **Add pricing**
+
+**Configure NZD Price:**
+- **Price:** 49.00 NZD
+- **Currency:** New Zealand Dollar (NZD)
+- **Billing period:** One-time
+- Click **Add price**
+- **Copy the Price ID** (looks like `price_1ABC...xyz`)
+  - Save this - you'll need it for code configuration
+
+**Configure AUD Price (optional):**
+- Add another price: 45.00 AUD (approximately 49 NZD converted)
+- Billing: One-time
+- **Copy the Price ID**
+
+### 4.2 Bundle Product 2: 100 Image Bundle
+
+Navigate to: **Products** → **Add product**
+
+1. **Name:** RealEnhance 100 Image Bundle
+2. **Description:** 100 additional enhanced images. Best value. Expires at end of purchase month.
+3. **Pricing model:** One-time
+4. Click **Add pricing**
+
+**Configure NZD Price:**
+- **Price:** 89.00 NZD
+- **Currency:** New Zealand Dollar (NZD)
+- **Billing period:** One-time
+- Click **Add price**
+- **Copy the Price ID** (looks like `price_1DEF...xyz`)
+  - Save this - you'll need it for code configuration
+
+**Configure AUD Price (optional):**
+- Add another price: 82.00 AUD (approximately 89 NZD converted)
+- Billing: One-time
+- **Copy the Price ID**
+
+### 4.3 Update Bundle Configuration in Code
+
+After creating the bundle products in Stripe, you need to add the Price IDs to your code.
+
+**Edit: `shared/src/bundles.ts`**
+
+Currently, the file only has price amounts. You need to add a new field for Stripe Price IDs:
+
+```typescript
+export interface ImageBundle {
+  code: BundleCode;
+  images: number;
+  priceNZD: number;
+  name: string;
+  description: string;
+  stripePriceIdByCurrency?: {
+    nzd?: string;
+    aud?: string;
+  };
+}
+
+export const IMAGE_BUNDLES: Record<BundleCode, ImageBundle> = {
+  BUNDLE_50: {
+    code: "BUNDLE_50",
+    images: 50,
+    priceNZD: 49,
+    name: "50 Image Bundle",
+    description: "50 enhanced images - perfect for a busy month",
+    stripePriceIdByCurrency: {
+      nzd: "price_ABC123Your50BundleNZD",  // ← Replace with your Price ID from Step 4.1
+      aud: "price_DEF456Your50BundleAUD",  // ← Replace if you created AUD price
+    },
+  },
+  BUNDLE_100: {
+    code: "BUNDLE_100",
+    images: 100,
+    priceNZD: 89,
+    name: "100 Image Bundle",
+    description: "100 enhanced images - best value for high-volume agencies",
+    stripePriceIdByCurrency: {
+      nzd: "price_GHI789Your100BundleNZD",  // ← Replace with your Price ID from Step 4.2
+      aud: "price_JKL012Your100BundleAUD",  // ← Replace if you created AUD price
+    },
+  }
+};
+```
+
+**💡 Important Notes:**
+- Bundle images expire at the end of the purchase month
+- Bundles are consumed AFTER the monthly subscription allowance
+- These are one-time purchases, not recurring charges
+- Perfect for agencies with unexpectedly busy months
+
+---
+
+## Step 5: Get Your API Keys
+
+### 5.1 Development Keys (Test Mode)
 
 1. Go to: **Developers** → **API keys**
 2. Make sure you're in **Test mode** (toggle in sidebar)
@@ -113,7 +216,7 @@ For each product above, you'll create prices in different currencies. Start with
    - **Publishable key:** `pk_test_...` (for frontend)
    - **Secret key:** `sk_test_...` (for backend)
 
-### 4.2 Production Keys (Live Mode)
+### 5.2 Production Keys (Live Mode)
 
 1. Switch to **Live mode** (toggle in sidebar)
 2. ⚠️ **Only use these in production!**
@@ -160,60 +263,40 @@ Webhooks notify your server when subscriptions change (payments succeed/fail, ca
 
 ---
 
-## Step 6: Update Your Code with Stripe Price IDs
+## Step 6: Update Your Code with Stripe Price IDs (Already Done!)
 
-### 6.1 Edit `shared/src/billing/stripePlans.ts`
+### 6.1 Subscription Price IDs (✅ Already Updated!)
 
-Replace the empty `stripePriceIdByCurrency` objects with your actual Price IDs:
+Your subscription Price IDs have already been added to `shared/src/billing/stripePlans.ts`:
 
 ```typescript
-export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
-  starter: {
-    planCode: "starter",
-    displayName: "Starter",
-    mainAllowance: 100,
-    stagingAllowance: 0,
-    monthlyPriceByCurrency: {
-      nzd: 12900,
-      aud: 11900,
-    },
-    stripePriceIdByCurrency: {
-      nzd: "price_ABC123YourStarterNZD",  // ← Your NZD Price ID
-      aud: "price_DEF456YourStarterAUD",  // ← Your AUD Price ID (if created)
-    },
+starter: {
+  stripePriceIdByCurrency: {
+    nzd: "price_1SlxnZPay1sYFQ7VPUCSv2u1",  // ✅ Already set
+    aud: "price_1SlxuYPay1sYFQ7VkqWef0bn",  // ✅ Already set
   },
-  pro: {
-    planCode: "pro",
-    displayName: "Pro",
-    mainAllowance: 275,
-    stagingAllowance: 0,
-    monthlyPriceByCurrency: {
-      nzd: 24900,
-      aud: 22900,
-    },
-    stripePriceIdByCurrency: {
-      nzd: "price_GHI789YourProNZD",      // ← Your NZD Price ID
-      aud: "price_JKL012YourProAUD",      // ← Your AUD Price ID (if created)
-    },
+},
+pro: {
+  stripePriceIdByCurrency: {
+    nzd: "price_1SlxpoPay1sYFQ7VhgbzFUlu",  // ✅ Already set
+    aud: "price_1SlxxGPay1sYFQ7V5OzTzJwy",  // ✅ Already set
   },
-  agency: {
-    planCode: "agency",
-    displayName: "Studio",
-    mainAllowance: 600,
-    stagingAllowance: 0,
-    monthlyPriceByCurrency: {
-      nzd: 49900,
-      aud: 44900,
-    },
-    stripePriceIdByCurrency: {
-      nzd: "price_MNO345YourStudioNZD",   // ← Your NZD Price ID
-      aud: "price_PQR678YourStudioAUD",   // ← Your AUD Price ID (if created)
-    },
+},
+agency: {
+  stripePriceIdByCurrency: {
+    nzd: "price_1SlxqQPay1sYFQ7VCZ5vnSrM",  // ✅ Already set
+    aud: "price_1SlxwGPay1sYFQ7VMxdM1Mdb",  // ✅ Already set
   },
-};
+},
 ```
 
-### 6.2 Rebuild Shared Package
+**You can skip this step - your subscription prices are already configured!**
+
+### 6.2 Bundle Price IDs (To Be Added Later)
+
+After you create the bundle products in Stripe (Step 4), you'll need to update `shared/src/bundles.ts` with the Price IDs as shown in Step 4.3.
+
+### 6.3 Rebuild Shared Package
 
 ```bash
 cd /workspaces/RealEnhance-v2

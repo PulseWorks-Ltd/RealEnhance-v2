@@ -75,11 +75,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
       usd: 7600, // $76 USD (calculated: ~7611)
     },
     stripePriceIdByCurrency: {
-      // Production: Set these to pre-created Stripe Price IDs
-      // Development: Leave empty to use dynamic price_data
-      // Example:
-      // nzd: "price_1234567890abcdefghijklmn",
-      // aud: "price_abcdefghijklmn1234567890",
+      nzd: "price_1SlxnZPay1sYFQ7VPUCSv2u1",
+      aud: "price_1SlxuYPay1sYFQ7VkqWef0bn",
     },
   },
   pro: {
@@ -94,7 +91,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
       usd: 14700, // $147 USD (calculated: ~14691)
     },
     stripePriceIdByCurrency: {
-      // Production: Set these to pre-created Stripe Price IDs
+      nzd: "price_1SlxpoPay1sYFQ7VhgbzFUlu",
+      aud: "price_1SlxxGPay1sYFQ7V5OzTzJwy",
     },
   },
   agency: {
@@ -109,9 +107,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
       usd: 29400, // $294 USD (calculated: ~29441)
     },
     stripePriceIdByCurrency: {
-      // Production: Set these to pre-created Stripe Price IDs
-      // IMPORTANT: Create new Price IDs for updated pricing
-      // Existing subscriptions will keep their original Price IDs (grandfathered)
+      nzd: "price_1SlxqQPay1sYFQ7VCZ5vnSrM",
+      aud: "price_1SlxwGPay1sYFQ7VMxdM1Mdb",
     },
   },
 };
