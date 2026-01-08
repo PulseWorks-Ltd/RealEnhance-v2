@@ -32,6 +32,7 @@ import stripeRouter from "./routes/stripe.js";
 import adminSubscriptionRouter from "./routes/adminSubscription.js";
 import { myImagesRouter } from "./routes/myImages.js";
 import billingRouter from "./routes/billing.js";
+import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -135,6 +136,8 @@ async function main() {
   app.use("/api/billing", billingRouter);
   // User's enhanced images gallery
   app.use("/api", myImagesRouter());
+  // Admin analysis endpoints
+  app.use("/api/admin", adminAnalysisRouter);
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

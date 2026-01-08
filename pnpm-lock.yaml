@@ -133,6 +133,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.705.0
         version: 3.937.0
+      '@google/generative-ai':
+        specifier: ^0.24.1
+        version: 0.24.1
       '@realenhance/shared':
         specifier: workspace:*
         version: link:../shared
@@ -978,6 +981,10 @@ packages:
 
   '@google/genai@0.7.0':
     resolution: {integrity: sha512-r+Fwj/emnXZN5R+4JCxDXboY4AGTmTn7+Wnori5dgyJiStP0P82f9YYL0CVsCnDIumNY2i0UIcZ1zGZdtHJ34w==}
+    engines: {node: '>=18.0.0'}
+
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
     engines: {node: '>=18.0.0'}
 
   '@img/sharp-darwin-arm64@0.33.5':
@@ -5330,6 +5337,8 @@ snapshots:
       - encoding
       - supports-color
       - utf-8-validate
+
+  '@google/generative-ai@0.24.1': {}
 
   '@img/sharp-darwin-arm64@0.33.5':
     optionalDependencies:
