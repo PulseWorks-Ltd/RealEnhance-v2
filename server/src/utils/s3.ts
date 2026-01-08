@@ -1,4 +1,5 @@
-import { PutObjectCommand, S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, S3Client, HeadBucketCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
 
@@ -130,4 +131,26 @@ export async function requireS3OrExit() {
     console.log(`[S3] Ready: bucket=${status.bucket} region=${status.region}`);
   }
   return status;
+}
+
+/**
+ * Generate a pre-signed URL for S3 object access
+ * @param key S3 object key
+ * @param expiresIn Expiration time in seconds (default: 3600 = 1 hour)
+ * @returns Pre-signed URL
+ */
+export async function getS3SignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) {
+    throw new Error("S3_BUCKET not configured");
+  }
+
+  const client = getClient();
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+
+  // Type cast to avoid smithy/types version conflicts between dependencies
+  return await getSignedUrl(client as any, command as any, { expiresIn });
 }
