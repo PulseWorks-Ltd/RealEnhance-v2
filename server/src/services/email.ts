@@ -58,12 +58,12 @@ export async function sendBatchCompleteEmail(opts: {
   zipBuffer?: Buffer;
 }): Promise<boolean> {
   const { userEmail, results, zipBuffer } = opts;
-  
+
   const successCount = results.filter(r => r.ok).length;
   const failCount = results.filter(r => !r.ok).length;
-  
+
   let subject = `Batch Processing Complete - ${successCount}/${results.length} images processed`;
-  
+
   let text = `Your batch image processing is complete!\n\n`;
   text += `✅ Successfully processed: ${successCount} images\n`;
   if (failCount > 0) {
@@ -73,7 +73,7 @@ export async function sendBatchCompleteEmail(opts: {
       text += `- ${r.filename}: ${r.error}\n`;
     });
   }
-  
+
   if (zipBuffer && successCount > 0) {
     text += `\nYour processed images are attached as a ZIP file.\n`;
   }
@@ -85,7 +85,7 @@ export async function sendBatchCompleteEmail(opts: {
   }] : undefined;
 
   const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@polishmypic.com';
-  
+
   return sendEmail({
     to: userEmail,
     from: fromEmail,
@@ -93,4 +93,85 @@ export async function sendBatchCompleteEmail(opts: {
     text,
     attachments
   });
+}
+
+/**
+ * Send an invitation email to a new team member
+ */
+export async function sendInvitationEmail(params: {
+  toEmail: string;
+  inviterName: string;
+  agencyName: string;
+  role: string;
+  inviteToken: string;
+  acceptUrl: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@polishmypic.com';
+
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('[EMAIL] SENDGRID_API_KEY not set, invitation email not sent');
+    return { ok: false, error: 'SendGrid not configured' };
+  }
+
+  const { toEmail, inviterName, agencyName, role, acceptUrl } = params;
+
+  const subject = `You've been invited to join ${agencyName} on RealEnhance`;
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2563eb;">You've Been Invited!</h2>
+
+      <p>Hi there,</p>
+
+      <p><strong>${inviterName}</strong> has invited you to join <strong>${agencyName}</strong> on RealEnhance as a <strong>${role}</strong>.</p>
+
+      <p>RealEnhance is an AI-powered image enhancement platform designed for property professionals.</p>
+
+      <div style="margin: 30px 0;">
+        <a href="${acceptUrl}"
+           style="background-color: #2563eb; color: white; padding: 12px 24px;
+                  text-decoration: none; border-radius: 6px; display: inline-block;">
+          Accept Invitation
+        </a>
+      </div>
+
+      <p style="color: #6b7280; font-size: 14px;">
+        This invitation will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+
+      <p style="color: #9ca3af; font-size: 12px;">
+        RealEnhance - AI-Powered Enhancement<br/>
+        If the button above doesn't work, copy and paste this link:<br/>
+        <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
+      </p>
+    </div>
+  `;
+
+  const textContent = `
+You've Been Invited!
+
+${inviterName} has invited you to join ${agencyName} on RealEnhance as a ${role}.
+
+RealEnhance is an AI-powered image enhancement platform designed for property professionals.
+
+Accept your invitation by visiting:
+${acceptUrl}
+
+This invitation will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
+
+---
+RealEnhance - AI-Powered Enhancement
+  `.trim();
+
+  const success = await sendEmail({
+    to: toEmail,
+    from: fromEmail,
+    subject,
+    text: textContent,
+    html: htmlContent,
+  });
+
+  return { ok: success, error: success ? undefined : 'Email sending failed' };
 }

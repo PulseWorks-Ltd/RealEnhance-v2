@@ -15,6 +15,7 @@
     "@aws-sdk/s3-request-presigner": "^3.965.0",
     "@google/generative-ai": "^0.24.1",
     "@realenhance/shared": "workspace:*",
+    "@sendgrid/mail": "^8.1.6",
     "@types/express": "^4.17.21",
     "@types/express-session": "1.17.7",
     "@types/node": "^24.10.1",
