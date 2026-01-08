@@ -51,6 +51,8 @@ export default function AgencyPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
   const [loading, setLoading] = useState(true);
+  const [agencyName, setAgencyName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const isAdminOrOwner = agencyInfo && (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin");
 
@@ -194,52 +196,49 @@ export default function AgencyPage() {
     );
   }
 
+  const handleCreateAgency = async () => {
+    if (!agencyName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter an agency name",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setCreating(true);
+      const res = await apiFetch("/api/agency/create", {
+        method: "POST",
+        body: JSON.stringify({ name: agencyName.trim(), planTier: "starter" }),
+      });
+
+      if (res.ok) {
+        toast({
+          title: "Success",
+          description: "Agency created successfully!",
+        });
+        loadAgencyData();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        toast({
+          title: "Failed to create agency",
+          description: errorData.error || "Unknown error",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create agency",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (!agencyInfo) {
-    const [agencyName, setAgencyName] = useState("");
-    const [creating, setCreating] = useState(false);
-
-    const handleCreateAgency = async () => {
-      if (!agencyName.trim()) {
-        toast({
-          title: "Error",
-          description: "Please enter an agency name",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      try {
-        setCreating(true);
-        const res = await apiFetch("/api/agency/create", {
-          method: "POST",
-          body: JSON.stringify({ name: agencyName.trim(), planTier: "starter" }),
-        });
-
-        if (res.ok) {
-          toast({
-            title: "Success",
-            description: "Agency created successfully!",
-          });
-          loadAgencyData();
-        } else {
-          const errorData = await res.json().catch(() => ({}));
-          toast({
-            title: "Failed to create agency",
-            description: errorData.error || "Unknown error",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "Failed to create agency",
-          variant: "destructive",
-        });
-      } finally {
-        setCreating(false);
-      }
-    };
-
     return (
       <div className="container mx-auto p-6">
         <Card>
