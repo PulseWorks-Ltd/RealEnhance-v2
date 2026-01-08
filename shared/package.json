@@ -88,6 +88,14 @@
     "./billing/stripeStatus.js": {
       "types": "./dist/billing/stripeStatus.d.ts",
       "default": "./dist/billing/stripeStatus.js"
+    },
+    "./analysis/storage.js": {
+      "types": "./dist/analysis/storage.d.ts",
+      "default": "./dist/analysis/storage.js"
+    },
+    "./analysis/types.js": {
+      "types": "./dist/analysis/types.d.ts",
+      "default": "./dist/analysis/types.js"
     }
   },
   "scripts": {

@@ -173,12 +173,20 @@ export async function packageJobDataForAnalysis(jobId: string): Promise<Analysis
 
   // Build input summary
   const stages: string[] = [];
-  if (job.options?.declutter === false && job.options?.virtualStage === false) {
+  // Infer stages from job payload options (for enhance jobs)
+  if (job.payload && job.payload.type === "enhance") {
+    const options = (job.payload as any).options;
+    if (options?.declutter === false && options?.virtualStage === false) {
+      stages.push("1A");
+    } else if (options?.declutter === true && options?.virtualStage === false) {
+      stages.push("1A", "1B");
+    } else if (options?.virtualStage === true) {
+      stages.push("1A", "1B", "2");
+    }
+  }
+  // Fallback: if no stages determined, assume 1A at minimum
+  if (stages.length === 0) {
     stages.push("1A");
-  } else if (job.options?.declutter === true && job.options?.virtualStage === false) {
-    stages.push("1A", "1B");
-  } else if (job.options?.virtualStage === true) {
-    stages.push("1A", "1B", "2");
   }
 
   const validatorResults = extractValidatorResults(job);
@@ -194,10 +202,19 @@ export async function packageJobDataForAnalysis(jobId: string): Promise<Analysis
     }
   }
 
+  // Get sceneType from payload options or meta
+  let sceneType: string | undefined;
+  if (job.payload && job.payload.type === "enhance") {
+    sceneType = (job.payload as any).options?.sceneType;
+  }
+  if (!sceneType) {
+    sceneType = job.meta?.scene?.label || (imageRecord?.meta as any)?.sceneType;
+  }
+
   const inputSummary: AnalysisInputSummary = {
-    jobId: job.jobId,
+    jobId: job.jobId || job.id,
     stages,
-    sceneType: job.options?.sceneType || imageRecord?.meta?.sceneType,
+    sceneType,
     validators: validatorResults.map((v) => v.name),
     failFlags,
     scoreHighlights,

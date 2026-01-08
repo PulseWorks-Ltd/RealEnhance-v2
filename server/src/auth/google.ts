@@ -15,12 +15,14 @@ function getBaseUrl(): string {
 function initPassport() {
   const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } = process.env as Record<string, string | undefined>;
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-    console.warn("[auth] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Google login will fail.");
+    console.warn("[auth] Missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Google login disabled.");
+    // Don't initialize the strategy if credentials are missing
+    return false;
   }
 
   const opts: StrategyOptions = {
-    clientID: GOOGLE_CLIENT_ID || "",
-    clientSecret: GOOGLE_CLIENT_SECRET || "",
+    clientID: GOOGLE_CLIENT_ID,
+    clientSecret: GOOGLE_CLIENT_SECRET,
     callbackURL: `${getBaseUrl()}/auth/google/callback`,
   };
 
@@ -68,6 +70,8 @@ function initPassport() {
   passport.deserializeUser((obj: any, done) => {
     done(null, obj);
   });
+
+  return true;
 }
 
 /** Ensure passport middleware is mounted (after express-session) */
@@ -77,8 +81,20 @@ function ensurePassportInit(app: Express) {
 }
 
 export function attachGoogleAuth(app: Express) {
-  initPassport();
+  const googleEnabled = initPassport();
   ensurePassportInit(app);
+
+  // Only register Google OAuth routes if credentials are configured
+  if (!googleEnabled) {
+    // Return error for Google auth attempts when not configured
+    app.get("/auth/google", (_req: Request, res: Response) => {
+      res.status(503).json({ error: "Google authentication is not configured" });
+    });
+    app.get("/auth/google/callback", (_req: Request, res: Response) => {
+      res.status(503).json({ error: "Google authentication is not configured" });
+    });
+    return;
+  }
 
   // Step 1: start Google OAuth
   app.get(
