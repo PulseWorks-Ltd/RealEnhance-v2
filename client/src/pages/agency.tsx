@@ -139,10 +139,21 @@ export default function AgencyPage() {
       });
 
       if (res.ok) {
-        toast({
-          title: "Invite sent",
-          description: `Invitation sent to ${inviteEmail}`,
-        });
+        const data = await res.json();
+
+        if (data.emailSent === false) {
+          toast({
+            title: "Invitation Created",
+            description: `Invite created for ${inviteEmail}, but email delivery failed. Please share the invite link manually.`,
+            variant: "warning",
+          });
+        } else {
+          toast({
+            title: "Success",
+            description: `Invitation sent to ${inviteEmail}`,
+          });
+        }
+
         setInviteEmail("");
         loadAgencyData();
       } else {

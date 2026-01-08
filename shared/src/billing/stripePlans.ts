@@ -82,7 +82,7 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   pro: {
     planCode: "pro",
     displayName: "Pro",
-    mainAllowance: 275,
+    mainAllowance: 250,
     stagingAllowance: 0,
     monthlyPriceByCurrency: {
       nzd: 24900, // $249 NZD
@@ -101,9 +101,9 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
     mainAllowance: 600,
     stagingAllowance: 0,
     monthlyPriceByCurrency: {
-      nzd: 49900, // $499 NZD (updated from $399)
-      aud: 44900, // $449 AUD (specified requirement)
-      zar: 524000, // R5240 ZAR (calculated: ~523950)
+      nzd: 49900, // $499 NZD
+      aud: 45900, // $459 AUD (calculated: ~45908)
+      zar: 523900, // R5239 ZAR (calculated: ~523950)
       usd: 29400, // $294 USD (calculated: ~29441)
     },
     stripePriceIdByCurrency: {

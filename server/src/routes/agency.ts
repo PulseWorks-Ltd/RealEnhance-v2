@@ -21,6 +21,7 @@ import type { UserRecord } from "@realenhance/shared/types.js";
 import { hashPassword } from "../utils/password.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
+import { sendInvitationEmail } from "../services/email.js";
 
 const router = Router();
 
@@ -199,6 +200,27 @@ router.post("/invite", requireAuth, requireAgencyAdmin, async (req: Request, res
       return res.status(409).json({ error: result.error });
     }
 
+    // Send invitation email
+    const agency = await getAgency(user.agencyId!);
+    const baseUrl = process.env.PUBLIC_ORIGIN || process.env.BASE_URL || "http://localhost:3000";
+    const acceptUrl = `${baseUrl}/accept-invite?token=${result.invite!.token}`;
+
+    const emailResult = await sendInvitationEmail({
+      toEmail: email.trim().toLowerCase(),
+      inviterName: user.name || user.email,
+      agencyName: agency?.name || "RealEnhance Agency",
+      role: role || "member",
+      inviteToken: result.invite!.token,
+      acceptUrl,
+    });
+
+    if (!emailResult.ok) {
+      console.error(`[INVITE] Failed to send email to ${email}:`, emailResult.error);
+      // Still return success - invite was created even if email failed
+    } else {
+      console.log(`[INVITE] Email sent successfully to ${email}`);
+    }
+
     res.status(201).json({
       invite: {
         inviteId: result.invite!.inviteId,
@@ -207,6 +229,7 @@ router.post("/invite", requireAuth, requireAgencyAdmin, async (req: Request, res
         token: result.invite!.token,
         expiresAt: result.invite!.expiresAt,
       },
+      emailSent: emailResult.ok,
     });
   } catch (err) {
     console.error("[AGENCY] Invite error:", err);

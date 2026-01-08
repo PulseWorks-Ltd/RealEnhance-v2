@@ -177,13 +177,13 @@ export function BillingSection({ agency }: BillingSectionProps) {
                   <SelectItem value="pro">
                     <div className="flex flex-col items-start">
                       <span className="font-medium">Pro - $249 NZD/mo</span>
-                      <span className="text-xs text-muted-foreground">250 enhanced + 25 staging images</span>
+                      <span className="text-xs text-muted-foreground">250 enhanced images</span>
                     </div>
                   </SelectItem>
                   <SelectItem value="agency">
                     <div className="flex flex-col items-start">
-                      <span className="font-medium">Studio - $399 NZD/mo</span>
-                      <span className="text-xs text-muted-foreground">500 enhanced + 75 staging images</span>
+                      <span className="font-medium">Studio - $499 NZD/mo</span>
+                      <span className="text-xs text-muted-foreground">600 enhanced images</span>
                     </div>
                   </SelectItem>
                 </SelectContent>
