@@ -64,20 +64,47 @@ export default function AgencyPage() {
 
       // Load agency info
       const infoRes = await apiFetch("/api/agency/info");
-      if (infoRes.ok && infoRes.data) {
-        setAgencyInfo(infoRes.data);
+      if (infoRes.ok) {
+        const infoData = await infoRes.json();
+
+        // Map backend response to frontend format
+        const agencyInfo: AgencyInfo = {
+          agencyId: infoData.agency.agencyId,
+          name: infoData.agency.name,
+          planTier: infoData.agency.planTier,
+          subscriptionStatus: infoData.agency.subscriptionStatus,
+          stripeCustomerId: infoData.agency.stripeCustomerId,
+          stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
+          billingCountry: infoData.agency.billingCountry,
+          billingCurrency: infoData.agency.billingCurrency,
+          currentPeriodEnd: infoData.agency.currentPeriodEnd,
+          activeUsers: infoData.activeUsers,
+          userRole: user?.role || "member", // Get role from AuthContext
+        };
+
+        setAgencyInfo(agencyInfo);
 
         // Load members if admin or owner
-        if (infoRes.data.userRole === "owner" || infoRes.data.userRole === "admin") {
-          const membersRes = await apiFetch("/api/agency/members");
-          if (membersRes.ok && membersRes.data) {
-            setMembers(membersRes.data);
+        if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
+          try {
+            const membersRes = await apiFetch("/api/agency/members");
+            if (membersRes.ok) {
+              const membersData = await membersRes.json();
+              setMembers(membersData.members || membersData || []);
+            }
+          } catch (err) {
+            console.error("Failed to load members:", err);
           }
 
           // Load invites
-          const invitesRes = await apiFetch("/api/agency/invites");
-          if (invitesRes.ok && invitesRes.data) {
-            setInvites(invitesRes.data);
+          try {
+            const invitesRes = await apiFetch("/api/agency/invites");
+            if (invitesRes.ok) {
+              const invitesData = await invitesRes.json();
+              setInvites(invitesData.invites || invitesData || []);
+            }
+          } catch (err) {
+            console.error("Failed to load invites:", err);
           }
         }
       }
@@ -168,13 +195,72 @@ export default function AgencyPage() {
   }
 
   if (!agencyInfo) {
+    const [agencyName, setAgencyName] = useState("");
+    const [creating, setCreating] = useState(false);
+
+    const handleCreateAgency = async () => {
+      if (!agencyName.trim()) {
+        toast({
+          title: "Error",
+          description: "Please enter an agency name",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        setCreating(true);
+        const res = await apiFetch("/api/agency/create", {
+          method: "POST",
+          body: JSON.stringify({ name: agencyName.trim(), planTier: "starter" }),
+        });
+
+        if (res.ok) {
+          toast({
+            title: "Success",
+            description: "Agency created successfully!",
+          });
+          loadAgencyData();
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          toast({
+            title: "Failed to create agency",
+            description: errorData.error || "Unknown error",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to create agency",
+          variant: "destructive",
+        });
+      } finally {
+        setCreating(false);
+      }
+    };
+
     return (
       <div className="container mx-auto p-6">
         <Card>
           <CardHeader>
-            <CardTitle>No Agency</CardTitle>
-            <CardDescription>You are not part of an agency account.</CardDescription>
+            <CardTitle>Create Your Agency</CardTitle>
+            <CardDescription>Get started by creating your agency account</CardDescription>
           </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Agency Name</label>
+              <Input
+                placeholder="Enter your agency name"
+                value={agencyName}
+                onChange={(e) => setAgencyName(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+            <Button onClick={handleCreateAgency} disabled={creating} className="w-full">
+              {creating ? "Creating..." : "Create Agency"}
+            </Button>
+          </CardContent>
         </Card>
       </div>
     );
