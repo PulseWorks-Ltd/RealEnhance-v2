@@ -157,9 +157,19 @@ export async function listAgencyUsers(agencyId: string): Promise<UserRecord[]> {
 
     const users: UserRecord[] = [];
     for (const key of keys) {
-      const data = await client.hGetAll(key);
-      if (data && data.agencyId === agencyId) {
-        users.push(parseUserFromRedis(data));
+      // Some legacy keys may not be hashes; skip them to avoid WRONGTYPE errors
+      try {
+        const keyType = await client.type(key);
+        if (keyType !== "hash") {
+          continue;
+        }
+
+        const data = await client.hGetAll(key);
+        if (data && data.agencyId === agencyId) {
+          users.push(parseUserFromRedis(data));
+        }
+      } catch (err) {
+        console.warn(`[AGENCY] Skipping malformed user key ${key}:`, err);
       }
     }
 
@@ -180,7 +190,7 @@ export async function countActiveAgencyUsers(agencyId: string): Promise<number> 
     const activeCount = users.filter(u => u.isActive !== false).length;
     return activeCount;
   } catch (err) {
-    console.error("[AGENCY] Failed to count active users:", err);
+    console.error("[AGENCY] Failed to count agency users:", err);
     return 0;
   }
 }
