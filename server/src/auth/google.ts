@@ -127,32 +127,16 @@ export function attachGoogleAuth(app: Express) {
       const client = clientOrigins[0] || "http://localhost:3000";
       const toClient = new URL("/auth/complete", client).toString();
 
-      // Respond with a tiny HTML that notifies the opener and closes the popup.
-      // If there is no opener (e.g. full-page login), fall back to redirecting
-      // to the client route. This avoids surfacing client 500s in the popup.
+      // Immediately redirect to the client domain so the popup can close itself
+      // from the same origin it was opened from (cross-origin window.close() is blocked)
       const html = `<!doctype html>
 <html lang="en">
   <meta charset="utf-8" />
+  <meta http-equiv="refresh" content="0;url=${toClient}" />
   <title>Signing in…</title>
   <body>
     <p>Signing you in…</p>
-    <script>
-      (function() {
-        var target = ${JSON.stringify(toClient)};
-        try {
-          if (window.opener && window.opener.postMessage) {
-            window.opener.postMessage({ type: "auth:success" }, "*");
-          }
-        } catch (e) { /* ignore */ }
-
-        setTimeout(function() {
-          try { window.close(); } catch (e) {}
-          if (!window.closed) {
-            try { window.location.replace(target); } catch (e) { window.location.href = target; }
-          }
-        }, 50);
-      })();
-    </script>
+    <script>window.location.replace(${JSON.stringify(toClient)});</script>
   </body>
 </html>`;
 
