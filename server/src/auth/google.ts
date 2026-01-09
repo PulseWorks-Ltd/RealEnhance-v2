@@ -101,7 +101,8 @@ export function attachGoogleAuth(app: Express) {
     "/auth/google",
     passport.authenticate("google", {
       scope: ["profile", "email"],
-      prompt: "select_account",
+      // Force account picker and explicit consent even if Google has an active session
+      prompt: "select_account consent",
       accessType: "offline",
     }) as unknown as (req: any, res: any, next: NextFunction) => void
   );

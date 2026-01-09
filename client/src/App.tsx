@@ -14,6 +14,7 @@ const Results        = lazy(() => import("@/pages/Results"));
 const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const Agency         = lazy(() => import("@/pages/agency"));
+const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/auth/complete" element={<AuthComplete />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/results" element={<Results />} />
