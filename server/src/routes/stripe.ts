@@ -12,7 +12,7 @@ import type { PlanTier } from "@realenhance/shared/auth/types.js";
 const router = Router();
 
 // Initialize Stripe with secret key from environment
-const stripeApiVersion = process.env.STRIPE_API_VERSION || "2024-12-18";
+const stripeApiVersion = (process.env.STRIPE_API_VERSION as Stripe.StripeConfig["apiVersion"]) || "2023-10-16";
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: stripeApiVersion })
   : null;
