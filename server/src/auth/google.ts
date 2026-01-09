@@ -125,10 +125,39 @@ export function attachGoogleAuth(app: Express) {
 
       const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
       const client = clientOrigins[0] || "http://localhost:3000";
-      // Redirect directly to the client origin to complete auth; the client route
-      // will signal back to the opener and close the popup, avoiding COOP/CSP issues.
       const toClient = new URL("/auth/complete", client).toString();
-      res.redirect(toClient);
+
+      // Respond with a tiny HTML that notifies the opener and closes the popup.
+      // If there is no opener (e.g. full-page login), fall back to redirecting
+      // to the client route. This avoids surfacing client 500s in the popup.
+      const html = `<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Signing in…</title>
+  <body>
+    <p>Signing you in…</p>
+    <script>
+      (function() {
+        var target = ${JSON.stringify(toClient)};
+        try {
+          if (window.opener && window.opener.postMessage) {
+            window.opener.postMessage({ type: "auth:success" }, "*");
+          }
+        } catch (e) { /* ignore */ }
+
+        setTimeout(function() {
+          try { window.close(); } catch (e) {}
+          if (!window.closed) {
+            try { window.location.replace(target); } catch (e) { window.location.href = target; }
+          }
+        }, 50);
+      })();
+    </script>
+  </body>
+</html>`;
+
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
     }
   );
 
