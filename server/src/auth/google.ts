@@ -102,6 +102,7 @@ export function attachGoogleAuth(app: Express) {
     passport.authenticate("google", {
       scope: ["profile", "email"],
       prompt: "select_account",
+      accessType: "offline",
     }) as unknown as (req: any, res: any, next: NextFunction) => void
   );
 
