@@ -59,8 +59,15 @@ export function BillingSection({ agency }: BillingSectionProps) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to create checkout session");
+        let errorMessage = "Failed to create checkout session";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+        } catch {
+          // Response body might be empty or not JSON
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const { url } = await response.json();
@@ -85,8 +92,15 @@ export function BillingSection({ agency }: BillingSectionProps) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to create portal session");
+        let errorMessage = "Failed to create portal session";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+        } catch {
+          // Response body might be empty or not JSON
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const { url } = await response.json();
