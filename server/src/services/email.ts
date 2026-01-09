@@ -125,7 +125,7 @@ export async function sendInvitationEmail(params: {
 
       <p><strong>${inviterName}</strong> has invited you to join <strong>${agencyName}</strong> on RealEnhance as a <strong>${role}</strong>.</p>
 
-      <p>RealEnhance is an AI-powered image enhancement platform designed for property professionals.</p>
+      <p>RealEnhance helps real estate teams quickly turn everyday listing photos into polished, professional-quality images that attract buyers.</p>
 
       <div style="margin: 30px 0;">
         <a href="${acceptUrl}"
@@ -142,7 +142,7 @@ export async function sendInvitationEmail(params: {
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
 
       <p style="color: #9ca3af; font-size: 12px;">
-        RealEnhance - AI-Powered Enhancement<br/>
+        RealEnhance — Elevate your property photos<br/>
         If the button above doesn't work, copy and paste this link:<br/>
         <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
       </p>
@@ -154,7 +154,7 @@ You've Been Invited!
 
 ${inviterName} has invited you to join ${agencyName} on RealEnhance as a ${role}.
 
-RealEnhance is an AI-powered image enhancement platform designed for property professionals.
+RealEnhance helps real estate teams quickly turn everyday listing photos into polished, professional-quality images that attract buyers.
 
 Accept your invitation by visiting:
 ${acceptUrl}
@@ -162,7 +162,7 @@ ${acceptUrl}
 This invitation will expire in 7 days. If you didn't expect this invitation, you can safely ignore this email.
 
 ---
-RealEnhance - AI-Powered Enhancement
+RealEnhance — Elevate your property photos
   `.trim();
 
   const success = await sendEmail({
