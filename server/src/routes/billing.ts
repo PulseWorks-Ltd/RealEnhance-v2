@@ -18,8 +18,8 @@ import {
 const router = Router();
 
 // Initialize Stripe (only if API key is provided)
-// Use a valid version; allow override via STRIPE_API_VERSION
-const stripeApiVersion = (process.env.STRIPE_API_VERSION as Stripe.StripeConfig["apiVersion"]) || "2023-10-16";
+// Allow override via STRIPE_API_VERSION; fallback to Stripe default when unset
+const stripeApiVersion = process.env.STRIPE_API_VERSION as Stripe.StripeConfig["apiVersion"] | undefined;
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: stripeApiVersion })
   : null;
