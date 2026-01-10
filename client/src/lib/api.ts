@@ -1,7 +1,12 @@
 // client/src/lib/api.ts
+// Prefer build-time API base; otherwise, if we're on the deployed client domain, force the server URL.
 const rawBase =
   (import.meta as any).env?.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" ? `${window.location.origin}` : "http://localhost:5000");
+  (typeof window !== "undefined" && window.location.hostname.includes("client-production-3021.up.railway.app")
+    ? "https://server-production-96f7.up.railway.app"
+    : typeof window !== "undefined"
+      ? `${window.location.origin}`
+      : "http://localhost:5000");
 
 const API_BASE = rawBase.replace(/\/+$/, ""); // strip trailing slash
 

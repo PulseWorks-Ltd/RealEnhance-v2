@@ -1,0 +1,99 @@
+# Query: model: "gemini-2.5-flash"
+# ContextLines: 1
+
+19 results - 19 files
+
+worker/src/ai/analyze.ts:
+  12      const response = await opts.ai.models.generateContent({
+  13:       model: "gemini-2.0-flash",
+  14        contents: [
+
+worker/src/ai/architectural-geometry-detector.ts:
+  36      const resp = await ai.models.generateContent({
+  37:       model: "gemini-2.5-flash",
+  38        contents: [
+
+worker/src/ai/compliance.ts:
+  11    const resp = await (ai as any).models.generateContent({
+  12:     model: "gemini-2.5-flash",
+  13      contents: [{
+
+worker/src/ai/critique.ts:
+  5    const resp = await ai.models.generateContent({
+  6:     model: "gemini-2.5-flash",
+  7      contents: [{ role: "user", parts: [{ text: prompt }] }]
+
+worker/src/ai/exterior-validator.ts:
+  63      const resp = await ai.models.generateContent({
+  64:       model: "gemini-2.5-flash",
+  65        contents: [{
+
+worker/src/ai/fixture-detector.ts:
+  81      const result = await ai.models.generateContent({
+  82:       model: "gemini-2.5-flash",
+  83        contents: [
+
+worker/src/ai/fov-detector.ts:
+  74      const result = await ai.models.generateContent({
+  75:       model: "gemini-2.5-flash",
+  76        contents: [
+
+worker/src/ai/furniture-scale-validator.ts:
+  95      const resp = await ai.models.generateContent({
+  96:       model: "gemini-2.5-flash",
+  97        contents: [{
+
+worker/src/ai/furnitureDetector.ts:
+  162      const resp = await ai.models.generateContent({
+  163:       model: "gemini-2.5-flash",
+  164        contents: [{
+
+worker/src/ai/perspective-detector.ts:
+  78      const result = await ai.models.generateContent({
+  79:       model: "gemini-2.5-flash",
+  80        contents: [
+
+worker/src/ai/planner.ts:
+  20    const resp = await ai.models.generateContent({
+  21:     model: "gemini-2.5-flash",
+  22      contents: [{ role: "user", parts: [{ text: prompt }] }]
+
+worker/src/ai/qa.ts:
+  15      const resp = await ai.models.generateContent({
+  16:       model: "gemini-2.5-flash",
+  17        contents: [{
+
+worker/src/ai/scene.ts:
+  42      const resp = await ai.models.generateContent({
+  43:       model: "gemini-2.5-flash",
+  44        contents: [{
+
+worker/src/ai/spatialAnalyzer.ts:
+  357      const resp = await ai.models.generateContent({
+  358:       model: "gemini-2.5-flash",
+  359        contents: [{
+
+worker/src/ai/unified-validator.ts:
+  744      const result = await ai.models.generateContent({
+  745:       model: "gemini-2.5-flash",
+  746        contents: [
+
+worker/src/ai/wall-detector.ts:
+  91      const result = await ai.models.generateContent({
+  92:       model: "gemini-2.5-flash",
+  93        contents: [
+
+worker/src/ai/wall-plane-validator.ts:
+  91      const resp = await ai.models.generateContent({
+  92:       model: "gemini-2.5-flash",
+  93        contents: [{
+
+worker/src/ai/windowDetector.ts:
+  16      const resp = await ai.models.generateContent({
+  17:       model: "gemini-2.5-flash",
+  18        contents: [
+
+worker/src/validators/realism.ts:
+  36    const resp = await ai.models.generateContent({
+  37:     model: "gemini-2.5-flash",
+  38      contents: [
