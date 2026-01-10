@@ -1,0 +1,14 @@
+# Query: model: "gemini-2.5-flash-image"
+# ContextLines: 1
+
+2 results - 2 files
+
+GEMINI_API_FIX.md:
+  25  const result = await client.models.generateContent({
+  26:   model: "gemini-2.5-flash-image",
+  27    contents: [...]
+
+server/src/services/compliance.ts:
+  13    const resp = await ai.models.generateContent({
+  14:     model: "gemini-2.0-flash-image",
+  15      contents: [{
