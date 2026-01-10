@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 interface BillingSectionProps {
   agency: {
@@ -48,7 +49,7 @@ export function BillingSection({ agency }: BillingSectionProps) {
   const handleSubscribe = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/billing/checkout-subscription", {
+      const response = await fetch(api("/api/billing/checkout-subscription"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -86,7 +87,7 @@ export function BillingSection({ agency }: BillingSectionProps) {
   const handleManageSubscription = async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/billing/portal", {
+      const response = await fetch(api("/api/billing/portal"), {
         method: "POST",
         credentials: "include",
       });
