@@ -204,7 +204,7 @@ router.post("/invite", requireAuth, requireAgencyAdmin, async (req: Request, res
 
     // Send invitation email
     const agency = await getAgency(user.agencyId!);
-    const baseUrl = process.env.PUBLIC_ORIGIN || process.env.BASE_URL || "http://localhost:3000";
+    const baseUrl = process.env.CLIENT_URL || "http://localhost:5173";
     const acceptUrl = `${baseUrl}/accept-invite?token=${result.invite!.token}`;
 
     const emailResult = await sendInvitationEmail({
