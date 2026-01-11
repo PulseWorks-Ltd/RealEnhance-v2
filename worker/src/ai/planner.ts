@@ -12,11 +12,11 @@ export type LayoutPlan = {
 };
 
 async function callGeminiText(prompt: string): Promise<string> {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY not configured");
+  if (!process.env.REALENHANCE_API_KEY) {
+    throw new Error("REALENHANCE_API_KEY not configured");
   }
   
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.REALENHANCE_API_KEY });
   const resp = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }]
@@ -49,7 +49,7 @@ User goal: ${userGoal}
     const text = await callGeminiText(prompt);
     return JSON.parse(text) as LayoutPlan;
   } catch (error) {
-    // Safe fallback if GEMINI_API_KEY is missing or JSON parsing fails
+    // Safe fallback if REALENHANCE_API_KEY is missing or JSON parsing fails
     console.warn('[PLANNER] Planning failed, using safe fallback:', error);
     return { roomType: 'unknown' as const, vignettes: [], omit: [] };
   }

@@ -63,9 +63,9 @@ export async function runStage2(
     needsRetry = true;
   }
 
-  // Check API key before attempting Gemini calls (support GOOGLE_API_KEY or GEMINI_API_KEY)
-  if (!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY)) {
-    console.warn(`[stage2] ⚠️ No GOOGLE_API_KEY/GEMINI_API_KEY set – skipping (using ${baseStage} output)`);
+  // Check API key before attempting Gemini calls
+  if (!process.env.REALENHANCE_API_KEY) {
+    console.warn(`[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
     return out;
   }
 

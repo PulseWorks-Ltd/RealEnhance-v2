@@ -94,14 +94,14 @@ async function main(): Promise<void> {
   process.env.STAGE2_DEBUG = "1";
   process.env.USE_GEMINI_STAGE2 = "1";
 
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.REALENHANCE_API_KEY;
   if (!apiKey) {
-    throw new Error("GOOGLE_API_KEY environment variable is required");
+    throw new Error("REALENHANCE_API_KEY environment variable is required");
   }
-  
-  // Validate API key format
+
+  // Validate API key format (Gemini keys still follow AIza prefix)
   if (!/^AIza[0-9A-Za-z-_]{35}$/.test(apiKey)) {
-    throw new Error("Invalid GOOGLE_API_KEY format - must start with 'AIza' and be 39 chars long");
+    throw new Error("Invalid REALENHANCE_API_KEY format - must start with 'AIza' and be 39 chars long");
   }
 
   // Validate API key and quota configuration

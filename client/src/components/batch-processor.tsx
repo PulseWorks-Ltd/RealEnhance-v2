@@ -2628,7 +2628,7 @@ export default function BatchProcessor() {
                 className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
                 data-testid="button-proceed-enhance"
               >
-                Enhance (max {allowStaging ? files.length * 2 : files.length} credits) →
+                Enhance {files.length} {files.length === 1 ? "Image" : "Images"} →
               </button>
             </div>
           </div>
@@ -2654,7 +2654,7 @@ export default function BatchProcessor() {
                   className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg disabled:opacity-50"
                   data-testid="button-start-batch"
                 >
-                  Enhance (max {allowStaging ? files.length * 2 : files.length} credits)
+                  Enhance {files.length} {files.length === 1 ? "Image" : "Images"}
                 </button>
                 <div className="flex justify-center mt-4">
                   <button
