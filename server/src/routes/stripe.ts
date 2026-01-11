@@ -104,11 +104,13 @@ router.post(
             agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
             // Safely convert Unix timestamps to ISO strings
-            if (subscription.current_period_start) {
-              agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+            const periodStart = (subscription as any).current_period_start;
+            const periodEnd = (subscription as any).current_period_end;
+            if (periodStart) {
+              agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
             }
-            if (subscription.current_period_end) {
-              agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+            if (periodEnd) {
+              agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
             }
 
             if (currency) agency.billingCurrency = currency as any;
@@ -190,11 +192,13 @@ router.post(
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
           // Safely convert Unix timestamps to ISO strings
-          if (subscription.current_period_start) {
-            agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+          const periodStart = (subscription as any).current_period_start;
+          const periodEnd = (subscription as any).current_period_end;
+          if (periodStart) {
+            agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
           }
-          if (subscription.current_period_end) {
-            agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+          if (periodEnd) {
+            agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
           }
 
           // Update price if changed (plan upgrade/downgrade)
@@ -259,11 +263,13 @@ router.post(
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
           // Safely convert Unix timestamps to ISO strings
-          if (subscription.current_period_start) {
-            agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+          const periodStart = (subscription as any).current_period_start;
+          const periodEnd = (subscription as any).current_period_end;
+          if (periodStart) {
+            agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
           }
-          if (subscription.current_period_end) {
-            agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+          if (periodEnd) {
+            agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
           }
 
           await updateAgency(agency);
