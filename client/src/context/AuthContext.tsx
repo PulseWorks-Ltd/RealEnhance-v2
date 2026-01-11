@@ -44,12 +44,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Lazy auth: do not auto-load session on first paint.
-  // We fetch the user only when the app needs it (e.g., ensureSignedIn or an explicit refresh)
-  // This keeps first-time visitors looking anonymous until they interact.
+  // Auto-check session on mount to maintain logged-in state across page loads
+  // This ensures users stay logged in when returning from external redirects (e.g., Stripe)
   useEffect(() => {
-    // no-op: intentionally not auto-refreshing user on mount
-  }, []);
+    refreshUser();
+  }, [refreshUser]);
 
   const signOut = useCallback(async () => {
     try {

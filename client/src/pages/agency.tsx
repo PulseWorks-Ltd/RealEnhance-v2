@@ -69,6 +69,7 @@ export default function AgencyPage() {
       // Clean up URL without page reload
       window.history.replaceState({}, "", "/agency");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadAgencyData = async () => {
