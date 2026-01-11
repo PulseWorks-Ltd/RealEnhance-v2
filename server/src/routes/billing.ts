@@ -149,7 +149,7 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
       client_reference_id: agency.agencyId,
       mode: "subscription",
       line_items: lineItems,
-      success_url: `${CLIENT_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${CLIENT_URL}/agency?subscription=success`,
       cancel_url: `${CLIENT_URL}/agency`,
       metadata: {
         agencyId: agency.agencyId,

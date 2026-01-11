@@ -102,8 +102,15 @@ router.post(
             agency.stripePriceId = stripePriceId;
             agency.planTier = planTier as PlanTier;
             agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
-            agency.currentPeriodStart = new Date((subscription as any).current_period_start * 1000).toISOString();
-            agency.currentPeriodEnd = new Date((subscription as any).current_period_end * 1000).toISOString();
+
+            // Safely convert Unix timestamps to ISO strings
+            if (subscription.current_period_start) {
+              agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+            }
+            if (subscription.current_period_end) {
+              agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+            }
+
             if (currency) agency.billingCurrency = currency as any;
             if (country) agency.billingCountry = country as any;
 
@@ -181,8 +188,14 @@ router.post(
 
           // Update subscription status
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
-          agency.currentPeriodStart = new Date((subscription as any).current_period_start * 1000).toISOString();
-          agency.currentPeriodEnd = new Date((subscription as any).current_period_end * 1000).toISOString();
+
+          // Safely convert Unix timestamps to ISO strings
+          if (subscription.current_period_start) {
+            agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+          }
+          if (subscription.current_period_end) {
+            agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+          }
 
           // Update price if changed (plan upgrade/downgrade)
           const newPriceId = subscription.items.data[0]?.price.id;
@@ -244,8 +257,14 @@ router.post(
 
           // Ensure status is ACTIVE after successful payment
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
-          agency.currentPeriodStart = new Date((subscription as any).current_period_start * 1000).toISOString();
-          agency.currentPeriodEnd = new Date((subscription as any).current_period_end * 1000).toISOString();
+
+          // Safely convert Unix timestamps to ISO strings
+          if (subscription.current_period_start) {
+            agency.currentPeriodStart = new Date(subscription.current_period_start * 1000).toISOString();
+          }
+          if (subscription.current_period_end) {
+            agency.currentPeriodEnd = new Date(subscription.current_period_end * 1000).toISOString();
+          }
 
           await updateAgency(agency);
 

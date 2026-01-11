@@ -58,6 +58,17 @@ export default function AgencyPage() {
 
   useEffect(() => {
     loadAgencyData();
+
+    // Check for subscription success query parameter
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("subscription") === "success") {
+      toast({
+        title: "Subscription Activated!",
+        description: "Your subscription has been successfully activated. Welcome aboard!",
+      });
+      // Clean up URL without page reload
+      window.history.replaceState({}, "", "/agency");
+    }
   }, []);
 
   const loadAgencyData = async () => {
