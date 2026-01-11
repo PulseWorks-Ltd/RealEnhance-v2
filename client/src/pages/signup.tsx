@@ -1,31 +1,88 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { apiFetch } from "@/lib/api";
 
 export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [inviteInfo, setInviteInfo] = useState<{ email: string; agencyName: string } | null>(null);
 
   const { signUpWithEmail, ensureSignedIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/home";
+  const inviteToken = searchParams.get("token");
+
+  // Load invite info if token present
+  useEffect(() => {
+    if (inviteToken) {
+      loadInviteInfo();
+    }
+  }, [inviteToken]);
+
+  const loadInviteInfo = async () => {
+    try {
+      const res = await apiFetch(`/api/agency/invite/info?token=${inviteToken}`);
+      if (res.ok) {
+        const data = await res.json();
+        setInviteInfo({ email: data.email, agencyName: data.agencyName });
+        setEmail(data.email); // Pre-fill email
+      }
+    } catch (err) {
+      console.error("Failed to load invite info:", err);
+    }
+  };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Validate password confirmation
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await signUpWithEmail(email, password, name);
-      navigate(redirectTo);
+      // If invite token present, use invite signup flow
+      if (inviteToken) {
+        const res = await apiFetch("/api/agency/invite/accept", {
+          method: "POST",
+          body: JSON.stringify({
+            token: inviteToken,
+            name,
+            password,
+          }),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to accept invite");
+        }
+
+        // Invite accepted, user created and logged in
+        navigate("/home");
+      } else {
+        // Regular signup flow
+        await signUpWithEmail(email, password, name);
+        navigate(redirectTo);
+      }
     } catch (err: any) {
       setError(err.message || "Signup failed");
     } finally {
@@ -49,14 +106,25 @@ export default function Signup() {
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">
-            Create Account
+            {inviteInfo ? "Accept Invitation" : "Create Account"}
           </CardTitle>
           <CardDescription className="text-center">
-            Sign up to start enhancing your photos
+            {inviteInfo
+              ? `Join ${inviteInfo.agencyName} on RealEnhance`
+              : "Sign up to start enhancing your photos"}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {inviteInfo && (
+            <div className="p-3 rounded-md bg-brand-light border border-brand-primary/20 text-sm">
+              <p className="font-medium">You've been invited to join {inviteInfo.agencyName}</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                Create your account to get started
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="p-3 rounded-md bg-destructive/10 text-destructive text-sm">
               {error}
@@ -86,8 +154,14 @@ export default function Signup() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                disabled={loading}
+                disabled={loading || !!inviteInfo}
+                readOnly={!!inviteInfo}
               />
+              {inviteInfo && (
+                <p className="text-xs text-muted-foreground">
+                  Email from invitation
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -105,6 +179,25 @@ export default function Signup() {
               <p className="text-xs text-muted-foreground">
                 Must be at least 8 characters
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={8}
+                disabled={loading}
+              />
+              {password && confirmPassword && password !== confirmPassword && (
+                <p className="text-xs text-destructive">
+                  Passwords do not match
+                </p>
+              )}
             </div>
 
             <Button

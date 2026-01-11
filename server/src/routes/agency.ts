@@ -257,6 +257,46 @@ router.get("/invites", requireAuth, requireAgencyAdmin, async (req: Request, res
 });
 
 /**
+ * GET /api/agency/invite/info
+ * Get invite information without accepting (for prefilling signup form)
+ */
+router.get("/invite/info", async (req: Request, res: Response) => {
+  try {
+    const { token } = req.query;
+
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ error: "Invite token is required" });
+    }
+
+    const invite = await getInviteByToken(token);
+
+    if (!invite) {
+      return res.status(404).json({ error: "Invite not found or expired" });
+    }
+
+    if (invite.acceptedAt) {
+      return res.status(400).json({ error: "Invite already accepted" });
+    }
+
+    // Get agency info to show agency name
+    const agency = await getAgency(invite.agencyId);
+
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    res.json({
+      email: invite.email,
+      agencyName: agency.name,
+      role: invite.role,
+    });
+  } catch (err) {
+    console.error("[AGENCY] Get invite info error:", err);
+    res.status(500).json({ error: "Failed to get invite information" });
+  }
+});
+
+/**
  * POST /api/agency/invite/accept
  * Accept an invite and join the agency
  */
