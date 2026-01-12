@@ -313,7 +313,8 @@ export function uploadRouter() {
       const jobId = "job_" + crypto.randomUUID();
       const finalDeclutter = parseStrictBool(opts.declutter);
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      const requiredImages = finalVirtualStage ? 2 : 1;
+      // Pricing logic: 1 image for 1A-only, 1A+1B, or 1A+2; 2 images only when 1B and 2 both run
+      const requiredImages = finalDeclutter && finalVirtualStage ? 2 : 1;
 
       try {
         const reservation = await reserveAllowance({

@@ -43,6 +43,42 @@ export async function recordEnhanceStageUsage(
 }
 
 /**
+ * Record bundled usage for an enhance job according to pricing rules
+ * imagesUsed: 1 for 1A-only / 1A+1B / 1A+2, 2 for 1A+1B+2
+ */
+export async function recordEnhanceBundleUsage(
+  payload: EnhanceJobPayload,
+  imagesUsed: number,
+  agencyId?: string | null
+): Promise<void> {
+  try {
+    await recordUsageEvent({
+      userId: payload.userId,
+      agencyId: agencyId || (await getAgencyIdForUser(payload.userId)),
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage: "1A",
+      modelUsed: "gemini-2.0-flash-exp",
+      roomType: payload.options?.roomType || null,
+      sceneType: typeof payload.options?.sceneType === "string" ? payload.options.sceneType : null,
+      declutter: payload.options?.declutter || null,
+      staging: payload.options?.virtualStage || null,
+      listingId: payload.listingId || null,
+      meta: {
+        imagesUsed,
+        stages: {
+          stage1A: true,
+          stage1B: !!payload.options?.declutter,
+          stage2: !!payload.options?.virtualStage,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[USAGE] Failed to record bundled enhance usage (non-blocking):", err);
+  }
+}
+
+/**
  * Record usage for an edit job
  */
 export async function recordEditUsage(

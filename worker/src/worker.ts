@@ -50,7 +50,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
-import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
+import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
@@ -210,6 +210,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           scene: { label: sceneLabel as any, confidence: 0.5 }
         }
       });
+
+      // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
+      try {
+        await finalizeReservationFromWorker({
+          jobId: payload.jobId,
+          stage12Success: true,
+          stage2Success: true,
+        });
+        nLog(`[BILLING] Finalized reservation for stage2-only retry: ${payload.jobId}`);
+      } catch (billingErr) {
+        nLog("[BILLING] Failed to finalize reservation (stage2-only retry):", (billingErr as any)?.message || billingErr);
+      }
 
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
       return; // ✅ Exit early - full pipeline not needed
@@ -1123,22 +1135,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
 
   // ===== USAGE TRACKING (BEST-EFFORT, NON-BLOCKING) =====
-  // Record usage events for all completed stages
+  // Record a single bundled usage event following pricing rules
   try {
     const agencyId = (payload as any).agencyId || null;
-
-    // Always record Stage 1A
-    await recordEnhanceStageUsage(payload, "1A", agencyId);
-
-    // Record Stage 1B if it ran
-    if (path1B && payload.options.declutter) {
-      await recordEnhanceStageUsage(payload, "1B", agencyId);
-    }
-
-    // Record Stage 2 if it ran
-    if (hasStage2 && path2) {
-      await recordEnhanceStageUsage(payload, "2", agencyId);
-    }
+    const imagesUsed = payload.options.declutter && payload.options.virtualStage ? 2 : 1;
+    await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
   } catch (usageErr) {
     // Usage tracking must never block job completion
     nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
