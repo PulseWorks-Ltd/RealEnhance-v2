@@ -3,11 +3,23 @@
   "build": {
     "builder": "NIXPACKS",
     "nixpacksPlan": {
-      "providers": ["node"],
       "phases": {
-        "setup": { "nixPkgs": ["nodejs", "pnpm"] },
-        "install": { "cmds": ["pnpm install --no-frozen-lockfile --force"] },
-        "build":   { "cmds": ["rm -rf dist node_modules/.vite", "pnpm run build"] }
+        "setup": {
+          "nixPkgs": ["nodejs_20"],
+          "aptPkgs": []
+        },
+        "install": {
+          "cmds": [
+            "npm install -g pnpm@latest",
+            "pnpm install --no-frozen-lockfile --force"
+          ]
+        },
+        "build": {
+          "cmds": [
+            "rm -rf dist node_modules/.vite",
+            "pnpm run build"
+          ]
+        }
       }
     }
   },
