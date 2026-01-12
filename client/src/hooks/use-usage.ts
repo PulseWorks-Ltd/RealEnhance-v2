@@ -33,11 +33,8 @@ export function useUsage() {
       setLoading(true);
       setError(null);
       const response = await apiFetch("/api/usage/summary");
-      if (response.ok && response.data) {
-        setUsage(response.data);
-      } else {
-        setError(response.error || "Failed to fetch usage");
-      }
+      const data = (await response.json()) as UsageSummary;
+      setUsage(data);
     } catch (err) {
       console.error("Error fetching usage:", err);
       setError("Failed to fetch usage");
