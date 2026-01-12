@@ -498,7 +498,7 @@ export default function BatchProcessor() {
             filename: next.filename,
             ok: !!norm?.ok,
             image: norm?.image || undefined,
-            originalImageUrl: next.result?.originalImageUrl || undefined,  // Preserve original URL for comparison slider
+            originalImageUrl: next.result?.originalImageUrl || next.result?.originalUrl || undefined,  // Preserve original URL for comparison slider
             error: next.error || norm?.error
           };
           return copy;
@@ -820,11 +820,12 @@ export default function BatchProcessor() {
           for (let i = 0; i < data.items.length; i++) {
             const item = data.items[i];
             const url = item?.imageUrl || item?.resultUrl || item?.image || null;
+            const originalUrl = item?.originalImageUrl || item?.originalUrl || item?.original || null;
             if (item && item.status === 'completed' && !processedSetRef.current.has(i)) {
               processedSetRef.current.add(i);
               queueRef.current.push({
                 index: i,
-                result: { imageUrl: url, originalImageUrl: item.originalImageUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
+                result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -860,9 +861,10 @@ export default function BatchProcessor() {
             processedSetRef.current.add(0);
             if (data.status === 'completed') {
               const url = data.imageUrl || data.resultUrl || data.image || null;
+              const originalUrl = data.originalImageUrl || data.originalUrl || data.original || null;
               queueRef.current.push({
                 index: 0,
-                result: { imageUrl: url, originalImageUrl: data.originalImageUrl || null, mode: 'enhanced' },
+                result: { imageUrl: url, originalImageUrl: originalUrl, mode: 'enhanced' },
                 filename: files[0]?.name || 'image-1'
               });
             } else {
@@ -1017,6 +1019,7 @@ export default function BatchProcessor() {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
           const url = it?.imageUrl || it?.resultUrl || it?.image || null;
+          const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const status = String(it?.status || "").toLowerCase();
           const isCompleted = status === "completed" || status === "complete" || status === "done";
 
@@ -1026,7 +1029,7 @@ export default function BatchProcessor() {
               index: idx,
               result: {
                 imageUrl: url,
-                originalImageUrl: it.originalImageUrl || null,
+                originalImageUrl: originalUrl,
                 qualityEnhancedUrl: null,
                 mode: it.mode || "enhanced"
               },
@@ -1713,7 +1716,11 @@ export default function BatchProcessor() {
                   ok: true
                 };
                 const normalizedResult = normalizeBatchItem(retryResult);
-                const preservedOriginalUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+                const preservedOriginalUrl =
+                  results[imageIndex]?.result?.originalImageUrl ||
+                  results[imageIndex]?.result?.originalUrl ||
+                  results[imageIndex]?.originalImageUrl ||
+                  results[imageIndex]?.originalUrl;
                 const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
@@ -2816,7 +2823,7 @@ export default function BatchProcessor() {
                     const imageUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
                     const displayName = result?.filename || file?.name || `Image ${i+1}`;
                     // Use server's original URL (from S3) for comparison slider, fallback to local preview
-                    const originalUrl = result?.originalImageUrl || previewUrls[result?.index ?? i];
+                    const originalUrl = result?.originalImageUrl || result?.originalUrl || result?.result?.originalImageUrl || result?.result?.originalUrl || previewUrls[result?.index ?? i];
                     return (
                     <div key={i} className="bg-brand-light rounded-lg p-4 flex gap-4 items-start">
                       <div className="relative w-24 h-24">
@@ -3221,7 +3228,11 @@ export default function BatchProcessor() {
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
-                const preservedOriginalUrl = results[editingImageIndex]?.result?.originalImageUrl || results[editingImageIndex]?.originalImageUrl;
+                const preservedOriginalUrl =
+                  results[editingImageIndex]?.result?.originalImageUrl ||
+                  results[editingImageIndex]?.result?.originalUrl ||
+                  results[editingImageIndex]?.originalImageUrl ||
+                  results[editingImageIndex]?.originalUrl;
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
                 setResults(prev => prev.map((r, i) =>
                   i === editingImageIndex ? {

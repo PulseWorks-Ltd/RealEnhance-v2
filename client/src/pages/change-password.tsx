@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ChangePassword() {
-  const { user, loading, changePassword } = useAuth();
+  const { user, loading, changePassword, requestPasswordReset } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -17,6 +17,8 @@ export default function ChangePassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [resetSending, setResetSending] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -48,6 +50,32 @@ export default function ChangePassword() {
       setError(err.message || "Failed to change password");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!user?.email) {
+      setError("No email on file for this account");
+      return;
+    }
+    setError(null);
+    setResetSending(true);
+    try {
+      await requestPasswordReset(user.email);
+      setResetSent(true);
+      toast({
+        title: "Reset link sent",
+        description: "Check your email for a password reset link.",
+      });
+    } catch (err: any) {
+      // Avoid user enumeration; still show success
+      setResetSent(true);
+      toast({
+        title: "Reset link sent",
+        description: "If this email exists, a reset link was sent.",
+      });
+    } finally {
+      setResetSending(false);
     }
   };
 
@@ -114,6 +142,22 @@ export default function ChangePassword() {
               {submitting ? "Updating..." : "Change Password"}
             </Button>
           </form>
+          <div className="pt-2 border-t border-border/60 mt-4 space-y-2 text-sm text-muted-foreground">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-foreground">Forgot your password?</p>
+                <p>Send a reset link to your email. You can also use the full reset flow on the sign-in page.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleForgotPassword}
+                disabled={resetSending || resetSent}
+              >
+                {resetSending ? "Sending..." : resetSent ? "Sent" : "Send reset link"}
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
