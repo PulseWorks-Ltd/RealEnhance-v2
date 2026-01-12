@@ -77,6 +77,9 @@ const BATCH_JOB_KEY = "pmf_batch_job";
 const ACTIVE_BATCH_KEY = "activeBatchJobIds";
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 
+// Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
+const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
+
 function saveBatchJobState(state: PersistedBatchJob) {
   try {
     localStorage.setItem(BATCH_JOB_KEY, JSON.stringify(state));
@@ -554,11 +557,18 @@ export default function BatchProcessor() {
   }
 
   const previewUrls = useMemo(
-    () => files.map(f => URL.createObjectURL(f)),
+    () => files.map((f: any) => (f.__restored ? RESTORED_PLACEHOLDER : URL.createObjectURL(f))),
     [files]
   );
 
-  useEffect(() => () => previewUrls.forEach(u => URL.revokeObjectURL(u)), [previewUrls]);
+  useEffect(() => () => {
+    previewUrls.forEach(u => {
+      // Only revoke real blob/object URLs; placeholders/data URIs need no cleanup
+      if (u && typeof u === "string" && u.startsWith("blob:")) {
+        URL.revokeObjectURL(u);
+      }
+    });
+  }, [previewUrls]);
   
   // Progress text clears when files change
   useEffect(() => {
@@ -577,6 +587,9 @@ export default function BatchProcessor() {
       setProcessedImages(savedState.processedImages);
       setProcessedImagesByIndex(savedState.processedImagesByIndex);
       jobIdToIndexRef.current = savedState.jobIdToIndex || {};
+      if (!Object.keys(jobIdToIndexRef.current).length) {
+        rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
+      }
       setGlobalGoal(savedState.goal);
       setPreserveStructure(savedState.settings.preserveStructure);
       setAllowStaging(savedState.settings.allowStaging);
@@ -624,6 +637,7 @@ export default function BatchProcessor() {
             setJobIds(activeIds);
             setRunState("running");
             setActiveTab("enhance");
+            rebuildJobIndexMapping(activeIds, files.length || activeIds.length);
             startPollingExistingBatch(activeIds);
           }
         } catch {
@@ -635,7 +649,7 @@ export default function BatchProcessor() {
 
   // Auto-save state when key values change
   useEffect(() => {
-    if (jobId && runState !== "idle") {
+    if (runState !== "idle" && (jobId || jobIds.length)) {
       const state: PersistedBatchJob = {
         jobId,
         jobIds,
@@ -2051,6 +2065,19 @@ export default function BatchProcessor() {
 
   // Dummy state to force re-render when room type detection updates
   const [roomTypeDetectionTick, setRoomTypeDetectionTick] = useState(0);
+
+  // Rebuild jobId->index mapping when we only have jobIds and file order
+  const rebuildJobIndexMapping = (ids: string[] | null | undefined, fileCount: number) => {
+    if (!ids || !ids.length || !fileCount) return;
+    // Only fill missing entries to avoid clobbering any saved mapping
+    const mapping = { ...jobIdToIndexRef.current } as Record<string, number>;
+    ids.forEach((id, idx) => {
+      if (typeof id === "string" && mapping[id] === undefined && idx < fileCount) {
+        mapping[id] = idx;
+      }
+    });
+    jobIdToIndexRef.current = mapping;
+  };
 
   return (
   <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
