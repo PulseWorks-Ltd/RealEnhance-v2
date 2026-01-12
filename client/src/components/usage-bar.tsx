@@ -128,7 +128,7 @@ export function UsageSummary({
         <ul className="space-y-0.5 ml-2">
           <li>• Enhancement only (1A): <span className="font-medium">1 image</span></li>
           <li>• Enhancement + Declutter (1A + 1B): <span className="font-medium">1 image</span></li>
-          <li>• Enhancement + Staging (1A + Stage 2): <span className="font-medium">2 images</span></li>
+          <li>• Enhancement + Staging (1A + Stage 2): <span className="font-medium">1 image</span></li>
           <li>• Enhancement + Declutter + Staging (1A + 1B + Stage 2): <span className="font-medium">2 images</span></li>
         </ul>
       </div>
