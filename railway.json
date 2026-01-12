@@ -4,7 +4,7 @@
       "name": "server",
       "builder": "NIXPACKS",
       "rootDirectory": ".",
-      "buildCommand": "npm install -g pnpm@latest && NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/server run build",
+      "buildCommand": "NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/server run build",
       "startCommand": "pnpm --filter @realenhance/server run start"
     },
     {

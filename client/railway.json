@@ -5,12 +5,11 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["nodejs_20"],
+          "nixPkgs": ["nodejs_20", "pnpm"],
           "aptPkgs": []
         },
         "install": {
           "cmds": [
-            "npm install -g pnpm@latest",
             "pnpm install --no-frozen-lockfile --force"
           ]
         },
