@@ -4,19 +4,22 @@
       "name": "server",
       "builder": "NIXPACKS",
       "rootDirectory": ".",
-      "buildCommand": "pnpm --filter @realenhance/shared run build && pnpm --filter @realenhance/server run build",
+      "buildCommand": "npm install -g pnpm@latest && NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/server run build",
       "startCommand": "pnpm --filter @realenhance/server run start"
     },
     {
       "name": "worker",
       "builder": "NIXPACKS",
       "rootDirectory": ".",
-      "buildCommand": "pnpm --filter @realenhance/shared run build && pnpm --filter @realenhance/worker run build",
+      "buildCommand": "npm install -g pnpm@latest && NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/worker run build",
       "startCommand": "pnpm --filter @realenhance/worker run start"
     },
     {
       "name": "client",
-      "rootDirectory": "client"
+      "builder": "NIXPACKS",
+      "rootDirectory": "client",
+      "buildCommand": "npm install -g pnpm@latest && pnpm install --no-frozen-lockfile --force && pnpm run build",
+      "startCommand": "pnpm run preview -- --host 0.0.0.0 --port $PORT"
     }
   ]
 }
