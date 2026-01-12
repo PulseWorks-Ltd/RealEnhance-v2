@@ -2,14 +2,14 @@
 nixPkgs = ["nodejs_20", "pnpm"]
 
 [phases.install]
-# Install workspace dependencies from root
-cmds = ["pnpm install --no-frozen-lockfile --prefer-offline"]
+# Install workspace dependencies from root (with devDependencies for TypeScript)
+cmds = ["NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline"]
 
 [phases.build]
 # Build shared package first, then server
 cmds = [
-  "pnpm --filter @realenhance/shared run build",
-  "pnpm --filter @realenhance/server build"
+  "NODE_ENV=development pnpm --filter @realenhance/shared run build",
+  "NODE_ENV=development pnpm --filter @realenhance/server build"
 ]
 
 [start]
