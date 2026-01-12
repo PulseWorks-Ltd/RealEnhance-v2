@@ -2326,6 +2326,28 @@ export default function BatchProcessor() {
                   </div>
                 </div>
 
+                {/* Image Consumption Notice */}
+                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                  <p className="text-sm font-medium text-blue-300 mb-1">Image consumption per photo:</p>
+                  <p className="text-sm text-blue-200">
+                    {allowStaging ? (
+                      <>
+                        <span className="font-semibold">2 images</span> will be consumed per photo
+                        <span className="text-xs block text-blue-300 mt-1">
+                          (1 for enhancement{declutter ? ' + declutter' : ''}, 1 for staging)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold">1 image</span> will be consumed per photo
+                        <span className="text-xs block text-blue-300 mt-1">
+                          ({declutter ? 'Enhancement + declutter' : 'Enhancement only'})
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+
                 <div>
                   <button
                     onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}

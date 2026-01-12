@@ -115,16 +115,6 @@ export function UsageSummary({
         type="main"
       />
 
-      {hasStaging && (
-        <UsageBar
-          label="Virtual Staging Images"
-          used={stagingUsed || 0}
-          total={stagingTotal || 0}
-          warningLevel={stagingWarning || "none"}
-          type="staging"
-        />
-      )}
-
       {mainWarning === "exhausted" && (
         <Alert variant="destructive">
           <AlertDescription>
@@ -133,21 +123,15 @@ export function UsageSummary({
         </Alert>
       )}
 
-      {stagingNote && (
-        <p className="text-xs text-gray-600">{stagingNote}</p>
-      )}
-
-      {!hasStaging && mainWarning !== "exhausted" && !stagingNote && (
-        <p className="text-xs text-gray-500">
-          {planName} plan • Virtual staging uses additional image allowance
-        </p>
-      )}
-
-      {hasStaging && stagingWarning === "exhausted" && mainWarning !== "exhausted" && (
-        <p className="text-xs text-gray-600">
-          Virtual staging bundle exhausted. Stage 2 will now use your main image allowance.
-        </p>
-      )}
+      <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
+        <p className="font-semibold mb-1">Image consumption:</p>
+        <ul className="space-y-0.5 ml-2">
+          <li>• Enhancement only (1A): <span className="font-medium">1 image</span></li>
+          <li>• Enhancement + Declutter (1A + 1B): <span className="font-medium">1 image</span></li>
+          <li>• Enhancement + Staging (1A + Stage 2): <span className="font-medium">2 images</span></li>
+          <li>• Enhancement + Declutter + Staging (1A + 1B + Stage 2): <span className="font-medium">2 images</span></li>
+        </ul>
+      </div>
 
       {topUsers && topUsers.length > 0 && (
         <div className="pt-4 border-t border-gray-200">
