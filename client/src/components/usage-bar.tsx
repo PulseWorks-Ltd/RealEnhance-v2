@@ -98,6 +98,10 @@ export function UsageSummary({
   stagingNote,
   topUsers,
 }: UsageSummaryProps) {
+  const top10 = (topUsers || [])
+    .slice()
+    .sort((a, b) => b.used - a.used)
+    .slice(0, 10);
   const hasStaging = stagingTotal && stagingTotal > 0;
 
   return (
@@ -133,11 +137,11 @@ export function UsageSummary({
         </ul>
       </div>
 
-      {topUsers && topUsers.length > 0 && (
+      {top10.length > 0 && (
         <div className="pt-4 border-t border-gray-200">
           <h4 className="text-sm font-semibold mb-2">Top Users This Month</h4>
           <div className="space-y-1">
-            {topUsers.map((u) => (
+            {top10.map((u) => (
               <div key={u.userId} className="flex items-center justify-between text-sm">
                 <span className="text-gray-700 truncate">{u.name}</span>
                 <span className="text-gray-500 font-mono">{u.used}</span>
