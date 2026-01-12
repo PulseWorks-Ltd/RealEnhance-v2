@@ -51,6 +51,7 @@ interface PersistedFileMetadata {
 
 interface PersistedBatchJob {
   jobId: string;
+  jobIds: string[];
   runState: RunState;
   results: any[];
   processedImages: string[];
@@ -69,9 +70,11 @@ interface PersistedBatchJob {
     stagingStyle: string;
   };
   fileMetadata: PersistedFileMetadata[];
+  jobIdToIndex: Record<string, number>;
 }
 
 const BATCH_JOB_KEY = "pmf_batch_job";
+const ACTIVE_BATCH_KEY = "activeBatchJobIds";
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 
 function saveBatchJobState(state: PersistedBatchJob) {
@@ -107,6 +110,8 @@ function loadBatchJobState(): PersistedBatchJob | null {
 function clearBatchJobState() {
   try {
     localStorage.removeItem(BATCH_JOB_KEY);
+    localStorage.removeItem(ACTIVE_BATCH_KEY);
+    localStorage.removeItem("activeJobId");
   } catch (error) {
     console.warn("Failed to clear batch job state:", error);
   }
@@ -566,10 +571,12 @@ export default function BatchProcessor() {
     if (savedState) {
       console.log("Restoring batch job state:", savedState.jobId);
       setJobId(savedState.jobId);
+      setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
       setRunState(savedState.runState);
       setResults(savedState.results);
       setProcessedImages(savedState.processedImages);
       setProcessedImagesByIndex(savedState.processedImagesByIndex);
+      jobIdToIndexRef.current = savedState.jobIdToIndex || {};
       setGlobalGoal(savedState.goal);
       setPreserveStructure(savedState.settings.preserveStructure);
       setAllowStaging(savedState.settings.allowStaging);
@@ -601,19 +608,27 @@ export default function BatchProcessor() {
       // If the job was running, continue polling
       if (savedState.runState === "running") {
         setActiveTab("enhance");
-        startPollingExistingJob(savedState.jobId);
+        startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
       } else if (savedState.runState === "done") {
         setActiveTab("enhance");
       }
     } else {
-      // Fallback: check for activeJobId from enhanced polling (user may have navigated away)
-      const activeJobId = localStorage.getItem("activeJobId");
-      if (activeJobId) {
-        console.log("Resuming polling for active job:", activeJobId);
-        setJobId(activeJobId);
-        setRunState("running");
-        setActiveTab("enhance");
-        startPollingExistingJob(activeJobId);
+      // Fallback: check for active batch ids from enhanced polling (user may have navigated away)
+      const activeBatchIdsRaw = localStorage.getItem(ACTIVE_BATCH_KEY);
+      if (activeBatchIdsRaw) {
+        try {
+          const activeIds: string[] = JSON.parse(activeBatchIdsRaw);
+          if (Array.isArray(activeIds) && activeIds.length) {
+            console.log("Resuming polling for active batch:", activeIds);
+            setJobId(activeIds[0]);
+            setJobIds(activeIds);
+            setRunState("running");
+            setActiveTab("enhance");
+            startPollingExistingBatch(activeIds);
+          }
+        } catch {
+          localStorage.removeItem(ACTIVE_BATCH_KEY);
+        }
       }
     }
   }, []);
@@ -623,6 +638,7 @@ export default function BatchProcessor() {
     if (jobId && runState !== "idle") {
       const state: PersistedBatchJob = {
         jobId,
+        jobIds,
         runState,
         results,
         processedImages,
@@ -645,11 +661,19 @@ export default function BatchProcessor() {
           size: file.size,
           type: file.type,
           lastModified: file.lastModified
-        }))
+        })),
+        jobIdToIndex: { ...jobIdToIndexRef.current }
       };
       saveBatchJobState(state);
     }
-  }, [jobId, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter]);
+  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle]);
+
+  const startPollingExistingBatch = async (ids: string[]) => {
+    if (!ids.length) return;
+    const controller = new AbortController();
+    setAbortController(controller);
+    await pollForBatch(ids, controller);
+  };
 
   // Polling function for existing jobs
   const startPollingExistingJob = async (existingJobId: string) => {
@@ -886,6 +910,7 @@ export default function BatchProcessor() {
 
   // Multi-job polling using server batch endpoint
   const pollForBatch = async (ids: string[], controller: AbortController) => {
+    localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(ids));
     const MAX_POLL_MINUTES = 45;
     const MAX_POLL_MS = MAX_POLL_MINUTES * 60 * 1000;
     const BACKOFF_START_MS = 1000;
@@ -909,6 +934,8 @@ export default function BatchProcessor() {
         if (!resp.ok) {
           setRunState("idle");
           setAbortController(null);
+          localStorage.removeItem(ACTIVE_BATCH_KEY);
+          localStorage.removeItem("activeJobId");
           // Fallback: if 404 (route missing on older deploy), poll per-id legacy endpoint
           if (resp.status === 404) {
             console.error("❌ BATCH STATUS 404 – WRONG ROUTE MATCH!", {
@@ -1010,6 +1037,8 @@ export default function BatchProcessor() {
           setAbortController(null);
           await refreshUser();
           setProgressText(`Batch complete! ${items.filter((i:any)=>i.status==='completed').length} images enhanced successfully.`);
+          localStorage.removeItem(ACTIVE_BATCH_KEY);
+          localStorage.removeItem("activeJobId");
           return;
         }
 
@@ -1020,6 +1049,8 @@ export default function BatchProcessor() {
       }
       await new Promise(r => setTimeout(r, delay));
     }
+    localStorage.removeItem(ACTIVE_BATCH_KEY);
+    localStorage.removeItem("activeJobId");
   };
 
   // Helper: start polling a single region-edit job via the global batch status endpoint
@@ -1047,6 +1078,7 @@ export default function BatchProcessor() {
     const MAX_POLL_MS = 45 * 60 * 1000;
     const BACKOFF_START_MS = 1000, BACKOFF_MAX_MS = 5000, BACKOFF_FACTOR = 1.5;
     let delay = BACKOFF_START_MS; const deadline = Date.now() + MAX_POLL_MS;
+    localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(ids));
     while (Date.now() < deadline) {
       if (controller.signal.aborted) return;
       try {
@@ -1077,7 +1109,10 @@ export default function BatchProcessor() {
         }
         schedule();
         if (completed === ids.length) {
-          setRunState('done'); setAbortController(null); await refreshUser(); return;
+          setRunState('done'); setAbortController(null); await refreshUser();
+          localStorage.removeItem(ACTIVE_BATCH_KEY);
+          localStorage.removeItem("activeJobId");
+          return;
         }
         delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
       } catch (e:any) {
@@ -1086,6 +1121,8 @@ export default function BatchProcessor() {
       }
       await new Promise(r=>setTimeout(r, delay));
     }
+    localStorage.removeItem(ACTIVE_BATCH_KEY);
+    localStorage.removeItem("activeJobId");
   };
 
   // Cancel entire batch: abort client polling and notify server to cancel queued jobs
@@ -1107,6 +1144,7 @@ export default function BatchProcessor() {
       setRunState("idle");
       setProgressText("Cancelled");
       localStorage.removeItem("activeJobId");
+      localStorage.removeItem(ACTIVE_BATCH_KEY);
       toast({ title: 'Batch cancelled', description: ids.length ? `Requested cancel for ${ids.length} job(s).` : 'Stopped polling.' });
     } catch (e: any) {
       toast({ title: 'Cancel failed', description: e?.message || 'Unable to cancel batch on server', variant: 'destructive' });
@@ -1171,6 +1209,7 @@ export default function BatchProcessor() {
     setResults(Array.from({ length: files.length }, () => null));
     setProgressText("");
     setJobId("");
+    setJobIds([]);
     setProcessedImages([]);
     setProcessedImagesByIndex({});
     processedSetRef.current.clear(); // Reset processed tracking for new batch
