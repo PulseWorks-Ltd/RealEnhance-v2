@@ -160,3 +160,84 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+// ============================================================================
+// ENHANCED IMAGES HISTORY - Quota-Bound Retention
+// ============================================================================
+
+/**
+ * Enhancement attempt audit record (INTERNAL USE ONLY)
+ * Provides full traceability from stored images back to validator decisions.
+ * NEVER expose validator details to users.
+ */
+export interface EnhancementAttempt {
+  attemptId: string; // UUID
+  jobId: JobId;
+  stage: 'stage12' | 'stage2' | 'edit' | 'region_edit';
+  attemptNumber: number;
+
+  // Model & prompt tracking
+  modelUsed?: string; // e.g., "gemini-1.5-flash-002"
+  promptVersion?: string; // e.g., "v2.1" or hash
+
+  // Validator results (INTERNAL ONLY)
+  validatorPassed?: boolean;
+  validatorSummaryInternal?: Record<string, any>; // scores, warnings, structural checks
+
+  // Traceability
+  traceId: string; // correlates with worker logs
+
+  createdAt: string;
+}
+
+/**
+ * Enhanced image record with quota-bound retention
+ * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
+ * Oldest images expire first (FIFO)
+ */
+export interface EnhancedImage {
+  id: string; // UUID
+
+  // Ownership & scoping
+  agencyId: string;
+  userId: UserId;
+  jobId: JobId;
+
+  // Stage completion tracking
+  stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
+
+  // Storage
+  storageKey: string; // S3 key
+  publicUrl: string; // Full public URL
+  thumbnailUrl?: string; // Optional thumbnail
+
+  // File metadata
+  sizeBytes?: number;
+  contentType?: string;
+
+  // Retention & expiry
+  isExpired: boolean;
+  expiresAt?: string; // Computed based on retention policy
+
+  // Audit & traceability (NEVER expose validator details to users)
+  auditRef: string; // Short human-friendly reference (e.g., "RE-7F3K9Q")
+  traceId: string; // Correlates with worker logs
+  stage12AttemptId?: string; // UUID reference
+  stage2AttemptId?: string; // UUID reference
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Enhanced image list item (for API responses)
+ * Excludes sensitive audit data
+ */
+export interface EnhancedImageListItem {
+  id: string;
+  thumbnailUrl: string;
+  publicUrl: string;
+  stagesCompleted: string[];
+  createdAt: string;
+  auditRef: string; // May be shown to users as generic "Support reference"
+}

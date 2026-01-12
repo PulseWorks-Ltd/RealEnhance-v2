@@ -33,6 +33,7 @@ import adminSubscriptionRouter from "./routes/adminSubscription.js";
 import { myImagesRouter } from "./routes/myImages.js";
 import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
+import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -136,6 +137,8 @@ async function main() {
   app.use("/api/billing", billingRouter);
   // User's enhanced images gallery
   app.use("/api", myImagesRouter());
+  // Previously enhanced images (quota-bound retention)
+  app.use("/api/enhanced-images", enhancedImagesRouter());
   // Admin analysis endpoints
   app.use("/api/admin", adminAnalysisRouter);
 

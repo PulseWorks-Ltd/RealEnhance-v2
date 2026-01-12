@@ -15,6 +15,7 @@ const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const Agency         = lazy(() => import("@/pages/agency"));
 const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
+const EnhancedHistory = lazy(() => import("@/pages/enhanced-history"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/my-photos" element={<MyPhotos />} />
           <Route path="/region-edit" element={<RegionEditPage />} />
           <Route path="/agency" element={<Agency />} />
+          <Route path="/enhanced-history" element={<EnhancedHistory />} />
           <Route path="/dashboard" element={<Navigate to="/home" replace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

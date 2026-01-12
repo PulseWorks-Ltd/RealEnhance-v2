@@ -52,6 +52,8 @@ import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
+import { recordEnhancedImage } from "./db/enhancedImages.js";
+import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -1187,6 +1189,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": hasStage2 ? pub2Url : null
     }
   });
+
+  // Record enhanced image for "Previously Enhanced Images" history
+  // FAIL-SAFE: Non-blocking - if this fails, job still completes successfully
+  if (payload.agencyId && pubFinalUrl) {
+    const stagesCompleted: string[] = ['1A'];
+    if (payload.options.declutter && pub1BUrl) stagesCompleted.push('1B');
+    if (hasStage2 && pub2Url) stagesCompleted.push('2');
+
+    const auditRef = generateAuditRef();
+    const traceId = generateTraceId(payload.jobId);
+
+    recordEnhancedImage({
+      agencyId: payload.agencyId,
+      userId: payload.userId,
+      jobId: payload.jobId,
+      stagesCompleted,
+      publicUrl: pubFinalUrl,
+      thumbnailUrl: pubFinalUrl, // Use same URL for thumbnail (can be optimized later)
+      auditRef,
+      traceId,
+    }).catch((err) => {
+      // Log but don't throw - this is not critical for job completion
+      nLog(`[enhanced-images] Failed to record image: ${err}`);
+    });
+  }
 
   // Return value for BullMQ status consumers
   const returnValue = {

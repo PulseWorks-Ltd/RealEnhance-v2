@@ -46,6 +46,10 @@ export function ProfileDropdown() {
     navigate("/agency");
   };
 
+  const handleEnhancedHistory = () => {
+    navigate("/enhanced-history");
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger data-testid="button-profile">
@@ -59,6 +63,9 @@ export function ProfileDropdown() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleViewHistory} data-testid="button-view-history">
           📸 Previously Enhanced Photos
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleEnhancedHistory} data-testid="button-enhanced-history">
+          🗂️ Enhanced History
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
           🏢 Agency Settings
