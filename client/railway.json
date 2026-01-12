@@ -7,7 +7,7 @@
       "phases": {
         "setup": { "nixPkgs": ["nodejs", "pnpm"] },
         "install": { "cmds": ["pnpm install --no-frozen-lockfile --force"] },
-        "build":   { "cmds": ["pnpm run build"] }
+        "build":   { "cmds": ["rm -rf dist node_modules/.vite", "pnpm run build"] }
       }
     }
   },
