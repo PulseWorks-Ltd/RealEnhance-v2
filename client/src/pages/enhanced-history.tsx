@@ -33,6 +33,13 @@ export default function EnhancedHistoryPage() {
 
       const currentOffset = resetOffset ? 0 : offset;
 
+      if (!user?.agencyId) {
+        setImages([]);
+        setTotal(0);
+        setLoading(false);
+        return;
+      }
+
       const response = await apiFetch(
         `/api/enhanced-images?limit=${limit}&offset=${currentOffset}`
       );
@@ -59,7 +66,7 @@ export default function EnhancedHistoryPage() {
   useEffect(() => {
     fetchImages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offset]);
+  }, [offset, user?.agencyId]);
 
   // Download image
   const handleDownload = (image: EnhancedImageListItem) => {
