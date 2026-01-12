@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { getImageRecord } from "../services/images.js";
 import { enqueueEditJob } from "../services/jobs.js";
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
+import { incrementEdit } from "../services/usageLedger.js";
 
 export function editRouter() {
   const r = Router();
@@ -25,7 +26,8 @@ export function editRouter() {
       baseVersionId,
       mode,
       instruction,
-      mask
+      mask,
+      jobId: baseJobId,
     } = req.body || {};
 
     const rec = getImageRecord(imageId);
@@ -39,6 +41,13 @@ export function editRouter() {
     const baseOk = rec.history.find((v: any) => v.versionId === baseVersionId);
     if (!baseOk) {
       return res.status(400).json({ error: "invalid_base_version" });
+    }
+
+    if (baseJobId) {
+      const editCheck = await incrementEdit(baseJobId as string);
+      if (editCheck.locked) {
+        return res.status(429).json({ error: "edit_limit_reached", editCount: editCheck.editCount });
+      }
     }
 
     const enqueueParams = {

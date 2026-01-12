@@ -19,6 +19,8 @@ export interface UsageSummary {
   stagingWarning?: "none" | "approaching" | "critical" | "exhausted";
   agencyName?: string;
   userRole?: string;
+  stagingNote?: string;
+  topUsers?: Array<{ userId: string; name: string; used: number }>;
 }
 
 export function useUsage() {

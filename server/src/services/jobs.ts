@@ -106,8 +106,8 @@ export async function enqueueEnhanceJob(params: {
     enabled: boolean;
     base1BUrl: string;
   };
-}) {
-  const jobId: JobId = "job_" + crypto.randomUUID();
+}, jobIdOverride?: JobId) {
+  const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());
   const now = new Date().toISOString();
 
   const payload: AnyJobPayload = {

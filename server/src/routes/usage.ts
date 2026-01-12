@@ -4,9 +4,10 @@
 import { Router, type Request, type Response } from "express";
 import { getUserById } from "../services/users.js";
 import { getAgency } from "@realenhance/shared/agencies.js";
-import { getRemainingUsage, getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 import { planTierToPlanCode, PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
+import { getUsageSnapshot, getTopUsersByUsage } from "../services/usageLedger.js";
+import { getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 
 export function usageRouter() {
   const r = Router();
@@ -36,20 +37,18 @@ export function usageRouter() {
         return res.status(404).json({ error: "agency_not_found" });
       }
 
-      const monthKey = getCurrentMonthKey();
-      const remaining = await getRemainingUsage(user.agencyId, monthKey);
+      const snapshot = await getUsageSnapshot(user.agencyId);
+      const topUsers = await getTopUsersByUsage(user.agencyId);
       const planCode = planTierToPlanCode(agency.planTier as PlanTier);
       const planLimits = PLAN_LIMITS[agency.planTier as PlanTier];
 
       // Calculate usage percentages for warnings
-      const mainUsagePercent = (remaining.mainUsed / remaining.mainAllowance) * 100;
-      const stagingUsagePercent = remaining.stagingAllowance > 0
-        ? (remaining.stagingUsed / remaining.stagingAllowance) * 100
-        : 0;
+      const mainUsagePercent = (snapshot.includedUsed / snapshot.includedLimit) * 100;
+      const stagingUsagePercent = 0; // staging allowance removed in new model
 
       // Determine warning levels
       let mainWarning: "none" | "approaching" | "critical" | "exhausted" = "none";
-      if (remaining.mainRemaining === 0) {
+      if (snapshot.remaining === 0) {
         mainWarning = "exhausted";
       } else if (mainUsagePercent >= 95) {
         mainWarning = "critical";
@@ -57,35 +56,39 @@ export function usageRouter() {
         mainWarning = "approaching";
       }
 
-      let stagingWarning: "none" | "approaching" | "critical" | "exhausted" = "none";
-      if (remaining.stagingAllowance > 0) {
-        if (remaining.stagingRemaining === 0) {
-          stagingWarning = "exhausted";
-        } else if (stagingUsagePercent >= 95) {
-          stagingWarning = "critical";
-        } else if (stagingUsagePercent >= 80) {
-          stagingWarning = "approaching";
-        }
-      }
+      const stagingWarning: "none" | "approaching" | "critical" | "exhausted" = "none";
+
+      const resolvedTopUsers = await Promise.all(
+        topUsers.map(async (u) => {
+          const urec = await getUserById(u.userId);
+          return {
+            userId: u.userId,
+            name: urec?.name || urec?.email || u.userId,
+            used: u.used,
+          };
+        })
+      );
 
       return res.json({
         hasAgency: true,
-        monthKey,
+        monthKey: snapshot.monthKey,
         planCode,
         planName: planCode.charAt(0) + planCode.slice(1).toLowerCase(), // "STARTER" -> "Starter"
         price: planLimits.price,
-        mainAllowance: remaining.mainAllowance,
-        mainUsed: remaining.mainUsed,
-        mainRemaining: remaining.mainRemaining,
+        mainAllowance: snapshot.includedLimit,
+        mainUsed: snapshot.includedUsed,
+        mainRemaining: snapshot.remaining,
         mainUsagePercent: Math.round(mainUsagePercent),
         mainWarning,
-        stagingAllowance: remaining.stagingAllowance,
-        stagingUsed: remaining.stagingUsed,
-        stagingRemaining: remaining.stagingRemaining,
+        stagingAllowance: 0,
+        stagingUsed: 0,
+        stagingRemaining: 0,
         stagingUsagePercent: Math.round(stagingUsagePercent),
         stagingWarning,
         agencyName: agency.name,
         userRole: user.role || "member",
+        topUsers: resolvedTopUsers,
+        stagingNote: "Virtual staging uses an additional image from your allowance.",
       });
     } catch (err) {
       console.error("[USAGE API] Error fetching usage summary:", err);

@@ -8,10 +8,11 @@ import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
-import { isUsageExhausted, getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
+import { reserveAllowance, finalizeReservation } from "../services/usageLedger.js";
+import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -153,36 +154,27 @@ export function uploadRouter() {
       }
     }
 
-    // ===== USAGE GATING: Check if agency has exhausted monthly allowance =====
-    try {
-      const fullUser = await getUserById(sessUser.id);
-      if (fullUser && fullUser.agencyId) {
-        const exhaustedCheck = await isUsageExhausted(fullUser.agencyId);
-        if (exhaustedCheck.exhausted) {
-          const monthKey = getCurrentMonthKey();
-          console.log(`[USAGE GATE] Agency ${fullUser.agencyId} exhausted usage for ${monthKey}`);
-          return res.status(402).json({
-            code: "USAGE_EXHAUSTED",
-            error: "Plan limit reached",
-            message: `Your agency has reached its monthly image limit. Please contact support to add capacity or wait until next month.`,
-            monthKey,
-            mainRemaining: exhaustedCheck.mainRemaining,
-            stagingRemaining: exhaustedCheck.stagingRemaining,
-          });
-        }
-      }
-    } catch (usageGateErr) {
-      // Fail-open: if usage check fails, allow the request to proceed
-      console.error("[USAGE GATE] Error checking usage (fail-open):", usageGateErr);
-    }
-
     const userDir = path.join(uploadRoot, sessUser.id);
     await fs.mkdir(userDir, { recursive: true });
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
+    const reservedJobs: string[] = [];
+
+    const releaseReservations = async () => {
+      for (const jobId of reservedJobs) {
+        try {
+          await finalizeReservation({ jobId, stage12Success: false, stage2Success: false });
+        } catch (e) {
+          console.error(`[upload] failed to release reservation for ${jobId}`, e);
+        }
+      }
+    };
 
     // Get agencyId for image tracking and retention (reusing fullUser from subscription gate above)
     const agencyId = fullUser?.agencyId || undefined;
+    if (!agencyId) {
+      return res.status(400).json({ error: "agency_required", message: "Uploads require an agency context" });
+    }
 
     // Server-side validation: if staging is enabled, every interior image must have a valid roomType
     if (allowStagingForm) {
@@ -318,6 +310,32 @@ export function uploadRouter() {
         opts.replaceSky = true;
       }
 
+      const jobId = "job_" + crypto.randomUUID();
+      const finalDeclutter = parseStrictBool(opts.declutter);
+      const finalVirtualStage = parseStrictBool(opts.virtualStage);
+      const requiredImages = finalVirtualStage ? 2 : 1;
+
+      try {
+        const reservation = await reserveAllowance({
+          jobId,
+          agencyId,
+          userId: sessUser.id,
+          requiredImages,
+          requestedStage12: true,
+          requestedStage2: finalVirtualStage,
+        });
+        reservedJobs.push(jobId);
+        console.log(`[upload] reserved allowance for ${jobId}: remaining=${reservation.remaining}`);
+      } catch (err: any) {
+        console.error(`[upload] reservation failed for job ${jobId}`, err?.message || err);
+        if (err?.code === "QUOTA_EXCEEDED") {
+          await releaseReservations();
+          return res.status(402).json({ code: "QUOTA_EXCEEDED", snapshot: err.snapshot });
+        }
+        await releaseReservations();
+        return res.status(503).json({ error: "reservation_failed" });
+      }
+
       const finalPath = path.join(userDir, f.filename || f.originalname);
 
       // move file into user's folder
@@ -373,11 +391,9 @@ export function uploadRouter() {
         );
       } catch {}
 
-      const finalDeclutter = parseStrictBool(opts.declutter);
-      const finalVirtualStage = parseStrictBool(opts.virtualStage);
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
-      const { jobId } = await enqueueEnhanceJob({
+      const { jobId: enqueuedJobId } = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId,
         remoteOriginalUrl,
@@ -394,9 +410,15 @@ export function uploadRouter() {
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
         },
+        jobId,
       });
 
-      jobs.push({ jobId, imageId });
+      const idx = reservedJobs.indexOf(jobId);
+      if (idx >= 0) {
+        reservedJobs.splice(idx, 1);
+      }
+
+      jobs.push({ jobId: enqueuedJobId, imageId });
 
       // Track usage for analytics (non-blocking)
       recordUsageEvent({

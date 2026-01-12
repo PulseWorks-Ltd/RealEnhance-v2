@@ -51,7 +51,7 @@ import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
-import { chargeForStage1, chargeForStage2, getAgencyIdFromPayload } from "./utils/usageBilling";
+import { finalizeReservationFromWorker } from "./utils/reservations.js";
 
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
@@ -80,6 +80,8 @@ import { chargeForStage1, chargeForStage2, getAgencyIdFromPayload } from "./util
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  let stage12Success = false;
+  let stage2Success = false;
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
   const strictBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v;
@@ -188,15 +190,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const pub2 = await publishImage(path2);
       const pub2Url = pub2.url;
 
-      timings.totalMs = Date.now() - t0;
+      stage2Success = true;
 
-      // Charge for Stage 2 completion (Stage-2-only retry mode)
-      try {
-        const agencyId = getAgencyIdFromPayload(payload);
-        await chargeForStage2(payload, agencyId);
-      } catch (billingErr) {
-        nLog("[BILLING] Failed to charge Stage 2 in stage-2-only mode (non-blocking):", (billingErr as any)?.message || billingErr);
-      }
+      timings.totalMs = Date.now() - t0;
 
       updateJob(payload.jobId, {
         status: "complete",
@@ -655,6 +651,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
   const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
+  stage12Success = true;
   const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
@@ -732,6 +729,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       const pub2 = await publishImage(path2);
       pub2Url = pub2.url;
+      stage2Success = true;
       if (v2) {
         try {
           setVersionPublicUrl(payload.imageId, v2.versionId, pub2.url);
@@ -1144,22 +1142,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
   }
 
-  // ===== BILLABLE USAGE CHARGING (BEST-EFFORT, NON-BLOCKING) =====
-  // Charge for successful outputs only (Stage 1 + Stage 2 if applicable)
+  // ===== RESERVATION FINALIZATION =====
+  // Finalize reservation based on actual stage completion
   try {
-    const agencyId = getAgencyIdFromPayload(payload);
-
-    // Charge for Stage 1 (enhanced image)
-    // Only charge once for the final Stage 1 output (1B if declutter, 1A otherwise)
-    await chargeForStage1(payload, agencyId);
-
-    // Charge for Stage 2 (virtual staging) if it ran successfully
-    if (hasStage2 && path2) {
-      await chargeForStage2(payload, agencyId);
-    }
+    await finalizeReservationFromWorker({
+      jobId: payload.jobId,
+      stage12Success,
+      stage2Success,
+    });
+    nLog(`[BILLING] Finalized reservation for ${payload.jobId}: stage12=${stage12Success}, stage2=${stage2Success}`);
   } catch (billingErr) {
     // Billing must never block job completion, but log error for reconciliation
-    nLog("[BILLING] Failed to charge usage (non-blocking):", (billingErr as any)?.message || billingErr);
+    nLog("[BILLING] Failed to finalize reservation (non-blocking):", (billingErr as any)?.message || billingErr);
     // In production, you might want to queue this for retry or manual reconciliation
   }
 

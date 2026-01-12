@@ -47,6 +47,8 @@ export default function Home() {
                 stagingWarning={usage.stagingWarning}
                 planName={usage.planName || ""}
                 monthKey={usage.monthKey}
+                stagingNote={usage.stagingNote}
+                topUsers={usage.topUsers}
               />
             </CardContent>
           </Card>
