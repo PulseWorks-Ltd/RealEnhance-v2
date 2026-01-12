@@ -12,10 +12,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useUsage } from '@/hooks/use-usage';
 import type { EnhancedImageListItem } from '@realenhance/shared/types';
 
 export default function EnhancedHistoryPage() {
   const { user } = useAuth();
+  const { usage } = useUsage();
   const [images, setImages] = useState<EnhancedImageListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -83,6 +85,17 @@ export default function EnhancedHistoryPage() {
     }
   };
 
+  const fallbackRetentionCopy =
+    'Previously enhanced images are retained for up to 3 months of your plan allowance. Please download any images you want to keep long-term.';
+
+  const planName = usage?.planName;
+  const monthlyIncludedImages = usage?.mainAllowance;
+  const retentionCount = monthlyIncludedImages ? monthlyIncludedImages * 3 : null;
+  const retentionCopy =
+    planName && retentionCount
+      ? `${planName} retains up to ${retentionCount} enhanced images (3 months of your plan allowance). Please download any images you want to keep long-term.`
+      : fallbackRetentionCopy;
+
   if (!user?.agencyId) {
     return (
       <div className="container mx-auto p-6">
@@ -100,10 +113,7 @@ export default function EnhancedHistoryPage() {
       <Card>
         <CardHeader>
           <CardTitle>Previously Enhanced Images</CardTitle>
-          <CardDescription>
-            Your enhanced images are retained for up to three months of your plan allowance.
-            Please download images you wish to keep long-term.
-          </CardDescription>
+          <CardDescription>{retentionCopy}</CardDescription>
         </CardHeader>
         <CardContent>
           {loading && images.length === 0 ? (
@@ -219,11 +229,7 @@ export default function EnhancedHistoryPage() {
           <CardTitle className="text-base">Retention Policy</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-gray-600 space-y-2">
-          <p>
-            Previously enhanced images are automatically retained for up to three months of your
-            monthly plan allowance. For example, if your plan includes 100 images per month, we'll
-            retain up to 300 of your most recent enhanced images.
-          </p>
+          <p>{retentionCopy}</p>
           <p>
             Older images are automatically removed when you exceed your retention limit (oldest
             first). We recommend downloading images you want to keep for longer than the retention

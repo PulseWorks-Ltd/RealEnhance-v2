@@ -13,6 +13,16 @@ export function authUserRouter() {
     const full = await getUserById(sessUser.id);
     if (!full) return res.status(401).json({ error: "Unauthorized" });
 
+    // Ensure the session is hydrated with agency + role for downstream auth checks
+    (req.session as any).user = {
+      id: full.id,
+      name: full.name ?? null,
+      email: full.email,
+      credits: full.credits,
+      agencyId: full.agencyId ?? null,
+      role: (full.role as any) ?? "member",
+    };
+
     const imgs = listImagesForUser(full.id);
 
     res.json({

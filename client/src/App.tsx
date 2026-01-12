@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
@@ -11,12 +11,19 @@ const Signup         = lazy(() => import("@/pages/signup"));
 const Home           = lazy(() => import("@/pages/home"));
 const Editor         = lazy(() => import("@/pages/Editor"));
 const Results        = lazy(() => import("@/pages/Results"));
-const MyPhotos       = lazy(() => import("@/pages/MyPhotos"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const Agency         = lazy(() => import("@/pages/agency"));
 const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
 const EnhancedHistory = lazy(() => import("@/pages/enhanced-history"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
+
+function LegacyMyPhotosRedirect() {
+  const location = useLocation();
+  const search = location.search || "";
+  const hash = location.hash || "";
+
+  return <Navigate to={`/enhanced-history${search}${hash}`} replace />;
+}
 
 export default function App() {
   return (
@@ -32,7 +39,7 @@ export default function App() {
           <Route path="/auth/complete" element={<AuthComplete />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/results" element={<Results />} />
-          <Route path="/my-photos" element={<MyPhotos />} />
+          <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
           <Route path="/region-edit" element={<RegionEditPage />} />
           <Route path="/agency" element={<Agency />} />
           <Route path="/enhanced-history" element={<EnhancedHistory />} />

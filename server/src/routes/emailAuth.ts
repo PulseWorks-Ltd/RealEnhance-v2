@@ -49,7 +49,9 @@ export function emailAuthRouter() {
         id: newUser.id,
         name: newUser.name,
         email: newUser.email,
-        credits: newUser.credits
+        credits: newUser.credits,
+        agencyId: newUser.agencyId ?? null,
+        role: newUser.role ?? "member",
       };
 
       // Return user (without password fields)
@@ -101,7 +103,9 @@ export function emailAuthRouter() {
         id: user.id,
         name: user.name,
         email: user.email,
-        credits: user.credits
+        credits: user.credits,
+        agencyId: user.agencyId ?? null,
+        role: user.role ?? "member",
       };
 
       // Return user (without password fields)

@@ -53,6 +53,8 @@ function initPassport() {
             name: (user as any).name,
             email: (user as any).email,
             credits: (user as any).credits,
+            agencyId: (user as any).agencyId ?? null,
+            role: (user as any).role ?? "member",
           };
 
           return done(null, sessionUser as any);
@@ -116,12 +118,15 @@ export function attachGoogleAuth(app: Express) {
     }) as unknown as (req: any, res: any, next: NextFunction) => void,
     async (req: Request, res: Response) => {
       const authed: any = (req as any).user;
+      const fullUser = await getUserByEmail(authed.email);
 
       (req.session as any).user = {
         id: authed.id,
         name: authed.name ?? null,
         email: authed.email,
         credits: authed.credits,
+        agencyId: fullUser?.agencyId ?? authed.agencyId ?? null,
+        role: (fullUser?.role as any) ?? authed.role ?? "member",
       };
 
       const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);

@@ -38,10 +38,6 @@ export function ProfileDropdown() {
     await signOut();
   };
 
-  const handleViewHistory = () => {
-    navigate("/my-photos");
-  };
-
   const handleAgencySettings = () => {
     navigate("/agency");
   };
@@ -61,11 +57,8 @@ export function ProfileDropdown() {
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel>{email}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleViewHistory} data-testid="button-view-history">
-          📸 Previously Enhanced Photos
-        </DropdownMenuItem>
         <DropdownMenuItem onClick={handleEnhancedHistory} data-testid="button-enhanced-history">
-          🗂️ Enhanced History
+          📸 Enhanced History
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
           🏢 Agency Settings
