@@ -8,7 +8,10 @@ export type ImageId = string;
 /* ---------- Users ---------- */
 export interface AuthUser {
   id: UserId;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
   email: string;
   credits: number;
   createdAt: string;

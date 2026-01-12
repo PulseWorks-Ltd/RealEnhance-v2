@@ -17,6 +17,8 @@ import {
 export function upsertUserFromGoogle(params: {
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
 }): Promise<UserRecord> {
   return upsertGoogleShared(params);
 }
