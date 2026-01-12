@@ -175,3 +175,79 @@ RealEnhance — Elevate your property photos
 
   return { ok: success, error: success ? undefined : 'Email sending failed' };
 }
+
+/**
+ * Send a password reset email
+ */
+export async function sendPasswordResetEmail(params: {
+  toEmail: string;
+  resetLink: string;
+  displayName?: string;
+  ttlMinutes?: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@polishmypic.com';
+
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('[EMAIL] SENDGRID_API_KEY not set, password reset email not sent');
+    return { ok: false, error: 'SendGrid not configured' };
+  }
+
+  const { toEmail, resetLink, displayName, ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 30) } = params;
+
+  const subject = "Reset your RealEnhance password";
+  const friendlyName = displayName || toEmail;
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2563eb;">Reset your password</h2>
+
+      <p>Hi ${friendlyName},</p>
+
+      <p>We received a request to reset your RealEnhance password. Click the button below to set a new password.</p>
+
+      <div style="margin: 30px 0;">
+        <a href="${resetLink}"
+           style="background-color: #2563eb; color: white; padding: 12px 24px;
+                  text-decoration: none; border-radius: 6px; display: inline-block;">
+          Reset Password
+        </a>
+      </div>
+
+      <p style="color: #6b7280; font-size: 14px;">
+        This link will expire in ${ttlMinutes} minutes. If you didn't request a reset, you can safely ignore this email.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+
+      <p style="color: #9ca3af; font-size: 12px;">
+        RealEnhance — Elevate your property photos<br/>
+        If the button above doesn't work, copy and paste this link:<br/>
+        <a href="${resetLink}" style="color: #2563eb;">${resetLink}</a>
+      </p>
+    </div>
+  `;
+
+  const textContent = `
+Reset your password
+
+Hi ${friendlyName},
+
+We received a request to reset your RealEnhance password. Use the link below to set a new password (expires in ${ttlMinutes} minutes):
+${resetLink}
+
+If you didn't request a reset, you can safely ignore this email.
+
+---
+RealEnhance — Elevate your property photos
+  `.trim();
+
+  const success = await sendEmail({
+    to: toEmail,
+    from: fromEmail,
+    subject,
+    text: textContent,
+    html: htmlContent,
+  });
+
+  return { ok: success, error: success ? undefined : 'Email sending failed' };
+}

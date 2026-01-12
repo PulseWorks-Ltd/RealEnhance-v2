@@ -15,6 +15,10 @@ const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
 const Agency         = lazy(() => import("@/pages/agency"));
 const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
 const EnhancedHistory = lazy(() => import("@/pages/enhanced-history"));
+const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
+const ResetPassword = lazy(() => import("@/pages/reset-password"));
+const ChangePassword = lazy(() => import("@/pages/change-password"));
+const ProfileSettings = lazy(() => import("@/pages/settings/profile"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
 function LegacyMyPhotosRedirect() {
@@ -37,6 +41,10 @@ export default function App() {
           <Route path="/home" element={<Home />} />
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/auth/complete" element={<AuthComplete />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/change-password" element={<ChangePassword />} />
+          <Route path="/settings/profile" element={<ProfileSettings />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/results" element={<Results />} />
           <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />

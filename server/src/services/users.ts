@@ -26,7 +26,9 @@ export function upsertUserFromGoogle(params: {
  */
 export async function createUserWithPassword(params: {
   email: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   passwordHash: string;
   agencyId?: string | null;
   role?: "owner" | "admin" | "member";
@@ -40,6 +42,8 @@ export async function createUserWithPassword(params: {
   return createUser({
     email: params.email,
     name: params.name,
+    firstName: params.firstName,
+    lastName: params.lastName,
     authProvider: "email",
     passwordHash: params.passwordHash,
     agencyId: params.agencyId || undefined,

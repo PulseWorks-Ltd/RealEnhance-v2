@@ -22,6 +22,7 @@ import { hashPassword } from "../utils/password.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
 import { sendInvitationEmail } from "../services/email.js";
+import { getDisplayName } from "@realenhance/shared/users.js";
 
 const router = Router();
 
@@ -161,6 +162,9 @@ router.get("/members", requireAuth, requireAgencyAdmin, async (req: Request, res
       id: m.id,
       email: m.email,
       name: m.name,
+      firstName: m.firstName,
+      lastName: m.lastName,
+      displayName: getDisplayName(m),
       role: m.role || "member",
       isActive: m.isActive !== false,
       createdAt: m.createdAt,
@@ -209,7 +213,7 @@ router.post("/invite", requireAuth, requireAgencyAdmin, async (req: Request, res
 
     const emailResult = await sendInvitationEmail({
       toEmail: email.trim().toLowerCase(),
-      inviterName: user.name || user.email,
+      inviterName: getDisplayName(user),
       agencyName: agency?.name || "RealEnhance Agency",
       role: role || "member",
       inviteToken: result.invite!.token,
@@ -339,6 +343,9 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
       (req.session as any).user = {
         id: user.id,
         name: user.name,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
+        displayName: getDisplayName(user),
         email: user.email,
         credits: user.credits,
       };
@@ -379,6 +386,9 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
     (req.session as any).user = {
       id: user.id,
       name: user.name,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      displayName: getDisplayName(user),
       email: user.email,
       credits: user.credits,
     };

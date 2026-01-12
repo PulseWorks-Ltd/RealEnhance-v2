@@ -17,7 +17,9 @@ export type JobId = string;
 export interface UserRecord {
   id: UserId;
   email: string;
-  name: string;
+  name?: string; // Legacy full name (kept for backward compatibility)
+  firstName?: string;
+  lastName?: string;
   passwordHash?: string;  // Optional: undefined for OAuth-only users
   authProvider: "email" | "google";  // Track authentication method
   credits: number; // DEPRECATED: Kept for backward compatibility, not enforced

@@ -57,11 +57,23 @@ async function isRedisAvailable(): Promise<boolean> {
 }
 
 /**
+ * Derive a human-friendly display name with legacy compatibility
+ */
+export function getDisplayName(user: Pick<UserRecord, "email" | "name" | "firstName" | "lastName">): string {
+  const parts = [user.firstName?.trim(), user.lastName?.trim()].filter(Boolean);
+  if (parts.length) return parts.join(" ");
+  if (user.name && user.name.trim()) return user.name.trim();
+  return user.email;
+}
+
+/**
  * Create a new user
  */
 export async function createUser(params: {
   email: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   authProvider?: "google" | "email";
   passwordHash?: string;
   agencyId?: string;
@@ -70,10 +82,16 @@ export async function createUser(params: {
   const userId = `user_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
+  const legacyName = params.name?.trim();
+  const combinedName = `${params.firstName?.trim() || ""} ${params.lastName?.trim() || ""}`.trim();
+  const fallbackName = legacyName || combinedName || params.email;
+
   const user: UserRecord = {
     id: userId,
     email: params.email,
-    name: params.name,
+    name: fallbackName,
+    firstName: params.firstName?.trim(),
+    lastName: params.lastName?.trim(),
     authProvider: params.authProvider || "email",
     passwordHash: params.passwordHash,
     agencyId: params.agencyId,
@@ -93,7 +111,9 @@ export async function createUser(params: {
       await client.hSet(key, {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: user.name || "",
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
         authProvider: user.authProvider || "",
         passwordHash: user.passwordHash || "",
         agencyId: user.agencyId || "",
@@ -142,6 +162,8 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
         id: data.id,
         email: data.email,
         name: data.name,
+        firstName: data.firstName || undefined,
+        lastName: data.lastName || undefined,
         authProvider: (data.authProvider as "google" | "email") || undefined,
         passwordHash: data.passwordHash || undefined,
         agencyId: data.agencyId || undefined,
@@ -203,7 +225,9 @@ export async function updateUser(user: UserRecord): Promise<void> {
       await client.hSet(key, {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: user.name || "",
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
         authProvider: user.authProvider || "",
         passwordHash: user.passwordHash || "",
         agencyId: user.agencyId || "",
@@ -237,6 +261,8 @@ export async function updateUser(user: UserRecord): Promise<void> {
 export async function upsertUserFromGoogle(params: {
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
 }): Promise<UserRecord> {
   let user = await getUserByEmail(params.email);
 
@@ -245,11 +271,15 @@ export async function upsertUserFromGoogle(params: {
     return createUser({
       email: params.email,
       name: params.name,
+      firstName: params.firstName,
+      lastName: params.lastName,
       authProvider: "google",
     });
   } else {
     // Update existing user
     user.name = params.name || user.name;
+    user.firstName = params.firstName || user.firstName;
+    user.lastName = params.lastName || user.lastName;
     // Link Google account if user originally signed up with email
     if (!user.authProvider || user.authProvider === "email") {
       user.authProvider = "google";
@@ -264,7 +294,9 @@ export async function upsertUserFromGoogle(params: {
  */
 export async function upsertUserFromEmail(params: {
   email: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   passwordHash: string;
 }): Promise<UserRecord> {
   let user = await getUserByEmail(params.email);
@@ -274,12 +306,16 @@ export async function upsertUserFromEmail(params: {
     return createUser({
       email: params.email,
       name: params.name,
+      firstName: params.firstName,
+      lastName: params.lastName,
       authProvider: "email",
       passwordHash: params.passwordHash,
     });
   } else {
     // Update existing user
     user.name = params.name || user.name;
+    user.firstName = params.firstName || user.firstName;
+    user.lastName = params.lastName || user.lastName;
     user.passwordHash = params.passwordHash;
     user.authProvider = "email";
     await updateUser(user);

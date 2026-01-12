@@ -10,7 +10,8 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +27,10 @@ export default function Login() {
 
     try {
       if (isSignUp) {
-        await signUpWithEmail(email, password, name);
+        if (!firstName.trim() || !lastName.trim()) {
+          throw new Error("First and last name are required");
+        }
+        await signUpWithEmail(email, password, firstName.trim(), lastName.trim());
       } else {
         await signInWithEmail(email, password);
       }
@@ -72,17 +76,31 @@ export default function Login() {
 
           <form onSubmit={handleEmailSubmit} className="space-y-4">
             {isSignUp && (
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="John Doe"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                  disabled={loading}
-                />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Doe"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                    disabled={loading}
+                  />
+                </div>
               </div>
             )}
 
@@ -115,6 +133,13 @@ export default function Login() {
                 <p className="text-xs text-muted-foreground">
                   Must be at least 8 characters
                 </p>
+              )}
+              {!isSignUp && (
+                <div className="text-xs text-right">
+                  <a href="/forgot-password" className="text-primary underline-offset-4 hover:underline">
+                    Forgot password?
+                  </a>
+                </div>
               )}
             </div>
 

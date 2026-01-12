@@ -11,7 +11,8 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [inviteInfo, setInviteInfo] = useState<{ email: string; agencyName: string } | null>(null);
@@ -57,6 +58,11 @@ export default function Signup() {
       return;
     }
 
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("First and last name are required");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -66,7 +72,7 @@ export default function Signup() {
           method: "POST",
           body: JSON.stringify({
             token: inviteToken,
-            name,
+            name: `${firstName} ${lastName}`.trim(),
             password,
           }),
         });
@@ -80,7 +86,7 @@ export default function Signup() {
         navigate("/home");
       } else {
         // Regular signup flow
-        await signUpWithEmail(email, password, name);
+        await signUpWithEmail(email, password, firstName.trim(), lastName.trim());
         navigate(redirectTo);
       }
     } catch (err: any) {
@@ -132,17 +138,31 @@ export default function Signup() {
           )}
 
           <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                type="text"
-                placeholder="John Doe"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                disabled={loading}
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  type="text"
+                  placeholder="John"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  type="text"
+                  placeholder="Doe"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

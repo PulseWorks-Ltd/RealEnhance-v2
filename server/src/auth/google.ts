@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-google-oauth20";
 import { upsertUserFromGoogle, getUserByEmail } from "../services/users.js";
+import { getDisplayName } from "@realenhance/shared/users.js";
 // Seat limits removed - unlimited users per agency
 
 /** Resolve public base URL safely (prod vs local) */
@@ -44,13 +45,20 @@ function initPassport() {
         try {
           const email = profile.emails?.[0]?.value;
           const name = profile.displayName ?? "Unnamed User";
+          const firstName = profile.name?.givenName;
+          const lastName = profile.name?.familyName;
           if (!email) return done(new Error("No email returned from Google profile"));
 
-          const user = await upsertUserFromGoogle({ email, name });
+          const user = await upsertUserFromGoogle({ email, name, firstName, lastName });
+
+          const displayName = getDisplayName(user);
 
           const sessionUser = {
             id: (user as any).id,
             name: (user as any).name,
+            firstName: (user as any).firstName ?? null,
+            lastName: (user as any).lastName ?? null,
+            displayName,
             email: (user as any).email,
             credits: (user as any).credits,
             agencyId: (user as any).agencyId ?? null,
@@ -120,9 +128,14 @@ export function attachGoogleAuth(app: Express) {
       const authed: any = (req as any).user;
       const fullUser = await getUserByEmail(authed.email);
 
+      const displayName = fullUser ? getDisplayName(fullUser) : authed.displayName;
+
       (req.session as any).user = {
         id: authed.id,
         name: authed.name ?? null,
+        firstName: authed.firstName ?? fullUser?.firstName ?? null,
+        lastName: authed.lastName ?? fullUser?.lastName ?? null,
+        displayName,
         email: authed.email,
         credits: authed.credits,
         agencyId: fullUser?.agencyId ?? authed.agencyId ?? null,

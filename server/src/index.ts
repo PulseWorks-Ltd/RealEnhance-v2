@@ -25,6 +25,7 @@ import { groupsRouter } from "./routes/groups.js";
 import { healthRouter } from "./routes/health.js";
 import { undoRouter } from "./routes/undo.js";
 import { visionRoomTypeRouter } from "./routes/vision-room-type.js";
+import { profileRouter } from "./routes/profile.js";
 import adminUsageRouter from "./routes/adminUsage.js";
 import agencyRouter from "./routes/agency.js";
 import { usageRouter } from "./routes/usage.js";
@@ -121,6 +122,7 @@ async function main() {
   app.use("/api", groupsRouter());
   app.use("/api", healthRouter());
   app.use("/api", undoRouter());
+  app.use("/api/profile", profileRouter());
   // Register ML-based room type detection API
   app.use("/api", visionRoomTypeRouter);
   // Admin usage tracking endpoints

@@ -8,6 +8,9 @@ type AuthUser = {
   deviceId?: string | null;
   credits: number;
   name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
   agencyId?: string | null;
   role?: "owner" | "admin" | "member";
 };
@@ -19,7 +22,11 @@ type AuthState = {
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
   signInWithEmail: (email: string, password: string) => Promise<AuthUser>;
-  signUpWithEmail: (email: string, password: string, name: string) => Promise<AuthUser>;
+  signUpWithEmail: (email: string, password: string, firstName: string, lastName: string) => Promise<AuthUser>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  updateProfile: (payload: { firstName: string; lastName: string }) => Promise<AuthUser>;
 };
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -52,8 +59,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     try {
-  // Server exposes /auth/logout
-  await apiFetch("/auth/logout", { method: "POST" });
+      // Server exposes /auth/logout
+      await apiFetch("/auth/logout", { method: "POST" });
     } catch (e) {
       console.warn("logout:", e);
     } finally {
@@ -163,12 +170,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Login failed" }));
-        throw new Error(errorData.error || "Login failed");
-      }
-
       const userData = await response.json();
       setUser(userData);
       return userData;
@@ -177,19 +178,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const signUpWithEmail = useCallback(async (email: string, password: string, name: string): Promise<AuthUser> => {
+  const signUpWithEmail = useCallback(async (email: string, password: string, firstName: string, lastName: string): Promise<AuthUser> => {
     try {
       const response = await apiFetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, firstName, lastName }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Signup failed" }));
-        throw new Error(errorData.error || "Signup failed");
-      }
-
       const userData = await response.json();
       setUser(userData);
       return userData;
@@ -206,6 +201,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUser,
     signInWithEmail,
     signUpWithEmail,
+    requestPasswordReset: async (email: string) => {
+      await apiFetch("/api/auth/request-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    },
+    confirmPasswordReset: async (token: string, newPassword: string) => {
+      await apiFetch("/api/auth/confirm-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword }),
+      });
+    },
+    changePassword: async (currentPassword: string, newPassword: string) => {
+      await apiFetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      await refreshUser();
+    },
+    updateProfile: async (payload: { firstName: string; lastName: string }) => {
+      const res = await apiFetch("/api/profile/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update profile");
+      }
+      const data = await res.json();
+      setUser(data.user || data);
+      return data.user || data;
+    },
   };
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

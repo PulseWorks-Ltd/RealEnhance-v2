@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { getUserById } from "../services/users.js";
+import { getDisplayName } from "@realenhance/shared/users.js";
 import { listImagesForUser } from "../services/images.js";
 
 export function authUserRouter() {
@@ -14,9 +15,14 @@ export function authUserRouter() {
     if (!full) return res.status(401).json({ error: "Unauthorized" });
 
     // Ensure the session is hydrated with agency + role for downstream auth checks
+    const displayName = getDisplayName(full);
+
     (req.session as any).user = {
       id: full.id,
       name: full.name ?? null,
+      firstName: full.firstName ?? null,
+      lastName: full.lastName ?? null,
+      displayName,
       email: full.email,
       credits: full.credits,
       agencyId: full.agencyId ?? null,
@@ -28,6 +34,9 @@ export function authUserRouter() {
     res.json({
       id: full.id,
       name: full.name,
+      firstName: full.firstName,
+      lastName: full.lastName,
+      displayName,
       email: full.email,
       credits: full.credits,
       agencyId: full.agencyId,

@@ -1,15 +1,52 @@
 import { Router, Request, Response } from "express";
-import { createUserWithPassword, getUserByEmail } from "../services/users.js";
+import { createUserWithPassword, getUserByEmail, getUserById, updateUser } from "../services/users.js";
 import { hashPassword, comparePassword, validatePassword, validateEmail } from "../utils/password.js";
+import { createResetToken, consumeResetToken, checkResetThrottle } from "../services/passwordResetTokens.js";
+import { sendPasswordResetEmail } from "../services/email.js";
+import { getDisplayName } from "@realenhance/shared/users.js";
+import type { UserRecord } from "@realenhance/shared/types.js";
 // Seat limits removed - unlimited users per agency
 
 export function emailAuthRouter() {
   const r = Router();
 
+  const genericResetMessage = {
+    message: "If an account exists for that email, we've sent a reset link.",
+  } as const;
+
+  const buildSessionUser = (user: UserRecord) => {
+    const displayName = getDisplayName(user);
+    return {
+      id: user.id,
+      name: user.name ?? null,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      displayName,
+      email: user.email,
+      credits: user.credits,
+      agencyId: user.agencyId ?? null,
+      role: user.role ?? "member",
+    };
+  };
+
+  const requireAuthedUser = async (req: Request, res: Response): Promise<UserRecord | null> => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      res.status(401).json({ error: "Authentication required" });
+      return null;
+    }
+    const full = await getUserById(sessUser.id);
+    if (!full) {
+      res.status(401).json({ error: "Authentication required" });
+      return null;
+    }
+    return full;
+  };
+
   // POST /api/auth/signup - Create new user with email+password
   r.post("/signup", async (req: Request, res: Response) => {
     try {
-      const { email, password, name } = req.body;
+      const { email, password, firstName, lastName, name } = req.body;
 
       // Validate email format
       const emailValidation = validateEmail(email);
@@ -23,9 +60,15 @@ export function emailAuthRouter() {
         return res.status(400).json({ error: passwordValidation.error });
       }
 
-      // Validate name
-      if (!name || name.trim().length === 0) {
-        return res.status(400).json({ error: "Name is required" });
+      const cleanedFirst = firstName?.trim();
+      const cleanedLast = lastName?.trim();
+      const cleanedLegacyName = name?.trim();
+      const combinedName = `${cleanedFirst || ""} ${cleanedLast || ""}`.trim();
+
+      if (!cleanedFirst || !cleanedLast) {
+        if (!cleanedLegacyName) {
+          return res.status(400).json({ error: "First and last name are required" });
+        }
       }
 
       // Check if user already exists
@@ -40,27 +83,19 @@ export function emailAuthRouter() {
       // Create user
       const newUser = await createUserWithPassword({
         email: email.toLowerCase().trim(),
-        name: name.trim(),
+        name: cleanedLegacyName || combinedName || email.toLowerCase().trim(),
+        firstName: cleanedFirst,
+        lastName: cleanedLast,
         passwordHash
       });
 
+      const sessionUser = buildSessionUser(newUser);
+
       // Create session (same as Google OAuth)
-      (req.session as any).user = {
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        credits: newUser.credits,
-        agencyId: newUser.agencyId ?? null,
-        role: newUser.role ?? "member",
-      };
+      (req.session as any).user = sessionUser;
 
       // Return user (without password fields)
-      res.status(201).json({
-        id: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        credits: newUser.credits
-      });
+      res.status(201).json(sessionUser);
 
     } catch (error) {
       console.error("[emailAuth] Signup error:", error);
@@ -98,27 +133,147 @@ export function emailAuthRouter() {
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
-      // Create session (same as Google OAuth)
-      (req.session as any).user = {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        credits: user.credits,
-        agencyId: user.agencyId ?? null,
-        role: user.role ?? "member",
-      };
+      const sessionUser = buildSessionUser(user);
+      (req.session as any).user = sessionUser;
 
       // Return user (without password fields)
-      res.json({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        credits: user.credits
-      });
+      res.json(sessionUser);
 
     } catch (error) {
       console.error("[emailAuth] Login error:", error);
       res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // POST /api/auth/request-reset - non-enumerating
+  r.post("/request-reset", async (req: Request, res: Response) => {
+    const emailRaw = (req.body?.email || "").toString().trim().toLowerCase();
+    const requesterIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip;
+
+    try {
+      if (!emailRaw) return res.status(200).json(genericResetMessage);
+
+      const throttle = await checkResetThrottle(emailRaw, requesterIp);
+      if (!throttle.allowed) {
+        console.warn(`[reset] throttled for ${emailRaw} ip=${requesterIp} counts`, throttle);
+        return res.status(200).json(genericResetMessage);
+      }
+
+      const user = await getUserByEmail(emailRaw);
+      if (!user || !user.passwordHash) {
+        return res.status(200).json(genericResetMessage);
+      }
+
+      const { token, expiresAt } = await createResetToken(user.id, user.email);
+      const ttlMinutes = Number(process.env.RESET_TOKEN_TTL_MINUTES || 30);
+
+      const baseEnv = process.env.RESET_BASE_URL?.replace(/\/+$/, "");
+      const originHeader = (req.headers.origin as string | undefined)?.replace(/\/+$/, "");
+      const hostDerived = `${req.protocol}://${req.get("host")}`.replace(/\/+$/, "");
+      const base = baseEnv || originHeader || hostDerived;
+      const resetLink = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+      const emailResult = await sendPasswordResetEmail({
+        toEmail: user.email,
+        resetLink,
+        displayName: getDisplayName(user),
+        ttlMinutes,
+      });
+
+      if (!emailResult.ok) {
+        console.warn(`[reset] failed to send email to ${user.email}:`, emailResult.error);
+      } else {
+        console.log(`[reset] email queued for ${user.email}, expires ${expiresAt}`);
+      }
+    } catch (err) {
+      console.error("[reset] request-reset error", err);
+    }
+
+    return res.status(200).json(genericResetMessage);
+  });
+
+  // POST /api/auth/confirm-reset
+  r.post("/confirm-reset", async (req: Request, res: Response) => {
+    try {
+      const { token, newPassword } = req.body;
+
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: "Invalid or expired link." });
+      }
+
+      const passwordValidation = validatePassword(newPassword);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ error: passwordValidation.error });
+      }
+
+      const tokenResult = await consumeResetToken(token);
+      if (!tokenResult) {
+        return res.status(400).json({ error: "Invalid or expired link." });
+      }
+
+      const user = await getUserById(tokenResult.userId);
+      if (!user || user.email.toLowerCase() !== tokenResult.email.toLowerCase()) {
+        return res.status(400).json({ error: "Invalid or expired link." });
+      }
+
+      if (user.passwordHash) {
+        const same = await comparePassword(newPassword, user.passwordHash);
+        if (same) {
+          return res.status(400).json({ error: "New password must be different from the old password" });
+        }
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+      await updateUser(user.id, { passwordHash });
+
+      console.log(`[reset] password reset for user ${user.id}`);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[reset] confirm-reset error", err);
+      return res.status(400).json({ error: "Invalid or expired link." });
+    }
+  });
+
+  // POST /api/auth/change-password (authenticated)
+  r.post("/change-password", async (req: Request, res: Response) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current and new passwords are required" });
+      }
+
+      const user = await requireAuthedUser(req, res);
+      if (!user) return;
+
+      if (!user.passwordHash) {
+        return res.status(400).json({ error: "Password not set for this account" });
+      }
+
+      const matches = await comparePassword(currentPassword, user.passwordHash);
+      if (!matches) {
+        return res.status(400).json({ error: "Current password is incorrect" });
+      }
+
+      const passwordValidation = validatePassword(newPassword);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ error: passwordValidation.error });
+      }
+
+      const same = await comparePassword(newPassword, user.passwordHash);
+      if (same) {
+        return res.status(400).json({ error: "New password must be different from the old password" });
+      }
+
+      const passwordHash = await hashPassword(newPassword);
+      const updated = await updateUser(user.id, { passwordHash });
+
+      // Refresh session
+      (req.session as any).user = buildSessionUser(updated);
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[auth] change-password error", err);
+      return res.status(500).json({ error: "Failed to change password" });
     }
   });
 

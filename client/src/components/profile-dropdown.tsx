@@ -27,6 +27,7 @@ export function ProfileDropdown() {
 
   const authUser = user as AuthUser;
   const email = authUser.email || 'User';
+  const displayName = (authUser as any).displayName || `${authUser.firstName || ''} ${authUser.lastName || ''}`.trim() || email;
 
   // Better user display: handle edge cases more gracefully
   const initial = (authUser.firstName || authUser.lastName || email || "?").trim()[0]?.toUpperCase() ?? "U";
@@ -42,6 +43,10 @@ export function ProfileDropdown() {
     navigate("/agency");
   };
 
+  const handleProfile = () => {
+    navigate("/settings/profile");
+  };
+
   const handleEnhancedHistory = () => {
     navigate("/enhanced-history");
   };
@@ -55,10 +60,13 @@ export function ProfileDropdown() {
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuLabel>{email}</DropdownMenuLabel>
+        <DropdownMenuLabel>{displayName || email}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleEnhancedHistory} data-testid="button-enhanced-history">
           📸 Enhanced History
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleProfile} data-testid="button-profile-settings">
+          👤 Profile Settings
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
           🏢 Agency Settings

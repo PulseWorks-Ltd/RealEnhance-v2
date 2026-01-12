@@ -203,6 +203,8 @@ function parseUserFromRedis(data: Record<string, string>): UserRecord {
     id: data.id,
     email: data.email,
     name: data.name,
+    firstName: data.firstName || undefined,
+    lastName: data.lastName || undefined,
     passwordHash: data.passwordHash,
     authProvider: (data.authProvider as "email" | "google") || "email",
     credits: parseInt(data.credits || "0", 10),

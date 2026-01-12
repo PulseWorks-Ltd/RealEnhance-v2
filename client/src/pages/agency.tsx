@@ -14,7 +14,10 @@ import { BillingSection } from "@/components/BillingSection";
 interface AgencyMember {
   id: string;
   email: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
   role: "owner" | "admin" | "member";
   isActive: boolean;
 }
@@ -292,8 +295,8 @@ export default function AgencyPage() {
     <div className="container mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold">Agency Settings</h1>
 
-      {/* Monthly Usage Card */}
-      {usage && usage.hasAgency && (
+      {/* Monthly Usage Card - Admin/Owner only */}
+      {isAdminOrOwner && usage && usage.hasAgency && (
         <Card>
           <CardHeader>
             <CardTitle>Monthly Usage</CardTitle>
@@ -429,7 +432,7 @@ export default function AgencyPage() {
               {members.map((member) => (
                 <div key={member.id} className="flex items-center justify-between p-3 border rounded">
                   <div className="flex-1">
-                    <div className="font-medium">{member.name}</div>
+                    <div className="font-medium">{member.displayName || member.name || member.email}</div>
                     <div className="text-sm text-muted-foreground">{member.email}</div>
                   </div>
                   <div className="flex items-center gap-3">
