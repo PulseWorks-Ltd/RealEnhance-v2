@@ -163,28 +163,5 @@ export function UsageSummary({
         </div>
       )}
     </div>
-        />
-      )}
-
-      {mainWarning === "exhausted" && (
-        <Alert variant="destructive">
-          <AlertDescription>
-            Your agency has reached its monthly image limit. Please upgrade your plan or wait until next month to continue enhancing images.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {!hasStaging && mainWarning !== "exhausted" && (
-        <p className="text-xs text-gray-500">
-          {planName} plan • Virtual staging uses additional image allowance
-        </p>
-      )}
-
-      {hasStaging && stagingWarning === "exhausted" && mainWarning !== "exhausted" && (
-        <p className="text-xs text-gray-600">
-          Virtual staging bundle exhausted. Stage 2 will now use your main image allowance.
-        </p>
-      )}
-    </div>
   );
 }

@@ -410,8 +410,7 @@ export function uploadRouter() {
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
         },
-        jobId,
-      });
+      }, jobId);
 
       const idx = reservedJobs.indexOf(jobId);
       if (idx >= 0) {
