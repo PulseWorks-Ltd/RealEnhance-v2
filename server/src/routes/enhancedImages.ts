@@ -28,7 +28,7 @@ export function enhancedImagesRouter() {
   router.get('/', async (req: Request, res: Response) => {
     try {
       // Require authentication
-      const user = req.session?.user;
+      const user = (req.session as any)?.user;
       if (!user) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
@@ -72,7 +72,7 @@ export function enhancedImagesRouter() {
   router.get('/:id', async (req: Request, res: Response) => {
     try {
       // Require authentication
-      const user = req.session?.user;
+      const user = (req.session as any)?.user;
       if (!user) {
         return res.status(401).json({ error: 'Unauthorized' });
       }

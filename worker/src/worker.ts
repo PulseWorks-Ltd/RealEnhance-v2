@@ -52,7 +52,7 @@ import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceStageUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
-import { recordEnhancedImage } from "./db/enhancedImages.js";
+import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 
 /**
@@ -1200,7 +1200,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const auditRef = generateAuditRef();
     const traceId = generateTraceId(payload.jobId);
 
-    recordEnhancedImage({
+    recordEnhancedImageHistory({
       agencyId: payload.agencyId,
       userId: payload.userId,
       jobId: payload.jobId,

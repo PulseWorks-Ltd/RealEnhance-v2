@@ -5,7 +5,7 @@
  * This provides traceability and enables the "Previously Enhanced Images" feature.
  */
 
-import { getPool } from './index.js';
+import { pool } from './index.js';
 
 interface CreateEnhancedImageParams {
   agencyId: string;
@@ -25,7 +25,6 @@ interface CreateEnhancedImageParams {
  * IMPORTANT: This is fail-safe - if it fails, log but don't block the job.
  */
 export async function recordEnhancedImage(params: CreateEnhancedImageParams): Promise<void> {
-  const pool = getPool();
 
   try {
     // Extract storage key from URL (remove protocol and domain)

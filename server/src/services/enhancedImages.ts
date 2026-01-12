@@ -6,7 +6,7 @@
  * Oldest images expire first (FIFO).
  */
 
-import { getPool } from '../db/index.js';
+import { pool } from '../db/index.js';
 import type { EnhancedImage, EnhancedImageListItem } from '@realenhance/shared/types';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
 
@@ -48,7 +48,6 @@ interface CreateEnhancedImageParams {
 export async function createEnhancedImage(
   params: CreateEnhancedImageParams
 ): Promise<EnhancedImage> {
-  const pool = getPool();
 
   const auditRef = generateAuditRef();
   const traceId = params.traceId || generateTraceId(params.jobId);
@@ -107,7 +106,6 @@ export async function listEnhancedImages(
   limit: number = 100,
   offset: number = 0
 ): Promise<{ images: EnhancedImageListItem[]; total: number }> {
-  const pool = getPool();
 
   // Enforce retention before listing (lazy cleanup)
   await enforceRetentionLimits(agencyId);
@@ -164,7 +162,6 @@ export async function getEnhancedImage(
   agencyId: string,
   userId?: string
 ): Promise<EnhancedImage | null> {
-  const pool = getPool();
 
   // Enforce retention before retrieval (lazy cleanup)
   await enforceRetentionLimits(agencyId);
@@ -197,7 +194,6 @@ export async function getEnhancedImage(
  * - Storage deletion can be done async (future enhancement)
  */
 async function enforceRetentionLimits(agencyId: string): Promise<void> {
-  const pool = getPool();
 
   try {
     // Get agency plan allowance
@@ -306,7 +302,6 @@ export async function deleteExpiredImagesFromStorage(
   agencyId?: string,
   batchSize: number = 100
 ): Promise<number> {
-  const pool = getPool();
 
   // TODO: Implement S3 deletion logic
   // 1. Query expired images with storage_key
