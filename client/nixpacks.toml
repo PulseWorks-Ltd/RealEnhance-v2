@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm", "caddy"]
+
+[phases.install]
+cmd = "pnpm install --no-frozen-lockfile --prefer-offline"
+
+[phases.build]
+cmd = "pnpm run build"
+
+[start]
+cmd = "pnpm run preview -- --host 0.0.0.0 --port $PORT"
