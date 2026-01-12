@@ -51,6 +51,10 @@ export function ProfileDropdown() {
     navigate("/enhanced-history");
   };
 
+  const handleChangePassword = () => {
+    navigate("/change-password");
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger data-testid="button-profile">
@@ -67,6 +71,9 @@ export function ProfileDropdown() {
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleProfile} data-testid="button-profile-settings">
           👤 Profile Settings
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleChangePassword} data-testid="button-change-password">
+          🔒 Change Password
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
           🏢 Agency Settings

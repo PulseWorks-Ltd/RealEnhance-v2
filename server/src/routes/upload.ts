@@ -365,9 +365,11 @@ export function uploadRouter() {
       // In strict mode (production or REQUIRE_S3=1), failure will abort the request.
       // In non-strict mode, we continue but mark lack of remoteOriginalUrl.
       let remoteOriginalUrl: string | undefined = undefined;
+      let remoteOriginalKey: string | undefined = undefined;
       try {
         const up = await uploadOriginalToS3(finalPath);
         remoteOriginalUrl = up.url;
+        remoteOriginalKey = up.key;
         // optionally, could store in record.versions here in future
       } catch (e) {
         const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
@@ -397,6 +399,7 @@ export function uploadRouter() {
         userId: sessUser.id,
         imageId,
         remoteOriginalUrl,
+        remoteOriginalKey,
         agencyId, // Pass agencyId for usage billing in worker
         options: {
           declutter: finalDeclutter,

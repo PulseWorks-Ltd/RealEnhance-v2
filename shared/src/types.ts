@@ -111,6 +111,8 @@ export interface EnhanceJobPayload {
     enabled: boolean;
     base1BUrl: string;  // URL of Stage-1B output to reuse
   };
+  remoteOriginalUrl?: string; // S3 URL of original if uploaded
+  remoteOriginalKey?: string; // S3 key of original if uploaded
   createdAt: string;
 }
 
@@ -212,6 +214,10 @@ export interface EnhancedImage {
   storageKey: string; // S3 key
   publicUrl: string; // Full public URL
   thumbnailUrl?: string; // Optional thumbnail
+  originalUrl?: string | null; // Signed original URL (nullable)
+  originalS3Key?: string | null; // S3 key for original
+  enhancedS3Key?: string | null; // S3 key for enhanced (final)
+  thumbS3Key?: string | null; // S3 key for thumbnail
 
   // File metadata
   sizeBytes?: number;
@@ -239,6 +245,7 @@ export interface EnhancedImageListItem {
   id: string;
   thumbnailUrl: string;
   publicUrl: string;
+  originalUrl?: string | null;
   stagesCompleted: string[];
   createdAt: string;
   auditRef: string; // May be shown to users as generic "Support reference"

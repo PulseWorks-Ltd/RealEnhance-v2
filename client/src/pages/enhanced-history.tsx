@@ -14,6 +14,8 @@ import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useUsage } from '@/hooks/use-usage';
 import type { EnhancedImageListItem } from '@realenhance/shared/types';
+import { CompareSlider } from '@/components/CompareSlider';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function EnhancedHistoryPage() {
   const { user } = useAuth();
@@ -23,6 +25,7 @@ export default function EnhancedHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<EnhancedImageListItem | null>(null);
   const limit = 24; // Show 24 images per page
 
   // Fetch enhanced images
@@ -146,6 +149,7 @@ export default function EnhancedHistoryPage() {
                   <div
                     key={image.id}
                     className="group relative rounded-lg overflow-hidden border border-gray-200 hover:border-purple-500 transition-all cursor-pointer"
+                    onClick={() => setSelected(image)}
                   >
                     {/* Image */}
                     <div className="aspect-square">
@@ -178,13 +182,13 @@ export default function EnhancedHistoryPage() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => window.open(image.publicUrl, '_blank')}
+                          onClick={(e) => { e.stopPropagation(); window.open(image.publicUrl, '_blank'); }}
                         >
                           View
                         </Button>
                         <Button
                           size="sm"
-                          onClick={() => handleDownload(image)}
+                          onClick={(e) => { e.stopPropagation(); handleDownload(image); }}
                         >
                           Download
                         </Button>
@@ -247,6 +251,41 @@ export default function EnhancedHistoryPage() {
           </p>
         </CardContent>
       </Card>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Enhancement Preview
+              {selected?.auditRef && (
+                <span className="text-xs text-gray-500">Ref {selected.auditRef}</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-3">
+              {selected.originalUrl ? (
+                <CompareSlider
+                  originalImage={selected.originalUrl}
+                  enhancedImage={selected.publicUrl}
+                  height={520}
+                  className="w-full"
+                  data-testid="history-compare-slider"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3 py-8 text-gray-600">
+                  <img src={selected.publicUrl} alt="Enhanced" className="max-h-[460px] object-contain" />
+                  <span className="text-sm">Original unavailable for this item</span>
+                </div>
+              )}
+              <div className="flex gap-2 justify-end">
+                <Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>
+                <Button onClick={() => handleDownload(selected)}>Download</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

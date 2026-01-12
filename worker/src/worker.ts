@@ -1199,6 +1199,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     const auditRef = generateAuditRef();
     const traceId = generateTraceId(payload.jobId);
+    const extractKey = (url?: string | null) => {
+      if (!url) return null;
+      try {
+        const u = new URL(url);
+        return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+      } catch {
+        return null;
+      }
+    };
+    const originalKey = (payload as any).remoteOriginalKey || extractKey((payload as any).remoteOriginalUrl || publishedOriginal?.url || null);
+    const enhancedKey = extractKey(pubFinalUrl || null);
+    const thumbKey = extractKey(pubFinalUrl || null);
 
     recordEnhancedImageHistory({
       agencyId: payload.agencyId,
@@ -1207,6 +1219,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stagesCompleted,
       publicUrl: pubFinalUrl,
       thumbnailUrl: pubFinalUrl, // Use same URL for thumbnail (can be optimized later)
+      originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
+      originalS3Key: originalKey,
+      enhancedS3Key: enhancedKey,
+      thumbS3Key: thumbKey,
       auditRef,
       traceId,
     }).catch((err) => {

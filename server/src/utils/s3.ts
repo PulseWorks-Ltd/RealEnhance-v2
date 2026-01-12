@@ -154,3 +154,17 @@ export async function getS3SignedUrl(key: string, expiresIn: number = 3600): Pro
   // Type cast to avoid smithy/types version conflicts between dependencies
   return await getSignedUrl(client as any, command as any, { expiresIn });
 }
+
+export async function deleteS3Object(key: string): Promise<void> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) return;
+  const client = getClient();
+  const importer: any = new Function('p', 'return import(p)');
+  const mod: any = await importer('@aws-sdk/client-s3');
+  const { DeleteObjectCommand } = mod;
+  try {
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    console.warn('[S3] delete failed for key', key, err as any);
+  }
+}

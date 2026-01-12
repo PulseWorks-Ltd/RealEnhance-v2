@@ -85,6 +85,7 @@ export async function enqueueEnhanceJob(params: {
   imageId: ImageId;
   agencyId?: string | null; // Optional: agency ID for usage billing
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
+  remoteOriginalKey?: string; // S3 key of original if uploaded
   options: {
     declutter: boolean;
     declutterMode?: "light" | "stage-ready";
@@ -120,6 +121,7 @@ export async function enqueueEnhanceJob(params: {
     createdAt: now,
     // add non-typed extension field for worker consumption
     remoteOriginalUrl: params.remoteOriginalUrl as any,
+    remoteOriginalKey: params.remoteOriginalKey as any,
     // ✅ Pass stage2OnlyMode to worker
     stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;

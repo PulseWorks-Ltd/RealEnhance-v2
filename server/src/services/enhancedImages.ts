@@ -9,6 +9,18 @@
 import { pool } from '../db/index.js';
 import type { EnhancedImage, EnhancedImageListItem } from '@realenhance/shared/types';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
+import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
+
+// Best-effort signer with short TTL; falls back to null if signing fails or key missing
+async function safeSign(key?: string | null): Promise<string | null> {
+  if (!key) return null;
+  try {
+    return await getS3SignedUrl(key, 900); // 15 minutes
+  } catch (err) {
+    console.warn('[enhanced-images] Failed to sign URL', key, err);
+    return null;
+  }
+}
 
 /**
  * LAZY CLEANUP APPROACH (V1)
@@ -34,6 +46,10 @@ interface CreateEnhancedImageParams {
   stagesCompleted: string[];
   publicUrl: string;
   thumbnailUrl?: string;
+  originalUrl?: string | null;
+  originalS3Key?: string | null;
+  enhancedS3Key?: string | null;
+  thumbS3Key?: string | null;
   sizeBytes?: number;
   contentType?: string;
   traceId?: string;
@@ -52,16 +68,20 @@ export async function createEnhancedImage(
   const auditRef = generateAuditRef();
   const traceId = params.traceId || generateTraceId(params.jobId);
   const storageKey = extractStorageKey(params.publicUrl);
+  const enhancedKey = params.enhancedS3Key || storageKey;
+  const thumbKey = params.thumbS3Key || (params.thumbnailUrl ? extractStorageKey(params.thumbnailUrl) : enhancedKey);
+  const originalKey = params.originalS3Key || (params.originalUrl ? extractStorageKey(params.originalUrl) : null);
 
   const result = await pool.query(
     `INSERT INTO enhanced_images (
       agency_id, user_id, job_id, stages_completed,
       storage_key, public_url, thumbnail_url,
+      original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
       size_bytes, content_type,
       audit_ref, trace_id,
       stage12_attempt_id, stage2_attempt_id,
       is_expired
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, FALSE)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, FALSE)
     ON CONFLICT (job_id) DO UPDATE SET
       updated_at = NOW()
     RETURNING *`,
@@ -73,6 +93,10 @@ export async function createEnhancedImage(
       storageKey,
       params.publicUrl,
       params.thumbnailUrl || params.publicUrl,
+      originalKey,
+      enhancedKey,
+      thumbKey,
+      params.originalUrl || null,
       params.sizeBytes || null,
       params.contentType || 'image/jpeg',
       auditRef,
@@ -110,12 +134,14 @@ export async function listEnhancedImages(
   // Enforce retention before listing (lazy cleanup)
   await enforceRetentionLimits(agencyId);
 
-  const baseQuery = userId
-    ? `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref
+    const baseQuery = userId
+     ? `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
+       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key
        FROM enhanced_images
        WHERE agency_id = $1 AND user_id = $2 AND is_expired = FALSE
        ORDER BY created_at DESC`
-    : `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref
+     : `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
+       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key
        FROM enhanced_images
        WHERE agency_id = $1 AND is_expired = FALSE
        ORDER BY created_at DESC`;
@@ -135,14 +161,26 @@ export async function listEnhancedImages(
     pool.query(countQuery, params),
   ]);
 
-  const images: EnhancedImageListItem[] = listResult.rows.map((row) => ({
-    id: row.id,
-    thumbnailUrl: row.thumbnail_url,
-    publicUrl: row.public_url,
-    stagesCompleted: row.stages_completed,
-    createdAt: row.created_at,
-    auditRef: row.audit_ref,
-  }));
+  const images: EnhancedImageListItem[] = [];
+  for (const row of listResult.rows) {
+    const enhancedKey = row.enhanced_s3_key || row.storage_key || null;
+    const thumbKey = row.thumb_s3_key || row.storage_key || null;
+    const originalKey = row.original_s3_key || null;
+
+    const signedEnhanced = enhancedKey ? await safeSign(enhancedKey) : row.public_url;
+    const signedThumb = thumbKey ? await safeSign(thumbKey) : row.thumbnail_url;
+    const signedOriginal = originalKey ? await safeSign(originalKey) : (row.remote_original_url || null);
+
+    images.push({
+      id: row.id,
+      thumbnailUrl: signedThumb || row.thumbnail_url,
+      publicUrl: signedEnhanced || row.public_url,
+      originalUrl: signedOriginal,
+      stagesCompleted: row.stages_completed,
+      createdAt: row.created_at,
+      auditRef: row.audit_ref,
+    });
+  }
 
   const total = parseInt(countResult.rows[0].count, 10);
 
@@ -180,7 +218,7 @@ export async function getEnhancedImage(
     return null;
   }
 
-  return dbRowToEnhancedImage(result.rows[0]);
+  return await dbRowToEnhancedImage(result.rows[0]);
 }
 
 /**
@@ -240,7 +278,7 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
          ORDER BY created_at ASC
          LIMIT $2
        )
-       RETURNING id, audit_ref, created_at`,
+       RETURNING id, audit_ref, created_at, original_s3_key, enhanced_s3_key, thumb_s3_key`,
       [agencyId, excessCount]
     );
 
@@ -256,8 +294,13 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
         );
       });
 
-      // TODO: Schedule async storage deletion for expired images
-      // This can be done via a background job or separate cleanup process
+      // Best-effort storage cleanup for expired items
+      for (const row of expireResult.rows) {
+        const keys = [row.original_s3_key, row.enhanced_s3_key, row.thumb_s3_key].filter(Boolean) as string[];
+        for (const key of keys) {
+          deleteS3Object(key).catch(() => {});
+        }
+      }
     }
   } catch (error) {
     console.error(`[retention] Failed to enforce retention for agency ${agencyId}:`, error);
@@ -268,7 +311,15 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
 /**
  * Convert database row to EnhancedImage type
  */
-function dbRowToEnhancedImage(row: any): EnhancedImage {
+async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
+  const enhancedKey = row.enhanced_s3_key || row.storage_key || null;
+  const thumbKey = row.thumb_s3_key || row.storage_key || null;
+  const originalKey = row.original_s3_key || null;
+
+  const publicUrl = enhancedKey ? (await safeSign(enhancedKey)) || row.public_url : row.public_url;
+  const thumbnailUrl = thumbKey ? (await safeSign(thumbKey)) || row.thumbnail_url : row.thumbnail_url;
+  const originalUrl = originalKey ? await safeSign(originalKey) : (row.remote_original_url || null);
+
   return {
     id: row.id,
     agencyId: row.agency_id,
@@ -276,8 +327,12 @@ function dbRowToEnhancedImage(row: any): EnhancedImage {
     jobId: row.job_id,
     stagesCompleted: row.stages_completed,
     storageKey: row.storage_key,
-    publicUrl: row.public_url,
-    thumbnailUrl: row.thumbnail_url,
+    publicUrl,
+    thumbnailUrl,
+    originalUrl,
+    originalS3Key: originalKey,
+    enhancedS3Key: enhancedKey,
+    thumbS3Key: thumbKey,
     sizeBytes: row.size_bytes,
     contentType: row.content_type,
     isExpired: row.is_expired,
