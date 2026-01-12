@@ -64,14 +64,6 @@ export async function recordEnhanceBundleUsage(
       declutter: payload.options?.declutter || null,
       staging: payload.options?.virtualStage || null,
       listingId: payload.listingId || null,
-      meta: {
-        imagesUsed,
-        stages: {
-          stage1A: true,
-          stage1B: !!payload.options?.declutter,
-          stage2: !!payload.options?.virtualStage,
-        },
-      },
     });
   } catch (err) {
     console.error("[USAGE] Failed to record bundled enhance usage (non-blocking):", err);
