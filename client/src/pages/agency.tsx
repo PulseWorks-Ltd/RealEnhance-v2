@@ -309,6 +309,8 @@ export default function AgencyPage() {
               stagingWarning={usage.stagingWarning}
               planName={usage.planName || ""}
               monthKey={usage.monthKey}
+              stagingNote={usage.stagingNote}
+              topUsers={usage.topUsers}
             />
           </CardContent>
         </Card>
