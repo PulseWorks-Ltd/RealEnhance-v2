@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "pnpm --filter @realenhance/shared run build && tsc -p tsconfig.json",
+    "build": "pnpm --filter @realenhance/shared run build && tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/db/migrations', 'dist/db/migrations', {recursive: true})\"",
     "migrate": "tsx src/db/migrate.ts",
     "start": "NODE_ENV=production node dist/db/migrate.js && NODE_ENV=production node dist/index.js",
     "enqueue:test": "pnpm run build && node dist/scripts/test-enqueue.js"
