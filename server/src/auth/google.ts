@@ -24,7 +24,7 @@ function initPassport() {
   const opts: StrategyOptions = {
     clientID: GOOGLE_CLIENT_ID,
     clientSecret: GOOGLE_CLIENT_SECRET,
-    callbackURL: `${getBaseUrl()}/auth/google/callback`,
+    callbackURL: process.env.GOOGLE_CALLBACK_URL!,
   };
 
   // Helpful startup log to verify redirect URI configuration in prod
