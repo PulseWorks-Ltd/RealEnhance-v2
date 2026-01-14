@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-google-oauth20";
-import { upsertUserFromGoogle, getUserByEmail } from "../services/users.js";
+import { upsertUserFromGoogle, getUserByEmail, updateUser } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 // Seat limits removed - unlimited users per agency
 
@@ -69,19 +69,21 @@ function initPassport() {
             }
 
             // Link Google to existing account
-            user.googleId = googleId;
-            user.firstName = firstName || user.firstName;
-            user.lastName = lastName || user.lastName;
-            user.name = name || user.name;
+            const authProvider =
+              user.passwordHash && user.authProvider === "email" ? "both" as const :
+              !user.passwordHash ? "google" as const :
+              user.authProvider;
 
-            // Update authProvider based on passwordHash presence
-            if (user.passwordHash && user.authProvider === "email") {
-              user.authProvider = "both";
-            } else if (!user.passwordHash) {
-              user.authProvider = "google";
-            }
+            await updateUser(user.id, {
+              googleId,
+              firstName: firstName || user.firstName,
+              lastName: lastName || user.lastName,
+              name: name || user.name,
+              authProvider
+            });
 
-            await updateUser(user);
+            // Fetch updated user
+            user = await getUserByEmail(email) || user;
             console.log(`[Google OAuth] Linked Google account to existing user ${user.id}`);
           } else {
             // No existing user - create new Google-only account

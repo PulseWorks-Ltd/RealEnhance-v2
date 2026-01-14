@@ -16,9 +16,12 @@ export type JobId = string;
 export interface UserRecord {
     id: UserId;
     email: string;
-    name: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string;
     passwordHash?: string;
-    authProvider: "email" | "google";
+    authProvider: "email" | "google" | "both";
+    googleId?: string;
     credits: number;
     imageIds: ImageId[];
     agencyId?: string | null;
@@ -86,6 +89,8 @@ export interface EnhanceJobPayload {
         enabled: boolean;
         base1BUrl: string;
     };
+    remoteOriginalUrl?: string;
+    remoteOriginalKey?: string;
     createdAt: string;
 }
 export interface EditJobPayload {
@@ -129,4 +134,63 @@ export interface JobRecord {
     };
     createdAt: string;
     updatedAt: string;
+}
+/**
+ * Enhancement attempt audit record (INTERNAL USE ONLY)
+ * Provides full traceability from stored images back to validator decisions.
+ * NEVER expose validator details to users.
+ */
+export interface EnhancementAttempt {
+    attemptId: string;
+    jobId: JobId;
+    stage: 'stage12' | 'stage2' | 'edit' | 'region_edit';
+    attemptNumber: number;
+    modelUsed?: string;
+    promptVersion?: string;
+    validatorPassed?: boolean;
+    validatorSummaryInternal?: Record<string, any>;
+    traceId: string;
+    createdAt: string;
+}
+/**
+ * Enhanced image record with quota-bound retention
+ * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
+ * Oldest images expire first (FIFO)
+ */
+export interface EnhancedImage {
+    id: string;
+    agencyId: string;
+    userId: UserId;
+    jobId: JobId;
+    stagesCompleted: string[];
+    storageKey: string;
+    publicUrl: string;
+    thumbnailUrl?: string;
+    originalUrl?: string | null;
+    originalS3Key?: string | null;
+    enhancedS3Key?: string | null;
+    thumbS3Key?: string | null;
+    sizeBytes?: number;
+    contentType?: string;
+    isExpired: boolean;
+    expiresAt?: string;
+    auditRef: string;
+    traceId: string;
+    stage12AttemptId?: string;
+    stage2AttemptId?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+/**
+ * Enhanced image list item (for API responses)
+ * Excludes sensitive audit data
+ */
+export interface EnhancedImageListItem {
+    id: string;
+    thumbnailUrl: string;
+    publicUrl: string;
+    originalUrl?: string | null;
+    stagesCompleted: string[];
+    createdAt: string;
+    auditRef: string;
 }

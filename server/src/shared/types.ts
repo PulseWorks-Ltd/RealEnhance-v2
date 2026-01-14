@@ -23,8 +23,10 @@ export interface UserRecord extends AuthUser {
   imageIds: ImageId[];
   /** Optional password hash for email/password authentication */
   passwordHash?: string;
-  /** Authentication provider: "email" for email/password, "google" for OAuth */
-  authProvider: "email" | "google";
+  /** Authentication provider: "email" for email/password, "google" for OAuth, "both" for linked accounts */
+  authProvider: "email" | "google" | "both";
+  /** Optional Google profile ID for account linking */
+  googleId?: string;
   /** Optional agency ID for multi-user agency accounts */
   agencyId?: string | null;
   /** Agency role: owner, admin, or member */
