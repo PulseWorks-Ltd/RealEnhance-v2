@@ -46,37 +46,50 @@ module.exports = {
         // ===== BRAND DESIGN SYSTEM =====
         // Navy scale (primary brand)
         'brand': {
-          50: '#f0f4f8',
-          100: '#d9e2ec',
-          200: '#bcccdc',
-          300: '#9fb3c8',
-          400: '#829ab1',
-          500: '#243b53', // Primary Navy
-          600: '#102a43',
-          700: '#0d2137',
-          800: '#091a2b',
-          900: '#061021', // Deepest Navy
+          50: '#f8fafc', // Slate 50
+          100: '#f1f5f9', // Slate 100
+          200: '#e2e8f0', // Slate 200
+          300: '#cbd5e1', // Slate 300
+          400: '#94a3b8', // Slate 400
+          500: '#64748b', // Slate 500
+          600: '#475569', // Slate 600
+          700: '#334155', // Slate 700 (Brand Light)
+          800: '#1e293b', // Slate 800
+          900: '#0f172a', // Slate 900 (Brand Default)
+          950: '#020617', // Slate 950
         },
         // Emerald action (CTAs, success)
         'action': {
-          50: '#e6f7f1',
-          100: '#c3ead9',
-          400: '#3dc99b',
-          500: '#27ab83', // Primary Emerald
-          600: '#199473',
-          700: '#127a5f',
+          50: '#ecfdf5',
+          100: '#d1fae5', // Light highlight
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#10b981',
+          600: '#059669', // Primary Action/Success
+          700: '#047857', // Hover state
+          800: '#065f46',
+          900: '#064e3b',
         },
         // Gold accent (premium, warnings)
         'gold': {
-          50: '#fefbea',
+          50: '#fffbeb',
           100: '#fef3c7',
-          400: '#f6c244',
-          500: '#d69e2e', // Premium Accent
-          600: '#b7791f',
+          200: '#fde68a',
+          300: '#fcd34d',
+          400: '#fbbf24',
+          500: '#f59e0b', // Accent Default
+          600: '#d97706',
+          700: '#b45309',
+          800: '#92400e',
+          900: '#78350f',
         },
         // Surface tokens
         'surface': {
           DEFAULT: '#ffffff',
+          page: '#F8FAFC',    // Slate 50
+          card: '#FFFFFF',    // White
+          border: '#E2E8F0',  // Slate 200
           muted: '#f8fafc',
           subtle: '#f1f5f9',
         },
@@ -111,6 +124,14 @@ module.exports = {
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
         serif: ['"Playfair Display"', 'serif'],
+      },
+      borderRadius: {
+        'xs': '4px',
+        'sm': '6px',
+        DEFAULT: '8px',
+        'md': '8px',
+        'lg': '12px',
+        'xl': '16px',
       },
       container: {
         center: true,

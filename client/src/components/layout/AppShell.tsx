@@ -48,7 +48,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const planName = usage?.planName || 'Free';
 
   return (
-    <div className="flex h-screen bg-surface-muted text-foreground font-sans">
+    <div className="flex h-screen bg-surface-page text-brand-900 font-sans">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div
@@ -65,7 +65,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         {/* Brand header */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-brand-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-action-500 to-action-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-action-600 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <span className="text-lg font-semibold tracking-tight">RealEnhance</span>
@@ -115,7 +115,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         {/* User section */}
         <div className="p-4 border-t border-brand-800">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-600 to-brand-700 flex items-center justify-center text-xs font-medium ring-2 ring-brand-800">
+            <div className="w-9 h-9 rounded-full bg-brand-700 flex items-center justify-center text-xs font-medium ring-2 ring-brand-800">
               {userInitials}
             </div>
             <div className="flex-1 min-w-0">
@@ -129,18 +129,18 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <header className="lg:hidden h-14 bg-white border-b border-border flex items-center justify-between px-4 sticky top-0 z-30">
+        <header className="lg:hidden h-14 bg-white border-b border-surface-border flex items-center justify-between px-4 sticky top-0 z-30">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 -ml-2 rounded-md hover:bg-muted transition-colors"
+            className="p-2 -ml-2 rounded-md hover:bg-surface-subtle transition-colors"
           >
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5 h-5 text-brand-700" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-action-500 to-action-600 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-action-600 flex items-center justify-center">
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
-            <span className="font-semibold text-brand-600">RealEnhance</span>
+            <span className="font-semibold text-brand-900">RealEnhance</span>
           </div>
           <div className="w-9" /> {/* Spacer for centering */}
         </header>
@@ -179,13 +179,13 @@ const NavItem = ({
     to={to}
     onClick={onClick}
     className={({ isActive }) => cn(
-      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150",
+      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group",
       isActive
-        ? "bg-brand-800 text-white shadow-sm"
-        : "text-brand-300 hover:bg-brand-800/50 hover:text-white"
+        ? "bg-brand-800 text-action-400 shadow-sm"
+        : "text-brand-400 hover:bg-brand-800/50 hover:text-brand-100"
     )}
   >
-    <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+    <Icon className={cn("w-[18px] h-[18px] flex-shrink-0", isActive ? "text-action-400" : "text-brand-400 group-hover:text-brand-200")} />
     <span className="text-sm font-medium">{label}</span>
   </NavLink>
 );

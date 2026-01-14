@@ -45,13 +45,13 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                 <>
                   <div
                     {...getRootProps()}
-                    className={`border-2 border-dashed rounded-xl p-6 cursor-pointer text-center ${isDragActive ? "border-purple-500 bg-purple-500/5" : "border-muted"}`}
+                    className={`min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 cursor-pointer text-center transition-colors ${isDragActive ? "border-action-400 bg-action-50" : "border-brand-200 hover:border-brand-300 hover:bg-surface-subtle"}`}
                   >
                     <input {...getInputProps()} />
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-brand-500 font-medium">
                       Drag & drop image here, or click to select
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
+                    <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
                   </div>
                   <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
                 </>
@@ -88,13 +88,13 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
             <CardContent className="p-4">
               <div
                 {...getRootProps()}
-                className={`border-2 border-dashed rounded-xl p-6 cursor-pointer text-center ${isDragActive ? "border-purple-500 bg-purple-500/5" : "border-muted"}`}
+                className={`min-h-[400px] flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-6 cursor-pointer text-center transition-colors ${isDragActive ? "border-action-400 bg-action-50" : "border-brand-200 hover:border-brand-300 hover:bg-surface-subtle"}`}
               >
                 <input {...getInputProps()} />
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-brand-500 font-medium">
                   Drag & drop images here, or click to select
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
+                <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
               </div>
               <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
             </CardContent>

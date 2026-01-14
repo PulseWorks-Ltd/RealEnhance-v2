@@ -9,21 +9,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "bg-brand-900 text-white hover:bg-brand-800 shadow-sm",
+        primary: "bg-brand-900 text-white hover:bg-brand-800 shadow-sm", // Alias for default
+        action: "bg-action-600 text-white hover:bg-action-700 shadow-sm", // Emerald Success
+        destructive: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
+        outline: "border border-brand-200 bg-white hover:bg-brand-50 text-brand-900",
+        secondary: "bg-brand-100 text-brand-900 hover:bg-brand-200",
+        ghost: "hover:bg-brand-50 text-brand-700 hover:text-brand-900",
+        link: "text-brand-900 underline-offset-4 hover:underline",
 
-        // 💙💚 Core brand gradient
-        brand: "bg-gradient-to-r from-brand-primary to-brand-accent text-white hover:opacity-90",
-
-        // 🟨 Promo accent (use sparingly)
-        brandHighlight: "bg-brand-highlight text-white hover:brightness-110 shadow-sm",
-
-        // 💠 Soft brand surface for subtle CTAs
-        brandSoft: "bg-brand-light text-foreground hover:brightness-105 border border-border",
+        // Mapped legacy variants
+        brand: "bg-brand-900 text-white hover:bg-brand-800 shadow-sm",
+        brandHighlight: "bg-gold-500 text-white hover:bg-gold-600 shadow-sm",
+        brandSoft: "bg-surface-subtle text-brand-900 border border-brand-200 hover:bg-brand-50",
       },
       size: {
         default: "h-10 px-4 py-2",
