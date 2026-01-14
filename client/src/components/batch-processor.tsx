@@ -3015,6 +3015,14 @@ export default function BatchProcessor() {
                                         >
                                             Edit
                                         </button>
+                                          <button
+                                            onClick={() => handleOpenRetryDialog(i)}
+                                            disabled={retryingImages.has(i)}
+                                            className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                            data-testid={`button-retry-${i}`}
+                                          >
+                                            {retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                          </button>
                                     </>
                                 )}
                             </div>
@@ -3151,9 +3159,10 @@ export default function BatchProcessor() {
               const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
               const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
               const quality = stage1b || stage1a || undefined;
-              const fallback = getDisplayUrl(results[editingImageIndex]) || undefined;
-              const initial = stage2 || quality || fallback;
-              console.log('[BatchProcessor] Resolved initialImageUrl (stage2||quality||fallback):', { stage2, stage1b, stage1a, initial, fallback });
+              const display = withVersion(getDisplayUrl(results[editingImageIndex]), item?.version || item?.updatedAt) || undefined;
+              const previewFallback = previewUrls[editingImageIndex];
+              const initial = stage2 || quality || display || previewFallback;
+              console.log('[BatchProcessor] Resolved initialImageUrl (stage2||quality||display||preview):', { stage2, stage1b, stage1a, display, previewFallback, initial });
               return initial;
             })()}
             // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
@@ -3162,8 +3171,10 @@ export default function BatchProcessor() {
               const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
               const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
               const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const resolved = stage1b || stage1a || undefined;
-              console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A):', { stage1b, stage1a, resolved });
+              const display = withVersion(getDisplayUrl(results[editingImageIndex]), item?.version || item?.updatedAt) || undefined;
+              const previewFallback = previewUrls[editingImageIndex];
+              const resolved = stage1b || stage1a || display || previewFallback || undefined;
+              console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A||display||preview):', { stage1b, stage1a, display, previewFallback, resolved });
               return resolved;
             })()}
             initialGoal={globalGoal}
