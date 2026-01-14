@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles } from "lucide-react";
 
 /**
  * Derive the Stage 1 base image URL from a Stage 2 filename.
@@ -1175,300 +1178,311 @@ export function RegionEditor({
     (mode === "restore_original" && hasMask);
 
   return (
-    <div className="space-y-6">
-      {!initialImageUrl && (
-        <div>
-          <Label htmlFor="image-upload">Select Image</Label>
-          <Input
-            id="image-upload"
-            type="file"
-            accept="image/*"
-            onChange={onFileSelect}
-            data-testid="input-region-image"
-          />
-        </div>
-      )}
-
-      {previewUrl && (
-        <div className="space-y-4">
+    <div className="space-y-4 lg:space-y-6">
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
           <div>
-            <Label className="text-base font-medium">
-              Draw Region Mask (white = selected area)
-            </Label>
-            <p className="mt-1 mb-3 text-sm text-gray-600">
-              Draw on the image to mark the region. Use Alt/Ctrl + drag to pan,
-              mouse wheel to zoom.
-            </p>
+            <CardTitle className="text-xl font-semibold text-slate-900">Edit Image</CardTitle>
+            <CardDescription className="text-sm text-slate-600">
+              Draw a mask and describe what you want to add, remove, or replace.
+            </CardDescription>
+          </div>
+          <Badge variant="secondary" className="flex items-center gap-1 border border-action-100 bg-action-50 text-action-700">
+            <Sparkles className="h-4 w-4" /> AI-Assisted Edit
+          </Badge>
+        </CardHeader>
+      </Card>
 
-            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg bg-brand-light p-2">
-              <div className="flex items-center gap-1.5">
-                <Label className="text-xs">Brush:</Label>
-                <input
-                  type="range"
-                  min="5"
-                  max="50"
-                  value={brushSize}
-                  onChange={(e) => setBrushSize(Number(e.target.value))}
-                  className="w-16"
-                  data-testid="slider-brush-size"
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.7fr_1fr]">
+        {/* Canvas Zone */}
+        <Card className="border border-slate-200 shadow-sm overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold text-slate-900">Mask & Preview</CardTitle>
+            <CardDescription className="text-sm text-slate-600">Paint over the area you want to change. White = editable region.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 lg:space-y-4">
+            {!initialImageUrl && (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
+                <Label htmlFor="image-upload" className="text-sm font-medium text-slate-700">Select Image</Label>
+                <Input
+                  id="image-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={onFileSelect}
+                  data-testid="input-region-image"
+                  className="mt-2"
                 />
-                <span className="w-7 text-xs text-gray-600">
-                  {brushSize}px
-                </span>
               </div>
+            )}
 
-              <div className="flex items-center gap-1.5">
-                <Label className="text-xs">Zoom:</Label>
-                <button
-                  onClick={() =>
-                    setZoomLevel(Math.max(0.5, zoomLevel - 0.25))
-                  }
-                  disabled={zoomLevel <= 0.5}
-                  className="rounded border bg-white px-1.5 py-0.5 text-xs disabled:opacity-50"
-                  data-testid="button-zoom-out"
-                >
-                  -
-                </button>
-                <span className="w-9 text-center text-xs text-gray-600">
-                  {Math.round(zoomLevel * 100)}%
-                </span>
-                <button
-                  onClick={() =>
-                    setZoomLevel(Math.min(3, zoomLevel + 0.25))
-                  }
-                  disabled={zoomLevel >= 3}
-                  className="rounded border bg-white px-1.5 py-0.5 text-xs disabled:opacity-50"
-                  data-testid="button-zoom-in"
-                >
-                  +
-                </button>
-                <button
-                  onClick={() => {
-                    setZoomLevel(1);
-                    setPanOffset({ x: 0, y: 0 });
-                  }}
-                  className="rounded border bg-white px-1.5 py-0.5 text-xs"
-                  data-testid="button-reset-view"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
+            {previewUrl && (
+              <div className="space-y-3">
+                <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
+                  {/* Floating toolbar */}
+                  <div className="absolute left-4 top-4 z-10 flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
+                      <Brush className="h-4 w-4 text-slate-700" />
+                      <div className="flex items-center gap-2 text-xs text-slate-700">
+                        <span className="font-medium">Brush</span>
+                        <input
+                          type="range"
+                          min="5"
+                          max="50"
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(Number(e.target.value))}
+                          className="w-20"
+                          data-testid="slider-brush-size"
+                        />
+                        <span className="w-10 text-right">{brushSize}px</span>
+                      </div>
+                    </div>
 
-            <div
-              className="relative overflow-hidden rounded-lg border bg-brand-light"
-              style={{ minHeight: "600px" }}
-            >
-              {imageLoading && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-brand-light/80">
-                  <div className="text-center">
-                    <div className="mx-auto mb-2 h-12 w-12 animate-spin rounded-full border-b-2 border-brand-primary" />
-                    <p className="text-gray-600">Loading image...</p>
+                    <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
+                      <Move className="h-4 w-4 text-slate-700" />
+                      <span className="text-xs text-slate-700">Hold Alt/Ctrl + drag to pan</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 rounded-full bg-white/95 px-2 py-2 shadow-sm border border-slate-200 text-slate-700">
+                      <button
+                        onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
+                        disabled={zoomLevel <= 0.5}
+                        className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
+                        data-testid="button-zoom-out"
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </button>
+                      <span className="min-w-[46px] text-center text-xs font-medium">{Math.round(zoomLevel * 100)}%</span>
+                      <button
+                        onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
+                        disabled={zoomLevel >= 3}
+                        className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
+                        data-testid="button-zoom-in"
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </button>
+                      <div className="mx-1 h-4 w-px bg-slate-200" />
+                      <button
+                        onClick={() => {
+                          setZoomLevel(1);
+                          setPanOffset({ x: 0, y: 0 });
+                        }}
+                        className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100"
+                        data-testid="button-reset-view"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {imageLoading && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+                      <div className="text-center text-white">
+                        <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-2 border-white/30 border-b-white" />
+                        <p className="text-sm font-medium">Loading image...</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    className="relative h-full w-full"
+                    style={{
+                      minHeight: "620px",
+                      transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+                      transformOrigin: "top left",
+                    }}
+                  >
+                    {!previewUrl && !imageLoading && (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-500">
+                        <p>No image loaded. Please select an image file above.</p>
+                      </div>
+                    )}
+                    <canvas
+                      ref={previewCanvasRef}
+                      className="absolute inset-0 h-full w-full object-contain"
+                      style={{ display: previewUrl ? "block" : "none" }}
+                    />
+                    <canvas
+                      ref={canvasRef}
+                      className="absolute inset-0 h-full w-full object-contain opacity-60"
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      onWheel={handleZoom}
+                      style={{
+                        cursor: isPanning
+                          ? "grabbing"
+                          : isDrawing
+                            ? "crosshair"
+                            : "crosshair",
+                        display: previewUrl ? "block" : "none",
+                      }}
+                      data-testid="canvas-mask-drawing"
+                    />
                   </div>
                 </div>
-              )}
 
-              <div
-                className="relative h-full w-full"
-                style={{
-                  minHeight: "600px",
-                  transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-                  transformOrigin: "top left",
-                }}
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span>White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom.</span>
+                  <Button
+                    onClick={clearMask}
+                    variant="outline"
+                    size="sm"
+                    data-testid="button-clear-mask"
+                  >
+                    Clear Mask
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Controls Panel */}
+        <Card className="border border-slate-200 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold text-slate-900">Edit Settings</CardTitle>
+            <CardDescription className="text-sm text-slate-600">Provide clear instructions, then choose the operation and context.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="instructions" className="text-sm font-semibold text-slate-900">
+                  Instructions {mode === "edit" && <span className="text-red-500">*</span>}
+                </Label>
+                <span className="text-[11px] text-slate-500">Be specific.</span>
+              </div>
+              <Textarea
+                id="instructions"
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                placeholder={"e.g., Remove the couch and add a modern armchair.\nReplace the plant with a floor lamp."}
+                rows={4}
+                data-testid="textarea-instructions"
+                className={`${mode === "edit" && !instructions.trim() ? "border-red-200 focus:border-red-300" : ""} resize-none`}
+              />
+              <p className="text-xs text-slate-500">Be specific. The AI preserves walls, doors, and windows.</p>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="mode" className="text-sm font-semibold text-slate-900">
+                  Operation <span className="text-red-500">*</span>
+                </Label>
+              </div>
+              <Select
+                value={mode}
+                onValueChange={(v) => setMode("edit")}
               >
-                {!previewUrl && !imageLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                    <p>No image loaded. Please select an image file above.</p>
-                  </div>
-                )}
-                <canvas
-                  ref={previewCanvasRef}
-                  className="absolute inset-0 h-full w-full object-contain"
-                  style={{ display: previewUrl ? "block" : "none" }}
-                />
-                <canvas
-                  ref={canvasRef}
-                  className="absolute inset-0 h-full w-full object-contain opacity-60"
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
-                  onWheel={handleZoom}
-                  style={{
-                    cursor: isPanning
-                      ? "grabbing"
-                      : isDrawing
-                        ? "crosshair"
-                        : "crosshair",
-                    display: previewUrl ? "block" : "none",
-                  }}
-                  data-testid="canvas-mask-drawing"
-                />
+                <SelectTrigger data-testid="select-mode">
+                  <SelectValue placeholder="Choose Option" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="edit">Add / Remove / Replace (requires text)</SelectItem>
+                  {false && (
+                    <SelectItem value="restore_original">
+                      Restore Original (no text required)
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="scene-type" className="text-sm font-semibold text-slate-900">Scene Type</Label>
+                <Select
+                  value={sceneType}
+                  onValueChange={(v) => setSceneType(v as "auto" | "interior" | "exterior")}
+                >
+                  <SelectTrigger id="scene-type" data-testid="select-scene-type">
+                    <SelectValue placeholder="Auto-detect" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="interior">Interior</SelectItem>
+                    <SelectItem value="exterior">Exterior</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="room-type" className="text-sm font-semibold text-slate-900">Room Type</Label>
+                <Select
+                  value={roomType}
+                  onValueChange={(v) => setRoomType(v)}
+                >
+                  <SelectTrigger id="room-type" data-testid="select-room-type">
+                    <SelectValue placeholder="Auto-detect" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto</SelectItem>
+                    <SelectItem value="living_room">Living Room</SelectItem>
+                    <SelectItem value="bedroom">Bedroom</SelectItem>
+                    <SelectItem value="kitchen">Kitchen</SelectItem>
+                    <SelectItem value="bathroom">Bathroom</SelectItem>
+                    <SelectItem value="dining">Dining</SelectItem>
+                    <SelectItem value="exterior">Exterior</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-          </div>
 
-          <Button
-            onClick={clearMask}
-            variant="outline"
-            size="sm"
-            data-testid="button-clear-mask"
-          >
-            Clear Mask
-          </Button>
-        </div>
-      )}
+            <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <Input
+                id="smart-reinstate"
+                type="checkbox"
+                checked={smartReinstate}
+                onChange={(e) => setSmartReinstate(e.target.checked)}
+                className="mt-1 h-4 w-4"
+              />
+              <div className="space-y-1">
+                <Label htmlFor="smart-reinstate" className="text-sm font-semibold text-slate-900 cursor-pointer">
+                  Smart Reinstate
+                </Label>
+                <p className="text-xs text-slate-600">Keeps structure and boundaries intact (recommended).</p>
+              </div>
+            </div>
+          </CardContent>
 
-      {/* Required Fields */}
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="instructions" className="text-base font-medium">
-            Instructions{mode === "edit" && (
-              <span className="text-red-500">*</span>
-            )}
-          </Label>
-          <Textarea
-            id="instructions"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Describe your edit (required for Add/Remove/Replace)"
-            rows={2}
-            data-testid="textarea-instructions"
-            className={
-              mode === "edit" && !instructions.trim()
-                ? "border-red-200 focus:border-red-300"
-                : ""
-            }
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="mode" className="text-base font-medium">
-            Operation <span className="text-red-500">*</span>
-          </Label>
-          <Select
-            value={mode}
-            // NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
-            // This mode will be re-enabled in v3.0 when the multi-stage pipeline is finalized.
-            onValueChange={(v) => setMode("edit")}
-          >
-            <SelectTrigger data-testid="select-mode">
-              <SelectValue placeholder="Choose Option" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="edit">
-                Add / Remove / Replace (requires text)
-              </SelectItem>
-              {/**
-               * NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
-               * This mode will be re-enabled in v3.0 when the multi-stage pipeline is finalized.
-               */}
-              {false && (
-                <SelectItem value="restore_original">
-                  Restore Original (no text required)
-                </SelectItem>
+          <div className="border-t border-slate-200 bg-white px-4 py-3">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              {mode === "edit" ? (
+                <span>
+                  Requires <span className="font-semibold">instructions</span> and a <span className="font-semibold">mask</span>.
+                </span>
+              ) : (
+                <span>Restore Original is temporarily disabled.</span>
               )}
-            </SelectContent>
-          </Select>
-        </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  pollingAbortRef.current.abort = true;
+                  onCancel?.();
+                }}
+                data-testid="button-cancel-region-edit"
+                className="w-full"
+              >
+                Cancel
+              </Button>
 
-                <div>
-          <Label htmlFor="scene-type" className="text-base font-medium">
-            Scene Type
-          </Label>
-          <Select
-            value={sceneType}
-            onValueChange={(v) =>
-              setSceneType(v as "auto" | "interior" | "exterior")
-            }
-          >
-            <SelectTrigger id="scene-type" data-testid="select-scene-type">
-              <SelectValue placeholder="Auto-detect" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto</SelectItem>
-              <SelectItem value="interior">Interior</SelectItem>
-              <SelectItem value="exterior">Exterior</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div>
-          <Label htmlFor="room-type" className="text-base font-medium">
-            Room Type
-          </Label>
-          <Select
-            value={roomType}
-            onValueChange={(v) => setRoomType(v)}
-          >
-            <SelectTrigger id="room-type" data-testid="select-room-type">
-              <SelectValue placeholder="Auto-detect" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto</SelectItem>
-              <SelectItem value="living_room">Living Room</SelectItem>
-              <SelectItem value="bedroom">Bedroom</SelectItem>
-              <SelectItem value="kitchen">Kitchen</SelectItem>
-              <SelectItem value="bathroom">Bathroom</SelectItem>
-              <SelectItem value="dining">Dining</SelectItem>
-              <SelectItem value="exterior">Exterior</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Input
-            id="smart-reinstate"
-            type="checkbox"
-            checked={smartReinstate}
-            onChange={(e) => setSmartReinstate(e.target.checked)}
-            className="h-4 w-4"
-          />
-          <Label
-            htmlFor="smart-reinstate"
-            className="text-sm text-gray-700 cursor-pointer"
-          >
-            Smart Reinstate (keep structure & boundaries tight)
-          </Label>
-        </div>
-      </div>
-
-      {/* Footer buttons */}
-      <div className="flex items-center justify-between pt-4 border-t">
-        <div className="text-xs text-gray-500">
-          {mode === "edit" ? (
-            <span>
-              Requires <span className="font-semibold">instructions</span> and a{" "}
-              <span className="font-semibold">mask</span>.
-            </span>
-          ) : (
-            <span>Restore Original is temporarily disabled.</span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              pollingAbortRef.current.abort = true;
-              onCancel?.();
-            }}
-            data-testid="button-cancel-region-edit"
-          >
-            Cancel
-          </Button>
-
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!isFormValid || regionEditMutation.isPending}
-            data-testid="button-apply-region-edit"
-          >
-            {regionEditMutation.isPending ? "Applying edit..." : "Apply Edit"}
-          </Button>
-        </div>
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!isFormValid || regionEditMutation.isPending}
+                data-testid="button-apply-region-edit"
+                className="w-full bg-action-600 text-white hover:bg-action-700"
+              >
+                {regionEditMutation.isPending ? "Applying edit..." : "Apply Edit"}
+              </Button>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );
