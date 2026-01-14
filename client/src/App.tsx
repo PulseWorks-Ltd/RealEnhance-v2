@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
-import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { Header } from "@/components/Header";
+import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
 
@@ -34,29 +35,35 @@ function LegacyMyPhotosRedirect() {
 export default function App() {
   return (
     <>
-      <Header />
       <Suspense fallback={<div className="p-6">Loading…</div>}>
         <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/accept-invite" element={<AcceptInvite />} />
-          <Route path="/auth/complete" element={<AuthComplete />} />
-          <Route path="/start-trial" element={<StartTrial />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/change-password" element={<ChangePassword />} />
-          <Route path="/settings/profile" element={<ProfileSettings />} />
-          <Route path="/settings/security" element={<SecuritySettings />} />
-          <Route path="/editor" element={<Editor />} />
-          <Route path="/results" element={<Results />} />
-          <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
-          <Route path="/region-edit" element={<RegionEditPage />} />
-          <Route path="/agency" element={<Agency />} />
-          <Route path="/enhanced-history" element={<EnhancedHistory />} />
-          <Route path="/dashboard" element={<Navigate to="/home" replace />} />
-          <Route path="*" element={<NotFound />} />
+          {/* Public Routes with Header */}
+          <Route element={<><Header /><Outlet /></>}>
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/accept-invite" element={<AcceptInvite />} />
+            <Route path="/auth/complete" element={<AuthComplete />} />
+            <Route path="/start-trial" element={<StartTrial />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="*" element={<NotFound />} />
+          </Route>
+
+          {/* App Routes with Sidebar Shell */}
+          <Route element={<AppShell><Outlet /></AppShell>}>
+            <Route path="/home" element={<Home />} />
+            <Route path="/change-password" element={<ChangePassword />} />
+            <Route path="/settings/profile" element={<ProfileSettings />} />
+            <Route path="/settings/security" element={<SecuritySettings />} />
+            <Route path="/editor" element={<Editor />} />
+            <Route path="/results" element={<Results />} />
+            <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
+            <Route path="/region-edit" element={<RegionEditPage />} />
+            <Route path="/agency" element={<Agency />} />
+            <Route path="/enhanced-history" element={<EnhancedHistory />} />
+            <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+          </Route>
         </Routes>
       </Suspense>
       {/* Keep Toaster inside App so upstream providers receive a single child */}

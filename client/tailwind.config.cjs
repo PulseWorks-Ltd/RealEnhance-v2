@@ -44,6 +44,25 @@ module.exports = {
         },
 
         // Brand tokens
+        'brand': {
+          50: '#f0f4f8',
+          100: '#d9e2ec',
+          500: '#243b53', // Primary Navy
+          600: '#102a43',
+          900: '#061021', // Deepest Navy
+        },
+        'action': {
+          500: '#27ab83', // Emerald Green (Buttons)
+          600: '#199473',
+        },
+        'gold': {
+          500: '#d69e2e', // Premium Accent
+        },
+        'surface': {
+          DEFAULT: '#ffffff',
+          muted: '#f8fafc', // Slate-50
+        },
+
         'brand-primary': 'hsl(var(--brand-primary))',
         'brand-accent': 'hsl(var(--brand-accent))',
         'brand-light': 'hsl(var(--brand-light))',
@@ -51,9 +70,17 @@ module.exports = {
         'brand-surface': 'hsl(var(--brand-surface))',
       },
       borderRadius: {
+        DEFAULT: '0.375rem', // 6px
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+      },
+      boxShadow: {
+        'subtle': '0 1px 2px 0 rgba(36, 59, 83, 0.05)',
+        'card': '0 4px 6px -1px rgba(36, 59, 83, 0.1), 0 2px 4px -1px rgba(36, 59, 83, 0.06)',
+      },
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
       },
       container: {
         center: true,
