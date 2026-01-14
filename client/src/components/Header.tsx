@@ -29,12 +29,7 @@ export function Header() {
       <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
         {/* Brand */}
         <a href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-action-600 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-brand-900" data-testid="app-title">
-            RealEnhance
-          </span>
+          <img src="/Logo-dark.png" alt="RealEnhance" className="h-8 w-auto" />
         </a>
 
         {/* Right: actions */}

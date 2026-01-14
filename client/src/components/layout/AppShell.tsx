@@ -65,10 +65,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         {/* Brand header */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-brand-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-action-600 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight">RealEnhance</span>
+            <img src="/Logo-light.png" alt="RealEnhance" className="h-8 w-auto" />
           </div>
           <button
             onClick={() => setSidebarOpen(false)}

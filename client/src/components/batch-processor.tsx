@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
+import { Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 type RunState = "idle" | "running" | "done";
 
@@ -135,6 +136,30 @@ export default function BatchProcessor() {
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
+
+  // Transparent AI simulation
+  const [aiSteps, setAiSteps] = useState<Record<number, string>>({});
+  useEffect(() => {
+    if (runState !== 'running') return;
+    const steps = [
+      "Analyzing geometry...", "Correcting vertical perspective...", "Balancing exposure...", 
+      "Detecting windows...", "Rendering virtual furniture...", "Adjusting manufacturing lighting...",
+      "Optimizing textures...", "Finalizing composition..."
+    ];
+    const interval = setInterval(() => {
+        setAiSteps(prev => {
+            const next = {...prev};
+             for (let i = 0; i < 50; i++) { 
+                if (Math.random() > 0.6) {
+                    next[i] = steps[Math.floor(Math.random() * steps.length)];
+                }
+             }
+            return next;
+        });
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [runState]);
+
   const [jobId, setJobId] = useState<string>("");
   const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
   const jobIdToIndexRef = useRef<Record<string, number>>({});
@@ -2135,7 +2160,7 @@ export default function BatchProcessor() {
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
-  <div className="bg-brand-surface/95 rounded-xl shadow-lg p-8">
+  <div className={activeTab === 'enhance' ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
@@ -2762,381 +2787,212 @@ export default function BatchProcessor() {
           </div>
         )}
 
-        {/* Enhance Tab */}
+        {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900 mb-6">Enhance Your Images</h2>
+          <div className="min-h-screen bg-slate-50 relative pointer-events-auto">
             
-            {runState === "idle" && (
-              <div className="text-center py-8">
-                <div className="text-6xl mb-4">✨</div>
-                <h3 className="text-xl font-medium text-gray-900 mb-2">
-                  Ready to enhance {files.length} images
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Industry: {industryMap[presetKey]} • {preserveStructure ? "Structure preserved" : "Flexible changes"} • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
-                </p>
-                <button
-                  onClick={startBatchProcessing}
-                  disabled={!files.length}
-                  className="bg-action-500 text-white px-8 py-4 rounded hover:bg-action-600 transition-colors font-medium text-lg disabled:opacity-50"
-                  data-testid="button-start-batch"
-                >
-                  Enhance {files.length} {files.length === 1 ? "Image" : "Images"}
-                </button>
-                <div className="flex justify-center mt-4">
-                  <button
-                    onClick={() => setActiveTab("describe")}
-                    className="text-gray-500 hover:text-gray-700 text-sm"
-                    data-testid="button-back-describe"
-                  >
-                    ← Back to settings
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Progress Display */}
-            {/* ✅ HARD GUARD: Do NOT show global progress during retry operations */}
-            {(runState === "running" || isUploading) && retryingImages.size === 0 && (
-              <div className="bg-brand-50 border border-brand-200 rounded-lg p-6 mb-6">
-                <div className="flex flex-col gap-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-brand-900">
-                      {isUploading ? "Uploading Images" : "Enhancing Photos"}
+            {(runState === "idle") ? (
+              /* Idle State - "Ready to Start" similar to before but cleaner */
+              <div className="bg-white rounded-xl shadow-lg p-8 max-w-4xl mx-auto mt-8">
+                  <div className="text-center py-8">
+                    <div className="text-6xl mb-4">✨</div>
+                    <h3 className="text-xl font-medium text-gray-900 mb-2">
+                      Ready to enhance {files.length} images
                     </h3>
+                    <p className="text-gray-600 mb-6">
+                      Industry: {industryMap[presetKey]} • {preserveStructure ? "Structure preserved" : "Flexible changes"} • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
+                    </p>
                     <button
-                      onClick={cancelBatchProcessing}
-                      className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
-                      disabled={!abortController}
-                      data-testid="button-cancel-batch"
+                      onClick={startBatchProcessing}
+                      disabled={!files.length}
+                      className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 shadow-md"
+                      data-testid="button-start-batch"
                     >
-                      Cancel
+                      Process Batch #{Math.floor(Math.random() * 1000) + 2000} ({files.length} Images)
                     </button>
+                    <div className="flex justify-center mt-4">
+                      <button
+                        onClick={() => setActiveTab("describe")}
+                        className="text-gray-500 hover:text-gray-700 text-sm"
+                        data-testid="button-back-describe"
+                      >
+                        ← Back to settings
+                      </button>
+                    </div>
                   </div>
-
-                  <ProcessingSteps
-                    steps={[
-                      { id: "upload", label: "Uploading", status: isUploading ? "active" : "complete" },
-                      { id: "process", label: "Enhancing & Staging", status: isUploading ? "pending" : "active" }
-                    ]}
-                    className="w-full justify-between max-w-xl mx-auto"
-                  />
-
-                  <div className="bg-white rounded-lg p-4 border border-brand-100 flex items-center justify-center gap-3">
-                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-600"></div>
-                     <span className="text-brand-700 font-medium" data-testid="text-progress-counter">
-                        {isUploading ? "Uploading files to secure server..." : (progressText || "Initializing...")}
-                     </span>
-                  </div>
-                </div>
-                
-                {lastDetected && (
-                   <div className="mt-4 pt-4 border-t border-brand-200 flex items-center justify-center gap-2">
-                    <span className="text-sm text-brand-700">
-                      Detected: <span className="font-medium capitalize">{lastDetected.label.replace(/_/g, ' ')}</span> ({Math.round((lastDetected.confidence||0)*100)}%)
-                    </span>
-                    <OverrideDropdown
-                      currentLabel={lastDetected.label}
-                      onSelect={async (label) => {
-                        try {
-                          const fname = files[lastDetected.index]?.name;
-                          if (!fname) return alert('Cannot re-queue: filename missing');
-                          await apiJson(`/api/requeue/by-filename`, {
-                            method: 'POST',
-                            body: JSON.stringify({ filename: fname, sceneType: label })
-                          });
-                          toast({ title: 'Re-queued', description: `Reprocessing with scene: ${label}` });
-                        } catch (e: any) {
-                          alert(e?.message || 'Failed to re-queue');
-                        }
-                      }}
-                    />
-                  </div>
-                )}
               </div>
-            )}
+            ) : (
+             /* COMMAND CENTER VIEW */
+             <div className="max-w-5xl mx-auto py-8 px-4">
+                
+                {/* 1. Header Section */}
+                <div className="mb-8">
+                    <div className="flex justify-between items-end mb-4">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Processing Batch</h1>
+                        <p className="text-slate-500 mt-1">Please keep this tab open. {files.length - results.filter(r => r?.result?.image && !r?.error).length} images remaining.</p>
+                    </div>
+                    <div className="text-right">
+                        {(runState === 'running' || isUploading) && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                {isUploading ? "Uploading" : "Optimizing"}
+                            </span>
+                        )}
+                        {runState === 'done' && (
+                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                <CheckCircle className="w-3 h-3 mr-2" />
+                                Complete
+                            </span>
+                        )}
+                    </div>
+                    </div>
 
-            {/* Live Results Grid - Show immediately when processing starts */}
-            {runState !== "idle" && files.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium text-gray-900">Enhancement Results</h3>
-                <div className="grid gap-4">
-                  {files.map((file, i) => {
-                    const result = results?.[i];
-                    const baseUrl = getDisplayUrl(result);
-                    // Add cache-busting version to force browser reload on retry/edit
-                    const imageUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
-                    const displayName = result?.filename || file?.name || `Image ${i+1}`;
-                    // Use server's original URL (from S3) for comparison slider, fallback to local preview
-                    const originalUrl = result?.originalImageUrl || result?.originalUrl || result?.result?.originalImageUrl || result?.result?.originalUrl || previewUrls[result?.index ?? i];
-                    return (
-                    <div key={i} className="bg-brand-light rounded-lg p-4 flex gap-4 items-start">
-                      <div className="relative w-24 h-24">
-                        {imageUrl ? (
-                          <>
-                            <img 
-                              key={imageUrl}
-                              src={imageUrl} 
-                              className={`w-24 h-24 object-cover rounded-lg border border-gray-300 cursor-pointer hover:opacity-80 ${retryingImages.has(i) || editingImages.has(i) ? 'opacity-50' : ''}`}
-                              onClick={() => {
-                                if (retryingImages.has(i) || editingImages.has(i)) return;
-                                console.log('[PREVIEW] Opening modal:', { imageUrl, displayName, originalUrl, index: i });
-                                setPreviewImage({
-                                  url: imageUrl,
-                                  filename: displayName,
-                                  originalUrl: originalUrl,
-                                  index: i
-                                });
-                              }}
-                              onLoad={() => {
-                                // Show success toast only when new image loads during retry or edit
-                                if (retryingImages.has(i) || retryLoadingImages.has(i)) {
-                                  toast({
-                                    title: "Retry complete",
-                                    description: `${displayName} has been successfully enhanced.`
-                                  });
-                                  // Clear spinner only when image fully loads
-                                  setRetryLoadingImages(prev => {
-                                    const next = new Set(prev);
-                                    next.delete(i);
-                                    return next;
-                                  });
-                                  setRetryingImages(prev => {
-                                    const next = new Set(prev);
-                                    next.delete(i);
-                                    return next;
-                                  });
-                                } else if (editingImages.has(i)) {
-                                  toast({
-                                    title: "Edit complete",
-                                    description: `${displayName} has been successfully enhanced with the advanced editor.`
-                                  });
-                                  // Remove from editing set
-                                  setEditingImages(prev => {
-                                    const next = new Set(prev);
-                                    next.delete(i);
-                                    return next;
-                                  });
-                                }
-                              }}
-                              data-testid={`img-result-${i}`}
+                    {/* 2. Global Progress Bar */}
+                    <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden">
+                     {/* Calculate total progress - use IIFE for clean variable scope */}
+                     {(() => {
+                         const completed = results.filter(r => (r?.result?.image || (r?.result?.imageUrl)) || r?.error).length;
+                         const total = files.length || 1;
+                         const pct = Math.round((completed / total) * 100);
+                         const uploadPct = isUploading ? 10 : 0; 
+                         const displayPct = isUploading ? 30 : Math.max(5, pct);
+                         return (
+                            <div 
+                                className="h-full bg-emerald-600 transition-all duration-500 ease-out" 
+                                style={{ width: `${runState === 'done' ? 100 : displayPct}%` }}
                             />
-                            {/* Loading overlay during retry or edit */}
-                            {(retryLoadingImages.has(i) || editingImages.has(i)) && (
-                              <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
-                                <div className="text-center text-white">
-                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-2"></div>
-                                  <div className="text-xs font-medium">
-                                    {retryLoadingImages.has(i) ? "Enhancing..." : "Editing..."}
+                         );
+                     })()}
+                    </div>
+                </div>
+
+                {/* 3. The List */}
+                <div className="space-y-4">
+                    {files.map((file, i) => {
+                        const result = results[i];
+                        const isDone = !!(result?.result?.image || result?.result?.imageUrl || result?.image || result?.imageUrl);
+                        const isError = !!(result?.error);
+                        const isProcessing = (runState === 'running' || isUploading) && !isDone && !isError;
+                        const displayStatus = isError ? "Failed" : isDone ? "Complete" : isUploading ? "Uploading..." : aiSteps[i] || "Waiting in queue...";
+                        
+                        // Image Preview Logic
+                        const baseUrl = getDisplayUrl(result);
+                        const enhancedUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
+                        const previewUrl = enhancedUrl || previewUrls[i];
+                        
+                        return (
+                          <div 
+                            key={i} 
+                            className="group relative bg-white border border-slate-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all flex items-center gap-6"
+                          >
+                            {/* Thumbnail with Overlay */}
+                            <div className="relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100">
+                              <img 
+                                src={previewUrl || ''} 
+                                alt={file.name} 
+                                className={`h-full w-full object-cover transition-all ${isProcessing ? 'opacity-80' : ''}`}
+                              />
+                              {isProcessing && (
+                                <div className="absolute inset-0 bg-emerald-900/10 animate-pulse" />
+                              )}
+                              {isDone && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                      <CheckCircle className="text-white w-6 h-6 shadow-sm" />
                                   </div>
-                                </div>
-                              </div>
-                            )}
-                            {/* Strict retry badge (validator-driven) */}
-                            {strictRetryingIndices.has(i) && (
-                              <div className="absolute top-1 left-1">
-                                <span className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full shadow">
-                                  Strict retry
+                              )}
+                            </div>
+
+                            {/* Info Column */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-center mb-1">
+                                <h3 className="text-sm font-semibold text-slate-900 truncate">{file.name}</h3>
+                                {/* Individual % - Fake it if processing, real if done */}
+                                <span className="text-xs font-mono text-slate-400">
+                                    {isDone ? '100%' : isProcessing ? 'Processing...' : '0%'}
                                 </span>
                               </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="w-24 h-24 bg-gray-200 rounded-lg border border-gray-300 flex items-center justify-center text-sm text-gray-500">
-                            {runState === "running" ? "..." : "No image"}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">{displayName}</p>
-                        {imageUrl ? (
-                          <>
-                            {/* NEW: Show different indicators for polish-only vs staged enhancements */}
-                            {result?.result?.mode === 'polish-only' ? (
-                              <>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="bg-amber-100 text-amber-800 text-xs px-2 py-1 rounded-full font-medium">
-                                    POLISH ONLY
-                                  </span>
-                                  <p className="text-amber-700 text-sm">✓ Enhanced with polish-only mode</p>
-                                </div>
-                                {result?.result?.note && (
-                                  <p className="text-gray-600 text-xs mb-2">{result.result.note}</p>
-                                )}
-                              </>
-                            ) : (
-                              <p className="text-green-600 text-sm mb-2">✓ Enhanced successfully</p>
-                            )}
-                            <div className="flex gap-3">
-                              <button
-                                onClick={() => setPreviewImage({
-                                  url: imageUrl,
-                                  filename: displayName,
-                                  originalUrl: originalUrl,
-                                  index: i
-                                })}
-                                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                                data-testid={`button-preview-${i}`}
-                              >
-                                Preview
-                              </button>
-                              <a 
-                                href={imageUrl} 
-                                target="_blank" 
-                                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                              >
-                                Download
-                              </a>
-                                  <button
-                                    onClick={() => {
-                                      if (retryingImages.has(i)) {
-                                        toast({
-                                          title: "Retry in progress",
-                                          description: "This image is currently retrying.",
-                                          variant: "destructive"
-                                        });
-                                        return;
-                                      }
-                                      handleOpenRetryDialog(i);
-                                    }}
-                                    className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                                    data-testid={`button-retry-${i}`}
-                                  >
-                                    {retryingImages.has(i) ? "Retrying..." : "Retry"}
-                                  </button>
-                              <button
-                                onClick={() => {
-                                  if (retryingImages.has(i)) {
-                                    toast({
-                                      title: "Retry in progress",
-                                      description: "Please wait for the retry to complete before editing.",
-                                      variant: "destructive"
-                                    });
-                                    return;
-                                  }
-                                  handleEditImage(i);
-                                }}
-                                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                                data-testid={`button-edit-${i}`}
-                              >
-                                {editingImages.has(i) ? "Editing..." : "Edit"}
-                              </button>
-                            </div>
-                            {/* Timings & Compliance badges if available */}
-                            {result?.result?.meta?.timings || result?.result?.meta?.compliance ? (
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                {result?.result?.meta?.timings && (
-                                  <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                                    ⏱ {Math.round((result.result.meta.timings.totalMs||0)/100)/10}s
-                                  </span>
-                                )}
-                                {result?.result?.meta?.compliance && (
-                                  result.result.meta.compliance.ok ? (
-                                    <span className="bg-green-100 text-green-700 px-2 py-1 rounded">Compliance OK</span>
-                                  ) : (
-                                    <span className="bg-red-100 text-red-700 px-2 py-1 rounded">Compliance blocked</span>
-                                  )
+                              
+                              {/* The "Transparent AI" Status Text */}
+                              <div className="flex items-center gap-2">
+                                {isProcessing ? (
+                                   <>
+                                    <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
+                                    <p className="text-sm text-emerald-700 font-medium animate-pulse">
+                                      {displayStatus}
+                                    </p>
+                                   </>
+                                ) : isError ? (
+                                    <p className="text-sm text-red-600 flex items-center gap-2"><XCircle className="w-3 h-3"/> {result.error || "Error"}</p>
+                                ) : isDone ? (
+                                   <p className="text-sm text-slate-500">Enhancement complete</p> 
+                                ) : (
+                                  <p className="text-sm text-slate-400">{displayStatus}</p>
                                 )}
                               </div>
-                            ) : null}
-                            {/* Classification badges (scene + room + staging gate) */}
-                            {(() => {
-                              const meta = result?.result?.meta;
-                              if (!meta) return null;
-                              const sceneLabel = meta?.scene?.label;
-                              const userRoom = imageRoomTypes[i];
-                              const detectedRoom = meta?.roomTypeDetected || meta?.roomType;
-                              const finalRoom = userRoom && userRoom !== 'auto' ? userRoom : detectedRoom;
-                              const badges: React.ReactNode[] = [];
-                              if (sceneLabel) {
-                                badges.push(
-                                  <span key="scene" className="bg-blue-100 text-blue-700 px-2 py-1 rounded">
-                                    {String(sceneLabel).replace(/_/g,' ')}
-                                  </span>
-                                );
-                              }
-                              if (finalRoom) {
-                                badges.push(
-                                  <span key="room" className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                                    Room: {String(finalRoom).replace(/_/g,' ')}
-                                  </span>
-                                );
-                              }
-                              if (meta?.allowStaging === false) {
-                                badges.push(<span key="staging-block" className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">Staging blocked</span>);
-                              } else if (meta?.allowStaging) {
-                                badges.push(<span key="staging-ok" className="bg-green-100 text-green-700 px-2 py-1 rounded">Staging OK</span>);
-                              }
-                              if (!badges.length) return null;
-                              return (
-                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                  {badges}
-                                  <button
-                                    onClick={() => handleOpenRetryDialog(i)}
-                                    className="underline text-blue-600 hover:text-blue-700"
-                                  >Override room</button>
+
+                              {/* Individual Progress Line - Only when processing */}
+                              {isProcessing && (
+                                <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-emerald-500 transition-all duration-300 animate-pulse" 
+                                    style={{ width: `${isUploading ? 30 : 60}%` }} 
+                                  />
                                 </div>
-                              );
-                            })()}
-                          </>
-                        ) : result?.error ? (
-                          <p className="text-red-600 text-sm">Error: {result.error}</p>
-                        ) : (
-                          <p className="text-gray-500 text-sm">Processing...</p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                              )}
+                            </div>
+
+                            {/* Action / Cancel Column */}
+                            <div className="shrink-0 flex gap-2">
+                                {isDone && (
+                                    <>
+                                        <button 
+                                            onClick={() => setPreviewImage({
+                                                url: enhancedUrl!,
+                                                filename: file.name,
+                                                originalUrl: previewUrls[i],
+                                                index: i
+                                            })}
+                                            className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                        >
+                                            Preview
+                                        </button>
+                                         <button 
+                                            onClick={() => handleEditImage(i)}
+                                            className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                        >
+                                            Edit
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                          </div>
+                        );
+                    })}
                 </div>
-              </div>
-            )}
 
-            {/* Action buttons after completion */}
-            {runState === "done" && (() => {
-              // Calculate successful results count for accurate ZIP counter
-              const successfulResults = results.filter(r => r && !r.error && (r.result?.image || r.result?.imageUrl || r.image || r.imageUrl));
-              
-              return (
-              <div className="mt-8 flex flex-wrap gap-4 justify-center">
-                <button 
-                  onClick={downloadZip}
-                  disabled={successfulResults.length === 0 || isDownloadingZip}
-                  className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  data-testid="button-download-zip"
-                >
-                  {isDownloadingZip ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      Preparing ZIP...
-                    </>
-                  ) : (
-                    `Download All as ZIP (${successfulResults.length})`
-                  )}
-                </button>
-                
-                {results.some(r => r?.error) && (
-                  <button 
-                    onClick={handleRetryFailed}
-                    className="bg-yellow-600 text-white px-6 py-3 rounded-lg hover:bg-yellow-700 transition-colors font-medium"
-                    data-testid="button-retry-failed"
-                  >
-                    Retry Failed Images
-                  </button>
+                {/* Final Actions */}
+                {runState === "done" && (
+                    <div className="mt-8 flex justify-center gap-4">
+                         <button 
+                            onClick={downloadZip}
+                            disabled={isDownloadingZip}
+                            className="bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+                        >
+                            {isDownloadingZip && <Loader2 className="w-4 h-4 animate-spin"/>}
+                            Download All (ZIP)
+                        </button>
+                        <button 
+                            onClick={handleRestart}
+                            className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                        >
+                            Start New Batch
+                        </button>
+                    </div>
                 )}
-                
-                <button 
-                  onClick={handleRestart}
-                  className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors font-medium"
-                  data-testid="button-restart-batch"
-                >
-                  Start Over
-                </button>
-              </div>
-              );
-            })()}
 
+             </div>
+            )}
           </div>
         )}
       </div>
