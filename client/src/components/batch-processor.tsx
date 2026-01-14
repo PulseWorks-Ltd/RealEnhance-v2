@@ -133,7 +133,7 @@ export default function BatchProcessor() {
   
   const [files, setFiles] = useState<File[]>([]);
   const [globalGoal, setGlobalGoal] = useState("");
-  const [preserveStructure] = useState<boolean>(true);
+  const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
@@ -174,7 +174,7 @@ export default function BatchProcessor() {
   
   // Additional boolean flags for processing control
   const [allowStaging, setAllowStaging] = useState(true);
-  const [allowRetouch] = useState(true);
+  const [allowRetouch, setAllowRetouch] = useState(true);
   const [outdoorStaging, setOutdoorStaging] = useState<"auto" | "none">("auto");
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
