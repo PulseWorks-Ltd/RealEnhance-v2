@@ -23,6 +23,7 @@ import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
 import { sendInvitationEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
+import { invalidateSessionsForUser } from "../services/sessionStore.js";
 
 const router = Router();
 
@@ -439,6 +440,11 @@ router.post("/users/:userId/disable", requireAuth, requireAgencyAdmin, async (re
 
     // Disable user
     const updatedUser = await updateUser(userId, { isActive: false });
+
+    const clearedSessions = await invalidateSessionsForUser(userId);
+    if (clearedSessions > 0) {
+      console.log(`[AGENCY] Cleared ${clearedSessions} active session(s) for disabled user ${userId}`);
+    }
 
     res.json({
       user: {

@@ -1,5 +1,5 @@
 // server/src/index.ts
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import session, { type SessionOptions } from "express-session";
 import RedisStore from "connect-redis";
 import { createClient as createRedisClient, type RedisClientType } from "redis";
@@ -9,7 +9,7 @@ import morgan from "morgan";
 import cookieParser from "cookie-parser";
 
 import { attachGoogleAuth } from "./auth/google.js";
-import { setCreditsForEmail } from "./services/users.js";
+import { getUserById, setCreditsForEmail } from "./services/users.js";
 import { authUserRouter } from "./routes/authUser.js";
 import { emailAuthRouter } from "./routes/emailAuth.js";
 import { registerMeRoutes } from "./routes.me.js";
@@ -99,6 +99,47 @@ async function main() {
     }
   };
   app.use(session(sessionOptions));
+
+  const sessionCookieName = sessionOptions.name || "connect.sid";
+  const sessionCookieOptions = {
+    httpOnly: true,
+    sameSite: sessionOptions.cookie?.sameSite,
+    secure: sessionOptions.cookie?.secure,
+    path: sessionOptions.cookie?.path,
+  } as const;
+
+  async function destroySession(req: Request) {
+    if (!req.session) return;
+    await new Promise<void>((resolve) => req.session!.destroy(() => resolve()));
+  }
+
+  // Global guard: block disabled users and clean up dead sessions
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) return next();
+
+    try {
+      const fullUser = await getUserById(sessUser.id);
+
+      if (!fullUser) {
+        await destroySession(req);
+        res.clearCookie(sessionCookieName, sessionCookieOptions);
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      if (fullUser.isActive === false) {
+        await destroySession(req);
+        res.clearCookie(sessionCookieName, sessionCookieOptions);
+        return res.status(403).json({ error: "USER_DISABLED", message: "Your account has been disabled. Contact your admin." });
+      }
+
+      (req as any).authUser = fullUser;
+      return next();
+    } catch (err) {
+      console.error("[auth] session validation error", err);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
 
   // Health
   app.get("/health", (_req, res) => {

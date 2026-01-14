@@ -98,6 +98,7 @@ export async function createUser(params: {
     googleId: params.googleId,
     agencyId: params.agencyId,
     role: params.role,
+    isActive: true,
     credits: 50, // Default starting credits
     imageIds: [],
     createdAt: now,
@@ -118,6 +119,7 @@ export async function createUser(params: {
         lastName: user.lastName || "",
         authProvider: user.authProvider || "",
         passwordHash: user.passwordHash || "",
+        isActive: String(user.isActive !== false),
         agencyId: user.agencyId || "",
         role: user.role || "",
         credits: user.credits.toString(),
@@ -133,7 +135,7 @@ export async function createUser(params: {
     } else {
       // Fallback to file storage
       const state = loadUsersFromFile();
-      state[userId] = user;
+      state[userId] = { ...user, isActive: user.isActive !== false };
       saveUsersToFile(state);
       console.log(`[USERS] Created user ${userId} in file (Redis unavailable)`);
     }
@@ -171,6 +173,7 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
         googleId: data.googleId || undefined,
         agencyId: data.agencyId || undefined,
         role: (data.role as "owner" | "admin" | "member") || undefined,
+        isActive: data.isActive !== "false",
         credits: parseInt(data.credits || "0", 10),
         imageIds: data.imageIds ? JSON.parse(data.imageIds) : [],
         createdAt: data.createdAt,
@@ -179,7 +182,9 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
     } else {
       // Fallback to file storage
       const state = loadUsersFromFile();
-      return state[userId] || null;
+      const user = state[userId];
+      if (!user) return null;
+      return { ...user, isActive: user.isActive !== false };
     }
   } catch (err) {
     console.error("[USERS] Failed to get user by ID:", err);
@@ -205,7 +210,8 @@ export async function getUserByEmail(email: string): Promise<UserRecord | null> 
     } else {
       // Fallback to file storage
       const state = loadUsersFromFile();
-      return Object.values(state).find(u => u.email === email) || null;
+      const found = Object.values(state).find(u => u.email === email) || null;
+      return found ? { ...found, isActive: found.isActive !== false } : null;
     }
   } catch (err) {
     console.error("[USERS] Failed to get user by email:", err);
@@ -236,6 +242,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
         googleId: user.googleId || "",
         agencyId: user.agencyId || "",
         role: user.role || "",
+        isActive: String(user.isActive !== false),
         credits: user.credits.toString(),
         imageIds: JSON.stringify(user.imageIds),
         createdAt: user.createdAt,
@@ -249,7 +256,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
     } else {
       // Fallback to file storage
       const state = loadUsersFromFile();
-      state[user.id] = user;
+      state[user.id] = { ...user, isActive: user.isActive !== false };
       saveUsersToFile(state);
       console.log(`[USERS] Updated user ${user.id} in file (Redis unavailable)`);
     }
@@ -387,7 +394,7 @@ export async function getAllUsers(): Promise<UserRecord[]> {
     } else {
       // Load from file
       const state = loadUsersFromFile();
-      return Object.values(state);
+      return Object.values(state).map((u) => ({ ...u, isActive: u.isActive !== false }));
     }
   } catch (err) {
     console.error("[USERS] Failed to get all users:", err);

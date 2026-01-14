@@ -174,6 +174,36 @@ export function attachGoogleAuth(app: Express) {
       const authed: any = (req as any).user;
       const fullUser = await getUserByEmail(authed.email);
 
+      if (fullUser?.isActive === false) {
+        const cookieName = "realsess";
+        const cookieOpts = {
+          httpOnly: true,
+          sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
+          secure: process.env.NODE_ENV === "production",
+        };
+
+        if (req.session) {
+          await new Promise<void>((resolve) => {
+            req.session!.destroy(() => resolve());
+          });
+        }
+
+        res.clearCookie(cookieName, cookieOpts);
+
+        const disabledHtml = `<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <title>Account disabled</title>
+  <body>
+    <p>Your account has been disabled. Please contact your agency admin or support.</p>
+    <p><a href="/login">Return to login</a></p>
+  </body>
+</html>`;
+
+        res.status(403).send(disabledHtml);
+        return;
+      }
+
       const displayName = fullUser ? getDisplayName(fullUser) : authed.displayName;
 
       (req.session as any).user = {

@@ -40,6 +40,11 @@ export function emailAuthRouter() {
       res.status(401).json({ error: "Authentication required" });
       return null;
     }
+
+    if (full.isActive === false) {
+      res.status(403).json({ error: "USER_DISABLED", message: "Account is disabled" });
+      return null;
+    }
     return full;
   };
 
@@ -119,6 +124,10 @@ export function emailAuthRouter() {
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
+      if (user.isActive === false) {
+        return res.status(403).json({ error: "Account disabled", code: "USER_DISABLED" });
+      }
+
       // Check if this is an OAuth-only user (no password set)
       if (!user.passwordHash) {
         return res.status(400).json({
@@ -162,6 +171,10 @@ export function emailAuthRouter() {
       }
 
       const user = await getUserByEmail(emailRaw);
+      if (user && user.isActive === false) {
+        console.warn(`[reset] disabled user requested reset ${emailRaw}`);
+        return res.status(200).json(genericResetMessage);
+      }
       if (!user || !user.passwordHash) {
         return res.status(200).json(genericResetMessage);
       }
@@ -216,6 +229,10 @@ export function emailAuthRouter() {
       const user = await getUserById(tokenResult.userId);
       if (!user || user.email.toLowerCase() !== tokenResult.email.toLowerCase()) {
         return res.status(400).json({ error: "Invalid or expired link." });
+      }
+
+      if (user.isActive === false) {
+        return res.status(403).json({ error: "Account is disabled", code: "USER_DISABLED" });
       }
 
       if (user.passwordHash) {
