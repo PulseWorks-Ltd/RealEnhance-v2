@@ -133,7 +133,7 @@ export default function BatchProcessor() {
   
   const [files, setFiles] = useState<File[]>([]);
   const [globalGoal, setGlobalGoal] = useState("");
-  const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
+  const [preserveStructure] = useState<boolean>(true);
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
@@ -174,7 +174,7 @@ export default function BatchProcessor() {
   
   // Additional boolean flags for processing control
   const [allowStaging, setAllowStaging] = useState(true);
-  const [allowRetouch, setAllowRetouch] = useState(true);
+  const [allowRetouch] = useState(true);
   const [outdoorStaging, setOutdoorStaging] = useState<"auto" | "none">("auto");
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
@@ -636,9 +636,9 @@ export default function BatchProcessor() {
         rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
       }
       setGlobalGoal(savedState.goal);
-      setPreserveStructure(savedState.settings.preserveStructure);
+      setPreserveStructure?.(savedState.settings.preserveStructure);
       setAllowStaging(savedState.settings.allowStaging);
-      setAllowRetouch(savedState.settings.allowRetouch);
+      setAllowRetouch?.(savedState.settings.allowRetouch);
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
@@ -1287,10 +1287,10 @@ export default function BatchProcessor() {
     const goalToSend = globalGoal.trim() || "General, realistic enhancement for the selected industry.";
     fd.append("goal", goalToSend);
     fd.append("industry", industryMap[presetKey] || "Real Estate");
-    fd.append("preserveStructure", preserveStructure.toString());
+    fd.append("preserveStructure", "true");
     fd.append("allowStaging", allowStaging.toString());
     fd.append("stagingStyle", allowStaging ? stagingStyle : "");
-    fd.append("allowRetouch", allowRetouch.toString());
+    fd.append("allowRetouch", "true");
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     fd.append("declutter", declutter.toString());
     if (declutter) {
@@ -1497,10 +1497,10 @@ export default function BatchProcessor() {
     fd.append("goal", goalToSend);
     
     fd.append("industry", industryMap[presetKey] || "Real Estate");
-    fd.append("preserveStructure", preserveStructure.toString());
+    fd.append("preserveStructure", "true");
     fd.append("allowStaging", allowStaging.toString());
     fd.append("stagingStyle", allowStaging ? stagingStyle : "");
-    fd.append("allowRetouch", allowRetouch.toString());
+    fd.append("allowRetouch", "true");
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     // Manual room linking metadata (for retry)
     fd.append("metaJson", metaJson);
@@ -2330,19 +2330,13 @@ export default function BatchProcessor() {
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium text-white">Enhancement Options</h3>
                   
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={preserveStructure}
-                      onChange={(e) => setPreserveStructure(e.target.checked)}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-preserve-structure"
-                    />
+                  <div className="flex items-start gap-3 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2">
+                    <div className="mt-0.5 h-4 w-4 rounded bg-emerald-500" aria-hidden="true" />
                     <div>
                       <span className="text-sm font-medium text-white">Preserve original features</span>
-                      <p className="text-xs text-gray-400">No structural changes to rooms or layouts</p>
+                      <p className="text-xs text-gray-400">Always on. No structural changes to rooms or layouts.</p>
                     </div>
-                  </label>
+                  </div>
 
                   <label className="flex items-center gap-3">
                     <input
@@ -2451,19 +2445,13 @@ export default function BatchProcessor() {
                     </div>
                   )}
 
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={allowRetouch}
-                      onChange={(e) => setAllowRetouch(e.target.checked)}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-allow-retouch"
-                    />
+                  <div className="flex items-start gap-3 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2">
+                    <div className="mt-0.5 h-4 w-4 rounded bg-emerald-500" aria-hidden="true" />
                     <div>
                       <span className="text-sm font-medium text-white">Allow retouch</span>
-                      <p className="text-xs text-gray-400">Lighting, color, and cleanup adjustments</p>
+                      <p className="text-xs text-gray-400">Always on. Lighting, color, and cleanup adjustments.</p>
                     </div>
-                  </label>
+                  </div>
 
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-white">Scene Selector</label>
