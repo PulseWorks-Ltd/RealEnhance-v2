@@ -201,6 +201,20 @@ export default function BatchProcessor() {
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
 
+  // Helper to clear retry flags for a specific image index
+  const clearRetryFlags = useCallback((index: number) => {
+    setRetryingImages(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+    setRetryLoadingImages(prev => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+  }, []);
+
   // Retry timeout safety (60 seconds max)
   const RETRY_TIMEOUT_MS = 60_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1826,6 +1840,9 @@ export default function BatchProcessor() {
                 }));
                 await refreshUser();
 
+                // Mark retry as finished (spinner clears on image load, but clear now for buttons/state)
+                clearRetryFlags(imageIndex);
+
                 // ✅ DO NOT set global progress state
                 // ❌ setRunState("done");
                 // ❌ setAbortController(null);
@@ -1843,6 +1860,8 @@ export default function BatchProcessor() {
                 // ❌ setRunState("done");
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry failed. Unable to enhance image.");
+
+                clearRetryFlags(imageIndex);
 
                 toast({
                   title: "Retry failed",
@@ -1876,6 +1895,8 @@ export default function BatchProcessor() {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
+
+        clearRetryFlags(imageIndex);
 
         toast({
           title: "Retry failed",
@@ -2923,10 +2944,19 @@ export default function BatchProcessor() {
                 <div className="space-y-4">
                     {files.map((file, i) => {
                         const result = results[i];
+                        const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
                         const isDone = !!(result?.result?.image || result?.result?.imageUrl || result?.image || result?.imageUrl);
-                        const isError = !!(result?.error);
-                        const isProcessing = (runState === 'running' || isUploading) && !isDone && !isError;
-                        const displayStatus = isError ? "Failed" : isDone ? "Complete" : isUploading ? "Uploading..." : aiSteps[i] || "Waiting in queue...";
+                        const isError = !!(result?.error) && !isRetrying;
+                        const isProcessing = ((runState === 'running' || isUploading) && !isDone && !isError) || isRetrying;
+                        const displayStatus = isError
+                          ? "Failed"
+                          : isDone
+                          ? "Complete"
+                          : isRetrying
+                          ? "Retrying..."
+                          : isUploading
+                          ? "Uploading..."
+                          : aiSteps[i] || "Waiting in queue...";
                         
                         // Image Preview Logic
                         const baseUrl = getDisplayUrl(result);
@@ -2939,19 +2969,37 @@ export default function BatchProcessor() {
                             className="group relative bg-white border border-slate-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all flex items-center gap-6"
                           >
                             {/* Thumbnail with Overlay */}
-                            <div className="relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100">
+                            <div
+                              className="relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer"
+                              onClick={() => {
+                                if (!previewUrl) return;
+                                setPreviewImage({
+                                  url: enhancedUrl || previewUrl,
+                                  filename: file.name,
+                                  originalUrl: previewUrls[i],
+                                  index: i
+                                });
+                              }}
+                            >
                               <img 
                                 src={previewUrl || ''} 
                                 alt={file.name} 
                                 className={`h-full w-full object-cover transition-all ${isProcessing ? 'opacity-80' : ''}`}
+                                onLoad={() => clearRetryFlags(i)}
+                                onError={() => clearRetryFlags(i)}
                               />
                               {isProcessing && (
-                                <div className="absolute inset-0 bg-emerald-900/10 animate-pulse" />
-                              )}
-                              {isDone && (
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                      <CheckCircle className="text-white w-6 h-6 shadow-sm" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/20">
+                                  <div className="flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-emerald-700 text-xs font-medium shadow-sm">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    {isRetrying ? 'Retrying…' : 'Processing…'}
                                   </div>
+                                </div>
+                              )}
+                              {!isProcessing && isDone && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+                                  <CheckCircle className="text-white w-6 h-6 shadow-sm" />
+                                </div>
                               )}
                             </div>
 

@@ -8,7 +8,7 @@ const statusBadgeVariants = cva(
     variants: {
       status: {
         processing: "bg-status-processing/10 text-status-processing",
-        success: "bg-status-success/10 text-status-success",
+        success: "bg-white text-status-success border border-status-success/30 shadow-sm",
         error: "bg-status-error/10 text-status-error",
         warning: "bg-status-warning/10 text-status-warning",
         pending: "bg-muted text-muted-foreground",
@@ -61,12 +61,16 @@ export function StatusBadge({
   return (
     <span className={cn(statusBadgeVariants({ status }), className)}>
       {showIcon && (
-        <Icon
-          className={cn(
-            "w-3.5 h-3.5",
-            status === "processing" && "animate-spin"
-          )}
-        />
+        <span className={cn("inline-flex items-center justify-center rounded-full", status === "success" ? "bg-white w-5 h-5 shadow-[0_0_0_1px_rgba(34,197,94,0.35)]" : "")}
+          aria-hidden="true"
+        >
+          <Icon
+            className={cn(
+              "w-3.5 h-3.5",
+              status === "processing" && "animate-spin"
+            )}
+          />
+        </span>
       )}
       {displayLabel}
     </span>
