@@ -152,6 +152,10 @@ export interface ValidationTrigger {
   threshold: number;
   /** Stage where this trigger was raised */
   stage: StageId;
+  /** If true, this trigger bypasses multi-signal gating and forces risk=true */
+  fatal?: boolean;
+  /** Optional metadata (e.g., ROI coords, metrics) for debugging */
+  meta?: Record<string, unknown>;
 }
 
 /**

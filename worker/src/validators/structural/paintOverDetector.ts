@@ -1,6 +1,5 @@
 import sharp from "sharp";
-import { StageAwareConfig } from "../stageAwareConfig";
-import { ValidationTrigger } from "./types";
+import { StageAwareConfig, ValidationTrigger } from "../stageAwareConfig";
 
 interface PaintOverResult {
   triggers: ValidationTrigger[];
@@ -165,14 +164,20 @@ export const runPaintOverCheck = async (params: PaintOverParams): Promise<PaintO
     if (edgeBelow && texBelow) {
       triggers.push({
         id: "fatal_opening_painted_over",
-        score: Math.min(edgeRatio, texRatio),
+        value: Math.min(edgeRatio, texRatio),
+        threshold: Math.min(config.paintOverEdgeRatioMin, config.paintOverTexRatioMin),
+        message: `High confidence paint-over detected (edge=${edgeRatio.toFixed(2)}, tex=${texRatio.toFixed(2)})`,
+        stage: "stage2",
         fatal: true,
         meta: { roi, edgeRatio, texRatio, baseEdgeDensity, baseTexVar, candEdgeDensity, candTexVar },
       });
     } else if (edgeBelow || texBelow) {
       triggers.push({
         id: "opening_painted_over",
-        score: edgeBelow ? edgeRatio : texRatio,
+        value: edgeBelow ? edgeRatio : texRatio,
+        threshold: edgeBelow ? config.paintOverEdgeRatioMin : config.paintOverTexRatioMin,
+        message: `Potential paint-over detected (${edgeBelow ? 'edge' : 'texture'} loss)`,
+        stage: "stage2",
         meta: { roi, edgeRatio, texRatio, baseEdgeDensity, baseTexVar, candEdgeDensity, candTexVar },
       });
     }
