@@ -14,12 +14,13 @@ export async function createAgency(params: {
   planTier?: PlanTier;
   ownerId: string;
   subscriptionStatus?: SubscriptionStatus;
+  agencyId?: string;
 }): Promise<Agency> {
   const planTier = params.planTier || "starter";
   const subscriptionStatus = params.subscriptionStatus || "TRIAL"; // New agencies start as TRIAL
 
   const agency: Agency = {
-    agencyId: `agency_${uuidv4()}`,
+    agencyId: params.agencyId || `agency_${uuidv4()}`,
     name: params.name,
     planTier,
     subscriptionStatus,

@@ -42,6 +42,13 @@ interface AgencyInfo {
   currentPeriodEnd?: string;
   activeUsers?: number; // For informational purposes only
   userRole: "owner" | "admin" | "member";
+  trial?: {
+    status: "none" | "pending" | "active" | "expired" | "converted";
+    expiresAt?: string | null;
+    creditsTotal: number;
+    creditsUsed: number;
+    remaining: number;
+  };
 }
 
 export default function AgencyPage() {
@@ -58,6 +65,11 @@ export default function AgencyPage() {
   const [creating, setCreating] = useState(false);
 
   const isAdminOrOwner = agencyInfo && (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin");
+
+  const scrollToBilling = () => {
+    const el = document.getElementById("billing-section");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
     loadAgencyData();
@@ -97,6 +109,15 @@ export default function AgencyPage() {
           currentPeriodEnd: infoData.agency.currentPeriodEnd,
           activeUsers: infoData.activeUsers,
           userRole: user?.role || "member", // Get role from AuthContext
+          trial: infoData.trial
+            ? {
+                status: infoData.trial.status,
+                expiresAt: infoData.trial.expiresAt,
+                creditsTotal: infoData.trial.creditsTotal,
+                creditsUsed: infoData.trial.creditsUsed,
+                remaining: infoData.trial.remaining,
+              }
+            : undefined,
         };
 
         setAgencyInfo(agencyInfo);
@@ -314,6 +335,36 @@ export default function AgencyPage() {
     <div className="container mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold">Agency Settings</h1>
 
+      {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
+        <Card>
+          <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle>Promo Trial</CardTitle>
+              <CardDescription>
+                {agencyInfo.trial.status === "active"
+                  ? `You have ${agencyInfo.trial.remaining} trial credits remaining.`
+                  : agencyInfo.trial.status === "expired"
+                  ? "Your trial has ended."
+                  : agencyInfo.trial.status === "converted"
+                  ? "You have upgraded. Trial credits are closed."
+                  : "Trial status updated."}
+              </CardDescription>
+              {agencyInfo.trial.expiresAt && (
+                <p className="text-sm text-muted-foreground">
+                  Expires {new Date(agencyInfo.trial.expiresAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary">{agencyInfo.trial.status}</Badge>
+              <Button variant="default" onClick={scrollToBilling}>
+                Upgrade now
+              </Button>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
+
       {/* Monthly Usage Card - Admin/Owner only */}
       {isAdminOrOwner && usage && usage.hasAgency && (
         <Card>
@@ -340,19 +391,21 @@ export default function AgencyPage() {
 
       {/* Billing & Subscription - Admin/Owner only */}
       {isAdminOrOwner && (
-        <BillingSection
-          agency={{
-            agencyId: agencyInfo.agencyId,
-            name: agencyInfo.name,
-            planTier: agencyInfo.planTier,
-            subscriptionStatus: agencyInfo.subscriptionStatus,
-            stripeCustomerId: agencyInfo.stripeCustomerId,
-            stripeSubscriptionId: agencyInfo.stripeSubscriptionId,
-            billingCountry: agencyInfo.billingCountry,
-            billingCurrency: agencyInfo.billingCurrency,
-            currentPeriodEnd: agencyInfo.currentPeriodEnd,
-          }}
-        />
+        <div id="billing-section">
+          <BillingSection
+            agency={{
+              agencyId: agencyInfo.agencyId,
+              name: agencyInfo.name,
+              planTier: agencyInfo.planTier,
+              subscriptionStatus: agencyInfo.subscriptionStatus,
+              stripeCustomerId: agencyInfo.stripeCustomerId,
+              stripeSubscriptionId: agencyInfo.stripeSubscriptionId,
+              billingCountry: agencyInfo.billingCountry,
+              billingCurrency: agencyInfo.billingCurrency,
+              currentPeriodEnd: agencyInfo.currentPeriodEnd,
+            }}
+          />
+        </div>
       )}
 
       {/* Bundle Purchase - Admin/Owner only */}

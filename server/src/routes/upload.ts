@@ -12,6 +12,7 @@ import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, finalizeReservation } from "../services/usageLedger.js";
+import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -89,6 +90,9 @@ export function uploadRouter() {
     // ===== SUBSCRIPTION STATUS GATING: Check if agency subscription is active =====
     // FAIL-CLOSED: block uploads if we can't verify subscription status
     const fullUser = await getUserById(sessUser.id);
+    let trialSummary: Awaited<ReturnType<typeof getTrialSummary>> | null = null;
+    const now = new Date();
+
     if (fullUser && fullUser.agencyId) {
       try {
         const agency = await getAgency(fullUser.agencyId);
@@ -103,26 +107,32 @@ export function uploadRouter() {
           });
         }
 
-        // Check if agency has Stripe subscription OR is grandfathered
+        trialSummary = await getTrialSummary(fullUser.agencyId);
         const hasStripeSubscription = !!agency.stripeSubscriptionId;
         const isGrandfathered = agency.billingGrandfatheredUntil
-          ? new Date(agency.billingGrandfatheredUntil) > new Date()
+          ? new Date(agency.billingGrandfatheredUntil) > now
           : false;
 
-        // New agencies without subscription need to subscribe
-        if (!hasStripeSubscription && !isGrandfathered && agency.subscriptionStatus !== "ACTIVE") {
-          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} requires Stripe subscription`);
+        const trialExpired = trialSummary.status === "expired" || (trialSummary.expiresAt && new Date(trialSummary.expiresAt) < now);
+        const trialActive = trialSummary.status === "active" && !trialExpired && trialSummary.remaining > 0 && !hasStripeSubscription;
+
+        // New agencies without subscription can proceed on an active trial; otherwise require subscription
+        if (!hasStripeSubscription && !isGrandfathered && !trialActive && agency.subscriptionStatus !== "ACTIVE") {
+          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} requires Stripe subscription (no active trial)`);
           return res.status(403).json({
-            code: "SUBSCRIPTION_REQUIRED",
-            error: "Subscription required",
-            message: "Please activate your subscription to begin enhancing images.",
+            code: trialExpired ? "TRIAL_ENDED" : "SUBSCRIPTION_REQUIRED",
+            error: trialExpired ? "Trial ended" : "Subscription required",
+            message: trialExpired
+              ? "Your promo trial has ended. Please upgrade to continue enhancing images."
+              : "Please activate your subscription to begin enhancing images.",
             requiresSubscription: true,
+            trial: trialSummary,
           });
         }
 
-        // Allow both ACTIVE and TRIAL subscriptions
+        // Allow both ACTIVE and TRIAL subscriptions, but do not double-charge if trial will be used
         const allowedStatuses = ["ACTIVE", "TRIAL"];
-        if (!allowedStatuses.includes(agency.subscriptionStatus)) {
+        if (!trialActive && !allowedStatuses.includes(agency.subscriptionStatus)) {
           console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} has inactive subscription: ${agency.subscriptionStatus}`);
           return res.status(403).json({
             code: "SUBSCRIPTION_INACTIVE",
@@ -159,6 +169,7 @@ export function uploadRouter() {
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
     const reservedJobs: string[] = [];
+    const trialReservedJobs: string[] = [];
 
     const releaseReservations = async () => {
       for (const jobId of reservedJobs) {
@@ -166,6 +177,13 @@ export function uploadRouter() {
           await finalizeReservation({ jobId, stage12Success: false, stage2Success: false });
         } catch (e) {
           console.error(`[upload] failed to release reservation for ${jobId}`, e);
+        }
+      }
+      for (const jobId of trialReservedJobs) {
+        try {
+          await releaseTrialReservation(jobId);
+        } catch (e) {
+          console.error(`[upload] failed to release trial reservation for ${jobId}`, e);
         }
       }
     };
@@ -316,25 +334,59 @@ export function uploadRouter() {
       // Pricing logic: 1 image for 1A-only, 1A+1B, or 1A+2; 2 images only when 1B and 2 both run
       const requiredImages = finalDeclutter && finalVirtualStage ? 2 : 1;
 
-      try {
-        const reservation = await reserveAllowance({
-          jobId,
-          agencyId,
-          userId: sessUser.id,
-          requiredImages,
-          requestedStage12: true,
-          requestedStage2: finalVirtualStage,
-        });
-        reservedJobs.push(jobId);
-        console.log(`[upload] reserved allowance for ${jobId}: remaining=${reservation.remaining}`);
-      } catch (err: any) {
-        console.error(`[upload] reservation failed for job ${jobId}`, err?.message || err);
-        if (err?.code === "QUOTA_EXCEEDED") {
+      const trialEligible = Boolean(
+        trialSummary &&
+        trialSummary.status === "active" &&
+        trialSummary.remaining > 0 &&
+        (!trialSummary.expiresAt || new Date(trialSummary.expiresAt) > now)
+      );
+      let usedTrial = false;
+
+      if (trialEligible) {
+        try {
+          const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages });
+          if (trialReserve.allowed) {
+            trialReservedJobs.push(jobId);
+            usedTrial = true;
+            if (trialSummary) {
+              trialSummary = {
+                ...trialSummary,
+                remaining: Math.max(0, trialSummary.remaining - requiredImages),
+              };
+            }
+          } else if (trialReserve.reason === "TRIAL_DEPLETED" || trialReserve.reason === "TRIAL_EXPIRED") {
+            await releaseReservations();
+            return res.status(402).json({ code: "TRIAL_EXHAUSTED", trial: trialSummary });
+          }
+        } catch (err) {
+          console.error(`[upload] trial reservation failed for ${jobId}`, err);
           await releaseReservations();
-          return res.status(402).json({ code: "QUOTA_EXCEEDED", snapshot: err.snapshot });
+          return res.status(503).json({ error: "trial_reservation_failed" });
         }
-        await releaseReservations();
-        return res.status(503).json({ error: "reservation_failed" });
+      }
+
+      // Only reserve subscription allowance if trial did not satisfy this job
+      if (!usedTrial) {
+        try {
+          const reservation = await reserveAllowance({
+            jobId,
+            agencyId,
+            userId: sessUser.id,
+            requiredImages,
+            requestedStage12: true,
+            requestedStage2: finalVirtualStage,
+          });
+          reservedJobs.push(jobId);
+          console.log(`[upload] reserved allowance for ${jobId}: remaining=${reservation.remaining}`);
+        } catch (err: any) {
+          console.error(`[upload] reservation failed for job ${jobId}`, err?.message || err);
+          if (err?.code === "QUOTA_EXCEEDED") {
+            await releaseReservations();
+            return res.status(402).json({ code: "QUOTA_EXCEEDED", snapshot: err.snapshot });
+          }
+          await releaseReservations();
+          return res.status(503).json({ error: "reservation_failed" });
+        }
       }
 
       const finalPath = path.join(userDir, f.filename || f.originalname);
@@ -377,6 +429,7 @@ export function uploadRouter() {
         const msg = (e as any)?.message || String(e);
         console.warn('[upload] original S3 upload failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without remote URL)');
         if (strict) {
+          await releaseReservations();
           return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
         }
       }
@@ -419,6 +472,10 @@ export function uploadRouter() {
       const idx = reservedJobs.indexOf(jobId);
       if (idx >= 0) {
         reservedJobs.splice(idx, 1);
+      }
+      const trialIdx = trialReservedJobs.indexOf(jobId);
+      if (trialIdx >= 0) {
+        trialReservedJobs.splice(trialIdx, 1);
       }
 
       jobs.push({ jobId: enqueuedJobId, imageId });

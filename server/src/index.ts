@@ -36,6 +36,7 @@ import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import adminResetRouter from "./routes/adminReset.js";
+import trialRouter from "./routes/trial.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -185,6 +186,8 @@ async function main() {
   app.use("/api/enhanced-images", enhancedImagesRouter());
   // Admin analysis endpoints
   app.use("/api/admin", adminAnalysisRouter);
+  // Promo trial onboarding
+  app.use("/api/trial", trialRouter());
   // One-time admin data reset (heavily guarded)
   app.use(adminResetRouter);
 

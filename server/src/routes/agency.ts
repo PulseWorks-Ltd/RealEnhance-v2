@@ -24,6 +24,7 @@ import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
 import { sendInvitationEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { invalidateSessionsForUser } from "../services/sessionStore.js";
+import { getTrialSummary } from "../services/trials.js";
 
 const router = Router();
 
@@ -153,10 +154,12 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     }
 
     const activeUsers = await countActiveAgencyUsers(user.agencyId);
+    const trial = await getTrialSummary(user.agencyId);
 
     res.json({
       agency,
       activeUsers, // For informational purposes only - no limits
+      trial,
     });
   } catch (err) {
     console.error("[AGENCY] Get info error:", err);

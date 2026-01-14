@@ -10,6 +10,7 @@ import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@reale
 import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
 import { pool } from "../db/index.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
+import { markTrialConverted } from "../services/trials.js";
 
 const router = Router();
 
@@ -136,6 +137,7 @@ router.post(
 
             await updateAgency(agency);
             await upsertAgencyAllowance(agency.agencyId, agency.planTier);
+            await markTrialConverted(agency.agencyId);
 
             console.log(`[STRIPE] ✅ Subscription activated for agency ${agencyId}: ${planTier} (${subscription.status})`);
           } else {
