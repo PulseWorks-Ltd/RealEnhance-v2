@@ -92,10 +92,18 @@ async function computeEdgeIoU(basePath: string, outputPath: string): Promise<num
   return m.edgeIoU;
 }
 
-async function computeStructuralEdgeIoU(basePath: string, outputPath: string): Promise<number> {
+/**
+ * Compute structural edge IoU with proper handling for skipped/null values
+ */
+async function computeStructuralEdgeIoU(basePath: string, outputPath: string): Promise<{ value: number | null; skipReason?: string }> {
   const mask = await loadOrComputeStructuralMask("default", basePath);
   const verdict = await validateStage2Structural(basePath, outputPath, { structuralMask: mask });
-  return verdict.structuralIoU ?? 0;
+
+  // CRITICAL: Do NOT default to 0 - return null with reason if IoU couldn't be computed
+  if (verdict.structuralIoU !== undefined && verdict.structuralIoU !== null) {
+    return { value: verdict.structuralIoU };
+  }
+  return { value: null, skipReason: verdict.structuralIoUSkipReason || "unknown" };
 }
 
 async function validateStage1A(basePath: string, outputPath: string, context: any, sizeMismatch: boolean): Promise<ValidationResult> {

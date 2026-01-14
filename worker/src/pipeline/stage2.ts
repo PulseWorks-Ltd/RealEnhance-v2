@@ -10,6 +10,10 @@ import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
+import { loadStageAwareConfig } from "../validators/stageAwareConfig";
+import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
+import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
+import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -26,6 +30,10 @@ export async function runStage2(
     stagingStyle?: string;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
+    /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
+    stage1APath?: string;
+    /** Job ID for validation tracking */
+    jobId?: string;
   }
 ): Promise<string> {
   let out = basePath;
@@ -36,13 +44,27 @@ export async function runStage2(
   let lastValidatorResults: any = {};
   let tempMultiplier = 1.0;
   let strictPrompt = false;
+
+  // Stage-aware validation config
+  const stageAwareConfig = loadStageAwareConfig();
+  const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
+
+  // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
+  // If stage1APath not provided, fallback to basePath with warning
+  const validationBaseline = opts.stage1APath || basePath;
+  if (!opts.stage1APath) {
+    console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+  }
+
   console.log(`[stage2] 🔵 Starting virtual staging...`);
   console.log(`[stage2] Input: ${basePath}`);
+  console.log(`[stage2] Validation baseline: ${validationBaseline}`);
   console.log(`[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
   console.log(`[stage2] Room type: ${opts.roomType}`);
   console.log(`[stage2] Scene type: ${opts.sceneType || 'interior'}`);
   console.log(`[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
-  
+  console.log(`[stage2] Stage-aware validation: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
+
   // Early exit if Stage 2 not enabled
   if (process.env.USE_GEMINI_STAGE2 !== "1") {
     console.log(`[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
@@ -50,17 +72,19 @@ export async function runStage2(
     return out;
   }
 
-  // Run OpenCV validator after Stage 1B (before staging)
-  try {
-    const imageBuffer = await sharp(basePath).toBuffer();
-    const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
-    validatorNotes.push({ stage: '1B', validator: 'OpenCV', result: result1B });
-    lastValidatorResults['1B'] = result1B;
-    if (!result1B.ok) needsRetry = true;
-  } catch (e) {
-    validatorNotes.push({ stage: '1B', validator: 'OpenCV', error: String(e) });
-    lastValidatorResults['1B'] = { ok: false, error: String(e) };
-    needsRetry = true;
+  // Run OpenCV validator after Stage 1B (before staging) - legacy behavior
+  if (!stageAwareConfig.enabled) {
+    try {
+      const imageBuffer = await sharp(basePath).toBuffer();
+      const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+      validatorNotes.push({ stage: '1B', validator: 'OpenCV', result: result1B });
+      lastValidatorResults['1B'] = result1B;
+      if (!result1B.ok) needsRetry = true;
+    } catch (e) {
+      validatorNotes.push({ stage: '1B', validator: 'OpenCV', error: String(e) });
+      lastValidatorResults['1B'] = { ok: false, error: String(e) };
+      needsRetry = true;
+    }
   }
 
   // Check API key before attempting Gemini calls
@@ -71,8 +95,11 @@ export async function runStage2(
 
   if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
-  // Only allow a single retry if validators fail
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Retry loop: use config.maxRetryAttempts (default 3) if stage-aware enabled
+  const maxAttempts = stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2;
+  let currentTightenLevel: TightenLevel = 0;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     needsRetry = false;
     let inputForStage2 = out;
     if (opts.stagingRegion) {
@@ -123,8 +150,15 @@ export async function runStage2(
     if (useTest) {
       textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
     }
-    // On retry, make prompt stricter
-    if (attempt === 1) {
+
+    // Apply prompt tightening based on retry attempt
+    if (stageAwareConfig.enabled && attempt > 0) {
+      currentTightenLevel = getTightenLevelFromAttempt(attempt);
+      logTighteningInfo("2", attempt, currentTightenLevel);
+      textPrompt = buildTightenedPrompt("2", textPrompt, currentTightenLevel);
+      strictPrompt = true;
+    } else if (attempt === 1) {
+      // Legacy retry behavior when stage-aware is disabled
       textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
       tempMultiplier = 0.8;
       strictPrompt = true;
@@ -164,8 +198,21 @@ export async function runStage2(
       if (isNZStyleEnabled()) {
         const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
         let temperature = preset.temperature;
-        if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
-        generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+
+        // Apply tightened generation config when stage-aware is enabled
+        if (stageAwareConfig.enabled && currentTightenLevel > 0) {
+          const tightenedConfig = getTightenedGenerationConfig(currentTightenLevel, {
+            temperature: preset.temperature,
+            topP: preset.topP,
+            topK: preset.topK,
+          });
+          generationConfig = { ...(generationConfig || {}), ...tightenedConfig };
+          console.log(`[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
+        } else {
+          // Legacy behavior
+          if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
+          generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+        }
       }
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
@@ -194,29 +241,90 @@ export async function runStage2(
 
       // Run validators after Stage 2
       let validatorFailed = false;
-      // OpenCV validator
-      try {
-        const stagedBuffer = await sharp(out).toBuffer();
-        const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
-        validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
-        lastValidatorResults['2'] = result2;
-        if (!result2.ok) validatorFailed = true;
-      } catch (e) {
-        validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
-        lastValidatorResults['2'] = { ok: false, error: String(e) };
-        validatorFailed = true;
-      }
-      // Gemini-based validators (DISCONNECTED)
-      // const validationResult = await validateStage2Structural(...);
-      // if (!validationResult.ok) { validatorFailed = true; }
 
-      if (validatorFailed && attempt === 0) {
-        needsRetry = true;
-        retryCount++;
-        console.log(`[stage2] Validator requested retry (single retry)`);
-        continue;
+      if (stageAwareConfig.enabled) {
+        // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====
+        // CRITICAL: Use Stage1A output as baseline, NOT original
+        try {
+          const validationResult = await validateStructureStageAware({
+            stage: "stage2",
+            baselinePath: validationBaseline, // Stage1A output
+            candidatePath: out, // Stage2 output
+            mode: "log", // Non-blocking by default
+            jobId,
+            sceneType: opts.sceneType || "interior",
+            roomType: opts.roomType,
+            retryAttempt: attempt,
+            config: stageAwareConfig,
+          });
+
+          validatorNotes.push({ stage: '2', validator: 'StageAware', result: validationResult });
+          lastValidatorResults['2'] = validationResult;
+
+          if (validationResult.risk) {
+            validatorFailed = true;
+            console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers)`);
+            validationResult.triggers.forEach((t, i) => {
+              console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
+            });
+
+            // Use retry manager to decide if we should retry
+            const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
+
+            if (retryDecision.shouldRetry) {
+              currentTightenLevel = retryDecision.tightenLevel;
+              needsRetry = true;
+              retryCount++;
+              console.log(`[stage2] ${retryDecision.reason}`);
+
+              if (opts.onStrictRetry) {
+                opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
+              }
+
+              if (retryDecision.isFinalAttempt) {
+                console.warn(`[stage2] ⚠️ This is the FINAL retry attempt`);
+              }
+              continue;
+            } else {
+              // Max retries reached
+              if (retryDecision.reason.includes("Max attempts")) {
+                markStageFailed(jobId, "stage2", validationResult.triggers);
+                console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
+              }
+              break;
+            }
+          } else {
+            console.log(`[stage2] ✅ Stage-aware validation passed (risk=false)`);
+            break;
+          }
+        } catch (e) {
+          console.error(`[stage2] Stage-aware validation error:`, e);
+          validatorNotes.push({ stage: '2', validator: 'StageAware', error: String(e) });
+          // On error, don't retry - just continue with the output
+          break;
+        }
       } else {
-        break;
+        // ===== LEGACY VALIDATION (OpenCV) =====
+        try {
+          const stagedBuffer = await sharp(out).toBuffer();
+          const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
+          validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
+          lastValidatorResults['2'] = result2;
+          if (!result2.ok) validatorFailed = true;
+        } catch (e) {
+          validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
+          lastValidatorResults['2'] = { ok: false, error: String(e) };
+          validatorFailed = true;
+        }
+
+        if (validatorFailed && attempt === 0) {
+          needsRetry = true;
+          retryCount++;
+          console.log(`[stage2] Validator requested retry (single retry)`);
+          continue;
+        } else {
+          break;
+        }
       }
     } catch (e: any) {
       validatorNotes.push({ stage: '2', validator: 'Gemini', error: String(e) });

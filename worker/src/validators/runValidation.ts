@@ -20,6 +20,8 @@ import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
 import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
 import { vLog, nLog } from "../logger";
+import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
+import { validateStructureStageAware } from "./structural/stageAwareValidator";
 
 /**
  * Result from a single validator
@@ -55,6 +57,12 @@ export interface UnifiedValidationParams {
   mode?: "log" | "enforce";
   jobId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
+  /**
+   * Stage1A output path for Stage2 validation baseline.
+   * CRITICAL: Stage2 should validate against Stage1A output, NOT original.
+   * If not provided, falls back to originalPath (legacy behavior).
+   */
+  stage1APath?: string;
 }
 
 /**
@@ -118,9 +126,11 @@ export async function runUnifiedValidation(
     mode = "log",
     jobId,
     stagingStyle,
+    stage1APath,
   } = params;
 
   const validatorMode = getValidatorMode("structure");
+  const stageAwareConfig = loadStageAwareConfig();
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -136,8 +146,12 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] Scene: ${sceneType}`);
   nLog(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
   nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
+  nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
+  if (stage1APath) {
+    nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
+  }
 
   // Check if validators are enabled
   if (!isValidatorEnabled("structure")) {
@@ -148,6 +162,74 @@ export async function runUnifiedValidation(
       reasons: ["Validators disabled"],
       raw: {},
     };
+  }
+
+  // ===== STAGE-AWARE VALIDATION PATH =====
+  // When enabled, use the new stage-aware validator for Stage 2
+  if (stageAwareConfig.enabled && stage === "2") {
+    nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
+
+    // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
+    const validationBaseline = stage1APath || originalPath;
+    if (!stage1APath) {
+      nLog(`[unified-validator] ⚠️ No stage1APath provided - using originalPath as baseline (may cause false positives)`);
+    }
+
+    try {
+      const stageAwareResult = await validateStructureStageAware({
+        stage: "stage2",
+        baselinePath: validationBaseline,
+        candidatePath: enhancedPath,
+        mode: mode === "enforce" ? "block" : "log",
+        jobId,
+        sceneType,
+        roomType,
+        config: stageAwareConfig,
+      });
+
+      // Convert stage-aware result to UnifiedValidationResult format
+      const reasons: string[] = [];
+      if (stageAwareResult.risk) {
+        stageAwareResult.triggers.forEach(t => {
+          reasons.push(`${t.id}: ${t.message}`);
+        });
+      }
+
+      const results: Record<string, ValidatorResult> = {
+        stageAware: {
+          name: "stageAware",
+          passed: !stageAwareResult.risk,
+          score: stageAwareResult.score,
+          message: stageAwareResult.risk
+            ? `Risk detected: ${stageAwareResult.triggers.length} triggers`
+            : "Stage-aware validation passed",
+          details: {
+            triggers: stageAwareResult.triggers,
+            metrics: stageAwareResult.metrics,
+            debug: stageAwareResult.debug,
+          },
+        },
+      };
+
+      nLog(`[unified-validator] Stage-aware result: risk=${stageAwareResult.risk}, score=${stageAwareResult.score.toFixed(3)}`);
+      if (stageAwareResult.risk) {
+        nLog(`[unified-validator] Triggers (${stageAwareResult.triggers.length}/${stageAwareConfig.gateMinSignals} required):`);
+        stageAwareResult.triggers.forEach((t, i) => {
+          nLog(`[unified-validator]   ${i + 1}. ${t.id}: ${t.message}`);
+        });
+      }
+
+      return {
+        passed: !stageAwareResult.risk || mode === "log",
+        score: stageAwareResult.score,
+        reasons,
+        raw: results,
+        profile: "STRICT", // Stage-aware always uses strict mode
+      };
+    } catch (err) {
+      nLog(`[unified-validator] Stage-aware validation error: ${err}`);
+      // Fall through to legacy validation on error
+    }
   }
 
   const results: Record<string, ValidatorResult> = {};
@@ -260,23 +342,57 @@ export async function runUnifiedValidation(
       const structResult = await validateStage2Structural(originalPath, enhancedPath, {
         structuralMask: mask,
       });
-      const structIoU = structResult.structuralIoU || 0;
+
       const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
-      const passed = structResult.ok && structIoU >= minStructIoU;
+
+      // CRITICAL FIX: Do NOT default undefined IoU to 0 - handle explicitly
+      let passed: boolean;
+      let score: number;
+      let message: string;
+
+      if (structResult.structuralIoU !== undefined && structResult.structuralIoU !== null) {
+        // IoU was computed successfully
+        const structIoU = structResult.structuralIoU;
+        passed = structResult.ok && structIoU >= minStructIoU;
+        score = structIoU;
+        message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
+
+        if (!passed) {
+          reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
+          if (structResult.reason) {
+            reasons.push(`Reason: ${structResult.reason}`);
+          }
+        }
+      } else {
+        // IoU was skipped - do NOT treat as failure
+        const skipReason = structResult.structuralIoUSkipReason || "unknown";
+        passed = structResult.ok; // Pass based on semantic checks only
+        score = 0.5; // Neutral score (not 0!)
+        message = `Structural IoU skipped: ${skipReason}`;
+
+        nLog(`[unified-validator] Structural IoU computation skipped: ${skipReason}`);
+        if (structResult.debug) {
+          nLog(`[unified-validator]   - dims: base=${structResult.debug.baseWidth}x${structResult.debug.baseHeight}, cand=${structResult.debug.candWidth}x${structResult.debug.candHeight}`);
+          nLog(`[unified-validator]   - maskPixels: ${structResult.debug.maskPixels}`);
+          if (structResult.debug.intersectionPixels !== undefined) {
+            nLog(`[unified-validator]   - intersection: ${structResult.debug.intersectionPixels}, union: ${structResult.debug.unionPixels}`);
+          }
+        }
+      }
 
       results.structuralMask = {
         name: "structuralMask",
         passed,
-        score: structIoU,
-        message: `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`,
-        details: { structIoU, minStructIoU, reason: structResult.reason },
+        score,
+        message,
+        details: {
+          structIoU: structResult.structuralIoU,
+          structIoUSkipReason: structResult.structuralIoUSkipReason,
+          minStructIoU,
+          reason: structResult.reason,
+          debug: structResult.debug,
+        },
       };
-      if (!passed) {
-        reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
-        if (structResult.reason) {
-          reasons.push(`Reason: ${structResult.reason}`);
-        }
-      }
     } catch (err) {
       console.warn("[unified-validator] Structural mask validation error:", err);
       results.structuralMask = {
