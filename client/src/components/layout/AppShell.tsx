@@ -178,7 +178,7 @@ const NavItem = ({
     className={({ isActive }) => cn(
       "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group",
       isActive
-        ? "bg-brand-800 text-action-400 shadow-sm"
+        ? "bg-brand-800 text-white shadow-sm border-l-2 border-action-500"
         : "text-brand-400 hover:bg-brand-800/50 hover:text-brand-100"
     )}
   >
@@ -187,7 +187,7 @@ const NavItem = ({
         <Icon
           className={cn(
             "w-[18px] h-[18px] flex-shrink-0",
-            isActive ? "text-action-400" : "text-brand-400 group-hover:text-brand-200"
+            isActive ? "text-action-400" : "text-brand-500 group-hover:text-brand-200"
           )}
         />
         <span className="text-sm font-medium">{label}</span>

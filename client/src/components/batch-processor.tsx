@@ -17,7 +17,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
-import { Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2 } from 'lucide-react';
+import { Switch } from "@/components/ui/switch";
 
 type RunState = "idle" | "running" | "done";
 
@@ -229,6 +230,8 @@ export default function BatchProcessor() {
   // Track manual scene overrides per-image (when user changes scene dropdown)
   const [manualSceneOverrideByIndex, setManualSceneOverrideByIndex] = useState<Record<number, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
+  // Studio view: current image being configured
+  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
 
   // Tuning controls (apply to all images in this batch; optional)
   // Declutter intensity removed: always heavy/preset in backend
@@ -2285,7 +2288,7 @@ export default function BatchProcessor() {
                 </div>
                 <button
                   onClick={() => setActiveTab("describe")}
-                  className="mt-6 bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                  className="mt-6 bg-action-600 text-white px-6 py-3 rounded-lg hover:bg-action-700 transition-colors font-medium"
                   data-testid="button-proceed-describe"
                 >
                   Next: Describe Enhancement →
@@ -2556,7 +2559,7 @@ export default function BatchProcessor() {
                 </button>
                 <button
                   onClick={() => setActiveTab("images")}
-                  className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
+                  className="px-6 py-3 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors font-medium"
                   data-testid="button-next-to-images"
                 >
                   Next →
@@ -2566,223 +2569,272 @@ export default function BatchProcessor() {
           </div>
         )}
 
-        {/* Images Tab */}
+        {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold text-white">Configure Your Images</h2>
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="link-images"
-                  checked={linkImages}
-                  onChange={(e) => setLinkImages(e.target.checked)}
-                  className="rounded border-gray-300"
-                  data-testid="checkbox-link-images"
+          <div className="flex h-[calc(100vh-140px)] bg-slate-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden">
+
+            {/* LEFT PANEL: The Canvas */}
+            <div className="flex-1 bg-slate-100 relative flex items-center justify-center p-6 lg:p-8 overflow-hidden">
+              {/* Back Navigation */}
+              <button
+                onClick={() => setActiveTab("describe")}
+                className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back to Settings
+              </button>
+
+              {/* Image Counter Badge */}
+              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 shadow-sm">
+                {currentImageIndex + 1} of {files.length}
+              </div>
+
+              {/* Navigation Arrows */}
+              {files.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                    disabled={currentImageIndex === 0}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                    disabled={currentImageIndex === files.length - 1}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+
+              {/* The Image Canvas */}
+              <div className="relative shadow-2xl rounded-lg overflow-hidden max-h-[70vh] max-w-full">
+                <img
+                  src={previewUrls[currentImageIndex]}
+                  alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                  className="max-h-[70vh] w-auto object-contain bg-white"
                 />
-                <label htmlFor="link-images" className="text-white text-sm">
-                  Link Images
-                </label>
+                {/* Zoom Button Overlay */}
+                <button
+                  onClick={() => setPreviewImage({
+                    url: previewUrls[currentImageIndex],
+                    filename: files[currentImageIndex]?.name || '',
+                    index: currentImageIndex
+                  })}
+                  className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
+                  title="View fullscreen"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
               </div>
-            </div>
-            
-            {/* Tuning Controls */}
-            <div className="mb-6 p-4 rounded-lg border border-gray-700 bg-gray-800/60">
-              <div className="flex flex-wrap items-end gap-4">
-                {/* Declutter Intensity removed: always uses heavy/preset in backend prompt */}
-                {!samplingUiEnabled ? (
-                  <div className="text-xs text-gray-400 max-w-xl">
-                    Temperature/topP/topK are disabled. Prompts embed temperature per stage/scene. Declutter intensity remains configurable here.
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-2">Temperature</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 0.55"
-                        value={temperatureInput}
-                        onChange={(e)=>setTemperatureInput(e.target.value)}
-                        className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-2">topP</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 0.85"
-                        value={topPInput}
-                        onChange={(e)=>setTopPInput(e.target.value)}
-                        className="w-32 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-gray-300 text-xs font-medium mb-2">topK</label>
-                      <input
-                        type="number"
-                        step="1"
-                        placeholder="e.g. 40"
-                        value={topKInput}
-                        onChange={(e)=>setTopKInput(e.target.value)}
-                        className="w-28 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                      />
-                    </div>
-                    <div className="text-xs text-gray-400 max-w-xl">
-                      These optional controls apply to the whole batch. Leave blank to use smart defaults or server config.
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
 
-            <p className="text-gray-300 mb-8">
-              Selecting scene type and room type is completely optional but will often get better results if completed. If you don't want to complete this section, just click "Start Enhancing" at the bottom of the page.
-            </p>
-
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {files.map((file, index) => (
-                <div key={index} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                  {/* Image Preview */}
-                  <div className="relative mb-4">
-                    <img
-                      src={previewUrls[index]}
-                      alt={`Preview ${index + 1}`}
-                      className="w-full h-32 object-cover rounded-lg"
-                    />
-                    <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs">
-                      {index + 1}
-                    </div>
-                  </div>
-
-                  {/* Image Name */}
-                  <div className="mb-4">
-                    <p className="text-white text-sm font-medium truncate" title={file.name}>
-                      {file.name}
-                    </p>
-                  </div>
-
-                  {/* Scene Selector Dropdown */}
-                  <div className="mb-4">
-                    <label className="block text-gray-300 text-xs font-medium mb-2">
-                      Scene Type
-                    </label>
-                    <select
-                      value={imageSceneTypes[index] || "auto"}
-                      onChange={(e) => {
-                        const nextVal = e.target.value as "auto" | "interior" | "exterior";
-                        setImageSceneTypes(prev => ({ ...prev, [index]: nextVal }));
-                        // Mark manual scene override when user selects anything other than auto
-                        setManualSceneOverrideByIndex(prev => ({ ...prev, [index]: nextVal !== "auto" }));
-                        // SKY SAFEGUARD (UX): If user manually sets scene, disable sky replacement
-                        if (nextVal !== "auto") {
-                          setImageSkyReplacement(prev => ({ ...prev, [index]: false }));
-                        }
-                      }}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      data-testid={`select-scene-${index}`}
+              {/* Thumbnail Strip (for multiple images) */}
+              {files.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
+                  {files.slice(0, 10).map((file, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentImageIndex(idx)}
+                      className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${
+                        idx === currentImageIndex
+                          ? 'ring-2 ring-action-500 ring-offset-1'
+                          : 'opacity-60 hover:opacity-100'
+                      }`}
                     >
-                      <option value="auto">Auto</option>
-                      <option value="interior">Interior</option>
-                      <option value="exterior">Exterior</option>
-                    </select>
-                  </div>
-
-                  {/* Sky Replacement Toggle - Only show for exterior images */}
-                  {imageSceneTypes[index] === "exterior" && (
-                    <div className="mb-4 p-3 bg-gray-800/50 rounded-md border border-gray-700">
-                      <label className="flex items-center justify-between cursor-pointer">
-                        <div>
-                          <span className="block text-gray-300 text-sm font-medium">
-                            Replace Sky
-                          </span>
-                          <span className="block text-gray-500 text-xs mt-1">
-                            Replace cloudy skies with clear blue
-                          </span>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={(() => {
-                            const val = imageSkyReplacement[index] !== undefined ? imageSkyReplacement[index] : true;
-                            // If manual override is set, force unchecked
-                            return manualSceneOverrideByIndex[index] ? false : val;
-                          })()}
-                          onChange={(e) => {
-                            if (manualSceneOverrideByIndex[index]) return; // disabled logically
-                            setImageSkyReplacement(prev => ({ ...prev, [index]: e.target.checked }));
-                          }}
-                          className="ml-3 w-5 h-5 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
-                          data-testid={`toggle-sky-${index}`}
-                          disabled={!!manualSceneOverrideByIndex[index]}
-                          title={manualSceneOverrideByIndex[index] ? "Disabled due to manual scene override" : "Replace cloudy skies with clear blue"}
-                        />
-                      </label>
-                      {manualSceneOverrideByIndex[index] && (
-                        <p className="mt-2 text-xs text-yellow-400">Sky replacement is disabled because the scene was manually overridden.</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Room Type Dropdown – only for interior images when staging is enabled */}
-                  {allowStaging && (imageSceneTypes[index] || "interior") !== "exterior" && (
-                    <div className="mb-4">
-                      <label className="block text-gray-300 text-xs font-medium mb-2">
-                        Room Type
-                      </label>
-                      <FixedSelect
-                        value={imageRoomTypes[index] || ""}
-                        onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [index]: v }))}
-                        placeholder="Select room type…"
-                        className="w-full"
-                      >
-                        <FixedSelectItem value="bedroom-1">Bedroom 1</FixedSelectItem>
-                        <FixedSelectItem value="bedroom-2">Bedroom 2</FixedSelectItem>
-                        <FixedSelectItem value="bedroom-3">Bedroom 3</FixedSelectItem>
-                        <FixedSelectItem value="bedroom-4">Bedroom 4</FixedSelectItem>
-                        <FixedSelectItem value="kitchen">Kitchen</FixedSelectItem>
-                        <FixedSelectItem value="living-room">Living Room</FixedSelectItem>
-                        <FixedSelectItem value="multi-living">Multiple Living Areas</FixedSelectItem>
-                        <FixedSelectItem value="dining-room">Dining Room</FixedSelectItem>
-                        <FixedSelectItem value="study">Study</FixedSelectItem>
-                        <FixedSelectItem value="office">Office</FixedSelectItem>
-                        <FixedSelectItem value="bathroom-1">Bathroom 1</FixedSelectItem>
-                        <FixedSelectItem value="bathroom-2">Bathroom 2</FixedSelectItem>
-                        <FixedSelectItem value="laundry">Laundry</FixedSelectItem>
-                        <FixedSelectItem value="garage">Garage</FixedSelectItem>
-                        <FixedSelectItem value="basement">Basement</FixedSelectItem>
-                        <FixedSelectItem value="attic">Attic</FixedSelectItem>
-                        <FixedSelectItem value="hallway">Hallway</FixedSelectItem>
-                        <FixedSelectItem value="staircase">Staircase</FixedSelectItem>
-                        <FixedSelectItem value="entryway">Entryway</FixedSelectItem>
-                        <FixedSelectItem value="closet">Closet</FixedSelectItem>
-                        <FixedSelectItem value="pantry">Pantry</FixedSelectItem>
-                      </FixedSelect>
+                      <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                  {files.length > 10 && (
+                    <div className="w-12 h-12 rounded-md bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-medium flex-shrink-0">
+                      +{files.length - 10}
                     </div>
                   )}
                 </div>
-              ))}
+              )}
             </div>
 
-            <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-600">
-              <button
-                onClick={() => setActiveTab("describe")}
-                className="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
-                data-testid="button-back-describe"
-              >
-                ← Back to Settings
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("enhance");
-                  // Auto-start processing when proceeding to enhance
-                  startBatchProcessing();
-                }}
-                className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
-                data-testid="button-proceed-enhance"
-              >
-                Enhance {files.length} {files.length === 1 ? "Image" : "Images"} →
-              </button>
+            {/* RIGHT PANEL: The Inspector Sidebar */}
+            <div className="w-80 lg:w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl">
+
+              {/* Sidebar Header */}
+              <div className="p-5 border-b border-slate-100">
+                <div className="flex justify-between items-center mb-1">
+                  <h2 className="text-lg font-semibold text-slate-900">Settings</h2>
+                  <button
+                    onClick={() => {
+                      // Reset current image settings to auto
+                      setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "auto" }));
+                      setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: false }));
+                      setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: true }));
+                      setImageRoomTypes(prev => ({ ...prev, [currentImageIndex]: "" }));
+                    }}
+                    className="text-xs text-action-600 font-medium hover:text-action-700"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 truncate" title={files[currentImageIndex]?.name}>
+                  {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                </p>
+              </div>
+
+              {/* Scrollable Settings Area */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+
+                {/* Scene Type Selection - Visual Cards */}
+                <section>
+                  <label className="text-sm font-medium text-slate-900 mb-3 block">Scene Type</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
+                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
+                      }}
+                      data-testid={`select-scene-${currentImageIndex}`}
+                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
+                        imageSceneTypes[currentImageIndex] === "exterior"
+                          ? 'border-action-500 bg-action-50 text-action-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      <Home className="w-6 h-6" />
+                      <span className="text-sm font-medium">Exterior</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
+                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
+                        setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: false }));
+                      }}
+                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
+                        (imageSceneTypes[currentImageIndex] === "interior" || (!imageSceneTypes[currentImageIndex] || imageSceneTypes[currentImageIndex] === "auto"))
+                          ? 'border-action-500 bg-action-50 text-action-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      <Armchair className="w-6 h-6" />
+                      <span className="text-sm font-medium">Interior</span>
+                    </button>
+                  </div>
+                </section>
+
+                {/* AI Enhancements Section */}
+                <section className="space-y-4">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
+
+                  {/* Sky Replacement Toggle - Only for Exterior */}
+                  {imageSceneTypes[currentImageIndex] === "exterior" && (
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex gap-3">
+                        <div className="mt-0.5 text-slate-400"><CloudSun className="w-5 h-5" /></div>
+                        <div>
+                          <label className="text-sm font-medium text-slate-900 block">Blue Sky Replacement</label>
+                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies with clear blue.</p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={(() => {
+                          const val = imageSkyReplacement[currentImageIndex] !== undefined ? imageSkyReplacement[currentImageIndex] : true;
+                          return manualSceneOverrideByIndex[currentImageIndex] ? false : val;
+                        })()}
+                        onCheckedChange={(checked: boolean) => {
+                          if (manualSceneOverrideByIndex[currentImageIndex]) return;
+                          setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: checked }));
+                        }}
+                        disabled={!!manualSceneOverrideByIndex[currentImageIndex]}
+                        data-testid={`toggle-sky-${currentImageIndex}`}
+                        className="data-[state=checked]:bg-action-600"
+                      />
+                    </div>
+                  )}
+
+                  {/* Link Images Toggle */}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex gap-3">
+                      <div className="mt-0.5 text-slate-400">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-slate-900 block">Link Images</label>
+                        <p className="text-xs text-slate-500 mt-0.5">Group multi-angle shots of same room.</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={linkImages}
+                      onCheckedChange={setLinkImages}
+                      data-testid="checkbox-link-images"
+                      className="data-[state=checked]:bg-action-600"
+                    />
+                  </div>
+                </section>
+
+                {/* Room Type Selection - Only for Interior when staging enabled */}
+                {allowStaging && (imageSceneTypes[currentImageIndex] || "interior") !== "exterior" && (
+                  <section>
+                    <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
+                    <FixedSelect
+                      value={imageRoomTypes[currentImageIndex] || ""}
+                      onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [currentImageIndex]: v }))}
+                      placeholder="Select room type…"
+                      className="w-full"
+                    >
+                      <FixedSelectItem value="bedroom-1">Bedroom 1</FixedSelectItem>
+                      <FixedSelectItem value="bedroom-2">Bedroom 2</FixedSelectItem>
+                      <FixedSelectItem value="bedroom-3">Bedroom 3</FixedSelectItem>
+                      <FixedSelectItem value="bedroom-4">Bedroom 4</FixedSelectItem>
+                      <FixedSelectItem value="kitchen">Kitchen</FixedSelectItem>
+                      <FixedSelectItem value="living-room">Living Room</FixedSelectItem>
+                      <FixedSelectItem value="multi-living">Multiple Living Areas</FixedSelectItem>
+                      <FixedSelectItem value="dining-room">Dining Room</FixedSelectItem>
+                      <FixedSelectItem value="study">Study</FixedSelectItem>
+                      <FixedSelectItem value="office">Office</FixedSelectItem>
+                      <FixedSelectItem value="bathroom-1">Bathroom 1</FixedSelectItem>
+                      <FixedSelectItem value="bathroom-2">Bathroom 2</FixedSelectItem>
+                      <FixedSelectItem value="laundry">Laundry</FixedSelectItem>
+                      <FixedSelectItem value="garage">Garage</FixedSelectItem>
+                      <FixedSelectItem value="basement">Basement</FixedSelectItem>
+                      <FixedSelectItem value="attic">Attic</FixedSelectItem>
+                      <FixedSelectItem value="hallway">Hallway</FixedSelectItem>
+                      <FixedSelectItem value="staircase">Staircase</FixedSelectItem>
+                      <FixedSelectItem value="entryway">Entryway</FixedSelectItem>
+                      <FixedSelectItem value="closet">Closet</FixedSelectItem>
+                      <FixedSelectItem value="pantry">Pantry</FixedSelectItem>
+                    </FixedSelect>
+                  </section>
+                )}
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-3">
+                  <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-700 leading-relaxed">
+                    Scene and room settings are optional. Our AI will auto-detect if not specified.
+                  </p>
+                </div>
+              </div>
+
+              {/* Sidebar Footer - Sticky */}
+              <div className="p-5 border-t border-slate-200 bg-slate-50">
+                <div className="flex justify-between text-sm mb-4">
+                  <span className="text-slate-600">Estimated Cost</span>
+                  <span className="font-semibold text-slate-900">
+                    {files.length} {files.length === 1 ? 'Credit' : 'Credits'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveTab("enhance");
+                    startBatchProcessing();
+                  }}
+                  className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500"
+                  data-testid="button-proceed-enhance"
+                >
+                  Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -3057,7 +3109,7 @@ export default function BatchProcessor() {
                   handleOpenRetryDialog(index);
                 }}
                 disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-action-600 text-white rounded hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="button-retry-from-preview"
               >
                 Retry

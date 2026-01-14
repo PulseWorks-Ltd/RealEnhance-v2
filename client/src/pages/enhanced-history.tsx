@@ -127,7 +127,7 @@ export default function EnhancedHistoryPage() {
         title="Gallery"
         description={`${total > 0 ? `${total} enhanced images` : 'Your enhanced property photos'}`}
         action={
-          <Button variant="brand" onClick={() => navigate('/home')}>
+          <Button variant="action" onClick={() => navigate('/home')}>
             Enhance More Photos
           </Button>
         }
@@ -158,15 +158,15 @@ export default function EnhancedHistoryPage() {
           ) : (
             <>
               {/* Image Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
                 {images.map((image) => (
                   <div
                     key={image.id}
-                    className="group relative rounded overflow-hidden border border-border bg-card hover:border-action-400 hover:shadow-card transition-all duration-200 cursor-pointer"
+                    className="group relative rounded-lg overflow-hidden border border-border bg-card hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
                     onClick={() => setSelected(image)}
                   >
                     {/* Image */}
-                    <div className="aspect-square bg-muted">
+                    <div className="aspect-[4/3] bg-muted">
                       <img
                         src={image.thumbnailUrl}
                         alt="Enhanced property photo"
@@ -318,7 +318,7 @@ export default function EnhancedHistoryPage() {
                   <Button variant="outline" onClick={() => setSelected(null)}>
                     Close
                   </Button>
-                  <Button variant="brand" onClick={() => handleDownload(selected)}>
+                  <Button variant="action" onClick={() => handleDownload(selected)}>
                     <Download className="w-4 h-4 mr-2" />
                     Download
                   </Button>
