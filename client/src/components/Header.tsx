@@ -5,6 +5,7 @@ import { ProfileDropdown } from "@/components/profile-dropdown";
 import { withDevice } from "@/lib/withDevice";
 import { apiFetch } from "@/lib/api";
 import { useNavigate, useLocation } from "react-router-dom";
+import { Sparkles } from "lucide-react";
 
 
 export function Header() {
@@ -27,18 +28,13 @@ export function Header() {
     >
       <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
         {/* Brand */}
-        <a href="/" className="flex items-center gap-3">
-          <img src="/logo.svg" alt="RealEnhance" className="h-8 w-auto rounded object-contain drop-shadow-sm" />
-          <div className="leading-tight">
-            <h1
-              className="text-xl font-bold bg-clip-text text-transparent
-                         bg-gradient-to-r from-brand-primary to-brand-accent"
-              data-testid="app-title"
-            >
-              RealEnhance
-            </h1>
-            <p className="text-[11px] text-neutral-500">AI-Powered Enhancement</p>
+        <a href="/" className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-action-600 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
+          <span className="text-xl font-bold tracking-tight text-brand-900" data-testid="app-title">
+            RealEnhance
+          </span>
         </a>
 
         {/* Right: actions */}
