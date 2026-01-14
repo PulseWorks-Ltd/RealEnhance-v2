@@ -29,7 +29,7 @@ export function Header() {
       <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
         {/* Brand */}
         <a href="/" className="flex items-center gap-2.5">
-          <img src="/Logo-dark.png" alt="RealEnhance" className="h-8 w-auto" />
+          <img src="/Logo-light.png" alt="RealEnhance" className="h-8 w-auto" />
         </a>
 
         {/* Right: actions */}

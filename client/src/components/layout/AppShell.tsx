@@ -63,9 +63,9 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         {/* Brand header */}
-        <div className="h-16 flex items-center justify-between px-5 border-b border-brand-800">
-          <div className="flex items-center gap-2.5">
-            <img src="/Logo-light.png" alt="RealEnhance" className="h-8 w-auto" />
+        <div className="h-16 flex items-center justify-between px-4 border-b border-brand-800">
+          <div className="flex items-center flex-1 h-full py-2">
+            <img src="/Logo-dark.png" alt="RealEnhance" className="h-full w-auto object-contain" />
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
