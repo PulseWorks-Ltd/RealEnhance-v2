@@ -15,6 +15,8 @@ import { RegionEditor } from "./region-editor";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dropzone } from "@/components/ui/dropzone";
+import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 
 type RunState = "idle" | "running" | "done";
 
@@ -125,6 +127,7 @@ export default function BatchProcessor() {
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
   // Tab state for clean UI flow
   const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">("upload");
+  const [isUploading, setIsUploading] = useState(false);
   
   const [files, setFiles] = useState<File[]>([]);
   const [globalGoal, setGlobalGoal] = useState("");
@@ -1257,6 +1260,7 @@ export default function BatchProcessor() {
     fd.append("metaJson", metaJson);
     
     try {
+      setIsUploading(true);
       // Phase 1: Start batch processing with files
       const uploadResp = await fetch(api("/api/upload"), {
         method: "POST",
@@ -1267,6 +1271,7 @@ export default function BatchProcessor() {
       });
 
       if (!uploadResp.ok) {
+        setIsUploading(false);
         setRunState("idle");
         if (uploadResp.status === 401) {
           return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
@@ -1276,6 +1281,7 @@ export default function BatchProcessor() {
       }
 
   const uploadResult = await uploadResp.json();
+  setIsUploading(false);
   const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
   if (!jobs.length) throw new Error("Upload response missing jobs");
   const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
@@ -1289,6 +1295,7 @@ export default function BatchProcessor() {
   await pollForBatch(ids, controller);
       
     } catch (error: any) {
+      setIsUploading(false);
       setRunState("idle");
       setProgressText("");
       setAbortController(null);
@@ -2087,7 +2094,7 @@ export default function BatchProcessor() {
   };
 
   return (
-  <div className="max-w-4xl mx-auto p-6 bg-brand-surface min-h-screen">
+  <div className="w-full">
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
@@ -2104,26 +2111,15 @@ export default function BatchProcessor() {
               }
             </p>
             
-            <div className="border-2 border-dashed border-gray-600 rounded-lg p-12 hover:border-purple-500 transition-colors">
-              <input 
-                type="file" 
-                multiple 
-                onChange={onFiles} 
-                className="hidden"
-                id="file-upload"
-                accept="image/*"
-                data-testid="input-batch-files"
-              />
-              <label htmlFor="file-upload" className="cursor-pointer">
-                <div className="text-6xl mb-4">📸</div>
-                <p className="text-lg font-medium text-white mb-2">
-                  {files.length === 0 ? "Click to select images" : "Click to add more images"}
-                </p>
-                <p className="text-sm text-gray-400">
-                  Supports JPEG, PNG, WEBP • Max 15MB per image
-                </p>
-              </label>
-            </div>
+            <Dropzone 
+              onFilesSelected={(newFiles) => {
+                setFiles(prev => [...prev, ...newFiles]);
+                if (newFiles.length > 0) setActiveTab("describe");
+              }}
+              maxFiles={50}
+              maxSizeMB={15}
+              className="bg-brand-800/20"
+            />
 
             {files.length > 0 && (
               <div className="mt-8">
@@ -2168,7 +2164,7 @@ export default function BatchProcessor() {
                     <div 
                       key={i} 
                       className={`relative group cursor-pointer rounded-lg border-2 transition-all ${
-                        selection.has(i) ? "border-blue-500 ring-2 ring-blue-500/30" : "border-gray-600"
+                        selection.has(i) ? "border-brand-500 ring-2 ring-brand-500/30" : "border-gray-600"
                       }`}
                       onClick={() => toggleSelect(i)}
                       data-testid={`thumbnail-${i}`}
@@ -2746,7 +2742,7 @@ export default function BatchProcessor() {
                 <button
                   onClick={startBatchProcessing}
                   disabled={!files.length}
-                  className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-lg disabled:opacity-50"
+                  className="bg-action-500 text-white px-8 py-4 rounded hover:bg-action-600 transition-colors font-medium text-lg disabled:opacity-50"
                   data-testid="button-start-batch"
                 >
                   Enhance {files.length} {files.length === 1 ? "Image" : "Images"}
@@ -2765,29 +2761,42 @@ export default function BatchProcessor() {
 
             {/* Progress Display */}
             {/* ✅ HARD GUARD: Do NOT show global progress during retry operations */}
-            {runState === "running" && progressText && retryingImages.size === 0 && (
-              <div className="bg-brand-light border border-blue-200 rounded-lg p-6 mb-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-4"></div>
-                  <span className="text-blue-800 font-medium" data-testid="text-progress-counter">
-                    {progressText}
-                  </span>
-                  </div>
-                  <div>
+            {(runState === "running" || isUploading) && retryingImages.size === 0 && (
+              <div className="bg-brand-50 border border-brand-200 rounded-lg p-6 mb-6">
+                <div className="flex flex-col gap-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-brand-900">
+                      {isUploading ? "Uploading Images" : "Enhancing Photos"}
+                    </h3>
                     <button
                       onClick={cancelBatchProcessing}
-                      className="px-3 py-2 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                      className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
                       disabled={!abortController}
                       data-testid="button-cancel-batch"
                     >
                       Cancel
                     </button>
                   </div>
+
+                  <ProcessingSteps
+                    steps={[
+                      { id: "upload", label: "Uploading", status: isUploading ? "active" : "complete" },
+                      { id: "process", label: "Enhancing & Staging", status: isUploading ? "pending" : "active" }
+                    ]}
+                    className="w-full justify-between max-w-xl mx-auto"
+                  />
+
+                  <div className="bg-white rounded-lg p-4 border border-brand-100 flex items-center justify-center gap-3">
+                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-brand-600"></div>
+                     <span className="text-brand-700 font-medium" data-testid="text-progress-counter">
+                        {isUploading ? "Uploading files to secure server..." : (progressText || "Initializing...")}
+                     </span>
+                  </div>
                 </div>
+                
                 {lastDetected && (
-                  <div className="mt-3 flex items-center justify-center gap-2">
-                    <span className="text-sm text-gray-700">
+                   <div className="mt-4 pt-4 border-t border-brand-200 flex items-center justify-center gap-2">
+                    <span className="text-sm text-brand-700">
                       Detected: <span className="font-medium capitalize">{lastDetected.label.replace(/_/g, ' ')}</span> ({Math.round((lastDetected.confidence||0)*100)}%)
                     </span>
                     <OverrideDropdown

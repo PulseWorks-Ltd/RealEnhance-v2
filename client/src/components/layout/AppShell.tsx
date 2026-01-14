@@ -18,12 +18,12 @@ import { cn } from '@/lib/utils';
 
 // Navigation configuration
 const mainNavItems = [
-  { to: '/home', icon: Home, label: 'Dashboard' },
+  { to: '/home', icon: Home, label: 'Enhance' },
   { to: '/enhanced-history', icon: Image, label: 'Gallery' },
 ];
 
 const managementNavItems = [
-  { to: '/agency', icon: CreditCard, label: 'Billing' },
+  { to: '/agency', icon: CreditCard, label: 'Billing & Plan' },
 ];
 
 const systemNavItems = [
@@ -158,7 +158,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
 
 // Navigation section label
 const NavSectionLabel = ({ children }: { children: React.ReactNode }) => (
-  <span className="px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-500">
+  <span className="px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-400">
     {children}
   </span>
 );

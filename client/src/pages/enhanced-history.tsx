@@ -162,7 +162,7 @@ export default function EnhancedHistoryPage() {
                 {images.map((image) => (
                   <div
                     key={image.id}
-                    className="group relative rounded-lg overflow-hidden border border-border bg-card hover:border-action-400 hover:shadow-card transition-all duration-200 cursor-pointer"
+                    className="group relative rounded overflow-hidden border border-border bg-card hover:border-action-400 hover:shadow-card transition-all duration-200 cursor-pointer"
                     onClick={() => setSelected(image)}
                   >
                     {/* Image */}
@@ -177,7 +177,10 @@ export default function EnhancedHistoryPage() {
 
                     {/* Status indicator */}
                     <div className="absolute top-2 right-2">
-                      <StatusBadge status="success" label="Ready" />
+                      <StatusBadge 
+                        status={(image as any).status === 'failed' ? 'error' : 'success'} 
+                        label={(image as any).status === 'failed' ? 'Failed' : 'Ready'} 
+                      />
                     </div>
 
                     {/* Overlay on hover */}

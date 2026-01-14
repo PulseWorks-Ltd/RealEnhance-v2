@@ -22,6 +22,12 @@ export interface StageAwareConfig {
   logArtifactsOnFail: boolean;
   /** Maximum retry attempts per stage */
   maxRetryAttempts: number;
+
+  /** Paint-over / opening suppression detector (Stage2) */
+  paintOverEnable: boolean;
+  paintOverEdgeRatioMin: number;
+  paintOverTexRatioMin: number;
+  paintOverMinRoiArea: number;
 }
 
 /**
@@ -36,6 +42,11 @@ export function loadStageAwareConfig(): StageAwareConfig {
     iouMinPixelsRatio: parseFloat(process.env.STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO || "0.005"),
     logArtifactsOnFail: process.env.STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL !== "0",
     maxRetryAttempts: parseInt(process.env.STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS || "3", 10),
+
+    paintOverEnable: process.env.STRUCT_VALIDATION_PAINTOVER_ENABLE !== "0",
+    paintOverEdgeRatioMin: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_EDGE_RATIO_MIN || "0.35"),
+    paintOverTexRatioMin: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_TEX_RATIO_MIN || "0.45"),
+    paintOverMinRoiArea: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_MIN_ROI_AREA || "0.005"),
   };
 }
 
