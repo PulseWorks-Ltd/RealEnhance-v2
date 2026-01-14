@@ -1,6 +1,6 @@
 // Client-side stub for room type detection (replace with real logic as needed)
   // Replaced by backend ML API call below
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FixedSelect, FixedSelectItem } from "@/components/ui/FixedSelect";
 import { withDevice } from "@/lib/withDevice";
