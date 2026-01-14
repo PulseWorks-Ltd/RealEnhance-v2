@@ -11,6 +11,24 @@ import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
+// Minimal image validation: check mimetype and magic bytes for common formats (JPEG/PNG/WebP)
+async function isLikelyImage(filePath: string, mime?: string | null): Promise<boolean> {
+  if (mime && !mime.startsWith("image/")) return false;
+  try {
+    const fh = await fs.open(filePath, "r");
+    const buf = Buffer.alloc(12);
+    const { bytesRead } = await fh.read(buf, 0, 12, 0);
+    await fh.close();
+    if (!bytesRead) return false;
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
+    const isPng = buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const isWebp = buf.slice(0, 4).toString("ascii") === "RIFF" && buf.slice(8, 12).toString("ascii") === "WEBP";
+    return isJpeg || isPng || isWebp;
+  } catch {
+    return false;
+  }
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: async (_req, _file, cb) => {
@@ -52,6 +70,14 @@ export function retrySingleRouter() {
 
       const file = (req.file as Express.Multer.File | undefined);
       if (!file) return res.status(400).json({ success: false, error: "missing_image" });
+
+      // Basic validation to avoid placeholder/non-image retries
+      const tempPath = (file as any).path || path.join((file as any).destination ?? uploadRoot, file.filename);
+      const isImage = await isLikelyImage(tempPath, file.mimetype);
+      if (!isImage) {
+        await fs.unlink(tempPath).catch(() => {});
+        return res.status(400).json({ success: false, error: "invalid_image_format", message: "Invalid image format for retry" });
+      }
 
       // REMOVED: Credit gating - execution is now always allowed
       // Usage tracking happens after job enqueuing

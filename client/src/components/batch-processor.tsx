@@ -1554,6 +1554,43 @@ export default function BatchProcessor() {
     const isPlaceholder = (fileToRetry as any).__restored === true;
     const originalFromStoreUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
 
+    // If we only have a placeholder, pull the original from storage so the retry uses a real image
+    let fileForUpload: File = fileToRetry;
+    if (isPlaceholder) {
+      if (!originalFromStoreUrl) {
+        toast({
+          title: "Need the original photo",
+          description: "Please re-upload the image before retrying so we can process the real file.",
+          variant: "destructive"
+        });
+        return;
+      }
+      try {
+        const resp = await fetch(originalFromStoreUrl);
+        if (!resp.ok) throw new Error("Unable to download the original image");
+        const blob = await resp.blob();
+        const revived = new File([blob], fileToRetry.name || "retry-image.jpg", {
+          type: blob.type || fileToRetry.type || "image/jpeg",
+          lastModified: Date.now()
+        });
+        // Mark as real so subsequent retries use this file
+        (revived as any).__restored = false;
+        setFiles(prev => {
+          const next = [...prev];
+          next[imageIndex] = revived;
+          return next;
+        });
+        fileForUpload = revived;
+      } catch (err: any) {
+        toast({
+          title: "Couldn’t load the original",
+          description: err?.message || "Please re-upload the image and retry.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     try {
       // Check credits and authentication
       await ensureLoggedInAndCredits(1);
@@ -1602,7 +1639,7 @@ export default function BatchProcessor() {
       
       // Use dedicated retry endpoint that bypasses batch lock
       const fd = new FormData();
-      fd.append("image", fileToRetry); // Correct field name for retry-single
+      fd.append("image", fileForUpload); // Correct field name for retry-single
       fd.append("goal", goalToSend);
       if (sceneType) fd.append("sceneType", sceneType);
       if (sceneType && sceneType !== 'auto') fd.append("manualSceneOverride", "true");
