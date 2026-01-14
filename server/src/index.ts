@@ -35,6 +35,7 @@ import { myImagesRouter } from "./routes/myImages.js";
 import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
+import adminResetRouter from "./routes/adminReset.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -143,6 +144,8 @@ async function main() {
   app.use("/api/enhanced-images", enhancedImagesRouter());
   // Admin analysis endpoints
   app.use("/api/admin", adminAnalysisRouter);
+  // One-time admin data reset (heavily guarded)
+  app.use(adminResetRouter);
 
   // Static file serving for uploaded and data images (development-friendly)
   const filesRoot = path.join(process.cwd(), "server");

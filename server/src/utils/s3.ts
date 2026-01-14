@@ -1,4 +1,11 @@
-import { PutObjectCommand, S3Client, HeadBucketCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  PutObjectCommand,
+  S3Client,
+  HeadBucketCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
@@ -167,4 +174,50 @@ export async function deleteS3Object(key: string): Promise<void> {
   } catch (err) {
     console.warn('[S3] delete failed for key', key, err as any);
   }
+}
+
+export async function purgeS3Prefix(prefixInput: string): Promise<{ deleted: number }> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+
+  const raw = (prefixInput || "").trim();
+  if (!raw) {
+    throw new Error("S3_RESET_PREFIX is required and cannot be empty");
+  }
+
+  // Normalize to single trailing slash
+  const normalizedPrefix = `${raw.replace(/^\/+/, "").replace(/\/+$/, "")}/`;
+
+  const client = getClient();
+  let deleted = 0;
+  let continuation: string | undefined;
+
+  do {
+    const listResp = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: normalizedPrefix,
+        ContinuationToken: continuation,
+      })
+    );
+
+    const objects = listResp.Contents || [];
+    if (objects.length > 0) {
+      const toDelete = objects
+        .map((obj) => obj.Key)
+        .filter((key): key is string => !!key && key.startsWith(normalizedPrefix))
+        .map((Key) => ({ Key }));
+
+      if (toDelete.length > 0) {
+        const delResp = await client.send(
+          new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: toDelete } })
+        );
+        deleted += delResp.Deleted?.length || 0;
+      }
+    }
+
+    continuation = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
+  } while (continuation);
+
+  return { deleted };
 }
