@@ -423,13 +423,44 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     }
   }
 
-  // ===== 7. MULTI-SIGNAL GATING =====
-  const risk = triggers.length >= config.gateMinSignals;
+  // ===== 6.5 PAINT-OVER DETECTION (Stage2 only) =====
+  if (params.stage === "stage2" && config.paintOverEnable && !debug.dimensionMismatch) {
+    try {
+      const { runPaintOverCheck } = await import("./paintOverDetector.js");
+      const paintOverResult = await runPaintOverCheck({
+        baselinePath: params.baselinePath,
+        candidatePath: params.candidatePath,
+        config,
+        jobId: params.jobId,
+      });
+
+      // Add paint-over triggers
+      if (paintOverResult?.triggers?.length) {
+        for (const t of paintOverResult.triggers) {
+          triggers.push(t);
+          if (t.fatal) {
+            console.error(`[stageAware] FATAL paint-over detected: ${t.message}`);
+          }
+        }
+      }
+
+      // Log debug artifacts
+      if (paintOverResult?.debugArtifacts?.length) {
+        console.log(`[stageAware] Paint-over debug artifacts: ${paintOverResult.debugArtifacts.join(", ")}`);
+      }
+    } catch (err) {
+      console.error(`[stageAware] Error in paint-over detection:`, err);
+    }
+  }
+
+  // ===== 7. MULTI-SIGNAL GATING (with fatal bypass) =====
+  const hasFatalTrigger = triggers.some(t => t.fatal === true);
+  const risk = hasFatalTrigger || triggers.length >= config.gateMinSignals;
   const passed = !risk || mode === "log";
 
-  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals})`);
-  triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}: ${t.message}`));
-  console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}`);
+  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
+  triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
+  console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""}`);
   console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
 
   // ===== 8. COMPUTE AGGREGATE SCORE =====

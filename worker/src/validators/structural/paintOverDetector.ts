@@ -158,15 +158,19 @@ export const runPaintOverCheck = async (params: PaintOverParams): Promise<PaintO
     const edgeRatio = candEdgeDensity / Math.max(baseEdgeDensity, 1e-6);
     const texRatio = candTexVar / Math.max(baseTexVar, 1e-6);
 
+    // Per-ROI logging
+    console.log(`[paintOver] ROI=(${roi.x},${roi.y},${roi.width},${roi.height}) edgeRatio=${edgeRatio.toFixed(3)} texRatio=${texRatio.toFixed(3)} baseEdge=${baseEdgeDensity.toFixed(4)} candEdge=${candEdgeDensity.toFixed(4)} baseTex=${baseTexVar.toFixed(2)} candTex=${candTexVar.toFixed(2)}`);
+
     const edgeBelow = edgeRatio < config.paintOverEdgeRatioMin;
     const texBelow = texRatio < config.paintOverTexRatioMin;
 
     if (edgeBelow && texBelow) {
+      console.error(`[paintOver] FATAL opening painted over: ROI=(${roi.x},${roi.y},${roi.width},${roi.height}) edgeRatio=${edgeRatio.toFixed(3)} texRatio=${texRatio.toFixed(3)}`);
       triggers.push({
         id: "fatal_opening_painted_over",
         value: Math.min(edgeRatio, texRatio),
         threshold: Math.min(config.paintOverEdgeRatioMin, config.paintOverTexRatioMin),
-        message: `High confidence paint-over detected (edge=${edgeRatio.toFixed(2)}, tex=${texRatio.toFixed(2)})`,
+        message: `FATAL: Opening painted over ROI=(${roi.x},${roi.y},${roi.width},${roi.height}) edgeRatio=${edgeRatio.toFixed(3)} texRatio=${texRatio.toFixed(3)}`,
         stage: "stage2",
         fatal: true,
         meta: { roi, edgeRatio, texRatio, baseEdgeDensity, baseTexVar, candEdgeDensity, candTexVar },
@@ -186,19 +190,60 @@ export const runPaintOverCheck = async (params: PaintOverParams): Promise<PaintO
       const tag = jobId ? `${jobId}-` : "";
       const baseCropPath = `/tmp/struct-debug-${tag}paintover-base-${roi.x}-${roi.y}.png`;
       const candCropPath = `/tmp/struct-debug-${tag}paintover-cand-${roi.x}-${roi.y}.png`;
-      await sharp(baselinePath)
-        .greyscale()
-        .resize(base.width, base.height)
-        .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
-        .toFile(baseCropPath);
-      await sharp(candidatePath)
-        .greyscale()
-        .resize(cand.width, cand.height)
-        .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
-        .toFile(candCropPath);
-      debugArtifacts.push(baseCropPath, candCropPath);
+      const baseEdgePath = `/tmp/struct-debug-${tag}paintover-base-edges-${roi.x}-${roi.y}.png`;
+      const candEdgePath = `/tmp/struct-debug-${tag}paintover-cand-edges-${roi.x}-${roi.y}.png`;
+
+      try {
+        // Save baseline ROI crop
+        await sharp(baselinePath)
+          .greyscale()
+          .resize(base.width, base.height)
+          .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
+          .toFile(baseCropPath);
+
+        // Save candidate ROI crop
+        await sharp(candidatePath)
+          .greyscale()
+          .resize(cand.width, cand.height)
+          .extract({ left: roi.x, top: roi.y, width: roi.width, height: roi.height })
+          .toFile(candCropPath);
+
+        // Save baseline edge overlay for ROI
+        const baseEdgeRoi = extractEdgeRoi(baseEdges, base.width, roi);
+        await sharp(Buffer.from(baseEdgeRoi), {
+          raw: { width: roi.width, height: roi.height, channels: 1 },
+        })
+          .toFile(baseEdgePath);
+
+        // Save candidate edge overlay for ROI
+        const candEdgeRoi = extractEdgeRoi(candEdges, cand.width, roi);
+        await sharp(Buffer.from(candEdgeRoi), {
+          raw: { width: roi.width, height: roi.height, channels: 1 },
+        })
+          .toFile(candEdgePath);
+
+        debugArtifacts.push(baseCropPath, candCropPath, baseEdgePath, candEdgePath);
+        console.log(`[paintOver] Debug artifacts saved: ${baseCropPath}, ${candCropPath}, ${baseEdgePath}, ${candEdgePath}`);
+      } catch (err) {
+        console.warn(`[paintOver] Failed to save debug artifacts:`, err);
+      }
     }
   }
 
   return { triggers, debugArtifacts: debugArtifacts.length ? debugArtifacts : undefined };
 };
+
+/**
+ * Extract edge data for a specific ROI from the full edge buffer
+ */
+function extractEdgeRoi(edges: Uint8Array, width: number, roi: Roi): Uint8Array {
+  const out = new Uint8Array(roi.width * roi.height);
+  for (let y = 0; y < roi.height; y++) {
+    for (let x = 0; x < roi.width; x++) {
+      const srcIdx = (roi.y + y) * width + (roi.x + x);
+      const dstIdx = y * roi.width + x;
+      out[dstIdx] = edges[srcIdx];
+    }
+  }
+  return out;
+}
