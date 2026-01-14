@@ -103,6 +103,20 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
       role: "owner",
     });
 
+    // Refresh session payload so subsequent requests immediately see the new agency/role
+    const displayName = getDisplayName(updatedUser as any);
+    (req.session as any).user = {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name ?? null,
+      firstName: updatedUser.firstName ?? null,
+      lastName: updatedUser.lastName ?? null,
+      displayName,
+      credits: updatedUser.credits,
+      agencyId: updatedUser.agencyId,
+      role: updatedUser.role || "owner",
+    };
+
     res.status(201).json({
       agency,
       user: {
@@ -111,6 +125,8 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
         name: updatedUser.name,
         agencyId: updatedUser.agencyId,
         role: updatedUser.role,
+        displayName,
+        credits: updatedUser.credits,
       },
     });
   } catch (err) {

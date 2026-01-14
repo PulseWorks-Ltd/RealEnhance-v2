@@ -45,7 +45,7 @@ interface AgencyInfo {
 }
 
 export default function AgencyPage() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const { usage } = useUsage();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
@@ -240,10 +240,29 @@ export default function AgencyPage() {
       });
 
       if (res.ok) {
+        const created = await res.json().catch(() => null);
+        await refreshUser();
         toast({
           title: "Success",
           description: "Agency created successfully!",
         });
+        setAgencyName("");
+        // If backend returned agency details, apply immediately while fetch refreshes
+        if (created?.agency && created?.user) {
+          setAgencyInfo({
+            agencyId: created.agency.agencyId,
+            name: created.agency.name,
+            planTier: created.agency.planTier,
+            subscriptionStatus: created.agency.subscriptionStatus,
+            stripeCustomerId: created.agency.stripeCustomerId,
+            stripeSubscriptionId: created.agency.stripeSubscriptionId,
+            billingCountry: created.agency.billingCountry,
+            billingCurrency: created.agency.billingCurrency,
+            currentPeriodEnd: created.agency.currentPeriodEnd,
+            activeUsers: created.activeUsers,
+            userRole: created.user.role || "owner",
+          });
+        }
         loadAgencyData();
       } else {
         const errorData = await res.json().catch(() => ({}));
