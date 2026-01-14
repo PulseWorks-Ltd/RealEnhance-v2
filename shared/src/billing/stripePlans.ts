@@ -34,6 +34,8 @@ export interface StripePlanConfig {
   displayName: string;
   mainAllowance: number;
   stagingAllowance: number;
+  seatLimit: number | null;
+  allowInvites: boolean;
   monthlyPriceByCurrency: Partial<Record<BillingCurrency, number>>;
   stripePriceIdByCurrency: Partial<Record<BillingCurrency, string>>;
 }
@@ -68,6 +70,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
     displayName: "Starter",
     mainAllowance: 100,
     stagingAllowance: 0,
+    seatLimit: null,
+    allowInvites: true,
     monthlyPriceByCurrency: {
       nzd: 12900, // $129 NZD
       aud: 11900, // $119 AUD (calculated: ~11868)
@@ -84,6 +88,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
     displayName: "Pro",
     mainAllowance: 250,
     stagingAllowance: 0,
+    seatLimit: null,
+    allowInvites: true,
     monthlyPriceByCurrency: {
       nzd: 24900, // $249 NZD
       aud: 22900, // $229 AUD (calculated: ~22908)
@@ -100,6 +106,8 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
     displayName: "Studio",
     mainAllowance: 600,
     stagingAllowance: 0,
+    seatLimit: null,
+    allowInvites: true,
     monthlyPriceByCurrency: {
       nzd: 49900, // $499 NZD
       aud: 45900, // $459 AUD (calculated: ~45908)
@@ -136,6 +144,23 @@ export function getStripePriceId(planTier: PlanTier, currency: BillingCurrency):
   const plan = getStripePlan(planTier);
   return plan.stripePriceIdByCurrency[currency];
 }
+
+/**
+ * Find plan by Stripe Price ID (any currency) for webhook and upgrade flows.
+ */
+export function findPlanByPriceId(priceId?: string | null): { planTier: PlanTier; plan: StripePlanConfig } | null {
+  if (!priceId) return null;
+  for (const planTier of Object.keys(STRIPE_PLANS) as PlanTier[]) {
+    const plan = STRIPE_PLANS[planTier];
+    const ids = Object.values(plan.stripePriceIdByCurrency).filter(Boolean);
+    if (ids.includes(priceId)) {
+      return { planTier, plan };
+    }
+  }
+  return null;
+}
+
+export const PLAN_ORDER: PlanTier[] = ["starter", "pro", "agency"];
 
 /**
  * Format price for display

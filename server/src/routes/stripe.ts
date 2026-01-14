@@ -7,6 +7,8 @@ import { createImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
+import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
+import { pool } from "../db/index.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 
 const router = Router();
@@ -19,6 +21,20 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
+
+async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
+  const plan = getStripePlan(planTier);
+  const allowance = plan.mainAllowance;
+  await pool.query(
+    `INSERT INTO agency_accounts (agency_id, monthly_included_images, plan_tier, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (agency_id) DO UPDATE
+       SET monthly_included_images = EXCLUDED.monthly_included_images,
+           plan_tier = EXCLUDED.plan_tier,
+           updated_at = NOW();`,
+    [agencyId, allowance, planTier]
+  );
+}
 
 /**
  * POST /api/stripe/webhook
@@ -89,6 +105,8 @@ router.post(
 
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
             const stripePriceId = subscription.items.data[0]?.price.id;
+            const mapped = findPlanByPriceId(stripePriceId);
+            const planTierFromPrice = mapped?.planTier || (planTier as PlanTier);
 
             // Update agency with subscription details
             const agency = await getAgency(agencyId);
@@ -100,7 +118,7 @@ router.post(
             agency.stripeCustomerId = session.customer as string;
             agency.stripeSubscriptionId = subscriptionId;
             agency.stripePriceId = stripePriceId;
-            agency.planTier = planTier as PlanTier;
+            agency.planTier = planTierFromPrice;
             agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
             // Safely convert Unix timestamps to ISO strings
@@ -117,6 +135,7 @@ router.post(
             if (country) agency.billingCountry = country as any;
 
             await updateAgency(agency);
+            await upsertAgencyAllowance(agency.agencyId, agency.planTier);
 
             console.log(`[STRIPE] ✅ Subscription activated for agency ${agencyId}: ${planTier} (${subscription.status})`);
           } else {
@@ -205,6 +224,11 @@ router.post(
           const newPriceId = subscription.items.data[0]?.price.id;
           if (newPriceId) {
             agency.stripePriceId = newPriceId;
+            const mapped = findPlanByPriceId(newPriceId);
+            if (mapped) {
+              agency.planTier = mapped.planTier;
+              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            }
           }
 
           await updateAgency(agency);
@@ -272,6 +296,16 @@ router.post(
             agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
           }
 
+          const priceId = subscription.items.data[0]?.price.id;
+          if (priceId) {
+            agency.stripePriceId = priceId;
+            const mapped = findPlanByPriceId(priceId);
+            if (mapped) {
+              agency.planTier = mapped.planTier;
+              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            }
+          }
+
           await updateAgency(agency);
 
           console.log(`[STRIPE] ✅ Invoice paid for agency ${agencyId}: $${(invoice.amount_paid / 100).toFixed(2)}`);
@@ -302,6 +336,16 @@ router.post(
 
           // Mark as past due
           agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
+
+          const priceId = subscription.items.data[0]?.price.id;
+          if (priceId) {
+            agency.stripePriceId = priceId;
+            const mapped = findPlanByPriceId(priceId);
+            if (mapped) {
+              agency.planTier = mapped.planTier;
+              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            }
+          }
 
           await updateAgency(agency);
 

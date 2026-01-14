@@ -13,7 +13,12 @@ import {
   isValidCountry,
   type BillingCountry,
   type BillingCurrency,
+  findPlanByPriceId,
+  PLAN_ORDER,
+  formatPrice,
 } from "@realenhance/shared/billing/stripePlans.js";
+import { planTierToPlanCode } from "@realenhance/shared/plans.js";
+import { getUsageSnapshot } from "../services/usageLedger.js";
 
 const router = Router();
 
@@ -35,6 +40,21 @@ function requireAuth(req: Request, res: Response, next: Function) {
     return res.status(401).json({ error: "not_authenticated" });
   }
   next();
+}
+
+async function loadUserAndAgency(req: Request) {
+  const sessUser = (req.session as any)?.user;
+  const user = await getUserById(sessUser.id);
+  if (!user) throw Object.assign(new Error("User not found"), { status: 401 });
+  if (!user.agencyId) throw Object.assign(new Error("No agency"), { status: 400 });
+  const agency = await getAgency(user.agencyId);
+  if (!agency) throw Object.assign(new Error("Agency not found"), { status: 404 });
+  return { user, agency };
+}
+
+function requireAgencyAdmin(user: any) {
+  const role = user?.role || "member";
+  return role === "owner" || role === "admin";
 }
 
 /**
@@ -228,6 +248,207 @@ router.post("/portal", requireAuth, async (req: Request, res: Response) => {
       error: "Portal failed",
       message: error.message || "Failed to create portal session",
     });
+  }
+});
+
+/**
+ * GET /api/billing/subscription
+ * Returns the agency subscription details and usage snapshot
+ */
+router.get("/subscription", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { user, agency } = await loadUserAndAgency(req);
+
+    const usage = await getUsageSnapshot(agency.agencyId);
+    const tier = (agency.planTier as PlanTier) || "starter";
+    const plan = getStripePlan(tier);
+    const billingCurrency: BillingCurrency = (agency.billingCurrency as BillingCurrency) || "nzd";
+
+    const currentPricePlan = findPlanByPriceId(agency.stripePriceId);
+    const effectiveTier = currentPricePlan?.planTier || tier;
+    const effectivePlan = currentPricePlan?.plan || plan;
+
+    const currentIndex = PLAN_ORDER.indexOf(effectiveTier);
+    const upgradeOptions = PLAN_ORDER.filter((p) => PLAN_ORDER.indexOf(p) > currentIndex).map((p) => {
+      const cfg = getStripePlan(p);
+      const priceId = getStripePriceId(p, billingCurrency);
+      const priceCents = cfg.monthlyPriceByCurrency[billingCurrency] || cfg.monthlyPriceByCurrency.nzd || 0;
+      return {
+        planTier: p,
+        displayName: cfg.displayName,
+        monthlyAllowance: cfg.mainAllowance,
+        priceId,
+        price: priceCents,
+        priceFormatted: priceCents ? formatPrice(priceCents, billingCurrency) : null,
+        seatLimit: cfg.seatLimit,
+        allowInvites: cfg.allowInvites,
+      };
+    }).filter((p) => !!p.priceId);
+
+    return res.json({
+      agencyId: agency.agencyId,
+      planCode: planTierToPlanCode(effectiveTier),
+      planTier: effectiveTier,
+      planDisplayName: effectivePlan.displayName,
+      stripePriceId: agency.stripePriceId || null,
+      stripeSubscriptionId: agency.stripeSubscriptionId || null,
+      status: agency.subscriptionStatus || "CANCELLED",
+      currentPeriodEnd: agency.currentPeriodEnd || null,
+      billingCountry: agency.billingCountry || null,
+      billingCurrency,
+      seatLimit: effectivePlan.seatLimit,
+      allowInvites: effectivePlan.allowInvites,
+      allowance: {
+        monthlyIncluded: effectivePlan.mainAllowance,
+        used: usage.includedUsed,
+        remaining: usage.remaining,
+      },
+      usage: {
+        monthKey: usage.monthKey,
+        includedUsed: usage.includedUsed,
+        addonUsed: usage.addonUsed,
+      },
+      addOns: {
+        balance: usage.addonBalance,
+      },
+      upgradeOptions,
+      canManage: requireAgencyAdmin(user),
+    });
+  } catch (error: any) {
+    const status = error?.status || 500;
+    const message = error?.message || "Failed to load subscription";
+    console.error("[BILLING] subscription error", error);
+    return res.status(status).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/billing/subscription/preview-change
+ * Returns proration preview for switching subscription price
+ */
+router.get("/subscription/preview-change", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const newPriceId = req.query.newPriceId as string;
+    if (!newPriceId) {
+      return res.status(400).json({ error: "newPriceId is required" });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+    if (!requireAgencyAdmin(user)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    if (!agency.stripeSubscriptionId || !agency.stripeCustomerId) {
+      return res.status(400).json({ error: "No active subscription to preview" });
+    }
+
+    const subscription = await stripe.subscriptions.retrieve(agency.stripeSubscriptionId);
+    const item = subscription.items.data[0];
+    if (!item) {
+      return res.status(400).json({ error: "Subscription item not found" });
+    }
+
+    const upcoming = await stripe.invoices.retrieveUpcoming({
+      customer: agency.stripeCustomerId,
+      subscription: subscription.id,
+      subscription_items: [
+        {
+          id: item.id,
+          price: newPriceId,
+        },
+      ],
+      subscription_proration_behavior: "create_prorations",
+    });
+
+    const currency = (upcoming.currency || subscription.currency || "nzd") as BillingCurrency;
+    const dueToday = upcoming.amount_due || 0;
+    const subscriptionLine = upcoming.lines.data.find((l) => l.type === "subscription");
+    const newMonthly = subscriptionLine?.amount || 0;
+    const prorationLines = upcoming.lines.data
+      .filter((l) => l.proration)
+      .map((l) => ({ description: l.description, amount: l.amount }));
+
+    return res.json({
+      currency,
+      dueToday,
+      newMonthly,
+      prorationLines,
+    });
+  } catch (error: any) {
+    console.error("[BILLING] preview-change error", error);
+    const status = error?.status || 500;
+    return res.status(status).json({ error: error?.message || "Preview failed" });
+  }
+});
+
+/**
+ * POST /api/billing/subscription/change-plan
+ * Updates the Stripe subscription item price
+ */
+router.post("/subscription/change-plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const { newPriceId, effective } = req.body as {
+      newPriceId?: string;
+      effective?: "immediate" | "next_renewal";
+    };
+
+    if (!newPriceId) {
+      return res.status(400).json({ error: "newPriceId is required" });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+    if (!requireAgencyAdmin(user)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    if (!agency.stripeSubscriptionId || !agency.stripeCustomerId) {
+      return res.status(400).json({ error: "No active subscription to change" });
+    }
+
+    const subscription = await stripe.subscriptions.retrieve(agency.stripeSubscriptionId);
+    const item = subscription.items.data[0];
+    if (!item) {
+      return res.status(400).json({ error: "Subscription item not found" });
+    }
+
+    const prorationBehavior = effective === "next_renewal" ? "none" : "create_prorations";
+    const mappedPlan = findPlanByPriceId(newPriceId);
+
+    const updated = await stripe.subscriptions.update(subscription.id, {
+      items: [
+        {
+          id: item.id,
+          price: newPriceId,
+        },
+      ],
+      proration_behavior: prorationBehavior,
+      metadata: {
+        ...subscription.metadata,
+        planTier: mappedPlan?.planTier || subscription.metadata.planTier,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      subscriptionId: updated.id,
+      prorationBehavior,
+      newPriceId,
+      currentPeriodEnd: updated.current_period_end
+        ? new Date(updated.current_period_end * 1000).toISOString()
+        : null,
+    });
+  } catch (error: any) {
+    console.error("[BILLING] change-plan error", error);
+    const status = error?.status || 500;
+    return res.status(status).json({ error: error?.message || "Change plan failed" });
   }
 });
 
