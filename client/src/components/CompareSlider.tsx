@@ -112,10 +112,10 @@ export function CompareSlider({
       {/* Labels above the image */}
       {showLabels && (
         <div className="flex justify-between items-center mb-3 px-4">
-          <div className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+          <div className="bg-muted text-foreground px-4 py-2 rounded-full text-sm font-semibold shadow-card">
             {originalLabel}
           </div>
-          <div className="bg-green-600 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg">
+          <div className="bg-action-600 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-card">
             {enhancedLabel}
           </div>
         </div>
@@ -123,7 +123,7 @@ export function CompareSlider({
       
       {/* Image comparison slider */}
       <Card 
-        className="overflow-hidden relative bg-gray-900 h-full"
+        className="overflow-hidden relative bg-brand-900 h-full"
         style={{ height: '100%' }}
       >
         <div ref={containerRef} className="relative w-full h-full">

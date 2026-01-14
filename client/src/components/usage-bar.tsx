@@ -17,26 +17,26 @@ export function UsageBar({ label, used, total, warningLevel, type = "main" }: Us
   const getColorClass = () => {
     switch (warningLevel) {
       case "exhausted":
-        return "bg-red-500";
+        return "bg-status-error";
       case "critical":
-        return "bg-orange-500";
+        return "bg-status-warning";
       case "approaching":
-        return "bg-yellow-500";
+        return "bg-gold-500";
       default:
-        return "bg-green-500";
+        return "bg-status-success";
     }
   };
 
   const getTextColor = () => {
     switch (warningLevel) {
       case "exhausted":
-        return "text-red-700";
+        return "text-status-error";
       case "critical":
-        return "text-orange-700";
+        return "text-status-warning";
       case "approaching":
-        return "text-yellow-700";
+        return "text-gold-600";
       default:
-        return "text-gray-700";
+        return "text-muted-foreground";
     }
   };
 

@@ -10,6 +10,26 @@ import { UsageSummary } from "@/components/usage-bar";
 import { useUsage } from "@/hooks/use-usage";
 import { BundlePurchase } from "@/components/bundle-purchase";
 import { BillingSection } from "@/components/BillingSection";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Users,
+  Mail,
+  Crown,
+  Shield,
+  User,
+  Loader2,
+  Building2,
+  Sparkles,
+  Clock,
+} from "lucide-react";
 
 interface AgencyMember {
   id: string;
@@ -40,7 +60,7 @@ interface AgencyInfo {
   billingCountry?: "NZ" | "AU" | "ZA";
   billingCurrency?: "nzd" | "aud" | "zar" | "usd";
   currentPeriodEnd?: string;
-  activeUsers?: number; // For informational purposes only
+  activeUsers?: number;
   userRole: "owner" | "admin" | "member";
   trial?: {
     status: "none" | "pending" | "active" | "expired" | "converted";
@@ -50,6 +70,13 @@ interface AgencyInfo {
     remaining: number;
   };
 }
+
+// Role icon mapping
+const roleIcons = {
+  owner: Crown,
+  admin: Shield,
+  member: User,
+};
 
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
@@ -74,14 +101,12 @@ export default function AgencyPage() {
   useEffect(() => {
     loadAgencyData();
 
-    // Check for subscription success query parameter
     const params = new URLSearchParams(window.location.search);
     if (params.get("subscription") === "success") {
       toast({
         title: "Subscription Activated!",
         description: "Your subscription has been successfully activated. Welcome aboard!",
       });
-      // Clean up URL without page reload
       window.history.replaceState({}, "", "/agency");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,12 +116,10 @@ export default function AgencyPage() {
     try {
       setLoading(true);
 
-      // Load agency info
       const infoRes = await apiFetch("/api/agency/info");
       if (infoRes.ok) {
         const infoData = await infoRes.json();
 
-        // Map backend response to frontend format
         const agencyInfo: AgencyInfo = {
           agencyId: infoData.agency.agencyId,
           name: infoData.agency.name,
@@ -108,7 +131,7 @@ export default function AgencyPage() {
           billingCurrency: infoData.agency.billingCurrency,
           currentPeriodEnd: infoData.agency.currentPeriodEnd,
           activeUsers: infoData.activeUsers,
-          userRole: user?.role || "member", // Get role from AuthContext
+          userRole: user?.role || "member",
           trial: infoData.trial
             ? {
                 status: infoData.trial.status,
@@ -122,7 +145,6 @@ export default function AgencyPage() {
 
         setAgencyInfo(agencyInfo);
 
-        // Load members if admin or owner
         if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
           try {
             const membersRes = await apiFetch("/api/agency/members");
@@ -134,7 +156,6 @@ export default function AgencyPage() {
             console.error("Failed to load members:", err);
           }
 
-          // Load invites
           try {
             const invitesRes = await apiFetch("/api/agency/invites");
             if (invitesRes.ok) {
@@ -150,7 +171,7 @@ export default function AgencyPage() {
       console.error("Failed to load agency data:", error);
       toast({
         title: "Error",
-        description: "Failed to load agency information",
+        description: "Failed to load organization information",
         variant: "destructive",
       });
     } finally {
@@ -216,38 +237,30 @@ export default function AgencyPage() {
       if (res.ok) {
         toast({
           title: "Success",
-          description: `User ${enable ? "enabled" : "disabled"} successfully`,
+          description: `Team member ${enable ? "enabled" : "disabled"} successfully`,
         });
         loadAgencyData();
       } else {
         toast({
           title: "Error",
-          description: res.error || "Failed to update user",
+          description: res.error || "Failed to update team member",
           variant: "destructive",
         });
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to update user status",
+        description: "Failed to update team member status",
         variant: "destructive",
       });
     }
   };
 
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center">Loading agency information...</div>
-      </div>
-    );
-  }
-
   const handleCreateAgency = async () => {
     if (!agencyName.trim()) {
       toast({
         title: "Error",
-        description: "Please enter an agency name",
+        description: "Please enter an organization name",
         variant: "destructive",
       });
       return;
@@ -265,10 +278,9 @@ export default function AgencyPage() {
         await refreshUser();
         toast({
           title: "Success",
-          description: "Agency created successfully!",
+          description: "Organization created successfully!",
         });
         setAgencyName("");
-        // If backend returned agency details, apply immediately while fetch refreshes
         if (created?.agency && created?.user) {
           setAgencyInfo({
             agencyId: created.agency.agencyId,
@@ -288,7 +300,7 @@ export default function AgencyPage() {
       } else {
         const errorData = await res.json().catch(() => ({}));
         toast({
-          title: "Failed to create agency",
+          title: "Failed to create organization",
           description: errorData.error || "Unknown error",
           variant: "destructive",
         });
@@ -296,7 +308,7 @@ export default function AgencyPage() {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to create agency",
+        description: "Failed to create organization",
         variant: "destructive",
       });
     } finally {
@@ -304,26 +316,66 @@ export default function AgencyPage() {
     }
   };
 
+  // Loading state
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Billing & Team"
+          description="Manage your subscription and team members"
+        />
+        <div className="flex flex-col items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 text-muted-foreground animate-spin mb-3" />
+          <p className="text-sm text-muted-foreground">Loading organization info...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Create agency state
   if (!agencyInfo) {
     return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Your Agency</CardTitle>
-            <CardDescription>Get started by creating your agency account</CardDescription>
+      <div className="space-y-6">
+        <PageHeader
+          title="Get Started"
+          description="Create your organization to start enhancing property photos"
+        />
+        <Card className="max-w-md mx-auto">
+          <CardHeader className="text-center">
+            <div className="w-12 h-12 rounded-full bg-action-50 flex items-center justify-center mx-auto mb-3">
+              <Building2 className="w-6 h-6 text-action-600" />
+            </div>
+            <CardTitle>Create Your Organization</CardTitle>
+            <CardDescription>
+              Set up your organization to manage billing and invite team members
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Agency Name</label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Organization Name</label>
               <Input
-                placeholder="Enter your agency name"
+                placeholder="e.g., Smith Real Estate"
                 value={agencyName}
                 onChange={(e) => setAgencyName(e.target.value)}
-                className="mt-2"
               />
             </div>
-            <Button onClick={handleCreateAgency} disabled={creating} className="w-full">
-              {creating ? "Creating..." : "Create Agency"}
+            <Button
+              variant="brand"
+              onClick={handleCreateAgency}
+              disabled={creating}
+              className="w-full"
+            >
+              {creating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Create Organization
+                </>
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -332,45 +384,56 @@ export default function AgencyPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <h1 className="text-3xl font-bold">Agency Settings</h1>
+    <div className="space-y-6">
+      <PageHeader
+        title="Billing & Team"
+        description={`Manage ${agencyInfo.name}'s subscription and team`}
+      />
 
+      {/* Trial Banner */}
       {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
-        <Card>
-          <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle>Promo Trial</CardTitle>
-              <CardDescription>
-                {agencyInfo.trial.status === "active"
-                  ? `You have ${agencyInfo.trial.remaining} trial credits remaining.`
-                  : agencyInfo.trial.status === "expired"
-                  ? "Your trial has ended."
-                  : agencyInfo.trial.status === "converted"
-                  ? "You have upgraded. Trial credits are closed."
-                  : "Trial status updated."}
-              </CardDescription>
-              {agencyInfo.trial.expiresAt && (
-                <p className="text-sm text-muted-foreground">
-                  Expires {new Date(agencyInfo.trial.expiresAt).toLocaleString()}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Badge variant="secondary">{agencyInfo.trial.status}</Badge>
-              <Button variant="default" onClick={scrollToBilling}>
-                Upgrade now
+        <Card className="border-gold-400 bg-gold-50">
+          <CardContent className="py-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-gold-100">
+                  <Sparkles className="w-4 h-4 text-gold-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">
+                    {agencyInfo.trial.status === "active"
+                      ? `${agencyInfo.trial.remaining} trial enhancements remaining`
+                      : agencyInfo.trial.status === "expired"
+                      ? "Your trial has ended"
+                      : agencyInfo.trial.status === "converted"
+                      ? "You've upgraded! Trial complete."
+                      : "Trial status updated"}
+                  </p>
+                  {agencyInfo.trial.expiresAt && agencyInfo.trial.status === "active" && (
+                    <p className="text-sm text-muted-foreground">
+                      Expires {new Date(agencyInfo.trial.expiresAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <Button variant="brand" onClick={scrollToBilling}>
+                Upgrade Now
               </Button>
             </div>
-          </CardHeader>
+          </CardContent>
         </Card>
       )}
 
-      {/* Monthly Usage Card - Admin/Owner only */}
+      {/* Monthly Usage Card */}
       {isAdminOrOwner && usage && usage.hasAgency && (
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Usage</CardTitle>
-            <CardDescription>Your plan includes {usage.mainAllowance} enhanced images per month</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <span>Monthly Usage</span>
+            </CardTitle>
+            <CardDescription>
+              Your plan includes {usage.mainAllowance} enhanced images per month
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <UsageSummary
@@ -389,7 +452,7 @@ export default function AgencyPage() {
         </Card>
       )}
 
-      {/* Billing & Subscription - Admin/Owner only */}
+      {/* Billing Section */}
       {isAdminOrOwner && (
         <div id="billing-section">
           <BillingSection
@@ -408,83 +471,104 @@ export default function AgencyPage() {
         </div>
       )}
 
-      {/* Bundle Purchase - Admin/Owner only */}
+      {/* Bundle Purchase */}
       {isAdminOrOwner && <BundlePurchase />}
 
-      {/* Agency Info Card */}
+      {/* Organization Info Card */}
       <Card>
         <CardHeader>
-          <CardTitle>{agencyInfo.name}</CardTitle>
-          <CardDescription>Plan: {agencyInfo.planTier}</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-muted-foreground" />
+            {agencyInfo.name}
+          </CardTitle>
+          <CardDescription>
+            {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)} Plan
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {agencyInfo.activeUsers !== undefined && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Team Size</span>
-                <Badge variant="secondary">
-                  {agencyInfo.activeUsers} active users
-                </Badge>
+              <div className="flex items-center justify-between py-2 border-b border-border">
+                <span className="text-sm text-muted-foreground">Team Size</span>
+                <span className="text-sm font-medium">
+                  {agencyInfo.activeUsers} {agencyInfo.activeUsers === 1 ? 'member' : 'members'}
+                </span>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Your Role</span>
-              <Badge>{agencyInfo.userRole}</Badge>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-muted-foreground">Your Role</span>
+              <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
+                {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
+              </Badge>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Invite Section - Admin/Owner only */}
+      {/* Invite Section */}
       {isAdminOrOwner && (
         <Card>
           <CardHeader>
-            <CardTitle>Invite Team Member</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-muted-foreground" />
+              Invite Team Member
+            </CardTitle>
             <CardDescription>
-              Send an invitation to add a new team member to your agency
+              Send an invitation to add a new team member
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Input
                 type="email"
-                placeholder="email@example.com"
+                placeholder="colleague@example.com"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 className="flex-1"
               />
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as "admin" | "member")}
-                className="border rounded px-3 py-2"
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-              <Button onClick={handleInvite}>Send Invite</Button>
+              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as "admin" | "member")}>
+                <SelectTrigger className="w-full sm:w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={handleInvite}>
+                Send Invite
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Pending Invites - Admin/Owner only */}
+      {/* Pending Invites */}
       {isAdminOrOwner && invites.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Pending Invites</CardTitle>
-            <CardDescription>{invites.length} invitation(s) pending</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-muted-foreground" />
+              Pending Invitations
+            </CardTitle>
+            <CardDescription>
+              {invites.length} invitation{invites.length !== 1 ? 's' : ''} awaiting response
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {invites.map((invite) => (
-                <div key={invite.token} className="flex items-center justify-between p-3 border rounded">
+                <div
+                  key={invite.token}
+                  className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
+                >
                   <div>
-                    <div className="font-medium">{invite.email}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Role: {invite.role} • Expires: {new Date(invite.expiresAt).toLocaleDateString()}
-                    </div>
+                    <p className="font-medium text-foreground">{invite.email}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                    </p>
                   </div>
-                  <Badge variant="outline">Pending</Badge>
+                  <StatusBadge status="pending" label="Pending" />
                 </div>
               ))}
             </div>
@@ -492,40 +576,59 @@ export default function AgencyPage() {
         </Card>
       )}
 
-      {/* Members List - Admin/Owner only */}
+      {/* Team Members */}
       {isAdminOrOwner && members.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Team Members</CardTitle>
-            <CardDescription>{members.length} member(s)</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              Team Members
+            </CardTitle>
+            <CardDescription>
+              {members.length} team member{members.length !== 1 ? 's' : ''}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {members.map((member) => (
-                <div key={member.id} className="flex items-center justify-between p-3 border rounded">
-                  <div className="flex-1">
-                    <div className="font-medium">{member.displayName || member.name || member.email}</div>
-                    <div className="text-sm text-muted-foreground">{member.email}</div>
+              {members.map((member) => {
+                const RoleIcon = roleIcons[member.role];
+                return (
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                        <RoleIcon className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-foreground truncate">
+                          {member.displayName || member.name || member.email.split('@')[0]}
+                        </p>
+                        <p className="text-sm text-muted-foreground truncate">{member.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-4">
+                      <Badge variant={member.role === "owner" ? "default" : "secondary"}>
+                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                      </Badge>
+                      <StatusBadge
+                        status={member.isActive ? "success" : "error"}
+                        label={member.isActive ? "Active" : "Disabled"}
+                      />
+                      {member.role !== "owner" && agencyInfo.userRole === "owner" && (
+                        <Button
+                          size="sm"
+                          variant={member.isActive ? "outline" : "default"}
+                          onClick={() => handleToggleUser(member.id, !member.isActive)}
+                        >
+                          {member.isActive ? "Disable" : "Enable"}
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant={member.role === "owner" ? "default" : "secondary"}>
-                      {member.role}
-                    </Badge>
-                    <Badge variant={member.isActive ? "default" : "destructive"}>
-                      {member.isActive ? "Active" : "Disabled"}
-                    </Badge>
-                    {member.role !== "owner" && agencyInfo.userRole === "owner" && (
-                      <Button
-                        size="sm"
-                        variant={member.isActive ? "destructive" : "default"}
-                        onClick={() => handleToggleUser(member.id, !member.isActive)}
-                      >
-                        {member.isActive ? "Disable" : "Enable"}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

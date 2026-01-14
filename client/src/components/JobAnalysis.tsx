@@ -170,7 +170,7 @@ export function JobAnalysisPanel({ jobId }: JobAnalysisProps) {
   const getStatusBadge = () => {
     switch (analysis.status) {
       case "COMPLETE":
-        return <Badge className="bg-green-500"><CheckCircle className="mr-1 h-3 w-3" /> Complete</Badge>;
+        return <Badge className="bg-status-success text-white"><CheckCircle className="mr-1 h-3 w-3" /> Complete</Badge>;
       case "FAILED":
         return <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" /> Failed</Badge>;
       case "PENDING":
@@ -181,13 +181,13 @@ export function JobAnalysisPanel({ jobId }: JobAnalysisProps) {
   const getClassificationColor = (classification: string) => {
     switch (classification) {
       case "REAL_IMAGE_ISSUE":
-        return "bg-orange-500";
+        return "bg-status-warning";
       case "SYSTEM_ISSUE":
-        return "bg-red-500";
+        return "bg-status-error";
       case "MIXED":
-        return "bg-yellow-500";
+        return "bg-gold-500";
       default:
-        return "bg-gray-500";
+        return "bg-muted";
     }
   };
 

@@ -43,26 +43,53 @@ module.exports = {
           foreground: 'hsl(var(--card-foreground))',
         },
 
-        // Brand tokens
+        // ===== BRAND DESIGN SYSTEM =====
+        // Navy scale (primary brand)
         'brand': {
           50: '#f0f4f8',
           100: '#d9e2ec',
+          200: '#bcccdc',
+          300: '#9fb3c8',
+          400: '#829ab1',
           500: '#243b53', // Primary Navy
           600: '#102a43',
+          700: '#0d2137',
+          800: '#091a2b',
           900: '#061021', // Deepest Navy
         },
+        // Emerald action (CTAs, success)
         'action': {
-          500: '#27ab83', // Emerald Green (Buttons)
+          50: '#e6f7f1',
+          100: '#c3ead9',
+          400: '#3dc99b',
+          500: '#27ab83', // Primary Emerald
           600: '#199473',
+          700: '#127a5f',
         },
+        // Gold accent (premium, warnings)
         'gold': {
+          50: '#fefbea',
+          100: '#fef3c7',
+          400: '#f6c244',
           500: '#d69e2e', // Premium Accent
+          600: '#b7791f',
         },
+        // Surface tokens
         'surface': {
           DEFAULT: '#ffffff',
-          muted: '#f8fafc', // Slate-50
+          muted: '#f8fafc',
+          subtle: '#f1f5f9',
+        },
+        // Status semantic colors
+        'status': {
+          success: '#27ab83',
+          warning: '#d69e2e',
+          error: '#dc2626',
+          info: '#3b82f6',
+          processing: '#8b5cf6',
         },
 
+        // CSS variable-based brand tokens
         'brand-primary': 'hsl(var(--brand-primary))',
         'brand-accent': 'hsl(var(--brand-accent))',
         'brand-light': 'hsl(var(--brand-light))',
@@ -78,6 +105,8 @@ module.exports = {
       boxShadow: {
         'subtle': '0 1px 2px 0 rgba(36, 59, 83, 0.05)',
         'card': '0 4px 6px -1px rgba(36, 59, 83, 0.1), 0 2px 4px -1px rgba(36, 59, 83, 0.06)',
+        'elevated': '0 10px 25px -5px rgba(36, 59, 83, 0.1), 0 8px 10px -6px rgba(36, 59, 83, 0.05)',
+        'glow': '0 0 20px rgba(39, 171, 131, 0.15)',
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
@@ -87,6 +116,31 @@ module.exports = {
         padding: '1rem',
         screens: {
           '2xl': '1200px',
+        },
+      },
+      // Consistent spacing rhythm
+      spacing: {
+        '18': '4.5rem',
+        '22': '5.5rem',
+      },
+      // Animation presets
+      animation: {
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'slide-up': 'slideUp 0.3s ease-out',
+        'pulse-subtle': 'pulseSubtle 2s ease-in-out infinite',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        pulseSubtle: {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.7' },
         },
       },
     },

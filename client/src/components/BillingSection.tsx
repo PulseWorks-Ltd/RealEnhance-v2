@@ -31,10 +31,10 @@ const PLAN_NAMES: Record<string, string> = {
 };
 
 const STATUS_CONFIG = {
-  ACTIVE: { label: "Active", variant: "default" as const, color: "bg-green-500" },
-  TRIAL: { label: "Trial", variant: "secondary" as const, color: "bg-blue-500" },
-  PAST_DUE: { label: "Past Due", variant: "destructive" as const, color: "bg-yellow-500" },
-  CANCELLED: { label: "Cancelled", variant: "destructive" as const, color: "bg-red-500" },
+  ACTIVE: { label: "Active", variant: "default" as const, color: "bg-status-success" },
+  TRIAL: { label: "Trial", variant: "secondary" as const, color: "bg-status-info" },
+  PAST_DUE: { label: "Past Due", variant: "destructive" as const, color: "bg-status-warning" },
+  CANCELLED: { label: "Cancelled", variant: "destructive" as const, color: "bg-status-error" },
 };
 
 export function BillingSection({ agency }: BillingSectionProps) {
