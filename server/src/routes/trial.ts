@@ -96,7 +96,7 @@ router.post("/start", rateLimit, async (req: Request, res: Response) => {
     });
 
     const displayName = getDisplayName(newUser);
-    const sessionUser: Partial<UserRecord> = {
+    const sessionUser: any = {
       id: newUser.id,
       email: newUser.email,
       name: newUser.name,
