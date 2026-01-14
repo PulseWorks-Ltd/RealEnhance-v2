@@ -185,8 +185,17 @@ const NavItem = ({
         : "text-brand-400 hover:bg-brand-800/50 hover:text-brand-100"
     )}
   >
-    <Icon className={cn("w-[18px] h-[18px] flex-shrink-0", isActive ? "text-action-400" : "text-brand-400 group-hover:text-brand-200")} />
-    <span className="text-sm font-medium">{label}</span>
+    {({ isActive }) => (
+      <>
+        <Icon
+          className={cn(
+            "w-[18px] h-[18px] flex-shrink-0",
+            isActive ? "text-action-400" : "text-brand-400 group-hover:text-brand-200"
+          )}
+        />
+        <span className="text-sm font-medium">{label}</span>
+      </>
+    )}
   </NavLink>
 );
 
