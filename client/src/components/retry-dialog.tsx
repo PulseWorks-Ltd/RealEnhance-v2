@@ -92,7 +92,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
           {originalImageUrl && enhancedImageUrl && (
             <div className="mb-4">
               <Label className="text-sm font-medium mb-2 block">Preview Comparison</Label>
-              <div className="relative w-full h-64 bg-brand-light rounded-lg overflow-hidden border">
+              <div className="relative w-full h-64 bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
                 <div className="absolute inset-0">
                   <img 
                     src={enhancedImageUrl} 
@@ -111,11 +111,11 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                   />
                 </div>
                 <div
-                  className="absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-10"
+                  className="absolute top-0 bottom-0 w-1 bg-action-500 cursor-ew-resize z-10"
                   style={{ left: `${sliderPosition}%` }}
                 >
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-action-600">
+                    <svg className="w-4 h-4 text-action-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
                     </svg>
                   </div>
@@ -218,7 +218,8 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             >
               Cancel
             </Button>
-            <Button 
+            <Button
+              variant="action"
               onClick={handleSubmit}
               disabled={isLoading}
               data-testid="button-retry-enhance"

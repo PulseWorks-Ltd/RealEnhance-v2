@@ -122,8 +122,8 @@ export function CompareSlider({
       )}
       
       {/* Image comparison slider */}
-      <Card 
-        className="overflow-hidden relative bg-brand-900 h-full"
+      <Card
+        className="overflow-hidden relative bg-slate-100 h-full"
         style={{ height: '100%' }}
       >
         <div ref={containerRef} className="relative w-full h-full">
@@ -146,15 +146,15 @@ export function CompareSlider({
           />
           
           {/* Slider Handle */}
-          <div 
-            className="absolute top-0 bottom-0 w-1 bg-gradient-to-b from-brand-primary to-brand-accent cursor-ew-resize z-10 touch-none"
+          <div
+            className="absolute top-0 bottom-0 w-1 bg-action-500 cursor-ew-resize z-10 touch-none"
             style={{ left: `${currentPosition}%` }}
             onMouseDown={handleMouseDown}
             onTouchStart={handleTouchStart}
             data-testid={`${testId}-handle`}
           >
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-purple-500">
-              <svg className="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 24 24">
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-action-600">
+              <svg className="w-4 h-4 text-action-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M18 9v6h-2V9h2zm-8 0v6H8V9h2z"/>
               </svg>
             </div>

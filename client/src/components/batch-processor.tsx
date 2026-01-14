@@ -3063,11 +3063,6 @@ export default function BatchProcessor() {
           <div className="text-center">
             <h3 className="text-lg font-semibold mb-4">{previewImage.filename}</h3>
             
-            {/* Debug logging removed: do not use console.log in JSX */}
-              filename: previewImage.filename,
-              hasUrl: !!previewImage.url,
-              hasOriginal: !!previewImage.originalUrl
-            
             {/* Show before/after slider if we have both original and enhanced images */}
             {previewImage.originalUrl ? (
               <div className="mb-4">
@@ -3103,41 +3098,41 @@ export default function BatchProcessor() {
             )}
             
             <div className="mt-4 flex justify-center gap-3">
-              <button 
-                onClick={() => setPreviewImage(null)} 
-                className="px-4 py-2 bg-brand-light0 text-white rounded hover:bg-gray-600 transition-colors"
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
                 data-testid="button-close-preview"
               >
                 Close
               </button>
-              <button 
+              <button
                 onClick={() => {
                   const index = previewImage.index;
                   setPreviewImage(null);
                   handleOpenRetryDialog(index);
                 }}
                 disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
-                className="px-4 py-2 bg-action-600 text-white rounded hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="button-retry-from-preview"
               >
                 Retry
               </button>
-              <button 
+              <button
                 onClick={() => {
                   const index = previewImage.index;
                   setPreviewImage(null);
                   handleEditImage(index);
                 }}
                 disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
-                className="px-4 py-2 bg-brand-accent text-white rounded hover:bg-brand-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="button-edit-from-preview"
               >
                 Edit
               </button>
-              <a 
-                href={previewImage.url} 
-                target="_blank" 
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              <a
+                href={previewImage.url}
+                target="_blank"
+                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
                 data-testid="link-download-preview"
               >
                 Download
