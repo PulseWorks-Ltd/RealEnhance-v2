@@ -104,7 +104,7 @@ async function main() {
   const sessionCookieOptions = {
     httpOnly: true,
     sameSite: sessionOptions.cookie?.sameSite,
-    secure: sessionOptions.cookie?.secure,
+    secure: sessionOptions.cookie?.secure === true,
     path: sessionOptions.cookie?.path,
   } as const;
 

@@ -352,7 +352,7 @@ router.get("/subscription/preview-change", requireAuth, async (req: Request, res
       return res.status(400).json({ error: "Subscription item not found" });
     }
 
-    const upcoming = await stripe.invoices.retrieveUpcoming({
+    const upcoming = await (stripe.invoices as any).retrieveUpcoming({
       customer: agency.stripeCustomerId,
       subscription: subscription.id,
       subscription_items: [
@@ -362,7 +362,7 @@ router.get("/subscription/preview-change", requireAuth, async (req: Request, res
         },
       ],
       subscription_proration_behavior: "create_prorations",
-    });
+    } as any);
 
     const currency = (upcoming.currency || subscription.currency || "nzd") as BillingCurrency;
     const dueToday = upcoming.amount_due || 0;
@@ -441,8 +441,8 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
       subscriptionId: updated.id,
       prorationBehavior,
       newPriceId,
-      currentPeriodEnd: updated.current_period_end
-        ? new Date(updated.current_period_end * 1000).toISOString()
+      currentPeriodEnd: (updated as any).current_period_end
+        ? new Date((updated as any).current_period_end * 1000).toISOString()
         : null,
     });
   } catch (error: any) {
