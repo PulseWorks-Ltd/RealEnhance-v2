@@ -121,6 +121,18 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   },
 };
 
+// Centralized lookup for Stripe Price ID -> plan mapping (NZD/AUD only for now)
+export const PRICE_ID_TO_PLAN_TIER: Record<string, PlanTier> = (() => {
+  const entries: Record<string, PlanTier> = {};
+  for (const planTier of Object.keys(STRIPE_PLANS) as PlanTier[]) {
+    const priceIds = STRIPE_PLANS[planTier].stripePriceIdByCurrency || {};
+    for (const priceId of Object.values(priceIds)) {
+      if (priceId) entries[priceId] = planTier;
+    }
+  }
+  return entries;
+})();
+
 /**
  * Get plan configuration by tier
  */
@@ -150,14 +162,9 @@ export function getStripePriceId(planTier: PlanTier, currency: BillingCurrency):
  */
 export function findPlanByPriceId(priceId?: string | null): { planTier: PlanTier; plan: StripePlanConfig } | null {
   if (!priceId) return null;
-  for (const planTier of Object.keys(STRIPE_PLANS) as PlanTier[]) {
-    const plan = STRIPE_PLANS[planTier];
-    const ids = Object.values(plan.stripePriceIdByCurrency).filter(Boolean);
-    if (ids.includes(priceId)) {
-      return { planTier, plan };
-    }
-  }
-  return null;
+  const planTier = PRICE_ID_TO_PLAN_TIER[priceId];
+  if (!planTier) return null;
+  return { planTier, plan: STRIPE_PLANS[planTier] };
 }
 
 export const PLAN_ORDER: PlanTier[] = ["starter", "pro", "agency"];

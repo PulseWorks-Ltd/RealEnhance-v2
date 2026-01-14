@@ -107,7 +107,11 @@ router.post(
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
             const stripePriceId = subscription.items.data[0]?.price.id;
             const mapped = findPlanByPriceId(stripePriceId);
-            const planTierFromPrice = mapped?.planTier || (planTier as PlanTier);
+            if (!mapped) {
+              console.error(`[STRIPE] Unknown price ID ${stripePriceId} for subscription ${subscriptionId}`);
+              return res.status(400).json({ error: "Unknown Stripe price ID" });
+            }
+            const planTierFromPrice = mapped.planTier;
 
             // Update agency with subscription details
             const agency = await getAgency(agencyId);
@@ -230,6 +234,8 @@ router.post(
             if (mapped) {
               agency.planTier = mapped.planTier;
               await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            } else {
+              console.error(`[STRIPE] Unknown price ID ${newPriceId} on subscription.update for agency ${agencyId}`);
             }
           }
 
@@ -305,6 +311,8 @@ router.post(
             if (mapped) {
               agency.planTier = mapped.planTier;
               await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            } else {
+              console.error(`[STRIPE] Unknown price ID ${priceId} on invoice.payment_succeeded for agency ${agencyId}`);
             }
           }
 
@@ -346,6 +354,8 @@ router.post(
             if (mapped) {
               agency.planTier = mapped.planTier;
               await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
+            } else {
+              console.error(`[STRIPE] Unknown price ID ${priceId} on invoice.payment_failed for agency ${agencyId}`);
             }
           }
 
