@@ -19,6 +19,7 @@ const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
 const ResetPassword = lazy(() => import("@/pages/reset-password"));
 const ChangePassword = lazy(() => import("@/pages/change-password"));
 const ProfileSettings = lazy(() => import("@/pages/settings/profile"));
+const SecuritySettings = lazy(() => import("@/pages/settings/security"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 
 function LegacyMyPhotosRedirect() {
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/change-password" element={<ChangePassword />} />
           <Route path="/settings/profile" element={<ProfileSettings />} />
+          <Route path="/settings/security" element={<SecuritySettings />} />
           <Route path="/editor" element={<Editor />} />
           <Route path="/results" element={<Results />} />
           <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />

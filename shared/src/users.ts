@@ -74,8 +74,9 @@ export async function createUser(params: {
   name?: string;
   firstName?: string;
   lastName?: string;
-  authProvider?: "google" | "email";
+  authProvider?: "google" | "email" | "both";
   passwordHash?: string;
+  googleId?: string;
   agencyId?: string;
   role?: "owner" | "admin" | "member";
 }): Promise<UserRecord> {
@@ -94,6 +95,7 @@ export async function createUser(params: {
     lastName: params.lastName?.trim(),
     authProvider: params.authProvider || "email",
     passwordHash: params.passwordHash,
+    googleId: params.googleId,
     agencyId: params.agencyId,
     role: params.role,
     credits: 50, // Default starting credits
@@ -164,8 +166,9 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
         name: data.name,
         firstName: data.firstName || undefined,
         lastName: data.lastName || undefined,
-        authProvider: (data.authProvider as "google" | "email") || undefined,
+        authProvider: (data.authProvider as "google" | "email" | "both") || undefined,
         passwordHash: data.passwordHash || undefined,
+        googleId: data.googleId || undefined,
         agencyId: data.agencyId || undefined,
         role: (data.role as "owner" | "admin" | "member") || undefined,
         credits: parseInt(data.credits || "0", 10),
@@ -230,6 +233,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
         lastName: user.lastName || "",
         authProvider: user.authProvider || "",
         passwordHash: user.passwordHash || "",
+        googleId: user.googleId || "",
         agencyId: user.agencyId || "",
         role: user.role || "",
         credits: user.credits.toString(),
@@ -263,6 +267,7 @@ export async function upsertUserFromGoogle(params: {
   name: string;
   firstName?: string;
   lastName?: string;
+  googleId?: string;
 }): Promise<UserRecord> {
   let user = await getUserByEmail(params.email);
 
@@ -274,16 +279,22 @@ export async function upsertUserFromGoogle(params: {
       firstName: params.firstName,
       lastName: params.lastName,
       authProvider: "google",
+      googleId: params.googleId,
     });
   } else {
     // Update existing user
     user.name = params.name || user.name;
     user.firstName = params.firstName || user.firstName;
     user.lastName = params.lastName || user.lastName;
-    // Link Google account if user originally signed up with email
-    if (!user.authProvider || user.authProvider === "email") {
+    user.googleId = params.googleId || user.googleId;
+
+    // Update authProvider based on passwordHash presence
+    if (user.passwordHash && user.authProvider === "email") {
+      user.authProvider = "both";
+    } else if (!user.passwordHash) {
       user.authProvider = "google";
     }
+
     await updateUser(user);
     return user;
   }

@@ -13,6 +13,7 @@ type AuthUser = {
   displayName?: string | null;
   agencyId?: string | null;
   role?: "owner" | "admin" | "member";
+  authProvider?: "email" | "google" | "both";
 };
 
 type AuthState = {
@@ -26,6 +27,7 @@ type AuthState = {
   requestPasswordReset: (email: string) => Promise<void>;
   confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  setPassword: (newPassword: string) => Promise<void>;
   updateProfile: (payload: { firstName: string; lastName: string }) => Promise<AuthUser>;
 };
 
@@ -221,6 +223,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
+      await refreshUser();
+    },
+    setPassword: async (newPassword: string) => {
+      const response = await apiFetch("/api/auth/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to set password");
+      }
       await refreshUser();
     },
     updateProfile: async (payload: { firstName: string; lastName: string }) => {

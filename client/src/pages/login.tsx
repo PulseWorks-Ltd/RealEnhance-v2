@@ -36,7 +36,12 @@ export default function Login() {
       }
       navigate(redirectTo);
     } catch (err: any) {
-      setError(err.message || (isSignUp ? "Signup failed" : "Login failed"));
+      // Handle AUTH_NO_PASSWORD error specifically
+      if (err.message?.includes("no password set") || err.message?.includes("Sign in with Google")) {
+        setError("This account has no password. Please sign in with Google instead, then set a password in Settings.");
+      } else {
+        setError(err.message || (isSignUp ? "Signup failed" : "Login failed"));
+      }
     } finally {
       setLoading(false);
     }

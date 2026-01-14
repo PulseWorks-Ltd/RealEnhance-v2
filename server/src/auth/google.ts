@@ -44,12 +44,56 @@ function initPassport() {
       async (accessToken, _refreshToken, profile, done) => {
         try {
           const email = profile.emails?.[0]?.value;
+          const emailVerified = profile.emails?.[0]?.verified ?? false;
+          const googleId = profile.id;
           const name = profile.displayName ?? "Unnamed User";
           const firstName = profile.name?.givenName;
           const lastName = profile.name?.familyName;
-          if (!email) return done(new Error("No email returned from Google profile"));
 
-          const user = await upsertUserFromGoogle({ email, name, firstName, lastName });
+          if (!email) {
+            return done(new Error("No email returned from Google profile"));
+          }
+
+          // Security: Only link verified emails
+          if (!emailVerified) {
+            console.warn(`[Google OAuth] Unverified email for ${email}, proceeding with caution`);
+          }
+
+          // Check for existing user by email BEFORE creating
+          let user = await getUserByEmail(email);
+
+          if (user) {
+            // Account exists - link Google to it
+            if (user.googleId && user.googleId !== googleId) {
+              return done(new Error("This email is already linked to a different Google account"));
+            }
+
+            // Link Google to existing account
+            user.googleId = googleId;
+            user.firstName = firstName || user.firstName;
+            user.lastName = lastName || user.lastName;
+            user.name = name || user.name;
+
+            // Update authProvider based on passwordHash presence
+            if (user.passwordHash && user.authProvider === "email") {
+              user.authProvider = "both";
+            } else if (!user.passwordHash) {
+              user.authProvider = "google";
+            }
+
+            await updateUser(user);
+            console.log(`[Google OAuth] Linked Google account to existing user ${user.id}`);
+          } else {
+            // No existing user - create new Google-only account
+            user = await upsertUserFromGoogle({
+              email,
+              name,
+              firstName,
+              lastName,
+              googleId
+            });
+            console.log(`[Google OAuth] Created new Google user ${user.id}`);
+          }
 
           const displayName = getDisplayName(user);
 

@@ -21,7 +21,8 @@ export interface UserRecord {
   firstName?: string;
   lastName?: string;
   passwordHash?: string;  // Optional: undefined for OAuth-only users
-  authProvider: "email" | "google";  // Track authentication method
+  authProvider: "email" | "google" | "both";  // Track authentication method (both = email+password AND Google)
+  googleId?: string;  // Optional: Google profile ID for account linking
   credits: number; // DEPRECATED: Kept for backward compatibility, not enforced
   imageIds: ImageId[];
   agencyId?: string | null; // Optional: links user to an agency for usage tracking

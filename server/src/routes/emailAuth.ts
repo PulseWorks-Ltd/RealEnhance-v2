@@ -122,8 +122,10 @@ export function emailAuthRouter() {
       // Check if this is an OAuth-only user (no password set)
       if (!user.passwordHash) {
         return res.status(400).json({
-          error: "This account uses Google sign-in. Please log in with Google.",
-          isOAuthOnly: true
+          error: "This account has no password set. Sign in with Google, then you can set a password in Settings.",
+          code: "AUTH_NO_PASSWORD",
+          isOAuthOnly: true,
+          authProvider: user.authProvider
         });
       }
 
@@ -274,6 +276,57 @@ export function emailAuthRouter() {
     } catch (err) {
       console.error("[auth] change-password error", err);
       return res.status(500).json({ error: "Failed to change password" });
+    }
+  });
+
+  // POST /api/auth/set-password - Set password for OAuth-only users (authenticated)
+  r.post("/set-password", async (req: Request, res: Response) => {
+    try {
+      const { newPassword } = req.body;
+
+      if (!newPassword) {
+        return res.status(400).json({ error: "Password is required" });
+      }
+
+      const user = await requireAuthedUser(req, res);
+      if (!user) return;
+
+      // Check if user already has a password
+      if (user.passwordHash) {
+        return res.status(400).json({
+          error: "Password already set. Use 'Change Password' instead.",
+          code: "PASSWORD_ALREADY_SET"
+        });
+      }
+
+      // Validate password strength
+      const passwordValidation = validatePassword(newPassword);
+      if (!passwordValidation.valid) {
+        return res.status(400).json({ error: passwordValidation.error });
+      }
+
+      // Hash and set password
+      const passwordHash = await hashPassword(newPassword);
+      user.passwordHash = passwordHash;
+
+      // Update authProvider to "both" if was Google-only
+      if (user.authProvider === "google") {
+        user.authProvider = "both";
+      }
+
+      const updated = await updateUser(user.id, { passwordHash, authProvider: user.authProvider });
+
+      // Refresh session
+      (req.session as any).user = buildSessionUser(updated);
+
+      console.log(`[auth] Password set for OAuth user ${user.id}`);
+      return res.json({
+        ok: true,
+        message: "Password set successfully. You can now log in with email and password."
+      });
+    } catch (err) {
+      console.error("[auth] set-password error", err);
+      return res.status(500).json({ error: "Failed to set password" });
     }
   });
 
