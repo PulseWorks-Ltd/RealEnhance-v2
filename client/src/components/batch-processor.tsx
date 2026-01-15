@@ -22,13 +22,26 @@ import { Switch } from "@/components/ui/switch";
 
 type RunState = "idle" | "running" | "done";
 
-type SceneLabel = "interior" | "exterior";
+type SceneType = "interior" | "exterior";
+type SceneLabel = SceneType;
 
-interface ScenePrediction {
-  label: SceneLabel | null;
-  confidence: number | null;
+type SceneDetectResult = {
+  scene: SceneType | null;
+  confidence: number; // 0..1
+  signal: number;     // unpenalized/penalized aggregate signal 0..1
+  features: {
+    skyTop10: number;
+    skyTop40: number;
+    grassBottom: number;
+    blueOverall: number;
+    greenOverall: number;
+    meanLum: number;
+  };
+  reason: "confident_interior" | "confident_exterior" | "uncertain";
   source?: "client" | "server";
-}
+};
+
+const EMPTY_SCENE_FEATURES = { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 };
 
 // Clamp a number into [0,1]; return null when not finite
 const clamp01 = (value: number | null | undefined): number | null => {
@@ -38,12 +51,34 @@ const clamp01 = (value: number | null | undefined): number | null => {
   return Math.min(1, Math.max(0, v));
 };
 
-// Scene confidence threshold (configurable via env; defaults to 0.75)
-const SCENE_CONFIDENCE_THRESHOLD = (() => {
+// Scene confidence guard (auto-accept only when >= guard)
+const SCENE_CONFIDENCE_GUARD = (() => {
   const raw = Number((import.meta as any).env?.VITE_SCENE_CONF_THRESHOLD);
   const clamped = clamp01(raw);
   return clamped === null ? 0.75 : clamped;
 })();
+
+// Scene signal thresholds (two-band hysteresis)
+const SCENE_SIGNAL_LOW = (() => {
+  const raw = Number((import.meta as any).env?.VITE_SCENE_SIGNAL_LOW);
+  const clamped = clamp01(raw);
+  return clamped === null ? 0.06 : clamped;
+})();
+
+const SCENE_SIGNAL_HIGH = (() => {
+  const raw = Number((import.meta as any).env?.VITE_SCENE_SIGNAL_HIGH);
+  const clamped = clamp01(raw);
+  const safe = clamped === null ? 0.12 : clamped;
+  return Math.max(safe, SCENE_SIGNAL_LOW + 0.01); // ensure ordering
+})();
+
+const SCENE_CONF_SCALE = (() => {
+  const raw = Number((import.meta as any).env?.VITE_SCENE_CONF_SCALE);
+  if (!Number.isFinite(raw) || raw <= 0) return 0.20;
+  return raw;
+})();
+
+const IS_DEV = !!(import.meta as any).env?.DEV;
 
 // Normalizer functions to handle shape mismatch between backend and frontend
 function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; error?: string } | null {
@@ -262,7 +297,7 @@ export default function BatchProcessor() {
   
   // Images tab state
   const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
-  const [scenePredictions, setScenePredictions] = useState<Record<number, ScenePrediction>>({});
+  const [scenePredictions, setScenePredictions] = useState<Record<number, SceneDetectResult>>({});
   const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
   const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
@@ -284,6 +319,7 @@ export default function BatchProcessor() {
   const scheduledRef = useRef(false);
   const processedSetRef = useRef<Set<number>>(new Set());
   const filesFingerprintRef = useRef<string>("");
+  const sceneDetectCacheRef = useRef<Record<string, SceneDetectResult>>({});
   // Track which jobIds have shown a strict-retry toast
   const strictNotifiedRef = useRef<Set<string>>(new Set());
   // Track which indices are currently undergoing strict validator retry
@@ -298,14 +334,20 @@ export default function BatchProcessor() {
   const { refreshUser } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
 
-  const isHighConfidence = (pred?: ScenePrediction | null) => {
-    const conf = clamp01(pred?.confidence ?? null);
-    return !!pred?.label && conf !== null && conf >= SCENE_CONFIDENCE_THRESHOLD;
+  const isSceneAutoAcceptable = (pred?: SceneDetectResult | null) => {
+    if (!pred) return false;
+    if (!pred.scene) return false;
+    const conf = clamp01(pred.confidence);
+    if (conf === null) return false;
+    if (pred.reason === "uncertain") return false;
+    return conf >= SCENE_CONFIDENCE_GUARD;
   };
 
-  // Lightweight client-side scene detector (prefill UX): interior vs exterior + confidence
-  // More robust heuristic using regional sampling and relaxed thresholds.
-  async function detectSceneFromFile(f: File): Promise<ScenePrediction> {
+  // Lightweight client-side scene detector (prefill UX): 3-state with uncertain band
+  async function detectSceneFromFile(f: File): Promise<SceneDetectResult> {
+    const cacheKey = `${f.name}:${f.size}:${f.lastModified}`;
+    if (sceneDetectCacheRef.current[cacheKey]) return sceneDetectCacheRef.current[cacheKey];
+
     try {
       const bmp = await createImageBitmap(f);
       // Normalize width to 256 while preserving aspect
@@ -324,7 +366,6 @@ export default function BatchProcessor() {
       let grassBottom40 = 0;
       let luminanceSum = 0;
 
-      // Helper: classify pixel H,S,V
       for (let i = 0, px = 0; i < img.data.length; i += 4, px++) {
         const r = img.data[i];
         const g = img.data[i + 1];
@@ -347,16 +388,12 @@ export default function BatchProcessor() {
         total++;
         luminanceSum += v;
 
-        // Overall blue/green presence (broader bands)
         if (v > 0.45 && s > 0.10 && h >= 190 && h <= 255) blueOverall++;
         if (v > 0.30 && s > 0.30 && h >= 70 && h <= 160) greenOverall++;
 
-        // Sky-like pixels: light, low-ish saturation blues
         const isSkyish = v > 0.65 && s < 0.55 && h >= 185 && h <= 245;
-        // Grass-like pixels: green with reasonable sat
         const isGrass = v > 0.35 && s > 0.35 && h >= 75 && h <= 150;
 
-        // Weight top region for sky, bottom region for grass
         if (isSkyish) {
           if (y < height * 0.10) skyTop10++;
           if (y < height * 0.40) skyTop40++;
@@ -365,49 +402,76 @@ export default function BatchProcessor() {
       }
 
       const denom = Math.max(1, total);
-      const skyTop10Pct = skyTop10 / denom;
-      const skyTop40Pct = skyTop40 / denom;
-      const grassBottomPct = grassBottom40 / denom;
-      const blueOverallPct = blueOverall / denom;
-      const greenOverallPct = greenOverall / denom;
-      const meanLum = luminanceSum / denom;
+      const features = {
+        skyTop10: skyTop10 / denom,
+        skyTop40: skyTop40 / denom,
+        grassBottom: grassBottom40 / denom,
+        blueOverall: blueOverall / denom,
+        greenOverall: greenOverall / denom,
+        meanLum: luminanceSum / denom,
+      };
 
-      // Heuristic rules tuned for typical RE photos
-      // Primary cues
-      const skyStrong = skyTop10Pct >= 0.06 || skyTop40Pct >= 0.12;
-      const grassStrong = grassBottomPct >= 0.08;
-      // Secondary cues supporting low sky/grass (e.g., cropped exterior, night)
-      const blueSupport = blueOverallPct >= 0.18 && skyTop40Pct >= 0.05;
-      const greenSupport = greenOverallPct >= 0.18 && grassBottomPct >= 0.05;
-      // Night exterior: dim image, modest blue band near top
-      const nightSkySupport = meanLum < 0.40 && skyTop40Pct >= 0.06;
-
-      const isExterior = skyStrong || grassStrong || blueSupport || greenSupport || nightSkySupport;
-
-      // Confidence proxy: strongest signal from sky/grass bands
-      const signal = Math.max(
-        skyTop10Pct,
-        skyTop40Pct * 0.9,
-        grassBottomPct,
-        blueOverallPct * 0.8,
-        greenOverallPct * 0.8
+      // Aggregate signal (pre-penalty)
+      let signal = Math.max(
+        features.skyTop10,
+        features.skyTop40 * 0.9,
+        features.grassBottom,
+        features.blueOverall * 0.8,
+        features.greenOverall * 0.8
       );
-      const confidence = clamp01(signal * 2) ?? 0.55; // lift modest signals
 
-      // Debug: surface quick metrics to help tuning if needed
-      console.log("[SceneDetect] skyTop10=", skyTop10Pct.toFixed(3),
-        " skyTop40=", skyTop40Pct.toFixed(3),
-        " grassBottom=", grassBottomPct.toFixed(3),
-        " blueOverall=", blueOverallPct.toFixed(3),
-        " greenOverall=", greenOverallPct.toFixed(3),
-        " meanLum=", meanLum.toFixed(3),
+      // Contradiction penalties to push ambiguous cases to uncertain
+      if (features.skyTop40 < 0.03 && features.blueOverall > 0.10) signal *= 0.7;
+      if (features.grassBottom < 0.02 && features.greenOverall > 0.08) signal *= 0.8;
+      if (features.meanLum > 0.70 && features.skyTop40 < 0.02) signal *= 0.85;
+
+      // Two-threshold band decision
+      let scene: SceneType | null = null;
+      let reason: SceneDetectResult["reason"] = "uncertain";
+      if (signal <= SCENE_SIGNAL_LOW) {
+        scene = "interior";
+        reason = "confident_interior";
+      } else if (signal >= SCENE_SIGNAL_HIGH) {
+        scene = "exterior";
+        reason = "confident_exterior";
+      }
+
+      // Confidence based on distance from the uncertain band
+      const mid = (SCENE_SIGNAL_LOW + SCENE_SIGNAL_HIGH) / 2;
+      const halfBand = (SCENE_SIGNAL_HIGH - SCENE_SIGNAL_LOW) / 2;
+      const margin = Math.abs(signal - mid) - halfBand;
+      const confidence = clamp01(margin / SCENE_CONF_SCALE) ?? 0;
+
+      console.log(
+        "[SceneDetect] skyTop10=", features.skyTop10.toFixed(3),
+        " skyTop40=", features.skyTop40.toFixed(3),
+        " grassBottom=", features.grassBottom.toFixed(3),
+        " blueOverall=", features.blueOverall.toFixed(3),
+        " greenOverall=", features.greenOverall.toFixed(3),
+        " meanLum=", features.meanLum.toFixed(3),
         " signal=", signal.toFixed(3),
-        " -> exterior=", isExterior);
+        " low=", SCENE_SIGNAL_LOW.toFixed(3),
+        " high=", SCENE_SIGNAL_HIGH.toFixed(3),
+        " -> scene=", scene,
+        " conf=", (confidence ?? 0).toFixed(2),
+        " reason=", reason
+      );
 
-      return { label: isExterior ? "exterior" : "interior", confidence, source: "client" };
+      const result: SceneDetectResult = { scene, confidence: confidence ?? 0, signal, features, reason, source: "client" };
+      sceneDetectCacheRef.current[cacheKey] = result;
+      return result;
     } catch (e) {
-      console.warn("[SceneDetect] Fallback to interior due to error:", e);
-      return { label: "interior", confidence: null, source: "client" };
+      console.warn("[SceneDetect] Detection failed; marking uncertain:", e);
+      const fallback: SceneDetectResult = {
+        scene: null,
+        confidence: 0,
+        signal: 0,
+        features: { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 },
+        reason: "uncertain",
+        source: "client",
+      };
+      sceneDetectCacheRef.current[cacheKey] = fallback;
+      return fallback;
     }
   }
 
@@ -427,6 +491,7 @@ export default function BatchProcessor() {
         setImageSkyReplacement({});
         setMetaByIndex({});
         setSelection(new Set());
+        sceneDetectCacheRef.current = {};
       }
       filesFingerprintRef.current = fp;
     }
@@ -447,7 +512,7 @@ export default function BatchProcessor() {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
     (async () => {
-      const nextPreds: Record<number, ScenePrediction> = {};
+      const nextPreds: Record<number, SceneDetectResult> = {};
       const skyDefaults: Record<number, boolean> = {};
       await Promise.all(files.map(async (f, i) => {
         // only auto-fill if user hasn't set it
@@ -455,12 +520,12 @@ export default function BatchProcessor() {
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
           nextPreds[i] = prediction;
-          if (isHighConfidence(prediction) && prediction.label) {
+          if (isSceneAutoAcceptable(prediction) && prediction.scene) {
             setImageSceneTypes(prev => {
               if (prev[i] && prev[i] !== "auto") return prev;
-              return { ...prev, [i]: prediction.label as string };
+              return { ...prev, [i]: prediction.scene as string };
             });
-            if (prediction.label === "exterior" && imageSkyReplacement[i] === undefined) {
+            if (prediction.scene === "exterior" && imageSkyReplacement[i] === undefined) {
               skyDefaults[i] = true;
             }
           } else {
@@ -486,7 +551,7 @@ export default function BatchProcessor() {
     const explicit = imageSceneTypes[index];
     if (explicit === "interior" || explicit === "exterior") return explicit;
     const pred = scenePredictions[index];
-    if (isHighConfidence(pred) && pred?.label) return pred.label;
+    if (isSceneAutoAcceptable(pred) && pred?.scene) return pred.scene;
     return null;
   }, [imageSceneTypes, scenePredictions]);
 
@@ -494,7 +559,7 @@ export default function BatchProcessor() {
     const explicit = imageSceneTypes[index];
     if (explicit === "interior" || explicit === "exterior") return false;
     const pred = scenePredictions[index];
-    if (isHighConfidence(pred)) return false;
+    if (isSceneAutoAcceptable(pred)) return false;
     return true; // no confident prediction and no user selection
   }, [imageSceneTypes, scenePredictions]);
 
@@ -520,19 +585,22 @@ export default function BatchProcessor() {
     return blockers;
   }, [files, imageValidationStatus]);
 
-  const recordScenePrediction = useCallback((index: number, prediction: ScenePrediction) => {
-    const normalized: ScenePrediction = {
-      label: prediction?.label ?? null,
-      confidence: clamp01(prediction?.confidence ?? null),
-      source: prediction?.source
+  const recordScenePrediction = useCallback((index: number, prediction: SceneDetectResult) => {
+    const normalized: SceneDetectResult = {
+      scene: prediction?.scene ?? null,
+      confidence: clamp01(prediction?.confidence) ?? 0,
+      signal: clamp01(prediction?.signal) ?? 0,
+      features: prediction?.features || EMPTY_SCENE_FEATURES,
+      reason: prediction?.reason ?? "uncertain",
+      source: prediction?.source || "server",
     };
     setScenePredictions(prev => ({ ...prev, [index]: normalized }));
-    if (isHighConfidence(normalized) && normalized.label) {
+    if (isSceneAutoAcceptable(normalized) && normalized.scene) {
       setImageSceneTypes(prev => {
         if (prev[index] && prev[index] !== "auto") return prev;
-        return { ...prev, [index]: normalized.label as string };
+        return { ...prev, [index]: normalized.scene as string };
       });
-      if (normalized.label === "exterior" && imageSkyReplacement[index] === undefined) {
+      if (normalized.scene === "exterior" && imageSkyReplacement[index] === undefined) {
         setImageSkyReplacement(prev => ({ ...prev, [index]: true }));
       }
     }
@@ -597,8 +665,15 @@ export default function BatchProcessor() {
         if (sceneType !== "auto") metaItem.sceneType = sceneType;
         const pred = scenePredictions[i];
         const predConf = clamp01(pred?.confidence ?? null);
-        if (pred?.label && predConf !== null) {
-          metaItem.scenePrediction = { label: pred.label, confidence: predConf };
+        if (pred) {
+          metaItem.scenePrediction = {
+            scene: pred.scene,
+            confidence: predConf,
+            signal: clamp01(pred.signal) ?? pred.signal ?? null,
+            reason: pred.reason,
+            features: pred.features,
+            source: pred.source || "client",
+          };
         }
       if (manualSceneOverrideByIndex[i]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
@@ -668,7 +743,14 @@ export default function BatchProcessor() {
         if (next.result && next.result.meta && next.result.meta.scene) {
           const scene = next.result.meta.scene;
           const conf = clamp01(scene.confidence ?? null);
-          recordScenePrediction(next.index, { label: scene.label as SceneLabel, confidence: conf, source: "server" });
+          recordScenePrediction(next.index, {
+            scene: (scene.label as SceneLabel) ?? null,
+            confidence: conf ?? 0,
+            signal: clamp01(scene.signal ?? conf ?? null) ?? 0,
+            features: scene.features || EMPTY_SCENE_FEATURES,
+            reason: scene.reason || (scene.label ? (scene.label === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
+            source: "server",
+          });
           if (scene.label) {
             setProgressText(`Detected: ${scene.label} (${Math.round((conf || 0) * 100)}%)`);
             setLastDetected({ index: next.index, label: scene.label, confidence: conf || 0 });
@@ -1003,7 +1085,14 @@ export default function BatchProcessor() {
             if (item?.meta?.scene) {
               const scene = item.meta.scene;
               const conf = clamp01(scene.confidence ?? null);
-              recordScenePrediction(i, { label: scene.label as SceneLabel, confidence: conf, source: "server" });
+              recordScenePrediction(i, {
+                scene: (scene.label as SceneLabel) ?? null,
+                confidence: conf ?? 0,
+                signal: clamp01(scene.signal ?? conf ?? null) ?? 0,
+                features: scene.features || EMPTY_SCENE_FEATURES,
+                reason: scene.reason || (scene.label ? (scene.label === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
+                source: "server",
+              });
             }
             // Merge room type detection (user override precedence)
             try {
@@ -2936,16 +3025,16 @@ export default function BatchProcessor() {
                   const roomNeeds = roomTypeRequiresInput(currentImageIndex);
                   const prediction = scenePredictions[currentImageIndex];
                   const conf = clamp01(prediction?.confidence ?? null);
-                  const highConf = isHighConfidence(prediction);
-                  const detectedLine = highConf && prediction?.label
-                    ? `Detected: ${prediction.label} (${Math.round((conf || 0) * 100)}%). You can change if it looks wrong.`
+                  const autoAccepted = isSceneAutoAcceptable(prediction);
+                  const detectedLine = autoAccepted && prediction?.scene
+                    ? `Scene type was auto-detected as ${prediction.scene}. You can change it if it looks wrong.`
                     : null;
                   const isAlert = sceneNeeds || roomNeeds;
                   const lines: string[] = [];
-                  if (sceneNeeds) lines.push("We couldn’t confidently detect the scene. Please choose Interior or Exterior to continue.");
+                  if (sceneNeeds) lines.push("We couldn’t confidently detect whether this image is interior or exterior. Please select one to continue.");
                   if (roomNeeds) lines.push("Room Type is required when Room Staging (Stage 2) is enabled.");
                   if (!lines.length && detectedLine) lines.push(detectedLine);
-                  if (!lines.length) lines.push("You can adjust Scene Type and Room Type anytime. We’ll auto-fill when confidence is high.");
+                  if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
                   return (
                     <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3`}>
                       <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isAlert ? 'text-red-500' : 'text-blue-500'}`} />
@@ -2953,6 +3042,27 @@ export default function BatchProcessor() {
                         {lines.map((line, idx) => (
                           <p key={idx}>{line}</p>
                         ))}
+                        {IS_DEV && prediction && (
+                          <div className="mt-2 text-[11px] text-slate-500">
+                            <div className="font-semibold text-slate-600">Scene Debug</div>
+                            <div className="flex flex-wrap gap-2">
+                              <span>scene={prediction.scene ?? 'null'}</span>
+                              <span>conf={(conf ?? 0).toFixed(2)}</span>
+                              <span>reason={prediction.reason}</span>
+                              <span>signal={(prediction.signal ?? 0).toFixed(3)}</span>
+                              <span>low={SCENE_SIGNAL_LOW.toFixed(3)}</span>
+                              <span>high={SCENE_SIGNAL_HIGH.toFixed(3)}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span>sky10={(prediction.features?.skyTop10 ?? 0).toFixed(3)}</span>
+                              <span>sky40={(prediction.features?.skyTop40 ?? 0).toFixed(3)}</span>
+                              <span>grass={(prediction.features?.grassBottom ?? 0).toFixed(3)}</span>
+                              <span>blue={(prediction.features?.blueOverall ?? 0).toFixed(3)}</span>
+                              <span>green={(prediction.features?.greenOverall ?? 0).toFixed(3)}</span>
+                              <span>lum={(prediction.features?.meanLum ?? 0).toFixed(3)}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
