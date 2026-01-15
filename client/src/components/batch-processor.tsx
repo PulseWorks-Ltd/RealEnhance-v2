@@ -22,6 +22,29 @@ import { Switch } from "@/components/ui/switch";
 
 type RunState = "idle" | "running" | "done";
 
+type SceneLabel = "interior" | "exterior";
+
+interface ScenePrediction {
+  label: SceneLabel | null;
+  confidence: number | null;
+  source?: "client" | "server";
+}
+
+// Clamp a number into [0,1]; return null when not finite
+const clamp01 = (value: number | null | undefined): number | null => {
+  if (!Number.isFinite(value as number)) return null;
+  const v = Number(value);
+  if (Number.isNaN(v)) return null;
+  return Math.min(1, Math.max(0, v));
+};
+
+// Scene confidence threshold (configurable via env; defaults to 0.75)
+const SCENE_CONFIDENCE_THRESHOLD = (() => {
+  const raw = Number((import.meta as any).env?.VITE_SCENE_CONF_THRESHOLD);
+  const clamped = clamp01(raw);
+  return clamped === null ? 0.75 : clamped;
+})();
+
 // Normalizer functions to handle shape mismatch between backend and frontend
 function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; error?: string } | null {
   if (!it) return null;
@@ -239,6 +262,7 @@ export default function BatchProcessor() {
   
   // Images tab state
   const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
+  const [scenePredictions, setScenePredictions] = useState<Record<number, ScenePrediction>>({});
   const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
   const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
@@ -274,9 +298,14 @@ export default function BatchProcessor() {
   const { refreshUser } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
 
-  // Lightweight client-side scene detector (prefill UX): interior vs exterior
+  const isHighConfidence = (pred?: ScenePrediction | null) => {
+    const conf = clamp01(pred?.confidence ?? null);
+    return !!pred?.label && conf !== null && conf >= SCENE_CONFIDENCE_THRESHOLD;
+  };
+
+  // Lightweight client-side scene detector (prefill UX): interior vs exterior + confidence
   // More robust heuristic using regional sampling and relaxed thresholds.
-  async function detectSceneFromFile(f: File): Promise<"interior" | "exterior"> {
+  async function detectSceneFromFile(f: File): Promise<ScenePrediction> {
     try {
       const bmp = await createImageBitmap(f);
       // Normalize width to 256 while preserving aspect
@@ -355,6 +384,16 @@ export default function BatchProcessor() {
 
       const isExterior = skyStrong || grassStrong || blueSupport || greenSupport || nightSkySupport;
 
+      // Confidence proxy: strongest signal from sky/grass bands
+      const signal = Math.max(
+        skyTop10Pct,
+        skyTop40Pct * 0.9,
+        grassBottomPct,
+        blueOverallPct * 0.8,
+        greenOverallPct * 0.8
+      );
+      const confidence = clamp01(signal * 2) ?? 0.55; // lift modest signals
+
       // Debug: surface quick metrics to help tuning if needed
       console.log("[SceneDetect] skyTop10=", skyTop10Pct.toFixed(3),
         " skyTop40=", skyTop40Pct.toFixed(3),
@@ -362,12 +401,13 @@ export default function BatchProcessor() {
         " blueOverall=", blueOverallPct.toFixed(3),
         " greenOverall=", greenOverallPct.toFixed(3),
         " meanLum=", meanLum.toFixed(3),
+        " signal=", signal.toFixed(3),
         " -> exterior=", isExterior);
 
-      return isExterior ? "exterior" : "interior";
+      return { label: isExterior ? "exterior" : "interior", confidence, source: "client" };
     } catch (e) {
       console.warn("[SceneDetect] Fallback to interior due to error:", e);
-      return "interior";
+      return { label: "interior", confidence: null, source: "client" };
     }
   }
 
@@ -402,34 +442,104 @@ export default function BatchProcessor() {
     };
   }, []);
 
-  // When user enters the Images tab, prefill scene types using client-side detector
+  // When user enters the Images tab, prefill scene predictions using client-side detector
   useEffect(() => {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
     (async () => {
-      const next: Record<number, string> = {};
+      const nextPreds: Record<number, ScenePrediction> = {};
       const skyDefaults: Record<number, boolean> = {};
       await Promise.all(files.map(async (f, i) => {
         // only auto-fill if user hasn't set it
         if (imageSceneTypes[i] && imageSceneTypes[i] !== "auto") return;
-        const scene = await detectSceneFromFile(f);
+        const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
-          next[i] = scene;
-          // Auto-enable sky replacement for exterior images (can be toggled off by user)
-          if (scene === "exterior" && imageSkyReplacement[i] === undefined) {
-            skyDefaults[i] = true;
+          nextPreds[i] = prediction;
+          if (isHighConfidence(prediction) && prediction.label) {
+            setImageSceneTypes(prev => {
+              if (prev[i] && prev[i] !== "auto") return prev;
+              return { ...prev, [i]: prediction.label as string };
+            });
+            if (prediction.label === "exterior" && imageSkyReplacement[i] === undefined) {
+              skyDefaults[i] = true;
+            }
+          } else {
+            setImageSceneTypes(prev => {
+              const copy = { ...prev } as Record<number, string>;
+              delete copy[i];
+              return copy;
+            });
           }
         }
       }));
-      if (!cancelled && Object.keys(next).length) {
-        setImageSceneTypes(prev => ({ ...prev, ...next }));
+      if (!cancelled && Object.keys(nextPreds).length) {
+        setScenePredictions(prev => ({ ...prev, ...nextPreds }));
         if (Object.keys(skyDefaults).length) {
           setImageSkyReplacement(prev => ({ ...prev, ...skyDefaults }));
         }
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, files]);
+  }, [activeTab, files, imageSceneTypes, imageSkyReplacement]);
+
+  const finalSceneForIndex = useCallback((index: number): SceneLabel | null => {
+    const explicit = imageSceneTypes[index];
+    if (explicit === "interior" || explicit === "exterior") return explicit;
+    const pred = scenePredictions[index];
+    if (isHighConfidence(pred) && pred?.label) return pred.label;
+    return null;
+  }, [imageSceneTypes, scenePredictions]);
+
+  const sceneRequiresInput = useCallback((index: number) => {
+    const explicit = imageSceneTypes[index];
+    if (explicit === "interior" || explicit === "exterior") return false;
+    const pred = scenePredictions[index];
+    if (isHighConfidence(pred)) return false;
+    return true; // no confident prediction and no user selection
+  }, [imageSceneTypes, scenePredictions]);
+
+  const roomTypeRequiresInput = useCallback((index: number) => {
+    if (!allowStaging) return false;
+    const scene = finalSceneForIndex(index);
+    if (scene === "exterior") return false;
+    return !(imageRoomTypes[index]);
+  }, [allowStaging, finalSceneForIndex, imageRoomTypes]);
+
+  const imageValidationStatus = useCallback((index: number): "needs_input" | "ok" | "unknown" => {
+    if (sceneRequiresInput(index) || roomTypeRequiresInput(index)) return "needs_input";
+    const hasScene = !!finalSceneForIndex(index);
+    const hasRoom = !!imageRoomTypes[index];
+    return hasScene || hasRoom ? "ok" : "unknown";
+  }, [finalSceneForIndex, imageRoomTypes, roomTypeRequiresInput, sceneRequiresInput]);
+
+  const blockingIndices = useMemo(() => {
+    const blockers: number[] = [];
+    files.forEach((_, idx) => {
+      if (imageValidationStatus(idx) === "needs_input") blockers.push(idx);
+    });
+    return blockers;
+  }, [files, imageValidationStatus]);
+
+  const recordScenePrediction = useCallback((index: number, prediction: ScenePrediction) => {
+    const normalized: ScenePrediction = {
+      label: prediction?.label ?? null,
+      confidence: clamp01(prediction?.confidence ?? null),
+      source: prediction?.source
+    };
+    setScenePredictions(prev => ({ ...prev, [index]: normalized }));
+    if (isHighConfidence(normalized) && normalized.label) {
+      setImageSceneTypes(prev => {
+        if (prev[index] && prev[index] !== "auto") return prev;
+        return { ...prev, [index]: normalized.label as string };
+      });
+      if (normalized.label === "exterior" && imageSkyReplacement[index] === undefined) {
+        setImageSkyReplacement(prev => ({ ...prev, [index]: true }));
+      }
+    }
+  }, [imageSkyReplacement]);
+
+  const blockingCount = blockingIndices.length;
+  const firstBlockingIndex = blockingIndices[0] ?? 0;
 
   // Manual room linking functions
   function toggleSelect(i: number) {
@@ -483,8 +593,13 @@ export default function BatchProcessor() {
       if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
       if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
       // Scene type
-      const sceneType = imageSceneTypes[i] || "auto";
-      if (sceneType !== "auto") metaItem.sceneType = sceneType;
+        const sceneType = finalSceneForIndex(i) || "auto";
+        if (sceneType !== "auto") metaItem.sceneType = sceneType;
+        const pred = scenePredictions[i];
+        const predConf = clamp01(pred?.confidence ?? null);
+        if (pred?.label && predConf !== null) {
+          metaItem.scenePrediction = { label: pred.label, confidence: predConf };
+        }
       if (manualSceneOverrideByIndex[i]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
       if (allowStaging && (sceneType !== "exterior")) {
@@ -507,7 +622,7 @@ export default function BatchProcessor() {
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, imageSceneTypes, imageRoomTypes, imageSkyReplacement, manualSceneOverrideByIndex, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypes, imageRoomTypes, imageSkyReplacement, manualSceneOverrideByIndex, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictions]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -552,8 +667,12 @@ export default function BatchProcessor() {
         // If the server included job meta like scene detection, surface it
         if (next.result && next.result.meta && next.result.meta.scene) {
           const scene = next.result.meta.scene;
-          setProgressText(`Detected: ${scene.label} (${Math.round((scene.confidence||0)*100)}%)`);
-          setLastDetected({ index: next.index, label: scene.label, confidence: scene.confidence || 0 });
+          const conf = clamp01(scene.confidence ?? null);
+          recordScenePrediction(next.index, { label: scene.label as SceneLabel, confidence: conf, source: "server" });
+          if (scene.label) {
+            setProgressText(`Detected: ${scene.label} (${Math.round((conf || 0) * 100)}%)`);
+            setLastDetected({ index: next.index, label: scene.label, confidence: conf || 0 });
+          }
         }
 
         // Update processed images tracking in the same tick
@@ -880,6 +999,11 @@ export default function BatchProcessor() {
                 error: item.error || "Processing failed",
                 filename: item.filename || `image-${i + 1}`
               });
+            }
+            if (item?.meta?.scene) {
+              const scene = item.meta.scene;
+              const conf = clamp01(scene.confidence ?? null);
+              recordScenePrediction(i, { label: scene.label as SceneLabel, confidence: conf, source: "server" });
             }
             // Merge room type detection (user override precedence)
             try {
@@ -1221,23 +1345,17 @@ export default function BatchProcessor() {
       return;
     }
 
-    // NEW: if staging is enabled, ensure every interior image has a room type selected
-    if (allowStaging) {
-      const missing: number[] = [];
-      files.forEach((_, index) => {
-        const scene = imageSceneTypes[index] || "interior"; // default to interior if unset
-        const isInterior = scene !== "exterior";
-        if (isInterior && !imageRoomTypes[index]) {
-          missing.push(index + 1);
-        }
+    // Block start when required inputs are missing
+    if (blockingIndices.length) {
+      const humanList = blockingIndices.map(i => i + 1).join(", ");
+      toast({
+        title: "Complete required settings",
+        description: `Please fill Scene Type${allowStaging ? " and Room Type" : ""} for image(s): ${humanList}.`,
+        variant: "destructive"
       });
-      if (missing.length) {
-        alert(
-          `Please select a room type for image(s): ${missing.join(", ")} before running staging.`
-        );
-        setActiveTab("images");
-        return;
-      }
+      setActiveTab("images");
+      setCurrentImageIndex(blockingIndices[0]);
+      return;
     }
 
     // Calculate credits needed based on two-stage system:
@@ -2626,19 +2744,27 @@ export default function BatchProcessor() {
               {/* Thumbnail Strip (for multiple images) */}
               {files.length > 1 && (
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
-                  {files.slice(0, 10).map((file, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setCurrentImageIndex(idx)}
-                      className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${
-                        idx === currentImageIndex
-                          ? 'ring-2 ring-action-500 ring-offset-1'
-                          : 'opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
-                    </button>
-                  ))}
+                  {files.slice(0, 10).map((file, idx) => {
+                    const status = imageValidationStatus(idx);
+                    const statusRing = status === "needs_input"
+                      ? "ring-2 ring-red-500 ring-offset-1"
+                      : status === "ok"
+                        ? "ring-2 ring-emerald-500 ring-offset-1"
+                        : "ring-1 ring-slate-200";
+                    const activeState = idx === currentImageIndex
+                      ? "outline outline-2 outline-action-500 outline-offset-2"
+                      : "opacity-60 hover:opacity-100";
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => setCurrentImageIndex(idx)}
+                        className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
+                        title={status === "needs_input" ? "Needs scene/room input" : undefined}
+                      >
+                        <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
+                      </button>
+                    );
+                  })}
                   {files.length > 10 && (
                     <div className="w-12 h-12 rounded-md bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-medium flex-shrink-0">
                       +{files.length - 10}
@@ -2646,6 +2772,10 @@ export default function BatchProcessor() {
                   )}
                 </div>
               )}
+
+              <div className="mt-4 text-xs text-slate-700 max-w-xl">
+                Complete required fields for images highlighted in red to continue.
+              </div>
             </div>
 
             {/* RIGHT PANEL: The Inspector Sidebar */}
@@ -2702,7 +2832,7 @@ export default function BatchProcessor() {
                         setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: false }));
                       }}
                       className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
-                        (imageSceneTypes[currentImageIndex] === "interior" || (!imageSceneTypes[currentImageIndex] || imageSceneTypes[currentImageIndex] === "auto"))
+                        imageSceneTypes[currentImageIndex] === "interior"
                           ? 'border-action-500 bg-action-50 text-action-700'
                           : 'border-slate-200 hover:border-slate-300 text-slate-600'
                       }`}
@@ -2766,7 +2896,7 @@ export default function BatchProcessor() {
                 </section>
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}
-                {allowStaging && (imageSceneTypes[currentImageIndex] || "interior") !== "exterior" && (
+                {allowStaging && (finalSceneForIndex(currentImageIndex) !== "exterior") && (
                   <section>
                     <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
                     <FixedSelect
@@ -2800,13 +2930,33 @@ export default function BatchProcessor() {
                   </section>
                 )}
 
-                {/* Info Box */}
-                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-3">
-                  <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-blue-700 leading-relaxed">
-                    Scene and room settings are optional. Our AI will auto-detect if not specified.
-                  </p>
-                </div>
+                {/* Guidance / Alerts */}
+                {(() => {
+                  const sceneNeeds = sceneRequiresInput(currentImageIndex);
+                  const roomNeeds = roomTypeRequiresInput(currentImageIndex);
+                  const prediction = scenePredictions[currentImageIndex];
+                  const conf = clamp01(prediction?.confidence ?? null);
+                  const highConf = isHighConfidence(prediction);
+                  const detectedLine = highConf && prediction?.label
+                    ? `Detected: ${prediction.label} (${Math.round((conf || 0) * 100)}%). You can change if it looks wrong.`
+                    : null;
+                  const isAlert = sceneNeeds || roomNeeds;
+                  const lines: string[] = [];
+                  if (sceneNeeds) lines.push("We couldn’t confidently detect the scene. Please choose Interior or Exterior to continue.");
+                  if (roomNeeds) lines.push("Room Type is required when Room Staging (Stage 2) is enabled.");
+                  if (!lines.length && detectedLine) lines.push(detectedLine);
+                  if (!lines.length) lines.push("You can adjust Scene Type and Room Type anytime. We’ll auto-fill when confidence is high.");
+                  return (
+                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3`}>
+                      <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isAlert ? 'text-red-500' : 'text-blue-500'}`} />
+                      <div className="text-xs leading-relaxed space-y-1">
+                        {lines.map((line, idx) => (
+                          <p key={idx}>{line}</p>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Sidebar Footer - Sticky */}
@@ -2817,16 +2967,31 @@ export default function BatchProcessor() {
                     {files.length} {files.length === 1 ? 'Credit' : 'Credits'}
                   </span>
                 </div>
-                <button
+                <div
                   onClick={() => {
-                    setActiveTab("enhance");
-                    startBatchProcessing();
+                    if (blockingCount > 0) {
+                      startBatchProcessing();
+                    }
                   }}
-                  className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500"
-                  data-testid="button-proceed-enhance"
                 >
-                  Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
-                </button>
+                  <button
+                    onClick={() => {
+                      setActiveTab("enhance");
+                      startBatchProcessing();
+                    }}
+                    disabled={blockingCount > 0 || !files.length}
+                    title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    data-testid="button-proceed-enhance"
+                  >
+                    Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
+                  </button>
+                </div>
+                {blockingCount > 0 && (
+                  <p className="mt-2 text-xs text-red-700">
+                    Complete required settings for images highlighted in red to continue.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2849,8 +3014,9 @@ export default function BatchProcessor() {
                     </p>
                     <button
                       onClick={startBatchProcessing}
-                      disabled={!files.length}
-                      className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 shadow-md"
+                      disabled={!files.length || blockingCount > 0}
+                      title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                      className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                       data-testid="button-start-batch"
                     >
                       Process Batch #{Math.floor(Math.random() * 1000) + 2000} ({files.length} Images)

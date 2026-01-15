@@ -454,7 +454,7 @@ export default function AgencyPage() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
-              <span>Plan & Credits</span>
+              <span>Plan & Images</span>
               <Badge variant={agencyInfo.subscription.status === "ACTIVE" ? "default" : "secondary"}>
                 {agencyInfo.subscription.status.toLowerCase()}
               </Badge>

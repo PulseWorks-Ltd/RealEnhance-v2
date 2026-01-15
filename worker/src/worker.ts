@@ -207,7 +207,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         meta: {
           stage2OnlyRetry: true,
           timings,
-          scene: { label: sceneLabel as any, confidence: 0.5 }
+          scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }
         }
       });
 
@@ -416,8 +416,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     // store interim meta (non-fatal if write fails)
     updateJob(payload.jobId, { meta: {
+      scene: { label: sceneLabel as any, confidence: primary?.confidence ?? null },
       scenePrimary: primary,
-      scene: { label: room.label as any, confidence: room.confidence },
       allowStaging,
       stagingRegion: stagingRegionGlobal,
       roomTypeDetected: detectedRoom,
@@ -431,6 +431,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     allowStaging = false;
   }
   timings.sceneDetectMs = Date.now() - tScene;
+
+  const sceneMeta = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
 
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
@@ -560,7 +562,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "error",
         errorMessage: errMsg,
         error: errMsg,
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+        meta: { ...sceneMeta }
       });
       throw new Error(errMsg);
     }
@@ -583,7 +585,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "error",
         errorMessage: errMsg,
         error: errMsg,
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+        meta: { ...sceneMeta }
       });
       return;
     }
@@ -701,8 +703,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 updateJob(payload.jobId, {
                   message: msg,
                   meta: {
-                    ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
-                    scenePrimary,
+                    ...(sceneLabel ? { ...sceneMeta } : {}),
                     strictRetry: true,
                     strictRetryReasons: reasons || []
                   }
@@ -719,7 +720,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       status: "error",
       errorMessage: errMsg,
       error: errMsg,
-      meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary }
+      meta: { ...sceneMeta }
     });
     return;
   }
@@ -805,8 +806,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Store validation results in job metadata
       updateJob(payload.jobId, {
         meta: {
-          ...(sceneLabel ? { scene: { label: sceneLabel as any, confidence: 0.5 } } : {}),
-          scenePrimary,
+          ...(sceneLabel ? { ...sceneMeta } : {}),
           unifiedValidation: {
             passed: unifiedValidation.passed,
             score: unifiedValidation.score,
@@ -828,8 +828,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           error: failureMsg,
           message: `Image failed structural validation (score: ${unifiedValidation.score})`,
           meta: {
-            scene: { label: sceneLabel as any, confidence: 0.5 },
-            scenePrimary,
+            ...(sceneLabel ? { ...sceneMeta } : {}),
             unifiedValidation,
             structuralValidationFailed: true,
           },
@@ -918,8 +917,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         error: lastViolationMsg,
         message: `Validation failed. Retrying with stricter settings (attempt ${retries+2}/3)...`,
         meta: {
-          scene: { label: sceneLabel as any, confidence: 0.5 },
-          scenePrimary,
+          ...(sceneLabel ? { ...sceneMeta } : {}),
           compliance,
           strictRetry: true,
           strictRetryReasons: Array.isArray((compliance as any)?.reasons) ? (compliance as any).reasons : ["compliance retry"],
@@ -946,7 +944,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
         message: "Image enhancement completed after 1 retry, but failed compliance validation.",
-        meta: { scene: { label: sceneLabel as any, confidence: 0.5 }, scenePrimary, compliance, complianceFailed: true }
+        meta: { ...(sceneLabel ? { ...sceneMeta } : {}), compliance, complianceFailed: true }
       });
       nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
       // Do NOT return; continue so image is published
@@ -1161,8 +1159,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   const meta = {
-    scene: { label: sceneLabel as any, confidence: 0.5 },
-    scenePrimary,
+    ...sceneMeta,
     roomTypeDetected: detectedRoom,
     roomType: payload.options.roomType || undefined,
     allowStaging,
