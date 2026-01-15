@@ -2436,21 +2436,6 @@ export default function BatchProcessor() {
                       </button>
                     </div>
                   )}
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-white">Scene Selector</label>
-                    <select
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                      value={outdoorStaging}
-                      onChange={(e) => setOutdoorStaging(e.target.value as "auto" | "none")}
-                      data-testid="select-scene-selector"
-                      title="Affects exterior images only"
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="none">None (polish only)</option>
-                    </select>
-                    <p className="text-xs text-gray-400">Affects exterior images only</p>
-                  </div>
                 </div>
 
                 {/* Image Consumption Notice */}
