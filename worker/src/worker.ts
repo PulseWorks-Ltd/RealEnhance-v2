@@ -272,6 +272,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Primary scene (ONNX + heuristic fallback)
     const primary = await detectSceneFromImage(buf);
     scenePrimary = primary;
+    const fmt = (v: any) => typeof v === "number" && Number.isFinite(v) ? v.toFixed(3) : "n/a";
+    nLog(`[SCENE] primary=${primary?.label ?? "unknown"} conf=${fmt(primary?.confidence)} sky=${fmt((primary as any)?.skyPct)} grass=${fmt((primary as any)?.grassPct)} deck=${fmt((primary as any)?.woodDeckPct)}`);
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
     if (!room) {
