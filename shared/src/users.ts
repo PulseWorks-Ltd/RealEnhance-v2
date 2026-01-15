@@ -7,6 +7,13 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+function getInitialCredits(): number {
+  const raw = process.env.INITIAL_FREE_CREDITS;
+  const parsed = raw !== undefined ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  return 50;
+}
+
 // File fallback path (same as old users.json)
 const getUsersFilePath = (): string => {
   const cwd = process.cwd();
@@ -99,7 +106,7 @@ export async function createUser(params: {
     agencyId: params.agencyId,
     role: params.role,
     isActive: true,
-    credits: 50, // Default starting credits
+    credits: getInitialCredits(),
     imageIds: [],
     createdAt: now,
     updatedAt: now,

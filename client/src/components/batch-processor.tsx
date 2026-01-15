@@ -69,21 +69,21 @@ interface PersistedFileMetadata {
             </div>
 
             <div className="bg-gray-900/70 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="grid gap-0 lg:grid-cols-[1.35fr_0.75fr]">
                 {/* Left Column - Settings */}
                 <div className="p-6 lg:p-8 space-y-6 border-b lg:border-b-0 lg:border-r border-gray-800/80">
-                  <div className="relative rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5 lg:p-6 space-y-4">
+                  <div className="relative rounded-xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/10 via-gray-900/60 to-gray-900/30 p-5 lg:p-6 space-y-4 shadow-inner">
                     <div className="absolute left-0 top-0 h-full w-1 bg-emerald-400/80" aria-hidden="true" />
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold text-emerald-100">Primary controls</p>
-                      <p className="text-sm text-emerald-50">Choose how AI should process your images. Leaving both off runs enhancement only.</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100">Primary decisions</p>
+                      <p className="text-sm text-emerald-50">Set declutter (Stage 1B) and staging (Stage 2). Leave both off to run enhancement-only.</p>
                     </div>
                     {preserveStructure && (
-                      <p className="text-xs text-emerald-100/80">Structural protection is enforced by default.</p>
+                      <p className="text-xs text-emerald-100/80">Structural protection stays on unless you disable it.</p>
                     )}
 
                     <div className="space-y-3">
-                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
+                      <label className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-gray-900/70 px-4 py-4 shadow-sm">
                         <input
                           type="checkbox"
                           checked={declutter}
@@ -97,15 +97,15 @@ interface PersistedFileMetadata {
                         />
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-white">Remove furniture & clutter</span>
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-emerald-100 border border-gray-700">Stage 1B</span>
+                            <span className="text-base font-semibold text-white">Remove furniture & clutter</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-100 border border-emerald-500/40">Stage 1B</span>
                           </div>
-                          <p className="text-xs text-gray-400">Clean out existing furniture and clutter before any staging.</p>
+                          <p className="text-xs text-gray-300">Clean the room first. Turning this off keeps existing items.</p>
                         </div>
                       </label>
 
                       {declutter && (
-                        <div className="ml-1 pl-4 border-l border-gray-800 space-y-2">
+                        <div className="ml-1 pl-4 border-l border-emerald-500/30 space-y-2">
                           <label className="flex items-start gap-2 rounded-md px-2">
                             <input
                               type="radio"
@@ -137,7 +137,7 @@ interface PersistedFileMetadata {
                         </div>
                       )}
 
-                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
+                      <label className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-gray-900/70 px-4 py-4 shadow-sm">
                         <input
                           type="checkbox"
                           checked={allowStaging}
@@ -148,8 +148,8 @@ interface PersistedFileMetadata {
                         <div className="space-y-1 w-full">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-white">Add virtual staging</span>
-                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-emerald-100 border border-gray-700">Stage 2</span>
+                              <span className="text-base font-semibold text-white">Add virtual staging</span>
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-100 border border-emerald-500/40">Stage 2</span>
                             </div>
                             {allowStaging && (
                               <button
@@ -161,7 +161,7 @@ interface PersistedFileMetadata {
                               </button>
                             )}
                           </div>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-300">
                             {declutter ? "Stage the emptied room with new furniture." : "Add furniture and decor to the existing room."}
                           </p>
                           {allowStaging && (

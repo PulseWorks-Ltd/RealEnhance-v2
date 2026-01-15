@@ -15,6 +15,11 @@ export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 export const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 export const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "";
 
+// Default free credits granted on first user/org creation
+export const INITIAL_FREE_CREDITS = Number.isFinite(Number(process.env.INITIAL_FREE_CREDITS))
+  ? Number(process.env.INITIAL_FREE_CREDITS)
+  : 50;
+
 export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN
   ? process.env.PUBLIC_ORIGIN.split(",").map(v => v.trim())
   : ["http://localhost:5173", "http://localhost:5000"];

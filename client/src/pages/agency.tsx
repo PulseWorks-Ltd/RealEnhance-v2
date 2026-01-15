@@ -62,6 +62,21 @@ interface AgencyInfo {
   currentPeriodEnd?: string;
   activeUsers?: number;
   userRole: "owner" | "admin" | "member";
+  subscription?: {
+    planTier: "starter" | "pro" | "agency";
+    planName: string;
+    status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
+    currentPeriodEnd?: string | null;
+    billingCurrency?: string | null;
+    billingCountry?: string | null;
+    allowance: {
+      monthlyIncluded: number;
+      used: number;
+      remaining: number;
+      addonBalance: number;
+      monthKey: string;
+    };
+  };
   trial?: {
     status: "none" | "pending" | "active" | "expired" | "converted";
     expiresAt?: string | null;
@@ -132,6 +147,17 @@ export default function AgencyPage() {
           currentPeriodEnd: infoData.agency.currentPeriodEnd,
           activeUsers: infoData.activeUsers,
           userRole: user?.role || "member",
+          subscription: infoData.subscription
+            ? {
+                planTier: infoData.subscription.planTier,
+                planName: infoData.subscription.planName,
+                status: infoData.subscription.status,
+                currentPeriodEnd: infoData.subscription.currentPeriodEnd,
+                billingCurrency: infoData.subscription.billingCurrency,
+                billingCountry: infoData.subscription.billingCountry,
+                allowance: infoData.subscription.allowance,
+              }
+            : undefined,
           trial: infoData.trial
             ? {
                 status: infoData.trial.status,
@@ -419,6 +445,47 @@ export default function AgencyPage() {
               <Button variant="brand" onClick={scrollToBilling}>
                 Upgrade Now
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {agencyInfo.subscription && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <span>Plan & Credits</span>
+              <Badge variant={agencyInfo.subscription.status === "ACTIVE" ? "default" : "secondary"}>
+                {agencyInfo.subscription.status.toLowerCase()}
+              </Badge>
+            </CardTitle>
+            <CardDescription>
+              {agencyInfo.subscription.planName} • {agencyInfo.subscription.allowance.monthKey}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Monthly included</p>
+              <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyIncluded}</p>
+              <p className="text-xs text-muted-foreground">
+                Used {agencyInfo.subscription.allowance.used} • Remaining {agencyInfo.subscription.allowance.remaining}
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Add-on / carry-over</p>
+              <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
+              <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Billing</p>
+              <p className="text-lg font-semibold">
+                {agencyInfo.subscription.billingCurrency?.toUpperCase() || agencyInfo.billingCurrency?.toUpperCase() || ""}
+              </p>
+              {agencyInfo.subscription.currentPeriodEnd && (
+                <p className="text-xs text-muted-foreground">
+                  Renews on {new Date(agencyInfo.subscription.currentPeriodEnd).toLocaleDateString()}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

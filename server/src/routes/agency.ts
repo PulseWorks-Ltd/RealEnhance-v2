@@ -10,6 +10,7 @@ import {
   listAgencyUsers,
   countActiveAgencyUsers,
 } from "@realenhance/shared/agencies.js";
+import { getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
 import {
   createInvite,
   getInviteByToken,
@@ -25,6 +26,9 @@ import { sendInvitationEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { invalidateSessionsForUser } from "../services/sessionStore.js";
 import { getTrialSummary } from "../services/trials.js";
+import { getUsageSnapshot } from "../services/usageLedger.js";
+import type { PlanTier } from "@realenhance/shared/auth/types.js";
+import { INITIAL_FREE_CREDITS } from "../config.js";
 
 const router = Router();
 
@@ -98,11 +102,18 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
       ownerId: user.id,
     });
 
-    // Update user to be agency owner
-    const updatedUser = await updateUser(user.id, {
+    // Update user to be agency owner and ensure starter credits are granted once
+    const updatePayload: Partial<UserRecord> = {
       agencyId: agency.agencyId,
       role: "owner",
-    });
+    };
+
+    const initialCredits = Number.isFinite(INITIAL_FREE_CREDITS) ? INITIAL_FREE_CREDITS : 50;
+    if ((user.credits ?? 0) < initialCredits) {
+      updatePayload.credits = initialCredits;
+    }
+
+    const updatedUser = await updateUser(user.id, updatePayload);
 
     // Refresh session payload so subsequent requests immediately see the new agency/role
     const displayName = getDisplayName(updatedUser as any);
@@ -155,11 +166,29 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
 
     const activeUsers = await countActiveAgencyUsers(user.agencyId);
     const trial = await getTrialSummary(user.agencyId);
+    const usage = await getUsageSnapshot(user.agencyId);
+    const planTier = (agency.planTier as PlanTier) || "starter";
+    const plan = getStripePlan(planTier);
 
     res.json({
       agency,
       activeUsers, // For informational purposes only - no limits
       trial,
+      subscription: {
+        planTier,
+        planName: plan.displayName,
+        status: agency.subscriptionStatus,
+        currentPeriodEnd: agency.currentPeriodEnd,
+        billingCurrency: agency.billingCurrency,
+        billingCountry: agency.billingCountry,
+        allowance: {
+          monthlyIncluded: usage.includedLimit,
+          used: usage.includedUsed,
+          remaining: usage.remaining,
+          addonBalance: usage.addonBalance,
+          monthKey: usage.monthKey,
+        },
+      },
     });
   } catch (err) {
     console.error("[AGENCY] Get info error:", err);

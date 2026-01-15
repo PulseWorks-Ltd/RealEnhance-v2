@@ -8,7 +8,7 @@ import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
-import { pool } from "../db/index.js";
+import { pool, withTransaction } from "../db/index.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import { markTrialConverted } from "../services/trials.js";
 
@@ -35,6 +35,59 @@ async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
            updated_at = NOW();`,
     [agencyId, allowance, planTier]
   );
+}
+
+async function recordSubscriptionInvoiceCredit(params: {
+  agencyId: string;
+  planTier: PlanTier;
+  invoiceId?: string | null;
+  subscriptionId?: string | null;
+  stripePriceId?: string | null;
+}) {
+  const plan = getStripePlan(params.planTier);
+  const creditAmount = plan.mainAllowance;
+
+  return withTransaction(async (client) => {
+    if (params.invoiceId) {
+      const existing = await client.query(
+        `SELECT 1 FROM addon_purchases WHERE metadata ->> 'invoiceId' = $1 LIMIT 1`,
+        [params.invoiceId]
+      );
+      if (existing.rowCount) {
+        return { granted: false as const, reason: "duplicate" };
+      }
+    }
+
+    await client.query(
+      `INSERT INTO agency_accounts (agency_id, monthly_included_images, plan_tier, addon_images_balance)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (agency_id) DO UPDATE
+         SET monthly_included_images = EXCLUDED.monthly_included_images,
+             plan_tier = EXCLUDED.plan_tier,
+             addon_images_balance = agency_accounts.addon_images_balance + EXCLUDED.addon_images_balance,
+             updated_at = NOW();`,
+      [params.agencyId, creditAmount, params.planTier, creditAmount]
+    );
+
+    await client.query(
+      `INSERT INTO addon_purchases (agency_id, quantity, source, metadata)
+         VALUES ($1, $2, $3, $4)`,
+      [
+        params.agencyId,
+        creditAmount,
+        "subscription_invoice",
+        JSON.stringify({
+          invoiceId: params.invoiceId || null,
+          subscriptionId: params.subscriptionId || null,
+          stripePriceId: params.stripePriceId || null,
+          planTier: params.planTier,
+          creditAmount,
+        }),
+      ]
+    );
+
+    return { granted: true as const, amount: creditAmount };
+  });
 }
 
 /**
@@ -242,6 +295,54 @@ router.post(
           await updateAgency(agency);
 
           console.log(`[STRIPE] ✅ Subscription updated for agency ${agencyId}: ${subscription.status}`);
+          break;
+        }
+
+        case "invoice.payment_succeeded": {
+          const invoice = event.data.object as Stripe.Invoice;
+          const subscriptionId = (invoice.subscription as string) || null;
+
+          if (!subscriptionId) {
+            console.warn(`[STRIPE] invoice.payment_succeeded missing subscription for invoice ${invoice.id}`);
+            break;
+          }
+
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          const agencyId = (subscription.metadata as any)?.agencyId || (invoice.metadata as any)?.agencyId;
+
+          if (!agencyId) {
+            console.error(`[STRIPE] invoice.payment_succeeded missing agencyId for subscription ${subscriptionId}`);
+            break;
+          }
+
+          const priceId = invoice.lines.data[0]?.price?.id || subscription.items.data[0]?.price?.id || null;
+          const mapped = priceId ? findPlanByPriceId(priceId) : null;
+          const planTier = (mapped?.planTier as PlanTier) || ((subscription.metadata as any)?.planTier as PlanTier) || "starter";
+
+          await upsertAgencyAllowance(agencyId, planTier);
+
+          try {
+            const result = await recordSubscriptionInvoiceCredit({
+              agencyId,
+              planTier,
+              invoiceId: invoice.id,
+              subscriptionId,
+              stripePriceId: priceId,
+            });
+
+            if (result.granted) {
+              console.log(
+                `[STRIPE] ✅ Granted ${result.amount} roll-over credits for invoice ${invoice.id} (agency ${agencyId}, plan ${planTier})`
+              );
+            } else {
+              console.log(
+                `[STRIPE] ⚠️  Skipped credit grant for invoice ${invoice.id} (agency ${agencyId}) reason=${result.reason}`
+              );
+            }
+          } catch (grantErr) {
+            console.error(`[STRIPE] Failed to record subscription credits for invoice ${invoice.id}`, grantErr);
+          }
+
           break;
         }
 
