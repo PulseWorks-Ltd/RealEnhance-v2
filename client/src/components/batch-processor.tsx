@@ -2329,14 +2329,6 @@ export default function BatchProcessor() {
               <div className="space-y-6">
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium text-white">Enhancement Options</h3>
-                  
-                  <div className="flex items-start gap-3 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2">
-                    <div className="mt-0.5 h-4 w-4 rounded bg-emerald-500" aria-hidden="true" />
-                    <div>
-                      <span className="text-sm font-medium text-white">Preserve original features</span>
-                      <p className="text-xs text-gray-400">Always on. No structural changes to rooms or layouts.</p>
-                    </div>
-                  </div>
 
                   <label className="flex items-center gap-3">
                     <input
@@ -2445,14 +2437,6 @@ export default function BatchProcessor() {
                     </div>
                   )}
 
-                  <div className="flex items-start gap-3 rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2">
-                    <div className="mt-0.5 h-4 w-4 rounded bg-emerald-500" aria-hidden="true" />
-                    <div>
-                      <span className="text-sm font-medium text-white">Allow retouch</span>
-                      <p className="text-xs text-gray-400">Always on. Lighting, color, and cleanup adjustments.</p>
-                    </div>
-                  </div>
-
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-white">Scene Selector</label>
                     <select
@@ -2541,7 +2525,7 @@ export default function BatchProcessor() {
                   </div>
                 )}
 
-                {preserveStructure && allowStaging && (
+                {allowStaging && (
                   <div className="mt-4 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg">
                     <div className="flex items-start gap-2">
                       <span className="text-purple-400 text-lg">📐</span>
@@ -2861,7 +2845,7 @@ export default function BatchProcessor() {
                       Ready to enhance {files.length} images
                     </h3>
                     <p className="text-gray-600 mb-6">
-                      Industry: {industryMap[presetKey]} • {preserveStructure ? "Structure preserved" : "Flexible changes"} • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
+                      Industry: {industryMap[presetKey]} • Structure preserved • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
                     </p>
                     <button
                       onClick={startBatchProcessing}
