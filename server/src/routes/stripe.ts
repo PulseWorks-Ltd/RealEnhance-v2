@@ -300,7 +300,7 @@ router.post(
 
         case "invoice.payment_succeeded": {
           const invoice = event.data.object as Stripe.Invoice;
-          const subscriptionId = (invoice.subscription as string) || null;
+          const subscriptionId = (invoice as any).subscription as string | null;
 
           if (!subscriptionId) {
             console.warn(`[STRIPE] invoice.payment_succeeded missing subscription for invoice ${invoice.id}`);
@@ -315,7 +315,7 @@ router.post(
             break;
           }
 
-          const priceId = invoice.lines.data[0]?.price?.id || subscription.items.data[0]?.price?.id || null;
+          const priceId = ((invoice.lines.data[0] as any)?.price?.id) || (subscription.items.data[0] as any)?.price?.id || null;
           const mapped = priceId ? findPlanByPriceId(priceId) : null;
           const planTier = (mapped?.planTier as PlanTier) || ((subscription.metadata as any)?.planTier as PlanTier) || "starter";
 
