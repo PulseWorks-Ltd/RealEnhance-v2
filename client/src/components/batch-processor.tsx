@@ -2843,8 +2843,8 @@ export default function BatchProcessor() {
 
               {/* Thumbnail Strip (for multiple images) */}
               {files.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
-                  {files.slice(0, 10).map((file, idx) => {
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
+                  {files.map((file, idx) => {
                     const status = imageValidationStatus(idx);
                     const statusRing = status === "needs_input"
                       ? "ring-2 ring-red-500 ring-offset-1"
@@ -2865,11 +2865,6 @@ export default function BatchProcessor() {
                       </button>
                     );
                   })}
-                  {files.length > 10 && (
-                    <div className="w-12 h-12 rounded-md bg-slate-200 flex items-center justify-center text-xs text-slate-600 font-medium flex-shrink-0">
-                      +{files.length - 10}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
