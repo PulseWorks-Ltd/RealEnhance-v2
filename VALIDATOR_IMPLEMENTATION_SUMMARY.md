@@ -213,6 +213,9 @@ Search Railway logs for validator output:
    - No code changes needed
    - Takes effect immediately on restart
 
+4. **Server-Enforced**
+   - All validation decisions are applied on the server before any image is delivered
+
 ### Known Limitations
 
 1. **Gemini Validators Disabled**

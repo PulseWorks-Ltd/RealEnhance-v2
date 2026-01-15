@@ -74,7 +74,7 @@ To achieve the "Premium Real Estate" look, we will move away from "Tech SaaS Blu
 
 ### C. Processing
 *   **Problem:** "Loading..." text or infinite spinner.
-*   **Fix:** "Transparent AI". Show steps: Uploading > analyzing structure > correcting perspective > balancing light.
+*   **Fix:** "Transparent AI". Show steps: Uploading > analyzing structure > correcting perspective > balancing light — explicitly framed as explanatory UI feedback, not a representation of model internals.
 *   **UI Pattern:** Linear Progress Bar with changing text labels underneath.
 
 ### D. Gallery / History
