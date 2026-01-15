@@ -52,6 +52,10 @@ const clamp01 = (value: number | null | undefined): number | null => {
 };
 
 // Scene confidence guard (auto-accept only when >= guard)
+// NOTE:
+// If VITE_SCENE_CONF_THRESHOLD === 0,
+// confidence does NOT gate auto-selection.
+// Scene auto-select is based purely on LOW/HIGH hysteresis band.
 const SCENE_CONFIDENCE_GUARD = (() => {
   const raw = Number((import.meta as any).env?.VITE_SCENE_CONF_THRESHOLD);
   const clamped = clamp01(raw);
@@ -2830,6 +2834,13 @@ export default function BatchProcessor() {
                 </button>
               </div>
 
+              {/* Validation reminder above thumbnails */}
+              {files.length > 1 && blockingCount > 0 && (
+                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shadow-sm border border-amber-200 whitespace-nowrap">
+                  Complete required fields for images highlighted in red to continue.
+                </div>
+              )}
+
               {/* Thumbnail Strip (for multiple images) */}
               {files.length > 1 && (
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
@@ -2861,10 +2872,6 @@ export default function BatchProcessor() {
                   )}
                 </div>
               )}
-
-              <div className="mt-4 text-xs text-slate-700 max-w-xl">
-                Complete required fields for images highlighted in red to continue.
-              </div>
             </div>
 
             {/* RIGHT PANEL: The Inspector Sidebar */}
