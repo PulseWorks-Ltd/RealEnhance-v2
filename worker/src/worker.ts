@@ -140,6 +140,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // Track primary scene detection (interior/exterior) confidence across all flows
+  let scenePrimary: any = undefined;
+
   // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   if (payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
@@ -259,7 +262,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
   let sceneLabel = (payload.options.sceneType as any) || "auto";
-  let scenePrimary: any = undefined;
   let allowStaging = true;
   let stagingRegionGlobal: any = null;
   // Manual scene override flag passed from client/server
