@@ -51,233 +51,270 @@ interface PersistedFileMetadata {
   size: number;
   type: string;
   lastModified: number;
-}
+        {/* Describe Tab */}
+        {activeTab === "describe" && (
+          <div className="max-w-6xl mx-auto space-y-8">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Step 2 of 3 — Configure Enhancement</p>
+                <h2 className="text-3xl font-semibold text-white">Describe your enhancement</h2>
+                <p className="text-sm text-gray-300">Choose declutter and/or staging, or leave both off for enhancement only (1 image per photo).</p>
+              </div>
+              <div className="bg-gray-900/70 border border-gray-800 rounded-xl px-4 py-3 space-y-1 md:min-w-[260px]">
+                <p className="text-xs uppercase font-semibold text-gray-400">Batch summary</p>
+                <p className="text-sm text-gray-200">
+                  {files.length} {files.length === 1 ? "photo" : "photos"} • {allowStaging ? `${stagingStyle} staging` : "Staging off"} • {declutter ? (declutterMode === "stage-ready" ? "Declutter: stage ready" : "Declutter: light") : "Declutter off"}
+                </p>
+              </div>
+            </div>
 
-interface PersistedBatchJob {
-  jobId: string;
-  jobIds: string[];
-  runState: RunState;
-  results: any[];
-  processedImages: string[];
-  processedImagesByIndex: { [key: number]: string };
-  timestamp: number;
-  fileCount: number;
-  goal: string;
-  industry: string;
-  settings: {
-    preserveStructure: boolean;
-    allowStaging: boolean;
-    allowRetouch: boolean;
-    outdoorStaging: string;
-    furnitureReplacement: boolean;
-    declutter: boolean;
-    stagingStyle: string;
-  };
-  fileMetadata: PersistedFileMetadata[];
-  jobIdToIndex: Record<string, number>;
-}
+            <div className="bg-gray-900/70 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+                {/* Left Column - Settings */}
+                <div className="p-6 lg:p-8 space-y-6 border-b lg:border-b-0 lg:border-r border-gray-800/80">
+                  <div className="relative rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5 lg:p-6 space-y-4">
+                    <div className="absolute left-0 top-0 h-full w-1 bg-emerald-400/80" aria-hidden="true" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-emerald-100">Primary controls</p>
+                      <p className="text-sm text-emerald-50">Choose how AI should process your images. Leaving both off runs enhancement only.</p>
+                    </div>
+                    {preserveStructure && (
+                      <p className="text-xs text-emerald-100/80">Structural protection is enforced by default.</p>
+                    )}
 
-const BATCH_JOB_KEY = "pmf_batch_job";
-const ACTIVE_BATCH_KEY = "activeBatchJobIds";
-const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
+                    <div className="space-y-3">
+                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={declutter}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDeclutter(checked);
+                            setFurnitureReplacement(checked);
+                          }}
+                          className="mt-0.5 h-5 w-5 rounded-md border-gray-600 bg-gray-900 text-emerald-500 focus:ring-emerald-500"
+                          data-testid="checkbox-declutter"
+                        />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-white">Remove furniture & clutter</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-emerald-100 border border-gray-700">Stage 1B</span>
+                          </div>
+                          <p className="text-xs text-gray-400">Clean out existing furniture and clutter before any staging.</p>
+                        </div>
+                      </label>
 
-// Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
-const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
+                      {declutter && (
+                        <div className="ml-1 pl-4 border-l border-gray-800 space-y-2">
+                          <label className="flex items-start gap-2 rounded-md px-2">
+                            <input
+                              type="radio"
+                              name="declutterMode"
+                              value="light"
+                              checked={declutterMode === "light"}
+                              onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                              className="mt-0.5 h-4 w-4 rounded-full border-gray-600 text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <div>
+                              <span className="text-sm text-white">Declutter only</span>
+                              <p className="text-xs text-gray-400">Removes mess while keeping existing furniture.</p>
+                            </div>
+                          </label>
+                          <label className="flex items-start gap-2 rounded-md px-2">
+                            <input
+                              type="radio"
+                              name="declutterMode"
+                              value="stage-ready"
+                              checked={declutterMode === "stage-ready"}
+                              onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                              className="mt-0.5 h-4 w-4 rounded-full border-gray-600 text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <div>
+                              <span className="text-sm text-white">Stage ready (empty room)</span>
+                              <p className="text-xs text-gray-400">Removes all furniture and clutter.</p>
+                            </div>
+                          </label>
+                        </div>
+                      )}
 
-function saveBatchJobState(state: PersistedBatchJob) {
-  try {
-    localStorage.setItem(BATCH_JOB_KEY, JSON.stringify(state));
-  } catch (error) {
-    console.warn("Failed to save batch job state:", error);
-  }
-}
+                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={allowStaging}
+                          onChange={(e) => setAllowStaging(e.target.checked)}
+                          className="mt-0.5 h-5 w-5 rounded-md border-gray-600 bg-gray-900 text-emerald-500 focus:ring-emerald-500"
+                          data-testid="checkbox-allow-staging"
+                        />
+                        <div className="space-y-1 w-full">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-white">Add virtual staging</span>
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-emerald-100 border border-gray-700">Stage 2</span>
+                            </div>
+                            {allowStaging && (
+                              <button
+                                onClick={() => setStagingStyle("NZ Standard Real Estate")}
+                                className="text-xs text-action-500 hover:text-action-400 underline"
+                                type="button"
+                              >
+                                Reset style
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {declutter ? "Stage the emptied room with new furniture." : "Add furniture and decor to the existing room."}
+                          </p>
+                          {allowStaging && (
+                            <div className="mt-2 space-y-2">
+                              <label className="text-xs font-semibold text-gray-300" htmlFor="staging-style-select">
+                                Staging style (applies to all staged images)
+                              </label>
+                              <select
+                                id="staging-style-select"
+                                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:ring-emerald-500 focus:border-emerald-500"
+                                value={stagingStyle}
+                                onChange={e => setStagingStyle(e.target.value)}
+                                data-testid="select-staging-style"
+                              >
+                                <option value="NZ Standard Real Estate">NZ Standard Real Estate</option>
+                                <option value="Coastal">Coastal</option>
+                                <option value="Contemporary">Contemporary</option>
+                                <option value="Hamptons">Hamptons</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Japandi">Japandi</option>
+                                <option value="Luxe Contemporary">Luxe Contemporary</option>
+                                <option value="Minimalist">Minimalist</option>
+                                <option value="Modern">Modern</option>
+                                <option value="Modern Farmhouse">Modern Farmhouse</option>
+                                <option value="NZ Modern">NZ Modern</option>
+                                <option value="Scandinavian">Scandinavian</option>
+                                <option value="Traditional">Traditional</option>
+                                <option value="Urban Loft">Urban Loft</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  </div>
 
-function loadBatchJobState(): PersistedBatchJob | null {
-  try {
-    const saved = localStorage.getItem(BATCH_JOB_KEY);
-    if (!saved) return null;
-    
-    const state = JSON.parse(saved) as PersistedBatchJob;
-    
-    // Check if job has expired
-    const hoursAgo = (Date.now() - state.timestamp) / (1000 * 60 * 60);
-    if (hoursAgo > JOB_EXPIRY_HOURS) {
-      clearBatchJobState();
-      return null;
-    }
-    
-    return state;
-  } catch (error) {
-    console.warn("Failed to load batch job state:", error);
-    clearBatchJobState();
-    return null;
-  }
-}
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 space-y-1">
+                      <p className="text-sm font-semibold text-blue-200">Image consumption per photo</p>
+                      <p className="text-sm text-blue-100">
+                        {declutter && allowStaging ? (
+                          <>
+                            <span className="font-semibold">2 images</span> (enhancement + declutter, plus staging)
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold">1 image</span> {declutter ? "(enhancement + declutter)" : allowStaging ? "(enhancement + staging)" : "(enhancement only)"}
+                          </>
+                        )}
+                      </p>
+                      <p className="text-xs text-blue-200/80">No selection still enhances quality (1 image per photo).</p>
+                    </div>
+                    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+                      <button
+                        onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
+                        className="flex items-center justify-between w-full text-left text-sm font-semibold text-white"
+                        data-testid="button-toggle-specific-requirements"
+                      >
+                        <span>Specific requirements (optional)</span>
+                        <span className="text-gray-400">{showSpecificRequirements ? "Hide" : "Add"}</span>
+                      </button>
+                      {showSpecificRequirements && (
+                        <textarea
+                          className="mt-3 w-full border border-gray-700 rounded-lg p-3 bg-gray-900 text-white focus:ring-emerald-500 focus:border-emerald-500"
+                          rows={4}
+                          placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
+                          value={globalGoal}
+                          onChange={e => setGlobalGoal(e.target.value)}
+                          data-testid="textarea-global-goal"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-function clearBatchJobState() {
-  try {
-    localStorage.removeItem(BATCH_JOB_KEY);
-    localStorage.removeItem(ACTIVE_BATCH_KEY);
-    localStorage.removeItem("activeJobId");
-  } catch (error) {
-    console.warn("Failed to clear batch job state:", error);
-  }
-}
+                {/* Right Column - Preview */}
+                <div className="p-6 lg:p-8 space-y-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.15em] text-gray-400">Current Input Image</p>
+                      <h3 className="text-lg font-semibold text-white">Preview</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      {preserveStructure && (
+                        <span className="rounded-full bg-gray-800 border border-gray-700 px-3 py-1 text-xs font-medium text-emerald-200">
+                          Structure locked
+                        </span>
+                      )}
+                      <span className="rounded-full bg-gray-800 border border-gray-700 px-3 py-1 text-xs font-medium text-gray-200">
+                        {allowStaging ? "Staging-safe" : declutter ? "Cleanup mode" : "Enhancement only"}
+                      </span>
+                    </div>
+                  </div>
 
-export default function BatchProcessor() {
-    // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
-    const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
-  // Tab state for clean UI flow
-  const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">("upload");
-  const [isUploading, setIsUploading] = useState(false);
-  
-  const [files, setFiles] = useState<File[]>([]);
-  const [globalGoal, setGlobalGoal] = useState("");
-  const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
-  const presetKey = "realestate"; // Locked to Real Estate only
-  const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
-  const [runState, setRunState] = useState<RunState>("idle");
+                  {files.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-800 bg-gray-900/40 p-3">
+                      {previewUrls.slice(0, 4).map((url, i) => (
+                        <div key={i} className="relative overflow-hidden rounded-lg border border-gray-800/80 bg-black">
+                          <img
+                            src={url}
+                            alt={`preview-${i}`}
+                            className="w-full h-32 object-cover transition duration-200 hover:scale-[1.01]"
+                          />
+                        </div>
+                      ))}
+                      {files.length > 4 && (
+                        <div className="w-full h-32 rounded-lg border border-dashed border-gray-700 bg-gray-900/40 flex items-center justify-center text-gray-400 text-sm">
+                          +{files.length - 4} more
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-  // Transparent AI simulation
-  const [aiSteps, setAiSteps] = useState<Record<number, string>>({});
-  useEffect(() => {
-    if (runState !== 'running') return;
-    const steps = [
-      "Analyzing geometry...", "Correcting vertical perspective...", "Balancing exposure...", 
-      "Detecting windows...", "Rendering virtual furniture...", "Adjusting manufacturing lighting...",
-      "Optimizing textures...", "Finalizing composition..."
-    ];
-    const interval = setInterval(() => {
-        setAiSteps(prev => {
-            const next = {...prev};
-             for (let i = 0; i < 50; i++) { 
-                if (Math.random() > 0.6) {
-                    next[i] = steps[Math.floor(Math.random() * steps.length)];
-                }
-             }
-            return next;
-        });
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [runState]);
+                  {allowStaging && (
+                    <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="text-emerald-200 text-lg" aria-hidden="true">📐</span>
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-100">Preserve + Stage</p>
+                          <p className="text-xs text-emerald-50 mt-1">
+                            Items stay on floor planes only, keeping doors, windows, and cabinets fully visible.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
 
-  const [jobId, setJobId] = useState<string>("");
-  const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
-  const jobIdToIndexRef = useRef<Record<string, number>>({});
-  const jobIdToImageIdRef = useRef<Record<string, string>>({});
-  const [results, setResults] = useState<any[]>([]);
-  const [progressText, setProgressText] = useState<string>("");
-  const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
-  const [processedImages, setProcessedImages] = useState<string[]>([]); // Track processed image URLs for ZIP download
-  const [processedImagesByIndex, setProcessedImagesByIndex] = useState<{[key: number]: string}>({}); // Track processed image URLs by original index
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
-  
-  // Additional boolean flags for processing control
-  const [allowStaging, setAllowStaging] = useState(true);
-  const [allowRetouch, setAllowRetouch] = useState(true);
-  const [outdoorStaging, setOutdoorStaging] = useState<"auto" | "none">("auto");
-  const [furnitureReplacement, setFurnitureReplacement] = useState(true);
-  // Declutter flag (drives Stage 1B in worker)
-  const [declutter, setDeclutter] = useState<boolean>(false);
-  const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
-  
-  // Collapsible specific requirements
-  const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
-  
-  // ZIP download loading state
-  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
-  
-  // Batch refine loading state
-  const [isBatchRefining, setIsBatchRefining] = useState(false);
-  const [hasRefinedImages, setHasRefinedImages] = useState(false);
-  // Track cancellable job ids reported by the server (per-image jobs)
-  const [cancelIds, setCancelIds] = useState<string[]>([]);
-  
-  // Preview/edit modal state
-  const [previewImage, setPreviewImage] = useState<{ url: string, filename: string, originalUrl?: string, index: number } | null>(null);
-  const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [regionEditorOpen, setRegionEditorOpen] = useState(false);
-  const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
-  const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
-  const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
-
-  // Helper to clear retry flags for a specific image index
-  const clearRetryFlags = useCallback((index: number) => {
-    setRetryingImages(prev => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
-    setRetryLoadingImages(prev => {
-      const next = new Set(prev);
-      next.delete(index);
-      return next;
-    });
-  }, []);
-
-  // Retry timeout safety (60 seconds max)
-  const RETRY_TIMEOUT_MS = 60_000;
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Retry dialog state
-  const [retryDialog, setRetryDialog] = useState<{ isOpen: boolean; imageIndex: number | null }>({
-    isOpen: false,
-    imageIndex: null
-  });
-  
-  const [isEditingInProgress, setIsEditingInProgress] = useState(false);
-  const [editingImage, setEditingImage] = useState<{ url: string, filename: string, resultIndex: number, onSubmit: (roiData: any, instructions?: string) => void } | null>(null);
-
-  // Manual room linking state
-  type LocalItemMeta = {
-    roomKey?: string;     // user label e.g. "Lounge-A"
-    angleOrder?: number;  // 1,2,3... (1 = primary)
-  };
-  
-  const [selection, setSelection] = useState<Set<number>>(new Set()); // indexes user has selected
-  const [metaByIndex, setMetaByIndex] = useState<Record<number, LocalItemMeta>>({});
-  
-  // Images tab state
-  const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
-  const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
-  const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
-  // Track manual scene overrides per-image (when user changes scene dropdown)
-  const [manualSceneOverrideByIndex, setManualSceneOverrideByIndex] = useState<Record<number, boolean>>({});
-  const [linkImages, setLinkImages] = useState<boolean>(false);
-  // Studio view: current image being configured
-  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
-
-  // Tuning controls (apply to all images in this batch; optional)
-  // Declutter intensity removed: always heavy/preset in backend
-  // Disable manual sampling controls; prompt embeds temperature instead
-  const samplingUiEnabled = false;
-  const [temperatureInput, setTemperatureInput] = useState<string>("");
-  const [topPInput, setTopPInput] = useState<string>("");
-  const [topKInput, setTopKInput] = useState<string>("");
-
-  // Progressive display queue for SSE items
-  const queueRef = useRef<any[]>([]);
-  const scheduledRef = useRef(false);
-  const processedSetRef = useRef<Set<number>>(new Set());
-  const filesFingerprintRef = useRef<string>("");
-  // Track which jobIds have shown a strict-retry toast
-  const strictNotifiedRef = useRef<Set<string>>(new Set());
-  // Track which indices are currently undergoing strict validator retry
-  const [strictRetryingIndices, setStrictRetryingIndices] = useState<Set<number>>(new Set());
-
-  // Industry mapping - locked to Real Estate only
-  const industryMap: Record<string, string> = {
-    "realestate": "Real Estate"
-  };
-  
-  const { toast } = useToast();
-  const { refreshUser } = useAuth();
-  const { ensureLoggedInAndCredits } = useAuthGuard();
-
-  // Lightweight client-side scene detector (prefill UX): interior vs exterior
-  // More robust heuristic using regional sampling and relaxed thresholds.
-  async function detectSceneFromFile(f: File): Promise<"interior" | "exterior"> {
-    try {
+            <div className="rounded-xl bg-gray-900/70 border border-gray-800 px-4 md:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="text-sm text-gray-200">
+                {files.length} image{files.length === 1 ? "" : "s"} • {allowStaging ? "Virtual staging enabled" : declutter ? "Declutter enabled" : "Enhancement only"} • {preserveStructure ? "Structural protection enforced" : "Structure flexible"}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+                <button
+                  onClick={() => setActiveTab("upload")}
+                  className="px-6 py-3 border border-gray-700 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
+                  data-testid="button-back-upload"
+                >
+                  ← Back to Upload
+                </button>
+                <button
+                  onClick={() => setActiveTab("images")}
+                  className="px-6 py-3 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors font-medium shadow-sm"
+                  data-testid="button-next-to-images"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       const bmp = await createImageBitmap(f);
       // Normalize width to 256 while preserving aspect
       const cnv = document.createElement("canvas");
@@ -2321,227 +2358,277 @@ export default function BatchProcessor() {
 
         {/* Describe Tab */}
         {activeTab === "describe" && (
-          <div>
-            <h2 className="text-2xl font-semibold text-white mb-6">Describe Your Enhancement</h2>
-            
-            <div className="grid md:grid-cols-2 gap-8">
-              {/* Left Column - Settings */}
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-white">Enhancement Options</h3>
-
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={declutter}
-                      onChange={(e) => { 
-                        const checked = e.target.checked;
-                        setDeclutter(checked); 
-                        setFurnitureReplacement(checked);
-                      }}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-declutter"
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-white">Remove furniture & clutter</span>
-                      <p className="text-xs text-gray-400">Clean out existing furniture and clutter (Stage 1B)</p>
-                    </div>
-                  </label>
-
-                  {/* Declutter Mode Radio Buttons */}
-                  {declutter && (
-                    <div className="ml-8 space-y-2 mb-3">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="declutterMode"
-                          value="light"
-                          checked={declutterMode === "light"}
-                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
-                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
-                        />
-                        <div>
-                          <span className="text-sm text-white">Declutter Only (Remove Clutter)</span>
-                          <p className="text-xs text-gray-400">Keeps furniture, removes mess and clutter</p>
-                        </div>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="declutterMode"
-                          value="stage-ready"
-                          checked={declutterMode === "stage-ready"}
-                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
-                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
-                        />
-                        <div>
-                          <span className="text-sm text-white">Stage Ready (Empty Room)</span>
-                          <p className="text-xs text-gray-400">Removes all furniture and clutter</p>
-                        </div>
-                      </label>
-                    </div>
-                  )}
-
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={allowStaging}
-                      onChange={(e) => setAllowStaging(e.target.checked)}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-allow-staging"
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-white">Add virtual staging</span>
-                      <p className="text-xs text-gray-400">
-                        {declutter 
-                          ? "Stage the empty room with new furniture (Stage 2)" 
-                          : "Add furniture and decor to existing room (Stage 2)"}
-                      </p>
-                    </div>
-                  </label>
-                  {/* Staging Style Dropdown - only shown if staging is enabled */}
-                  {allowStaging && (
-                    <div className="mb-2">
-                      <label className="text-sm font-medium text-white block mb-1" htmlFor="staging-style-select">
-                        Staging Style <span className="text-gray-400 text-xs">(applies to all staged images in this batch)</span>
-                      </label>
-                      <select
-                        id="staging-style-select"
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                        value={stagingStyle}
-                        onChange={e => setStagingStyle(e.target.value)}
-                        data-testid="select-staging-style"
-                      >
-                        <option value="NZ Standard Real Estate">NZ Standard Real Estate</option>
-                        <option value="Coastal">Coastal</option>
-                        <option value="Contemporary">Contemporary</option>
-                        <option value="Hamptons">Hamptons</option>
-                        <option value="Industrial">Industrial</option>
-                        <option value="Japandi">Japandi</option>
-                        <option value="Luxe Contemporary">Luxe Contemporary</option>
-                        <option value="Minimalist">Minimalist</option>
-                        <option value="Modern">Modern</option>
-                        <option value="Modern Farmhouse">Modern Farmhouse</option>
-                        <option value="NZ Modern">NZ Modern</option>
-                        <option value="Scandinavian">Scandinavian</option>
-                        <option value="Traditional">Traditional</option>
-                        <option value="Urban Loft">Urban Loft</option>
-                      </select>
-                      <button
-                        onClick={() => setStagingStyle("NZ Standard Real Estate")}
-                        className="text-xs text-blue-400 hover:text-blue-300 underline mt-1"
-                        type="button"
-                      >
-                        Reset to NZ Standard
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Image Consumption Notice */}
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                  <p className="text-sm font-medium text-blue-300 mb-1">Image consumption per photo:</p>
-                  <p className="text-sm text-blue-200">
-                    {declutter && allowStaging ? (
-                      <>
-                        <span className="font-semibold">2 images</span> will be consumed per photo
-                        <span className="text-xs block text-blue-300 mt-1">
-                          (1 for enhancement + declutter, 1 for staging)
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold">1 image</span> will be consumed per photo
-                        <span className="text-xs block text-blue-300 mt-1">
-                          ({declutter ? 'Enhancement + declutter' : allowStaging ? 'Enhancement + staging' : 'Enhancement only'})
-                        </span>
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <div>
-                  <button
-                    onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
-                    className="flex items-center justify-between w-full text-left p-3 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-600 transition-colors"
-                    data-testid="button-toggle-specific-requirements"
-                  >
-                    <span className="text-sm font-medium text-white">
-                      Specific Requirements <span className="text-gray-400">(optional)</span>
-                    </span>
-                    <span className={`transform transition-transform text-gray-400 ${showSpecificRequirements ? 'rotate-180' : ''}`}>
-                      ▼
-                    </span>
-                  </button>
-                  
-                  {showSpecificRequirements && (
-                    <div className="mt-2">
-                      <textarea
-                        className="w-full border border-gray-600 rounded-lg p-3 bg-gray-800 text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                        rows={4}
-                        placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
-                        value={globalGoal}
-                        onChange={e => setGlobalGoal(e.target.value)}
-                        data-testid="textarea-global-goal"
-                      />
-                    </div>
-                  )}
-                </div>
+          <div className="max-w-6xl mx-auto space-y-8">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div className="space-y-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step 2 of 3 — Configure Enhancement</p>
+                <h2 className="text-3xl font-semibold text-white">Describe your enhancement</h2>
+                <p className="text-sm text-gray-300">Pick declutter/staging if needed, or continue with enhancement-only. You can still leave both off.</p>
               </div>
-
-              {/* Right Column - Preview */}
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">Image Preview</h3>
-                {files.length > 0 && (
-                  <div className="grid grid-cols-2 gap-3">
-                    {previewUrls.slice(0, 4).map((url, i) => (
-                      <img 
-                        key={i}
-                        src={url} 
-                        alt={`preview-${i}`} 
-                        className="w-full h-32 object-cover rounded-lg border border-gray-600"
-                      />
-                    ))}
-                    {files.length > 4 && (
-                      <div className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center">
-                        <span className="text-gray-400 text-sm">+{files.length - 4} more</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {allowStaging && (
-                  <div className="mt-4 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <span className="text-purple-400 text-lg">📐</span>
-                      <div>
-                        <p className="text-sm font-medium text-purple-300">Preserve + Stage Mode</p>
-                        <p className="text-xs text-purple-200 mt-1">
-                          Items will be placed on floor planes only, keeping doors, windows, and cabinets fully visible.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+              <div className="w-full md:w-auto bg-gray-900/70 border border-gray-800 rounded-xl px-4 py-3">
+                <ProcessingSteps
+                  steps={[
+                    { id: "upload", label: "Upload", status: "complete" as const },
+                    { id: "describe", label: "Describe", status: "active" as const },
+                    { id: "images", label: "Images", status: "pending" as const },
+                    { id: "enhance", label: "Enhance", status: "pending" as const },
+                  ]}
+                />
               </div>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-gray-600">
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={() => setActiveTab("upload")}
-                  className="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
-                  data-testid="button-back-upload"
-                >
-                  ← Back to Upload
-                </button>
-                <button
-                  onClick={() => setActiveTab("images")}
-                  className="px-6 py-3 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors font-medium"
-                  data-testid="button-next-to-images"
-                >
-                  Next →
-                </button>
+            <div className="bg-gray-900/70 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+                {/* Left Column - Settings */}
+                <div className="p-6 lg:p-8 space-y-6">
+                  <div className="relative rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5 lg:p-6 shadow-[0_10px_40px_rgba(0,0,0,0.35)] overflow-hidden">
+                    <div className="absolute left-0 top-0 h-full w-1 bg-emerald-400/80" aria-hidden="true"></div>
+                    <div className="relative space-y-1">
+                      <p className="text-xs text-emerald-100/90">Choose how AI should process your images.</p>
+                      <p className="text-sm text-emerald-200">At least one option is recommended, but you can leave both off to run enhancement-only (1 credit per image).</p>
+                      {preserveStructure && (
+                        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-100 mt-2">
+                          Structure locked for this batch
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/70 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={declutter}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setDeclutter(checked);
+                            setFurnitureReplacement(checked);
+                          }}
+                          className="mt-1 h-5 w-5 rounded-md border-gray-600 bg-gray-900 text-emerald-500 focus:ring-emerald-500"
+                          data-testid="checkbox-declutter"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-white">Remove furniture & clutter</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-200 border border-gray-700">Stage 1B</span>
+                          </div>
+                          <p className="text-xs text-gray-400">Clean out existing furniture and clutter before any staging.</p>
+                        </div>
+                      </label>
+
+                      {declutter && (
+                        <div className="ml-8 space-y-3">
+                          <label className="flex items-start gap-2 rounded-md border border-gray-800/70 bg-gray-900/70 px-3 py-2">
+                            <input
+                              type="radio"
+                              name="declutterMode"
+                              value="light"
+                              checked={declutterMode === "light"}
+                              onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                              className="mt-1 h-4 w-4 border-gray-600 text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <div>
+                              <span className="text-sm text-white">Declutter Only (Remove Clutter)</span>
+                              <p className="text-xs text-gray-400">Keeps furniture, removes mess.</p>
+                            </div>
+                          </label>
+                          <label className="flex items-start gap-2 rounded-md border border-gray-800/70 bg-gray-900/70 px-3 py-2">
+                            <input
+                              type="radio"
+                              name="declutterMode"
+                              value="stage-ready"
+                              checked={declutterMode === "stage-ready"}
+                              onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
+                              className="mt-1 h-4 w-4 border-gray-600 text-emerald-500 focus:ring-emerald-500"
+                            />
+                            <div>
+                              <span className="text-sm text-white">Stage Ready (Empty Room)</span>
+                              <p className="text-xs text-gray-400">Removes all furniture and clutter.</p>
+                            </div>
+                          </label>
+                        </div>
+                      )}
+
+                      <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/70 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={allowStaging}
+                          onChange={(e) => setAllowStaging(e.target.checked)}
+                          className="mt-1 h-5 w-5 rounded-md border-gray-600 bg-gray-900 text-emerald-500 focus:ring-emerald-500"
+                          data-testid="checkbox-allow-staging"
+                        />
+                        <div className="w-full">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-white">Add virtual staging</span>
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-200 border border-gray-700">Stage 2</span>
+                            </div>
+                            {allowStaging && (
+                              <button
+                                onClick={() => setStagingStyle("NZ Standard Real Estate")}
+                                className="text-xs text-action-500 hover:text-action-400 underline"
+                                type="button"
+                              >
+                                Reset style
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {declutter
+                              ? "Stage the emptied room with new furniture."
+                              : "Add furniture and decor to the existing room."}
+                          </p>
+                          {allowStaging && (
+                            <div className="mt-3 space-y-2">
+                              <label className="text-xs font-semibold text-gray-300" htmlFor="staging-style-select">
+                                Staging style (applies to all staged images)
+                              </label>
+                              <select
+                                id="staging-style-select"
+                                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:ring-emerald-500 focus:border-emerald-500"
+                                value={stagingStyle}
+                                onChange={e => setStagingStyle(e.target.value)}
+                                data-testid="select-staging-style"
+                              >
+                                <option value="NZ Standard Real Estate">NZ Standard Real Estate</option>
+                                <option value="Coastal">Coastal</option>
+                                <option value="Contemporary">Contemporary</option>
+                                <option value="Hamptons">Hamptons</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Japandi">Japandi</option>
+                                <option value="Luxe Contemporary">Luxe Contemporary</option>
+                                <option value="Minimalist">Minimalist</option>
+                                <option value="Modern">Modern</option>
+                                <option value="Modern Farmhouse">Modern Farmhouse</option>
+                                <option value="NZ Modern">NZ Modern</option>
+                                <option value="Scandinavian">Scandinavian</option>
+                                <option value="Traditional">Traditional</option>
+                                <option value="Urban Loft">Urban Loft</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4 space-y-2">
+                      <p className="text-sm font-semibold text-white">Image consumption</p>
+                      <p className="text-sm text-gray-300">
+                        {declutter && allowStaging ? (
+                          <>
+                            <span className="font-semibold text-emerald-400">2 images</span> per photo
+                            <span className="block text-xs text-gray-400 mt-1">(1 for enhancement + declutter, 1 for staging)</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-emerald-400">1 image</span> per photo
+                            <span className="block text-xs text-gray-400 mt-1">({declutter ? "Enhancement + declutter" : allowStaging ? "Enhancement + staging" : "Enhancement only"})</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+                      <button
+                        onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
+                        className="flex items-center justify-between w-full text-left text-sm font-semibold text-white"
+                        data-testid="button-toggle-specific-requirements"
+                      >
+                        <span>Specific requirements (optional)</span>
+                        <span className="text-gray-400">{showSpecificRequirements ? "Hide" : "Show"}</span>
+                      </button>
+                      {showSpecificRequirements && (
+                        <textarea
+                          className="mt-3 w-full border border-gray-700 rounded-lg p-3 bg-gray-900 text-white focus:ring-emerald-500 focus:border-emerald-500"
+                          rows={4}
+                          placeholder="e.g., brighten rooms, greener lawn, blue sky, keep fixtures visible."
+                          value={globalGoal}
+                          onChange={e => setGlobalGoal(e.target.value)}
+                          data-testid="textarea-global-goal"
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Preview */}
+                <div className="p-6 lg:p-8 space-y-4 border-t lg:border-t-0 lg:border-l border-gray-800">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.15em] text-gray-400">Current Input Image</p>
+                      <h3 className="text-lg font-semibold text-white">Preview</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      {preserveStructure && (
+                        <span className="rounded-full bg-gray-800/90 border border-gray-700 px-3 py-1 text-xs font-medium text-emerald-200">
+                          Structure locked
+                        </span>
+                      )}
+                      <span className="rounded-full bg-gray-800/90 border border-gray-700 px-3 py-1 text-xs font-medium text-gray-200">
+                        {allowStaging ? "Staging-safe" : declutter ? "Cleanup mode" : "Enhancement only"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {files.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-gray-800 bg-gray-900/50 p-3">
+                      {previewUrls.slice(0, 4).map((url, i) => (
+                        <div key={i} className="relative overflow-hidden rounded-lg border border-gray-800/80 bg-black">
+                          <img
+                            src={url}
+                            alt={`preview-${i}`}
+                            className="w-full h-32 object-cover transition duration-200 hover:scale-[1.01]"
+                          />
+                        </div>
+                      ))}
+                      {files.length > 4 && (
+                        <div className="w-full h-32 rounded-lg border border-dashed border-gray-700 bg-gray-900/40 flex items-center justify-center text-gray-400 text-sm">
+                          +{files.length - 4} more
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400">Add photos first to preview this step.</p>
+                  )}
+
+                  {allowStaging && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="text-amber-300 text-lg" aria-hidden="true">📐</span>
+                        <div>
+                          <p className="text-sm font-semibold text-amber-200">Preserve + Stage Mode</p>
+                          <p className="text-xs text-amber-100 mt-1">
+                            Items will be placed on floor planes only, keeping doors, windows, and cabinets fully visible.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-800">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="text-sm text-gray-200">
+                  {files.length} image(s) • {allowStaging ? `${stagingStyle} staging enabled` : declutter ? "Declutter enabled" : "Enhancement only"} • {preserveStructure ? "Structural protection enforced" : "Structure flexible"}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 sm:justify-end">
+                  <button
+                    onClick={() => setActiveTab("upload")}
+                    className="px-6 py-3 border border-gray-700 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
+                    data-testid="button-back-upload"
+                  >
+                    ← Back to Upload
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("images")}
+                    className="px-6 py-3 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors font-semibold shadow-md"
+                    data-testid="button-next-to-images"
+                  >
+                    Next →
+                  </button>
+                </div>
               </div>
             </div>
           </div>
