@@ -1,0 +1,214 @@
+/**
+ * Stage-Aware Config Unit Tests
+ *
+ * Tests env parsing helpers and configuration loading.
+ * Run with: npx tsx src/validators/__tests__/stageAwareConfig.test.ts
+ */
+
+import {
+  parseEnvFloat01,
+  parseEnvBool,
+  parseEnvInt,
+  parseEnvFloat,
+  loadStage2Thresholds,
+  loadHardFailSwitches,
+  loadStageAwareConfig,
+} from "../stageAwareConfig";
+
+// Simple test runner
+let passed = 0;
+let failed = 0;
+
+function assert(condition: boolean, testName: string) {
+  if (condition) {
+    passed++;
+    console.log(`  ✓ ${testName}`);
+  } else {
+    failed++;
+    console.log(`  ✗ ${testName}`);
+  }
+}
+
+function assertEqual<T>(actual: T, expected: T, testName: string) {
+  assert(actual === expected, `${testName} (expected ${expected}, got ${actual})`);
+}
+
+// Store original env vars
+const originalEnv = { ...process.env };
+
+function resetEnv() {
+  process.env = { ...originalEnv };
+}
+
+console.log("\n=== stageAwareConfig Tests ===\n");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// parseEnvFloat01 tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("parseEnvFloat01:");
+
+resetEnv();
+delete process.env.TEST_VAR;
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0.5, "returns default when undefined");
+
+resetEnv();
+process.env.TEST_VAR = "";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0.5, "returns default when empty");
+
+resetEnv();
+process.env.TEST_VAR = "0.75";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0.75, "parses valid float");
+
+resetEnv();
+process.env.TEST_VAR = "0";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0, "parses 0");
+
+resetEnv();
+process.env.TEST_VAR = "1";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 1, "parses 1");
+
+resetEnv();
+process.env.TEST_VAR = "1.5";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 1, "clamps values above 1");
+
+resetEnv();
+process.env.TEST_VAR = "-0.5";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0, "clamps negative values");
+
+resetEnv();
+process.env.TEST_VAR = "not-a-number";
+assertEqual(parseEnvFloat01("TEST_VAR", 0.5), 0.5, "returns default for invalid float");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// parseEnvBool tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nparseEnvBool:");
+
+resetEnv();
+delete process.env.TEST_BOOL;
+assertEqual(parseEnvBool("TEST_BOOL", false), false, "returns default false when undefined");
+assertEqual(parseEnvBool("TEST_BOOL", true), true, "returns default true when undefined");
+
+resetEnv();
+process.env.TEST_BOOL = "";
+assertEqual(parseEnvBool("TEST_BOOL", true), true, "returns default when empty");
+
+resetEnv();
+process.env.TEST_BOOL = "1";
+assertEqual(parseEnvBool("TEST_BOOL", false), true, "returns true for '1'");
+
+resetEnv();
+process.env.TEST_BOOL = "true";
+assertEqual(parseEnvBool("TEST_BOOL", false), true, "returns true for 'true'");
+
+resetEnv();
+process.env.TEST_BOOL = "TRUE";
+assertEqual(parseEnvBool("TEST_BOOL", false), true, "returns true for 'TRUE'");
+
+resetEnv();
+process.env.TEST_BOOL = "0";
+assertEqual(parseEnvBool("TEST_BOOL", true), false, "returns false for '0'");
+
+resetEnv();
+process.env.TEST_BOOL = "false";
+assertEqual(parseEnvBool("TEST_BOOL", true), false, "returns false for 'false'");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// parseEnvInt tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nparseEnvInt:");
+
+resetEnv();
+delete process.env.TEST_INT;
+assertEqual(parseEnvInt("TEST_INT", 3), 3, "returns default when undefined");
+
+resetEnv();
+process.env.TEST_INT = "5";
+assertEqual(parseEnvInt("TEST_INT", 3), 5, "parses valid integer");
+
+resetEnv();
+process.env.TEST_INT = "-10";
+assertEqual(parseEnvInt("TEST_INT", 0), -10, "parses negative integer");
+
+resetEnv();
+process.env.TEST_INT = "5.7";
+assertEqual(parseEnvInt("TEST_INT", 0), 5, "truncates float to integer");
+
+resetEnv();
+process.env.TEST_INT = "abc";
+assertEqual(parseEnvInt("TEST_INT", 3), 3, "returns default for invalid input");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// loadStage2Thresholds tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadStage2Thresholds:");
+
+resetEnv();
+delete process.env.STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE2_UNIFIED_MIN;
+
+let thresholds = loadStage2Thresholds();
+assertEqual(thresholds.edgeIouMin, 0.60, "defaults edgeIouMin to 0.60");
+assertEqual(thresholds.structIouMin, 0.55, "defaults structIouMin to 0.55");
+assertEqual(thresholds.lineEdgeMin, 0.70, "defaults lineEdgeMin to 0.70");
+assertEqual(thresholds.unifiedMin, 0.65, "defaults unifiedMin to 0.65");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN = "0.45";
+process.env.STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN = "0.40";
+thresholds = loadStage2Thresholds();
+assertEqual(thresholds.edgeIouMin, 0.45, "uses custom edgeIouMin");
+assertEqual(thresholds.structIouMin, 0.40, "uses custom structIouMin");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// loadHardFailSwitches tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadHardFailSwitches:");
+
+resetEnv();
+delete process.env.STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE;
+delete process.env.STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE;
+delete process.env.STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA;
+
+let switches = loadHardFailSwitches();
+assertEqual(switches.blockOnWindowCountChange, false, "defaults blockOnWindowCountChange to false");
+assertEqual(switches.blockOnWindowPositionChange, false, "defaults blockOnWindowPositionChange to false");
+assertEqual(switches.blockOnOpeningsDelta, false, "defaults blockOnOpeningsDelta to false");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE = "1";
+process.env.STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE = "true";
+process.env.STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA = "1";
+switches = loadHardFailSwitches();
+assertEqual(switches.blockOnWindowCountChange, true, "enables blockOnWindowCountChange with '1'");
+assertEqual(switches.blockOnWindowPositionChange, true, "enables blockOnWindowPositionChange with 'true'");
+assertEqual(switches.blockOnOpeningsDelta, true, "enables blockOnOpeningsDelta with '1'");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// loadStageAwareConfig tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadStageAwareConfig:");
+
+resetEnv();
+const config = loadStageAwareConfig();
+assert(config.enabled !== undefined, "has enabled field");
+assert(config.stage2EdgeMode !== undefined, "has stage2EdgeMode field");
+assert(config.gateMinSignals !== undefined, "has gateMinSignals field");
+assert(config.stage2Thresholds !== undefined, "has stage2Thresholds field");
+assert(config.stage2Thresholds.edgeIouMin !== undefined, "has nested edgeIouMin");
+assert(config.hardFailSwitches !== undefined, "has hardFailSwitches field");
+assert(config.hardFailSwitches.blockOnWindowCountChange !== undefined, "has nested blockOnWindowCountChange");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Summary
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\n=== Test Results ===");
+console.log(`Passed: ${passed}`);
+console.log(`Failed: ${failed}`);
+console.log(`Total:  ${passed + failed}`);
+
+if (failed > 0) {
+  process.exit(1);
+}

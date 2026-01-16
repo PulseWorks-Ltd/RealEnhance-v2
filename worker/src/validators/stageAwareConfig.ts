@@ -3,9 +3,155 @@
  *
  * This module provides configuration for the stage-aware structural validation system.
  * All settings are configurable via environment variables with sensible defaults.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ENV VAR DOCUMENTATION
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * EXISTING ENV VARS (backward compatible):
+ * - STRUCTURE_VALIDATOR_MODE: "off" | "log" | "retry" | "block" (default: "off")
+ * - STRUCTURE_VALIDATOR_SENSITIVITY: Line deviation in degrees (default: 5.0)
+ * - STRUCT_VALIDATION_STAGE_AWARE: "0" | "1" (default: "0")
+ * - STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL: "0" | "1" (default: "1")
+ * - STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS: number (default: 3)
+ *
+ * NEW STAGE 2 THRESHOLD ENV VARS:
+ * - STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
+ * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.55)
+ * - STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN: 0.0-1.0 (default: 0.70)
+ * - STRUCT_VALIDATION_STAGE2_UNIFIED_MIN: 0.0-1.0 (default: 0.65)
+ *
+ * HARD-FAIL SWITCHES (default: false for safety - only enable when explicitly set):
+ * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "0")
+ * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE: "0" | "1" (default: "0")
+ * - STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA: "0" | "1" (default: "0")
  */
 
 export type StageId = "stage1A" | "stage1B" | "stage2";
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENV PARSING HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Parse a float from env var with default, clamped to [0,1] range with warning
+ */
+export function parseEnvFloat01(envKey: string, defaultValue: number): number {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === "") {
+    return defaultValue;
+  }
+  const parsed = parseFloat(raw);
+  if (Number.isNaN(parsed)) {
+    console.warn(`[stageAwareConfig] Invalid float for ${envKey}="${raw}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  if (parsed < 0 || parsed > 1) {
+    const clamped = Math.max(0, Math.min(1, parsed));
+    console.warn(`[stageAwareConfig] ${envKey}=${parsed} out of range [0,1], clamping to ${clamped}`);
+    return clamped;
+  }
+  return parsed;
+}
+
+/**
+ * Parse a boolean from env var (truthy if "1" or "true")
+ */
+export function parseEnvBool(envKey: string, defaultValue: boolean): boolean {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === "") {
+    return defaultValue;
+  }
+  return raw === "1" || raw.toLowerCase() === "true";
+}
+
+/**
+ * Parse an integer from env var with default
+ */
+export function parseEnvInt(envKey: string, defaultValue: number): number {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === "") {
+    return defaultValue;
+  }
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed)) {
+    console.warn(`[stageAwareConfig] Invalid int for ${envKey}="${raw}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+/**
+ * Parse a float from env var with default (no range clamping)
+ */
+export function parseEnvFloat(envKey: string, defaultValue: number): number {
+  const raw = process.env[envKey];
+  if (raw === undefined || raw === "") {
+    return defaultValue;
+  }
+  const parsed = parseFloat(raw);
+  if (Number.isNaN(parsed)) {
+    console.warn(`[stageAwareConfig] Invalid float for ${envKey}="${raw}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STAGE 2 THRESHOLD CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface Stage2Thresholds {
+  /** Minimum global edge IoU for Stage 2 */
+  edgeIouMin: number;
+  /** Minimum structural mask IoU for Stage 2 */
+  structIouMin: number;
+  /** Minimum line/edge score for Stage 2 */
+  lineEdgeMin: number;
+  /** Minimum unified structural score for Stage 2 */
+  unifiedMin: number;
+}
+
+/**
+ * Load Stage 2 thresholds from environment variables
+ */
+export function loadStage2Thresholds(): Stage2Thresholds {
+  return {
+    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN", 0.60),
+    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.55),
+    lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.70),
+    unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.65),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HARD-FAIL SWITCHES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface HardFailSwitches {
+  /** Block on window count change (default: false for safety) */
+  blockOnWindowCountChange: boolean;
+  /** Block on window position change (default: false for safety) */
+  blockOnWindowPositionChange: boolean;
+  /** Block on openings delta (+1 or -1 openings) (default: false for safety) */
+  blockOnOpeningsDelta: boolean;
+}
+
+/**
+ * Load hard-fail switches from environment variables
+ * Default to false for safety - only enable when explicitly set
+ */
+export function loadHardFailSwitches(): HardFailSwitches {
+  return {
+    blockOnWindowCountChange: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE", false),
+    blockOnWindowPositionChange: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE", false),
+    blockOnOpeningsDelta: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA", false),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN CONFIG INTERFACE
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export interface StageAwareConfig {
   /** Feature flag - when disabled, uses legacy validators */
@@ -28,26 +174,49 @@ export interface StageAwareConfig {
   paintOverEdgeRatioMin: number;
   paintOverTexRatioMin: number;
   paintOverMinRoiArea: number;
+
+  /** Stage 2 thresholds (NEW) */
+  stage2Thresholds: Stage2Thresholds;
+
+  /** Hard-fail switches (NEW) */
+  hardFailSwitches: HardFailSwitches;
 }
 
 /**
  * Load stage-aware configuration from environment variables
  */
 export function loadStageAwareConfig(): StageAwareConfig {
-  return {
-    enabled: process.env.STRUCT_VALIDATION_STAGE_AWARE === "1",
+  const config: StageAwareConfig = {
+    enabled: parseEnvBool("STRUCT_VALIDATION_STAGE_AWARE", false),
     stage2EdgeMode: parseEdgeMode(process.env.STRUCT_VALIDATION_STAGE2_EDGE_MODE),
-    stage2ExcludeLowerPct: parseFloat(process.env.STRUCT_VALIDATION_STAGE2_EXCLUDE_LOWER_PCT || "0.40"),
-    gateMinSignals: parseInt(process.env.STRUCT_VALIDATION_GATE_MIN_SIGNALS || "2", 10),
-    iouMinPixelsRatio: parseFloat(process.env.STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO || "0.005"),
-    logArtifactsOnFail: process.env.STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL !== "0",
-    maxRetryAttempts: parseInt(process.env.STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS || "3", 10),
+    stage2ExcludeLowerPct: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EXCLUDE_LOWER_PCT", 0.40),
+    gateMinSignals: parseEnvInt("STRUCT_VALIDATION_GATE_MIN_SIGNALS", 2),
+    iouMinPixelsRatio: parseEnvFloat01("STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO", 0.005),
+    logArtifactsOnFail: parseEnvBool("STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL", true),
+    maxRetryAttempts: parseEnvInt("STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS", 3),
 
-    paintOverEnable: process.env.STRUCT_VALIDATION_PAINTOVER_ENABLE !== "0",
-    paintOverEdgeRatioMin: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_EDGE_RATIO_MIN || "0.35"),
-    paintOverTexRatioMin: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_TEX_RATIO_MIN || "0.45"),
-    paintOverMinRoiArea: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_MIN_ROI_AREA || "0.005"),
+    paintOverEnable: parseEnvBool("STRUCT_VALIDATION_PAINTOVER_ENABLE", true),
+    paintOverEdgeRatioMin: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_EDGE_RATIO_MIN", 0.35),
+    paintOverTexRatioMin: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_TEX_RATIO_MIN", 0.45),
+    paintOverMinRoiArea: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_MIN_ROI_AREA", 0.005),
+
+    // NEW: Stage 2 thresholds
+    stage2Thresholds: loadStage2Thresholds(),
+
+    // NEW: Hard-fail switches
+    hardFailSwitches: loadHardFailSwitches(),
   };
+
+  // Log config on first load for debugging
+  console.log(`[stageAwareConfig] Loaded config:`, {
+    enabled: config.enabled,
+    stage2EdgeMode: config.stage2EdgeMode,
+    gateMinSignals: config.gateMinSignals,
+    stage2Thresholds: config.stage2Thresholds,
+    hardFailSwitches: config.hardFailSwitches,
+  });
+
+  return config;
 }
 
 function parseEdgeMode(value: string | undefined): "global" | "structure_only" | "exclude_lower" {
@@ -182,6 +351,9 @@ export interface ValidationSummary {
     lineDeviation?: number;
     wallDrift?: number;
     maskedDrift?: number;
+    windowValidationPassed?: number;
+    openingsCreated?: number;
+    openingsClosed?: number;
   };
   /** Debug information */
   debug: {

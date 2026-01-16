@@ -160,7 +160,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
 
       // Run Stage-2 only (using 1B as base)
-      const path2 = await runStage2(basePath, "1B", {
+      const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
         sceneType: payload.options.sceneType as any,
@@ -168,6 +168,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         profile: undefined,
         stagingRegion: undefined,
       });
+
+      // Handle block mode rejection (stage2Result is null)
+      if (stage2Result === null) {
+        nLog(`[worker] Stage-2-only was blocked by structural validation`);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: "Image rejected: Structural validation failed in block mode",
+          error: "BLOCKED_BY_VALIDATOR",
+          meta: { blockedByValidator: true }
+        });
+        return;
+      }
+      const path2 = stage2Result;
 
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
@@ -798,7 +811,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
       const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
-      path2 = payload.options.virtualStage
+      const stage2Result = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
@@ -828,6 +841,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
           })
         : (payload.options.declutter && path1B ? path1B : path1A);
+
+      // Handle block mode rejection (stage2Result is null)
+      if (stage2Result === null) {
+        nLog(`[WORKER] Stage 2 was blocked by structural validation (block mode enabled)`);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: "Image rejected: Structural validation failed in block mode",
+          error: "BLOCKED_BY_VALIDATOR",
+          meta: { ...sceneMeta, blockedByValidator: true }
+        });
+        return;
+      }
+      path2 = stage2Result;
     }
   } catch (e: any) {
     const errMsg = e?.message || String(e);

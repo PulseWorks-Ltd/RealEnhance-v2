@@ -21,6 +21,8 @@ import {
   loadStageAwareConfig,
   STAGE_THRESHOLDS,
   getStage2EdgeIouMin,
+  Stage2Thresholds,
+  HardFailSwitches,
 } from "../stageAwareConfig";
 import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
 import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
@@ -199,6 +201,22 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const triggers: ValidationTrigger[] = [];
   const metrics: ValidationSummary["metrics"] = {};
 
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // ENV-CONFIGURABLE STAGE 2 THRESHOLDS
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // When STRUCT_VALIDATION_STAGE_AWARE=1 and stage=stage2, use env-configurable thresholds
+  const stage2Thresholds = config.stage2Thresholds;
+  const hardFailSwitches = config.hardFailSwitches;
+  const isStage2 = params.stage === "stage2";
+
+  // Use env-configured thresholds for Stage 2, or static defaults for other stages
+  const effectiveThresholds = {
+    structuralMaskIouMin: isStage2 ? stage2Thresholds.structIouMin : thresholds.structuralMaskIouMin,
+    globalEdgeIouMin: isStage2 ? stage2Thresholds.edgeIouMin : (thresholds.globalEdgeIouMin || 0.60),
+    lineEdgeMin: isStage2 ? stage2Thresholds.lineEdgeMin : 0.70,
+    unifiedMin: isStage2 ? stage2Thresholds.unifiedMin : 0.65,
+  };
+
   const debug: ValidationSummary["debug"] = {
     dimsBaseline: { w: 0, h: 0 },
     dimsCandidate: { w: 0, h: 0 },
@@ -215,6 +233,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   console.log(`[stageAware] Baseline: ${params.baselinePath}`);
   console.log(`[stageAware] Candidate: ${params.candidatePath}`);
   console.log(`[stageAware] Mode: ${mode}`);
+  if (isStage2) {
+    console.log(`[stageAware] Stage2 Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}, lineEdgeMin=${effectiveThresholds.lineEdgeMin}, unifiedMin=${effectiveThresholds.unifiedMin}`);
+    console.log(`[stageAware] Hard-fail switches: windowCount=${hardFailSwitches.blockOnWindowCountChange}, windowPos=${hardFailSwitches.blockOnWindowPositionChange}, openings=${hardFailSwitches.blockOnOpeningsDelta}`);
+  }
 
   // ===== 1. LOAD AND VERIFY DIMENSIONS =====
   let baseMeta: sharp.Metadata;
@@ -317,12 +339,12 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         metrics.structuralIoU = structuralIoU;
         console.log(`[stageAware] Structural IoU (masked): ${structuralIoU.toFixed(3)} (inter=${iouResult.inter}, union=${iouResult.uni})`);
 
-        if (structuralIoU < thresholds.structuralMaskIouMin) {
+        if (structuralIoU < effectiveThresholds.structuralMaskIouMin) {
           triggers.push({
             id: "structural_mask_iou",
-            message: `Structural mask IoU too low: ${structuralIoU.toFixed(3)} < ${thresholds.structuralMaskIouMin}`,
+            message: `Structural mask IoU too low: ${structuralIoU.toFixed(3)} < ${effectiveThresholds.structuralMaskIouMin}`,
             value: structuralIoU,
-            threshold: thresholds.structuralMaskIouMin,
+            threshold: effectiveThresholds.structuralMaskIouMin,
             stage: params.stage,
           });
         }
@@ -423,7 +445,97 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     }
   }
 
-  // ===== 6.5 PAINT-OVER DETECTION (Stage2 only) =====
+  // ===== 6.5 HARD-FAIL SWITCH CHECKS (Stage2 only) =====
+  // These run window/opening detection and add FATAL triggers when switches enabled
+  if (isStage2 && !debug.dimensionMismatch) {
+    try {
+      const { validateWindows } = await import("../windowValidator.js");
+      const windowResult = await validateWindows(params.baselinePath, params.candidatePath);
+
+      // Add window validation metrics to debug
+      if (windowResult) {
+        metrics.windowValidationPassed = windowResult.ok ? 1 : 0;
+
+        if (!windowResult.ok && windowResult.reason) {
+          // Check if hard-fail switch is enabled
+          if (windowResult.reason === "window_count_change" && hardFailSwitches.blockOnWindowCountChange) {
+            triggers.push({
+              id: "window_count_change",
+              message: `Window count changed (hard-fail enabled)`,
+              value: 1,
+              threshold: 0,
+              stage: params.stage,
+              fatal: true, // Bypasses multi-signal gating
+            });
+            console.log(`[stageAware] FATAL: Window count change detected (blockOnWindowCountChange=true)`);
+          } else if (windowResult.reason === "window_position_change" && hardFailSwitches.blockOnWindowPositionChange) {
+            triggers.push({
+              id: "window_position_change",
+              message: `Window position changed significantly (hard-fail enabled)`,
+              value: 1,
+              threshold: 0,
+              stage: params.stage,
+              fatal: true,
+            });
+            console.log(`[stageAware] FATAL: Window position change detected (blockOnWindowPositionChange=true)`);
+          } else if (!windowResult.ok) {
+            // Non-fatal window issue - add as regular trigger
+            triggers.push({
+              id: windowResult.reason || "window_change",
+              message: `Window validation failed: ${windowResult.reason}`,
+              value: 1,
+              threshold: 0,
+              stage: params.stage,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[stageAware] Window validation error (non-fatal):`, err);
+    }
+
+    // Check for openings delta using semantic validator
+    try {
+      const { runSemanticStructureValidator } = await import("../semanticStructureValidator.js");
+      const semanticResult = await runSemanticStructureValidator({
+        originalImagePath: params.baselinePath,
+        enhancedImagePath: params.candidatePath,
+        scene: params.sceneType || "interior",
+        mode: "log",
+      });
+
+      if (semanticResult) {
+        const openingsDelta = semanticResult.openings.created + semanticResult.openings.closed;
+        metrics.openingsCreated = semanticResult.openings.created;
+        metrics.openingsClosed = semanticResult.openings.closed;
+
+        if (openingsDelta > 0 && hardFailSwitches.blockOnOpeningsDelta) {
+          triggers.push({
+            id: "openings_delta",
+            message: `Openings changed: +${semanticResult.openings.created} created, -${semanticResult.openings.closed} closed (hard-fail enabled)`,
+            value: openingsDelta,
+            threshold: 0,
+            stage: params.stage,
+            fatal: true,
+          });
+          console.log(`[stageAware] FATAL: Openings delta detected (blockOnOpeningsDelta=true)`);
+        } else if (openingsDelta > 0) {
+          // Non-fatal openings change - add as regular trigger
+          triggers.push({
+            id: "openings_delta",
+            message: `Openings changed: +${semanticResult.openings.created} created, -${semanticResult.openings.closed} closed`,
+            value: openingsDelta,
+            threshold: 0,
+            stage: params.stage,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[stageAware] Semantic structure validation error (non-fatal):`, err);
+    }
+  }
+
+  // ===== 6.6 PAINT-OVER DETECTION (Stage2 only) =====
   if (params.stage === "stage2" && config.paintOverEnable && !debug.dimensionMismatch) {
     try {
       const { runPaintOverCheck } = await import("./paintOverDetector.js");
@@ -462,6 +574,23 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
   console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""}`);
   console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
+
+  // ===== 7.5 CONCISE FAILURE LOG (single-line summary for monitoring) =====
+  if (risk) {
+    const fatalIds = triggers.filter(t => t.fatal).map(t => t.id);
+    const nonFatalIds = triggers.filter(t => !t.fatal).map(t => t.id);
+    const metricsStr = Object.entries(metrics)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(3) : v}`)
+      .join(" ");
+
+    // Single-line structured log for easy parsing/alerting
+    console.log(
+      `[STRUCT_FAIL] stage=${params.stage} mode=${mode} ` +
+      `fatal=[${fatalIds.join(",")}] triggers=[${nonFatalIds.join(",")}] ` +
+      `${metricsStr} jobId=${params.jobId || "unknown"}`
+    );
+  }
 
   // ===== 8. COMPUTE AGGREGATE SCORE =====
   let score = 1.0;

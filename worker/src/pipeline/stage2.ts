@@ -13,7 +13,8 @@ import type { StagingRegion } from "../ai/region-detector";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
-import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
+import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
+import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel, applySamplingBackoff, formatSamplingParams, SamplingParams } from "../ai/promptTightening";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -35,7 +36,7 @@ export async function runStage2(
     /** Job ID for validation tracking */
     jobId?: string;
   }
-): Promise<string> {
+): Promise<string | null> {
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
   const validatorNotes: any[] = [];
@@ -99,6 +100,21 @@ export async function runStage2(
   const maxAttempts = stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2;
   let currentTightenLevel: TightenLevel = 0;
 
+  // ===== BASELINE SAMPLING PARAMS =====
+  // Store the original sampling params from presets - these are NOT mutated
+  // Retries use applySamplingBackoff() to compute reduced values from this baseline
+  const scene = opts.sceneType || "interior";
+  const baselineSamplingParams: SamplingParams = isNZStyleEnabled()
+    ? (scene === "interior"
+        ? { temperature: NZ_REAL_ESTATE_PRESETS.stage2Interior.temperature, topP: NZ_REAL_ESTATE_PRESETS.stage2Interior.topP, topK: NZ_REAL_ESTATE_PRESETS.stage2Interior.topK }
+        : { temperature: NZ_REAL_ESTATE_PRESETS.stage2Exterior.temperature, topP: NZ_REAL_ESTATE_PRESETS.stage2Exterior.topP, topK: NZ_REAL_ESTATE_PRESETS.stage2Exterior.topK })
+    : { temperature: 0.3, topP: 0.8, topK: 40 }; // Fallback defaults
+
+  console.log(`[stage2] Baseline sampling params: ${formatSamplingParams(baselineSamplingParams)}`);
+
+  // Track which sampling params are actually used on each attempt
+  let currentSamplingParams: SamplingParams = { ...baselineSamplingParams };
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     needsRetry = false;
     let inputForStage2 = out;
@@ -131,7 +147,7 @@ export async function runStage2(
     }
 
     // Build prompt and call Gemini
-    const scene = opts.sceneType || "interior";
+    // Note: `scene` is already defined before the retry loop (for baseline sampling params)
     const { data, mime } = toBase64(inputForStage2);
     const profile = opts.profile;
     const useTest = process.env.USE_TEST_PROMPTS === "1";
@@ -195,24 +211,33 @@ export async function runStage2(
       if (!ai) throw new Error("getGeminiClient returned null/undefined");
       const apiStartTime = Date.now();
       let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
-      if (isNZStyleEnabled()) {
-        const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
-        let temperature = preset.temperature;
 
-        // Apply tightened generation config when stage-aware is enabled
-        if (stageAwareConfig.enabled && currentTightenLevel > 0) {
-          const tightenedConfig = getTightenedGenerationConfig(currentTightenLevel, {
-            temperature: preset.temperature,
-            topP: preset.topP,
-            topK: preset.topK,
-          });
-          generationConfig = { ...(generationConfig || {}), ...tightenedConfig };
-          console.log(`[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
-        } else {
-          // Legacy behavior
-          if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
-          generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+      // ===== SAMPLING PARAMS FOR THIS ATTEMPT =====
+      // On retry attempts, apply progressive sampling backoff from baseline
+      if (stageAwareConfig.enabled) {
+        // Use applySamplingBackoff to compute reduced params for retries
+        currentSamplingParams = applySamplingBackoff(baselineSamplingParams, attempt);
+
+        if (attempt > 0) {
+          console.log(`[stage2] Retry ${attempt}: Applying sampling backoff from baseline`);
+          console.log(`[stage2]   Baseline: ${formatSamplingParams(baselineSamplingParams)}`);
+          console.log(`[stage2]   Reduced:  ${formatSamplingParams(currentSamplingParams)}`);
         }
+
+        // Build generation config from current sampling params
+        generationConfig = {
+          ...(generationConfig || {}),
+          temperature: currentSamplingParams.temperature,
+          topP: currentSamplingParams.topP,
+          topK: currentSamplingParams.topK,
+        };
+      } else if (isNZStyleEnabled()) {
+        // Legacy behavior when stage-aware is disabled
+        const preset = scene === "interior" ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
+        let temperature = preset.temperature;
+        if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
+        generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+        currentSamplingParams = { temperature, topP: preset.topP, topK: preset.topK };
       }
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
@@ -246,11 +271,15 @@ export async function runStage2(
         // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====
         // CRITICAL: Use Stage1A output as baseline, NOT original
         try {
+          // Determine validation mode from env var (STRUCTURE_VALIDATOR_MODE)
+          const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
+          console.log(`[stage2] Structural validation mode: ${validationMode} (STRUCTURE_VALIDATOR_MODE=${getValidatorMode("structure")})`);
+
           const validationResult = await validateStructureStageAware({
             stage: "stage2",
             baselinePath: validationBaseline, // Stage1A output
             candidatePath: out, // Stage2 output
-            mode: "log", // Non-blocking by default
+            mode: validationMode, // Controlled by STRUCTURE_VALIDATOR_MODE env var
             jobId,
             sceneType: opts.sceneType || "interior",
             roomType: opts.roomType,
@@ -263,15 +292,29 @@ export async function runStage2(
 
           if (validationResult.risk) {
             validatorFailed = true;
-            console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers)`);
-            validationResult.triggers.forEach((t, i) => {
-              console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
-            });
+            const hasFatalTrigger = validationResult.triggers.some(t => t.fatal);
+            const fatalIds = validationResult.triggers.filter(t => t.fatal).map(t => t.id);
+            const nonFatalIds = validationResult.triggers.filter(t => !t.fatal).map(t => t.id);
 
             // Use retry manager to decide if we should retry
             const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
+            const willRetry = retryDecision.shouldRetry;
 
-            if (retryDecision.shouldRetry) {
+            // ===== STRUCTURED FAILURE LOG (single line for monitoring) =====
+            console.log(
+              `[STRUCT_FAIL] stage=2 mode=${validationMode} attempt=${attempt + 1}/${maxAttempts} willRetry=${willRetry} ` +
+              `${formatSamplingParams(currentSamplingParams)} ` +
+              `fatal=[${fatalIds.join(",")}] triggers=[${nonFatalIds.join(",")}] jobId=${jobId}`
+            );
+
+            // Detailed trigger log
+            console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers, fatal=${hasFatalTrigger})`);
+            validationResult.triggers.forEach((t, i) => {
+              console.warn(`[stage2]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`);
+            });
+
+            // ===== RETRY LOGIC (both fatal and non-fatal triggers allow retries) =====
+            if (willRetry) {
               currentTightenLevel = retryDecision.tightenLevel;
               needsRetry = true;
               retryCount++;
@@ -286,10 +329,16 @@ export async function runStage2(
               }
               continue;
             } else {
-              // Max retries reached
+              // Max retries reached - only NOW do we reject in block mode
               if (retryDecision.reason.includes("Max attempts")) {
                 markStageFailed(jobId, "stage2", validationResult.triggers);
                 console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
+
+                // In block mode, return null ONLY after all retries exhausted
+                if (validationMode === "block") {
+                  console.error(`[stage2] ❌ BLOCKED: Max retries reached in block mode - rejecting image`);
+                  return null;
+                }
               }
               break;
             }

@@ -235,3 +235,110 @@ export function logTighteningInfo(
     console.log(`[promptTightening] Applying tightened constraints to preserve structure`);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SAMPLING BACKOFF FOR VALIDATOR-DRIVEN RETRIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Sampling parameters that can be reduced on validation failures.
+ * Fields are optional to support partial configs.
+ */
+export interface SamplingParams {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+}
+
+/**
+ * Configuration for sampling backoff limits.
+ * These define the minimum values to prevent breaking output quality.
+ */
+export interface SamplingBackoffLimits {
+  minTemp: number;
+  minTopP: number;
+  minTopK: number;
+}
+
+/**
+ * Default backoff limits - conservative minimums to avoid breaking generation.
+ * These are based on the fact that our baselines are already quite low.
+ */
+const DEFAULT_BACKOFF_LIMITS: SamplingBackoffLimits = {
+  minTemp: 0.02,   // Allow very low but not zero
+  minTopP: 0.15,   // Keep some diversity
+  minTopK: 5,      // Keep minimal token candidates
+};
+
+/**
+ * Apply progressive sampling backoff for validator-driven retries.
+ *
+ * Uses a 10% compound reduction per retry attempt:
+ * - attemptIndex=0: returns baseParams unchanged (first attempt uses original settings)
+ * - attemptIndex=1: reduces by 10% (factor = 0.9)
+ * - attemptIndex=2: reduces by ~19% (factor = 0.81)
+ * - attemptIndex=3: reduces by ~27% (factor = 0.729)
+ *
+ * Only reduces fields that exist in baseParams; undefined fields remain undefined.
+ *
+ * @param baseParams - Original sampling parameters (from preset/config)
+ * @param attemptIndex - 0-based attempt number (0 = first attempt, no reduction)
+ * @param limits - Optional custom limits for minimum values
+ * @returns New sampling params with backoff applied (does NOT mutate baseParams)
+ */
+export function applySamplingBackoff(
+  baseParams: SamplingParams,
+  attemptIndex: number,
+  limits: Partial<SamplingBackoffLimits> = {}
+): SamplingParams {
+  // First attempt (attemptIndex=0) returns unchanged params
+  if (attemptIndex <= 0) {
+    return { ...baseParams };
+  }
+
+  // Merge with default limits
+  const effectiveLimits: SamplingBackoffLimits = {
+    ...DEFAULT_BACKOFF_LIMITS,
+    ...limits,
+  };
+
+  // Compute compound reduction factor: 0.9^attemptIndex
+  const factor = Math.pow(0.9, attemptIndex);
+
+  const result: SamplingParams = {};
+
+  // Only reduce fields that exist in baseParams
+  if (baseParams.temperature !== undefined) {
+    const reduced = baseParams.temperature * factor;
+    result.temperature = Math.max(effectiveLimits.minTemp, Math.min(reduced, baseParams.temperature));
+  }
+
+  if (baseParams.topP !== undefined) {
+    const reduced = baseParams.topP * factor;
+    result.topP = Math.max(effectiveLimits.minTopP, Math.min(reduced, baseParams.topP));
+  }
+
+  if (baseParams.topK !== undefined) {
+    const reduced = Math.round(baseParams.topK * factor);
+    result.topK = Math.max(effectiveLimits.minTopK, Math.min(reduced, baseParams.topK));
+  }
+
+  return result;
+}
+
+/**
+ * Format sampling params for logging (handles undefined fields).
+ */
+export function formatSamplingParams(params: SamplingParams): string {
+  const parts: string[] = [];
+  if (params.temperature !== undefined) {
+    parts.push(`temp=${params.temperature.toFixed(3)}`);
+  }
+  if (params.topP !== undefined) {
+    parts.push(`topP=${params.topP.toFixed(2)}`);
+  }
+  if (params.topK !== undefined) {
+    parts.push(`topK=${params.topK}`);
+  }
+  return parts.join(" ") || "(no sampling params)";
+}
