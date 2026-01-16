@@ -15,7 +15,7 @@ export interface AgencyImageBundle {
   stripePaymentIntentId: string;
   stripeSessionId?: string;
   purchasedAt: string;
-  expiresAt: string; // End of purchase month
+  expiresAt: string; // 30 days from purchase
 }
 
 /**
@@ -46,9 +46,9 @@ export async function createImageBundle(params: {
       };
     }
 
-    // Calculate expiry (end of purchase month)
-    const [year, month] = monthKey.split("-").map(Number);
-    const expiryDate = new Date(year, month, 0, 23, 59, 59); // Last day of month
+    // Calculate expiry (30 days from purchase)
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + 30);
     const expiresAt = expiryDate.toISOString();
 
     const bundle: AgencyImageBundle = {
@@ -98,7 +98,7 @@ export async function createImageBundle(params: {
  */
 export async function getActiveBundles(
   agencyId: string,
-  monthKey: string = getCurrentMonthKey()
+  _monthKey: string = getCurrentMonthKey()
 ): Promise<AgencyImageBundle[]> {
   const redis = getRedis();
 
@@ -119,8 +119,8 @@ export async function getActiveBundles(
       if (data) {
         const bundle: AgencyImageBundle = JSON.parse(data);
 
-        // Only include bundles from current month that haven't expired
-        if (bundle.monthKey === monthKey && new Date(bundle.expiresAt) > new Date()) {
+        // Only include bundles that haven't expired (expiry is 30 days from purchase)
+        if (new Date(bundle.expiresAt) > new Date()) {
           bundles.push(bundle);
         }
       }

@@ -40,6 +40,22 @@ export function getCurrentMonthKey(): string {
 }
 
 /**
+ * Get billing-cycle key (aligned to Stripe period) when available; otherwise fall back to calendar month key.
+ * Uses agency.currentPeriodStart if present; formats as YYYY-MM-DD for uniqueness across mid-month renewals.
+ */
+export async function getCurrentBillingCycleKey(agencyId: string): Promise<string> {
+  try {
+    const agency = await getAgency(agencyId);
+    if (agency?.currentPeriodStart) {
+      return agency.currentPeriodStart.slice(0, 10);
+    }
+  } catch (err) {
+    console.warn(`[USAGE] Billing cycle key fallback for ${agencyId}:`, err);
+  }
+  return getCurrentMonthKey();
+}
+
+/**
  * Get month key for a specific date in NZ timezone
  */
 export function getMonthKeyForDate(date: Date): string {
@@ -155,31 +171,37 @@ export async function incrementUsage(
 
     // Update counters based on consumption order
     if (type === "main") {
-      // For main pool: Try base allowance first, then bundles
-      const baseRemaining = Math.max(0, usage.mainAllowance - usage.mainUsed);
+      // Extras-first: consume bundles before touching monthly allowance
+      let remainingToCharge = amount;
 
-      if (baseRemaining >= amount) {
-        // Consume from base allowance
-        usage.mainUsed += amount;
+      const bundleRemaining = await getTotalBundleRemaining(agencyId, monthKey);
+      if (bundleRemaining > 0) {
+        const consumeFromBundles = Math.min(bundleRemaining, remainingToCharge);
+        const consumed = await consumeBundleImages(agencyId, consumeFromBundles, monthKey);
+        remainingToCharge -= consumed;
         console.log(
-          `[USAGE] ${agencyId} ${monthKey}: mainUsed +${amount} => ${usage.mainUsed} (from base allowance)`
+          `[USAGE] ${agencyId} ${monthKey}: Consumed ${consumed} from bundles (remainingToCharge=${remainingToCharge})`
         );
-      } else {
-        // Base allowance exhausted, consume from bundles
-        const bundleRemaining = await getTotalBundleRemaining(agencyId, monthKey);
+      }
 
-        if (bundleRemaining >= amount) {
-          const consumed = await consumeBundleImages(agencyId, amount, monthKey);
+      if (remainingToCharge > 0) {
+        const baseRemaining = Math.max(0, usage.mainAllowance - usage.mainUsed);
+        const consumeFromBase = Math.min(baseRemaining, remainingToCharge);
+        usage.mainUsed += consumeFromBase;
+        remainingToCharge -= consumeFromBase;
+        if (consumeFromBase > 0) {
           console.log(
-            `[USAGE] ${agencyId} ${monthKey}: Consumed ${consumed} images from bundles (base exhausted)`
+            `[USAGE] ${agencyId} ${monthKey}: mainUsed +${consumeFromBase} => ${usage.mainUsed} (from monthly allowance)`
           );
-        } else {
-          // Both exhausted - this shouldn't happen if gating works correctly
-          console.warn(
-            `[USAGE] ${agencyId} ${monthKey}: Both base and bundles exhausted, incrementing mainUsed anyway`
-          );
-          usage.mainUsed += amount;
         }
+      }
+
+      // If still remaining, allow soft overage to avoid job failure; log for audit
+      if (remainingToCharge > 0) {
+        usage.mainUsed += remainingToCharge;
+        console.warn(
+          `[USAGE] ${agencyId} ${monthKey}: allowance exhausted; overage recorded +${remainingToCharge}`
+        );
       }
     } else {
       // For staging: Always increment staging counter
