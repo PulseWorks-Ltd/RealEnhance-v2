@@ -14,13 +14,32 @@ const STARTER_MAIN_ALLOWANCE = num(
   process.env.STARTER_MAIN_ALLOWANCE,
   num(process.env.INITIAL_FREE_CREDITS, 100)
 );
-const STARTER_RETENTION = num(process.env.STARTER_RETENTION_LIMIT, 300);
+const STARTER_RET_MULT = num(process.env.STARTER_RETENTION_MULTIPLIER, 3);
+const STARTER_RETENTION = num(
+  process.env.STARTER_RETENTION_LIMIT,
+  STARTER_MAIN_ALLOWANCE * STARTER_RET_MULT
+);
 
 const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 250);
-const PRO_RETENTION = num(process.env.PRO_RETENTION_LIMIT, 750);
+const PRO_RET_MULT = num(process.env.PRO_RETENTION_MULTIPLIER, 3);
+const PRO_RETENTION = num(
+  process.env.PRO_RETENTION_LIMIT,
+  PRO_MAIN_ALLOWANCE * PRO_RET_MULT
+);
 
-const AGENCY_MAIN_ALLOWANCE = num(process.env.AGENCY_MAIN_ALLOWANCE, 600);
-const AGENCY_RETENTION = num(process.env.AGENCY_RETENTION_LIMIT, 2000);
+// Studio tier (internally stored as "agency"), prefer STUDIO_* envs; fall back to legacy AGENCY_* if set
+const STUDIO_MAIN_ALLOWANCE = num(
+  process.env.STUDIO_MAIN_ALLOWANCE ?? process.env.AGENCY_MAIN_ALLOWANCE,
+  600
+);
+const STUDIO_RET_MULT = num(
+  process.env.STUDIO_RETENTION_MULTIPLIER ?? process.env.AGENCY_RETENTION_MULTIPLIER,
+  3
+);
+const STUDIO_RETENTION = num(
+  process.env.STUDIO_RETENTION_LIMIT ?? process.env.AGENCY_RETENTION_LIMIT,
+  STUDIO_MAIN_ALLOWANCE * STUDIO_RET_MULT
+);
 
 /**
  * Image-based usage model (NO SEAT LIMITS - unlimited users per agency)
@@ -50,10 +69,10 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
     retentionLimit: PRO_RETENTION
   },
   agency: {
-    mainAllowance: AGENCY_MAIN_ALLOWANCE,
+    mainAllowance: STUDIO_MAIN_ALLOWANCE,
     stagingAllowance: 0,
     price: 499, // NZD base price
-    retentionLimit: AGENCY_RETENTION
+    retentionLimit: STUDIO_RETENTION
   },
 };
 
