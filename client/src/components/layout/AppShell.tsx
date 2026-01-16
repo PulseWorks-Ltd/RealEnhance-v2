@@ -11,6 +11,7 @@ import {
   X,
   Sparkles,
   LogOut,
+  Building2,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -30,11 +31,12 @@ const mainNavItems = [
 ];
 
 const managementNavItems = [
-  { to: '/agency', icon: CreditCard, label: 'Billing & Plan' },
+  { to: '/agency', icon: CreditCard, label: 'Billing & Usage' },
+  { to: '/agency/settings', icon: Building2, label: 'Agency' },
 ];
 
 const systemNavItems = [
-  { to: '/settings/profile', icon: Settings, label: 'Settings' },
+  { to: '/settings/profile', icon: Settings, label: 'Account Settings' },
 ];
 
 export const AppShell = ({ children }: { children: React.ReactNode }) => {

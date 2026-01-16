@@ -13,43 +13,7 @@ import { BundlePurchase } from "@/components/bundle-purchase";
 import { BillingSection } from "@/components/BillingSection";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Users,
-  Mail,
-  Crown,
-  Shield,
-  User,
-  Loader2,
-  Building2,
-  Sparkles,
-  Clock,
-} from "lucide-react";
-
-interface AgencyMember {
-  id: string;
-  email: string;
-  name?: string;
-  firstName?: string;
-  lastName?: string;
-  displayName?: string;
-  role: "owner" | "admin" | "member";
-  isActive: boolean;
-}
-
-interface AgencyInvite {
-  token: string;
-  email: string;
-  role: "admin" | "member";
-  createdAt: string;
-  expiresAt: string;
-}
+import { Loader2, Building2, Sparkles } from "lucide-react";
 
 interface AgencyInfo {
   agencyId: string;

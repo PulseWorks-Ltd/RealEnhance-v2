@@ -13,7 +13,8 @@ const Home           = lazy(() => import("@/pages/home"));
 const Editor         = lazy(() => import("@/pages/Editor"));
 const Results        = lazy(() => import("@/pages/Results"));
 const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
-const Agency         = lazy(() => import("@/pages/agency"));
+const AgencyBilling  = lazy(() => import("@/pages/agency"));
+const AgencySettings = lazy(() => import("@/pages/agency-settings"));
 const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
 const EnhancedHistory = lazy(() => import("@/pages/enhanced-history"));
 const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
@@ -61,8 +62,11 @@ export default function App() {
             <Route path="/results" element={<Results />} />
             <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
             <Route path="/region-edit" element={<RegionEditPage />} />
-            <Route path="/agency" element={<Agency />} />
+            <Route path="/agency" element={<AgencyBilling />} />
+            <Route path="/billing" element={<BillingSettings />} />
             <Route path="/settings/billing" element={<BillingSettings />} />
+            <Route path="/agency/settings" element={<AgencySettings />} />
+            <Route path="/settings/agency" element={<AgencySettings />} />
             <Route path="/enhanced-history" element={<EnhancedHistory />} />
             <Route path="/dashboard" element={<Navigate to="/home" replace />} />
           </Route>
