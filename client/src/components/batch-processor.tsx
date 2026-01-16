@@ -301,6 +301,7 @@ export default function BatchProcessor() {
   
   // Images tab state
   const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
+  const [manualSceneTypes, setManualSceneTypes] = useState<Record<number, SceneLabel | null>>({});
   const [scenePredictions, setScenePredictions] = useState<Record<number, SceneDetectResult>>({});
   const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
   const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
@@ -309,6 +310,13 @@ export default function BatchProcessor() {
   const [linkImages, setLinkImages] = useState<boolean>(false);
   // Studio view: current image being configured
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+
+  const manualSceneTypesRef = useRef<Record<number, SceneLabel | null>>({});
+  const imageSceneTypesRef = useRef<Record<number, string>>({});
+  const scenePredictionsRef = useRef<Record<number, SceneDetectResult>>({});
+  useEffect(() => { manualSceneTypesRef.current = manualSceneTypes; }, [manualSceneTypes]);
+  useEffect(() => { imageSceneTypesRef.current = imageSceneTypes; }, [imageSceneTypes]);
+  useEffect(() => { scenePredictionsRef.current = scenePredictions; }, [scenePredictions]);
 
   // Tuning controls (apply to all images in this batch; optional)
   // Declutter intensity removed: always heavy/preset in backend
@@ -491,10 +499,12 @@ export default function BatchProcessor() {
       const userSelected = files.some(f => !(f as any).__restored);
       if (userSelected) {
         setImageSceneTypes({});
+        setManualSceneTypes({});
         setImageRoomTypes({});
         setImageSkyReplacement({});
         setMetaByIndex({});
         setSelection(new Set());
+        setManualSceneOverrideByIndex({});
         sceneDetectCacheRef.current = {};
       }
       filesFingerprintRef.current = fp;
@@ -515,16 +525,32 @@ export default function BatchProcessor() {
   useEffect(() => {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
+    console.log("[SceneDetect] starting auto-detect pass", { fileCount: files.length });
     (async () => {
       const nextPreds: Record<number, SceneDetectResult> = {};
       const skyDefaults: Record<number, boolean> = {};
       await Promise.all(files.map(async (f, i) => {
-        // only auto-fill if user hasn't set it
-        if (imageSceneTypes[i] && imageSceneTypes[i] !== "auto") return;
+        if (cancelled) return;
+        const manualScene = manualSceneTypesRef.current[i];
+        if (manualScene) {
+          console.log("[SceneDetect] skip manual scene", { index: i, scene: manualScene });
+          return;
+        }
+        const explicit = imageSceneTypesRef.current[i];
+        if (explicit && explicit !== "auto") {
+          console.log("[SceneDetect] skip existing scene", { index: i, scene: explicit });
+          return;
+        }
+        const existingPrediction = scenePredictionsRef.current[i];
+        if (existingPrediction) {
+          console.log("[SceneDetect] reuse cached prediction", { index: i, scene: existingPrediction.scene, source: existingPrediction.source });
+          nextPreds[i] = existingPrediction;
+          return;
+        }
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
           nextPreds[i] = prediction;
-          if (isSceneAutoAcceptable(prediction) && prediction.scene) {
+          if (isSceneAutoAcceptable(prediction) && prediction.scene && !manualSceneTypesRef.current[i]) {
             setImageSceneTypes(prev => {
               if (prev[i] && prev[i] !== "auto") return prev;
               return { ...prev, [i]: prediction.scene as string };
@@ -549,23 +575,27 @@ export default function BatchProcessor() {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, files, imageSceneTypes, imageSkyReplacement]);
+  }, [activeTab, files]);
 
   const finalSceneForIndex = useCallback((index: number): SceneLabel | null => {
+    const manual = manualSceneTypes[index];
+    if (manual === "interior" || manual === "exterior") return manual;
     const explicit = imageSceneTypes[index];
     if (explicit === "interior" || explicit === "exterior") return explicit;
     const pred = scenePredictions[index];
     if (isSceneAutoAcceptable(pred) && pred?.scene) return pred.scene;
     return null;
-  }, [imageSceneTypes, scenePredictions]);
+  }, [imageSceneTypes, manualSceneTypes, scenePredictions]);
 
   const sceneRequiresInput = useCallback((index: number) => {
+    const manual = manualSceneTypes[index];
+    if (manual === "interior" || manual === "exterior") return false;
     const explicit = imageSceneTypes[index];
     if (explicit === "interior" || explicit === "exterior") return false;
     const pred = scenePredictions[index];
     if (isSceneAutoAcceptable(pred)) return false;
     return true; // no confident prediction and no user selection
-  }, [imageSceneTypes, scenePredictions]);
+  }, [imageSceneTypes, manualSceneTypes, scenePredictions]);
 
   const roomTypeRequiresInput = useCallback((index: number) => {
     if (!allowStaging) return false;
@@ -612,6 +642,7 @@ export default function BatchProcessor() {
 
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
+  const currentFinalScene = finalSceneForIndex(currentImageIndex);
 
   // Manual room linking functions
   function toggleSelect(i: number) {
@@ -2880,6 +2911,11 @@ export default function BatchProcessor() {
                     onClick={() => {
                       // Reset current image settings to auto
                       setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "auto" }));
+                      setManualSceneTypes(prev => {
+                        const next = { ...prev } as Record<number, SceneLabel | null>;
+                        delete next[currentImageIndex];
+                        return next;
+                      });
                       setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: false }));
                       setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: true }));
                       setImageRoomTypes(prev => ({ ...prev, [currentImageIndex]: "" }));
@@ -2903,12 +2939,14 @@ export default function BatchProcessor() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => {
+                        console.log("[SceneSelect] manual override set", { index: currentImageIndex, scene: "exterior" });
+                        setManualSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
                         setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
                         setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
                       }}
                       data-testid={`select-scene-${currentImageIndex}`}
                       className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
-                        imageSceneTypes[currentImageIndex] === "exterior"
+                        currentFinalScene === "exterior"
                           ? 'border-action-500 bg-action-50 text-action-700'
                           : 'border-slate-200 hover:border-slate-300 text-slate-600'
                       }`}
@@ -2918,12 +2956,14 @@ export default function BatchProcessor() {
                     </button>
                     <button
                       onClick={() => {
+                        console.log("[SceneSelect] manual override set", { index: currentImageIndex, scene: "interior" });
+                        setManualSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
                         setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
                         setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
                         setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: false }));
                       }}
                       className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
-                        imageSceneTypes[currentImageIndex] === "interior"
+                        currentFinalScene === "interior"
                           ? 'border-action-500 bg-action-50 text-action-700'
                           : 'border-slate-200 hover:border-slate-300 text-slate-600'
                       }`}
@@ -2939,7 +2979,7 @@ export default function BatchProcessor() {
                   <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
 
                   {/* Sky Replacement Toggle - Only for Exterior */}
-                  {imageSceneTypes[currentImageIndex] === "exterior" && (
+                  {currentFinalScene === "exterior" && (
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex gap-3">
                         <div className="mt-0.5 text-slate-400"><CloudSun className="w-5 h-5" /></div>
@@ -2987,7 +3027,7 @@ export default function BatchProcessor() {
                 </section>
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}
-                {allowStaging && (finalSceneForIndex(currentImageIndex) !== "exterior") && (
+                {allowStaging && (currentFinalScene !== "exterior") && (
                   <section>
                     <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
                     <FixedSelect
