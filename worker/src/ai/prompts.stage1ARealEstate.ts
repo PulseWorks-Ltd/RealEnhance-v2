@@ -113,11 +113,11 @@ DO NOT replace any visible items.
 Enhance only.`;
 
 /**
- * Stage 1A prompt for exterior/daylight scenes (canonical strong/normal exterior prompt)
+ * Stage 1A prompt for exterior/daylight scenes
  *
  * Use when: Exterior photos, daylight outdoor shots, facades, decks, gardens
  */
-export const STAGE1A_PROMPT_EXTERIOR_SKY_STRONG = `You are enhancing a real estate EXTERIOR photograph taken in daylight for professional property marketing.
+export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = `You are enhancing a real estate EXTERIOR photograph taken in daylight for professional property marketing.
 
 This is a QUALITY ENHANCEMENT ONLY task.
 
@@ -166,17 +166,6 @@ DO NOT replace any visible items.
 
 Enhance only.`;
 
-export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = STAGE1A_PROMPT_EXTERIOR_SKY_STRONG;
-
-export const SKY_LOCK_BLOCK = `
-
-SKY PRESERVATION (REQUIRED):
-• Do NOT replace, regenerate, repaint, inpaint, or generatively fill the sky.
-• Do NOT introduce blue sky where it does not exist.
-• Preserve roofs, pergolas, patio covers, awnings, and all overhead structures exactly (never remove or open them to sky).
-• If unsure whether a region is sky or structure, treat it as STRUCTURE and leave it unchanged.
-`;
-
 /**
  * Calculate average luminance of an image to determine if it's dark or bright
  */
@@ -207,13 +196,10 @@ export async function getAverageLuminance(imagePath: string): Promise<number> {
 export async function selectStage1APrompt(
   sceneType: "interior" | "exterior" | string | undefined,
   inputPath: string,
-  skyMode: "safe" | "strong" = "safe"
+  _skyMode: "safe" | "strong" = "safe"
 ): Promise<string> {
   if (sceneType === "exterior") {
-    if (skyMode === "strong") {
-      return STAGE1A_PROMPT_EXTERIOR_SKY_STRONG;
-    }
-    return `${STAGE1A_PROMPT_EXTERIOR_SKY_STRONG}\n${SKY_LOCK_BLOCK}`;
+    return STAGE1A_PROMPT_EXTERIOR_DAYLIGHT;
   }
 
   // For interiors, analyze brightness
