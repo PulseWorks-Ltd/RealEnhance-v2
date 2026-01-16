@@ -22,6 +22,7 @@ interface BillingSectionProps {
     billingCurrency?: "nzd" | "aud" | "zar" | "usd";
     currentPeriodEnd?: string;
   };
+  canManage?: boolean;
 }
 
 const PLAN_NAMES: Record<string, string> = {
@@ -37,7 +38,7 @@ const STATUS_CONFIG = {
   CANCELLED: { label: "Cancelled", variant: "destructive" as const, color: "bg-status-error" },
 };
 
-export function BillingSection({ agency }: BillingSectionProps) {
+export function BillingSection({ agency, canManage = true }: BillingSectionProps) {
   const [loading, setLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier);
   const [selectedCountry, setSelectedCountry] = useState<string>(agency.billingCountry || "NZ");
@@ -45,8 +46,10 @@ export function BillingSection({ agency }: BillingSectionProps) {
 
   const statusConfig = STATUS_CONFIG[agency.subscriptionStatus];
   const hasSubscription = !!agency.stripeSubscriptionId;
+  const manageDisabled = !canManage;
 
   const handleSubscribe = async () => {
+    if (manageDisabled) return;
     setLoading(true);
     try {
       const response = await fetch(api("/api/billing/checkout-subscription"), {
@@ -85,6 +88,7 @@ export function BillingSection({ agency }: BillingSectionProps) {
   };
 
   const handleManageSubscription = async () => {
+    if (manageDisabled) return;
     setLoading(true);
     try {
       const response = await fetch(api("/api/billing/portal"), {
@@ -221,9 +225,10 @@ export function BillingSection({ agency }: BillingSectionProps) {
 
             <Button
               onClick={handleSubscribe}
-              disabled={loading}
+              disabled={loading || manageDisabled}
               className="w-full"
               size="lg"
+              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
               {loading ? "Loading..." : "Subscribe Now"}
             </Button>
@@ -235,14 +240,17 @@ export function BillingSection({ agency }: BillingSectionProps) {
           <div className="pt-4 border-t">
             <Button
               onClick={handleManageSubscription}
-              disabled={loading}
+              disabled={loading || manageDisabled}
               className="w-full"
               variant="outline"
+              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
               {loading ? "Loading..." : "Manage Subscription"}
             </Button>
             <p className="text-xs text-muted-foreground mt-2 text-center">
-              Update payment method, view invoices, or cancel subscription
+              {manageDisabled
+                ? "Contact an agency owner or admin to update billing."
+                : "Update payment method, view invoices, or cancel subscription"}
             </p>
           </div>
         )}

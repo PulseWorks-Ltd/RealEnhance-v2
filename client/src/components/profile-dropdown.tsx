@@ -39,8 +39,12 @@ export function ProfileDropdown() {
     await signOut();
   };
 
-  const handleAgencySettings = () => {
+  const handleBilling = () => {
     navigate("/agency");
+  };
+
+  const handleAgencySettings = () => {
+    navigate("/agency/settings");
   };
 
   const handleProfile = () => {
@@ -70,13 +74,16 @@ export function ProfileDropdown() {
           📸 Enhanced History
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleProfile} data-testid="button-profile-settings">
-          👤 Profile Settings
+          👤 Account Settings
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleChangePassword} data-testid="button-change-password">
           🔒 Change Password
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleBilling} data-testid="button-billing">
+          💳 Billing & Usage
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
-          🏢 Agency Settings
+          🏢 Agency
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} data-testid="button-signout">
