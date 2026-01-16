@@ -280,6 +280,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!clientScenePrediction) return false; // No client prediction → auto-detected by worker
     if (clientScenePrediction.scene === null) return true; // Explicit null scene
     if (clientScenePrediction.reason === "uncertain") return true; // Uncertain reason
+    if (clientScenePrediction.reason === "covered_exterior_suspect") return true; // Covered exterior suspect
     const conf = typeof clientScenePrediction.confidence === "number" ? clientScenePrediction.confidence : 0;
     if (conf < SCENE_CONF_THRESHOLD) return true; // Below threshold
     return false;

@@ -351,7 +351,7 @@ export default function BatchProcessor() {
     if (!pred.scene) return false;
     const conf = clamp01(pred.confidence);
     if (conf === null) return false;
-    if (pred.reason === "uncertain") return false;
+    if (pred.reason === "uncertain" || pred.reason === "covered_exterior_suspect") return false;
     return conf >= SCENE_CONFIDENCE_GUARD;
   };
 
@@ -422,6 +422,32 @@ export default function BatchProcessor() {
         greenOverall: greenOverall / denom,
         meanLum: luminanceSum / denom,
       };
+
+      // Covered exterior suspect guard (align with worker defaults)
+      const coveredExteriorSuspect =
+        features.skyTop10 > 0.02 &&
+        features.blueOverall < 0.06 &&
+        features.skyTop40 > 0.05;
+
+      if (coveredExteriorSuspect) {
+        const unsure: SceneDetectResult = {
+          scene: null,
+          confidence: 0,
+          signal: Math.max(features.skyTop10, features.skyTop40, features.blueOverall),
+          features,
+          reason: "covered_exterior_suspect",
+          source: "client",
+        };
+        console.debug('[SceneDetect][client] covered_exterior_suspect → unsure', {
+          skyTop10: features.skyTop10,
+          skyTop40: features.skyTop40,
+          blueOverall: features.blueOverall,
+          meanLum: features.meanLum,
+          decision: unsure,
+        });
+        sceneDetectCacheRef.current[cacheKey] = unsure;
+        return unsure;
+      }
 
       // Aggregate signal (pre-penalty)
       let signal = Math.max(

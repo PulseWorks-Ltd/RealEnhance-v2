@@ -38,6 +38,9 @@ export interface ScenePrimaryResult {
   skyTop10?: number;   // Sky pixels in top 10% of image
   skyTop40?: number;   // Sky pixels in top 40% of image
   blueOverall?: number; // Blue sky pixels in entire image
+  reason?: string;
+  needsConfirm?: boolean;
+  coveredExteriorSuspect?: boolean;
 }
 
 async function onnxClassify(buf: Buffer): Promise<ScenePrimaryResult | null> {
@@ -153,9 +156,43 @@ async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
 }
 
 export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryResult> {
+  // Run ONNX first for primary label
   const onnx = await onnxClassify(buf);
-  if (onnx) return onnx;
-  return heuristic(buf);
+
+  // Always run heuristic to get robust metrics for covered-area detection
+  const heur = await heuristic(buf);
+
+  const base = onnx ?? heur;
+  const metrics = {
+    skyTop10: heur.skyTop10 ?? base.skyTop10 ?? 0,
+    skyTop40: heur.skyTop40 ?? base.skyTop40 ?? 0,
+    blueOverall: heur.blueOverall ?? base.blueOverall ?? 0,
+  };
+
+  // Covered exterior suspect guard: mark unsure regardless of ONNX confidence
+  const coveredExteriorSuspect = isCoveredExteriorSuspect({ ...base, ...metrics });
+  if (coveredExteriorSuspect) {
+    const result: ScenePrimaryResult = {
+      ...base,
+      ...metrics,
+      confidence: Math.min(base.confidence ?? 0, 0.49),
+      coveredExteriorSuspect: true,
+      needsConfirm: true,
+      reason: "covered_exterior_suspect",
+    };
+    console.debug('[SCENE][worker] covered_exterior_suspect → unsure', {
+      skyTop10: metrics.skyTop10,
+      skyTop40: metrics.skyTop40,
+      blueOverall: metrics.blueOverall,
+      onnxConf: onnx?.confidence ?? null,
+      label: result.label,
+      confidence: result.confidence,
+    });
+    return result;
+  }
+
+  // Return base result with merged metrics for downstream sky mode gating
+  return { ...base, ...metrics };
 }
 
 /**
@@ -187,6 +224,25 @@ export interface SkyModeResult {
   };
 }
 
+function isCoveredExteriorSuspect(sceneResult: ScenePrimaryResult): boolean {
+  const coveredEnabled = (process.env.COVERED_EXTERIOR_SUSPECT_ENABLED || '1') === '1';
+  if (!coveredEnabled) return false;
+
+  const skyTop10 = sceneResult.skyTop10 ?? 0;
+  const skyTop40 = sceneResult.skyTop40 ?? 0;
+  const blueOverall = sceneResult.blueOverall ?? 0;
+
+  const coveredSkyTop10Min = Number(process.env.COVERED_SKYTOP10_MIN || 0.02);
+  const coveredBlueOverallMax = Number(process.env.COVERED_BLUEOVERALL_MAX || 0.06);
+  const coveredSkyTop40Min = Number(process.env.COVERED_SKYTOP40_MIN || 0.05);
+
+  return (
+    skyTop10 > coveredSkyTop10Min &&
+    blueOverall < coveredBlueOverallMax &&
+    skyTop40 > coveredSkyTop40Min
+  );
+}
+
 export function determineSkyMode(sceneResult: ScenePrimaryResult): SkyModeResult {
   // Extract features (default to 0 if not available)
   const skyTop10 = sceneResult.skyTop10 ?? 0;
@@ -200,15 +256,7 @@ export function determineSkyMode(sceneResult: ScenePrimaryResult): SkyModeResult
   // Covered exterior suspect detection (conservative - forces SKY_SAFE)
   // Pattern: some sky-like pixels in top but very little blue overall = likely covered area (pergola, patio cover)
   // These thresholds are configurable via env vars for production tuning
-  const coveredEnabled = (process.env.COVERED_EXTERIOR_SUSPECT_ENABLED || '1') === '1';
-  const coveredSkyTop10Min = Number(process.env.COVERED_SKYTOP10_MIN || 0.02);
-  const coveredBlueOverallMax = Number(process.env.COVERED_BLUEOVERALL_MAX || 0.06);
-  const coveredSkyTop40Min = Number(process.env.COVERED_SKYTOP40_MIN || 0.05);
-
-  const coveredExteriorSuspect = coveredEnabled &&
-    skyTop10 > coveredSkyTop10Min &&
-    blueOverall < coveredBlueOverallMax &&
-    skyTop40 > coveredSkyTop40Min;
+  const coveredExteriorSuspect = isCoveredExteriorSuspect(sceneResult);
 
   // Strong sky allowed only if both thresholds met AND not a covered exterior suspect
   const allowStrongSky = !coveredExteriorSuspect && skyTop40 >= skyTop40Min && blueOverall >= blueOverallMin;
