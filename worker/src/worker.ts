@@ -334,10 +334,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const clientPred = clientScenePrediction;
       const skyReplacementAllowed = finalSkyModeResult.mode === "strong";
       console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
-        `scene=${effectiveScene} confidence=${fmt(primary?.confidence)} ` +
+        `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
         `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
         `skyReplacementAllowed=${skyReplacementAllowed} ` +
-        `reasonCode=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
+        `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
         `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
         `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
         `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
