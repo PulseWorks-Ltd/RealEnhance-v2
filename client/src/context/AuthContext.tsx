@@ -67,10 +67,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("logout:", e);
     } finally {
       setUser(null);
-      // Full refresh to clear any cached state and return to auth screen
+      // Redirect to public landing after logout
+      const landing = (import.meta as any)?.env?.VITE_PUBLIC_LANDING_URL || "https://www.realenhance.co.nz/";
       try {
-        window.location.reload();
-      } catch {}
+        window.location.href = landing;
+      } catch {
+        window.location.assign(landing);
+      }
     }
   }, []);
 
