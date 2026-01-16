@@ -6,8 +6,193 @@ export interface Stage1AOptions {
   skyMode?: SkyMode;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXTERIOR PROMPT COMPOSITION (PART A - No prompt drift)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The exterior prompt uses a single canonical base with toggled sky blocks.
+// This prevents prompt drift between SKY_SAFE and SKY_STRONG modes.
+
+/**
+ * Canonical base prompt for ALL exterior enhancements.
+ * Sky behavior is controlled by appending either SKY_ALLOWED_BLOCK or SKY_LOCK_BLOCK.
+ */
+const EXTERIOR_BASE_PROMPT = `REALENHANCE – STAGE 1A EXTERIOR – GEMINI 2.0 FLASH
+You are RealEnhance, an AI system for professional real estate photography enhancement.
+
+This is STAGE 1A: ENHANCEMENT ONLY (EXTERIOR).
+You must apply ONLY global photographic corrections.
+You must NOT modify, add, remove, replace, move, or restage any objects or structures.
+
+────────────────────────────────
+CRITICAL STRUCTURAL PROTECTION (ZERO TOLERANCE)
+────────────────────────────────
+PERMANENT STRUCTURES MUST NEVER BE ALTERED OR REMOVED:
+• All roofs, rooflines, eaves, soffits, gutters, and fascias
+• All patio covers, pergolas, carports, and awnings
+• All building edges, walls, columns, and posts
+• All fences, gates, and retaining walls
+• All beams, rafters, and structural supports
+• All verandahs, decks, and covered outdoor areas
+
+If ANY structure overlaps with the sky region:
+→ PRESERVE THE STRUCTURE COMPLETELY
+→ Only enhance the visible sky AROUND the structure
+→ When in doubt, assume it is a structure and KEEP it unchanged
+
+This rule OVERRIDES all sky enhancement instructions.
+
+────────────────────────────────
+PRIMARY OBJECTIVE
+────────────────────────────────
+Produce a clean, bright, natural, professional exterior real estate photo that looks like it was taken by a skilled photographer with a high-end DSLR — while remaining 100% realistic and not over-processed.
+
+The result must look:
+- Clean and well-maintained
+- Bright with natural lighting
+- Healthy, vibrant landscaping
+- Sharp but not harsh
+- Professional but NOT "Photoshopped"
+- Real and trustworthy
+
+────────────────────────────────
+AUTO-STRENGTH ADAPTATION LOGIC
+────────────────────────────────
+First, visually assess the lighting quality of the original image:
+
+1) If the image is DARK, FLAT, or BADLY LIT:
+   → Apply a STRONGER version of the allowed adjustments.
+
+2) If the image has DECENT LIGHTING but looks DULL (most mobile photos):
+   → Apply MODERATE enhancement profile. This is the DEFAULT behavior.
+
+3) If the image is ALREADY WELL-LIT:
+   → Apply only LIGHT-TOUCH refinement.
+
+Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
+
+────────────────────────────────
+ALLOWED GLOBAL ADJUSTMENTS
+────────────────────────────────
+You may apply these global photographic corrections:
+
+- Exposure and brightness lift for the entire scene
+- White balance normalization to clean daylight
+- Grass and vegetation enhancement (healthy green, vibrant but natural)
+- Gentle surface cleaning (remove dirt/mold from driveways, decks, fences) while preserving texture
+- Gentle midtone contrast increase
+- Subtle micro-clarity and texture recovery on building surfaces
+- Soft, natural sharpening (no halos)
+- Controlled vibrance increase for landscaping
+- Highlight recovery
+- Light shadow lift without flattening depth
+- Adaptive noise reduction only where needed
+
+These adjustments must affect the ENTIRE IMAGE uniformly.
+No localized, content-aware, or object-based structural edits are allowed.
+
+────────────────────────────────
+STRICT PROHIBITIONS (HARD RULES)
+────────────────────────────────
+You MUST NOT:
+
+- Add or remove any buildings, structures, or architectural elements.
+- Remove or alter roofs, patio covers, pergolas, awnings, or any overhead structures.
+- Add or remove vehicles, driveways, paths, decks, or patios.
+- Add props such as furniture, planters, decorations, or styling items.
+- Remove clutter or objects (even temporary items like bins or toys).
+- Move, resize, or reposition anything.
+- Modify building colors, materials, roofing, or siding.
+- Change landscape layout, tree positions, or garden beds.
+- Add or remove trees, shrubs, or plants.
+- Change the layout, perspective, or camera angle.
+- Apply content-aware fill or inpainting on structures.
+- Introduce stylistic looks, filters, HDR glow, or cinematic grading.
+
+The image must remain structurally and materially identical.
+
+────────────────────────────────
+STYLE TARGET
+────────────────────────────────
+Target the look of:
+- High-end professional New Zealand real estate photography
+- Healthy, well-maintained green lawns and gardens
+- Clean, bright building surfaces
+- Natural daylight exterior exposure
+- Subtle depth, not flat, not exaggerated
+
+This must look like a true photograph of the same property, not an edited or stylized version.
+
+────────────────────────────────
+OUTPUT REQUIREMENT
+────────────────────────────────
+Return ONLY the enhanced image.
+The contents and layout of the image must be visually identical.
+Only color, clarity, exposure, and surface quality may change.
+ALL STRUCTURES MUST BE PRESERVED.
+
+Do not explain.
+Do not annotate.
+Do not add content.
+Enhance only.`;
+
+/**
+ * Sky block when replacement IS allowed (open-sky exteriors with high confidence)
+ * Maintains realism - no dramatic/artificial replacements
+ */
+const SKY_ALLOWED_BLOCK = `
+────────────────────────────────
+SKY ENHANCEMENT (REPLACEMENT ALLOWED)
+────────────────────────────────
+You MAY replace gray/overcast skies with improved sky appearance:
+• Replace dull, gray, or heavily overcast skies with natural blue sky
+• Use realistic New Zealand-style sky: soft blue with natural white clouds
+• Keep sky replacement REALISTIC and NATURAL — no dramatic sunsets, no HDR glow
+• Match lighting direction and color temperature to the existing scene
+• Ensure sky blends naturally with the horizon and building edges
+
+IMPORTANT: Even with sky replacement allowed, you must NEVER alter or remove
+any structures, rooflines, pergolas, awnings, or architectural elements.
+The sky replacement must work AROUND all existing structures.`;
+
+/**
+ * Sky block when replacement is NOT allowed (covered exteriors, uncertain scenes, manual overrides)
+ * Strict preservation mode - only tonal adjustments
+ */
+const SKY_LOCK_BLOCK = `
+────────────────────────────────
+SKY PRESERVATION REQUIRED (NO REPLACEMENT)
+────────────────────────────────
+You MUST NOT replace, regenerate, repaint, or introduce new sky content:
+• Do NOT use sky replacement, inpainting, or generative fill on the sky
+• Do NOT introduce blue sky where it does not exist in the original
+• Do NOT alter the sky's content, cloud patterns, or weather appearance
+• ONLY apply tonal adjustments: exposure, contrast, color balance, dehaze
+
+STRUCTURAL PRESERVATION (ABSOLUTE):
+• Preserve ALL roof structures, rooflines, eaves, and fascias EXACTLY
+• Preserve ALL awnings, pergolas, patio covers, and carport roofs EXACTLY
+• Preserve ALL covered patio ceilings and overhead structures EXACTLY
+• Do NOT remove, open, or alter any overhead coverage to reveal sky
+• Do NOT modify the skyline, horizon, or any architectural silhouettes
+
+If you cannot confidently distinguish sky from structure:
+→ ASSUME IT IS A STRUCTURE and PRESERVE IT UNCHANGED
+→ Apply NO modifications to uncertain regions`;
+
+/**
+ * Build exterior prompt with toggled sky behavior
+ * @param skyReplacementAllowed - true for open-sky confident exteriors, false otherwise
+ */
+export function buildExteriorPrompt(options: { skyReplacementAllowed: boolean }): string {
+  const skyBlock = options.skyReplacementAllowed ? SKY_ALLOWED_BLOCK : SKY_LOCK_BLOCK;
+  return EXTERIOR_BASE_PROMPT + skyBlock;
+}
+
 export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior", skyMode: SkyMode = "safe"): string {
-  if (sceneType === "exterior") return buildStage1AExteriorPromptNZStyle(skyMode);
+  if (sceneType === "exterior") {
+    // Use new composition: skyMode "strong" = replacement allowed, "safe" = locked
+    return buildExteriorPrompt({ skyReplacementAllowed: skyMode === "strong" });
+  }
   return buildStage1AInteriorPromptNZStyle(roomType);
 }
 
@@ -132,173 +317,8 @@ Do not add content.
 Enhance only.`.trim();
 }
 
-function buildStage1AExteriorPromptNZStyle(skyMode: SkyMode = "safe"): string {
-  // SKY_SAFE mode: Only tonal adjustments, NO sky replacement/inpainting
-  // SKY_STRONG mode: Full sky replacement allowed (only for clear open-sky images)
-
-  const skySection = skyMode === "strong"
-    ? `- Sky replacement: Replace gray/overcast skies with vibrant New Zealand blue sky with soft natural clouds`
-    : `- Sky tonal enhancement ONLY: Adjust exposure, contrast, color balance, and dehaze to improve existing sky
-- DO NOT use sky replacement, inpainting, generative fill, or masking on any part of the sky or image
-- DO NOT remove or alter any structures that overlap with the sky region
-- If you CANNOT confidently identify whether a pixel region is sky or structure, PRESERVE IT UNCHANGED
-- When in doubt, do nothing to the sky; a safe enhancement is better than removing structures`;
-
-  const skyAutoStrength = skyMode === "strong"
-    ? `1) If the image has GRAY/OVERCAST SKY, DARK CONDITIONS, or FLAT LIGHT:
-   → Apply STRONGER sky replacement and exposure boost.`
-    : `1) If the image has GRAY/OVERCAST SKY, DARK CONDITIONS, or FLAT LIGHT:
-   → Apply STRONGER tonal adjustments to brighten and enhance the existing sky.
-   → DO NOT replace the sky. Only enhance exposure, contrast, and color.`;
-
-  const skyRetryNote = skyMode === "strong"
-    ? `- Increase sky saturation slightly (if replacing sky).`
-    : `- Increase sky brightness and contrast slightly (tonal only, no replacement).`;
-
-  const structuralProtection = `
-────────────────────────────────
-CRITICAL STRUCTURAL PROTECTION (ZERO TOLERANCE)
-────────────────────────────────
-PERMANENT STRUCTURES MUST NEVER BE ALTERED OR REMOVED:
-• All roofs, rooflines, eaves, soffits, gutters, and fascias
-• All patio covers, pergolas, carports, and awnings
-• All building edges, walls, columns, and posts
-• All fences, gates, and retaining walls
-• All beams, rafters, and structural supports
-• All verandahs, decks, and covered outdoor areas
-
-If ANY structure overlaps with the sky region:
-→ PRESERVE THE STRUCTURE COMPLETELY
-→ Only enhance the visible sky AROUND the structure
-→ When in doubt, assume it is a structure and KEEP it unchanged
-
-This rule OVERRIDES all sky enhancement instructions.`;
-
-  return `REALENHANCE – STAGE 1A EXTERIOR (MODERATE + AUTO-STRENGTH + VISUAL-DELTA RETRY) – GEMINI 2.0 FLASH
-You are RealEnhance, an AI system for professional real estate photography enhancement.
-
-This is STAGE 1A: ENHANCEMENT ONLY (EXTERIOR).
-SKY MODE: ${skyMode.toUpperCase()}
-You must apply ONLY global photographic corrections.
-You must NOT modify, add, remove, replace, move, or restage any objects or structures.
-${structuralProtection}
-
-────────────────────────────────
-PRIMARY OBJECTIVE
-────────────────────────────────
-Produce a clean, bright, natural, professional exterior real estate photo that looks like it was taken by a skilled photographer with a high-end DSLR — while remaining 100% realistic and not over-processed.
-
-The result must look:
-- Clean and well-maintained
-- Bright with improved sky appearance
-- Healthy, vibrant landscaping
-- Sharp but not harsh
-- Professional but NOT "Photoshopped"
-- Real and trustworthy
-
-────────────────────────────────
-AUTO-STRENGTH ADAPTATION LOGIC
-────────────────────────────────
-First, visually assess the lighting and sky quality of the original image:
-
-${skyAutoStrength}
-
-2) If the image has DECENT LIGHTING but looks DULL (most mobile photos):
-   → Apply MODERATE enhancement profile. This is the DEFAULT behavior.
-
-3) If the image is ALREADY WELL-LIT with clear skies:
-   → Apply only LIGHT-TOUCH refinement.
-
-Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
-
-────────────────────────────────
-VISUAL DELTA MINIMUM REQUIREMENT (AUTO-RETRY SIGNAL)
-────────────────────────────────
-If, after enhancement, the enhanced image appears visually almost identical to the original
-(i.e. no clear improvement in sky quality, grass vibrancy, surface clarity, and overall brightness):
-
-You MUST:
-${skyRetryNote}
-- Increase grass green enhancement slightly.
-- Increase overall exposure slightly.
-- Re-run the enhancement once at a stronger but still natural level.
-
-If a retry is required, internally flag:
-RETRY_APPLIED = true
-
-If no retry is required, internally flag:
-RETRY_APPLIED = false
-
-The final output MUST always be the visually improved version.
-Never return a weak or no-op enhancement.
-
-────────────────────────────────
-ALLOWED GLOBAL ADJUSTMENTS ONLY
-────────────────────────────────
-You may apply ONLY these global photographic corrections:
-
-${skySection}
-- Exposure and brightness lift for the entire scene
-- White balance normalization to clean daylight
-- Grass and vegetation enhancement (healthy green, vibrant but natural)
-- Gentle surface cleaning (remove dirt/mold from driveways, decks, fences) while preserving texture
-- Gentle midtone contrast increase
-- Subtle micro-clarity and texture recovery on building surfaces
-- Soft, natural sharpening (no halos)
-- Controlled vibrance increase for landscaping
-- Highlight recovery
-- Light shadow lift without flattening depth
-- Adaptive noise reduction only where needed
-
-These adjustments must affect the ENTIRE IMAGE uniformly.
-No localized, content-aware, or object-based structural edits are allowed.
-
-────────────────────────────────
-STRICT PROHIBITIONS (HARD RULES)
-────────────────────────────────
-You MUST NOT:
-
-- Add or remove any buildings, structures, or architectural elements.
-- Remove or alter roofs, patio covers, pergolas, awnings, or any overhead structures.
-- Add or remove vehicles, driveways, paths, decks, or patios.
-- Add props such as furniture, planters, decorations, or styling items.
-- Remove clutter or objects (even temporary items like bins or toys).
-- Move, resize, or reposition anything.
-- Modify building colors, materials, roofing, or siding.
-- Change landscape layout, tree positions, or garden beds.
-- Add or remove trees, shrubs, or plants.
-- Change the layout, perspective, or camera angle.
-- Apply content-aware fill or inpainting on structures.
-- Introduce stylistic looks, filters, HDR glow, or cinematic grading.
-
-The image must remain structurally and materially identical.
-
-────────────────────────────────
-STYLE TARGET
-────────────────────────────────
-Target the look of:
-- High-end professional New Zealand real estate photography
-- Improved sky appearance (enhanced or replaced based on mode)
-- Healthy, well-maintained green lawns and gardens
-- Clean, bright building surfaces
-- Natural daylight exterior exposure
-- Subtle depth, not flat, not exaggerated
-
-This must look like a true photograph of the same property, not an edited or stylized version.
-
-────────────────────────────────
-OUTPUT REQUIREMENT
-────────────────────────────────
-Return ONLY the enhanced image.
-The contents and layout of the image must be visually identical.
-Only sky appearance, color, clarity, exposure, and surface quality may change.
-ALL STRUCTURES MUST BE PRESERVED.
-
-Do not explain.
-Do not annotate.
-Do not add content.
-Enhance only.`.trim();
-}
+// NOTE: buildStage1AExteriorPromptNZStyle has been replaced by buildExteriorPrompt()
+// which uses EXTERIOR_BASE_PROMPT + SKY_ALLOWED_BLOCK/SKY_LOCK_BLOCK for cleaner composition.
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
   // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.

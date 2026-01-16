@@ -19,6 +19,7 @@ import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2 } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
+import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
 
 type RunState = "idle" | "running" | "done";
 
@@ -3039,6 +3040,15 @@ export default function BatchProcessor() {
 
                   {/* Link Images Toggle - Hidden for V1, code preserved for future use */}
                 </section>
+
+                {/* Staging Not Available Message - For exterior images when staging enabled globally */}
+                {allowStaging && currentFinalScene === "exterior" && (
+                  <section className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-700">
+                      <strong>Note:</strong> {getStagingDisabledMessage("exterior")}
+                    </p>
+                  </section>
+                )}
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}
                 {allowStaging && (currentFinalScene !== "exterior") && (

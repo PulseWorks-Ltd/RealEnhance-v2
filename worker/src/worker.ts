@@ -48,6 +48,7 @@ import {
 } from "./validators/runValidation";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
+import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
@@ -327,9 +328,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[SKY_MODE] ⚠️ FORCED SKY_SAFE: reason=${(finalSkyModeResult as any).forcedReason} requiresSceneConfirm=${requiresSceneConfirm} hasManualSceneOverride=${hasManualSceneOverride}`);
       }
 
-      // Per-file scene source logging (Task 3)
+      // ═══════════════════════════════════════════════════════════════════════════
+      // PER-FILE SCENE/SKY DECISION LOG (PART B - One line per file)
+      // ═══════════════════════════════════════════════════════════════════════════
       const clientPred = clientScenePrediction;
-      nLog(`[SCENE_SOURCE] prediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} manual=${sceneLabel !== 'auto' ? sceneLabel : 'null'} requiresConfirm=${requiresSceneConfirm} hasOverride=${hasManualSceneOverride} effective=${effectiveScene} skyMode=${finalSkyModeResult.mode} features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}}`);
+      const skyReplacementAllowed = finalSkyModeResult.mode === "strong";
+      console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
+        `scene=${effectiveScene} confidence=${fmt(primary?.confidence)} ` +
+        `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
+        `skyReplacementAllowed=${skyReplacementAllowed} ` +
+        `reasonCode=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
+        `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
+        `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
+        `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
+        `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
     }
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
@@ -742,6 +754,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
   nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // STAGING GUARD (PART C) - Single source of truth for staging eligibility
+  // ═══════════════════════════════════════════════════════════════════════════════
+  const stagingGuardScene: SceneType = sceneLabel === "interior" ? "interior" :
+                                        sceneLabel === "exterior" ? "exterior" : "unknown";
+  const stagingGuardResult = canStage({
+    scene: stagingGuardScene,
+    roomType: payload.options.roomType,
+    outdoorStagingEnabled: false // ALWAYS false for V1 - exterior staging blocked
+  });
+
+  // If staging was requested but not allowed, log and skip
+  if (payload.options.virtualStage && !stagingGuardResult.allowed) {
+    logStagingBlocked({
+      orgId: (payload as any).agencyId,
+      imageId: payload.imageId,
+      scene: stagingGuardScene,
+      reason: stagingGuardResult.reason
+    });
+    nLog(`[WORKER] ⚠️ Staging blocked: ${stagingGuardResult.reason} - ${stagingGuardResult.message}`);
+    // Don't error - just skip staging and return enhanced image
+    payload.options.virtualStage = false;
+  }
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A

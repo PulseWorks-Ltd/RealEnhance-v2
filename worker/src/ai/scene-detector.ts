@@ -243,6 +243,28 @@ function isCoveredExteriorSuspect(sceneResult: ScenePrimaryResult): boolean {
   );
 }
 
+/**
+ * Determines sky mode for exterior images.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ENV VARS DOCUMENTATION (PART B - SKY_SAFE AUDIT)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * NO ENV VARS REQUIRED for default behavior. Defaults are tuned for:
+ * - Open-sky exteriors → SKY_STRONG (replacement allowed)
+ * - Covered/uncertain exteriors → SKY_SAFE (tonal only)
+ *
+ * Optional tuning env vars:
+ * - SKY_STRONG_SKYTOP40_MIN (default: 0.16) - Min sky coverage in top 40% for STRONG
+ * - SKY_STRONG_BLUEOVERALL_MIN (default: 0.10) - Min blue sky overall for STRONG
+ * - COVERED_EXTERIOR_SUSPECT_ENABLED (default: '1') - Enable covered exterior detection
+ * - COVERED_SKYTOP10_MIN (default: 0.02) - Covered detection: min sky in top 10%
+ * - COVERED_BLUEOVERALL_MAX (default: 0.06) - Covered detection: max blue overall
+ * - COVERED_SKYTOP40_MIN (default: 0.05) - Covered detection: min sky in top 40%
+ *
+ * Missing env vars do NOT force SKY_SAFE by default - the algorithm uses
+ * feature-based detection to allow SKY_STRONG for clearly open-sky images.
+ */
 export function determineSkyMode(sceneResult: ScenePrimaryResult): SkyModeResult {
   // Extract features (default to 0 if not available)
   const skyTop10 = sceneResult.skyTop10 ?? 0;
@@ -250,22 +272,44 @@ export function determineSkyMode(sceneResult: ScenePrimaryResult): SkyModeResult
   const blueOverall = sceneResult.blueOverall ?? 0;
 
   // Configurable thresholds via env vars for SKY_STRONG gating
+  // These defaults are tuned to allow SKY_STRONG for clearly open-sky images
   const skyTop40Min = Number(process.env.SKY_STRONG_SKYTOP40_MIN || 0.16);
   const blueOverallMin = Number(process.env.SKY_STRONG_BLUEOVERALL_MIN || 0.10);
 
   // Covered exterior suspect detection (conservative - forces SKY_SAFE)
   // Pattern: some sky-like pixels in top but very little blue overall = likely covered area (pergola, patio cover)
-  // These thresholds are configurable via env vars for production tuning
   const coveredExteriorSuspect = isCoveredExteriorSuspect(sceneResult);
 
-  // Strong sky allowed only if both thresholds met AND not a covered exterior suspect
-  const allowStrongSky = !coveredExteriorSuspect && skyTop40 >= skyTop40Min && blueOverall >= blueOverallMin;
+  // Determine if features qualify for strong sky
+  const meetsStrongThresholds = skyTop40 >= skyTop40Min && blueOverall >= blueOverallMin;
 
-  return {
+  // Strong sky allowed only if both thresholds met AND not a covered exterior suspect
+  const allowStrongSky = !coveredExteriorSuspect && meetsStrongThresholds;
+
+  // Determine reason code for debugging
+  let reasonCode: string;
+  if (coveredExteriorSuspect) {
+    reasonCode = "covered_exterior_suspect";
+  } else if (!meetsStrongThresholds) {
+    reasonCode = skyTop40 < skyTop40Min ? "low_sky_coverage" : "low_blue_sky";
+  } else {
+    reasonCode = "confident_open_sky";
+  }
+
+  const result: SkyModeResult = {
     mode: allowStrongSky ? "strong" : "safe",
     allowStrongSky,
     coveredExteriorSuspect,
     features: { skyTop10, skyTop40, blueOverall },
     thresholds: { skyTop40Min, blueOverallMin }
   };
+
+  // Dev-only logging (exactly once per image at decision point) - PART B requirement
+  console.log(`[SKY_MODE_DECISION] mode=${result.mode} allowStrongSky=${allowStrongSky} ` +
+    `reason=${reasonCode} coveredSuspect=${coveredExteriorSuspect} ` +
+    `features={skyTop10:${skyTop10.toFixed(3)},skyTop40:${skyTop40.toFixed(3)},blueOverall:${blueOverall.toFixed(3)}} ` +
+    `thresholds={skyTop40Min:${skyTop40Min},blueOverallMin:${blueOverallMin}} ` +
+    `meetsThresholds=${meetsStrongThresholds}`);
+
+  return result;
 }
