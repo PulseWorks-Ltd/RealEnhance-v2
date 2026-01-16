@@ -1,5 +1,5 @@
 // client/src/components/layout/AppShell.tsx
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -10,11 +10,18 @@ import {
   Menu,
   X,
   Sparkles,
+  LogOut,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useUsage } from '@/hooks/use-usage';
 import { cn } from '@/lib/utils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 
 // Navigation configuration
 const mainNavItems = [
@@ -32,7 +39,7 @@ const systemNavItems = [
 
 export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { usage } = useUsage();
   const location = useLocation();
 
@@ -46,6 +53,41 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
     : user?.email?.split('@')[0] || 'User';
 
   const planName = usage?.planName || 'Free';
+
+  // Refresh the page after 30 minutes of inactivity
+  useEffect(() => {
+    const INACTIVITY_MS = 30 * 60 * 1000;
+    let timer: number;
+
+    const resetTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        window.location.reload();
+      }, INACTIVITY_MS);
+    };
+
+    const events: Array<keyof WindowEventMap> = [
+      'mousemove',
+      'keydown',
+      'scroll',
+      'touchstart',
+      'click',
+      'visibilitychange'
+    ];
+
+    const handler = () => {
+      if (document.hidden) return;
+      resetTimer();
+    };
+
+    events.forEach((evt) => window.addEventListener(evt, handler));
+    resetTimer();
+
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((evt) => window.removeEventListener(evt, handler));
+    };
+  }, []);
 
   return (
     <div className="flex h-screen bg-surface-page text-brand-900 font-sans">
@@ -111,15 +153,34 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
 
         {/* User section */}
         <div className="p-4 border-t border-brand-800">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-brand-700 flex items-center justify-center text-xs font-medium ring-2 ring-brand-800">
-              {userInitials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{userName}</p>
-              <p className="text-brand-400 text-xs">{planName}</p>
-            </div>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-brand-800/60 transition-colors text-left"
+                aria-label="User menu"
+              >
+                <div className="w-9 h-9 rounded-full bg-brand-700 flex items-center justify-center text-xs font-medium ring-2 ring-brand-800">
+                  {userInitials}
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="text-sm font-medium truncate">{userName}</p>
+                  <p className="text-brand-400 text-xs">{planName}</p>
+                </div>
+              </button>
+            </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" className="w-56">
+                <DropdownMenuItem
+                  onClick={async () => {
+                    await signOut();
+                  }}
+                  data-testid="button-sidebar-signout"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </aside>
 

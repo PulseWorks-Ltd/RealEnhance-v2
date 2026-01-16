@@ -67,6 +67,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("logout:", e);
     } finally {
       setUser(null);
+      // Full refresh to clear any cached state and return to auth screen
+      try {
+        window.location.reload();
+      } catch {}
     }
   }, []);
 
