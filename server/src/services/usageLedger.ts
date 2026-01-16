@@ -50,7 +50,9 @@ async function ensureMonthUsage(client: PoolClient, agencyId: string, monthKey: 
   await client.query(
     `INSERT INTO agency_month_usage (agency_id, yyyymm, included_limit)
      VALUES ($1, $2, $3)
-     ON CONFLICT (agency_id, yyyymm) DO NOTHING;`,
+     ON CONFLICT (agency_id, yyyymm) DO UPDATE
+       SET included_limit = EXCLUDED.included_limit,
+           updated_at = NOW();`,
     [agencyId, monthKey, includedLimit]
   );
   const res = await client.query(

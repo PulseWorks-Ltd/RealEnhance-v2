@@ -3,6 +3,25 @@
 
 import type { PlanTier } from "./auth/types.js";
 
+// Environment-driven plan tuning (falls back to existing defaults)
+const num = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+// Allow overriding allowances/retention per tier without code changes
+const STARTER_MAIN_ALLOWANCE = num(
+  process.env.STARTER_MAIN_ALLOWANCE,
+  num(process.env.INITIAL_FREE_CREDITS, 100)
+);
+const STARTER_RETENTION = num(process.env.STARTER_RETENTION_LIMIT, 300);
+
+const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 250);
+const PRO_RETENTION = num(process.env.PRO_RETENTION_LIMIT, 750);
+
+const AGENCY_MAIN_ALLOWANCE = num(process.env.AGENCY_MAIN_ALLOWANCE, 600);
+const AGENCY_RETENTION = num(process.env.AGENCY_RETENTION_LIMIT, 2000);
+
 /**
  * Image-based usage model (NO SEAT LIMITS - unlimited users per agency)
  * - mainAllowance: Monthly enhanced images (Stage 1 outputs)
@@ -19,22 +38,22 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   starter: {
-    mainAllowance: 100,
+    mainAllowance: STARTER_MAIN_ALLOWANCE,
     stagingAllowance: 0,
     price: 129,
-    retentionLimit: 300
+    retentionLimit: STARTER_RETENTION
   },
   pro: {
-    mainAllowance: 250,
+    mainAllowance: PRO_MAIN_ALLOWANCE,
     stagingAllowance: 0,
     price: 249,
-    retentionLimit: 800
+    retentionLimit: PRO_RETENTION
   },
   agency: {
-    mainAllowance: 600,
+    mainAllowance: AGENCY_MAIN_ALLOWANCE,
     stagingAllowance: 0,
     price: 499, // NZD base price
-    retentionLimit: 2000
+    retentionLimit: AGENCY_RETENTION
   },
 };
 
