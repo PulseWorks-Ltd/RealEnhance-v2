@@ -75,27 +75,62 @@ Only enhance image quality. No generative structural changes.
 Temperature: 0.18
 `;
   }
-  // exterior
+  // exterior - default to SKY_SAFE mode
+  return buildTestStage1AExteriorPrompt("safe");
+}
+
+export type SkyMode = "safe" | "strong";
+
+/**
+ * Build test Stage 1A exterior prompt with skyMode awareness
+ */
+function buildTestStage1AExteriorPrompt(skyMode: SkyMode): string {
+  const skyInstructions = skyMode === "strong"
+    ? `• Replace an overcast sky with a natural blue sky with soft clouds.`
+    : `• For sky: ONLY adjust exposure, contrast, color balance, and dehaze - NO sky replacement.
+• DO NOT use sky replacement, inpainting, generative fill, or masking on any part of the image.
+• If you CANNOT confidently identify whether a pixel region is sky or structure, PRESERVE IT UNCHANGED.
+• When in doubt, do nothing to the sky; a safe enhancement is better than removing structures.`;
+
   return RULE_PREFIX + `
 Enhance this exterior property image for real estate marketing.
+SKY MODE: ${skyMode.toUpperCase()}
 
 Your tasks:
 • Improve exposure, color, clarity, and sharpness.
-• Replace an overcast sky with a natural blue sky with soft clouds.
+${skyInstructions}
 • Add subtle, realistic warm sunlight appropriate to the scene.
 • Improve lawn health, fill patchy grass, and trim lawn edges.
 • Clean visible driveways, paths, patios, decks, fences, and walls to remove dirt, mould, and stains by roughly 30–40%, while keeping material and pattern identical.
 
+CRITICAL STRUCTURAL PROTECTION:
+• NEVER remove or alter roofs, patio covers, pergolas, awnings, or overhead structures.
+• NEVER remove beams, rafters, gutters, soffits, or fascias.
+• If ANY structure overlaps the sky region, PRESERVE IT COMPLETELY.
+• When in doubt, assume it is a structure and keep it unchanged.
+
 HARD RULES — NON-NEGOTIABLE:
 • Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe, zoom, or change the camera angle or perspective.
 • Do NOT change, resize, move, hide, or replace any buildings, rooflines, cladding, windows, or doors.
+• Do NOT remove or alter roofs, patio covers, pergolas, carports, or awnings.
 • Do NOT alter driveway, deck, or path shape, boundaries, layout, or material pattern (e.g., pavers, concrete joints).
 • Do NOT add or remove permanent structures, fences, retaining walls, or permanent landscaping.
 • Do NOT add or remove vehicles or large permanent items.
+${skyMode === "safe" ? "• Do NOT use inpainting, generative fill, or masking operations." : ""}
 
 Only enhance existing materials and cleanliness. No generative structural changes.
 Temperature: 0.21
 `;
+}
+
+/**
+ * Build test Stage 1A prompt with skyMode support
+ */
+export function buildTestStage1APromptWithSkyMode(sceneType: string, roomType?: string, skyMode: SkyMode = "safe") {
+  if (sceneType === "interior") {
+    return buildTestStage1APrompt(sceneType, roomType);
+  }
+  return buildTestStage1AExteriorPrompt(skyMode);
 }
 
 export function buildTestStage1BPrompt(sceneType: string, roomType?: string) {

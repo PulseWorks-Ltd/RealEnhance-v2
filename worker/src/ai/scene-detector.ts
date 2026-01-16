@@ -34,6 +34,10 @@ export interface ScenePrimaryResult {
   skyPct?: number;
   grassPct?: number;
   woodDeckPct?: number;
+  // Extended metrics for sky mode gating
+  skyTop10?: number;   // Sky pixels in top 10% of image
+  skyTop40?: number;   // Sky pixels in top 40% of image
+  blueOverall?: number; // Blue sky pixels in entire image
 }
 
 async function onnxClassify(buf: Buffer): Promise<ScenePrimaryResult | null> {
@@ -68,6 +72,12 @@ async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
   const stride = info.channels; // 4
   let sky = 0, grass = 0, woodDeck = 0, total = 0;
 
+  // Extended metrics for sky mode gating
+  let skyTop10 = 0, skyTop40 = 0, blueOverall = 0;
+  let pixelsTop10 = 0, pixelsTop40 = 0;
+  const top10Boundary = Math.floor(H * 0.1);
+  const top40Boundary = Math.floor(H * 0.4);
+
   const toHSV = (r: number, g: number, b: number) => {
     const R = r / 255, G = g / 255, B = b / 255;
     const max = Math.max(R, G, B);
@@ -93,7 +103,23 @@ async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const { h, s, v } = toHSV(r, g, b);
       total++;
-      if (v > 0.7 && s < 0.45 && h >= 190 && h <= 240) sky++;
+
+      // Track pixels in different regions
+      if (y < top10Boundary) pixelsTop10++;
+      if (y < top40Boundary) pixelsTop40++;
+
+      // Detect bright sky-like pixels (lighter criteria for general sky)
+      const isSkyLike = v > 0.7 && s < 0.45 && h >= 190 && h <= 240;
+      // Detect specifically blue sky pixels (stricter criteria)
+      const isBlue = v > 0.5 && s > 0.2 && h >= 195 && h <= 230;
+
+      if (isSkyLike) {
+        sky++;
+        if (y < top10Boundary) skyTop10++;
+        if (y < top40Boundary) skyTop40++;
+      }
+      if (isBlue) blueOverall++;
+
       if (v > 0.35 && s > 0.35 && h >= 75 && h <= 150) grass++;
       if (y >= lowerBandStart && v > 0.25 && s > 0.15) {
         const isRedBrown = (h >= 10 && h <= 30) || (h >= 330 || h <= 5);
@@ -108,11 +134,90 @@ async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
   const label: ScenePrimary = isExterior ? "exterior" : "interior";
   const signal = Math.max(skyPct, grassPct, woodDeckPct);
   const confidence = Math.max(0.55, Math.min(0.95, signal * 2));
-  return { label, confidence, skyPct: Number(skyPct.toFixed(4)), grassPct: Number(grassPct.toFixed(4)), woodDeckPct: Number(woodDeckPct.toFixed(4)) };
+
+  // Calculate extended metrics as ratios
+  const skyTop10Pct = pixelsTop10 > 0 ? skyTop10 / pixelsTop10 : 0;
+  const skyTop40Pct = pixelsTop40 > 0 ? skyTop40 / pixelsTop40 : 0;
+  const blueOverallPct = total > 0 ? blueOverall / total : 0;
+
+  return {
+    label,
+    confidence,
+    skyPct: Number(skyPct.toFixed(4)),
+    grassPct: Number(grassPct.toFixed(4)),
+    woodDeckPct: Number(woodDeckPct.toFixed(4)),
+    skyTop10: Number(skyTop10Pct.toFixed(4)),
+    skyTop40: Number(skyTop40Pct.toFixed(4)),
+    blueOverall: Number(blueOverallPct.toFixed(4))
+  };
 }
 
 export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryResult> {
   const onnx = await onnxClassify(buf);
   if (onnx) return onnx;
   return heuristic(buf);
+}
+
+/**
+ * Sky mode gating for exterior images.
+ * Determines whether to use SKY_SAFE (tonal only) or SKY_STRONG (replacement allowed).
+ *
+ * SKY_STRONG requires:
+ * - skyTop40 >= 0.16 (sufficient open sky in top 40% of image)
+ * - blueOverall >= 0.10 (sufficient blue sky visible)
+ *
+ * Covered exterior suspect detection (forces SKY_SAFE):
+ * - skyTop10 > 0.02 && blueOverall < 0.06 && skyTop40 > 0.05
+ * - This pattern indicates patio covers, pergolas, or awnings that could be mistaken for sky
+ */
+export type SkyMode = "safe" | "strong";
+
+export interface SkyModeResult {
+  mode: SkyMode;
+  allowStrongSky: boolean;
+  coveredExteriorSuspect: boolean;
+  features: {
+    skyTop10: number;
+    skyTop40: number;
+    blueOverall: number;
+  };
+  thresholds: {
+    skyTop40Min: number;
+    blueOverallMin: number;
+  };
+}
+
+export function determineSkyMode(sceneResult: ScenePrimaryResult): SkyModeResult {
+  // Extract features (default to 0 if not available)
+  const skyTop10 = sceneResult.skyTop10 ?? 0;
+  const skyTop40 = sceneResult.skyTop40 ?? 0;
+  const blueOverall = sceneResult.blueOverall ?? 0;
+
+  // Configurable thresholds via env vars for SKY_STRONG gating
+  const skyTop40Min = Number(process.env.SKY_STRONG_SKYTOP40_MIN || 0.16);
+  const blueOverallMin = Number(process.env.SKY_STRONG_BLUEOVERALL_MIN || 0.10);
+
+  // Covered exterior suspect detection (conservative - forces SKY_SAFE)
+  // Pattern: some sky-like pixels in top but very little blue overall = likely covered area (pergola, patio cover)
+  // These thresholds are configurable via env vars for production tuning
+  const coveredEnabled = (process.env.COVERED_EXTERIOR_SUSPECT_ENABLED || '1') === '1';
+  const coveredSkyTop10Min = Number(process.env.COVERED_SKYTOP10_MIN || 0.02);
+  const coveredBlueOverallMax = Number(process.env.COVERED_BLUEOVERALL_MAX || 0.06);
+  const coveredSkyTop40Min = Number(process.env.COVERED_SKYTOP40_MIN || 0.05);
+
+  const coveredExteriorSuspect = coveredEnabled &&
+    skyTop10 > coveredSkyTop10Min &&
+    blueOverall < coveredBlueOverallMax &&
+    skyTop40 > coveredSkyTop40Min;
+
+  // Strong sky allowed only if both thresholds met AND not a covered exterior suspect
+  const allowStrongSky = !coveredExteriorSuspect && skyTop40 >= skyTop40Min && blueOverall >= blueOverallMin;
+
+  return {
+    mode: allowStrongSky ? "strong" : "safe",
+    allowStrongSky,
+    coveredExteriorSuspect,
+    features: { skyTop10, skyTop40, blueOverall },
+    thresholds: { skyTop40Min, blueOverallMin }
+  };
 }

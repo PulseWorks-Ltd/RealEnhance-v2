@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -97,6 +98,7 @@ export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const { usage } = useUsage();
+  const navigate = useNavigate();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
   const [members, setMembers] = useState<AgencyMember[]>([]);
   const [invites, setInvites] = useState<AgencyInvite[]>([]);
@@ -125,81 +127,114 @@ export default function AgencyPage() {
       window.history.replaceState({}, "", "/agency");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
 
   const loadAgencyData = async () => {
     try {
       setLoading(true);
 
+      if (!user?.agencyId) {
+        setAgencyInfo(null);
+        setLoading(false);
+        return;
+      }
+
       const infoRes = await apiFetch("/api/agency/info");
-      if (infoRes.ok) {
-        const infoData = await infoRes.json();
-
-        const agencyInfo: AgencyInfo = {
-          agencyId: infoData.agency.agencyId,
-          name: infoData.agency.name,
-          planTier: infoData.agency.planTier,
-          subscriptionStatus: infoData.agency.subscriptionStatus,
-          stripeCustomerId: infoData.agency.stripeCustomerId,
-          stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
-          billingCountry: infoData.agency.billingCountry,
-          billingCurrency: infoData.agency.billingCurrency,
-          currentPeriodEnd: infoData.agency.currentPeriodEnd,
-          activeUsers: infoData.activeUsers,
-          userRole: user?.role || "member",
-          subscription: infoData.subscription
-            ? {
-                planTier: infoData.subscription.planTier,
-                planName: infoData.subscription.planName,
-                status: infoData.subscription.status,
-                currentPeriodEnd: infoData.subscription.currentPeriodEnd,
-                billingCurrency: infoData.subscription.billingCurrency,
-                billingCountry: infoData.subscription.billingCountry,
-                allowance: infoData.subscription.allowance,
-              }
-            : undefined,
-          trial: infoData.trial
-            ? {
-                status: infoData.trial.status,
-                expiresAt: infoData.trial.expiresAt,
-                creditsTotal: infoData.trial.creditsTotal,
-                creditsUsed: infoData.trial.creditsUsed,
-                remaining: infoData.trial.remaining,
-              }
-            : undefined,
-        };
-
-        setAgencyInfo(agencyInfo);
-
-        if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
-          try {
-            const membersRes = await apiFetch("/api/agency/members");
-            if (membersRes.ok) {
-              const membersData = await membersRes.json();
-              setMembers(membersData.members || membersData || []);
-            }
-          } catch (err) {
-            console.error("Failed to load members:", err);
+      if (!infoRes.ok) {
+        // Handle expected "no org" states without showing error toast
+        if (infoRes.status === 404) {
+          setAgencyInfo(null);
+          setLoading(false);
+          return;
+        }
+        // Check for ORG_NOT_FOUND error code in response body
+        try {
+          const errBody = await infoRes.json();
+          if (errBody?.error === "ORG_NOT_FOUND" || errBody?.code === "ORG_NOT_FOUND") {
+            setAgencyInfo(null);
+            setLoading(false);
+            return;
           }
+        } catch {
+          // JSON parse failed, continue to throw
+        }
+        throw new Error(`Failed to load agency info (${infoRes.status})`);
+      }
 
-          try {
-            const invitesRes = await apiFetch("/api/agency/invites");
-            if (invitesRes.ok) {
-              const invitesData = await invitesRes.json();
-              setInvites(invitesData.invites || invitesData || []);
+      const infoData = await infoRes.json();
+      if (!infoData?.agency) {
+        setAgencyInfo(null);
+        return;
+      }
+
+      const agencyInfo: AgencyInfo = {
+        agencyId: infoData.agency.agencyId,
+        name: infoData.agency.name,
+        planTier: infoData.agency.planTier,
+        subscriptionStatus: infoData.agency.subscriptionStatus,
+        stripeCustomerId: infoData.agency.stripeCustomerId,
+        stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
+        billingCountry: infoData.agency.billingCountry,
+        billingCurrency: infoData.agency.billingCurrency,
+        currentPeriodEnd: infoData.agency.currentPeriodEnd,
+        activeUsers: infoData.activeUsers,
+        userRole: user?.role || "member",
+        subscription: infoData.subscription
+          ? {
+              planTier: infoData.subscription.planTier,
+              planName: infoData.subscription.planName,
+              status: infoData.subscription.status,
+              currentPeriodEnd: infoData.subscription.currentPeriodEnd,
+              billingCurrency: infoData.subscription.billingCurrency,
+              billingCountry: infoData.subscription.billingCountry,
+              allowance: infoData.subscription.allowance,
             }
-          } catch (err) {
-            console.error("Failed to load invites:", err);
+          : undefined,
+        trial: infoData.trial
+          ? {
+              status: infoData.trial.status,
+              expiresAt: infoData.trial.expiresAt,
+              creditsTotal: infoData.trial.creditsTotal,
+              creditsUsed: infoData.trial.creditsUsed,
+              remaining: infoData.trial.remaining,
+            }
+          : undefined,
+      };
+
+      setAgencyInfo(agencyInfo);
+
+      if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
+        try {
+          const membersRes = await apiFetch("/api/agency/members");
+          if (membersRes.ok) {
+            const membersData = await membersRes.json();
+            setMembers(membersData.members || membersData || []);
           }
+        } catch (err) {
+          console.error("Failed to load members:", err);
+        }
+
+        try {
+          const invitesRes = await apiFetch("/api/agency/invites");
+          if (invitesRes.ok) {
+            const invitesData = await invitesRes.json();
+            setInvites(invitesData.invites || invitesData || []);
+          }
+        } catch (err) {
+          console.error("Failed to load invites:", err);
         }
       }
     } catch (error) {
       console.error("Failed to load agency data:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load organization information",
-        variant: "destructive",
-      });
+      if (user?.agencyId) {
+        toast({
+          title: "Error",
+          description: "Failed to load organization information",
+          variant: "destructive",
+        });
+      } else {
+        setAgencyInfo(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -322,6 +357,7 @@ export default function AgencyPage() {
             userRole: created.user.role || "owner",
           });
         }
+        navigate("/settings/billing#billing-section", { replace: true });
         loadAgencyData();
       } else {
         const errorData = await res.json().catch(() => ({}));

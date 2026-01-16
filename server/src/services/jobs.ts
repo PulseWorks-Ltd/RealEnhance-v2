@@ -94,6 +94,13 @@ export async function enqueueEnhanceJob(params: {
     sceneType: string;
     replaceSky?: boolean;  // Sky replacement toggle
     manualSceneOverride?: boolean; // Manual scene override flag (client -> server -> worker)
+    scenePrediction?: {  // Client-side scene prediction for SKY_SAFE forcing
+      scene: string | null;
+      confidence: number;
+      reason?: string;
+      features?: Record<string, number>;
+      source?: string;
+    };
     sampling?: {
       temperature?: number;
       topP?: number;

@@ -104,7 +104,7 @@ import { runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWith
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
-import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
+import { buildTestStage1APrompt, buildTestStage1APromptWithSkyMode, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp, type SkyMode } from "./prompts-test";
 
 let singleton: GoogleGenAI | null = null;
 
@@ -120,13 +120,14 @@ export function getGeminiClient(): GoogleGenAI {
   return singleton as any;
 }
 
-function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {
+function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean; skyMode?: SkyMode }): string {
   const useTest = process.env.USE_TEST_PROMPTS === "1";
   const stage = options as any as { stage?: "1A"|"1B"|"2"; };
   if (useTest && stage.stage) {
     const scene = (options.sceneType === "interior" || options.sceneType === "exterior") ? options.sceneType : "interior";
+    const skyMode = (options as any).skyMode || "safe";
     let p = stage.stage === "1A"
-      ? buildTestStage1APrompt(scene as any, (options as any).roomType)
+      ? buildTestStage1APromptWithSkyMode(scene as any, (options as any).roomType, skyMode)
       : stage.stage === "1B"
       ? buildTestStage1BPrompt(scene as any, (options as any).roomType)
       : buildTestStage2Prompt(scene as any, (options as any).roomType);

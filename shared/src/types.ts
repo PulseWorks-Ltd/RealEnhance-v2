@@ -106,6 +106,14 @@ export interface EnhanceJobPayload {
       topK?: number;
     };
     declutterIntensity?: "light" | "standard" | "heavy";
+    manualSceneOverride?: boolean; // Per-image manual scene flag
+    scenePrediction?: {  // Client-side scene prediction for SKY_SAFE forcing
+      scene: string | null;
+      confidence: number;
+      reason?: string;
+      features?: Record<string, number>;
+      source?: string;
+    };
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {

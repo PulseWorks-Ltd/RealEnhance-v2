@@ -236,6 +236,8 @@ export function uploadRouter() {
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
+      // Pass scenePrediction to worker for SKY_SAFE forcing logic
+      if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
       if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
         opts.stagingStyle = String(meta.stagingStyle).trim();
       }
@@ -463,6 +465,7 @@ export function uploadRouter() {
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference
           manualSceneOverride: opts.manualSceneOverride,
+          scenePrediction: opts.scenePrediction, // Pass client-side prediction for SKY_SAFE forcing
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,

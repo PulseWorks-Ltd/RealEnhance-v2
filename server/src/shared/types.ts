@@ -118,6 +118,9 @@ export type JobStatus =
   | "credit-batch-transfer"
   | "credit-batch-purchase";
 
+// Declutter mode tuning for Stage 1B
+export type DeclutterMode = "light" | "stage-ready";
+
 export type JobKind =
   | "enhance"
   | "edit"
@@ -147,13 +150,38 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  agencyId?: string | null;          // Usage/billing context
+  listingId?: string;                // Optional grouping across listings
+  manualSceneOverride?: boolean;     // Top-level override flag (legacy support)
   options: {
     declutter: boolean;
     virtualStage: boolean;
     roomType: string;
     sceneType: string | "auto";
-    replaceSky?: boolean;
+    replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)
+    stagingStyle?: string;           // Staging style (defaults to nz_standard)
+    declutterMode?: DeclutterMode;   // Stage 1B mode
+    declutterIntensity?: "light" | "standard" | "heavy";
+    manualSceneOverride?: boolean;   // Per-image manual scene flag
+    scenePrediction?: {              // Client-side scene prediction for SKY_SAFE forcing
+      scene: string | null;
+      confidence: number;
+      reason?: string;
+      features?: Record<string, number>;
+      source?: string;
+    };
+    sampling?: {                     // Optional sampling overrides
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+    };
   };
+  stage2OnlyMode?: {                 // Smart Stage-2 retry mode
+    enabled: boolean;
+    base1BUrl: string;
+  };
+  remoteOriginalUrl?: string;        // S3 URL of original if uploaded
+  remoteOriginalKey?: string;        // S3 key of original if uploaded
   createdAt: string;
 }
 

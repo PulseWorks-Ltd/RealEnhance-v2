@@ -41,7 +41,7 @@ export default function StartTrial() {
 
       await refreshUser();
       toast({ title: "Trial started", description: "Welcome! Your trial is ready to use." });
-      navigate("/agency", { replace: true });
+      navigate("/settings/billing", { replace: true });
     } catch (err: any) {
       toast({ title: "Error", description: err?.message || "Failed to start trial", variant: "destructive" });
     } finally {

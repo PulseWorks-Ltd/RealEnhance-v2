@@ -21,6 +21,7 @@ const ResetPassword = lazy(() => import("@/pages/reset-password"));
 const ChangePassword = lazy(() => import("@/pages/change-password"));
 const ProfileSettings = lazy(() => import("@/pages/settings/profile"));
 const SecuritySettings = lazy(() => import("@/pages/settings/security"));
+const BillingSettings = lazy(() => import("@/pages/agency"));
 const NotFound       = lazy(() => import("@/pages/not-found"));
 const StartTrial     = lazy(() => import("@/pages/start-trial"));
 
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
             <Route path="/region-edit" element={<RegionEditPage />} />
             <Route path="/agency" element={<Agency />} />
+            <Route path="/settings/billing" element={<BillingSettings />} />
             <Route path="/enhanced-history" element={<EnhancedHistory />} />
             <Route path="/dashboard" element={<Navigate to="/home" replace />} />
           </Route>

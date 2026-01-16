@@ -522,6 +522,8 @@ export default function BatchProcessor() {
   }, []);
 
   // When user enters the Images tab, prefill scene predictions using client-side detector
+  // NOTE: This effect only runs on file list changes / initial load, NOT on scene type changes
+  // to prevent re-running detection when user clicks Interior/Exterior buttons
   useEffect(() => {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
@@ -529,24 +531,34 @@ export default function BatchProcessor() {
     (async () => {
       const nextPreds: Record<number, SceneDetectResult> = {};
       const skyDefaults: Record<number, boolean> = {};
-      await Promise.all(files.map(async (f, i) => {
-        if (cancelled) return;
+
+      // Process files sequentially with microtask yields to prevent UI blocking
+      for (let i = 0; i < files.length; i++) {
+        if (cancelled) break;
+        const f = files[i];
+
+        // Skip files with manual scene override already set
         const manualScene = manualSceneTypesRef.current[i];
         if (manualScene) {
           console.log("[SceneDetect] skip manual scene", { index: i, scene: manualScene });
-          return;
+          continue;
         }
         const explicit = imageSceneTypesRef.current[i];
         if (explicit && explicit !== "auto") {
           console.log("[SceneDetect] skip existing scene", { index: i, scene: explicit });
-          return;
+          continue;
         }
         const existingPrediction = scenePredictionsRef.current[i];
         if (existingPrediction) {
           console.log("[SceneDetect] reuse cached prediction", { index: i, scene: existingPrediction.scene, source: existingPrediction.source });
           nextPreds[i] = existingPrediction;
-          return;
+          continue;
         }
+
+        // Yield to main thread between file processing to keep UI responsive
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (cancelled) break;
+
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
           nextPreds[i] = prediction;
@@ -566,7 +578,8 @@ export default function BatchProcessor() {
             });
           }
         }
-      }));
+      }
+
       if (!cancelled && Object.keys(nextPreds).length) {
         setScenePredictions(prev => ({ ...prev, ...nextPreds }));
         if (Object.keys(skyDefaults).length) {
@@ -2678,21 +2691,6 @@ export default function BatchProcessor() {
                       </button>
                     </div>
                   )}
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-white">Scene Selector</label>
-                    <select
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                      value={outdoorStaging}
-                      onChange={(e) => setOutdoorStaging(e.target.value as "auto" | "none")}
-                      data-testid="select-scene-selector"
-                      title="Affects exterior images only"
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="none">None (polish only)</option>
-                    </select>
-                    <p className="text-xs text-gray-400">Affects exterior images only</p>
-                  </div>
                 </div>
 
                 {/* Image Consumption Notice */}
@@ -2715,6 +2713,11 @@ export default function BatchProcessor() {
                       </>
                     )}
                   </p>
+                  {!declutter && !allowStaging && (
+                    <p className="text-xs text-blue-200/80 mt-2 border-t border-blue-500/20 pt-2">
+                      Enhancement-only mode: Your images will be professionally enhanced with improved lighting, color balance, and clarity. No furniture will be added or removed.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2760,9 +2763,13 @@ export default function BatchProcessor() {
                       />
                     ))}
                     {files.length > 4 && (
-                      <div className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center">
+                      <button
+                        onClick={() => setActiveTab("images")}
+                        className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center hover:bg-gray-700 hover:border-action-500 transition-colors cursor-pointer"
+                        title="Click to view all images"
+                      >
                         <span className="text-gray-400 text-sm">+{files.length - 4} more</span>
-                      </div>
+                      </button>
                     )}
                   </div>
                 )}
@@ -3004,26 +3011,7 @@ export default function BatchProcessor() {
                     </div>
                   )}
 
-                  {/* Link Images Toggle */}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex gap-3">
-                      <div className="mt-0.5 text-slate-400">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-900 block">Link Images</label>
-                        <p className="text-xs text-slate-500 mt-0.5">Group multi-angle shots of same room.</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={linkImages}
-                      onCheckedChange={setLinkImages}
-                      data-testid="checkbox-link-images"
-                      className="data-[state=checked]:bg-action-600"
-                    />
-                  </div>
+                  {/* Link Images Toggle - Hidden for V1, code preserved for future use */}
                 </section>
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}

@@ -84,6 +84,14 @@ export interface EnhanceJobPayload {
             topK?: number;
         };
         declutterIntensity?: "light" | "standard" | "heavy";
+        manualSceneOverride?: boolean;
+        scenePrediction?: {
+            scene: string | null;
+            confidence: number;
+            reason?: string;
+            features?: Record<string, number>;
+            source?: string;
+        };
     };
     stage2OnlyMode?: {
         enabled: boolean;

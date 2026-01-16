@@ -18,7 +18,7 @@ import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
-import { detectSceneFromImage } from "./ai/scene-detector";
+import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 
@@ -264,8 +264,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let sceneLabel = (payload.options.sceneType as any) || "auto";
   let allowStaging = true;
   let stagingRegionGlobal: any = null;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SKY_SAFE FORCING LOGIC (V1 Launch Safety)
+  // ═══════════════════════════════════════════════════════════════════════════════
   // Manual scene override flag passed from client/server
   const manualSceneOverride = strictBool((payload as any).manualSceneOverride) || strictBool(((payload as any).options || {}).manualSceneOverride);
+
+  // Client-side scene prediction (passed from upload for SKY_SAFE forcing)
+  const clientScenePrediction = (payload.options as any)?.scenePrediction;
+  const SCENE_CONF_THRESHOLD = Number(process.env.SCENE_CONF_THRESHOLD || 0.65);
+
+  // Determine if scene was uncertain from client prediction
+  const requiresSceneConfirm = ((): boolean => {
+    if (!clientScenePrediction) return false; // No client prediction → auto-detected by worker
+    if (clientScenePrediction.scene === null) return true; // Explicit null scene
+    if (clientScenePrediction.reason === "uncertain") return true; // Uncertain reason
+    const conf = typeof clientScenePrediction.confidence === "number" ? clientScenePrediction.confidence : 0;
+    if (conf < SCENE_CONF_THRESHOLD) return true; // Below threshold
+    return false;
+  })();
+
+  // Track whether to force SKY_SAFE (user involvement indicator)
+  const hasManualSceneOverride = !!manualSceneOverride;
+
   const tScene = Date.now();
   try {
     const buf = fs.readFileSync(origPath);
@@ -274,6 +296,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     scenePrimary = primary;
     const fmt = (v: any) => typeof v === "number" && Number.isFinite(v) ? v.toFixed(3) : "n/a";
     nLog(`[SCENE] primary=${primary?.label ?? "unknown"} conf=${fmt(primary?.confidence)} sky=${fmt((primary as any)?.skyPct)} grass=${fmt((primary as any)?.grassPct)} deck=${fmt((primary as any)?.woodDeckPct)}`);
+
+    // Sky mode determination for exteriors (SKY_SAFE vs SKY_STRONG)
+    if (primary?.label === "exterior") {
+      const baseSkyModeResult = determineSkyMode(primary);
+
+      // ═══════════════════════════════════════════════════════════════════════════
+      // FORCE SKY_SAFE RULE: If user was involved (uncertain scene OR manual override)
+      // ═══════════════════════════════════════════════════════════════════════════
+      const effectiveScene = sceneLabel !== "auto" ? sceneLabel : primary?.label;
+      const forceSkySafe = effectiveScene === "exterior" && (requiresSceneConfirm || hasManualSceneOverride);
+
+      // Apply force-safe override if needed
+      const finalSkyModeResult = forceSkySafe ? {
+        ...baseSkyModeResult,
+        mode: "safe" as const,
+        allowStrongSky: false,
+        forcedSafe: true,
+        forcedReason: requiresSceneConfirm ? "scene_uncertain" : "manual_override"
+      } : baseSkyModeResult;
+
+      (scenePrimary as any).skyModeResult = finalSkyModeResult;
+
+      // Enhanced logging for debugging
+      nLog(`[SKY_MODE] mode=${finalSkyModeResult.mode} allowStrongSky=${finalSkyModeResult.allowStrongSky} coveredSuspect=${baseSkyModeResult.coveredExteriorSuspect}`);
+      nLog(`[SKY_MODE] features: skyTop10=${fmt(finalSkyModeResult.features.skyTop10)} skyTop40=${fmt(finalSkyModeResult.features.skyTop40)} blueOverall=${fmt(finalSkyModeResult.features.blueOverall)}`);
+      nLog(`[SKY_MODE] thresholds: skyTop40Min=${finalSkyModeResult.thresholds.skyTop40Min} blueOverallMin=${finalSkyModeResult.thresholds.blueOverallMin}`);
+      if (forceSkySafe) {
+        nLog(`[SKY_MODE] ⚠️ FORCED SKY_SAFE: reason=${(finalSkyModeResult as any).forcedReason} requiresSceneConfirm=${requiresSceneConfirm} hasManualSceneOverride=${hasManualSceneOverride}`);
+      }
+
+      // Per-file scene source logging (Task 3)
+      const clientPred = clientScenePrediction;
+      nLog(`[SCENE_SOURCE] prediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} manual=${sceneLabel !== 'auto' ? sceneLabel : 'null'} requiresConfirm=${requiresSceneConfirm} hasOverride=${hasManualSceneOverride} effective=${effectiveScene} skyMode=${finalSkyModeResult.mode} features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}}`);
+    }
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
     if (!room) {
@@ -285,7 +341,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (sceneLabel === "auto" || !sceneLabel) sceneLabel = (primary?.label as any) || "interior";
     // Outdoor staging area detection for exteriors
     let stagingRegion: any = null;
-    if (sceneLabel === "exterior") {
+    // Master kill switch for outdoor staging (default OFF for V1 launch)
+    const outdoorStagingEnabled = (process.env.OUTDOOR_STAGING_ENABLED || '0') === '1';
+    if (sceneLabel === "exterior" && !outdoorStagingEnabled) {
+      nLog(`[WORKER] Outdoor staging disabled via OUTDOOR_STAGING_ENABLED=0 (default for V1)`);
+    }
+    if (sceneLabel === "exterior" && outdoorStagingEnabled) {
       try {
         const { getGeminiClient } = await import("./ai/gemini.js");
         const { detectStagingArea } = await import("./ai/staging-area-detector.js");
@@ -483,6 +544,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const defaultExterior = sceneLabel === "exterior";
     return explicitBool === undefined ? defaultExterior : explicitBool;
   })();
+
+  // Force-safe when user was involved (uncertain scene or manual override)
+  const effectiveSceneForSafe = sceneLabel !== "auto" ? sceneLabel : (scenePrimary?.label || "interior");
+  const forceSkySafeForReplace = effectiveSceneForSafe === "exterior" && (requiresSceneConfirm || hasManualSceneOverride);
+  if (forceSkySafeForReplace) {
+    safeReplaceSky = false;
+    nLog(`[WORKER] Sky Safeguard: forceSkySafe=1 (requiresSceneConfirm=${requiresSceneConfirm}, hasManualSceneOverride=${hasManualSceneOverride}) → disable sky replacement`);
+  }
+
   if (manualSceneOverride) {
     safeReplaceSky = false;
     nLog(`[WORKER] Sky Safeguard: manualSceneOverride=1 → disable sky replacement`);
@@ -499,6 +569,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
+
+  // Determine sky mode from scene detection results (already force-safe applied in detection block)
+  const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
+  nLog(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
@@ -508,6 +582,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (p === 'nz_high_end' || p === 'nz_standard') return p;
       return undefined;
     })(),
+    skyMode: skyModeForStage1A,
   });
   timings.stage1AMs = Date.now() - t1A;
   
