@@ -15,6 +15,7 @@ import { validateStructureStageAware } from "../validators/structural/stageAware
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel, applySamplingBackoff, formatSamplingParams, SamplingParams } from "../ai/promptTightening";
+import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX } from "../utils/dimensionGuard";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -294,6 +295,69 @@ export async function runStage2(
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       out = candidatePath;
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
+
+      // Dimension guard: retry once with strict prompt if Gemini drifts dimensions
+      if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
+        const dimResult = await compareImageDimensions(validationBaseline, candidatePath);
+        console.log(
+          `[stage2][dim] jobId=${jobId} attempt=${attempt + 1} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height}`
+        );
+
+        if (!dimResult.ok) {
+          if (stageAwareConfig.maxRetryAttempts > 0) {
+            console.warn(
+              `[stage2] Dimension mismatch from model output (baseline ${dimResult.baseline.width}x${dimResult.baseline.height}, candidate ${dimResult.candidate.width}x${dimResult.candidate.height}). Retrying once with strict dimension prompt.`
+            );
+
+            const strictPrompt = `${textPrompt}\n\n${STRICT_DIMENSION_PROMPT_SUFFIX}`;
+            const strictParts = [...requestParts.slice(0, requestParts.length - 1), { text: strictPrompt }];
+
+            try {
+              const { resp: strictResp, modelUsed: strictModel } = await runWithPrimaryThenFallback({
+                stageLabel: "2",
+                ai: ai as any,
+                baseRequest: {
+                  contents: strictParts,
+                  generationConfig,
+                } as any,
+                context: "stage2-dimension",
+              });
+
+              const strictResponseParts: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];
+              const strictImg = strictResponseParts.find(p => p.inlineData);
+
+              if (strictImg?.inlineData?.data) {
+                const retryCandidatePath = siblingOutPath(candidatePath, "-dimretry", ".webp");
+                writeImageDataUrl(retryCandidatePath, `data:image/webp;base64,${strictImg.inlineData.data}`);
+                out = retryCandidatePath;
+                candidatePath = retryCandidatePath;
+
+                const retryDim = await compareImageDimensions(validationBaseline, retryCandidatePath);
+                console.log(
+                  `[stage2][dim] retry jobId=${jobId} attempt=${attempt + 1} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height}`
+                );
+
+                if (!retryDim.ok) {
+                  console.error(`[stage2] ❌ Dimension mismatch persisted after strict retry (jobId=${jobId})`);
+                  if (validationMode === "block") {
+                    return null;
+                  }
+                } else {
+                  console.log(`[stage2] ✅ Dimension retry succeeded; continuing to validation.`);
+                }
+              } else {
+                console.warn(`[stage2] ⚠️ Strict dimension retry returned no image data`);
+              }
+            } catch (dimRetryErr) {
+              console.error(`[stage2] Dimension retry failed:`, dimRetryErr);
+            }
+          } else {
+            console.warn(
+              `[stage2] Dimension mismatch detected but STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS=0; validator will handle block in ${validationMode} mode.`
+            );
+          }
+        }
+      }
 
       // Run validators after Stage 2
       let validatorFailed = false;

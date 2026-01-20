@@ -7,6 +7,7 @@ import { validateStage1BStructural } from "../validators/stage1BValidator";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldValidatorBlock, getValidatorMode } from "../validators/validatorMode";
+import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX } from "../utils/dimensionGuard";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -36,6 +37,7 @@ export async function runStage1B(
 
   // Stage-aware validation config
   const stageAwareConfig = loadStageAwareConfig();
+  const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
   const jobId = providedJobId || (global as any).__jobId || `stage1B-${Date.now()}`;
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
@@ -77,7 +79,7 @@ export async function runStage1B(
     
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
-    const declutteredPath = await enhanceWithGemini(stage1APath, {
+    const geminiRequest = {
       replaceSky,
       declutter: true,
       sceneType,
@@ -93,7 +95,9 @@ export async function runStage1B(
       hardscapeClean: sceneType === "exterior",
       declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
       ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
-    });
+    } as const;
+
+    const declutteredPath = await enhanceWithGemini(stage1APath, geminiRequest);
     
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
     console.log(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
@@ -105,17 +109,56 @@ export async function runStage1B(
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
       await fs.rename(declutteredPath, outputPath);
 
+      // Early dimension guard so compliant images can pass after a single strict retry
+      let stage1BPath = outputPath;
+      if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
+        const dimResult = await compareImageDimensions(stage1APath, stage1BPath);
+        console.log(
+          `[stage1B][dim] jobId=${jobId} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height}`
+        );
+
+        if (!dimResult.ok) {
+          if (stageAwareConfig.maxRetryAttempts > 0) {
+            console.warn(
+              `[stage1B] Dimension mismatch from model output (baseline ${dimResult.baseline.width}x${dimResult.baseline.height}, candidate ${dimResult.candidate.width}x${dimResult.candidate.height}). Retrying once with strict dimension prompt.`
+            );
+
+            const strictPrompt = `${promptOverride}\n\n${STRICT_DIMENSION_PROMPT_SUFFIX}`;
+            const strictPath = await enhanceWithGemini(stage1APath, { ...geminiRequest, promptOverride: strictPrompt });
+            const retryPath = siblingOutPath(stage1APath, "-1B-dimretry", ".webp");
+            await fs.rename(strictPath, retryPath);
+
+            const retryDim = await compareImageDimensions(stage1APath, retryPath);
+            console.log(
+              `[stage1B][dim] retry jobId=${jobId} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height}`
+            );
+
+            if (!retryDim.ok) {
+              console.error(`[stage1B] ❌ Dimension mismatch persisted after strict retry (jobId=${jobId})`);
+              if (validationMode === "block") {
+                return null;
+              }
+            } else {
+              stage1BPath = retryPath;
+              console.log(`[stage1B] ✅ Dimension retry succeeded, continuing with ${stage1BPath}`);
+            }
+          } else {
+            console.warn(
+              `[stage1B] Dimension mismatch detected but STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS=0; validator will handle block in ${validationMode} mode.`
+            );
+          }
+        }
+      }
+
       // ═══════════════════════════════════════════════════════════════════════════════
       // STAGE-AWARE VALIDATION FOR STAGE 1B
       // ═══════════════════════════════════════════════════════════════════════════════
       // CRITICAL: Stage1B validation baseline MUST be Stage1A output (NOT original)
       // Comparing 1B vs original would inflate diffs since 1A already changed lighting/contrast
       if (stageAwareConfig.enabled) {
-        const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
-
         // Structured baseline log for monitoring
         console.log(
-          `[STRUCT_BASELINE] stage=1B jobId=${jobId} baseline=${stage1APath} candidate=${outputPath} ` +
+          `[STRUCT_BASELINE] stage=1B jobId=${jobId} baseline=${stage1APath} candidate=${stage1BPath} ` +
           `original=${originalPath || "(not provided)"} mode=${validationMode}`
         );
 
@@ -123,7 +166,7 @@ export async function runStage1B(
           const validationResult = await validateStructureStageAware({
             stage: "stage1B",
             baselinePath: stage1APath, // CRITICAL: Compare 1B output vs 1A output (NOT original)
-            candidatePath: outputPath,
+            candidatePath: stage1BPath,
             mode: validationMode,
             jobId,
             sceneType: (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as "interior" | "exterior",
@@ -164,22 +207,22 @@ export async function runStage1B(
         const { validateStageOutput } = await import("../validators/index.js");
         const canonicalPath: string | undefined = (global as any).__canonicalPath;
         const base = canonicalPath || stage1APath;
-        const verdict1 = await validateStageOutput("stage1B", base, outputPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
+        const verdict1 = await validateStageOutput("stage1B", base, stage1BPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
         // Soft mode: log verdict, always proceed
         console.log(`[stage1B] Validator verdict:`, verdict1);
         const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
         const maskPath = await loadOrComputeStructuralMask(jobId, base);
         const masks = { structuralMask: maskPath };
-        const verdict2 = await validateStage1BStructural(base, outputPath, masks);
+        const verdict2 = await validateStage1BStructural(base, stage1BPath, masks);
         console.log(`[stage1B] Structural validator verdict:`, verdict2);
         if (!verdict2.ok) {
           console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
         }
       }
 
-      console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
-      return outputPath;
+      console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${stage1BPath}`);
+      return stage1BPath;
     }
     
     // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
