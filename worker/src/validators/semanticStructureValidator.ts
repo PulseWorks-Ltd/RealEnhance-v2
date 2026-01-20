@@ -9,8 +9,8 @@
  * - New openings created
  * - Openings closed
  *
- * MODE: LOG-ONLY (non-blocking)
- * This validator never blocks images, only logs violations for analysis.
+ * MODE: LOG-ONLY (non-blocking) by default
+ * Can be used in enforce mode by callers to block on specific failures.
  *
  * Implementation uses Sharp for fast, reliable image analysis without OpenCV complexity.
  */
@@ -24,9 +24,18 @@ export interface SemanticStructureResult {
   passed: boolean;
   windows: { before: number; after: number; change: number };
   doors: { before: number; after: number; change: number };
-  walls: { driftRatio: number };
+  walls: { driftRatio: number; threshold: number; emptyRoom: boolean };
   openings: { created: number; closed: number };
 }
+
+export interface SemanticStructureOptions {
+  mode?: "log" | "enforce";
+  wallDriftMax?: number;
+  emptyRoom?: boolean;
+}
+
+const DEFAULT_WALL_DRIFT_MAX = Number(process.env.STAGE2_WALL_DRIFT_MAX_DEFAULT ?? 0.12);
+const DEFAULT_WALL_DRIFT_MAX_EMPTY = Number(process.env.STAGE2_WALL_DRIFT_MAX_EMPTYROOM ?? 0.18);
 
 /**
  * Window Detector (Simplified)
@@ -194,6 +203,56 @@ function computeOpeningChanges(
 }
 
 /**
+ * Build a semantic structure result from pre-computed metrics.
+ * This is exported to enable lightweight unit tests without image I/O.
+ */
+export function evaluateSemanticStructureResult(
+  metrics: {
+    windowsBefore: number;
+    windowsAfter: number;
+    doorsBefore: number;
+    doorsAfter: number;
+    wallDrift: number;
+    openingsCreated: number;
+    openingsClosed: number;
+  },
+  opts: SemanticStructureOptions = {}
+): SemanticStructureResult {
+  const emptyRoom = opts.emptyRoom === true;
+  const wallDriftMax = opts.wallDriftMax ?? (emptyRoom ? DEFAULT_WALL_DRIFT_MAX_EMPTY : DEFAULT_WALL_DRIFT_MAX);
+
+  const passed =
+    metrics.windowsBefore === metrics.windowsAfter &&
+    metrics.doorsBefore === metrics.doorsAfter &&
+    metrics.wallDrift < wallDriftMax &&
+    metrics.openingsCreated === 0 &&
+    metrics.openingsClosed === 0;
+
+  return {
+    passed,
+    windows: {
+      before: metrics.windowsBefore,
+      after: metrics.windowsAfter,
+      change: metrics.windowsAfter - metrics.windowsBefore,
+    },
+    doors: {
+      before: metrics.doorsBefore,
+      after: metrics.doorsAfter,
+      change: metrics.doorsAfter - metrics.doorsBefore,
+    },
+    walls: {
+      driftRatio: metrics.wallDrift,
+      threshold: wallDriftMax,
+      emptyRoom,
+    },
+    openings: {
+      created: metrics.openingsCreated,
+      closed: metrics.openingsClosed,
+    },
+  };
+}
+
+/**
  * Run Semantic Structure Validator
  *
  * Main entry point for semantic structural validation.
@@ -206,11 +265,15 @@ export async function runSemanticStructureValidator({
   enhancedImagePath,
   scene,
   mode = "log",
+  wallDriftMax,
+  emptyRoom = false,
 }: {
   originalImagePath: string;
   enhancedImagePath: string;
   scene: "interior" | "exterior";
-  mode?: "log";
+  mode?: "log" | "enforce";
+  wallDriftMax?: number;
+  emptyRoom?: boolean;
 }): Promise<SemanticStructureResult> {
   console.log(`[SEM][stage2] Starting semantic structural validation (${scene})`);
 
@@ -233,39 +296,22 @@ export async function runSemanticStructureValidator({
       computeEdgeDensity(enhancedImagePath),
     ]);
 
-    // Compute wall drift
+    // Compute wall drift and openings
     const wallDrift = computeWallDrift(originalEdgeDensity, enhancedEdgeDensity);
-
-    // Compute opening changes
     const openingChanges = computeOpeningChanges(originalEdgeDensity, enhancedEdgeDensity);
 
-    // Build result
-    const result: SemanticStructureResult = {
-      passed:
-        windowsBefore === windowsAfter &&
-        doorsBefore === doorsAfter &&
-        wallDrift < 0.12 &&
-        openingChanges.created === 0 &&
-        openingChanges.closed === 0,
-
-      windows: {
-        before: windowsBefore,
-        after: windowsAfter,
-        change: windowsAfter - windowsBefore,
+    const result = evaluateSemanticStructureResult(
+      {
+        windowsBefore,
+        windowsAfter,
+        doorsBefore,
+        doorsAfter,
+        wallDrift,
+        openingsCreated: openingChanges.created,
+        openingsClosed: openingChanges.closed,
       },
-
-      doors: {
-        before: doorsBefore,
-        after: doorsAfter,
-        change: doorsAfter - doorsBefore,
-      },
-
-      walls: {
-        driftRatio: wallDrift,
-      },
-
-      openings: openingChanges,
-    };
+      { wallDriftMax, emptyRoom }
+    );
 
     // LOG-ONLY OUTPUT (NO BLOCKING)
     console.log(
@@ -280,7 +326,8 @@ export async function runSemanticStructureValidator({
 
     console.log(
       `[SEM][stage2] wall drift: ${(result.walls.driftRatio * 100).toFixed(2)}% ` +
-      `${result.walls.driftRatio > 0.12 ? "(FAIL)" : "(OK)"}`
+      `(threshold=${(result.walls.threshold * 100).toFixed(2)}% emptyRoom=${result.walls.emptyRoom ? "true" : "false"}) ` +
+      `${result.walls.driftRatio > result.walls.threshold ? "(FAIL)" : "(OK)"}`
     );
 
     console.log(
@@ -289,7 +336,7 @@ export async function runSemanticStructureValidator({
     );
 
     console.log(
-      `[SEM][stage2] RESULT: ${result.passed ? "PASSED" : "FAILED"} (log-only, non-blocking)`
+      `[SEM][stage2] RESULT: ${result.passed ? "PASSED" : "FAILED"} (mode=${mode || "log"})`
     );
 
     return result;

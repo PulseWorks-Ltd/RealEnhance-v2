@@ -51,6 +51,7 @@ import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
+import { isEmptyRoomByEdgeDensity } from "./validators/emptyRoomHeuristic";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
@@ -1018,19 +1019,44 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====
   // Run semantic structure validator ONLY after Stage-2 virtual staging
   // This validator detects window/door count changes, wall drift, and opening modifications
-  // MODE: LOG-ONLY (non-blocking)
+  // MODE: ENFORCE for window-count change; relaxed wall drift for empty rooms
   if (path2 && payload.options.virtualStage) {
     try {
       nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════`);
 
-      await runSemanticStructureValidator({
+      const emptyRoomCheck = await isEmptyRoomByEdgeDensity(path2);
+      nLog(
+        `[worker][stage2][empty-room] edgeDensity=${emptyRoomCheck.edgeDensity.toFixed(4)} ` +
+        `threshold=${emptyRoomCheck.threshold} emptyRoom=${emptyRoomCheck.empty ? "true" : "false"}`
+      );
+
+      const semanticResult = await runSemanticStructureValidator({
         originalImagePath: path1A,  // Pre-staging baseline
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: "log",
+        mode: "enforce",
+        emptyRoom: emptyRoomCheck.empty,
       });
 
-      nLog(`[worker] Semantic validation completed (log-only, non-blocking)`);
+      // BLOCK on window count changes (Stage 2 only)
+      if (semanticResult.windows.change !== 0) {
+        const failureMsg = `Stage2 semantic validation failed: window count changed ${semanticResult.windows.before} -> ${semanticResult.windows.after}`;
+        nLog(`[worker] ❌ BLOCKING IMAGE due to window count change (stage2)`);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: failureMsg,
+          error: failureMsg,
+          message: failureMsg,
+          meta: {
+            ...(sceneLabel ? { ...sceneMeta } : {}),
+            semanticStructure: semanticResult,
+            structuralValidationFailed: true,
+          },
+        });
+        return;
+      }
+
+      nLog(`[worker] Semantic validation completed (stage2)`);
     } catch (semanticError: any) {
       // Semantic validation errors should never crash the job
       nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
