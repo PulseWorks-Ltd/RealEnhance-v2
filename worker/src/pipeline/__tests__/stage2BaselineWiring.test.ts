@@ -130,6 +130,40 @@ assertEqual(result.error, null, "no error when stage-aware disabled");
 assertEqual(result.warning, null, "no warning when stage-aware disabled");
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Test: Stage 1B baseline semantics (declutter compares vs Stage1A, NOT original)
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nStage 1B baseline semantics:");
+
+interface Stage1BValidationContext {
+  originalPath: string;
+  stage1APath: string;
+  stage1BCandidatePath: string;
+}
+
+function getCorrectBaselineForStage1B(ctx: Stage1BValidationContext): string {
+  // Stage 1B validation baseline should ALWAYS be Stage1A output
+  // Comparing 1B vs original would inflate diffs since 1A already changed lighting/contrast
+  return ctx.stage1APath;
+}
+
+const ctx1B: Stage1BValidationContext = {
+  originalPath: "/tmp/uploads/photo.jpg",
+  stage1APath: "/tmp/outputs/photo-1A.webp",
+  stage1BCandidatePath: "/tmp/outputs/photo-1B.webp",
+};
+
+assertEqual(
+  getCorrectBaselineForStage1B(ctx1B),
+  ctx1B.stage1APath,
+  "Stage 1B baseline is Stage1A output (not original)"
+);
+
+assert(
+  getCorrectBaselineForStage1B(ctx1B) !== ctx1B.originalPath,
+  "Stage 1B baseline must NOT be original path"
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Test: Stage 2 vs Stage 1A baseline semantics
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("\nStage 2 baseline semantics:");

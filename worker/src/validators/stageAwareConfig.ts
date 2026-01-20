@@ -19,6 +19,19 @@
  * - STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
  * - STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.30)
  *
+ * NEW STAGE 1B THRESHOLD ENV VARS (declutter/furniture removal):
+ * - STRUCT_VALIDATION_STAGE1B_EDGE_IOU_MIN: 0.0-1.0 (default: 0.50)
+ * - STRUCT_VALIDATION_STAGE1B_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.40)
+ * - STRUCT_VALIDATION_STAGE1B_LINEEDGE_MIN: 0.0-1.0 (default: 0.60)
+ * - STRUCT_VALIDATION_STAGE1B_UNIFIED_MIN: 0.0-1.0 (default: 0.55)
+ * - STRUCT_VALIDATION_STAGE1B_EDGE_MODE: "global" | "structure_only" | "exclude_lower" (default: "structure_only")
+ * - STRUCT_VALIDATION_STAGE1B_EXCLUDE_LOWER_PCT: 0.0-1.0 (default: 0.20)
+ *
+ * STAGE 1B HARD-FAIL SWITCHES (separate from global, defaults tuned for furniture removal):
+ * - STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "1" - ON)
+ * - STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_POSITION_CHANGE: "0" | "1" (default: "0" - OFF)
+ * - STRUCT_VALIDATION_STAGE1B_BLOCK_ON_OPENINGS_DELTA: "0" | "1" (default: "0" - OFF, furniture near doors can trigger false positives)
+ *
  * NEW STAGE 2 THRESHOLD ENV VARS:
  * - STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
  * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.55)
@@ -123,6 +136,64 @@ export function loadStage1AThresholds(): Stage1AThresholds {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// STAGE 1B THRESHOLD CONFIGURATION (declutter/furniture removal)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface Stage1BThresholds {
+  /** Minimum global edge IoU for Stage 1B (looser than 1A since furniture removal changes edges) */
+  edgeIouMin: number;
+  /** Minimum structural mask IoU for Stage 1B */
+  structIouMin: number;
+  /** Minimum line/edge score for Stage 1B */
+  lineEdgeMin: number;
+  /** Minimum unified structural score for Stage 1B */
+  unifiedMin: number;
+  /** Edge comparison mode: "global" | "structure_only" | "exclude_lower" */
+  edgeMode: "global" | "structure_only" | "exclude_lower";
+  /** Percentage of image bottom to exclude when edgeMode=exclude_lower */
+  excludeLowerPct: number;
+}
+
+/**
+ * Load Stage 1B thresholds from environment variables
+ * Defaults are looser than Stage 1A since furniture removal legitimately changes edges
+ */
+export function loadStage1BThresholds(): Stage1BThresholds {
+  return {
+    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_EDGE_IOU_MIN", 0.50),
+    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_STRUCT_IOU_MIN", 0.40),
+    lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_LINEEDGE_MIN", 0.60),
+    unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_UNIFIED_MIN", 0.55),
+    edgeMode: parseEdgeMode(process.env.STRUCT_VALIDATION_STAGE1B_EDGE_MODE),
+    excludeLowerPct: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_EXCLUDE_LOWER_PCT", 0.20),
+  };
+}
+
+/**
+ * Stage 1B hard-fail switches (separate from global switches)
+ * Defaults tuned for furniture removal: window count ON, others OFF
+ */
+export interface Stage1BHardFailSwitches {
+  /** Block on window count change (default: true - windows should not disappear during declutter) */
+  blockOnWindowCountChange: boolean;
+  /** Block on window position change (default: false - furniture near windows can affect detection) */
+  blockOnWindowPositionChange: boolean;
+  /** Block on openings delta (default: false - furniture near doorways can trigger false positives) */
+  blockOnOpeningsDelta: boolean;
+}
+
+/**
+ * Load Stage 1B hard-fail switches from environment variables
+ */
+export function loadStage1BHardFailSwitches(): Stage1BHardFailSwitches {
+  return {
+    blockOnWindowCountChange: parseEnvBool("STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_COUNT_CHANGE", true),
+    blockOnWindowPositionChange: parseEnvBool("STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_POSITION_CHANGE", false),
+    blockOnOpeningsDelta: parseEnvBool("STRUCT_VALIDATION_STAGE1B_BLOCK_ON_OPENINGS_DELTA", false),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // STAGE 2 THRESHOLD CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -203,10 +274,16 @@ export interface StageAwareConfig {
   /** Stage 1A thresholds */
   stage1AThresholds: Stage1AThresholds;
 
+  /** Stage 1B thresholds (declutter/furniture removal) */
+  stage1BThresholds: Stage1BThresholds;
+
+  /** Stage 1B hard-fail switches (separate from global) */
+  stage1BHardFailSwitches: Stage1BHardFailSwitches;
+
   /** Stage 2 thresholds */
   stage2Thresholds: Stage2Thresholds;
 
-  /** Hard-fail switches (NEW) */
+  /** Hard-fail switches (global, used by Stage 2) */
   hardFailSwitches: HardFailSwitches;
 }
 
@@ -231,10 +308,16 @@ export function loadStageAwareConfig(): StageAwareConfig {
     // Stage 1A thresholds
     stage1AThresholds: loadStage1AThresholds(),
 
+    // Stage 1B thresholds (declutter/furniture removal)
+    stage1BThresholds: loadStage1BThresholds(),
+
+    // Stage 1B hard-fail switches
+    stage1BHardFailSwitches: loadStage1BHardFailSwitches(),
+
     // Stage 2 thresholds
     stage2Thresholds: loadStage2Thresholds(),
 
-    // NEW: Hard-fail switches
+    // Hard-fail switches (global, used by Stage 2)
     hardFailSwitches: loadHardFailSwitches(),
   };
 
@@ -244,6 +327,8 @@ export function loadStageAwareConfig(): StageAwareConfig {
     stage2EdgeMode: config.stage2EdgeMode,
     gateMinSignals: config.gateMinSignals,
     stage1AThresholds: config.stage1AThresholds,
+    stage1BThresholds: config.stage1BThresholds,
+    stage1BHardFailSwitches: config.stage1BHardFailSwitches,
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
   });

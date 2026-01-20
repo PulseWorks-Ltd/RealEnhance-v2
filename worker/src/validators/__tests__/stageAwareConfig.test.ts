@@ -11,6 +11,8 @@ import {
   parseEnvInt,
   parseEnvFloat,
   loadStage1AThresholds,
+  loadStage1BThresholds,
+  loadStage1BHardFailSwitches,
   loadStage2Thresholds,
   loadHardFailSwitches,
   loadStageAwareConfig,
@@ -170,6 +172,66 @@ stage1AThresholds = loadStage1AThresholds();
 assertEqual(stage1AThresholds.structIouMin, 0, "clamps structIouMin below 0");
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// loadStage1BThresholds tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadStage1BThresholds:");
+
+resetEnv();
+delete process.env.STRUCT_VALIDATION_STAGE1B_EDGE_IOU_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE1B_STRUCT_IOU_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE1B_LINEEDGE_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE1B_UNIFIED_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE1B_EDGE_MODE;
+delete process.env.STRUCT_VALIDATION_STAGE1B_EXCLUDE_LOWER_PCT;
+
+let stage1BThresholds = loadStage1BThresholds();
+assertEqual(stage1BThresholds.edgeIouMin, 0.50, "defaults edgeIouMin to 0.50");
+assertEqual(stage1BThresholds.structIouMin, 0.40, "defaults structIouMin to 0.40");
+assertEqual(stage1BThresholds.lineEdgeMin, 0.60, "defaults lineEdgeMin to 0.60");
+assertEqual(stage1BThresholds.unifiedMin, 0.55, "defaults unifiedMin to 0.55");
+assertEqual(stage1BThresholds.edgeMode, "structure_only", "defaults edgeMode to structure_only");
+assertEqual(stage1BThresholds.excludeLowerPct, 0.20, "defaults excludeLowerPct to 0.20");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE1B_EDGE_IOU_MIN = "0.45";
+process.env.STRUCT_VALIDATION_STAGE1B_STRUCT_IOU_MIN = "0.35";
+process.env.STRUCT_VALIDATION_STAGE1B_LINEEDGE_MIN = "0.55";
+process.env.STRUCT_VALIDATION_STAGE1B_UNIFIED_MIN = "0.50";
+process.env.STRUCT_VALIDATION_STAGE1B_EDGE_MODE = "exclude_lower";
+process.env.STRUCT_VALIDATION_STAGE1B_EXCLUDE_LOWER_PCT = "0.30";
+stage1BThresholds = loadStage1BThresholds();
+assertEqual(stage1BThresholds.edgeIouMin, 0.45, "uses custom edgeIouMin");
+assertEqual(stage1BThresholds.structIouMin, 0.35, "uses custom structIouMin");
+assertEqual(stage1BThresholds.lineEdgeMin, 0.55, "uses custom lineEdgeMin");
+assertEqual(stage1BThresholds.unifiedMin, 0.50, "uses custom unifiedMin");
+assertEqual(stage1BThresholds.edgeMode, "exclude_lower", "uses custom edgeMode");
+assertEqual(stage1BThresholds.excludeLowerPct, 0.30, "uses custom excludeLowerPct");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// loadStage1BHardFailSwitches tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadStage1BHardFailSwitches:");
+
+resetEnv();
+delete process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_COUNT_CHANGE;
+delete process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_POSITION_CHANGE;
+delete process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_OPENINGS_DELTA;
+
+let stage1BSwitches = loadStage1BHardFailSwitches();
+assertEqual(stage1BSwitches.blockOnWindowCountChange, true, "defaults blockOnWindowCountChange to true (ON for 1B)");
+assertEqual(stage1BSwitches.blockOnWindowPositionChange, false, "defaults blockOnWindowPositionChange to false");
+assertEqual(stage1BSwitches.blockOnOpeningsDelta, false, "defaults blockOnOpeningsDelta to false");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_COUNT_CHANGE = "0";
+process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_WINDOW_POSITION_CHANGE = "1";
+process.env.STRUCT_VALIDATION_STAGE1B_BLOCK_ON_OPENINGS_DELTA = "1";
+stage1BSwitches = loadStage1BHardFailSwitches();
+assertEqual(stage1BSwitches.blockOnWindowCountChange, false, "disables blockOnWindowCountChange with '0'");
+assertEqual(stage1BSwitches.blockOnWindowPositionChange, true, "enables blockOnWindowPositionChange with '1'");
+assertEqual(stage1BSwitches.blockOnOpeningsDelta, true, "enables blockOnOpeningsDelta with '1'");
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // loadStage2Thresholds tests
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("\nloadStage2Thresholds:");
@@ -230,6 +292,14 @@ assert(config.gateMinSignals !== undefined, "has gateMinSignals field");
 assert(config.stage1AThresholds !== undefined, "has stage1AThresholds field");
 assert(config.stage1AThresholds.edgeIouMin !== undefined, "has stage1A nested edgeIouMin");
 assert(config.stage1AThresholds.structIouMin !== undefined, "has stage1A nested structIouMin");
+assert(config.stage1BThresholds !== undefined, "has stage1BThresholds field");
+assert(config.stage1BThresholds.edgeIouMin !== undefined, "has stage1B nested edgeIouMin");
+assert(config.stage1BThresholds.structIouMin !== undefined, "has stage1B nested structIouMin");
+assert(config.stage1BThresholds.lineEdgeMin !== undefined, "has stage1B nested lineEdgeMin");
+assert(config.stage1BThresholds.unifiedMin !== undefined, "has stage1B nested unifiedMin");
+assert(config.stage1BThresholds.edgeMode !== undefined, "has stage1B nested edgeMode");
+assert(config.stage1BHardFailSwitches !== undefined, "has stage1BHardFailSwitches field");
+assert(config.stage1BHardFailSwitches.blockOnWindowCountChange !== undefined, "has stage1B nested blockOnWindowCountChange");
 assert(config.stage2Thresholds !== undefined, "has stage2Thresholds field");
 assert(config.stage2Thresholds.edgeIouMin !== undefined, "has stage2 nested edgeIouMin");
 assert(config.hardFailSwitches !== undefined, "has hardFailSwitches field");

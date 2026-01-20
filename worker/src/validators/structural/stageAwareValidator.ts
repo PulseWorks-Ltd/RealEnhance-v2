@@ -3,7 +3,8 @@
  *
  * This module provides the core stage-aware validation logic:
  * - Stage1A baseline = Original
- * - Stage2 baseline = Stage1A output (NOT original)
+ * - Stage1B baseline = Stage1A output (declutter compares vs enhanced, NOT original)
+ * - Stage2 baseline = Stage1A output (staging compares vs enhanced, NOT original)
  * - Stage-specific thresholds and edge modes
  * - Multi-signal gating (require >=2 independent triggers for risk)
  * - Proper IoU handling (no silent 0.000)
@@ -22,6 +23,8 @@ import {
   STAGE_THRESHOLDS,
   getStage2EdgeIouMin,
   Stage1AThresholds,
+  Stage1BThresholds,
+  Stage1BHardFailSwitches,
   Stage2Thresholds,
   HardFailSwitches,
 } from "../stageAwareConfig";
@@ -205,28 +208,48 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ═══════════════════════════════════════════════════════════════════════════════
   // ENV-CONFIGURABLE STAGE THRESHOLDS
   // ═══════════════════════════════════════════════════════════════════════════════
-  // When STRUCT_VALIDATION_STAGE_AWARE=1, use env-configurable thresholds for both stages
+  // When STRUCT_VALIDATION_STAGE_AWARE=1, use env-configurable thresholds for all stages
   const stage1AThresholds = config.stage1AThresholds;
+  const stage1BThresholds = config.stage1BThresholds;
+  const stage1BHardFailSwitches = config.stage1BHardFailSwitches;
   const stage2Thresholds = config.stage2Thresholds;
   const hardFailSwitches = config.hardFailSwitches;
   const isStage2 = params.stage === "stage2";
   const isStage1A = params.stage === "stage1A";
+  const isStage1B = params.stage === "stage1B";
 
-  // Use env-configured thresholds for both Stage 1A and Stage 2
+  // Use env-configured thresholds for Stage 1A, 1B, and Stage 2
   const effectiveThresholds = {
     structuralMaskIouMin: isStage2
       ? stage2Thresholds.structIouMin
-      : isStage1A
-        ? stage1AThresholds.structIouMin
-        : thresholds.structuralMaskIouMin,
+      : isStage1B
+        ? stage1BThresholds.structIouMin
+        : isStage1A
+          ? stage1AThresholds.structIouMin
+          : thresholds.structuralMaskIouMin,
     globalEdgeIouMin: isStage2
       ? stage2Thresholds.edgeIouMin
-      : isStage1A
-        ? stage1AThresholds.edgeIouMin
-        : (thresholds.globalEdgeIouMin || 0.60),
-    lineEdgeMin: isStage2 ? stage2Thresholds.lineEdgeMin : 0.70,
-    unifiedMin: isStage2 ? stage2Thresholds.unifiedMin : 0.65,
+      : isStage1B
+        ? stage1BThresholds.edgeIouMin
+        : isStage1A
+          ? stage1AThresholds.edgeIouMin
+          : (thresholds.globalEdgeIouMin || 0.60),
+    lineEdgeMin: isStage2
+      ? stage2Thresholds.lineEdgeMin
+      : isStage1B
+        ? stage1BThresholds.lineEdgeMin
+        : 0.70,
+    unifiedMin: isStage2
+      ? stage2Thresholds.unifiedMin
+      : isStage1B
+        ? stage1BThresholds.unifiedMin
+        : 0.65,
   };
+
+  // Effective hard-fail switches - use stage-specific for Stage 1B, global for Stage 2
+  const effectiveHardFailSwitches: HardFailSwitches = isStage1B
+    ? stage1BHardFailSwitches
+    : hardFailSwitches;
 
   const debug: ValidationSummary["debug"] = {
     dimsBaseline: { w: 0, h: 0 },
@@ -247,9 +270,13 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (isStage1A) {
     console.log(`[stageAware] Stage1A Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}`);
   }
+  if (isStage1B) {
+    console.log(`[stageAware] Stage1B Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}, lineEdgeMin=${effectiveThresholds.lineEdgeMin}, unifiedMin=${effectiveThresholds.unifiedMin}`);
+    console.log(`[stageAware] Stage1B Hard-fail switches: windowCount=${effectiveHardFailSwitches.blockOnWindowCountChange}, windowPos=${effectiveHardFailSwitches.blockOnWindowPositionChange}, openings=${effectiveHardFailSwitches.blockOnOpeningsDelta}`);
+  }
   if (isStage2) {
     console.log(`[stageAware] Stage2 Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}, lineEdgeMin=${effectiveThresholds.lineEdgeMin}, unifiedMin=${effectiveThresholds.unifiedMin}`);
-    console.log(`[stageAware] Hard-fail switches: windowCount=${hardFailSwitches.blockOnWindowCountChange}, windowPos=${hardFailSwitches.blockOnWindowPositionChange}, openings=${hardFailSwitches.blockOnOpeningsDelta}`);
+    console.log(`[stageAware] Hard-fail switches: windowCount=${effectiveHardFailSwitches.blockOnWindowCountChange}, windowPos=${effectiveHardFailSwitches.blockOnWindowPositionChange}, openings=${effectiveHardFailSwitches.blockOnOpeningsDelta}`);
   }
 
   // ===== 1. LOAD AND VERIFY DIMENSIONS =====
@@ -472,7 +499,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
         if (!windowResult.ok && windowResult.reason) {
           // Check if hard-fail switch is enabled
-          if (windowResult.reason === "window_count_change" && hardFailSwitches.blockOnWindowCountChange) {
+          if (windowResult.reason === "window_count_change" && effectiveHardFailSwitches.blockOnWindowCountChange) {
             triggers.push({
               id: "window_count_change",
               message: `Window count changed (hard-fail enabled)`,
@@ -482,7 +509,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
               fatal: true, // Bypasses multi-signal gating
             });
             console.log(`[stageAware] FATAL: Window count change detected (blockOnWindowCountChange=true)`);
-          } else if (windowResult.reason === "window_position_change" && hardFailSwitches.blockOnWindowPositionChange) {
+          } else if (windowResult.reason === "window_position_change" && effectiveHardFailSwitches.blockOnWindowPositionChange) {
             triggers.push({
               id: "window_position_change",
               message: `Window position changed significantly (hard-fail enabled)`,
@@ -523,7 +550,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         metrics.openingsCreated = semanticResult.openings.created;
         metrics.openingsClosed = semanticResult.openings.closed;
 
-        if (openingsDelta > 0 && hardFailSwitches.blockOnOpeningsDelta) {
+        if (openingsDelta > 0 && effectiveHardFailSwitches.blockOnOpeningsDelta) {
           triggers.push({
             id: "openings_delta",
             message: `Openings changed: +${semanticResult.openings.created} created, -${semanticResult.openings.closed} closed (hard-fail enabled)`,

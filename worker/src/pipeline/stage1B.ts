@@ -4,6 +4,9 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
+import { loadStageAwareConfig } from "../validators/stageAwareConfig";
+import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
+import { shouldValidatorBlock, getValidatorMode } from "../validators/validatorMode";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -23,9 +26,17 @@ export async function runStage1B(
     sceneType?: "interior" | "exterior" | string;
     roomType?: string;
     declutterMode?: "light" | "stage-ready";
+    /** Original image path (for reference/masks if needed) */
+    originalPath?: string;
+    /** Job ID for validation tracking */
+    jobId?: string;
   } = {}
-): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode } = options;
+): Promise<string | null> {
+  const { replaceSky = false, sceneType, roomType, declutterMode, originalPath, jobId: providedJobId } = options;
+
+  // Stage-aware validation config
+  const stageAwareConfig = loadStageAwareConfig();
+  const jobId = providedJobId || (global as any).__jobId || `stage1B-${Date.now()}`;
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
   if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
@@ -87,28 +98,86 @@ export async function runStage1B(
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
     console.log(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
     
-    // If Gemini succeeded, validate against canonical base (not 1A)
+    // If Gemini succeeded, validate the decluttered output
     if (declutteredPath !== stage1APath) {
-      const { validateStageOutput } = await import("../validators/index.js");
-      const canonicalPath: string | undefined = (global as any).__canonicalPath;
-      const base = canonicalPath || stage1APath;
-      const verdict1 = await validateStageOutput("stage1B", base, declutteredPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
-      // Soft mode: log verdict, always proceed
-      console.log(`[stage1B] Validator verdict:`, verdict1);
-      const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
-      const jobId = (global as any).__jobId || "default";
-      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-      const maskPath = await loadOrComputeStructuralMask(jobId, base);
-      const masks = { structuralMask: maskPath };
-      const verdict2 = await validateStage1BStructural(base, declutteredPath, masks);
-      console.log(`[stage1B] Structural validator verdict:`, verdict2);
-      if (!verdict2.ok) {
-        console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
-      }
       const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
       const fs = await import("fs/promises");
       console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
       await fs.rename(declutteredPath, outputPath);
+
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // STAGE-AWARE VALIDATION FOR STAGE 1B
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // CRITICAL: Stage1B validation baseline MUST be Stage1A output (NOT original)
+      // Comparing 1B vs original would inflate diffs since 1A already changed lighting/contrast
+      if (stageAwareConfig.enabled) {
+        const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
+
+        // Structured baseline log for monitoring
+        console.log(
+          `[STRUCT_BASELINE] stage=1B jobId=${jobId} baseline=${stage1APath} candidate=${outputPath} ` +
+          `original=${originalPath || "(not provided)"} mode=${validationMode}`
+        );
+
+        try {
+          const validationResult = await validateStructureStageAware({
+            stage: "stage1B",
+            baselinePath: stage1APath, // CRITICAL: Compare 1B output vs 1A output (NOT original)
+            candidatePath: outputPath,
+            mode: validationMode,
+            jobId,
+            sceneType: (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as "interior" | "exterior",
+            roomType,
+            config: stageAwareConfig,
+          });
+
+          console.log(`[stage1B] Stage-aware validation result: risk=${validationResult.risk}, score=${validationResult.score.toFixed(3)}`);
+
+          if (validationResult.risk) {
+            const hasFatalTrigger = validationResult.triggers.some(t => t.fatal);
+            const fatalIds = validationResult.triggers.filter(t => t.fatal).map(t => t.id);
+            const nonFatalIds = validationResult.triggers.filter(t => !t.fatal).map(t => t.id);
+
+            console.warn(`[stage1B] Stage-aware validation detected risk (${validationResult.triggers.length} triggers, fatal=${hasFatalTrigger})`);
+            validationResult.triggers.forEach((t, i) => {
+              console.warn(`[stage1B]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`);
+            });
+
+            // Structured failure log
+            console.log(
+              `[STRUCT_FAIL] stage=1B mode=${validationMode} ` +
+              `fatal=[${fatalIds.join(",")}] triggers=[${nonFatalIds.join(",")}] jobId=${jobId}`
+            );
+
+            // In block mode with risk, return null to signal failure
+            if (validationMode === "block") {
+              console.error(`[stage1B] ❌ BLOCKED: Stage 1B structural validation failed in block mode`);
+              return null;
+            }
+          }
+        } catch (validationError) {
+          console.error(`[stage1B] Stage-aware validation error (fail-open):`, validationError);
+          // Continue in case of validation error - fail-open
+        }
+      } else {
+        // Legacy validation path when stage-aware is disabled
+        const { validateStageOutput } = await import("../validators/index.js");
+        const canonicalPath: string | undefined = (global as any).__canonicalPath;
+        const base = canonicalPath || stage1APath;
+        const verdict1 = await validateStageOutput("stage1B", base, outputPath, { sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any, roomType });
+        // Soft mode: log verdict, always proceed
+        console.log(`[stage1B] Validator verdict:`, verdict1);
+        const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
+        const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+        const maskPath = await loadOrComputeStructuralMask(jobId, base);
+        const masks = { structuralMask: maskPath };
+        const verdict2 = await validateStage1BStructural(base, outputPath, masks);
+        console.log(`[stage1B] Structural validator verdict:`, verdict2);
+        if (!verdict2.ok) {
+          console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
+        }
+      }
+
       console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
       return outputPath;
     }

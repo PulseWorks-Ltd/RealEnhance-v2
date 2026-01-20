@@ -682,12 +682,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
     try {
       // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
-      path1B = await runStage1B(path1A, {
+      // CRITICAL: Pass originalPath and jobId for proper baseline wiring in stage-aware validation
+      const stage1BResult = await runStage1B(path1A, {
         replaceSky: false, // Never combine with sky replacement
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
         declutterMode: declutterMode as "light" | "stage-ready",
+        originalPath: origPath,
+        jobId: payload.jobId,
       });
+
+      // Handle block mode rejection (stage1BResult is null)
+      if (stage1BResult === null) {
+        nLog(`[WORKER] Stage 1B was blocked by structural validation (block mode enabled)`);
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: "Image rejected: Stage 1B structural validation failed in block mode",
+          error: "BLOCKED_BY_VALIDATOR",
+          meta: { ...sceneMeta, blockedByValidator: true, blockedStage: "1B" }
+        });
+        return;
+      }
+      path1B = stage1BResult;
     } catch (e: any) {
       const errMsg = e?.message || String(e);
       nLog(`[worker] Stage 1B failed: ${errMsg}`);
