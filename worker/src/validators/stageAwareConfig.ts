@@ -290,6 +290,42 @@ export interface StageAwareConfig {
 /**
  * Load stage-aware configuration from environment variables
  */
+// ═══════════════════════════════════════════════════════════════════════════════
+// STAGE 2 BASELINE SELECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Chooses the correct baseline for Stage 2 structural validation.
+ *
+ * POLICY:
+ * - If Stage 1B ran and produced valid output → compare Stage 2 vs Stage 1B
+ * - Otherwise → compare Stage 2 vs Stage 1A
+ *
+ * This ensures we're comparing against the most recent predecessor stage,
+ * since 1B's changes (furniture removal) are expected and shouldn't be
+ * flagged as structural issues in Stage 2.
+ */
+export function chooseStage2Baseline(opts: {
+  stage1APath: string;
+  stage1BPath?: string | null;
+}): { baselinePath: string; baselineStage: "1A" | "1B" } {
+  const { stage1APath, stage1BPath } = opts;
+
+  // If Stage 1B ran and produced valid output, use it as baseline
+  if (stage1BPath && stage1BPath !== stage1APath) {
+    return {
+      baselinePath: stage1BPath,
+      baselineStage: "1B",
+    };
+  }
+
+  // Otherwise use Stage 1A
+  return {
+    baselinePath: stage1APath,
+    baselineStage: "1A",
+  };
+}
+
 export function loadStageAwareConfig(): StageAwareConfig {
   const config: StageAwareConfig = {
     enabled: parseEnvBool("STRUCT_VALIDATION_STAGE_AWARE", false),

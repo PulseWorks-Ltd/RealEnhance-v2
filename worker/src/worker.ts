@@ -845,8 +845,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
-            // CRITICAL: Pass Stage1A output as validation baseline for Stage2
+            // CRITICAL: Pass Stage1A and Stage1B paths for proper baseline selection
+            // Stage2 validation will compare against 1B if it ran, otherwise 1A
             stage1APath: path1A,
+            stage1BPath: path1B, // Will be undefined if declutter didn't run
             jobId: payload.jobId,
             onStrictRetry: ({ reasons }) => {
               try {

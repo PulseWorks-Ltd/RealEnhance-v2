@@ -10,7 +10,7 @@ import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
-import { loadStageAwareConfig } from "../validators/stageAwareConfig";
+import { loadStageAwareConfig, chooseStage2Baseline } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
@@ -31,8 +31,10 @@ export async function runStage2(
     stagingStyle?: string;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
-    /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
+    /** Stage1A output path for stage-aware validation baseline */
     stage1APath?: string;
+    /** Stage1B output path (if declutter ran) - used as validation baseline when available */
+    stage1BPath?: string;
     /** Job ID for validation tracking */
     jobId?: string;
   }
@@ -50,26 +52,45 @@ export async function runStage2(
   const stageAwareConfig = loadStageAwareConfig();
   const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
 
-  // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
-  // If stage1APath not provided:
+  // CRITICAL: Stage2 validation baseline selection
+  // Policy: Use Stage1B if it ran successfully, otherwise Stage1A
+  // If neither provided:
   // - In block mode: ERROR and return null (validation will cause false positives)
   // - In log mode: warn and fallback to basePath
   const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
-  const validationBaseline = opts.stage1APath || basePath;
-  if (!opts.stage1APath && stageAwareConfig.enabled) {
-    if (validationMode === "block") {
-      console.error(`[stage2] ❌ ERROR: No stage1APath provided for Stage2 validation in block mode - cannot validate safely`);
-      console.error(`[stage2] ❌ jobId=${jobId} basePath=${basePath} - Stage2 validation requires Stage1A output as baseline`);
-      // In block mode, missing stage1APath is a critical error since validation would cause false positives
-      return null;
-    } else {
-      console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+
+  // Choose the correct baseline using the helper
+  let validationBaseline: string;
+  let baselineStage: "1A" | "1B" | "unknown" = "unknown";
+
+  if (opts.stage1APath) {
+    // Use chooseStage2Baseline to select between 1A and 1B
+    const baselineChoice = chooseStage2Baseline({
+      stage1APath: opts.stage1APath,
+      stage1BPath: opts.stage1BPath,
+    });
+    validationBaseline = baselineChoice.baselinePath;
+    baselineStage = baselineChoice.baselineStage;
+  } else {
+    // No stage1APath provided - fallback to basePath with warning/error
+    validationBaseline = basePath;
+    baselineStage = "unknown";
+
+    if (stageAwareConfig.enabled) {
+      if (validationMode === "block") {
+        console.error(`[stage2] ❌ ERROR: No stage1APath provided for Stage2 validation in block mode - cannot validate safely`);
+        console.error(`[stage2] ❌ jobId=${jobId} basePath=${basePath} - Stage2 validation requires Stage1A output as baseline`);
+        // In block mode, missing stage1APath is a critical error since validation would cause false positives
+        return null;
+      } else {
+        console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+      }
     }
   }
 
   console.log(`[stage2] 🔵 Starting virtual staging...`);
   console.log(`[stage2] Input: ${basePath}`);
-  console.log(`[stage2] Validation baseline: ${validationBaseline}`);
+  console.log(`[stage2] Validation baseline: ${validationBaseline} (baselineStage=${baselineStage})`);
   console.log(`[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
   console.log(`[stage2] Room type: ${opts.roomType}`);
   console.log(`[stage2] Scene type: ${opts.sceneType || 'interior'}`);
@@ -287,7 +308,7 @@ export async function runStage2(
           // Structured baseline log for monitoring
           console.log(
             `[STRUCT_BASELINE] stage=2 jobId=${jobId} baseline=${validationBaseline} candidate=${out} ` +
-            `baselineIsStage1A=${!!opts.stage1APath} mode=${validationMode}`
+            `baselineStage=${baselineStage} mode=${validationMode}`
           );
 
           const validationResult = await validateStructureStageAware({
