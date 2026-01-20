@@ -172,8 +172,28 @@ export async function runUnifiedValidation(
     // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
     const validationBaseline = stage1APath || originalPath;
     if (!stage1APath) {
+      if (mode === "enforce") {
+        nLog(`[unified-validator] ❌ ERROR: No stage1APath provided for Stage 2 validation in enforce mode`);
+        // Return failed result instead of validating against original (would cause false positives)
+        return {
+          passed: false,
+          score: 0,
+          reasons: ["Missing stage1APath for Stage 2 validation - cannot validate safely in enforce mode"],
+          raw: {
+            missingBaseline: {
+              name: "missingBaseline",
+              passed: false,
+              score: 0,
+              message: "MISSING_STAGE1A_PATH",
+            },
+          },
+        };
+      }
       nLog(`[unified-validator] ⚠️ No stage1APath provided - using originalPath as baseline (may cause false positives)`);
     }
+
+    // Structured baseline log for monitoring
+    nLog(`[STRUCT_BASELINE] stage=2 jobId=${jobId} baseline=${validationBaseline} candidate=${enhancedPath} baselineIsStage1A=${!!stage1APath}`);
 
     try {
       const stageAwareResult = await validateStructureStageAware({

@@ -10,6 +10,7 @@ import {
   parseEnvBool,
   parseEnvInt,
   parseEnvFloat,
+  loadStage1AThresholds,
   loadStage2Thresholds,
   loadHardFailSwitches,
   loadStageAwareConfig,
@@ -139,6 +140,36 @@ process.env.TEST_INT = "abc";
 assertEqual(parseEnvInt("TEST_INT", 3), 3, "returns default for invalid input");
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// loadStage1AThresholds tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nloadStage1AThresholds:");
+
+resetEnv();
+delete process.env.STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN;
+delete process.env.STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN;
+
+let stage1AThresholds = loadStage1AThresholds();
+assertEqual(stage1AThresholds.edgeIouMin, 0.60, "defaults edgeIouMin to 0.60");
+assertEqual(stage1AThresholds.structIouMin, 0.30, "defaults structIouMin to 0.30");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN = "0.55";
+process.env.STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN = "0.25";
+stage1AThresholds = loadStage1AThresholds();
+assertEqual(stage1AThresholds.edgeIouMin, 0.55, "uses custom edgeIouMin");
+assertEqual(stage1AThresholds.structIouMin, 0.25, "uses custom structIouMin");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN = "1.5";
+stage1AThresholds = loadStage1AThresholds();
+assertEqual(stage1AThresholds.edgeIouMin, 1, "clamps edgeIouMin above 1");
+
+resetEnv();
+process.env.STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN = "-0.1";
+stage1AThresholds = loadStage1AThresholds();
+assertEqual(stage1AThresholds.structIouMin, 0, "clamps structIouMin below 0");
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // loadStage2Thresholds tests
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("\nloadStage2Thresholds:");
@@ -196,8 +227,11 @@ const config = loadStageAwareConfig();
 assert(config.enabled !== undefined, "has enabled field");
 assert(config.stage2EdgeMode !== undefined, "has stage2EdgeMode field");
 assert(config.gateMinSignals !== undefined, "has gateMinSignals field");
+assert(config.stage1AThresholds !== undefined, "has stage1AThresholds field");
+assert(config.stage1AThresholds.edgeIouMin !== undefined, "has stage1A nested edgeIouMin");
+assert(config.stage1AThresholds.structIouMin !== undefined, "has stage1A nested structIouMin");
 assert(config.stage2Thresholds !== undefined, "has stage2Thresholds field");
-assert(config.stage2Thresholds.edgeIouMin !== undefined, "has nested edgeIouMin");
+assert(config.stage2Thresholds.edgeIouMin !== undefined, "has stage2 nested edgeIouMin");
 assert(config.hardFailSwitches !== undefined, "has hardFailSwitches field");
 assert(config.hardFailSwitches.blockOnWindowCountChange !== undefined, "has nested blockOnWindowCountChange");
 

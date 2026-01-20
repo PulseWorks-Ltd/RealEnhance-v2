@@ -15,6 +15,10 @@
  * - STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL: "0" | "1" (default: "1")
  * - STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS: number (default: 3)
  *
+ * NEW STAGE 1A THRESHOLD ENV VARS:
+ * - STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
+ * - STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.30)
+ *
  * NEW STAGE 2 THRESHOLD ENV VARS:
  * - STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
  * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.55)
@@ -98,6 +102,27 @@ export function parseEnvFloat(envKey: string, defaultValue: number): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// STAGE 1A THRESHOLD CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface Stage1AThresholds {
+  /** Minimum global edge IoU for Stage 1A */
+  edgeIouMin: number;
+  /** Minimum structural mask IoU for Stage 1A */
+  structIouMin: number;
+}
+
+/**
+ * Load Stage 1A thresholds from environment variables
+ */
+export function loadStage1AThresholds(): Stage1AThresholds {
+  return {
+    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1A_EDGE_IOU_MIN", 0.60),
+    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1A_STRUCT_IOU_MIN", 0.30),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // STAGE 2 THRESHOLD CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -175,7 +200,10 @@ export interface StageAwareConfig {
   paintOverTexRatioMin: number;
   paintOverMinRoiArea: number;
 
-  /** Stage 2 thresholds (NEW) */
+  /** Stage 1A thresholds */
+  stage1AThresholds: Stage1AThresholds;
+
+  /** Stage 2 thresholds */
   stage2Thresholds: Stage2Thresholds;
 
   /** Hard-fail switches (NEW) */
@@ -200,7 +228,10 @@ export function loadStageAwareConfig(): StageAwareConfig {
     paintOverTexRatioMin: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_TEX_RATIO_MIN", 0.45),
     paintOverMinRoiArea: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_MIN_ROI_AREA", 0.005),
 
-    // NEW: Stage 2 thresholds
+    // Stage 1A thresholds
+    stage1AThresholds: loadStage1AThresholds(),
+
+    // Stage 2 thresholds
     stage2Thresholds: loadStage2Thresholds(),
 
     // NEW: Hard-fail switches
@@ -212,6 +243,7 @@ export function loadStageAwareConfig(): StageAwareConfig {
     enabled: config.enabled,
     stage2EdgeMode: config.stage2EdgeMode,
     gateMinSignals: config.gateMinSignals,
+    stage1AThresholds: config.stage1AThresholds,
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
   });

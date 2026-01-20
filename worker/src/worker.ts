@@ -160,6 +160,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
 
       // Run Stage-2 only (using 1B as base)
+      // NOTE: In stage-2-only mode, validation baseline is the 1B output (basePath)
+      // since we're comparing Stage2 output vs the input we're staging from
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -167,6 +169,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         angleHint: undefined,
         profile: undefined,
         stagingRegion: undefined,
+        // Use 1B as validation baseline (input to Stage2)
+        stage1APath: basePath,
+        jobId: payload.jobId,
       });
 
       // Handle block mode rejection (stage2Result is null)
@@ -824,6 +829,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
+            // CRITICAL: Pass Stage1A output as validation baseline for Stage2
+            stage1APath: path1A,
+            jobId: payload.jobId,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length

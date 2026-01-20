@@ -51,10 +51,20 @@ export async function runStage2(
   const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
 
   // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
-  // If stage1APath not provided, fallback to basePath with warning
+  // If stage1APath not provided:
+  // - In block mode: ERROR and return null (validation will cause false positives)
+  // - In log mode: warn and fallback to basePath
+  const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
   const validationBaseline = opts.stage1APath || basePath;
-  if (!opts.stage1APath) {
-    console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+  if (!opts.stage1APath && stageAwareConfig.enabled) {
+    if (validationMode === "block") {
+      console.error(`[stage2] ❌ ERROR: No stage1APath provided for Stage2 validation in block mode - cannot validate safely`);
+      console.error(`[stage2] ❌ jobId=${jobId} basePath=${basePath} - Stage2 validation requires Stage1A output as baseline`);
+      // In block mode, missing stage1APath is a critical error since validation would cause false positives
+      return null;
+    } else {
+      console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+    }
   }
 
   console.log(`[stage2] 🔵 Starting virtual staging...`);
@@ -273,7 +283,12 @@ export async function runStage2(
         try {
           // Determine validation mode from env var (STRUCTURE_VALIDATOR_MODE)
           const validationMode = shouldValidatorBlock("structure") ? "block" : "log";
-          console.log(`[stage2] Structural validation mode: ${validationMode} (STRUCTURE_VALIDATOR_MODE=${getValidatorMode("structure")})`);
+
+          // Structured baseline log for monitoring
+          console.log(
+            `[STRUCT_BASELINE] stage=2 jobId=${jobId} baseline=${validationBaseline} candidate=${out} ` +
+            `baselineIsStage1A=${!!opts.stage1APath} mode=${validationMode}`
+          );
 
           const validationResult = await validateStructureStageAware({
             stage: "stage2",

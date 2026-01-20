@@ -21,6 +21,7 @@ import {
   loadStageAwareConfig,
   STAGE_THRESHOLDS,
   getStage2EdgeIouMin,
+  Stage1AThresholds,
   Stage2Thresholds,
   HardFailSwitches,
 } from "../stageAwareConfig";
@@ -202,17 +203,27 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const metrics: ValidationSummary["metrics"] = {};
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // ENV-CONFIGURABLE STAGE 2 THRESHOLDS
+  // ENV-CONFIGURABLE STAGE THRESHOLDS
   // ═══════════════════════════════════════════════════════════════════════════════
-  // When STRUCT_VALIDATION_STAGE_AWARE=1 and stage=stage2, use env-configurable thresholds
+  // When STRUCT_VALIDATION_STAGE_AWARE=1, use env-configurable thresholds for both stages
+  const stage1AThresholds = config.stage1AThresholds;
   const stage2Thresholds = config.stage2Thresholds;
   const hardFailSwitches = config.hardFailSwitches;
   const isStage2 = params.stage === "stage2";
+  const isStage1A = params.stage === "stage1A";
 
-  // Use env-configured thresholds for Stage 2, or static defaults for other stages
+  // Use env-configured thresholds for both Stage 1A and Stage 2
   const effectiveThresholds = {
-    structuralMaskIouMin: isStage2 ? stage2Thresholds.structIouMin : thresholds.structuralMaskIouMin,
-    globalEdgeIouMin: isStage2 ? stage2Thresholds.edgeIouMin : (thresholds.globalEdgeIouMin || 0.60),
+    structuralMaskIouMin: isStage2
+      ? stage2Thresholds.structIouMin
+      : isStage1A
+        ? stage1AThresholds.structIouMin
+        : thresholds.structuralMaskIouMin,
+    globalEdgeIouMin: isStage2
+      ? stage2Thresholds.edgeIouMin
+      : isStage1A
+        ? stage1AThresholds.edgeIouMin
+        : (thresholds.globalEdgeIouMin || 0.60),
     lineEdgeMin: isStage2 ? stage2Thresholds.lineEdgeMin : 0.70,
     unifiedMin: isStage2 ? stage2Thresholds.unifiedMin : 0.65,
   };
@@ -233,6 +244,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   console.log(`[stageAware] Baseline: ${params.baselinePath}`);
   console.log(`[stageAware] Candidate: ${params.candidatePath}`);
   console.log(`[stageAware] Mode: ${mode}`);
+  if (isStage1A) {
+    console.log(`[stageAware] Stage1A Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}`);
+  }
   if (isStage2) {
     console.log(`[stageAware] Stage2 Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}, lineEdgeMin=${effectiveThresholds.lineEdgeMin}, unifiedMin=${effectiveThresholds.unifiedMin}`);
     console.log(`[stageAware] Hard-fail switches: windowCount=${hardFailSwitches.blockOnWindowCountChange}, windowPos=${hardFailSwitches.blockOnWindowPositionChange}, openings=${hardFailSwitches.blockOnOpeningsDelta}`);
