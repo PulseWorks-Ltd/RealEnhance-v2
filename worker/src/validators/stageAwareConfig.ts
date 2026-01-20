@@ -42,6 +42,7 @@
  * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA: "0" | "1" (default: "0")
+ * - STRUCT_VALIDATION_BLOCK_ON_DIMENSION_MISMATCH: "0" | "1" (default: "1")
  */
 
 export type StageId = "stage1A" | "stage1B" | "stage2";
@@ -285,6 +286,9 @@ export interface StageAwareConfig {
 
   /** Hard-fail switches (global, used by Stage 2) */
   hardFailSwitches: HardFailSwitches;
+
+  /** Whether dimension mismatch should be fatal (default: true) */
+  blockOnDimensionMismatch: boolean;
 }
 
 /**
@@ -355,6 +359,9 @@ export function loadStageAwareConfig(): StageAwareConfig {
 
     // Hard-fail switches (global, used by Stage 2)
     hardFailSwitches: loadHardFailSwitches(),
+
+    // Dimension mismatch fatal toggle (default ON)
+    blockOnDimensionMismatch: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_DIMENSION_MISMATCH", true),
   };
 
   // Log config on first load for debugging
@@ -367,6 +374,7 @@ export function loadStageAwareConfig(): StageAwareConfig {
     stage1BHardFailSwitches: config.stage1BHardFailSwitches,
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
+    blockOnDimensionMismatch: config.blockOnDimensionMismatch,
   });
 
   return config;

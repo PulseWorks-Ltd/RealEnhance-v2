@@ -205,6 +205,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const triggers: ValidationTrigger[] = [];
   const metrics: ValidationSummary["metrics"] = {};
 
+  console.log(`[stageAware] blockOnDimensionMismatch=${config.blockOnDimensionMismatch ? "ENABLED" : "DISABLED (non-fatal)"}`);
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // ENV-CONFIGURABLE STAGE THRESHOLDS
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -312,6 +314,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       value: 1,
       threshold: 0,
       stage: params.stage,
+      fatal: config.blockOnDimensionMismatch,
     });
   }
 

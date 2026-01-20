@@ -348,7 +348,7 @@ export async function runSemanticStructureValidator({
       passed: true, // Fail-open
       windows: { before: 0, after: 0, change: 0 },
       doors: { before: 0, after: 0, change: 0 },
-      walls: { driftRatio: 0 },
+      walls: { driftRatio: 0, threshold: DEFAULT_WALL_DRIFT_MAX, emptyRoom: false },
       openings: { created: 0, closed: 0 },
     };
   }
