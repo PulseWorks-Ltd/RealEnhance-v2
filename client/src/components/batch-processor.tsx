@@ -532,6 +532,9 @@ export default function BatchProcessor() {
         setMetaByIndex({});
         setSelection(new Set());
         setManualSceneOverrideByIndex({});
+        // Clear scene predictions and caches when the user picks a fresh file list
+        setScenePredictions({});
+        scenePredictionsRef.current = {};
         sceneDetectCacheRef.current = {};
       }
       filesFingerprintRef.current = fp;
@@ -2348,6 +2351,11 @@ export default function BatchProcessor() {
     // Clear room linking state
     setSelection(new Set());
     setMetaByIndex({});
+
+    // Clear client-side scene prediction state/caches to avoid cross-batch reuse
+    setScenePredictions({});
+    scenePredictionsRef.current = {};
+    sceneDetectCacheRef.current = {};
     
     // Clear persisted batch job state
     clearBatchJobState();
