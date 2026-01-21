@@ -324,6 +324,8 @@ function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyl
   // Base introduction - neutral, no style specification when explicit style is provided
   let prompt = `\nStage this ${roomType || "room"} interior for high-end real estate marketing.`;
 
+  prompt += `\n\nOPENINGS & WINDOWS ARE SACRED:\n• All windows, doors, and architectural openings MUST remain pixel-identical in position, size, frame thickness, mullions, edges, and geometry.\n• Do NOT add, remove, resize, reshape, or stylize windows or doors.\n• Do NOT add curtains, blinds, rods, or window coverings.\n• Do NOT change the view outside windows.\n• Do NOT place ANY furniture, lighting, plants, or decor overlapping or touching window or door frames.\n• Maintain a clear buffer around windows and doors; no tall items near opening edges.\n• Avoid mirrors, glass wall art, or framed items that could resemble openings.\n• If you cannot stage the room without altering ANY window or door geometry, return the image unchanged.`;
+
   // Only include NZ style block when NO explicit stagingStyle is provided
   if (!hasExplicitStyle) {
     prompt += `\n\nStaging style:\n• NZ contemporary / coastal / Scandi minimalist.\n• Light wood (oak/beech) furniture with soft white or warm grey upholstery.\n• Clean, natural fabrics (linen, cotton) with minimal patterns.\n• Simple rugs, light-toned or natural fiber.\n• Art that is subtle, minimal, coastal, neutral, or abstract.\n• 1–2 small accents only (no clutter, heavy décor, or bold colours).`;

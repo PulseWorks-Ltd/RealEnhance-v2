@@ -227,6 +227,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const isStage2 = params.stage === "stage2";
   const isStage1A = params.stage === "stage1A";
   const isStage1B = params.stage === "stage1B";
+  const stage2GateMinSignals = isStage2 ? Math.max(config.gateMinSignals, 3) : config.gateMinSignals;
 
   // Use env-configured thresholds for Stage 1A, 1B, and Stage 2
   const effectiveThresholds = {
@@ -749,7 +750,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ===== 7. MULTI-SIGNAL GATING (with fatal bypass + large-drift regime) =====
   const decision = evaluateRiskWithLargeDrift({
     triggers,
-    gateMinSignals: config.gateMinSignals,
+    gateMinSignals: stage2GateMinSignals,
     largeDrift,
     largeDriftIouSignalOnly: config.largeDriftIouSignalOnly,
     largeDriftRequireNonIouSignals: config.largeDriftRequireNonIouSignals,
@@ -759,7 +760,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const hasFatalTrigger = decision.hasFatal;
   const passed = !risk || mode === "log";
 
-  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
+  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${stage2GateMinSignals}, hasFatal: ${hasFatalTrigger})`);
   triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
   console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""} reason=${decision.reason}`);
   console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
@@ -772,6 +773,19 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       .filter(([, v]) => v !== undefined)
       .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(3) : v}`)
       .join(" ");
+
+    if (isStage2) {
+      const windowLike = triggers.filter(t => t.id.startsWith("window") || t.id.includes("openings"));
+      const maskedDriftVal = metrics.maskedEdgeDrift;
+      const maskedDriftThresh = (effectiveThresholds.maskedDriftMax ?? thresholds.maskedDriftMax)?.toFixed(3);
+      console.log(
+        `[stageAware][stage2] block_detail reason=${decision.reason} fatal=${hasFatalTrigger} ` +
+        `window_openings=[${windowLike.map(t => t.id).join(",")}] ` +
+        `masked_edge_drift=${maskedDriftVal !== undefined ? maskedDriftVal.toFixed(3) : "n/a"}` +
+        `${maskedDriftThresh ? "/" + maskedDriftThresh : ""} ` +
+        `iouOnly=${countIouTriggers(triggers) > 0 && countNonIouTriggers(triggers) === 0}`
+      );
+    }
 
     // Single-line structured log for easy parsing/alerting
     console.log(

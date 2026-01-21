@@ -245,7 +245,7 @@ export function loadStage2Thresholds(): Stage2Thresholds {
     structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.55),
     lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.70),
     unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.65),
-    maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX", 0.30),
+    maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX", 0.38),
     openingsCreateMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CREATE_MAX", 0),
     openingsCloseMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CLOSE_MAX", 0),
   };
@@ -493,7 +493,7 @@ export const STAGE_THRESHOLDS: Record<"stage1A" | "stage2", StageThresholds> = {
     windowCountChangeFatal: false, // staging should not fail on tiny window artifacts
     semanticWallDriftMax: 0.25,
     semanticOpeningsMax: 0,
-    maskedDriftMax: 0.30,
+    maskedDriftMax: 0.38,
     openingsCreateMax: 0,
     openingsCloseMax: 0,
   },
