@@ -111,7 +111,7 @@ export async function runStage1B(
 
       // Early dimension guard so compliant images can pass after a single strict retry
       let stage1BPath = outputPath;
-      let dimContext: ValidateParams["dimContext"] | null = null;
+      let dimContext: ValidateParams["dimContext"] | undefined = undefined;
 
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(stage1APath, stage1BPath);

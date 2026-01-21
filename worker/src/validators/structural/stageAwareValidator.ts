@@ -34,7 +34,6 @@ import { runLineGeometryCheck } from "./lineGeometryValidator";
 import { runOpeningsIntegrityCheck } from "./openingsIntegrityValidator";
 import { isEmptyRoomByEdgeDensity } from "../emptyRoomHeuristic";
 import { getDimensionTolerancePct } from "../../utils/dimensionGuard";
-import { ValidateParams } from "../stageAwareConfig";
 
 /**
  * Sobel edge detection with binary threshold

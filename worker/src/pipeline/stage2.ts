@@ -297,7 +297,7 @@ export async function runStage2(
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
       // Dimension guard: retry once with strict prompt if Gemini drifts dimensions
-      let dimContext: ValidateParams["dimContext"] | null = null;
+      let dimContext: ValidateParams["dimContext"] | undefined = undefined;
 
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(validationBaseline, candidatePath);
