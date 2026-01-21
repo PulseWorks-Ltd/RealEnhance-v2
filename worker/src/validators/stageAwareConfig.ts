@@ -38,8 +38,8 @@
  * - STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN: 0.0-1.0 (default: 0.70)
  * - STRUCT_VALIDATION_STAGE2_UNIFIED_MIN: 0.0-1.0 (default: 0.65)
  *
- * HARD-FAIL SWITCHES (default: false for safety - only enable when explicitly set):
- * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "0")
+ * HARD-FAIL SWITCHES (Stage2 global defaults):
+ * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "1")
  * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_DIMENSION_MISMATCH: "0" | "1" (default: "1")
@@ -270,7 +270,7 @@ export interface HardFailSwitches {
  */
 export function loadHardFailSwitches(): HardFailSwitches {
   return {
-    blockOnWindowCountChange: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE", false),
+    blockOnWindowCountChange: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE", true),
     blockOnWindowPositionChange: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE", false),
     blockOnOpeningsDelta: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA", false),
   };

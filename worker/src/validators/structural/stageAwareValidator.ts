@@ -368,7 +368,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   console.log(`[stageAware] Mask B: ${maskBPixels} pixels (${(debug.maskBRatio * 100).toFixed(2)}%)`);
 
   // ===== 4.5 LOW-EDGE HEURISTIC (skip noisy edge checks on nearly empty scenes) =====
-  if (config.lowEdgeEnable && !debug.dimensionMismatch) {
+  // Only applies to stages that run staging/declutter (1B/2) to avoid altering Stage1A behavior.
+  if (config.lowEdgeEnable && !debug.dimensionMismatch && (isStage1B || isStage2)) {
     try {
       const lowEdge = await isEmptyRoomByEdgeDensity(params.candidatePath, {
         edgeDensityMax: config.lowEdgeEdgeDensityMax,
@@ -661,6 +662,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         candidatePath: params.candidatePath,
         stage: params.stage,
         threshold: effectiveThresholds.lineEdgeMin,
+        maskBaseline,
+        maskCandidate,
+        jobId: params.jobId,
       });
 
       if (lineResult.metrics.lineScore !== undefined) {
