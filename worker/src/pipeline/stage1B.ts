@@ -7,7 +7,7 @@ import { validateStage1BStructural } from "../validators/stage1BValidator";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldValidatorBlock, getValidatorMode } from "../validators/validatorMode";
-import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX } from "../utils/dimensionGuard";
+import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX, isWithinDimensionTolerance, normalizeCandidateToBaseline, calculateDimensionDelta, getDimensionTolerancePct } from "../utils/dimensionGuard";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -113,12 +113,28 @@ export async function runStage1B(
       let stage1BPath = outputPath;
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(stage1APath, stage1BPath);
+        const deltas = calculateDimensionDelta(dimResult.baseline, dimResult.candidate);
         console.log(
-          `[stage1B][dim] jobId=${jobId} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height}`
+          `[stage1B][dim] jobId=${jobId} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height} ` +
+          `deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
         );
 
         if (!dimResult.ok) {
-          if (stageAwareConfig.maxRetryAttempts > 0) {
+          const tolerancePct = getDimensionTolerancePct();
+          const withinTolerance = isWithinDimensionTolerance(dimResult.baseline, dimResult.candidate, tolerancePct);
+
+          if (withinTolerance) {
+            const normalization = await normalizeCandidateToBaseline(stage1APath, stage1BPath, { suffix: "-dimnorm" });
+            console.log(
+              `[stage1B][dim-normalize] jobId=${jobId} method=${normalization.method} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} ` +
+              `candidate=${dimResult.candidate.width}x${dimResult.candidate.height} normalized=${normalization.normalizedPath} ` +
+              `deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
+            );
+
+            if (normalization.ok) {
+              stage1BPath = normalization.normalizedPath;
+            }
+          } else if (stageAwareConfig.maxRetryAttempts > 0) {
             console.warn(
               `[stage1B] Dimension mismatch from model output (baseline ${dimResult.baseline.width}x${dimResult.baseline.height}, candidate ${dimResult.candidate.width}x${dimResult.candidate.height}). Retrying once with strict dimension prompt.`
             );
@@ -129,8 +145,10 @@ export async function runStage1B(
             await fs.rename(strictPath, retryPath);
 
             const retryDim = await compareImageDimensions(stage1APath, retryPath);
+            const retryDelta = calculateDimensionDelta(retryDim.baseline, retryDim.candidate);
             console.log(
-              `[stage1B][dim] retry jobId=${jobId} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height}`
+              `[stage1B][dim] retry jobId=${jobId} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height} ` +
+              `deltaW=${(retryDelta.widthPct * 100).toFixed(2)}% deltaH=${(retryDelta.heightPct * 100).toFixed(2)}%`
             );
 
             if (!retryDim.ok) {

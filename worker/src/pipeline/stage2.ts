@@ -15,7 +15,7 @@ import { validateStructureStageAware } from "../validators/structural/stageAware
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel, applySamplingBackoff, formatSamplingParams, SamplingParams } from "../ai/promptTightening";
-import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX } from "../utils/dimensionGuard";
+import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX, isWithinDimensionTolerance, normalizeCandidateToBaseline, calculateDimensionDelta, getDimensionTolerancePct } from "../utils/dimensionGuard";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -299,12 +299,29 @@ export async function runStage2(
       // Dimension guard: retry once with strict prompt if Gemini drifts dimensions
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(validationBaseline, candidatePath);
+        const deltas = calculateDimensionDelta(dimResult.baseline, dimResult.candidate);
         console.log(
-          `[stage2][dim] jobId=${jobId} attempt=${attempt + 1} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height}`
+          `[stage2][dim] jobId=${jobId} attempt=${attempt + 1} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height} ` +
+          `deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
         );
 
         if (!dimResult.ok) {
-          if (stageAwareConfig.maxRetryAttempts > 0) {
+          const tolerancePct = getDimensionTolerancePct();
+          const withinTolerance = isWithinDimensionTolerance(dimResult.baseline, dimResult.candidate, tolerancePct);
+
+          if (withinTolerance) {
+            const normalization = await normalizeCandidateToBaseline(validationBaseline, candidatePath, { suffix: "-dimnorm" });
+            console.log(
+              `[stage2][dim-normalize] jobId=${jobId} attempt=${attempt + 1} method=${normalization.method} ` +
+              `baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height} ` +
+              `normalized=${normalization.normalizedPath} deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
+            );
+
+            if (normalization.ok) {
+              out = normalization.normalizedPath;
+              candidatePath = normalization.normalizedPath;
+            }
+          } else if (stageAwareConfig.maxRetryAttempts > 0) {
             console.warn(
               `[stage2] Dimension mismatch from model output (baseline ${dimResult.baseline.width}x${dimResult.baseline.height}, candidate ${dimResult.candidate.width}x${dimResult.candidate.height}). Retrying once with strict dimension prompt.`
             );
@@ -333,8 +350,10 @@ export async function runStage2(
                 candidatePath = retryCandidatePath;
 
                 const retryDim = await compareImageDimensions(validationBaseline, retryCandidatePath);
+                const retryDelta = calculateDimensionDelta(retryDim.baseline, retryDim.candidate);
                 console.log(
-                  `[stage2][dim] retry jobId=${jobId} attempt=${attempt + 1} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height}`
+                  `[stage2][dim] retry jobId=${jobId} attempt=${attempt + 1} baseline=${retryDim.baseline.width}x${retryDim.baseline.height} candidate=${retryDim.candidate.width}x${retryDim.candidate.height} ` +
+                  `deltaW=${(retryDelta.widthPct * 100).toFixed(2)}% deltaH=${(retryDelta.heightPct * 100).toFixed(2)}%`
                 );
 
                 if (!retryDim.ok) {

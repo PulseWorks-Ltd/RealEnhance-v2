@@ -56,6 +56,8 @@ jest.mock("../../utils/dimensionGuard", () => {
   return {
     ...actual,
     compareImageDimensions: jest.fn(),
+    normalizeCandidateToBaseline: jest.fn(),
+    isWithinDimensionTolerance: jest.fn(),
   };
 });
 
@@ -102,7 +104,7 @@ jest.mock("../../validators/stageAwareConfig", () => ({
   })),
 }));
 
-import { compareImageDimensions } from "../../utils/dimensionGuard";
+import { compareImageDimensions, normalizeCandidateToBaseline, isWithinDimensionTolerance } from "../../utils/dimensionGuard";
 import { runStage1B } from "../stage1B";
 import { runStage2 } from "../stage2";
 import { validateStructureStageAware } from "../../validators/structural/stageAwareValidator";
@@ -110,9 +112,13 @@ import { validateStructureStageAware } from "../../validators/structural/stageAw
 describe("dimension guard retry flows", () => {
   const envBackup = { ...process.env };
   const compareImageDimensionsMock = compareImageDimensions as jest.MockedFunction<typeof compareImageDimensions>;
+  const normalizeCandidateToBaselineMock = normalizeCandidateToBaseline as jest.MockedFunction<typeof normalizeCandidateToBaseline>;
+  const isWithinToleranceMock = isWithinDimensionTolerance as jest.MockedFunction<typeof isWithinDimensionTolerance>;
 
   beforeEach(() => {
     compareImageDimensionsMock.mockReset();
+    normalizeCandidateToBaselineMock.mockReset();
+    isWithinToleranceMock.mockReset();
     enhanceWithGeminiMock.mockReset();
     runWithPrimaryThenFallbackMock.mockReset();
     (validateStructureStageAware as jest.Mock).mockClear();
@@ -131,24 +137,35 @@ describe("dimension guard retry flows", () => {
     return p;
   };
 
-  test("stage1B retries once for dimension mismatch and succeeds", async () => {
+  test("stage1B normalizes small dimension drift without retry", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stage1b-dim-"));
     const stage1A = writeTmpFile(dir, "img-1A.webp");
     const firstOut = writeTmpFile(dir, "gemini-first.webp");
-    const retryOut = writeTmpFile(dir, "gemini-retry.webp");
+    const normalizedOut = path.join(dir, "gemini-first-dimnorm.webp");
 
     compareImageDimensionsMock
-      .mockResolvedValueOnce({ ok: false, baseline: { width: 100, height: 80 }, candidate: { width: 110, height: 82 }, message: "mismatch" })
+      .mockResolvedValueOnce({ ok: false, baseline: { width: 100, height: 80 }, candidate: { width: 103, height: 82 }, message: "mismatch" })
       .mockResolvedValueOnce({ ok: true, baseline: { width: 100, height: 80 }, candidate: { width: 100, height: 80 }, message: "match" });
 
-    enhanceWithGeminiMock.mockResolvedValueOnce(firstOut).mockResolvedValueOnce(retryOut);
+    isWithinToleranceMock.mockReturnValue(true);
+    normalizeCandidateToBaselineMock.mockResolvedValue({
+      ok: true,
+      baseline: { width: 100, height: 80 },
+      candidate: { width: 103, height: 82 },
+      message: "normalized",
+      normalizedPath: normalizedOut,
+      method: "crop",
+      deltas: { widthPct: 0.03, heightPct: 0.025 },
+    });
+
+    enhanceWithGeminiMock.mockResolvedValueOnce(firstOut);
 
     const result = await runStage1B(stage1A, { declutterMode: "stage-ready" });
 
-    const expectedRetryPath = path.join(dir, "img-1A-1B-dimretry.webp");
-    expect(result).toBe(expectedRetryPath);
-    expect(enhanceWithGeminiMock).toHaveBeenCalledTimes(2);
-    expect(enhanceWithGeminiMock.mock.calls[1][1].promptOverride).toContain(STRICT_DIMENSION_PROMPT_SUFFIX);
+    expect(result).toBe(normalizedOut);
+    expect(enhanceWithGeminiMock).toHaveBeenCalledTimes(1);
+    expect(enhanceWithGeminiMock.mock.calls[0][1].promptOverride).not.toContain(STRICT_DIMENSION_PROMPT_SUFFIX);
+    expect(normalizeCandidateToBaselineMock).toHaveBeenCalled();
     expect(validateStructureStageAware).toHaveBeenCalled();
   });
 
@@ -162,6 +179,17 @@ describe("dimension guard retry flows", () => {
       .mockResolvedValueOnce({ ok: false, baseline: { width: 100, height: 80 }, candidate: { width: 110, height: 82 }, message: "mismatch" })
       .mockResolvedValueOnce({ ok: false, baseline: { width: 100, height: 80 }, candidate: { width: 120, height: 90 }, message: "mismatch" });
 
+    isWithinToleranceMock.mockReturnValue(false);
+    normalizeCandidateToBaselineMock.mockResolvedValue({
+      ok: false,
+      baseline: { width: 100, height: 80 },
+      candidate: { width: 110, height: 82 },
+      message: "normalized",
+      normalizedPath: path.join(dir, "unused.webp"),
+      method: "crop",
+      deltas: { widthPct: 0.1, heightPct: 0.025 },
+    });
+
     enhanceWithGeminiMock.mockResolvedValueOnce(firstOut).mockResolvedValueOnce(retryOut);
 
     const result = await runStage1B(stage1A, { declutterMode: "stage-ready" });
@@ -171,27 +199,38 @@ describe("dimension guard retry flows", () => {
     expect(validateStructureStageAware).not.toHaveBeenCalled();
   });
 
-  test("stage2 retries once for dimension mismatch and succeeds", async () => {
+  test("stage2 normalizes small dimension drift without retry", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stage2-dim-"));
     const basePath = writeTmpFile(dir, "img-1B.webp");
     const stage1APath = writeTmpFile(dir, "img-1A.webp");
 
+    const normalizedOut = path.join(dir, "img-1B-2-retry1-dimnorm.webp");
+
     compareImageDimensionsMock
-      .mockResolvedValueOnce({ ok: false, baseline: { width: 1184, height: 864 }, candidate: { width: 1216, height: 880 }, message: "mismatch" })
+      .mockResolvedValueOnce({ ok: false, baseline: { width: 1184, height: 864 }, candidate: { width: 1208, height: 880 }, message: "mismatch" })
       .mockResolvedValueOnce({ ok: true, baseline: { width: 1184, height: 864 }, candidate: { width: 1184, height: 864 }, message: "match" });
 
+    isWithinToleranceMock.mockReturnValue(true);
+    normalizeCandidateToBaselineMock.mockResolvedValue({
+      ok: true,
+      baseline: { width: 1184, height: 864 },
+      candidate: { width: 1208, height: 880 },
+      message: "normalized",
+      normalizedPath: normalizedOut,
+      method: "crop",
+      deltas: { widthPct: 0.0203, heightPct: 0.0185 },
+    });
+
     const firstB64 = Buffer.from("first").toString("base64");
-    const retryB64 = Buffer.from("retry").toString("base64");
 
     runWithPrimaryThenFallbackMock
-      .mockResolvedValueOnce({ resp: { candidates: [{ content: { parts: [{ inlineData: { data: firstB64 } }] } }] }, modelUsed: "test" })
-      .mockResolvedValueOnce({ resp: { candidates: [{ content: { parts: [{ inlineData: { data: retryB64 } }] } }] }, modelUsed: "test" });
+      .mockResolvedValueOnce({ resp: { candidates: [{ content: { parts: [{ inlineData: { data: firstB64 } }] } }] }, modelUsed: "test" });
 
     const result = await runStage2(basePath, "1B", { roomType: "living room", stage1APath, stage1BPath: basePath });
 
-    const expectedRetryPath = path.join(dir, "img-1B-2-retry1-dimretry.webp");
-    expect(result).toBe(expectedRetryPath);
-    expect(runWithPrimaryThenFallbackMock).toHaveBeenCalledTimes(2);
+    expect(result).toBe(normalizedOut);
+    expect(runWithPrimaryThenFallbackMock).toHaveBeenCalledTimes(1);
+    expect(normalizeCandidateToBaselineMock).toHaveBeenCalled();
     expect(validateStructureStageAware).toHaveBeenCalled();
   });
 
@@ -203,6 +242,17 @@ describe("dimension guard retry flows", () => {
     compareImageDimensionsMock
       .mockResolvedValueOnce({ ok: false, baseline: { width: 1184, height: 864 }, candidate: { width: 1216, height: 880 }, message: "mismatch" })
       .mockResolvedValueOnce({ ok: false, baseline: { width: 1184, height: 864 }, candidate: { width: 1200, height: 900 }, message: "mismatch" });
+
+    isWithinToleranceMock.mockReturnValue(false);
+    normalizeCandidateToBaselineMock.mockResolvedValue({
+      ok: false,
+      baseline: { width: 1184, height: 864 },
+      candidate: { width: 1216, height: 880 },
+      message: "normalized",
+      normalizedPath: path.join(dir, "unused-norm.webp"),
+      method: "crop",
+      deltas: { widthPct: 0.0269, heightPct: 0.0185 },
+    });
 
     const firstB64 = Buffer.from("first-block").toString("base64");
     const retryB64 = Buffer.from("retry-block").toString("base64");
