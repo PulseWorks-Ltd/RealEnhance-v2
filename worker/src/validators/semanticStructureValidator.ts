@@ -34,7 +34,7 @@ export interface SemanticStructureOptions {
   emptyRoom?: boolean;
 }
 
-const DEFAULT_WALL_DRIFT_MAX = Number(process.env.STAGE2_WALL_DRIFT_MAX_DEFAULT ?? 0.12);
+const DEFAULT_WALL_DRIFT_MAX = Number(process.env.STAGE2_WALL_DRIFT_MAX_DEFAULT ?? 0.10);
 const DEFAULT_WALL_DRIFT_MAX_EMPTY = Number(process.env.STAGE2_WALL_DRIFT_MAX_EMPTYROOM ?? 0.18);
 
 /**

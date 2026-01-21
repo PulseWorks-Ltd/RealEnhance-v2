@@ -602,12 +602,14 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
             console.log(`[stageAware] FATAL: Window position change detected (blockOnWindowPositionChange=true)`);
           } else if (!windowResult.ok) {
             // Non-fatal window issue - add as regular trigger
+            const nonBlocking = windowResult.reason === "window_position_change" && !effectiveHardFailSwitches.blockOnWindowPositionChange;
             triggers.push({
               id: windowResult.reason || "window_change",
               message: `Window validation failed: ${windowResult.reason}`,
               value: 1,
               threshold: 0,
               stage: params.stage,
+              nonBlocking,
             });
           }
         }
@@ -649,6 +651,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
             value: openingsDelta,
             threshold: 0,
             stage: params.stage,
+            nonBlocking: true,
           });
         }
       }
@@ -747,6 +750,21 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     }
   }
 
+  // ===== 6.9 NORMALIZE NON-BLOCKING TRIGGERS BASED ON SWITCHES =====
+  // Ensure gate counting ignores signals explicitly marked non-blocking via config switches.
+  for (const t of triggers) {
+    if (t.id === "window_position_change" && !effectiveHardFailSwitches.blockOnWindowPositionChange) {
+      t.nonBlocking = true;
+    }
+
+    if (
+      (t.id === "openings_delta" || t.id === "openings_created_maskededge" || t.id === "openings_closed_maskededge") &&
+      !effectiveHardFailSwitches.blockOnOpeningsDelta
+    ) {
+      t.nonBlocking = true;
+    }
+  }
+
   // ===== 7. MULTI-SIGNAL GATING (with fatal bypass + large-drift regime) =====
   const decision = evaluateRiskWithLargeDrift({
     triggers,
@@ -759,8 +777,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const risk = decision.risk;
   const hasFatalTrigger = decision.hasFatal;
   const passed = !risk || mode === "log";
+  const gateEligibleTriggers = triggers.filter(t => !t.nonBlocking);
 
-  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${stage2GateMinSignals}, hasFatal: ${hasFatalTrigger})`);
+  console.log(`[stageAware] Triggers: ${triggers.length} (gateEligible: ${gateEligibleTriggers.length}, gate: ${stage2GateMinSignals}, hasFatal: ${hasFatalTrigger})`);
   triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
   console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""} reason=${decision.reason}`);
   console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
@@ -783,7 +802,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         `window_openings=[${windowLike.map(t => t.id).join(",")}] ` +
         `masked_edge_drift=${maskedDriftVal !== undefined ? maskedDriftVal.toFixed(3) : "n/a"}` +
         `${maskedDriftThresh ? "/" + maskedDriftThresh : ""} ` +
-        `iouOnly=${countIouTriggers(triggers) > 0 && countNonIouTriggers(triggers) === 0}`
+        `iouOnly=${countIouTriggers(gateEligibleTriggers) > 0 && countNonIouTriggers(gateEligibleTriggers) === 0}`
       );
     }
 
@@ -792,7 +811,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       `[STRUCT_FAIL] stage=${params.stage} mode=${mode} ` +
       `fatal=[${fatalIds.join(",")}] triggers=[${nonFatalIds.join(",")}] ` +
       `largeDrift=${largeDrift} maxDelta=${maxDelta?.toFixed(4)} tol=${dimTolerance?.toFixed(4)} ` +
-      `iouTriggers=${countIouTriggers(triggers)} nonIouTriggers=${countNonIouTriggers(triggers)} ` +
+      `iouTriggers=${countIouTriggers(gateEligibleTriggers)} nonIouTriggers=${countNonIouTriggers(gateEligibleTriggers)} ` +
       `reason=${decision.reason} ` +
       `${metricsStr} jobId=${params.jobId || "unknown"}`
     );
@@ -860,36 +879,47 @@ export function evaluateRiskWithLargeDrift(opts: {
   largeDrift: boolean;
   largeDriftIouSignalOnly: boolean;
   largeDriftRequireNonIouSignals: boolean;
-}): { risk: boolean; hasFatal: boolean; reason: string } {
+}): { risk: boolean; hasFatal: boolean; reason: string; gateCount: number } {
   const { triggers, gateMinSignals, largeDrift, largeDriftIouSignalOnly, largeDriftRequireNonIouSignals } = opts;
 
   const fatal = triggers.filter(t => t.fatal);
-  const iou = triggers.filter(isIouTrigger);
-  const nonIou = triggers.filter(t => !isIouTrigger(t) && !t.fatal);
+  const gateTriggers = triggers.filter(t => !t.nonBlocking);
+  const iou = gateTriggers.filter(isIouTrigger);
+  const nonIou = gateTriggers.filter(t => !isIouTrigger(t) && !t.fatal);
 
   if (!largeDrift || !largeDriftIouSignalOnly) {
-    const risk = fatal.length > 0 || triggers.length >= gateMinSignals;
-    return { risk, hasFatal: fatal.length > 0, reason: risk ? (fatal.length ? "fatal" : `gate>=${gateMinSignals}`) : "pass-normal" };
+    const risk = fatal.length > 0 || gateTriggers.length >= gateMinSignals;
+    return {
+      risk,
+      hasFatal: fatal.length > 0,
+      reason: risk ? (fatal.length ? "fatal" : `gate>=${gateMinSignals}`) : "pass-normal",
+      gateCount: gateTriggers.length,
+    };
   }
 
   // Large drift regime: IoU triggers are signal-only
   if (fatal.length > 0) {
-    return { risk: true, hasFatal: true, reason: `fatal=${fatal.map(t => t.id).join(",")}` };
+    return { risk: true, hasFatal: true, reason: `fatal=${fatal.map(t => t.id).join(",")}`, gateCount: gateTriggers.length };
   }
 
   if (largeDriftRequireNonIouSignals) {
     if (nonIou.length >= 1 && iou.length >= 1) {
-      return { risk: true, hasFatal: false, reason: "iou+nonIou" };
+      return { risk: true, hasFatal: false, reason: "iou+nonIou", gateCount: gateTriggers.length };
     }
     if (nonIou.length >= 2) {
-      return { risk: true, hasFatal: false, reason: ">=2 nonIou" };
+      return { risk: true, hasFatal: false, reason: ">=2 nonIou", gateCount: gateTriggers.length };
     }
-    return { risk: false, hasFatal: false, reason: "largeDrift-iou-only" };
+    return { risk: false, hasFatal: false, reason: "largeDrift-iou-only", gateCount: gateTriggers.length };
   }
 
-  // If non-IoU requirement disabled, fall back to gateMinSignals using all triggers
-  const risk = triggers.length >= gateMinSignals;
-  return { risk, hasFatal: false, reason: risk ? `gate>=${gateMinSignals}` : "largeDrift-pass" };
+  // If non-IoU requirement disabled, fall back to gateMinSignals using gate-eligible triggers
+  const risk = gateTriggers.length >= gateMinSignals;
+  return {
+    risk,
+    hasFatal: false,
+    reason: risk ? `gate>=${gateMinSignals}` : "largeDrift-pass",
+    gateCount: gateTriggers.length,
+  };
 }
 
 function isIouTrigger(t: ValidationTrigger): boolean {

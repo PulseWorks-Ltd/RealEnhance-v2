@@ -209,6 +209,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path2,
         scene: sceneLabel as any,
         mode: "log",
+        stage: "stage2",
       });
 
       // Publish Stage-2 result
@@ -757,6 +758,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path1B,
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
+        stage: "stage1B",
       });
 
       // ✅ Aggregate structural safety decision
@@ -1079,6 +1081,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
+        stage: "stage2",
       });
 
       nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);

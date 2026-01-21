@@ -31,6 +31,7 @@ export async function runOpeningsIntegrityCheck(opts: {
       originalImagePath: baselinePath,
       enhancedImagePath: candidatePath,
       scene,
+      stage,
       mode: "log",
     });
 
@@ -46,6 +47,7 @@ export async function runOpeningsIntegrityCheck(opts: {
         threshold: thresholds.createMax,
         stage,
         fatal: fatalOnOpeningsDelta,
+        nonBlocking: !fatalOnOpeningsDelta,
       });
     }
 
@@ -57,6 +59,7 @@ export async function runOpeningsIntegrityCheck(opts: {
         threshold: thresholds.closeMax,
         stage,
         fatal: fatalOnOpeningsDelta,
+        nonBlocking: !fatalOnOpeningsDelta,
       });
     }
 

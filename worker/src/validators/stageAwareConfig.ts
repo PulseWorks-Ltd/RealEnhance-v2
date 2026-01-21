@@ -241,10 +241,10 @@ export interface Stage2Thresholds {
  */
 export function loadStage2Thresholds(): Stage2Thresholds {
   return {
-    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN", 0.60),
-    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.55),
-    lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.70),
-    unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.65),
+    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN", 0.70),
+    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.80),
+    lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.58),
+    unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.70),
     maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX", 0.38),
     openingsCreateMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CREATE_MAX", 0),
     openingsCloseMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CLOSE_MAX", 0),
@@ -374,9 +374,9 @@ export function loadStageAwareConfig(): StageAwareConfig {
   const config: StageAwareConfig = {
     enabled: parseEnvBool("STRUCT_VALIDATION_STAGE_AWARE", false),
     stage2EdgeMode: parseEdgeMode(process.env.STRUCT_VALIDATION_STAGE2_EDGE_MODE),
-    stage2ExcludeLowerPct: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EXCLUDE_LOWER_PCT", 0.40),
+    stage2ExcludeLowerPct: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EXCLUDE_LOWER_PCT", 0.20),
     gateMinSignals: parseEnvInt("STRUCT_VALIDATION_GATE_MIN_SIGNALS", 2),
-    iouMinPixelsRatio: parseEnvFloat01("STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO", 0.005),
+    iouMinPixelsRatio: parseEnvFloat01("STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO", 0.01),
     logArtifactsOnFail: parseEnvBool("STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL", true),
     maxRetryAttempts: parseEnvInt("STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS", 3),
 
@@ -550,6 +550,8 @@ export interface ValidationTrigger {
   stage: StageId;
   /** If true, this trigger bypasses multi-signal gating and forces risk=true */
   fatal?: boolean;
+  /** If true, this trigger is logged but excluded from gate counting */
+  nonBlocking?: boolean;
   /** Optional metadata (e.g., ROI coords, metrics) for debugging */
   meta?: Record<string, unknown>;
 }
