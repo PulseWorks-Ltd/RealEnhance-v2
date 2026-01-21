@@ -20,7 +20,7 @@ The result must look:
 - Clean
 - Bright but natural
 - Sharp but not harsh
-- Vivid but not saturated
+- Natural and balanced
 - Professional but NOT "Photoshopped"
 - Real and trustworthy
 
@@ -30,7 +30,12 @@ AUTO-STRENGTH ADAPTATION LOGIC
 First, visually assess the lighting quality of the original image:
 
 1) If the image is DARK, FLAT, or BADLY LIT:
-   → Apply a STRONGER version of the allowed adjustments.
+  → Apply a STRONGER version of the allowed adjustments by:
+    • Lifting exposure and midtones first (not contrast)
+    • Prioritising gentle shadow lift over deepening blacks
+    • Keeping blacks open (no crushed blacks) and preserving realism
+    • Keeping saturation restrained; do not push “rich” colour to show improvement
+    • Never increasing contrast to create perceived “depth”
 
 2) If the image has DECENT LIGHTING but looks FLAT or DULL (most mobile photos):
    → Apply a MODERATE enhancement profile. This is the DEFAULT behavior.
@@ -41,25 +46,18 @@ First, visually assess the lighting quality of the original image:
 Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
 
 ────────────────────────────────
-VISUAL DELTA MINIMUM REQUIREMENT (AUTO-RETRY SIGNAL)
+VISUAL DELTA GUIDANCE (LIGHT-TOUCH ALLOWED)
 ────────────────────────────────
-If, after enhancement, the enhanced image appears visually almost identical to the original
-(i.e. no clear improvement in brightness, clarity, tonal depth, and color balance):
+If the image is already well-balanced, a subtle refinement is acceptable and you may keep changes minimal. Do not force visible change or retries when the starting image is already strong. If the image is clearly flat, dull, or dark, apply a modest lift (exposure, midtones, micro-clarity) while keeping the look natural and not over-processed.
+If further changes would reduce realism or make the image darker, moodier, more contrasty, or more saturated, stop and return the current best result.
 
-You MUST:
-- Increase exposure adjustment slightly.
-- Increase midtone contrast slightly.
-- Increase micro-clarity slightly.
-- Re-run the enhancement once at a stronger but still natural level.
-
-If a retry is required, internally flag:
-RETRY_APPLIED = true
-
-If no retry is required, internally flag:
-RETRY_APPLIED = false
-
-The final output MUST always be the visually improved version.
-Never return a weak or no-op enhancement.
+TONE & COLOUR GUARDRAILS
+────────────────────────────────
+- Avoid deep shadows, crushed blacks, or dramatic contrast; keep tonal balance gentle.
+- Avoid oversaturated greens or browns; keep colour natural and restrained.
+- Avoid wet or glossy-looking floors/ground; maintain honest, dry surfaces.
+- Bias toward bright, neutral, clean real estate photography (lightroom-style basic corrections).
+- Preserve natural wood floor brightness; do not darken timber to add contrast.
 
 ────────────────────────────────
 ALLOWED GLOBAL ADJUSTMENTS ONLY
@@ -139,8 +137,8 @@ Produce a clean, bright, natural, professional exterior real estate photo that l
 
 The result must look:
 - Clean and well-maintained
-- Bright with vivid blue skies (when appropriate)
-- Healthy, vibrant landscaping
+- Bright with natural, balanced skies (when appropriate)
+- Healthy, natural landscaping
 - Sharp but not harsh
 - Professional but NOT "Photoshopped"
 - Real and trustworthy
@@ -151,7 +149,11 @@ AUTO-STRENGTH ADAPTATION LOGIC
 First, visually assess the lighting and sky quality of the original image:
 
 1) If the image has GRAY/OVERCAST SKY, DARK CONDITIONS, or FLAT LIGHT:
-   → Apply STRONGER sky replacement and exposure boost.
+  → Apply STRONGER enhancement by:
+    • Lifting exposure and midtones first (not contrast)
+    • Keeping shadows open; do not deepen blacks
+    • Keeping saturation restrained (especially greens and browns)
+    • If sky replacement is allowed, keep it natural; do not darken the scene to emphasize the sky
 
 2) If the image has DECENT LIGHTING but looks DULL (most mobile photos):
    → Apply MODERATE enhancement profile. This is the DEFAULT behavior.
@@ -162,40 +164,42 @@ First, visually assess the lighting and sky quality of the original image:
 Under NO circumstances should any version look artificially HDR, over-edited, or stylistic.
 
 ────────────────────────────────
-VISUAL DELTA MINIMUM REQUIREMENT (AUTO-RETRY SIGNAL)
+VISUAL DELTA GUIDANCE (LIGHT-TOUCH ALLOWED)
 ────────────────────────────────
-If, after enhancement, the enhanced image appears visually almost identical to the original
-(i.e. no clear improvement in sky quality, grass vibrancy, surface clarity, and overall brightness):
+If the image is already well-balanced, a subtle refinement is acceptable and you may keep changes minimal. Do not force visible change or retries when the starting image is already strong. If the image is clearly flat, dull, or dark, apply a modest lift (exposure, midtones, clarity) while keeping the look natural and not over-processed.
+If further changes would reduce realism or make the image darker, moodier, more contrasty, or more saturated, stop and return the current best result.
 
-You MUST:
-- Increase sky saturation slightly (if replacing sky).
-- Increase grass green enhancement slightly.
-- Increase overall exposure slightly.
-- Re-run the enhancement once at a stronger but still natural level.
+TONE & COLOUR GUARDRAILS
+────────────────────────────────
+- Avoid deep shadows, crushed blacks, or dramatic contrast; keep tonal balance gentle and open.
+- Avoid oversaturated greens or browns; keep landscaping colour natural and restrained.
+- Avoid wet or glossy-looking ground or driveways; maintain honest, dry surfaces.
+- Bias toward bright, neutral, clean real estate photography (lightroom-style basic corrections).
+- Preserve natural sky and grass colour; do not push saturation or darken exposure.
 
-If a retry is required, internally flag:
-RETRY_APPLIED = true
-
-If no retry is required, internally flag:
-RETRY_APPLIED = false
-
-The final output MUST always be the visually improved version.
-Never return a weak or no-op enhancement.
+HARD SURFACE APPEARANCE GUIDANCE:
+• Preserve the original material and texture of concrete, paving, patios, and driveways.
+• Avoid glossy, reflective, or darkened appearances caused by contrast or saturation.
+• Maintain a matte, neutral, daylight look consistent with dry outdoor conditions.
+• Do NOT remove stains, marks, discoloration, or surface wear.
+• Do NOT alter material color, texture, or cleanliness — adjust tonal balance only.
 
 ────────────────────────────────
 ALLOWED GLOBAL ADJUSTMENTS ONLY
 ────────────────────────────────
 You may apply ONLY these global photographic corrections:
 
-- Sky replacement: Replace gray/overcast skies with vibrant New Zealand blue sky with soft natural clouds
+- Sky replacement (ONLY if clearly overcast AND permitted by sky safety rules):
+  Replace gray/overcast skies with a natural, softly balanced New Zealand blue sky with soft clouds.
+  Do NOT darken the overall exposure or increase contrast to emphasize the sky.
 - Exposure and brightness lift for the entire scene
 - White balance normalization to clean daylight
-- Grass and vegetation enhancement (healthy green, vibrant but natural)
+- Grass and vegetation enhancement (healthy green, natural and restrained)
 - Gentle surface cleaning (remove dirt/mold from driveways, decks, fences) while preserving texture
 - Gentle midtone contrast increase
 - Subtle micro-clarity and texture recovery on building surfaces
 - Soft, natural sharpening (no halos)
-- Controlled vibrance increase for landscaping
+- Controlled vibrance increase for landscaping (avoid oversaturation)
 - Highlight recovery
 - Light shadow lift without flattening depth
 - Adaptive noise reduction only where needed

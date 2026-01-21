@@ -26,6 +26,14 @@ YOU MUST:
 • Improve edge clarity and definition without sharpening halos
 • Normalise white balance to neutral indoor daylight
 
+TONE & COLOUR (REAL ESTATE STANDARD):
+• Keep the look bright, clean, neutral, and inviting (not cinematic or moody)
+• Keep shadows slightly lifted; avoid crushed blacks or heavy vignetting
+• Maintain moderate contrast; no HDR-style or dramatic grading
+• Use vibrance gently and keep saturation restrained
+• Keep whites neutral and free of colour casts
+• Do not deepen blacks; lift shadows slightly while preserving natural depth
+
 YOU MUST NOT:
 • Add, remove, replace, or move ANY objects
 • Change furniture, décor, wall art, or clutter
@@ -79,6 +87,13 @@ YOU MUST:
 • Improve image cleanliness and compression artefact reduction
 • Maintain true-to-life colour balance
 
+TONE & COLOUR (REAL ESTATE STANDARD):
+• Keep the look bright, clean, neutral, and inviting (not cinematic or moody)
+• Keep shadows slightly lifted; avoid crushed blacks or heavy vignetting
+• Maintain moderate contrast; no HDR-style or dramatic grading
+• Use vibrance gently and keep saturation restrained
+• Keep whites neutral and free of colour casts
+
 YOU MUST NOT:
 • Add, remove, replace, or move ANY objects
 • Change furniture, décor, wall art, or clutter
@@ -126,11 +141,18 @@ Refine clarity, sharpness, and tonal balance while keeping the image fully reali
 
 YOU MUST:
 • Improve global sharpness and edge clarity gently
-• Improve tonal separation between sky, building, and landscaping
+• Maintain clear separation between sky, building, and landscaping while keeping the scene bright and open (do not increase overall contrast)
 • Recover minor highlight clipping in bright sky areas if present
 • Improve shadow detail under eaves and shaded zones naturally
 • Reduce compression artefacts
 • Maintain true-to-life exterior colour balance (no artificial saturation)
+
+TONE & COLOUR (REAL ESTATE STANDARD):
+• Keep the scene bright, open, and neutral; avoid moody or dark looks
+• Avoid heavy shadows or increased overall contrast; keep tonal balance gentle
+• Keep greens and browns natural and restrained (no rich or overly saturated grading)
+• Avoid wet or glossy-looking ground; do not darken pavement or exterior surfaces
+• Do not darken global exposure; preserve the daylight openness of the scene
 
 YOU MUST NOT:
 • Add, remove, replace, or move ANY objects
