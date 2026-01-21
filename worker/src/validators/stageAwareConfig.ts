@@ -296,6 +296,10 @@ export interface StageAwareConfig {
   /** Maximum retry attempts per stage */
   maxRetryAttempts: number;
 
+  /** Large dimension drift handling */
+  largeDriftIouSignalOnly: boolean;
+  largeDriftRequireNonIouSignals: boolean;
+
   /** Low-edge handling */
   lowEdgeEnable: boolean;
   lowEdgeEdgeDensityMax: number;
@@ -376,6 +380,9 @@ export function loadStageAwareConfig(): StageAwareConfig {
     logArtifactsOnFail: parseEnvBool("STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL", true),
     maxRetryAttempts: parseEnvInt("STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS", 3),
 
+    largeDriftIouSignalOnly: parseEnvBool("STRUCT_VALIDATION_LARGE_DRIFT_IOU_SIGNAL_ONLY", true),
+    largeDriftRequireNonIouSignals: parseEnvBool("STRUCT_VALIDATION_LARGE_DRIFT_REQUIRE_NONIOU_SIGNALS", true),
+
     lowEdgeEnable: parseEnvBool("STRUCT_VALIDATION_LOWEDGE_ENABLE", true),
     lowEdgeEdgeDensityMax: parseEnvFloat01("STRUCT_VALIDATION_LOWEDGE_DENSITY_MAX", 0.045),
     lowEdgeCenterCropRatio: parseEnvFloat01("STRUCT_VALIDATION_LOWEDGE_CENTER_CROP_RATIO", 0.6),
@@ -416,6 +423,10 @@ export function loadStageAwareConfig(): StageAwareConfig {
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
     blockOnDimensionMismatch: config.blockOnDimensionMismatch,
+    largeDrift: {
+      iouSignalOnly: config.largeDriftIouSignalOnly,
+      requireNonIouSignals: config.largeDriftRequireNonIouSignals,
+    },
     lowEdge: {
       enable: config.lowEdgeEnable,
       densityMax: config.lowEdgeEdgeDensityMax,
@@ -594,6 +605,7 @@ export interface ValidationSummary {
     candidateUrl?: string;
     lowEdgeDetected?: boolean;
     lowEdgeThreshold?: number;
+    originalDims?: { base: { w: number; h: number }; candidate: { w: number; h: number }; wasNormalized?: boolean; maxDelta?: number };
   };
 }
 
@@ -619,6 +631,15 @@ export interface ValidateParams {
   retryAttempt?: number;
   /** Override config (for testing) */
   config?: StageAwareConfig;
+  /** Optional dimension context prior to normalization */
+  dimContext?: {
+    baseline: { width: number; height: number };
+    candidateOriginal: { width: number; height: number };
+    dw: number;
+    dh: number;
+    maxDelta: number;
+    wasNormalized?: boolean;
+  };
 }
 
 /**

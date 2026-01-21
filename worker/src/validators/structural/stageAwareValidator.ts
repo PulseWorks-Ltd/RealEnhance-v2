@@ -33,6 +33,8 @@ import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
 import { runLineGeometryCheck } from "./lineGeometryValidator";
 import { runOpeningsIntegrityCheck } from "./openingsIntegrityValidator";
 import { isEmptyRoomByEdgeDensity } from "../emptyRoomHeuristic";
+import { getDimensionTolerancePct } from "../../utils/dimensionGuard";
+import { ValidateParams } from "../stageAwareConfig";
 
 /**
  * Sobel edge detection with binary threshold
@@ -208,6 +210,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const triggers: ValidationTrigger[] = [];
   const metrics: ValidationSummary["metrics"] = {};
   let skipEdgeIoUTriggers = false;
+  let largeDrift = false;
+  let maxDelta = 0;
+  let dimContextMaxDelta: number | null = null;
 
   console.log(`[stageAware] blockOnDimensionMismatch=${config.blockOnDimensionMismatch ? "ENABLED" : "DISABLED (non-fatal)"}`);
 
@@ -323,6 +328,34 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
   debug.dimensionMismatch = baseMeta.width !== candMeta.width || baseMeta.height !== candMeta.height;
 
+  // Compute dimension deltas for large-drift regime (Stage1B/Stage2 only)
+  const widthDelta = Math.abs((candMeta.width || 0) - (baseMeta.width || 1)) / Math.max(1, baseMeta.width || 1);
+  const heightDelta = Math.abs((candMeta.height || 0) - (baseMeta.height || 1)) / Math.max(1, baseMeta.height || 1);
+  maxDelta = Math.max(widthDelta, heightDelta);
+
+  if (params.dimContext) {
+    dimContextMaxDelta = params.dimContext.maxDelta;
+    debug.originalDims = {
+      base: { w: params.dimContext.baseline.width, h: params.dimContext.baseline.height },
+      candidate: { w: params.dimContext.candidateOriginal.width, h: params.dimContext.candidateOriginal.height },
+      wasNormalized: params.dimContext.wasNormalized,
+      maxDelta: params.dimContext.maxDelta,
+    };
+    console.log(`[stageAware] DimContext provided: base=${params.dimContext.baseline.width}x${params.dimContext.baseline.height} candOrig=${params.dimContext.candidateOriginal.width}x${params.dimContext.candidateOriginal.height} maxDelta=${params.dimContext.maxDelta.toFixed(4)} wasNormalized=${params.dimContext.wasNormalized ? "yes" : "no"}`);
+  }
+
+  const dimTolerance = getDimensionTolerancePct();
+  const driftDecision = computeLargeDriftFlag({
+    stage: params.stage,
+    dimContext: params.dimContext,
+    computedMaxDelta: maxDelta,
+    tolerance: dimTolerance,
+    largeDriftIouSignalOnly: config.largeDriftIouSignalOnly,
+  });
+  const effectiveMaxDelta = driftDecision.effectiveMaxDelta;
+  largeDrift = driftDecision.largeDrift;
+  maxDelta = effectiveMaxDelta;
+
   // ===== 2. DIMENSION MISMATCH HANDLING =====
   // Per spec: treat dimension mismatch as a trigger, do NOT auto-resize
   if (debug.dimensionMismatch) {
@@ -333,7 +366,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       value: 1,
       threshold: 0,
       stage: params.stage,
-      fatal: config.blockOnDimensionMismatch,
+      fatal: largeDrift ? false : config.blockOnDimensionMismatch,
     });
   }
 
@@ -714,14 +747,22 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     }
   }
 
-  // ===== 7. MULTI-SIGNAL GATING (with fatal bypass) =====
-  const hasFatalTrigger = triggers.some(t => t.fatal === true);
-  const risk = hasFatalTrigger || triggers.length >= config.gateMinSignals;
+  // ===== 7. MULTI-SIGNAL GATING (with fatal bypass + large-drift regime) =====
+  const decision = evaluateRiskWithLargeDrift({
+    triggers,
+    gateMinSignals: config.gateMinSignals,
+    largeDrift,
+    largeDriftIouSignalOnly: config.largeDriftIouSignalOnly,
+    largeDriftRequireNonIouSignals: config.largeDriftRequireNonIouSignals,
+  });
+
+  const risk = decision.risk;
+  const hasFatalTrigger = decision.hasFatal;
   const passed = !risk || mode === "log";
 
   console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
   triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
-  console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""}`);
+  console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""} reason=${decision.reason}`);
   console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
 
   // ===== 7.5 CONCISE FAILURE LOG (single-line summary for monitoring) =====
@@ -737,6 +778,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     console.log(
       `[STRUCT_FAIL] stage=${params.stage} mode=${mode} ` +
       `fatal=[${fatalIds.join(",")}] triggers=[${nonFatalIds.join(",")}] ` +
+      `largeDrift=${largeDrift} maxDelta=${maxDelta?.toFixed(4)} tol=${dimTolerance?.toFixed(4)} ` +
+      `iouTriggers=${countIouTriggers(triggers)} nonIouTriggers=${countNonIouTriggers(triggers)} ` +
+      `reason=${decision.reason} ` +
       `${metricsStr} jobId=${params.jobId || "unknown"}`
     );
   }
@@ -795,3 +839,68 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
  * Export for use by other modules
  */
 export { loadStageAwareConfig, STAGE_THRESHOLDS, getStage2EdgeIouMin };
+
+// Helper: classify triggers and decide risk under large-drift regime (exported for tests)
+export function evaluateRiskWithLargeDrift(opts: {
+  triggers: ValidationTrigger[];
+  gateMinSignals: number;
+  largeDrift: boolean;
+  largeDriftIouSignalOnly: boolean;
+  largeDriftRequireNonIouSignals: boolean;
+}): { risk: boolean; hasFatal: boolean; reason: string } {
+  const { triggers, gateMinSignals, largeDrift, largeDriftIouSignalOnly, largeDriftRequireNonIouSignals } = opts;
+
+  const fatal = triggers.filter(t => t.fatal);
+  const iou = triggers.filter(isIouTrigger);
+  const nonIou = triggers.filter(t => !isIouTrigger(t) && !t.fatal);
+
+  if (!largeDrift || !largeDriftIouSignalOnly) {
+    const risk = fatal.length > 0 || triggers.length >= gateMinSignals;
+    return { risk, hasFatal: fatal.length > 0, reason: risk ? (fatal.length ? "fatal" : `gate>=${gateMinSignals}`) : "pass-normal" };
+  }
+
+  // Large drift regime: IoU triggers are signal-only
+  if (fatal.length > 0) {
+    return { risk: true, hasFatal: true, reason: `fatal=${fatal.map(t => t.id).join(",")}` };
+  }
+
+  if (largeDriftRequireNonIouSignals) {
+    if (nonIou.length >= 1 && iou.length >= 1) {
+      return { risk: true, hasFatal: false, reason: "iou+nonIou" };
+    }
+    if (nonIou.length >= 2) {
+      return { risk: true, hasFatal: false, reason: ">=2 nonIou" };
+    }
+    return { risk: false, hasFatal: false, reason: "largeDrift-iou-only" };
+  }
+
+  // If non-IoU requirement disabled, fall back to gateMinSignals using all triggers
+  const risk = triggers.length >= gateMinSignals;
+  return { risk, hasFatal: false, reason: risk ? `gate>=${gateMinSignals}` : "largeDrift-pass" };
+}
+
+function isIouTrigger(t: ValidationTrigger): boolean {
+  return t.id === "edge_iou" || t.id === "global_edge_iou" || t.id === "structural_mask_iou" || t.id === "unified_iou";
+}
+
+function countIouTriggers(triggers: ValidationTrigger[]): number {
+  return triggers.filter(isIouTrigger).length;
+}
+
+function countNonIouTriggers(triggers: ValidationTrigger[]): number {
+  return triggers.filter(t => !isIouTrigger(t) && !t.fatal).length;
+}
+
+// Helper: choose maxDelta source and compute large-drift flag (exported for tests)
+export function computeLargeDriftFlag(opts: {
+  stage: StageId;
+  dimContext?: ValidateParams["dimContext"];
+  computedMaxDelta: number;
+  tolerance: number;
+  largeDriftIouSignalOnly: boolean;
+}): { largeDrift: boolean; effectiveMaxDelta: number } {
+  const effectiveMaxDelta = opts.dimContext?.maxDelta ?? opts.computedMaxDelta;
+  const applies = (opts.stage === "stage1B" || opts.stage === "stage2") && opts.largeDriftIouSignalOnly;
+  const largeDrift = applies && effectiveMaxDelta > opts.tolerance;
+  return { largeDrift, effectiveMaxDelta };
+}

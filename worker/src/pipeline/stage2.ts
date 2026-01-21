@@ -10,7 +10,7 @@ import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import type { StagingRegion } from "../ai/region-detector";
-import { loadStageAwareConfig, chooseStage2Baseline } from "../validators/stageAwareConfig";
+import { loadStageAwareConfig, chooseStage2Baseline, ValidateParams } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
@@ -297,6 +297,8 @@ export async function runStage2(
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
       // Dimension guard: retry once with strict prompt if Gemini drifts dimensions
+      let dimContext: ValidateParams["dimContext"] | null = null;
+
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(validationBaseline, candidatePath);
         const deltas = calculateDimensionDelta(dimResult.baseline, dimResult.candidate);
@@ -304,6 +306,15 @@ export async function runStage2(
           `[stage2][dim] jobId=${jobId} attempt=${attempt + 1} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height} ` +
           `deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
         );
+
+        dimContext = {
+          baseline: dimResult.baseline,
+          candidateOriginal: dimResult.candidate,
+          dw: deltas.widthPct,
+          dh: deltas.heightPct,
+          maxDelta: Math.max(deltas.widthPct, deltas.heightPct),
+          wasNormalized: false,
+        };
 
         if (!dimResult.ok) {
           const tolerancePct = getDimensionTolerancePct();
@@ -320,6 +331,7 @@ export async function runStage2(
             if (normalization.ok) {
               out = normalization.normalizedPath;
               candidatePath = normalization.normalizedPath;
+              dimContext.wasNormalized = true;
             }
           } else if (stageAwareConfig.maxRetryAttempts > 0) {
             console.warn(
@@ -363,6 +375,15 @@ export async function runStage2(
                   }
                 } else {
                   console.log(`[stage2] ✅ Dimension retry succeeded; continuing to validation.`);
+                  const retryDelta = calculateDimensionDelta(retryDim.baseline, retryDim.candidate);
+                  dimContext = {
+                    baseline: retryDim.baseline,
+                    candidateOriginal: retryDim.candidate,
+                    dw: retryDelta.widthPct,
+                    dh: retryDelta.heightPct,
+                    maxDelta: Math.max(retryDelta.widthPct, retryDelta.heightPct),
+                    wasNormalized: true,
+                  };
                 }
               } else {
                 console.warn(`[stage2] ⚠️ Strict dimension retry returned no image data`);
@@ -404,6 +425,7 @@ export async function runStage2(
             roomType: opts.roomType,
             retryAttempt: attempt,
             config: stageAwareConfig,
+            dimContext,
           });
 
           validatorNotes.push({ stage: '2', validator: 'StageAware', result: validationResult });

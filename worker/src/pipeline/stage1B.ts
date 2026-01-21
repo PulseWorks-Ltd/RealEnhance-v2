@@ -4,7 +4,7 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
-import { loadStageAwareConfig } from "../validators/stageAwareConfig";
+import { loadStageAwareConfig, ValidateParams } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldValidatorBlock, getValidatorMode } from "../validators/validatorMode";
 import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX, isWithinDimensionTolerance, normalizeCandidateToBaseline, calculateDimensionDelta, getDimensionTolerancePct } from "../utils/dimensionGuard";
@@ -111,6 +111,8 @@ export async function runStage1B(
 
       // Early dimension guard so compliant images can pass after a single strict retry
       let stage1BPath = outputPath;
+      let dimContext: ValidateParams["dimContext"] | null = null;
+
       if (stageAwareConfig.enabled && stageAwareConfig.blockOnDimensionMismatch) {
         const dimResult = await compareImageDimensions(stage1APath, stage1BPath);
         const deltas = calculateDimensionDelta(dimResult.baseline, dimResult.candidate);
@@ -118,6 +120,15 @@ export async function runStage1B(
           `[stage1B][dim] jobId=${jobId} baseline=${dimResult.baseline.width}x${dimResult.baseline.height} candidate=${dimResult.candidate.width}x${dimResult.candidate.height} ` +
           `deltaW=${(deltas.widthPct * 100).toFixed(2)}% deltaH=${(deltas.heightPct * 100).toFixed(2)}%`
         );
+
+        dimContext = {
+          baseline: dimResult.baseline,
+          candidateOriginal: dimResult.candidate,
+          dw: deltas.widthPct,
+          dh: deltas.heightPct,
+          maxDelta: Math.max(deltas.widthPct, deltas.heightPct),
+          wasNormalized: false,
+        };
 
         if (!dimResult.ok) {
           const tolerancePct = getDimensionTolerancePct();
@@ -133,6 +144,7 @@ export async function runStage1B(
 
             if (normalization.ok) {
               stage1BPath = normalization.normalizedPath;
+              dimContext.wasNormalized = true;
             }
           } else if (stageAwareConfig.maxRetryAttempts > 0) {
             console.warn(
@@ -159,6 +171,15 @@ export async function runStage1B(
             } else {
               stage1BPath = retryPath;
               console.log(`[stage1B] ✅ Dimension retry succeeded, continuing with ${stage1BPath}`);
+              const retryDeltas = calculateDimensionDelta(retryDim.baseline, retryDim.candidate);
+              dimContext = {
+                baseline: retryDim.baseline,
+                candidateOriginal: retryDim.candidate,
+                dw: retryDeltas.widthPct,
+                dh: retryDeltas.heightPct,
+                maxDelta: Math.max(retryDeltas.widthPct, retryDeltas.heightPct),
+                wasNormalized: true,
+              };
             }
           } else {
             console.warn(
@@ -190,6 +211,7 @@ export async function runStage1B(
             sceneType: (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as "interior" | "exterior",
             roomType,
             config: stageAwareConfig,
+            dimContext,
           });
 
           console.log(`[stage1B] Stage-aware validation result: risk=${validationResult.risk}, score=${validationResult.score.toFixed(3)}`);
