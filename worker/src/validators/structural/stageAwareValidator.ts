@@ -30,6 +30,9 @@ import {
 } from "../stageAwareConfig";
 import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
 import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
+import { runLineGeometryCheck } from "./lineGeometryValidator";
+import { runOpeningsIntegrityCheck } from "./openingsIntegrityValidator";
+import { isEmptyRoomByEdgeDensity } from "../emptyRoomHeuristic";
 
 /**
  * Sobel edge detection with binary threshold
@@ -204,6 +207,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const mode = params.mode || "log";
   const triggers: ValidationTrigger[] = [];
   const metrics: ValidationSummary["metrics"] = {};
+  let skipEdgeIoUTriggers = false;
 
   console.log(`[stageAware] blockOnDimensionMismatch=${config.blockOnDimensionMismatch ? "ENABLED" : "DISABLED (non-fatal)"}`);
 
@@ -246,6 +250,21 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       : isStage1B
         ? stage1BThresholds.unifiedMin
         : 0.65,
+    maskedDriftMax: isStage2
+      ? stage2Thresholds.maskedDriftMax
+      : isStage1B
+        ? stage1BThresholds.maskedDriftMax
+        : thresholds.maskedDriftMax,
+    openingsCreateMax: isStage2
+      ? stage2Thresholds.openingsCreateMax
+      : isStage1B
+        ? stage1BThresholds.openingsCreateMax
+        : thresholds.openingsCreateMax || 0,
+    openingsCloseMax: isStage2
+      ? stage2Thresholds.openingsCloseMax
+      : isStage1B
+        ? stage1BThresholds.openingsCloseMax
+        : thresholds.openingsCloseMax || 0,
   };
 
   // Effective hard-fail switches - use stage-specific for Stage 1B, global for Stage 2
@@ -347,6 +366,27 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   console.log(`[stageAware] Mask A: ${maskAPixels} pixels (${(debug.maskARatio * 100).toFixed(2)}%)`);
   console.log(`[stageAware] Mask B: ${maskBPixels} pixels (${(debug.maskBRatio * 100).toFixed(2)}%)`);
+
+  // ===== 4.5 LOW-EDGE HEURISTIC (skip noisy edge checks on nearly empty scenes) =====
+  if (config.lowEdgeEnable && !debug.dimensionMismatch) {
+    try {
+      const lowEdge = await isEmptyRoomByEdgeDensity(params.candidatePath, {
+        edgeDensityMax: config.lowEdgeEdgeDensityMax,
+        centerCropRatio: config.lowEdgeCenterCropRatio,
+      });
+
+      metrics.edgeDensity = lowEdge.edgeDensity;
+      debug.lowEdgeDetected = lowEdge.empty;
+      debug.lowEdgeThreshold = lowEdge.threshold;
+
+      if (lowEdge.empty && config.lowEdgeSkipEdgeIoU) {
+        skipEdgeIoUTriggers = true;
+        console.log(`[stageAware] Low-edge scene detected (edgeDensity=${lowEdge.edgeDensity.toFixed(4)} <= ${lowEdge.threshold}); skipping edge IoU triggers`);
+      }
+    } catch (err) {
+      console.warn(`[stageAware] Low-edge heuristic error (non-fatal):`, err);
+    }
+  }
 
   // ===== 5. COMPUTE STRUCTURAL MASK IoU (if valid) =====
   let structuralIoU: number | null = null;
@@ -452,7 +492,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
         if (edgeIoU !== null) {
           metrics.edgeIoU = edgeIoU;
-          if (edgeIoU < edgeThresholdValue) {
+          if (!skipEdgeIoUTriggers && edgeIoU < edgeThresholdValue) {
             triggers.push({
               id: "edge_iou",
               message: `Edge IoU (${edgeMode}) too low: ${edgeIoU.toFixed(3)} < ${edgeThresholdValue}`,
@@ -460,6 +500,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
               threshold: edgeThresholdValue,
               stage: params.stage,
             });
+          } else if (skipEdgeIoUTriggers) {
+            console.log(`[stageAware] Edge IoU trigger suppressed due to low-edge scene (edgeIoU=${edgeIoU.toFixed(3)})`);
           }
         }
       } else {
@@ -473,7 +515,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
           metrics.globalEdgeIoU = edgeIoU;
           console.log(`[stageAware] Global Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${edgeThresholdValue})`);
 
-          if (edgeIoU < edgeThresholdValue) {
+          if (!skipEdgeIoUTriggers && edgeIoU < edgeThresholdValue) {
             triggers.push({
               id: "global_edge_iou",
               message: `Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${edgeThresholdValue}`,
@@ -481,6 +523,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
               threshold: edgeThresholdValue,
               stage: params.stage,
             });
+          } else if (skipEdgeIoUTriggers) {
+            console.log(`[stageAware] Global edge IoU trigger suppressed due to low-edge scene (edgeIoU=${edgeIoU.toFixed(3)})`);
           }
         }
       }
@@ -609,6 +653,63 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     }
   }
 
+  // ===== 6.7 LINE GEOMETRY (Stage1B/Stage2) =====
+  if ((isStage1B || isStage2) && !debug.dimensionMismatch) {
+    try {
+      const lineResult = await runLineGeometryCheck({
+        baselinePath: params.baselinePath,
+        candidatePath: params.candidatePath,
+        stage: params.stage,
+        threshold: effectiveThresholds.lineEdgeMin,
+      });
+
+      if (lineResult.metrics.lineScore !== undefined) {
+        metrics.lineScore = lineResult.metrics.lineScore;
+        metrics.edgeLoss = lineResult.metrics.edgeLoss;
+      }
+
+      if (lineResult.triggers.length) {
+        triggers.push(...lineResult.triggers);
+      }
+    } catch (err) {
+      console.warn(`[stageAware] Line geometry validation error (non-fatal):`, err);
+    }
+  }
+
+  // ===== 6.8 OPENINGS INTEGRITY (Stage1B/Stage2) =====
+  if ((isStage1B || isStage2) && !debug.dimensionMismatch) {
+    try {
+      const openingsResult = await runOpeningsIntegrityCheck({
+        baselinePath: params.baselinePath,
+        candidatePath: params.candidatePath,
+        stage: params.stage,
+        scene: params.sceneType || "interior",
+        thresholds: {
+          createMax: effectiveThresholds.openingsCreateMax ?? 0,
+          closeMax: effectiveThresholds.openingsCloseMax ?? 0,
+          maskedDriftMax: effectiveThresholds.maskedDriftMax ?? thresholds.maskedDriftMax,
+        },
+        fatalOnOpeningsDelta: effectiveHardFailSwitches.blockOnOpeningsDelta,
+      });
+
+      if (openingsResult.metrics.openingsCreated !== undefined) {
+        metrics.openingsCreated = openingsResult.metrics.openingsCreated;
+      }
+      if (openingsResult.metrics.openingsClosed !== undefined) {
+        metrics.openingsClosed = openingsResult.metrics.openingsClosed;
+      }
+      if (openingsResult.metrics.maskedEdgeDrift !== undefined) {
+        metrics.maskedEdgeDrift = openingsResult.metrics.maskedEdgeDrift;
+      }
+
+      if (openingsResult.triggers.length) {
+        triggers.push(...openingsResult.triggers);
+      }
+    } catch (err) {
+      console.warn(`[stageAware] Openings integrity validation error (non-fatal):`, err);
+    }
+  }
+
   // ===== 7. MULTI-SIGNAL GATING (with fatal bypass) =====
   const hasFatalTrigger = triggers.some(t => t.fatal === true);
   const risk = hasFatalTrigger || triggers.length >= config.gateMinSignals;
@@ -638,7 +739,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   // ===== 8. COMPUTE AGGREGATE SCORE =====
   let score = 1.0;
-  const weights = { structuralIoU: 0.4, edgeIoU: 0.3, globalEdgeIoU: 0.3 };
+  const weights = { structuralIoU: 0.35, edgeIoU: 0.25, globalEdgeIoU: 0.25, lineScore: 0.15 } as const;
   let weightSum = 0;
   let total = 0;
 

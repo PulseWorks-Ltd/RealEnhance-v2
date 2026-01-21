@@ -43,6 +43,18 @@
  * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_POSITION_CHANGE: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_OPENINGS_DELTA: "0" | "1" (default: "0")
  * - STRUCT_VALIDATION_BLOCK_ON_DIMENSION_MISMATCH: "0" | "1" (default: "1")
+ *
+ * LINE + OPENINGS + LOW-EDGE ENHANCEMENTS:
+ * - STRUCT_VALIDATION_STAGE1B_MASKED_DRIFT_MAX: 0.0-1.0 (default: 0.30)
+ * - STRUCT_VALIDATION_STAGE1B_OPENINGS_CREATE_MAX: 0.0-5.0 (default: 0)
+ * - STRUCT_VALIDATION_STAGE1B_OPENINGS_CLOSE_MAX: 0.0-5.0 (default: 0)
+ * - STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX: 0.0-1.0 (default: 0.30)
+ * - STRUCT_VALIDATION_STAGE2_OPENINGS_CREATE_MAX: 0.0-5.0 (default: 0)
+ * - STRUCT_VALIDATION_STAGE2_OPENINGS_CLOSE_MAX: 0.0-5.0 (default: 0)
+ * - STRUCT_VALIDATION_LOWEDGE_ENABLE: "0" | "1" (default: "1")
+ * - STRUCT_VALIDATION_LOWEDGE_DENSITY_MAX: 0.0-1.0 (default: 0.045)
+ * - STRUCT_VALIDATION_LOWEDGE_CENTER_CROP_RATIO: 0.0-1.0 (default: 0.6)
+ * - STRUCT_VALIDATION_LOWEDGE_SKIP_EDGE_IOU: "0" | "1" (default: "1")
  */
 
 export type StageId = "stage1A" | "stage1B" | "stage2";
@@ -153,6 +165,12 @@ export interface Stage1BThresholds {
   edgeMode: "global" | "structure_only" | "exclude_lower";
   /** Percentage of image bottom to exclude when edgeMode=exclude_lower */
   excludeLowerPct: number;
+  /** Maximum allowed masked edge drift before triggering */
+  maskedDriftMax: number;
+  /** Maximum allowed created openings */
+  openingsCreateMax: number;
+  /** Maximum allowed closed openings */
+  openingsCloseMax: number;
 }
 
 /**
@@ -167,6 +185,9 @@ export function loadStage1BThresholds(): Stage1BThresholds {
     unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_UNIFIED_MIN", 0.55),
     edgeMode: parseEdgeMode(process.env.STRUCT_VALIDATION_STAGE1B_EDGE_MODE),
     excludeLowerPct: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_EXCLUDE_LOWER_PCT", 0.20),
+    maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE1B_MASKED_DRIFT_MAX", 0.30),
+    openingsCreateMax: parseEnvFloat("STRUCT_VALIDATION_STAGE1B_OPENINGS_CREATE_MAX", 0),
+    openingsCloseMax: parseEnvFloat("STRUCT_VALIDATION_STAGE1B_OPENINGS_CLOSE_MAX", 0),
   };
 }
 
@@ -207,6 +228,12 @@ export interface Stage2Thresholds {
   lineEdgeMin: number;
   /** Minimum unified structural score for Stage 2 */
   unifiedMin: number;
+  /** Maximum allowed masked edge drift before triggering */
+  maskedDriftMax: number;
+  /** Maximum allowed created openings */
+  openingsCreateMax: number;
+  /** Maximum allowed closed openings */
+  openingsCloseMax: number;
 }
 
 /**
@@ -218,6 +245,9 @@ export function loadStage2Thresholds(): Stage2Thresholds {
     structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.55),
     lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.70),
     unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.65),
+    maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX", 0.30),
+    openingsCreateMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CREATE_MAX", 0),
+    openingsCloseMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CLOSE_MAX", 0),
   };
 }
 
@@ -265,6 +295,12 @@ export interface StageAwareConfig {
   logArtifactsOnFail: boolean;
   /** Maximum retry attempts per stage */
   maxRetryAttempts: number;
+
+  /** Low-edge handling */
+  lowEdgeEnable: boolean;
+  lowEdgeEdgeDensityMax: number;
+  lowEdgeCenterCropRatio: number;
+  lowEdgeSkipEdgeIoU: boolean;
 
   /** Paint-over / opening suppression detector (Stage2) */
   paintOverEnable: boolean;
@@ -340,6 +376,11 @@ export function loadStageAwareConfig(): StageAwareConfig {
     logArtifactsOnFail: parseEnvBool("STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL", true),
     maxRetryAttempts: parseEnvInt("STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS", 3),
 
+    lowEdgeEnable: parseEnvBool("STRUCT_VALIDATION_LOWEDGE_ENABLE", true),
+    lowEdgeEdgeDensityMax: parseEnvFloat01("STRUCT_VALIDATION_LOWEDGE_DENSITY_MAX", 0.045),
+    lowEdgeCenterCropRatio: parseEnvFloat01("STRUCT_VALIDATION_LOWEDGE_CENTER_CROP_RATIO", 0.6),
+    lowEdgeSkipEdgeIoU: parseEnvBool("STRUCT_VALIDATION_LOWEDGE_SKIP_EDGE_IOU", true),
+
     paintOverEnable: parseEnvBool("STRUCT_VALIDATION_PAINTOVER_ENABLE", true),
     paintOverEdgeRatioMin: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_EDGE_RATIO_MIN", 0.35),
     paintOverTexRatioMin: parseEnvFloat01("STRUCT_VALIDATION_PAINTOVER_TEX_RATIO_MIN", 0.45),
@@ -375,6 +416,12 @@ export function loadStageAwareConfig(): StageAwareConfig {
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
     blockOnDimensionMismatch: config.blockOnDimensionMismatch,
+    lowEdge: {
+      enable: config.lowEdgeEnable,
+      densityMax: config.lowEdgeEdgeDensityMax,
+      centerCrop: config.lowEdgeCenterCropRatio,
+      skipEdgeIoU: config.lowEdgeSkipEdgeIoU,
+    },
   });
 
   return config;
@@ -405,6 +452,10 @@ export interface StageThresholds {
   semanticOpeningsMax: number;
   /** Maximum masked drift percentage before triggering */
   maskedDriftMax: number;
+  /** Maximum allowed created openings (masked edge) */
+  openingsCreateMax?: number;
+  /** Maximum allowed closed openings (masked edge) */
+  openingsCloseMax?: number;
 }
 
 /**
@@ -421,6 +472,8 @@ export const STAGE_THRESHOLDS: Record<"stage1A" | "stage2", StageThresholds> = {
     semanticWallDriftMax: 0.20,
     semanticOpeningsMax: 0,
     maskedDriftMax: 0.25,
+    openingsCreateMax: 0,
+    openingsCloseMax: 0,
   },
   stage2: {
     lineDeviationDegMax: 5.0,
@@ -430,6 +483,8 @@ export const STAGE_THRESHOLDS: Record<"stage1A" | "stage2", StageThresholds> = {
     semanticWallDriftMax: 0.25,
     semanticOpeningsMax: 0,
     maskedDriftMax: 0.30,
+    openingsCreateMax: 0,
+    openingsCloseMax: 0,
   },
 };
 
@@ -512,9 +567,13 @@ export interface ValidationSummary {
     lineDeviation?: number;
     wallDrift?: number;
     maskedDrift?: number;
+    maskedEdgeDrift?: number;
     windowValidationPassed?: number;
     openingsCreated?: number;
     openingsClosed?: number;
+    lineScore?: number;
+    edgeLoss?: number;
+    edgeDensity?: number;
   };
   /** Debug information */
   debug: {
@@ -533,6 +592,8 @@ export interface ValidationSummary {
     unionPixels?: number;
     baselineUrl?: string;
     candidateUrl?: string;
+    lowEdgeDetected?: boolean;
+    lowEdgeThreshold?: number;
   };
 }
 
