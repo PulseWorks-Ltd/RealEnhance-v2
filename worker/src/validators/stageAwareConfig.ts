@@ -329,6 +329,12 @@ export interface StageAwareConfig {
 
   /** Whether dimension mismatch should be fatal (default: true) */
   blockOnDimensionMismatch: boolean;
+
+  /** Dimension mismatch policy tuning */
+  dimAspectRatioTolerance: number;
+  dimLargeDeltaPct: number;
+  dimSmallDeltaPct: number;
+  dimStrideMultiple: number;
 }
 
 /**
@@ -410,6 +416,12 @@ export function loadStageAwareConfig(): StageAwareConfig {
 
     // Dimension mismatch fatal toggle (default ON)
     blockOnDimensionMismatch: parseEnvBool("STRUCT_VALIDATION_BLOCK_ON_DIMENSION_MISMATCH", true),
+
+    // Dimension mismatch policy tuning (benign resize handling)
+    dimAspectRatioTolerance: parseEnvFloat01("STRUCT_VALIDATION_DIM_AR_TOLERANCE", 0.01),
+    dimLargeDeltaPct: parseEnvFloat01("STRUCT_VALIDATION_DIM_LARGE_DELTA_PCT", 0.08),
+    dimSmallDeltaPct: parseEnvFloat01("STRUCT_VALIDATION_DIM_SMALL_DELTA_PCT", 0.02),
+    dimStrideMultiple: Math.max(1, parseEnvInt("STRUCT_VALIDATION_DIM_STRIDE_MULTIPLE", 32)),
   };
 
   // Log config on first load for debugging
@@ -423,6 +435,12 @@ export function loadStageAwareConfig(): StageAwareConfig {
     stage2Thresholds: config.stage2Thresholds,
     hardFailSwitches: config.hardFailSwitches,
     blockOnDimensionMismatch: config.blockOnDimensionMismatch,
+    dimPolicy: {
+      arTolerance: config.dimAspectRatioTolerance,
+      largeDeltaPct: config.dimLargeDeltaPct,
+      smallDeltaPct: config.dimSmallDeltaPct,
+      strideMultiple: config.dimStrideMultiple,
+    },
     largeDrift: {
       iouSignalOnly: config.largeDriftIouSignalOnly,
       requireNonIouSignals: config.largeDriftRequireNonIouSignals,
@@ -522,7 +540,7 @@ export interface IoUResult {
   /** The computed IoU value, or null if computation was skipped */
   value: number | null;
   /** If value is null, explains why computation was skipped */
-  skipReason?: "union_zero" | "mask_too_small" | "dimension_mismatch" | "computation_error";
+  skipReason?: "union_zero" | "mask_too_small" | "dimension_mismatch" | "dimension_alignment_blocked" | "computation_error";
   /** Debug metrics */
   debug: {
     intersectionPixels?: number;
@@ -587,12 +605,24 @@ export interface ValidationSummary {
     lineScore?: number;
     edgeLoss?: number;
     edgeDensity?: number;
+    dimensionAspectRatioDelta?: number;
+    dimensionWidthDeltaPct?: number;
+    dimensionHeightDeltaPct?: number;
+    dimensionMaxDeltaPct?: number;
+    dimensionStrideAligned?: number;
+    dimensionNormalized?: number;
   };
   /** Debug information */
   debug: {
     dimsBaseline: { w: number; h: number };
     dimsCandidate: { w: number; h: number };
     dimensionMismatch: boolean;
+    dimensionReason?: string;
+    dimensionClassification?: string;
+    dimensionNormalizedPath?: string;
+    dimensionAspectRatioDelta?: number;
+    dimensionMaxDeltaPct?: number;
+    dimensionStrideAligned?: boolean;
     maskAPixels: number;
     maskBPixels: number;
     maskARatio: number;

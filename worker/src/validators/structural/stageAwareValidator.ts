@@ -13,6 +13,7 @@
 import sharp from "sharp";
 import fs from "fs/promises";
 import path from "path";
+import os from "os";
 import {
   StageId,
   ValidationSummary,
@@ -29,11 +30,156 @@ import {
   HardFailSwitches,
 } from "../stageAwareConfig";
 import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
-import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
 import { runLineGeometryCheck } from "./lineGeometryValidator";
 import { runOpeningsIntegrityCheck } from "./openingsIntegrityValidator";
 import { isEmptyRoomByEdgeDensity } from "../emptyRoomHeuristic";
 import { getDimensionTolerancePct } from "../../utils/dimensionGuard";
+
+type DimensionDecision = {
+  mismatch: boolean;
+  aspectRatioIn: number;
+  aspectRatioOut: number;
+  aspectRatioDelta: number;
+  widthDeltaPct: number;
+  heightDeltaPct: number;
+  maxDimDeltaPct: number;
+  strideAligned: boolean;
+  classification: "match" | "fatal_aspect_ratio" | "fatal_large_delta" | "benign_resize" | "moderate_delta";
+  fatal: boolean;
+  shouldNormalize: boolean;
+  skipAlignedComparisons: boolean;
+  reason: string;
+  nonBlocking: boolean;
+};
+
+function classifyDimensionChange(opts: {
+  baseW: number;
+  baseH: number;
+  candW: number;
+  candH: number;
+  config: StageAwareConfig;
+}): DimensionDecision {
+  const { baseW, baseH, candW, candH, config } = opts;
+  const mismatch = baseW !== candW || baseH !== candH;
+
+  const aspectRatioIn = baseW / baseH;
+  const aspectRatioOut = candW / candH;
+  const aspectRatioDelta = Math.abs(aspectRatioIn - aspectRatioOut) / Math.max(Number.EPSILON, aspectRatioIn);
+
+  const widthDeltaPct = Math.abs(candW - baseW) / Math.max(1, baseW);
+  const heightDeltaPct = Math.abs(candH - baseH) / Math.max(1, baseH);
+  const maxDimDeltaPct = Math.max(widthDeltaPct, heightDeltaPct);
+  const strideAligned = candW % config.dimStrideMultiple === 0 && candH % config.dimStrideMultiple === 0;
+
+  if (!mismatch) {
+    return {
+      mismatch: false,
+      aspectRatioIn,
+      aspectRatioOut,
+      aspectRatioDelta,
+      widthDeltaPct,
+      heightDeltaPct,
+      maxDimDeltaPct,
+      strideAligned,
+      classification: "match",
+      fatal: false,
+      shouldNormalize: false,
+      skipAlignedComparisons: false,
+      reason: "dimensions_match",
+      nonBlocking: false,
+    };
+  }
+
+  // Fatal when aspect ratio meaningfully changes
+  if (aspectRatioDelta > config.dimAspectRatioTolerance) {
+    return {
+      mismatch: true,
+      aspectRatioIn,
+      aspectRatioOut,
+      aspectRatioDelta,
+      widthDeltaPct,
+      heightDeltaPct,
+      maxDimDeltaPct,
+      strideAligned,
+      classification: "fatal_aspect_ratio",
+      fatal: true,
+      shouldNormalize: false,
+      skipAlignedComparisons: true,
+      reason: "aspect_ratio_delta_exceeds_tolerance",
+      nonBlocking: false,
+    };
+  }
+
+  // Fatal when size delta is large even if aspect ratio is preserved
+  if (maxDimDeltaPct > config.dimLargeDeltaPct) {
+    return {
+      mismatch: true,
+      aspectRatioIn,
+      aspectRatioOut,
+      aspectRatioDelta,
+      widthDeltaPct,
+      heightDeltaPct,
+      maxDimDeltaPct,
+      strideAligned,
+      classification: "fatal_large_delta",
+      fatal: true,
+      shouldNormalize: false,
+      skipAlignedComparisons: true,
+      reason: "dimension_delta_exceeds_large_threshold",
+      nonBlocking: false,
+    };
+  }
+
+  // Benign resize: aspect ratio preserved and delta small or stride-aligned
+  if (maxDimDeltaPct <= config.dimSmallDeltaPct || strideAligned) {
+    return {
+      mismatch: true,
+      aspectRatioIn,
+      aspectRatioOut,
+      aspectRatioDelta,
+      widthDeltaPct,
+      heightDeltaPct,
+      maxDimDeltaPct,
+      strideAligned,
+      classification: "benign_resize",
+      fatal: false,
+      shouldNormalize: true,
+      skipAlignedComparisons: false,
+      reason: strideAligned ? "stride_aligned_resize" : "small_delta_resize",
+      nonBlocking: true,
+    };
+  }
+
+  // Moderate delta, aspect ratio preserved: warn/risk but do not hard fail
+  return {
+    mismatch: true,
+    aspectRatioIn,
+    aspectRatioOut,
+    aspectRatioDelta,
+    widthDeltaPct,
+    heightDeltaPct,
+    maxDimDeltaPct,
+    strideAligned,
+    classification: "moderate_delta",
+    fatal: false,
+    shouldNormalize: true,
+    skipAlignedComparisons: false,
+    reason: "moderate_delta_resize",
+    nonBlocking: false,
+  };
+}
+
+async function normalizeCandidateForAlignment(candidatePath: string, targetW: number, targetH: number, jobId?: string): Promise<string> {
+  const parsed = path.parse(candidatePath);
+  const outDir = process.env.STRUCT_DIM_NORMALIZE_DIR || os.tmpdir();
+  const outPath = path.join(outDir, `${parsed.name}-${jobId || "job"}-${Date.now()}-dimnorm${parsed.ext || ".webp"}`);
+
+  await sharp(candidatePath)
+    .resize(targetW, targetH, { fit: "fill" })
+    .toFile(outPath);
+
+  return outPath;
+}
 
 /**
  * Sobel edge detection with binary threshold
@@ -211,7 +357,6 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   let skipEdgeIoUTriggers = false;
   let largeDrift = false;
   let maxDelta = 0;
-  let dimContextMaxDelta: number | null = null;
 
   console.log(`[stageAware] blockOnDimensionMismatch=${config.blockOnDimensionMismatch ? "ENABLED" : "DISABLED (non-fatal)"}`);
 
@@ -326,15 +471,51 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   debug.dimsBaseline = { w: baseMeta.width, h: baseMeta.height };
   debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
-  debug.dimensionMismatch = baseMeta.width !== candMeta.width || baseMeta.height !== candMeta.height;
+  const dimensionDecision = classifyDimensionChange({
+    baseW: baseMeta.width,
+    baseH: baseMeta.height,
+    candW: candMeta.width,
+    candH: candMeta.height,
+    config,
+  });
+
+  debug.dimensionMismatch = dimensionDecision.mismatch;
+  debug.dimensionReason = dimensionDecision.reason;
+  debug.dimensionClassification = dimensionDecision.classification;
+  debug.dimensionAspectRatioDelta = dimensionDecision.aspectRatioDelta;
+  debug.dimensionMaxDeltaPct = dimensionDecision.maxDimDeltaPct;
+  debug.dimensionStrideAligned = dimensionDecision.strideAligned;
+
+  metrics.dimensionAspectRatioDelta = dimensionDecision.aspectRatioDelta;
+  metrics.dimensionWidthDeltaPct = dimensionDecision.widthDeltaPct;
+  metrics.dimensionHeightDeltaPct = dimensionDecision.heightDeltaPct;
+  metrics.dimensionMaxDeltaPct = dimensionDecision.maxDimDeltaPct;
+  metrics.dimensionStrideAligned = dimensionDecision.strideAligned ? 1 : 0;
+
+  let candidatePathForAlignment = params.candidatePath;
+  let candWidth = candMeta.width!;
+  let candHeight = candMeta.height!;
+  let alignmentBlocked = dimensionDecision.skipAlignedComparisons;
+
+  if (dimensionDecision.shouldNormalize && dimensionDecision.mismatch) {
+    try {
+      candidatePathForAlignment = await normalizeCandidateForAlignment(params.candidatePath, baseMeta.width!, baseMeta.height!, params.jobId);
+      candWidth = baseMeta.width!;
+      candHeight = baseMeta.height!;
+      metrics.dimensionNormalized = 1;
+      debug.dimensionNormalizedPath = candidatePathForAlignment;
+    } catch (err) {
+      alignmentBlocked = true;
+      console.warn(`[stageAware] Failed to normalize candidate for alignment:`, err);
+    }
+  }
 
   // Compute dimension deltas for large-drift regime (Stage1B/Stage2 only)
-  const widthDelta = Math.abs((candMeta.width || 0) - (baseMeta.width || 1)) / Math.max(1, baseMeta.width || 1);
-  const heightDelta = Math.abs((candMeta.height || 0) - (baseMeta.height || 1)) / Math.max(1, baseMeta.height || 1);
-  maxDelta = Math.max(widthDelta, heightDelta);
+  const widthDelta = dimensionDecision.widthDeltaPct;
+  const heightDelta = dimensionDecision.heightDeltaPct;
+  maxDelta = dimensionDecision.maxDimDeltaPct;
 
   if (params.dimContext) {
-    dimContextMaxDelta = params.dimContext.maxDelta;
     debug.originalDims = {
       base: { w: params.dimContext.baseline.width, h: params.dimContext.baseline.height },
       candidate: { w: params.dimContext.candidateOriginal.width, h: params.dimContext.candidateOriginal.height },
@@ -356,17 +537,24 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   largeDrift = driftDecision.largeDrift;
   maxDelta = effectiveMaxDelta;
 
-  // ===== 2. DIMENSION MISMATCH HANDLING =====
-  // Per spec: treat dimension mismatch as a trigger, do NOT auto-resize
-  if (debug.dimensionMismatch) {
-    console.warn(`[stageAware] Dimension mismatch: base=${baseMeta.width}x${baseMeta.height}, cand=${candMeta.width}x${candMeta.height}`);
+  // ===== 2. DIMENSION MISMATCH HANDLING (STAGE-AWARE) =====
+  if (dimensionDecision.mismatch) {
+    console.warn(`[stageAware] Dimension mismatch: base=${baseMeta.width}x${baseMeta.height}, cand=${candMeta.width}x${candMeta.height} classification=${dimensionDecision.classification}`);
     triggers.push({
-      id: "dimension_mismatch",
-      message: `Dimensions changed: ${candMeta.width}x${candMeta.height} vs expected ${baseMeta.width}x${baseMeta.height}`,
-      value: 1,
-      threshold: 0,
+      id: dimensionDecision.classification === "fatal_aspect_ratio" ? "dimension_aspect_ratio_mismatch" : "dimension_mismatch",
+      message: `Dimensions changed: ${candMeta.width}x${candMeta.height} -> ${baseMeta.width}x${baseMeta.height}; ${dimensionDecision.reason}`,
+      value: Number(dimensionDecision.maxDimDeltaPct.toFixed(4)),
+      threshold: dimensionDecision.fatal ? Math.max(config.dimLargeDeltaPct, config.dimAspectRatioTolerance) : config.dimSmallDeltaPct,
       stage: params.stage,
-      fatal: largeDrift ? false : config.blockOnDimensionMismatch,
+      fatal: dimensionDecision.fatal && config.blockOnDimensionMismatch,
+      nonBlocking: dimensionDecision.nonBlocking,
+      meta: {
+        aspectRatioDelta: dimensionDecision.aspectRatioDelta,
+        widthDeltaPct: widthDelta,
+        heightDeltaPct: heightDelta,
+        strideAligned: dimensionDecision.strideAligned,
+        classification: dimensionDecision.classification,
+      },
     });
   }
 
@@ -374,11 +562,12 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const jobId = params.jobId || "default";
   let maskBaseline: StructuralMask;
   let maskCandidate: StructuralMask;
+  const maskCandidateKey = `${jobId}-cand${dimensionDecision.shouldNormalize && dimensionDecision.mismatch ? "-norm" : ""}`;
 
   try {
     [maskBaseline, maskCandidate] = await Promise.all([
       loadOrComputeStructuralMask(jobId + "-base", params.baselinePath),
-      loadOrComputeStructuralMask(jobId + "-cand", params.candidatePath),
+      loadOrComputeStructuralMask(maskCandidateKey, candidatePathForAlignment),
     ]);
   } catch (err) {
     console.error(`[stageAware] Error computing structural masks:`, err);
@@ -402,9 +591,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   // ===== 4.5 LOW-EDGE HEURISTIC (skip noisy edge checks on nearly empty scenes) =====
   // Only applies to stages that run staging/declutter (1B/2) to avoid altering Stage1A behavior.
-  if (config.lowEdgeEnable && !debug.dimensionMismatch && (isStage1B || isStage2)) {
+  if (config.lowEdgeEnable && !alignmentBlocked && (isStage1B || isStage2)) {
     try {
-      const lowEdge = await isEmptyRoomByEdgeDensity(params.candidatePath, {
+      const lowEdge = await isEmptyRoomByEdgeDensity(candidatePathForAlignment, {
         edgeDensityMax: config.lowEdgeEdgeDensityMax,
         centerCropRatio: config.lowEdgeCenterCropRatio,
       });
@@ -425,10 +614,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ===== 5. COMPUTE STRUCTURAL MASK IoU (if valid) =====
   let structuralIoU: number | null = null;
 
-  if (debug.dimensionMismatch) {
+  if (alignmentBlocked) {
     debug.structuralIoUSkipped = true;
-    debug.structuralIoUSkipReason = "dimension_mismatch";
-    console.warn(`[stageAware] Skipping structural IoU: dimension mismatch`);
+    debug.structuralIoUSkipReason = "dimension_alignment_blocked";
+    console.warn(`[stageAware] Skipping structural IoU: dimension alignment blocked`);
   } else if (debug.maskARatio < config.iouMinPixelsRatio || debug.maskBRatio < config.iouMinPixelsRatio) {
     debug.structuralIoUSkipped = true;
     debug.structuralIoUSkipReason = "mask_too_small";
@@ -438,7 +627,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     try {
       const [baseRaw, candRaw] = await Promise.all([
         sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(params.candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candidatePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
       const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
@@ -446,7 +635,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
       const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
-      const candEdge = sobelBinary(candGray, candMeta.width, candMeta.height, edgeThreshold);
+      const candEdge = sobelBinary(candGray, candWidth, candHeight, edgeThreshold);
 
       const iouResult = computeMaskedIoU(baseEdge, candEdge, maskBaseline.data);
       debug.intersectionPixels = iouResult.inter;
@@ -479,11 +668,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   }
 
   // ===== 6. COMPUTE EDGE IoU (stage-specific mode) =====
-  if (!debug.dimensionMismatch) {
+  if (!alignmentBlocked) {
     try {
       const [baseRaw, candRaw] = await Promise.all([
         sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(params.candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candidatePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
       const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
@@ -491,7 +680,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
       const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
-      const candEdge = sobelBinary(candGray, candMeta.width, candMeta.height, edgeThreshold);
+      const candEdge = sobelBinary(candGray, candWidth, candHeight, edgeThreshold);
 
       let edgeIoU: number | null = null;
       let edgeThresholdValue: number;
@@ -569,10 +758,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   // ===== 6.5 HARD-FAIL SWITCH CHECKS (Stage2 only) =====
   // These run window/opening detection and add FATAL triggers when switches enabled
-  if (isStage2 && !debug.dimensionMismatch) {
+  if (isStage2 && !alignmentBlocked) {
     try {
       const { validateWindows } = await import("../windowValidator.js");
-      const windowResult = await validateWindows(params.baselinePath, params.candidatePath);
+      const windowResult = await validateWindows(params.baselinePath, candidatePathForAlignment);
 
       // Add window validation metrics to debug
       if (windowResult) {
@@ -623,7 +812,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const { runSemanticStructureValidator } = await import("../semanticStructureValidator.js");
       const semanticResult = await runSemanticStructureValidator({
         originalImagePath: params.baselinePath,
-        enhancedImagePath: params.candidatePath,
+        enhancedImagePath: candidatePathForAlignment,
         scene: params.sceneType || "interior",
         mode: "log",
       });
@@ -661,12 +850,12 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   }
 
   // ===== 6.6 PAINT-OVER DETECTION (Stage2 only) =====
-  if (params.stage === "stage2" && config.paintOverEnable && !debug.dimensionMismatch) {
+  if (params.stage === "stage2" && config.paintOverEnable && !alignmentBlocked) {
     try {
       const { runPaintOverCheck } = await import("./paintOverDetector.js");
       const paintOverResult = await runPaintOverCheck({
         baselinePath: params.baselinePath,
-        candidatePath: params.candidatePath,
+        candidatePath: candidatePathForAlignment,
         config,
         jobId: params.jobId,
       });
@@ -691,11 +880,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   }
 
   // ===== 6.7 LINE GEOMETRY (Stage1B/Stage2) =====
-  if ((isStage1B || isStage2) && !debug.dimensionMismatch) {
+  if ((isStage1B || isStage2) && !alignmentBlocked) {
     try {
       const lineResult = await runLineGeometryCheck({
         baselinePath: params.baselinePath,
-        candidatePath: params.candidatePath,
+        candidatePath: candidatePathForAlignment,
         stage: params.stage,
         threshold: effectiveThresholds.lineEdgeMin,
         maskBaseline,
@@ -717,11 +906,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   }
 
   // ===== 6.8 OPENINGS INTEGRITY (Stage1B/Stage2) =====
-  if ((isStage1B || isStage2) && !debug.dimensionMismatch) {
+  if ((isStage1B || isStage2) && !alignmentBlocked) {
     try {
       const openingsResult = await runOpeningsIntegrityCheck({
         baselinePath: params.baselinePath,
-        candidatePath: params.candidatePath,
+        candidatePath: candidatePathForAlignment,
         stage: params.stage,
         scene: params.sceneType || "interior",
         thresholds: {

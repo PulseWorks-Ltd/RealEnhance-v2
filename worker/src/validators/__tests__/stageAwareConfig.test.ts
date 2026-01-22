@@ -304,6 +304,10 @@ assert(config.stage2Thresholds !== undefined, "has stage2Thresholds field");
 assert(config.stage2Thresholds.edgeIouMin !== undefined, "has stage2 nested edgeIouMin");
 assert(config.hardFailSwitches !== undefined, "has hardFailSwitches field");
 assert(config.hardFailSwitches.blockOnWindowCountChange !== undefined, "has nested blockOnWindowCountChange");
+assert(config.dimAspectRatioTolerance !== undefined, "has dimAspectRatioTolerance field");
+assert(config.dimLargeDeltaPct !== undefined, "has dimLargeDeltaPct field");
+assert(config.dimSmallDeltaPct !== undefined, "has dimSmallDeltaPct field");
+assert(config.dimStrideMultiple !== undefined, "has dimStrideMultiple field");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Summary
