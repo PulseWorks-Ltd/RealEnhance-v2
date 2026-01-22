@@ -24,6 +24,7 @@ import {
   type SemanticValidationResult,
   type PlacementValidationResult,
 } from "./geminiSemanticValidator";
+import { shouldGateOpeningsDelta } from "./structural/openingsDelta";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -94,6 +95,7 @@ export interface FinalDecision {
   blockedBy: BlockedBy;
   reason: string;
   details?: any;
+  warnings?: string[];
 }
 
 export interface ValidatorReport {
@@ -261,22 +263,25 @@ async function runLocalValidators(args: {
 
       const openingsMinDelta = stage === "2" ? stageAwareConfig.stage2Thresholds.openingsMinDelta : 1;
       const openingsDelta = Math.abs(maskedResult.createdOpenings) + Math.abs(maskedResult.closedOpenings);
+      const gate = shouldGateOpeningsDelta(openingsDelta, openingsMinDelta);
 
       // Add triggers for openings changes (significant for Stage 1B/2)
-      if (maskedResult.createdOpenings > 0 && openingsDelta >= openingsMinDelta) {
+      if (maskedResult.createdOpenings > 0 && gate) {
         triggers.push({
           id: "masked_edge_openings_created",
-          message: `${maskedResult.createdOpenings} openings created`,
+          message: `${maskedResult.createdOpenings} openings created (delta=${openingsDelta}, min=${openingsMinDelta})`,
           value: maskedResult.createdOpenings,
           threshold: 0,
+          meta: { delta: openingsDelta, minDelta: openingsMinDelta },
         });
       }
-      if (maskedResult.closedOpenings > 0 && openingsDelta >= openingsMinDelta) {
+      if (maskedResult.closedOpenings > 0 && gate) {
         triggers.push({
           id: "masked_edge_openings_closed",
-          message: `${maskedResult.closedOpenings} openings closed`,
+          message: `${maskedResult.closedOpenings} openings closed (delta=${openingsDelta}, min=${openingsMinDelta})`,
           value: maskedResult.closedOpenings,
           threshold: 0,
+          meta: { delta: openingsDelta, minDelta: openingsMinDelta },
         });
       }
     }
@@ -528,6 +533,10 @@ export async function validateStageOutput(args: {
       details: { fatalTriggers: localResult.result.triggers.filter((t) => t.fatal) },
     };
 
+    if (stage === "2") {
+      console.log(`[METRIC] local_fatal_rate_stage2 reason="${report.final.reason}" triggers=[${topTriggers}]`);
+    }
+
     console.log(
       `[VALIDATE_LOCAL_FAIL] stage=${stage} fatal=true triggers=[${topTriggers}]`
     );
@@ -629,6 +638,10 @@ export async function validateStageOutput(args: {
         details: { error: geminiResult.semanticRaw?.error },
       };
 
+      if (stage === "2") {
+        console.log(`[METRIC] gemini_semantic_block_rate_stage2 reason="parse_error"`);
+      }
+
       console.log(
         `[VALIDATE_FINAL_FAIL] stage=${stage} blockedBy=gemini_parse_error reason="JSON parse failed"`
       );
@@ -658,6 +671,10 @@ export async function validateStageOutput(args: {
           checks: semantic.checks,
         },
       };
+
+      if (stage === "2") {
+        console.log(`[METRIC] gemini_semantic_block_rate_stage2 reason="${semantic.reason}" conf=${semantic.confidence.toFixed(2)} failReasons=[${semantic.fail_reasons.slice(0,3).join(",")}]`);
+      }
 
       console.log(
         `[SEMANTIC_FAIL] stage=${stage} confidence=${semantic.confidence.toFixed(2)} ` +
@@ -695,11 +712,28 @@ export async function validateStageOutput(args: {
         details: { confidence: placement.confidence },
       };
 
+      console.log(`[METRIC] gemini_placement_hard_rate_stage2 reason="${placement.reason || "unknown"}" confidence=${placement.confidence ?? "n/a"}`);
+
       console.log(
         `[VALIDATE_FINAL_FAIL] stage=${stage} blockedBy=gemini_placement reason="${report.final.reason}"`
       );
 
       return report;
+    }
+  } else if (stage === "2" && geminiResult.ran.placement) {
+    const placement = geminiResult.result.placement;
+    if (placement && placement.verdict === "soft_fail") {
+      const warningText = placement.reason || "Placement may partially obstruct a path (review recommended).";
+      report.final.warnings = [warningText];
+      report.final.reason = `Passed with warnings: placement soft_fail (${warningText})`;
+      report.final.details = {
+        ...(report.final.details || {}),
+        placementVerdict: placement.verdict,
+        placementReasons: placement.reasons,
+        placementConfidence: placement.confidence,
+      };
+
+      console.log(`[METRIC] gemini_placement_soft_rate_stage2 reason="${placement.reason || "unknown"}" confidence=${placement.confidence ?? "n/a"}`);
     }
   }
 
@@ -708,7 +742,9 @@ export async function validateStageOutput(args: {
   report.final = {
     pass: true,
     blockedBy: "none",
-    reason: "All validators passed",
+    reason: report.final.reason || "All validators passed",
+    warnings: report.final.warnings,
+    details: report.final.details,
   };
 
   console.log(

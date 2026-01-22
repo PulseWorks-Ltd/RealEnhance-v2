@@ -587,6 +587,174 @@ function simulatePlacementSoftFail(): ValidatorReport {
 const placementSoftFailReport = simulatePlacementSoftFail();
 assertEqual(placementSoftFailReport.final.pass, true, "placement soft_fail does not block");
 assertEqual(placementSoftFailReport.ran.geminiPlacement, true, "placement ran for stage 2 soft fail");
+assert(placementSoftFailReport.final.warnings?.length === 1, "soft fail surfaces warning");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Smoke suite: golden scenarios A/B/C
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nGolden smoke scenarios:");
+
+// A) Borderline-but-acceptable staging: local risk but Gemini passes
+function scenarioA(): ValidatorReport {
+  return {
+    stage: "2",
+    baselinePath: "/tmp/baseA.webp",
+    candidatePath: "/tmp/candA.webp",
+    ran: {
+      localStructural: true,
+      localMaskedEdge: true,
+      localSemanticFallback: true,
+      geminiSemantic: true,
+      geminiPlacement: true,
+    },
+    skipped: { gemini: false },
+    latencyMs: { local: 120, gemini: 900, total: 1020 },
+    local: {
+      pass: false,
+      risk: true,
+      fatal: false,
+      triggers: [
+        { id: "masked_edge_drift", value: 0.4 },
+        { id: "window_position_change", value: 1 },
+        { id: "line_drift", value: 0.3 },
+      ],
+      metrics: {},
+      summary: "Local risk (non-fatal)",
+    },
+    gemini: {
+      semantic: {
+        pass: true,
+        confidence: 0.91,
+        allowed_changes_only: true,
+        reason: "Staging compliant",
+        fail_reasons: [],
+        checks: {} as any,
+      },
+      placement: {
+        pass: true,
+        verdict: "pass",
+        confidence: 0.9,
+      },
+      summary: "Gemini OK",
+    },
+    final: {
+      pass: true,
+      blockedBy: "none",
+      reason: "All validators passed",
+      warnings: [],
+    },
+  };
+}
+
+const scenarioAReport = scenarioA();
+assertEqual(scenarioAReport.final.pass, true, "Scenario A passes");
+assertEqual(scenarioAReport.final.blockedBy, "none" as BlockedBy, "Scenario A not blocked");
+assert(scenarioAReport.final.warnings?.length === 0, "Scenario A has no warnings");
+
+// B) Soft fail staging: placement soft fail should warn
+function scenarioB(): ValidatorReport {
+  return {
+    stage: "2",
+    baselinePath: "/tmp/baseB.webp",
+    candidatePath: "/tmp/candB.webp",
+    ran: {
+      localStructural: true,
+      localMaskedEdge: true,
+      localSemanticFallback: true,
+      geminiSemantic: true,
+      geminiPlacement: true,
+    },
+    skipped: { gemini: false },
+    latencyMs: { local: 110, gemini: 1000, total: 1110 },
+    local: {
+      pass: true,
+      risk: false,
+      fatal: false,
+      triggers: [],
+      metrics: {},
+      summary: "Local OK",
+    },
+    gemini: {
+      semantic: {
+        pass: true,
+        confidence: 0.9,
+        allowed_changes_only: true,
+        reason: "Staging compliant",
+        fail_reasons: [],
+        checks: {} as any,
+      },
+      placement: {
+        pass: true,
+        verdict: "soft_fail",
+        confidence: 0.72,
+        reason: "Dresser slightly overlaps closet edge",
+      },
+      summary: "Gemini WARN",
+    },
+    final: {
+      pass: true,
+      blockedBy: "none",
+      reason: "Passed with warnings: placement soft_fail (Dresser slightly overlaps closet edge)",
+      warnings: ["Placement may partially obstruct a closet door (low severity). Review recommended."],
+    },
+  };
+}
+
+const scenarioBReport = scenarioB();
+assertEqual(scenarioBReport.final.pass, true, "Scenario B passes");
+assert(scenarioBReport.final.warnings?.length === 1, "Scenario B surfaces a warning");
+
+// C) Hard fail staging: semantic or placement hard fail blocks
+function scenarioC(): ValidatorReport {
+  return {
+    stage: "2",
+    baselinePath: "/tmp/baseC.webp",
+    candidatePath: "/tmp/candC.webp",
+    ran: {
+      localStructural: true,
+      localMaskedEdge: true,
+      localSemanticFallback: true,
+      geminiSemantic: true,
+      geminiPlacement: true,
+    },
+    skipped: { gemini: false },
+    latencyMs: { local: 130, gemini: 1200, total: 1330 },
+    local: {
+      pass: true,
+      risk: false,
+      fatal: false,
+      triggers: [],
+      metrics: {},
+      summary: "Local OK",
+    },
+    gemini: {
+      semantic: {
+        pass: false,
+        confidence: 0.93,
+        allowed_changes_only: false,
+        reason: "Architecture changed: fake wall over closet",
+        fail_reasons: ["wall_added", "doors_blocked"],
+        checks: {} as any,
+      },
+      placement: {
+        pass: false,
+        verdict: "hard_fail",
+        confidence: 0.6,
+        reason: "Walkway blocked by fake wall",
+      },
+      summary: "Gemini FAIL",
+    },
+    final: {
+      pass: false,
+      blockedBy: "gemini_semantic",
+      reason: "Gemini semantic failed: Architecture changed: fake wall over closet (conf=0.93)",
+    },
+  };
+}
+
+const scenarioCReport = scenarioC();
+assertEqual(scenarioCReport.final.pass, false, "Scenario C blocks");
+assertEqual(scenarioCReport.final.blockedBy, "gemini_semantic" as BlockedBy, "Scenario C blocked by Gemini");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Test: JSON parse failure (parse_error)

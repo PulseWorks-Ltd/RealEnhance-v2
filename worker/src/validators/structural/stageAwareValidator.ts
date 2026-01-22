@@ -653,6 +653,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
             value: structuralIoU,
             threshold: effectiveThresholds.structuralMaskIouMin,
             stage: params.stage,
+            fatal: isStage2,
           });
         }
       } else {
@@ -722,6 +723,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
               value: edgeIoU,
               threshold: edgeThresholdValue,
               stage: params.stage,
+              fatal: isStage2,
             });
           } else if (skipEdgeIoUTriggers) {
             console.log(`[stageAware] Edge IoU trigger suppressed due to low-edge scene (edgeIoU=${edgeIoU.toFixed(3)})`);
@@ -956,6 +958,23 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       !effectiveHardFailSwitches.blockOnOpeningsDelta
     ) {
       t.nonBlocking = true;
+    }
+
+    if (isStage2) {
+      const fatalWhitelist = new Set([
+        "dimension_aspect_ratio_mismatch",
+        "dimension_mismatch",
+        "invalid_dimensions",
+        "mask_error",
+        "metadata_error",
+        "structural_mask_iou",
+        "edge_iou",
+      ]);
+
+      if (t.fatal && !fatalWhitelist.has(t.id)) {
+        t.fatal = false;
+        t.nonBlocking = true;
+      }
     }
   }
 

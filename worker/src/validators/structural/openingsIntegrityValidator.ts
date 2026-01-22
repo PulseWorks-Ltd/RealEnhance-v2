@@ -1,5 +1,6 @@
 import { runMaskedEdgeValidator } from "../maskedEdgeValidator";
 import { StageId, ValidationTrigger } from "../stageAwareConfig";
+import { shouldGateOpeningsDelta } from "./openingsDelta";
 
 export interface OpeningsIntegrityResult {
   triggers: ValidationTrigger[];
@@ -42,38 +43,42 @@ export async function runOpeningsIntegrityCheck(opts: {
 
     const totalDelta = Math.abs(result.createdOpenings) + Math.abs(result.closedOpenings);
     const openingsMinDelta = thresholds.openingsMinDelta ?? 1;
+    const gate = shouldGateOpeningsDelta(totalDelta, openingsMinDelta);
 
-    if (result.createdOpenings > thresholds.createMax && totalDelta >= openingsMinDelta) {
+    if (result.createdOpenings > thresholds.createMax && gate) {
       triggers.push({
         id: "openings_created_maskededge",
-        message: `Openings created: ${result.createdOpenings} > ${thresholds.createMax}`,
+        message: `Openings created: ${result.createdOpenings} > ${thresholds.createMax} (delta=${totalDelta}, min=${openingsMinDelta})`,
         value: result.createdOpenings,
         threshold: thresholds.createMax,
         stage,
         fatal: fatalOnOpeningsDelta,
         nonBlocking: !fatalOnOpeningsDelta,
+        meta: { delta: totalDelta, minDelta: openingsMinDelta },
       });
     }
 
-    if (result.closedOpenings > thresholds.closeMax && totalDelta >= openingsMinDelta) {
+    if (result.closedOpenings > thresholds.closeMax && gate) {
       triggers.push({
         id: "openings_closed_maskededge",
-        message: `Openings closed: ${result.closedOpenings} > ${thresholds.closeMax}`,
+        message: `Openings closed: ${result.closedOpenings} > ${thresholds.closeMax} (delta=${totalDelta}, min=${openingsMinDelta})`,
         value: result.closedOpenings,
         threshold: thresholds.closeMax,
         stage,
         fatal: fatalOnOpeningsDelta,
         nonBlocking: !fatalOnOpeningsDelta,
+        meta: { delta: totalDelta, minDelta: openingsMinDelta },
       });
     }
 
-    if (result.maskedEdgeDrift > thresholds.maskedDriftMax && totalDelta >= openingsMinDelta) {
+    if (result.maskedEdgeDrift > thresholds.maskedDriftMax && gate) {
       triggers.push({
         id: "masked_edge_drift",
-        message: `Masked edge drift too high: ${result.maskedEdgeDrift.toFixed(3)} > ${thresholds.maskedDriftMax}`,
+        message: `Masked edge drift too high: ${result.maskedEdgeDrift.toFixed(3)} > ${thresholds.maskedDriftMax} (delta=${totalDelta}, min=${openingsMinDelta})`,
         value: result.maskedEdgeDrift,
         threshold: thresholds.maskedDriftMax,
         stage,
+        meta: { delta: totalDelta, minDelta: openingsMinDelta },
       });
     }
   } catch (err) {

@@ -181,6 +181,9 @@ DISALLOWED (FAIL):
 - Furniture blocking windows/doors/openings
 - Furniture floating, intersecting walls, or obviously incorrect scale (major if obvious)
 - Adding NEW structural elements (built-ins, fake walls, fireplaces, new cabinetry, etc.)
+- Adding walls/panels that cover or hide doors/closets/openings
+- Doors/closets must stay visible/accessible; do not block primary walkthrough paths
+- Curtains/blinds can change slightly but should not imply structural changes or covering openings
 IMPORTANT:
 Do NOT fail Stage 2 simply because new furniture exists. New furniture is expected.
 `;
@@ -473,11 +476,13 @@ export async function validatePlacement(args: {
   Compare ORIGINAL vs EDITED and judge staging placement quality.
   "hard_fail" only when EDITED has an obvious, structural placement error such as:
   - blocking a DOOR or WINDOW,
+  - blocking primary walkthrough paths or fully obstructing closets/doors,
   - overlapping fixed fixtures in a physically impossible way,
   - furniture not aligned to floor perspective,
   - furniture floating or intersecting walls,
-  - obviously wrong scale (e.g., giant chairs, tiny tables).
-  "soft_fail" for mild/subjective issues (slight misalignment, small overlap that is usable). "pass" when placement is clearly fine.
+  - obviously wrong scale (e.g., giant chairs, tiny tables),
+  - fake walls/panels covering openings.
+  "soft_fail" for mild/subjective issues (slight misalignment, partial closet edge overlap that is still usable, small overlaps that do not fully block paths). "pass" when placement is clearly fine.
   Allow staging furniture to overlap walls/floors visually; overlapping alone is NOT a placement violation.
   Be tolerant of minor imperfections. Only mark hard_fail on clear problems.`;
 
