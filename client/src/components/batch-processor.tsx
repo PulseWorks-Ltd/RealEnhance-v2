@@ -2734,12 +2734,22 @@ export default function BatchProcessor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
 
+  // Scroll sync for carousel - Auto-scroll active thumbnail into view
+  useEffect(() => {
+    if (activeTab === "images") {
+      const element = document.getElementById(`thumbnail-btn-${currentImageIndex}`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }
+    }
+  }, [currentImageIndex, activeTab]);
+
   return (
   <div className="w-full">
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
-  <div className={activeTab === 'enhance' ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
+  <div className={(activeTab === 'enhance' || activeTab === 'images') ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
@@ -3114,7 +3124,7 @@ export default function BatchProcessor() {
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
           /* WORKBENCH LAYOUT: Full width container with side-by-side grid */
-          <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 overflow-hidden shadow-sm border-t border-slate-200">
+          <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 overflow-hidden shadow-sm border-t border-slate-200">
             {files.length === 0 ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center">
                 <div className="space-y-4">
@@ -3177,10 +3187,10 @@ export default function BatchProcessor() {
                                 type="button"
                                 onClick={() => handleRemoveImage(currentImageIndex)}
                                 disabled={removeDisabled}
-                                className="group h-8 w-8 rounded-full bg-white/20 hover:bg-red-600 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="group h-8 w-8 rounded-full bg-slate-200/80 hover:bg-red-600 backdrop-blur-md border border-white/40 shadow-lg flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Remove image"
                               >
-                                <X className="w-4 h-4 text-white drop-shadow-sm group-hover:scale-110 transition-transform" />
+                                <X className="w-4 h-4 text-slate-600 group-hover:text-white group-hover:scale-110 transition-transform group-hover:stroke-2" />
                               </button>
                             </div>
 
@@ -3239,27 +3249,33 @@ export default function BatchProcessor() {
                           {files.map((file, idx) => {
                             const status = imageValidationStatus(idx);
                             const isCurrent = idx === currentImageIndex;
+                            const isMissingInput = status === "needs_input";
                             
                             // Status indicators
-                            const statusColor = status === "needs_input" 
-                              ? "ring-red-500" 
-                              : status === "ok" 
-                                ? "ring-emerald-500" 
-                                : "ring-slate-300";
+                            // Restore Red Outline logic:
+                            // If incomplete: red outline (ring-red-500)
+                            // If active & complete: green (emerald) active ring
+                            // If active & incomplete: red ring + active glow
                             
-                            // User Request: 
-                            // Base: grayscale opacity-70 transition-all duration-300 ease-in-out
-                            // Hover: grayscale-0 opacity-100 scale-105
-                            // Active: grayscale-0 opacity-100 ring-4 ring-emerald-500 ring-offset-2 scale-105
-                            const activeRing = isCurrent 
-                              ? `grayscale-0 opacity-100 scale-105 ring-4 ring-emerald-500 ring-offset-2 shadow-lg z-10` 
-                              : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${statusColor}`;
+                            let ringClass = "ring-slate-300"; // Default grey
+                            if (isMissingInput) {
+                                ringClass = isCurrent ? "ring-red-500 ring-offset-red-50" : "ring-red-500";
+                            } else if (status === "ok") {
+                                ringClass = "ring-emerald-500";
+                            }
+                            
+                            // Apply active scaling and opacity
+                            // Desaturation: grayscale opacity-70 for inactive
+                            const baseClass = isCurrent 
+                              ? `grayscale-0 opacity-100 scale-105 ring-4 ${ringClass} ring-offset-2 shadow-lg z-10` 
+                              : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
 
                             return (
                               <div key={idx} className="relative group shrink-0 transition-all duration-300 ease-in-out py-1 overflow-hidden p-1">
                                 <button
+                                  id={`thumbnail-btn-${idx}`}
                                   onClick={() => setCurrentImageIndex(idx)}
-                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-300 ease-in-out bg-slate-200 ${activeRing}`}
+                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-300 ease-in-out bg-slate-200 ${baseClass}`}
                                 >
                                   <img 
                                     src={previewUrls[idx]} 
@@ -3269,7 +3285,7 @@ export default function BatchProcessor() {
                                   />
                                 </button>
                                 
-                                {/* Thumbnail Delete - Hidden by default, show on hover */}
+                                {/* Thumbnail Delete - Explicit X button */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -3277,13 +3293,14 @@ export default function BatchProcessor() {
                                     handleRemoveImage(idx);
                                   }}
                                   disabled={removeDisabled}
-                                  className={`absolute -top-1 -right-1 h-6 w-6 rounded-full bg-slate-800 text-white shadow-md flex items-center justify-center transition-all ${isCurrent ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'} hover:bg-red-600 z-20`}
+                                  className={`absolute top-2 right-2 h-6 w-6 rounded-full bg-slate-200/90 text-slate-600 shadow-sm flex items-center justify-center transition-all hover:bg-red-600 hover:text-white hover:scale-110 z-20 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                                  title="Remove image"
                                 >
-                                  <X className="w-3 h-3" />
+                                  <X className="w-3 h-3 hover:stroke-2" />
                                 </button>
 
                                 {/* Alert Icon for Needs Input */}
-                                {status === "needs_input" && (
+                                {isMissingInput && (
                                    <div className="absolute bottom-2 right-2 bg-red-500 text-white p-0.5 rounded-full shadow-sm z-10 pointer-events-none">
                                       <Info className="w-3 h-3" />
                                    </div>
