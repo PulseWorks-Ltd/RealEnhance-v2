@@ -387,6 +387,84 @@ router.get("/subscription/preview-change", requireAuth, async (req: Request, res
 });
 
 /**
+ * POST /api/billing/upgrade
+ * Upgrades the active subscription to a higher tier with proration
+ */
+router.post("/upgrade", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const { newPriceId } = req.body as { newPriceId?: string };
+
+    if (!newPriceId) {
+      return res.status(400).json({ error: "newPriceId is required" });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+
+    if (!requireAgencyAdmin(user)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    if (!agency.stripeSubscriptionId || !agency.stripeCustomerId) {
+      return res.status(400).json({ error: "No active subscription to upgrade" });
+    }
+
+    const targetPlan = findPlanByPriceId(newPriceId);
+    if (!targetPlan) {
+      return res.status(400).json({ error: "Invalid price for upgrade" });
+    }
+
+    const subscription = await stripe.subscriptions.retrieve(agency.stripeSubscriptionId);
+    const item = subscription.items.data[0];
+    if (!item) {
+      return res.status(400).json({ error: "Subscription item not found" });
+    }
+
+    const currentPriceId = (item.price as any)?.id || item.price as any;
+    const currentPlan = findPlanByPriceId(currentPriceId) || findPlanByPriceId(agency.stripePriceId);
+    const currentTier = currentPlan?.planTier || (agency.planTier as PlanTier) || "starter";
+
+    const currentIndex = PLAN_ORDER.indexOf(currentTier);
+    const targetIndex = PLAN_ORDER.indexOf(targetPlan.planTier);
+
+    if (targetIndex <= currentIndex) {
+      return res.status(400).json({ error: "Upgrade must move to a higher tier" });
+    }
+
+    const updated = await stripe.subscriptions.update(subscription.id, {
+      items: [
+        {
+          id: item.id,
+          price: newPriceId,
+        },
+      ],
+      proration_behavior: "create_prorations",
+      metadata: {
+        ...subscription.metadata,
+        planTier: targetPlan.planTier,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      subscriptionId: updated.id,
+      newPriceId,
+      planTier: targetPlan.planTier,
+      currentPeriodEnd: (updated as any).current_period_end
+        ? new Date((updated as any).current_period_end * 1000).toISOString()
+        : null,
+    });
+  } catch (error: any) {
+    console.error("[BILLING] upgrade error", error);
+    const status = error?.status || 500;
+    return res.status(status).json({ error: error?.message || "Upgrade failed" });
+  }
+});
+
+/**
  * POST /api/billing/subscription/change-plan
  * Updates the Stripe subscription item price
  */

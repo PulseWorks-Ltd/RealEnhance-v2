@@ -443,6 +443,10 @@ export default function AgencyPage() {
               currentPeriodEnd: agencyInfo.currentPeriodEnd,
             }}
             canManage={isAdminOrOwner}
+            onUpgradeComplete={() => {
+              refetchUsage();
+              loadAgencyData();
+            }}
           />
         </div>
       )}

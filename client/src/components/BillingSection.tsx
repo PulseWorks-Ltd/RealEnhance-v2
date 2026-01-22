@@ -1,11 +1,12 @@
 // client/src/components/BillingSection.tsx
 // Stripe billing management UI
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -23,6 +24,30 @@ interface BillingSectionProps {
     currentPeriodEnd?: string;
   };
   canManage?: boolean;
+  onUpgradeComplete?: () => void;
+}
+
+interface UpgradeOption {
+  planTier: "starter" | "pro" | "agency";
+  displayName: string;
+  monthlyAllowance: number;
+  priceId: string;
+  price: number;
+  priceFormatted: string | null;
+  seatLimit: number | null;
+  allowInvites: boolean;
+}
+
+interface SubscriptionInfo {
+  planTier: "starter" | "pro" | "agency";
+  planDisplayName: string;
+  stripeSubscriptionId: string | null;
+  status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
+  currentPeriodEnd: string | null;
+  billingCountry: string | null;
+  billingCurrency: BillingSectionProps["agency"]["billingCurrency"];
+  upgradeOptions: UpgradeOption[];
+  canManage: boolean;
 }
 
 const PLAN_NAMES: Record<string, string> = {
@@ -38,15 +63,25 @@ const STATUS_CONFIG = {
   CANCELLED: { label: "Cancelled", variant: "destructive" as const, color: "bg-status-error" },
 };
 
-export function BillingSection({ agency, canManage = true }: BillingSectionProps) {
+export function BillingSection({ agency, canManage = true, onUpgradeComplete }: BillingSectionProps) {
   const [loading, setLoading] = useState(false);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier);
   const [selectedCountry, setSelectedCountry] = useState<string>(agency.billingCountry || "NZ");
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
   const { toast } = useToast();
 
-  const statusConfig = STATUS_CONFIG[agency.subscriptionStatus];
-  const hasSubscription = !!agency.stripeSubscriptionId;
-  const manageDisabled = !canManage;
+  const effectiveStatus = subscription?.status || agency.subscriptionStatus;
+  const statusConfig = STATUS_CONFIG[effectiveStatus];
+  const hasSubscription = !!(agency.stripeSubscriptionId || subscription?.stripeSubscriptionId);
+  const manageDisabled = !canManage || (subscription ? !subscription.canManage : false);
+  const currentPlanName = subscription?.planDisplayName || PLAN_NAMES[agency.planTier];
+  const currentPeriodEnd = subscription?.currentPeriodEnd || agency.currentPeriodEnd;
+  const currentBillingCountry = subscription?.billingCountry || agency.billingCountry;
+  const currentBillingCurrency = subscription?.billingCurrency || agency.billingCurrency;
 
   const handleSubscribe = async () => {
     if (manageDisabled) return;
@@ -121,6 +156,82 @@ export function BillingSection({ agency, canManage = true }: BillingSectionProps
     }
   };
 
+  const fetchSubscription = useCallback(async () => {
+    try {
+      setLoadingSubscription(true);
+      const response = await fetch(api("/api/billing/subscription"), {
+        method: "GET",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load subscription (${response.status})`);
+      }
+
+      const data = await response.json();
+      setSubscription({
+        planTier: data.planTier,
+        planDisplayName: data.planDisplayName,
+        stripeSubscriptionId: data.stripeSubscriptionId,
+        status: data.status,
+        currentPeriodEnd: data.currentPeriodEnd,
+        billingCountry: data.billingCountry,
+        billingCurrency: data.billingCurrency,
+        upgradeOptions: data.upgradeOptions || [],
+        canManage: data.canManage,
+      });
+      setUpgradeOptions(data.upgradeOptions || []);
+    } catch (error: any) {
+      console.error("Failed to load subscription", error);
+      toast({
+        title: "Billing unavailable",
+        description: error.message || "Could not load subscription details",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingSubscription(false);
+    }
+  }, [toast, agency.agencyId]);
+
+  const handleUpgrade = async (priceId: string) => {
+    if (manageDisabled) return;
+    setUpgradeLoading(true);
+    try {
+      const response = await fetch(api("/api/billing/upgrade"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ newPriceId: priceId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || "Failed to upgrade plan");
+      }
+
+      toast({
+        title: "Plan upgraded",
+        description: "Plan upgraded successfully.",
+      });
+
+      await fetchSubscription();
+      setUpgradeOpen(false);
+      onUpgradeComplete?.();
+    } catch (error: any) {
+      toast({
+        title: "Upgrade failed",
+        description: error.message || "Unable to upgrade plan",
+        variant: "destructive",
+      });
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubscription();
+  }, [agency.agencyId, fetchSubscription]);
+
   return (
     <Card>
       <CardHeader>
@@ -152,7 +263,7 @@ export function BillingSection({ agency, canManage = true }: BillingSectionProps
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">Current Plan</p>
-            <p className="text-2xl font-bold">{PLAN_NAMES[agency.planTier]}</p>
+            <p className="text-2xl font-bold">{currentPlanName}</p>
           </div>
           <Badge variant={statusConfig.variant}>
             {statusConfig.label}
@@ -160,19 +271,19 @@ export function BillingSection({ agency, canManage = true }: BillingSectionProps
         </div>
 
         {/* Period End */}
-        {agency.currentPeriodEnd && hasSubscription && (
+        {currentPeriodEnd && hasSubscription && (
           <div>
             <p className="text-sm text-muted-foreground">
-              Current period ends: {new Date(agency.currentPeriodEnd).toLocaleDateString()}
+              Current period ends: {new Date(currentPeriodEnd).toLocaleDateString()}
             </p>
           </div>
         )}
 
         {/* Billing Region */}
-        {agency.billingCountry && (
+        {currentBillingCountry && (
           <div>
             <p className="text-sm text-muted-foreground">
-              Billing region: {agency.billingCountry} ({agency.billingCurrency?.toUpperCase()})
+              Billing region: {currentBillingCountry} ({currentBillingCurrency?.toUpperCase()})
             </p>
           </div>
         )}
@@ -252,6 +363,27 @@ export function BillingSection({ agency, canManage = true }: BillingSectionProps
                 ? "Contact an agency owner or admin to update billing."
                 : "Update payment method, view invoices, or cancel subscription"}
             </p>
+            {upgradeOptions.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <Button
+                  onClick={() => setUpgradeOpen(true)}
+                  disabled={loading || manageDisabled}
+                  className="w-full"
+                  variant="default"
+                  title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+                >
+                  Upgrade Plan
+                </Button>
+                <p className="text-xs text-muted-foreground text-center">
+                  Upgrades apply immediately with prorated charges handled by Stripe.
+                </p>
+                {manageDisabled && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Only owners or admins can upgrade plans.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -262,6 +394,53 @@ export function BillingSection({ agency, canManage = true }: BillingSectionProps
           <p>✓ Purchase additional image bundles anytime</p>
         </div>
       </CardContent>
+
+      <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upgrade Plan</DialogTitle>
+            <DialogDescription>
+              Choose a higher tier to unlock more allowance. No credit card data stored, all payments handled through Stripe.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {upgradeOptions.map((option) => (
+              <div key={option.planTier} className="border rounded-lg p-4 space-y-1">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">{option.displayName}</p>
+                    <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
+                  </div>
+                  <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}
+                </p>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={upgradeLoading || manageDisabled}
+                    onClick={() => handleUpgrade(option.priceId)}
+                  >
+                    {upgradeLoading ? "Upgrading..." : `Upgrade to ${option.displayName}`}
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            {!loadingSubscription && upgradeOptions.length === 0 && (
+              <p className="text-sm text-muted-foreground">No higher tiers available.</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUpgradeOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
