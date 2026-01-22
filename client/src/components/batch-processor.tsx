@@ -3086,7 +3086,8 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="grid h-[calc(100vh-140px)] w-full grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(320px,1fr)] bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden shadow-sm">
+          /* WORKBENCH LAYOUT: Full width container with side-by-side grid */
+          <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 overflow-hidden shadow-sm border-t border-slate-200">
             {files.length === 0 ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center">
                 <div className="space-y-4">
@@ -3112,138 +3113,165 @@ export default function BatchProcessor() {
               </div>
             ) : (
               <>
-                {/* LEFT PANEL: The Canvas */}
-                <div className="relative flex h-full flex-col bg-slate-50 p-4 sm:p-6 lg:p-8 overflow-hidden">
-                  {/* Back Navigation */}
-                  <button
-                    onClick={() => setActiveTab("describe")}
-                    className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors text-sm z-10"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    Back to Settings
-                  </button>
+                {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
+                <div className="flex-1 relative flex flex-col bg-slate-50/50 overflow-hidden">
+                  
+                  {/* Top Bar: Nav & Counter */}
+                  <div className="absolute top-0 left-0 right-0 z-10 flex justify-between items-center p-4 pointer-events-none">
+                    <button
+                      onClick={() => setActiveTab("describe")}
+                      className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-white/80 backdrop-blur-md rounded-lg shadow-sm border border-white/20 text-slate-600 hover:text-slate-900 transition-all hover:shadow-md text-sm font-medium"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Back
+                    </button>
 
-                  {/* Image Counter Badge */}
-                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 z-10">
-                    {currentImageIndex + 1} / {files.length}
-                  </div>
-
-                  {/* The Image Canvas Container - Expanded */}
-                  <div className="flex-1 relative w-full h-full flex items-center justify-center">
-                    
-                    {/* The Viewer */}
-                    <div className="relative flex items-center justify-center w-full h-full max-h-full rounded-xl overflow-hidden shadow-sm">
-                      <img
-                        src={previewUrls[currentImageIndex]}
-                        alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="max-h-full max-w-full object-contain"
-                      />
-
-                      {/* Navigation Arrows - Moved INSIDE viewer, above image */}
-                      {files.length > 1 && (
-                        <>
-                          <button
-                            onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
-                            disabled={currentImageIndex === 0}
-                            className="absolute left-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/20 text-white flex items-center justify-center transition-all opacity-40 hover:opacity-100 hover:bg-black/40 focus-visible:opacity-100 disabled:opacity-0 disabled:pointer-events-none z-20 pointer-events-auto backdrop-blur-[2px]"
-                            aria-label="Previous image"
-                          >
-                            <ChevronLeft className="h-6 w-6" />
-                          </button>
-                          <button
-                            onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
-                            disabled={currentImageIndex === files.length - 1}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/20 text-white flex items-center justify-center transition-all opacity-40 hover:opacity-100 hover:bg-black/40 focus-visible:opacity-100 disabled:opacity-0 disabled:pointer-events-none z-20 pointer-events-auto backdrop-blur-[2px]"
-                            aria-label="Next image"
-                          >
-                            <ChevronRight className="h-6 w-6" />
-                          </button>
-                        </>
-                      )}
-
-                      {/* Delete Button - Centered X */}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveImage(currentImageIndex)}
-                        disabled={removeDisabled}
-                        aria-label="Remove image from batch"
-                        className="absolute top-3 right-3 h-8 w-8 rounded-full bg-white text-slate-400 border border-slate-200 shadow-sm transition-colors hover:bg-red-500 hover:text-white hover:border-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed grid place-items-center z-20"
-                        title="Remove image"
-                      >
-                        <X className="w-4 h-4 leading-none" />
-                      </button>
-
-                      {/* Zoom Button Overlay */}
-                      <button
-                        onClick={() => setPreviewImage({
-                          url: previewUrls[currentImageIndex],
-                          filename: files[currentImageIndex]?.name || '',
-                          index: currentImageIndex
-                        })}
-                        className="absolute bottom-3 right-3 bg-white/90 hover:bg-white text-slate-600 p-2 rounded-lg transition-colors shadow-sm border border-slate-200 z-20 backdrop-blur-sm"
-                        title="View fullscreen"
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                      </button>
+                    <div className="pointer-events-auto bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-white/20">
+                      Image {currentImageIndex + 1} of {files.length}
                     </div>
                   </div>
 
-                  {/* Validation reminder above thumbnails */}
-                  {files.length > 1 && blockingCount > 0 && (
-                    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shadow-sm border border-amber-200 whitespace-nowrap">
-                      Complete required fields for images highlighted in red to continue.
-                    </div>
-                  )}
+                  {/* Main Viewer Area */}
+                  <div className="flex-1 relative w-full h-full flex items-center justify-center p-8 lg:p-12">
+                     {/* The Viewer Frame */}
+                     <div className="relative w-full h-full flex items-center justify-center max-w-[1600px] mx-auto">
+                        
+                        {/* The Image */}
+                        <div className="relative flex items-center justify-center w-full h-full"> 
+                            <img
+                              src={previewUrls[currentImageIndex]}
+                              alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                              className="max-h-full max-w-full object-contain shadow-2xl rounded-lg"
+                            />
+                            
+                            {/* Delete Button (Overlay) - Centered & Refined */}
+                            <div className="absolute top-4 right-4 z-20">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(currentImageIndex)}
+                                disabled={removeDisabled}
+                                className="group h-8 w-8 rounded-full bg-white/20 hover:bg-red-600 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Remove image"
+                              >
+                                <X className="w-4 h-4 text-white drop-shadow-sm group-hover:scale-110 transition-transform" />
+                              </button>
+                            </div>
 
-                  {/* Thumbnail Strip (for multiple images) */}
+                             {/* Fullscreen Button (Overlay) */}
+                             <div className="absolute bottom-4 right-4 z-20">
+                                <button
+                                  onClick={() => setPreviewImage({
+                                    url: previewUrls[currentImageIndex],
+                                    filename: files[currentImageIndex]?.name || '',
+                                    index: currentImageIndex
+                                  })}
+                                  className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center text-white transition-all hover:scale-105"
+                                  title="View fullscreen"
+                                >
+                                  <Maximize2 className="w-4 h-4 drop-shadow-sm" />
+                                </button>
+                             </div>
+                        </div>
+
+                        {/* Navigation Arrows (Outside Image) */}
+                         {files.length > 1 && (
+                            <>
+                              <button
+                                onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                                disabled={currentImageIndex === 0}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 lg:-ml-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                aria-label="Previous image"
+                              >
+                                <ChevronLeft className="h-5 w-5 mr-0.5" />
+                              </button>
+                              <button
+                                onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                                disabled={currentImageIndex === files.length - 1}
+                                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 lg:-mr-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                aria-label="Next image"
+                              >
+                                <ChevronRight className="h-5 w-5 ml-0.5" />
+                              </button>
+                            </>
+                          )}
+                     </div>
+                  </div>
+
+                  {/* Bottom: Thumbnail Strip */}
                   {files.length > 1 && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-3 bg-white/90 backdrop-blur-sm px-3 py-3 rounded-xl shadow-lg max-w-[88%] overflow-x-auto">
-                      {files.map((file, idx) => {
-                        const status = imageValidationStatus(idx);
-                        const statusRing = status === "needs_input"
-                          ? "ring-2 ring-red-500 ring-offset-1"
-                          : status === "ok"
-                            ? "ring-2 ring-emerald-500 ring-offset-1"
-                            : "ring-1 ring-slate-200";
-                        const activeState = idx === currentImageIndex
-                          ? "ring-[3px] ring-emerald-500 ring-offset-2 ring-offset-white scale-105"
-                          : "opacity-70 hover:opacity-100";
-                        return (
-                          <div key={idx} className="relative">
-                            <button
-                              onClick={() => setCurrentImageIndex(idx)}
-                              className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
-                              title={status === "needs_input" ? "Needs scene/room input" : undefined}
-                              type="button"
-                            >
-                              <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveImage(idx);
-                              }}
-                              disabled={removeDisabled}
-                              aria-label="Remove image from batch"
-                              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-white text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed grid place-items-center"
-                            >
-                              <X className="w-3 h-3 leading-none" />
-                            </button>
+                    <div className="relative h-32 bg-slate-100/50 border-t border-slate-200 backdrop-blur-sm flex items-center justify-center px-8 z-10 w-full">
+                       {/* Validation Alert Overlay (if needed) */}
+                       {blockingCount > 0 && (
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-xs font-semibold shadow-sm border border-amber-200 flex items-center gap-2 animate-bounce-subtle">
+                             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                             Complete settings for highlighted images
                           </div>
-                        );
-                      })}
+                       )}
+                       
+                       <div className="flex gap-4 overflow-x-auto pb-2 pt-2 snap-x px-4 max-w-full no-scrollbar">
+                          {files.map((file, idx) => {
+                            const status = imageValidationStatus(idx);
+                            const isCurrent = idx === currentImageIndex;
+                            
+                            // Status indicators
+                            const statusColor = status === "needs_input" 
+                              ? "ring-red-500" 
+                              : status === "ok" 
+                                ? "ring-emerald-500" 
+                                : "ring-slate-300";
+                            
+                            const activeRing = isCurrent 
+                              ? `ring-4 ring-emerald-500 ring-offset-2 ring-offset-slate-100 scale-105 shadow-lg z-10` 
+                              : `ring-1 ${statusColor} hover:ring-2 hover:ring-slate-400 opacity-80 hover:opacity-100 grayscale-[0.3] hover:grayscale-0 hover:scale-105`;
+
+                            return (
+                              <div key={idx} className="relative group shrink-0 transition-all duration-200 ease-out py-1">
+                                <button
+                                  onClick={() => setCurrentImageIndex(idx)}
+                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-200 bg-slate-200 ${activeRing}`}
+                                >
+                                  <img 
+                                    src={previewUrls[idx]} 
+                                    alt="" 
+                                    className="w-full h-full object-cover" 
+                                    loading="lazy"
+                                  />
+                                </button>
+                                
+                                {/* Thumbnail Delete - Hidden by default, show on hover */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveImage(idx);
+                                  }}
+                                  disabled={removeDisabled}
+                                  className={`absolute -top-1 -right-1 h-6 w-6 rounded-full bg-slate-800 text-white shadow-md flex items-center justify-center transition-all ${isCurrent ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100'} hover:bg-red-600 z-20`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+
+                                {/* Alert Icon for Needs Input */}
+                                {status === "needs_input" && (
+                                   <div className="absolute bottom-2 right-2 bg-red-500 text-white p-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                                      <Info className="w-3 h-3" />
+                                   </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* RIGHT PANEL: The Inspector Sidebar */}
-                <div className="bg-white border-l border-slate-200 flex flex-col shadow-xl h-full">
+                {/* RIGHT PANEL: Settings Sidebar (Fixed Width) */}
+                <div className="w-96 flex-shrink-0 bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
 
               {/* Sidebar Header */}
-              <div className="p-6 border-b border-slate-100">
+              <div className="p-6 border-b border-slate-100 bg-white sticky top-0 z-10">
                 <div className="flex justify-between items-center mb-1">
-                  <h2 className="text-xl font-semibold text-slate-900">Settings</h2>
+                  <h2 className="text-xl font-semibold text-slate-900 tracking-tight">Image Settings</h2>
                   <button
                     onClick={() => {
                       if (!currentImageId) return;
@@ -3258,22 +3286,22 @@ export default function BatchProcessor() {
                       setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
                       setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
                     }}
-                    className="text-xs text-action-600 font-medium hover:text-action-700"
+                    className="text-xs text-action-600 font-medium hover:text-action-700 bg-action-50 px-2 py-1 rounded transition-colors"
                   >
                     Reset
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 truncate" title={files[currentImageIndex]?.name}>
-                  {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                <p className="text-xs text-slate-500 truncate font-mono mt-1" title={files[currentImageIndex]?.name}>
+                   {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
                 </p>
               </div>
 
               {/* Scrollable Settings Area */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-white no-scrollbar">
 
                 {/* Scene Type Selection - Visual Cards */}
                 <section>
-                  <label className="text-sm font-medium text-slate-900 mb-3 block">Scene Type</label>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Scene Type</label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => {
@@ -3284,13 +3312,15 @@ export default function BatchProcessor() {
                         setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
                       }}
                       data-testid={`select-scene-${currentImageIndex}`}
-                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
+                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
                         currentFinalScene === "exterior"
-                          ? 'border-action-500 bg-action-50 text-action-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <Home className="w-6 h-6" />
+                      <div className={`p-2 rounded-full ${currentFinalScene === "exterior" ? 'bg-white' : 'bg-slate-100'}`}>
+                         <Home className="w-5 h-5" />
+                      </div>
                       <span className="text-sm font-medium">Exterior</span>
                     </button>
                     <button
@@ -3302,30 +3332,32 @@ export default function BatchProcessor() {
                         setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
                         setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
                       }}
-                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
+                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
                         currentFinalScene === "interior"
-                          ? 'border-action-500 bg-action-50 text-action-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <Armchair className="w-6 h-6" />
+                       <div className={`p-2 rounded-full ${currentFinalScene === "interior" ? 'bg-white' : 'bg-slate-100'}`}>
+                         <Armchair className="w-5 h-5" />
+                      </div>
                       <span className="text-sm font-medium">Interior</span>
                     </button>
                   </div>
                 </section>
 
                 {/* AI Enhancements Section */}
-                <section className="space-y-4">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
+                <section className="space-y-4 pt-2 border-t border-slate-100">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
 
                   {/* Sky Replacement Toggle - Only for Exterior */}
                   {currentFinalScene === "exterior" && (
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors bg-slate-50/50">
                       <div className="flex gap-3">
-                        <div className="mt-0.5 text-slate-400"><CloudSun className="w-5 h-5" /></div>
+                        <div className="mt-0.5 text-blue-500"><CloudSun className="w-5 h-5" /></div>
                         <div>
-                          <label className="text-sm font-medium text-slate-900 block">Blue Sky Replacement</label>
-                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies with clear blue.</p>
+                          <label className="text-sm font-medium text-slate-900 block">Blue Sky</label>
+                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies</p>
                         </div>
                       </div>
                       <Switch
@@ -3359,8 +3391,8 @@ export default function BatchProcessor() {
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}
                 {allowStaging && (currentFinalScene !== "exterior") && (
-                  <section className="pt-2">
-                    <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
+                  <section className="pt-2 border-t border-slate-100">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Room Staging</label>
                     <FixedSelect
                       value={(currentImageId && imageRoomTypesById[currentImageId]) || ""}
                       onValueChange={(v) => {
@@ -3412,7 +3444,7 @@ export default function BatchProcessor() {
                   if (!lines.length && detectedLine) lines.push(detectedLine);
                   if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
                   return (
-                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3`}>
+                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3 shadow-sm`}>
                       <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isAlert ? 'text-red-500' : 'text-blue-500'}`} />
                       <div className="text-xs leading-relaxed space-y-1">
                         {lines.map((line, idx) => (
@@ -3467,7 +3499,7 @@ export default function BatchProcessor() {
                     }}
                     disabled={blockingCount > 0 || !files.length}
                     title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
-                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
                     data-testid="button-proceed-enhance"
                   >
                     Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
