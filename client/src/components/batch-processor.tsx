@@ -46,6 +46,11 @@ type SceneDetectResult = {
 
 const EMPTY_SCENE_FEATURES = { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 };
 
+// Generate a stable ID for a file based on its properties (not array index)
+function getFileId(f: File): string {
+  return `${f.name}:${f.size}:${f.lastModified}`;
+}
+
 // Clamp a number into [0,1]; return null when not finite
 const clamp01 = (value: number | null | undefined): number | null => {
   if (!Number.isFinite(value as number)) return null;
@@ -302,24 +307,66 @@ export default function BatchProcessor() {
   const [selection, setSelection] = useState<Set<number>>(new Set()); // indexes user has selected
   const [metaByIndex, setMetaByIndex] = useState<Record<number, LocalItemMeta>>({});
   
-  // Images tab state
-  const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
-  const [manualSceneTypes, setManualSceneTypes] = useState<Record<number, SceneLabel | null>>({});
-  const [scenePredictions, setScenePredictions] = useState<Record<number, SceneDetectResult>>({});
-  const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
-  const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
+  // Images tab state - keyed by stable imageId (not array index) to survive removals
+  const [imageSceneTypesById, setImageSceneTypesById] = useState<Record<string, string>>({});
+  const [manualSceneTypesById, setManualSceneTypesById] = useState<Record<string, SceneLabel | null>>({});
+  const [scenePredictionsById, setScenePredictionsById] = useState<Record<string, SceneDetectResult>>({});
+  const [imageRoomTypesById, setImageRoomTypesById] = useState<Record<string, string>>({});
+  const [imageSkyReplacementById, setImageSkyReplacementById] = useState<Record<string, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
-  const [manualSceneOverrideByIndex, setManualSceneOverrideByIndex] = useState<Record<number, boolean>>({});
+  const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
-  // Studio view: current image being configured
-  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+  // Studio view: current image being configured (by stable imageId)
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
-  const manualSceneTypesRef = useRef<Record<number, SceneLabel | null>>({});
-  const imageSceneTypesRef = useRef<Record<number, string>>({});
-  const scenePredictionsRef = useRef<Record<number, SceneDetectResult>>({});
-  useEffect(() => { manualSceneTypesRef.current = manualSceneTypes; }, [manualSceneTypes]);
-  useEffect(() => { imageSceneTypesRef.current = imageSceneTypes; }, [imageSceneTypes]);
-  useEffect(() => { scenePredictionsRef.current = scenePredictions; }, [scenePredictions]);
+  const manualSceneTypesByIdRef = useRef<Record<string, SceneLabel | null>>({});
+  const imageSceneTypesByIdRef = useRef<Record<string, string>>({});
+  const scenePredictionsByIdRef = useRef<Record<string, SceneDetectResult>>({});
+  useEffect(() => { manualSceneTypesByIdRef.current = manualSceneTypesById; }, [manualSceneTypesById]);
+  useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
+  useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
+
+  // Compute currentImageIndex from selectedImageId for backwards compatibility
+  const currentImageIndex = useMemo(() => {
+    if (!selectedImageId) return 0;
+    const idx = files.findIndex(f => getFileId(f) === selectedImageId);
+    return idx >= 0 ? idx : 0;
+  }, [files, selectedImageId]);
+
+  // Set initial selectedImageId when files change
+  useEffect(() => {
+    if (files.length > 0 && !selectedImageId) {
+      setSelectedImageId(getFileId(files[0]));
+    } else if (files.length === 0) {
+      setSelectedImageId(null);
+    } else if (selectedImageId && !files.some(f => getFileId(f) === selectedImageId)) {
+      // Selected image was removed, select first available
+      setSelectedImageId(getFileId(files[0]));
+    }
+  }, [files, selectedImageId]);
+
+  // Helper to set current image by index (for UI that uses indices)
+  const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
+    if (typeof indexOrFn === 'function') {
+      const newIdx = indexOrFn(currentImageIndex);
+      if (newIdx >= 0 && newIdx < files.length) {
+        setSelectedImageId(getFileId(files[newIdx]));
+      }
+    } else {
+      if (indexOrFn >= 0 && indexOrFn < files.length) {
+        setSelectedImageId(getFileId(files[indexOrFn]));
+      }
+    }
+  }, [currentImageIndex, files]);
+
+  // Get imageId for a given index
+  const getImageIdForIndex = useCallback((index: number): string | null => {
+    if (index < 0 || index >= files.length) return null;
+    return getFileId(files[index]);
+  }, [files]);
+
+  // Get current imageId
+  const currentImageId = selectedImageId || (files.length > 0 ? getFileId(files[0]) : null);
 
   // Tuning controls (apply to all images in this batch; optional)
   // Declutter intensity removed: always heavy/preset in backend
@@ -545,31 +592,48 @@ export default function BatchProcessor() {
     }
   }
 
-  // When a brand-new file selection is made by the user (not a restore),
-  // clear all per-image settings so previous batch state doesn't bleed over.
-  function fingerprintFiles(list: File[]): string {
-    return list.map((f: any) => `${f.name}:${f.size}:${f.lastModified}:${f.__restored ? 'R' : 'U'}`).join('|');
-  }
+  // Track previous file IDs to detect additions vs removals
+  const prevFileIdsRef = useRef<Set<string>>(new Set());
 
+  // When files change, only clear state for completely new batches (not removals)
   useEffect(() => {
-    const fp = fingerprintFiles(files);
-    if (fp !== filesFingerprintRef.current) {
-      const userSelected = files.some(f => !(f as any).__restored);
-      if (userSelected) {
-        setImageSceneTypes({});
-        setManualSceneTypes({});
-        setImageRoomTypes({});
-        setImageSkyReplacement({});
-        setMetaByIndex({});
-        setSelection(new Set());
-        setManualSceneOverrideByIndex({});
-        // Clear scene predictions and caches when the user picks a fresh file list
-        setScenePredictions({});
-        scenePredictionsRef.current = {};
-        sceneDetectCacheRef.current = {};
-      }
-      filesFingerprintRef.current = fp;
+    const currentIds = new Set(files.map(getFileId));
+    const prevIds = prevFileIdsRef.current;
+
+    // Check if this is a completely new batch (no overlap with previous)
+    const hasOverlap = [...currentIds].some(id => prevIds.has(id));
+    const hasNewFiles = [...currentIds].some(id => !prevIds.has(id));
+    const userSelected = files.some(f => !(f as any).__restored);
+
+    // Only clear all state if user selected completely new files (no overlap)
+    if (userSelected && hasNewFiles && !hasOverlap && prevIds.size > 0) {
+      // Completely new batch - clear all state
+      setImageSceneTypesById({});
+      setManualSceneTypesById({});
+      setImageRoomTypesById({});
+      setImageSkyReplacementById({});
+      setMetaByIndex({});
+      setSelection(new Set());
+      setManualSceneOverrideById({});
+      setScenePredictionsById({});
+      scenePredictionsByIdRef.current = {};
+      sceneDetectCacheRef.current = {};
+    } else if (prevIds.size === 0 && currentIds.size > 0 && userSelected) {
+      // First batch selection - clear any stale state
+      setImageSceneTypesById({});
+      setManualSceneTypesById({});
+      setImageRoomTypesById({});
+      setImageSkyReplacementById({});
+      setMetaByIndex({});
+      setSelection(new Set());
+      setManualSceneOverrideById({});
+      setScenePredictionsById({});
+      scenePredictionsByIdRef.current = {};
+      sceneDetectCacheRef.current = {};
     }
+    // For removals or additions to existing batch, state is preserved (keyed by ID)
+
+    prevFileIdsRef.current = currentIds;
   }, [files]);
 
   // Cleanup retry timeout on unmount
@@ -585,34 +649,36 @@ export default function BatchProcessor() {
   // When user enters the Images tab, prefill scene predictions using client-side detector
   // NOTE: This effect only runs on file list changes / initial load, NOT on scene type changes
   // to prevent re-running detection when user clicks Interior/Exterior buttons
+  // IMPORTANT: Only detect for NEW images whose imageId is not already in scenePredictionsById
   useEffect(() => {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
     console.log("[SceneDetect] starting auto-detect pass", { fileCount: files.length });
     (async () => {
-      const nextPreds: Record<number, SceneDetectResult> = {};
-      const skyDefaults: Record<number, boolean> = {};
+      const nextPreds: Record<string, SceneDetectResult> = {};
+      const skyDefaults: Record<string, boolean> = {};
 
       // Process files sequentially with microtask yields to prevent UI blocking
       for (let i = 0; i < files.length; i++) {
         if (cancelled) break;
         const f = files[i];
+        const imageId = getFileId(f);
 
         // Skip files with manual scene override already set
-        const manualScene = manualSceneTypesRef.current[i];
+        const manualScene = manualSceneTypesByIdRef.current[imageId];
         if (manualScene) {
-          console.log("[SceneDetect] skip manual scene", { index: i, scene: manualScene });
+          console.log("[SceneDetect] skip manual scene", { imageId, scene: manualScene });
           continue;
         }
-        const explicit = imageSceneTypesRef.current[i];
+        const explicit = imageSceneTypesByIdRef.current[imageId];
         if (explicit && explicit !== "auto") {
-          console.log("[SceneDetect] skip existing scene", { index: i, scene: explicit });
+          console.log("[SceneDetect] skip existing scene", { imageId, scene: explicit });
           continue;
         }
-        const existingPrediction = scenePredictionsRef.current[i];
+        const existingPrediction = scenePredictionsByIdRef.current[imageId];
         if (existingPrediction) {
-          console.log("[SceneDetect] reuse cached prediction", { index: i, scene: existingPrediction.scene, source: existingPrediction.source });
-          nextPreds[i] = existingPrediction;
+          console.log("[SceneDetect] reuse cached prediction", { imageId, scene: existingPrediction.scene, source: existingPrediction.source });
+          nextPreds[imageId] = existingPrediction;
           continue;
         }
 
@@ -622,19 +688,19 @@ export default function BatchProcessor() {
 
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
-          nextPreds[i] = prediction;
-          if (isSceneAutoAcceptable(prediction) && prediction.scene && !manualSceneTypesRef.current[i]) {
-            setImageSceneTypes(prev => {
-              if (prev[i] && prev[i] !== "auto") return prev;
-              return { ...prev, [i]: prediction.scene as string };
+          nextPreds[imageId] = prediction;
+          if (isSceneAutoAcceptable(prediction) && prediction.scene && !manualSceneTypesByIdRef.current[imageId]) {
+            setImageSceneTypesById(prev => {
+              if (prev[imageId] && prev[imageId] !== "auto") return prev;
+              return { ...prev, [imageId]: prediction.scene as string };
             });
-            if (prediction.scene === "exterior" && imageSkyReplacement[i] === undefined) {
-              skyDefaults[i] = true;
+            if (prediction.scene === "exterior" && imageSkyReplacementById[imageId] === undefined) {
+              skyDefaults[imageId] = true;
             }
           } else {
-            setImageSceneTypes(prev => {
-              const copy = { ...prev } as Record<number, string>;
-              delete copy[i];
+            setImageSceneTypesById(prev => {
+              const copy = { ...prev } as Record<string, string>;
+              delete copy[imageId];
               return copy;
             });
           }
@@ -642,48 +708,55 @@ export default function BatchProcessor() {
       }
 
       if (!cancelled && Object.keys(nextPreds).length) {
-        setScenePredictions(prev => ({ ...prev, ...nextPreds }));
+        setScenePredictionsById(prev => ({ ...prev, ...nextPreds }));
         if (Object.keys(skyDefaults).length) {
-          setImageSkyReplacement(prev => ({ ...prev, ...skyDefaults }));
+          setImageSkyReplacementById(prev => ({ ...prev, ...skyDefaults }));
         }
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, files]);
+  }, [activeTab, files, imageSkyReplacementById]);
 
   const finalSceneForIndex = useCallback((index: number): SceneLabel | null => {
-    const manual = manualSceneTypes[index];
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return null;
+    const manual = manualSceneTypesById[imageId];
     if (manual === "interior" || manual === "exterior") return manual;
-    const explicit = imageSceneTypes[index];
+    const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return explicit;
-    const pred = scenePredictions[index];
+    const pred = scenePredictionsById[imageId];
     if (isSceneAutoAcceptable(pred) && pred?.scene) return pred.scene;
     return null;
-  }, [imageSceneTypes, manualSceneTypes, scenePredictions]);
+  }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const sceneRequiresInput = useCallback((index: number) => {
-    const manual = manualSceneTypes[index];
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return true;
+    const manual = manualSceneTypesById[imageId];
     if (manual === "interior" || manual === "exterior") return false;
-    const explicit = imageSceneTypes[index];
+    const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return false;
-    const pred = scenePredictions[index];
+    const pred = scenePredictionsById[imageId];
     if (isSceneAutoAcceptable(pred)) return false;
     return true; // no confident prediction and no user selection
-  }, [imageSceneTypes, manualSceneTypes, scenePredictions]);
+  }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const roomTypeRequiresInput = useCallback((index: number) => {
     if (!allowStaging) return false;
     const scene = finalSceneForIndex(index);
     if (scene === "exterior") return false;
-    return !(imageRoomTypes[index]);
-  }, [allowStaging, finalSceneForIndex, imageRoomTypes]);
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return true;
+    return !(imageRoomTypesById[imageId]);
+  }, [allowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
 
   const imageValidationStatus = useCallback((index: number): "needs_input" | "ok" | "unknown" => {
     if (sceneRequiresInput(index) || roomTypeRequiresInput(index)) return "needs_input";
     const hasScene = !!finalSceneForIndex(index);
-    const hasRoom = !!imageRoomTypes[index];
+    const imageId = getImageIdForIndex(index);
+    const hasRoom = imageId ? !!imageRoomTypesById[imageId] : false;
     return hasScene || hasRoom ? "ok" : "unknown";
-  }, [finalSceneForIndex, imageRoomTypes, roomTypeRequiresInput, sceneRequiresInput]);
+  }, [finalSceneForIndex, getImageIdForIndex, imageRoomTypesById, roomTypeRequiresInput, sceneRequiresInput]);
 
   const blockingIndices = useMemo(() => {
     const blockers: number[] = [];
@@ -694,6 +767,8 @@ export default function BatchProcessor() {
   }, [files, imageValidationStatus]);
 
   const recordScenePrediction = useCallback((index: number, prediction: SceneDetectResult) => {
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return;
     const normalized: SceneDetectResult = {
       scene: prediction?.scene ?? null,
       confidence: clamp01(prediction?.confidence) ?? 0,
@@ -702,17 +777,17 @@ export default function BatchProcessor() {
       reason: prediction?.reason ?? "uncertain",
       source: prediction?.source || "server",
     };
-    setScenePredictions(prev => ({ ...prev, [index]: normalized }));
+    setScenePredictionsById(prev => ({ ...prev, [imageId]: normalized }));
     if (isSceneAutoAcceptable(normalized) && normalized.scene) {
-      setImageSceneTypes(prev => {
-        if (prev[index] && prev[index] !== "auto") return prev;
-        return { ...prev, [index]: normalized.scene as string };
+      setImageSceneTypesById(prev => {
+        if (prev[imageId] && prev[imageId] !== "auto") return prev;
+        return { ...prev, [imageId]: normalized.scene as string };
       });
-      if (normalized.scene === "exterior" && imageSkyReplacement[index] === undefined) {
-        setImageSkyReplacement(prev => ({ ...prev, [index]: true }));
+      if (normalized.scene === "exterior" && imageSkyReplacementById[imageId] === undefined) {
+        setImageSkyReplacementById(prev => ({ ...prev, [imageId]: true }));
       }
     }
-  }, [imageSkyReplacement]);
+  }, [getImageIdForIndex, imageSkyReplacementById]);
 
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
@@ -760,39 +835,39 @@ export default function BatchProcessor() {
   }
 
   // Build metaJson to send with the batch request
-  // Build metaJson to send with the batch request
   const metaJson = useMemo(() => {
     // Build array of metadata for each image
     const arr: any[] = [];
     files.forEach((file, i) => {
+      const imageId = getFileId(file);
       const metaItem: any = { index: i };
       // Room linking
       if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
       if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
       // Scene type
-        const sceneType = finalSceneForIndex(i) || "auto";
-        if (sceneType !== "auto") metaItem.sceneType = sceneType;
-        const pred = scenePredictions[i];
-        const predConf = clamp01(pred?.confidence ?? null);
-        if (pred) {
-          metaItem.scenePrediction = {
-            scene: pred.scene,
-            confidence: predConf,
-            signal: clamp01(pred.signal) ?? pred.signal ?? null,
-            reason: pred.reason,
-            features: pred.features,
-            source: pred.source || "client",
-          };
-        }
-      if (manualSceneOverrideByIndex[i]) metaItem.manualSceneOverride = true;
+      const sceneType = finalSceneForIndex(i) || "auto";
+      if (sceneType !== "auto") metaItem.sceneType = sceneType;
+      const pred = scenePredictionsById[imageId];
+      const predConf = clamp01(pred?.confidence ?? null);
+      if (pred) {
+        metaItem.scenePrediction = {
+          scene: pred.scene,
+          confidence: predConf,
+          signal: clamp01(pred.signal) ?? pred.signal ?? null,
+          reason: pred.reason,
+          features: pred.features,
+          source: pred.source || "client",
+        };
+      }
+      if (manualSceneOverrideById[imageId]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
       if (allowStaging && (sceneType !== "exterior")) {
-        const roomType = imageRoomTypes[i];
+        const roomType = imageRoomTypesById[imageId];
         if (roomType) metaItem.roomType = roomType;
       }
       // Sky replacement (only for exteriors)
-      if (sceneType === "exterior" && imageSkyReplacement[i] !== undefined) {
-        metaItem.replaceSky = imageSkyReplacement[i];
+      if (sceneType === "exterior" && imageSkyReplacementById[imageId] !== undefined) {
+        metaItem.replaceSky = imageSkyReplacementById[imageId];
       }
       // Tuning controls
       if (samplingUiEnabled) {
@@ -806,7 +881,7 @@ export default function BatchProcessor() {
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypes, imageRoomTypes, imageSkyReplacement, manualSceneOverrideByIndex, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictions]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictionsById]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -1206,12 +1281,13 @@ export default function BatchProcessor() {
             // Merge room type detection (user override precedence)
             try {
               const detected = item?.meta?.roomTypeDetected || item?.meta?.roomType;
-              if (detected) {
-                setImageRoomTypes(prev => {
-                  const current = prev[i];
+              if (detected && i < files.length) {
+                const imgIdForDetection = getFileId(files[i]);
+                setImageRoomTypesById(prev => {
+                  const current = prev[imgIdForDetection];
                   if (!current || current === 'auto') {
                     setRoomTypeDetectionTick(tick => tick + 1); // Force re-render
-                    return { ...prev, [i]: detected };
+                    return { ...prev, [imgIdForDetection]: detected };
                   }
                   return prev;
                 });
@@ -1991,7 +2067,9 @@ export default function BatchProcessor() {
     
     try {
       // Determine explicit scene type - prefer provided, then metadata, then auto
-      const explicitScene = sceneType || imageSceneTypes[imageIndex] || "auto";
+      const imageIdForRetry = getImageIdForIndex(imageIndex);
+      const storedScene = imageIdForRetry ? imageSceneTypesById[imageIdForRetry] : null;
+      const explicitScene = sceneType || storedScene || "auto";
       
       // Build retry-focused goal based on scene
       const baseGoal = (globalGoal?.trim() || "General, realistic enhancement for the selected industry.").trim();
@@ -2399,8 +2477,8 @@ export default function BatchProcessor() {
     setMetaByIndex({});
 
     // Clear client-side scene prediction state/caches to avoid cross-batch reuse
-    setScenePredictions({});
-    scenePredictionsRef.current = {};
+    setScenePredictionsById({});
+    scenePredictionsByIdRef.current = {};
     sceneDetectCacheRef.current = {};
     
     // Clear persisted batch job state
@@ -2452,8 +2530,13 @@ export default function BatchProcessor() {
     setFiles([]);
     setSelection(new Set());
     setMetaByIndex({});
-    setImageSceneTypes({});
-    setImageRoomTypes({});
+    setImageSceneTypesById({});
+    setImageRoomTypesById({});
+    setManualSceneTypesById({});
+    setManualSceneOverrideById({});
+    setImageSkyReplacementById({});
+    setScenePredictionsById({});
+    setSelectedImageId(null);
   };
 
   const shiftIndexMap = <T,>(map: Record<number, T>, index: number): Record<number, T> => {
@@ -2468,12 +2551,30 @@ export default function BatchProcessor() {
   };
 
   const removeFile = (index: number) => {
+    // Get the imageId for the file being removed BEFORE modifying files array
+    const imageIdToRemove = index < files.length ? getFileId(files[index]) : null;
+
+    // Update selection to select next image (right neighbor, else left neighbor)
+    const total = files.length;
+    if (selectedImageId && imageIdToRemove && selectedImageId === imageIdToRemove) {
+      // Currently selected image is being removed - select next
+      const hasRight = index < total - 1;
+      const nextIndex = hasRight ? index + 1 : Math.max(0, index - 1);
+      if (nextIndex !== index && nextIndex < total) {
+        setSelectedImageId(getFileId(files[nextIndex]));
+      } else if (total <= 1) {
+        setSelectedImageId(null);
+      }
+    }
+
+    // Remove from files array
     setFiles(prev => prev.filter((_, i) => i !== index));
     setResults(prev => prev.filter((_, i) => i !== index));
     setAiSteps(prev => shiftIndexMap(prev, index));
     setProcessedImages(prev => prev.filter((_, i) => i !== index));
     setProcessedImagesByIndex(prev => shiftIndexMap(prev, index));
 
+    // Shift index-based selection state
     setSelection(prev => {
       const newSelection = new Set<number>();
       prev.forEach(i => {
@@ -2483,17 +2584,48 @@ export default function BatchProcessor() {
       return newSelection;
     });
 
+    // Shift index-based meta state
     setMetaByIndex(prev => shiftIndexMap(prev, index));
-    setImageSceneTypes(prev => shiftIndexMap(prev, index));
-    setManualSceneTypes(prev => shiftIndexMap(prev, index));
-    setManualSceneOverrideByIndex(prev => shiftIndexMap(prev, index));
-    setImageSkyReplacement(prev => shiftIndexMap(prev, index));
-    setImageRoomTypes(prev => shiftIndexMap(prev, index));
-    setScenePredictions(prev => shiftIndexMap(prev, index));
 
-    imageSceneTypesRef.current = shiftIndexMap(imageSceneTypesRef.current, index);
-    manualSceneTypesRef.current = shiftIndexMap(manualSceneTypesRef.current, index);
-    scenePredictionsRef.current = shiftIndexMap(scenePredictionsRef.current, index);
+    // Clean up scene state by imageId (optional - state persists for potential undo)
+    // Note: We delete the removed image's data to prevent memory leaks over time
+    if (imageIdToRemove) {
+      setImageSceneTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setManualSceneTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setManualSceneOverrideById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setImageSkyReplacementById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setImageRoomTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setScenePredictionsById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+
+      // Clean up refs too
+      delete imageSceneTypesByIdRef.current[imageIdToRemove];
+      delete manualSceneTypesByIdRef.current[imageIdToRemove];
+      delete scenePredictionsByIdRef.current[imageIdToRemove];
+    }
   };
 
   const removeDisabled = runState !== "idle" || isUploading;
@@ -2511,16 +2643,7 @@ export default function BatchProcessor() {
     const confirmed = window.confirm("Remove this image from the batch?");
     if (!confirmed) return;
 
-    setCurrentImageIndex(prev => {
-      const total = files.length;
-      if (prev === index) {
-        const hasRight = index < total - 1;
-        return hasRight ? index : Math.max(0, prev - 1);
-      }
-      if (prev > index) return prev - 1;
-      return prev;
-    });
-
+    // removeFile handles selection update internally
     removeFile(index);
   };
 
@@ -3070,16 +3193,17 @@ export default function BatchProcessor() {
                   <h2 className="text-lg font-semibold text-slate-900">Settings</h2>
                   <button
                     onClick={() => {
+                      if (!currentImageId) return;
                       // Reset current image settings to auto
-                      setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "auto" }));
-                      setManualSceneTypes(prev => {
-                        const next = { ...prev } as Record<number, SceneLabel | null>;
-                        delete next[currentImageIndex];
+                      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "auto" }));
+                      setManualSceneTypesById(prev => {
+                        const next = { ...prev } as Record<string, SceneLabel | null>;
+                        delete next[currentImageId];
                         return next;
                       });
-                      setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: false }));
-                      setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: true }));
-                      setImageRoomTypes(prev => ({ ...prev, [currentImageIndex]: "" }));
+                      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: false }));
+                      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
+                      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
                     }}
                     className="text-xs text-action-600 font-medium hover:text-action-700"
                   >
@@ -3100,10 +3224,11 @@ export default function BatchProcessor() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => {
-                        console.log("[SceneSelect] manual override set", { index: currentImageIndex, scene: "exterior" });
-                        setManualSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
-                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
-                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
+                        if (!currentImageId) return;
+                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "exterior" });
+                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
                       }}
                       data-testid={`select-scene-${currentImageIndex}`}
                       className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
@@ -3117,11 +3242,12 @@ export default function BatchProcessor() {
                     </button>
                     <button
                       onClick={() => {
-                        console.log("[SceneSelect] manual override set", { index: currentImageIndex, scene: "interior" });
-                        setManualSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
-                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
-                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
-                        setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: false }));
+                        if (!currentImageId) return;
+                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "interior" });
+                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
+                        setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
                       }}
                       className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
                         currentFinalScene === "interior"
@@ -3151,14 +3277,15 @@ export default function BatchProcessor() {
                       </div>
                       <Switch
                         checked={(() => {
-                          const val = imageSkyReplacement[currentImageIndex] !== undefined ? imageSkyReplacement[currentImageIndex] : true;
-                          return manualSceneOverrideByIndex[currentImageIndex] ? false : val;
+                          if (!currentImageId) return true;
+                          const val = imageSkyReplacementById[currentImageId] !== undefined ? imageSkyReplacementById[currentImageId] : true;
+                          return manualSceneOverrideById[currentImageId] ? false : val;
                         })()}
                         onCheckedChange={(checked: boolean) => {
-                          if (manualSceneOverrideByIndex[currentImageIndex]) return;
-                          setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: checked }));
+                          if (!currentImageId || manualSceneOverrideById[currentImageId]) return;
+                          setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: checked }));
                         }}
-                        disabled={!!manualSceneOverrideByIndex[currentImageIndex]}
+                        disabled={!currentImageId || !!manualSceneOverrideById[currentImageId]}
                         data-testid={`toggle-sky-${currentImageIndex}`}
                         className="data-[state=checked]:bg-action-600"
                       />
@@ -3182,8 +3309,11 @@ export default function BatchProcessor() {
                   <section>
                     <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
                     <FixedSelect
-                      value={imageRoomTypes[currentImageIndex] || ""}
-                      onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [currentImageIndex]: v }))}
+                      value={(currentImageId && imageRoomTypesById[currentImageId]) || ""}
+                      onValueChange={(v) => {
+                        if (!currentImageId) return;
+                        setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
+                      }}
                       placeholder="Select room type…"
                       className="w-full"
                     >
@@ -3216,7 +3346,7 @@ export default function BatchProcessor() {
                 {(() => {
                   const sceneNeeds = sceneRequiresInput(currentImageIndex);
                   const roomNeeds = roomTypeRequiresInput(currentImageIndex);
-                  const prediction = scenePredictions[currentImageIndex];
+                  const prediction = currentImageId ? scenePredictionsById[currentImageId] : undefined;
                   const conf = clamp01(prediction?.confidence ?? null);
                   const autoAccepted = isSceneAutoAcceptable(prediction);
                   const detectedLine = autoAccepted && prediction?.scene
@@ -3745,7 +3875,10 @@ export default function BatchProcessor() {
         imageIndex={retryDialog.imageIndex || 0}
         originalImageUrl={retryDialog.imageIndex !== null ? (results[retryDialog.imageIndex]?.result?.originalImageUrl || results[retryDialog.imageIndex]?.originalImageUrl || previewUrls[retryDialog.imageIndex]) : undefined}
         enhancedImageUrl={retryDialog.imageIndex !== null ? withVersion(getDisplayUrl(results[retryDialog.imageIndex]), results[retryDialog.imageIndex]?.version || results[retryDialog.imageIndex]?.updatedAt) || undefined : undefined}
-        detectedRoomType={retryDialog.imageIndex !== null ? imageRoomTypes[retryDialog.imageIndex] : undefined}
+        detectedRoomType={retryDialog.imageIndex !== null ? (() => {
+          const imgId = getImageIdForIndex(retryDialog.imageIndex);
+          return imgId ? imageRoomTypesById[imgId] : undefined;
+        })() : undefined}
       />
 
       {/* Editing in Progress Alert */}
