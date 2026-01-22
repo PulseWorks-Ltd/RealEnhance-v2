@@ -1,4 +1,5 @@
 import { withTransaction } from "../db/index.js";
+import { consumeBundleImages } from "@realenhance/shared/usage/imageBundles.js";
 
 export async function finalizeReservationFromWorker(params: {
   jobId: string;
@@ -78,6 +79,12 @@ export async function finalizeReservationFromWorker(params: {
          WHERE agency_id = $1 AND yyyymm = $2`,
         [jr.agency_id, jr.yyyymm]
       );
+    }
+
+    // Consume bundle allowance from Redis on success
+    const addonToConsume = (consumeStage12 ? jr.stage12_from_addon : 0) + (consumeStage2 ? jr.stage2_from_addon : 0);
+    if (addonToConsume > 0) {
+      await consumeBundleImages(jr.agency_id, addonToConsume, jr.yyyymm);
     }
 
     const newStatus = params.stage12Success && (!jr.requested_stage2 || params.stage2Success)
