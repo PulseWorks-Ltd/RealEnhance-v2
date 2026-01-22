@@ -3086,7 +3086,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="grid h-[calc(100vh-140px)] w-full grid-cols-1 lg:grid-cols-[3fr_1fr] bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden shadow-sm">
+          <div className="grid h-[calc(100vh-140px)] w-full grid-cols-1 lg:grid-cols-[minmax(0,3fr)_minmax(320px,1fr)] bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden shadow-sm">
             {files.length === 0 ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center">
                 <div className="space-y-4">
@@ -3113,72 +3113,79 @@ export default function BatchProcessor() {
             ) : (
               <>
                 {/* LEFT PANEL: The Canvas */}
-                <div className="relative flex h-full flex-col bg-slate-100 p-4 sm:p-6 lg:p-8 overflow-hidden">
+                <div className="relative flex h-full flex-col bg-slate-50 p-4 sm:p-6 lg:p-8 overflow-hidden">
                   {/* Back Navigation */}
                   <button
                     onClick={() => setActiveTab("describe")}
-                    className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm"
+                    className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors text-sm z-10"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     Back to Settings
                   </button>
 
                   {/* Image Counter Badge */}
-                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 shadow-sm">
-                    {currentImageIndex + 1} of {files.length}
+                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 z-10">
+                    {currentImageIndex + 1} / {files.length}
                   </div>
 
-                  {/* Navigation Arrows */}
-                  {files.length > 1 && (
-                    <>
-                      <button
-                        onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
-                        disabled={currentImageIndex === 0}
-                        className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/25 text-white opacity-70 flex items-center justify-center transition-all hover:opacity-100 hover:bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-30"
-                        aria-label="Previous image"
-                      >
-                        <ChevronLeft className="h-6 w-6" />
-                      </button>
-                      <button
-                        onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
-                        disabled={currentImageIndex === files.length - 1}
-                        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/25 text-white opacity-70 flex items-center justify-center transition-all hover:opacity-100 hover:bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-30"
-                        aria-label="Next image"
-                      >
-                        <ChevronRight className="h-6 w-6" />
-                      </button>
-                    </>
-                  )}
+                  {/* The Image Canvas Container - Expanded */}
+                  <div className="flex-1 relative w-full h-full flex items-center justify-center">
+                    
+                    {/* The Viewer */}
+                    <div className="relative flex items-center justify-center w-full h-full max-h-full rounded-xl overflow-hidden shadow-sm">
+                      <img
+                        src={previewUrls[currentImageIndex]}
+                        alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                        className="max-h-full max-w-full object-contain"
+                      />
 
-                  {/* The Image Canvas */}
-                  <div className="relative w-full max-w-5xl bg-white/90 rounded-xl shadow-2xl overflow-hidden flex items-center justify-center min-h-[320px] sm:min-h-[420px] lg:min-h-[520px]">
-                    <img
-                      src={previewUrls[currentImageIndex]}
-                      alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                      className="max-h-[70vh] max-w-full object-contain"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveImage(currentImageIndex)}
-                      disabled={removeDisabled}
-                      aria-label="Remove image from batch"
-                      className="absolute top-3 right-3 h-10 w-10 rounded-full bg-white/80 text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Remove image"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    {/* Zoom Button Overlay */}
-                    <button
-                      onClick={() => setPreviewImage({
-                        url: previewUrls[currentImageIndex],
-                        filename: files[currentImageIndex]?.name || '',
-                        index: currentImageIndex
-                      })}
-                      className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
-                      title="View fullscreen"
-                    >
-                      <Maximize2 className="w-4 h-4" />
-                    </button>
+                      {/* Navigation Arrows - Moved INSIDE viewer, above image */}
+                      {files.length > 1 && (
+                        <>
+                          <button
+                            onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                            disabled={currentImageIndex === 0}
+                            className="absolute left-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/20 text-white flex items-center justify-center transition-all opacity-40 hover:opacity-100 hover:bg-black/40 focus-visible:opacity-100 disabled:opacity-0 disabled:pointer-events-none z-20 pointer-events-auto backdrop-blur-[2px]"
+                            aria-label="Previous image"
+                          >
+                            <ChevronLeft className="h-6 w-6" />
+                          </button>
+                          <button
+                            onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                            disabled={currentImageIndex === files.length - 1}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/20 text-white flex items-center justify-center transition-all opacity-40 hover:opacity-100 hover:bg-black/40 focus-visible:opacity-100 disabled:opacity-0 disabled:pointer-events-none z-20 pointer-events-auto backdrop-blur-[2px]"
+                            aria-label="Next image"
+                          >
+                            <ChevronRight className="h-6 w-6" />
+                          </button>
+                        </>
+                      )}
+
+                      {/* Delete Button - Centered X */}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(currentImageIndex)}
+                        disabled={removeDisabled}
+                        aria-label="Remove image from batch"
+                        className="absolute top-3 right-3 h-8 w-8 rounded-full bg-white text-slate-400 border border-slate-200 shadow-sm transition-colors hover:bg-red-500 hover:text-white hover:border-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed grid place-items-center z-20"
+                        title="Remove image"
+                      >
+                        <X className="w-4 h-4 leading-none" />
+                      </button>
+
+                      {/* Zoom Button Overlay */}
+                      <button
+                        onClick={() => setPreviewImage({
+                          url: previewUrls[currentImageIndex],
+                          filename: files[currentImageIndex]?.name || '',
+                          index: currentImageIndex
+                        })}
+                        className="absolute bottom-3 right-3 bg-white/90 hover:bg-white text-slate-600 p-2 rounded-lg transition-colors shadow-sm border border-slate-200 z-20 backdrop-blur-sm"
+                        title="View fullscreen"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Validation reminder above thumbnails */}
@@ -3219,9 +3226,9 @@ export default function BatchProcessor() {
                               }}
                               disabled={removeDisabled}
                               aria-label="Remove image from batch"
-                              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-white/80 text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-white text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed grid place-items-center"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-3 h-3 leading-none" />
                             </button>
                           </div>
                         );
