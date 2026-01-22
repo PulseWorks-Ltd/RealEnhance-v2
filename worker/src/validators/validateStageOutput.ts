@@ -38,6 +38,7 @@ export interface ValidatorTrigger {
   message?: string;
   value?: number;
   threshold?: number;
+  meta?: Record<string, unknown>;
 }
 
 export interface LocalLaneResult {
