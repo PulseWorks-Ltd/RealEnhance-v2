@@ -34,9 +34,10 @@
  *
  * NEW STAGE 2 THRESHOLD ENV VARS:
  * - STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
- * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.55)
+ * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.80)
  * - STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN: 0.0-1.0 (default: 0.70)
  * - STRUCT_VALIDATION_STAGE2_UNIFIED_MIN: 0.0-1.0 (default: 0.65)
+ * - STRUCT_VALIDATION_STAGE2_OPENINGS_MIN_DELTA: integer (default: 2)
  *
  * HARD-FAIL SWITCHES (Stage2 global defaults):
  * - STRUCT_VALIDATION_BLOCK_ON_WINDOW_COUNT_CHANGE: "0" | "1" (default: "1")
@@ -234,6 +235,8 @@ export interface Stage2Thresholds {
   openingsCreateMax: number;
   /** Maximum allowed closed openings */
   openingsCloseMax: number;
+  /** Minimum total openings delta before blocking/gating kicks in */
+  openingsMinDelta: number;
 }
 
 /**
@@ -241,13 +244,14 @@ export interface Stage2Thresholds {
  */
 export function loadStage2Thresholds(): Stage2Thresholds {
   return {
-    edgeIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN", 0.70),
-    structIouMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.80),
+    edgeIouMin: parseEnvFloat01("STAGE2_LOCAL_EDGE_IOU_MIN", parseEnvFloat01("STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN", 0.55)),
+    structIouMin: parseEnvFloat01("STAGE2_LOCAL_STRUCT_IOU_MIN", parseEnvFloat01("STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN", 0.80)),
     lineEdgeMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN", 0.58),
     unifiedMin: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_UNIFIED_MIN", 0.70),
     maskedDriftMax: parseEnvFloat01("STRUCT_VALIDATION_STAGE2_MASKED_DRIFT_MAX", 0.38),
     openingsCreateMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CREATE_MAX", 0),
     openingsCloseMax: parseEnvFloat("STRUCT_VALIDATION_STAGE2_OPENINGS_CLOSE_MAX", 0),
+    openingsMinDelta: parseEnvInt("STRUCT_VALIDATION_STAGE2_OPENINGS_MIN_DELTA", 2),
   };
 }
 

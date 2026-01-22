@@ -19,6 +19,7 @@ export async function runOpeningsIntegrityCheck(opts: {
     createMax: number;
     closeMax: number;
     maskedDriftMax: number;
+    openingsMinDelta?: number;
   };
   fatalOnOpeningsDelta: boolean;
 }): Promise<OpeningsIntegrityResult> {
@@ -39,7 +40,10 @@ export async function runOpeningsIntegrityCheck(opts: {
     metrics.openingsClosed = result.closedOpenings;
     metrics.maskedEdgeDrift = result.maskedEdgeDrift;
 
-    if (result.createdOpenings > thresholds.createMax) {
+    const totalDelta = Math.abs(result.createdOpenings) + Math.abs(result.closedOpenings);
+    const openingsMinDelta = thresholds.openingsMinDelta ?? 1;
+
+    if (result.createdOpenings > thresholds.createMax && totalDelta >= openingsMinDelta) {
       triggers.push({
         id: "openings_created_maskededge",
         message: `Openings created: ${result.createdOpenings} > ${thresholds.createMax}`,
@@ -51,7 +55,7 @@ export async function runOpeningsIntegrityCheck(opts: {
       });
     }
 
-    if (result.closedOpenings > thresholds.closeMax) {
+    if (result.closedOpenings > thresholds.closeMax && totalDelta >= openingsMinDelta) {
       triggers.push({
         id: "openings_closed_maskededge",
         message: `Openings closed: ${result.closedOpenings} > ${thresholds.closeMax}`,
@@ -63,7 +67,7 @@ export async function runOpeningsIntegrityCheck(opts: {
       });
     }
 
-    if (result.maskedEdgeDrift > thresholds.maskedDriftMax) {
+    if (result.maskedEdgeDrift > thresholds.maskedDriftMax && totalDelta >= openingsMinDelta) {
       triggers.push({
         id: "masked_edge_drift",
         message: `Masked edge drift too high: ${result.maskedEdgeDrift.toFixed(3)} > ${thresholds.maskedDriftMax}`,

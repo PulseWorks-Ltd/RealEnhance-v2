@@ -174,13 +174,13 @@ assertEqual(fatalReport.final.blockedBy, "local" as BlockedBy, "fatal trigger bl
 assertEqual(fatalReport.ran.geminiSemantic, false, "gemini not called when local fatal");
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Test: Local risk in block mode stops pipeline
+// Test: Local risk in block mode stops pipeline (non-stage2)
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("\nLocal risk in block mode:");
 
 function simulateLocalRiskBlockMode(): ValidatorReport {
   return {
-    stage: "2",
+    stage: "1B_FULL",
     baselinePath: "/tmp/baseline.webp",
     candidatePath: "/tmp/candidate.webp",
     ran: {
@@ -222,6 +222,69 @@ const riskBlockReport = simulateLocalRiskBlockMode();
 assertEqual(riskBlockReport.final.pass, false, "risk in block mode causes pass=false");
 assertEqual(riskBlockReport.final.blockedBy, "local" as BlockedBy, "risk blockedBy=local");
 assertEqual(riskBlockReport.ran.geminiSemantic, false, "gemini not called when local risk in block mode");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Test: Stage 2 risk still runs Gemini
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nStage 2 risk still runs Gemini:");
+
+function simulateStage2RiskAllowsGemini(): ValidatorReport {
+  return {
+    stage: "2",
+    baselinePath: "/tmp/baseline.webp",
+    candidatePath: "/tmp/candidate.webp",
+    ran: {
+      localStructural: true,
+      localMaskedEdge: true,
+      localSemanticFallback: true,
+      geminiSemantic: true, // should still run
+      geminiPlacement: true,
+    },
+    skipped: {
+      gemini: false,
+    },
+    latencyMs: {
+      local: 150,
+      gemini: 900,
+      total: 1050,
+    },
+    local: {
+      pass: false,
+      risk: true,
+      fatal: false,
+      triggers: [
+        { id: "edge_iou", value: 0.4, threshold: 0.55 },
+      ],
+      metrics: { structuralIoU: 0.5 },
+      summary: "Local FAIL: risk detected",
+    },
+    gemini: {
+      semantic: {
+        pass: true,
+        confidence: 0.9,
+        allowed_changes_only: true,
+        reason: "Staging OK",
+        fail_reasons: [],
+        checks: {} as any,
+      },
+      placement: {
+        pass: true,
+        verdict: "pass",
+        confidence: 0.88,
+      },
+      summary: "Gemini OK",
+    },
+    final: {
+      pass: true,
+      blockedBy: "none",
+      reason: "Stage2 risk allowed; Gemini passed",
+    },
+  };
+}
+
+const stage2RiskReport = simulateStage2RiskAllowsGemini();
+assertEqual(stage2RiskReport.ran.geminiSemantic, true, "Gemini runs even when stage2 local risk");
+assertEqual(stage2RiskReport.final.pass, true, "Stage2 can pass with local risk once Gemini passes");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Test: Local pass leads to Gemini semantic being called
@@ -444,6 +507,7 @@ function simulatePlacementFail(): ValidatorReport {
       },
       placement: {
         pass: false,
+        verdict: "hard_fail",
         confidence: 0.82,
         reason: "Sofa blocking doorway",
       },
@@ -461,6 +525,68 @@ const placementFailReport = simulatePlacementFail();
 assertEqual(placementFailReport.final.pass, false, "placement fail causes pass=false");
 assertEqual(placementFailReport.final.blockedBy, "gemini_placement" as BlockedBy, "blockedBy=gemini_placement");
 assertEqual(placementFailReport.ran.geminiPlacement, true, "placement ran for stage 2");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Test: Stage 2 placement soft fail is warning only
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nStage 2 placement soft-fail warning:");
+
+function simulatePlacementSoftFail(): ValidatorReport {
+  return {
+    stage: "2",
+    baselinePath: "/tmp/baseline.webp",
+    candidatePath: "/tmp/candidate.webp",
+    ran: {
+      localStructural: true,
+      localMaskedEdge: true,
+      localSemanticFallback: true,
+      geminiSemantic: true,
+      geminiPlacement: true,
+    },
+    skipped: {
+      gemini: false,
+    },
+    latencyMs: {
+      local: 140,
+      gemini: 1800,
+      total: 1940,
+    },
+    local: {
+      pass: true,
+      risk: false,
+      fatal: false,
+      triggers: [],
+      metrics: {},
+      summary: "Local OK",
+    },
+    gemini: {
+      semantic: {
+        pass: true,
+        confidence: 0.88,
+        allowed_changes_only: true,
+        reason: "Staging compliant",
+        fail_reasons: [],
+        checks: {} as any,
+      },
+      placement: {
+        pass: true,
+        verdict: "soft_fail",
+        confidence: 0.70,
+        reason: "Minor misalignment",
+      },
+      summary: "Gemini placement WARN",
+    },
+    final: {
+      pass: true,
+      blockedBy: "none",
+      reason: "Soft placement issues allowed",
+    },
+  };
+}
+
+const placementSoftFailReport = simulatePlacementSoftFail();
+assertEqual(placementSoftFailReport.final.pass, true, "placement soft_fail does not block");
+assertEqual(placementSoftFailReport.ran.geminiPlacement, true, "placement ran for stage 2 soft fail");
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Test: JSON parse failure (parse_error)

@@ -74,6 +74,8 @@ export interface GeminiSemanticResult {
 
 export interface GeminiPlacementResult {
   pass: boolean;
+  verdict?: "pass" | "soft_fail" | "hard_fail";
+  reasons?: string[];
   confidence?: number;
   reason?: string;
   raw?: string;
@@ -197,6 +199,7 @@ async function runLocalValidators(args: {
   const triggers: ValidatorTrigger[] = [];
   const metrics: Record<string, any> = {};
   let ran = { structural: false, maskedEdge: false, semanticFallback: false };
+  let structRisk = false;
 
   // Run stage-aware structural validator if enabled
   if (stageAwareConfig.enabled) {
@@ -232,6 +235,8 @@ async function runLocalValidators(args: {
       metrics.dimensionMismatch = structResult.debug?.dimensionMismatch;
       metrics.structuralScore = structResult.score;
       metrics.risk = structResult.risk;
+
+      structRisk = !!structResult.risk;
     } catch (err: any) {
       console.error(`[VALIDATE_LOCAL] Structural validator error:`, err?.message);
       // Don't add fatal trigger for validator errors (fail-open for errors)
@@ -254,8 +259,11 @@ async function runLocalValidators(args: {
       metrics.createdOpenings = maskedResult.createdOpenings;
       metrics.closedOpenings = maskedResult.closedOpenings;
 
+      const openingsMinDelta = stage === "2" ? stageAwareConfig.stage2Thresholds.openingsMinDelta : 1;
+      const openingsDelta = Math.abs(maskedResult.createdOpenings) + Math.abs(maskedResult.closedOpenings);
+
       // Add triggers for openings changes (significant for Stage 1B/2)
-      if (maskedResult.createdOpenings > 0) {
+      if (maskedResult.createdOpenings > 0 && openingsDelta >= openingsMinDelta) {
         triggers.push({
           id: "masked_edge_openings_created",
           message: `${maskedResult.createdOpenings} openings created`,
@@ -263,7 +271,7 @@ async function runLocalValidators(args: {
           threshold: 0,
         });
       }
-      if (maskedResult.closedOpenings > 0) {
+      if (maskedResult.closedOpenings > 0 && openingsDelta >= openingsMinDelta) {
         triggers.push({
           id: "masked_edge_openings_closed",
           message: `${maskedResult.closedOpenings} openings closed`,
@@ -309,7 +317,7 @@ async function runLocalValidators(args: {
 
   // Determine pass/risk/fatal
   const hasFatal = triggers.some((t) => t.fatal === true);
-  const hasRisk = triggers.length >= (stageAwareConfig.gateMinSignals || 2) || hasFatal;
+  const hasRisk = structRisk || hasFatal || triggers.length >= (stageAwareConfig.gateMinSignals || 2);
   const pass = !hasRisk;
 
   // Build summary
@@ -391,6 +399,8 @@ async function runGeminiValidators(args: {
 
     placementResult = {
       pass: placementRaw.pass,
+      verdict: placementRaw.verdict,
+      reasons: placementRaw.reasons,
       confidence: placementRaw.confidence,
       reason: placementRaw.reason,
       raw: config.logRaw ? placementRaw.rawText : undefined,
@@ -403,8 +413,10 @@ async function runGeminiValidators(args: {
     summary = "Gemini: parse failed";
   } else if (!semanticResult.pass) {
     summary = `Gemini semantic FAIL: conf=${semanticResult.confidence.toFixed(2)}, reason=${semanticResult.reason}`;
-  } else if (placementResult && !placementResult.pass) {
+  } else if (placementResult && placementResult.verdict === "hard_fail") {
     summary = `Gemini placement FAIL: ${placementResult.reason || "unknown"}`;
+  } else if (placementResult && placementResult.verdict === "soft_fail") {
+    summary = `Gemini placement WARN (soft_fail): ${placementResult.reason || "minor issue"}`;
   } else {
     summary = `Gemini OK: semantic conf=${semanticResult.confidence.toFixed(2)}`;
   }
@@ -526,7 +538,7 @@ export async function validateStageOutput(args: {
     return report;
   }
 
-  if (blockMode && localConfig.blockOnRisk && localResult.result.risk) {
+  if (blockMode && localConfig.blockOnRisk && localResult.result.risk && stage !== "2") {
     // Risk in block mode blocks (controlled by LOCAL_VALIDATOR_BLOCK_ON_RISK)
     const topTriggers = localResult.result.triggers
       .slice(0, 2)
@@ -674,7 +686,7 @@ export async function validateStageOutput(args: {
   if (stage === "2" && geminiResult.ran.placement) {
     const placement = geminiResult.result.placement;
 
-    if (placement && !placement.pass) {
+    if (placement && placement.verdict === "hard_fail") {
       report.latencyMs.total = Date.now() - totalStart;
       report.final = {
         pass: false,

@@ -917,6 +917,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
           createMax: effectiveThresholds.openingsCreateMax ?? 0,
           closeMax: effectiveThresholds.openingsCloseMax ?? 0,
           maskedDriftMax: effectiveThresholds.maskedDriftMax ?? thresholds.maskedDriftMax,
+          openingsMinDelta: isStage2 ? stage2Thresholds.openingsMinDelta : 1,
         },
         fatalOnOpeningsDelta: effectiveHardFailSwitches.blockOnOpeningsDelta,
       });
@@ -943,6 +944,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // Ensure gate counting ignores signals explicitly marked non-blocking via config switches.
   for (const t of triggers) {
     if (t.id === "window_position_change" && !effectiveHardFailSwitches.blockOnWindowPositionChange) {
+      t.nonBlocking = true;
+    }
+
+    if (isStage2 && (t.id === "masked_edge_drift" || t.id === "openings_created_maskededge" || t.id === "openings_closed_maskededge")) {
       t.nonBlocking = true;
     }
 

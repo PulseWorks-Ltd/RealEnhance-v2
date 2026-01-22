@@ -431,6 +431,8 @@ export async function validateSemanticStageCompliance(args: {
 
 export interface PlacementValidationResult {
   pass: boolean;
+  verdict?: "pass" | "soft_fail" | "hard_fail";
+  reasons?: string[];
   confidence?: number;
   reason?: string;
   rawText?: string;
@@ -467,15 +469,17 @@ export async function validatePlacement(args: {
       return "image/webp";
     };
 
-    const placementPrompt = `Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}
-Compare ORIGINAL vs EDITED. ok=false if EDITED places objects in clearly unrealistic or unsafe positions, such as:
-- blocking a DOOR or WINDOW,
-- overlapping fixed fixtures,
-- furniture not aligned to floor perspective,
-- furniture floating or intersecting walls,
-- obviously wrong scale (e.g., giant chairs, tiny tables).
-Allow staging furniture to overlap walls/floors visually; overlapping is NOT a placement violation.
-Be tolerant of minor imperfections. Only fail on obvious issues.`;
+    const placementPrompt = `Return JSON only: {"verdict": "pass"|"soft_fail"|"hard_fail", "confidence": 0.0-1.0, "reasons": ["..."], "reason": "optional summary"}
+  Compare ORIGINAL vs EDITED and judge staging placement quality.
+  "hard_fail" only when EDITED has an obvious, structural placement error such as:
+  - blocking a DOOR or WINDOW,
+  - overlapping fixed fixtures in a physically impossible way,
+  - furniture not aligned to floor perspective,
+  - furniture floating or intersecting walls,
+  - obviously wrong scale (e.g., giant chairs, tiny tables).
+  "soft_fail" for mild/subjective issues (slight misalignment, small overlap that is usable). "pass" when placement is clearly fine.
+  Allow staging furniture to overlap walls/floors visually; overlapping alone is NOT a placement violation.
+  Be tolerant of minor imperfections. Only mark hard_fail on clear problems.`;
 
     const resp = await (ai as any).models.generateContent({
       model,
@@ -502,10 +506,18 @@ Be tolerant of minor imperfections. Only fail on obvious issues.`;
     try {
       const cleaned = cleanJsonResponse(rawText);
       const parsed = JSON.parse(cleaned);
+      const verdict: PlacementValidationResult["verdict"] = parsed.verdict || (parsed.ok === true ? "pass" : parsed.ok === false ? "hard_fail" : undefined);
+      const reasons: string[] | undefined = Array.isArray(parsed.reasons)
+        ? parsed.reasons.map((r: any) => String(r))
+        : undefined;
+      const pass = verdict ? verdict !== "hard_fail" : parsed.ok === true;
+
       return {
-        pass: parsed.ok === true,
+        pass,
+        verdict: verdict ?? (pass ? "pass" : "hard_fail"),
+        reasons,
         confidence: typeof parsed.confidence === "number" ? parsed.confidence : undefined,
-        reason: Array.isArray(parsed.reasons) ? parsed.reasons.join("; ") : undefined,
+        reason: parsed.reason || (reasons ? reasons.join("; ") : undefined),
         rawText: logRaw ? rawText : undefined,
       };
     } catch {
