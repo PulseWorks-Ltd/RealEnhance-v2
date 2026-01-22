@@ -286,7 +286,7 @@ export async function runStructuralCheck(
 
   if (severity === "risk") {
     console.warn(
-      `[structureValidator] ⚠️ Structural deviation detected but not blocking (mode=${result.mode}, severity=risk)`
+      `[structureValidator] ⚠️ Structural consistency check flagged but not blocking (mode=${result.mode}, severity=risk)`
     );
   } else {
     console.log("[structureValidator] ✓ Structural validation passed");

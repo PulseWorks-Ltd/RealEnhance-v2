@@ -286,7 +286,7 @@ def validate_structure(request: ValidationRequest) -> ValidationResponse:
 
         # Generate message
         if is_suspicious:
-            message = f"Structural deviation detected: {deviation_score:.2f}° (threshold: {request.sensitivity}°)"
+            message = f"Structural consistency check failed (score: {deviation_score:.2f}°)"
         else:
             message = f"Structural validation passed: {deviation_score:.2f}° deviation"
 

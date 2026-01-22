@@ -92,6 +92,9 @@ interface RegionEditorProps {
   onStart?: () => void; // Called when processing starts (for immediate UI feedback)
   onError?: (errorMessage?: string) => void; // Called when processing fails
   onJobStarted?: (jobId: string) => void; // Optional: delegate polling to parent
+  jobId?: string | null;
+  imageId?: string | null;
+  stageUrls?: Record<string, string | null> | null;
   initialImageUrl?: string;
   originalImageUrl?: string; // URL to original image for pixel-level restoration
   initialGoal?: string;
@@ -104,16 +107,14 @@ export function RegionEditor({
   onStart,
   onError,
   onJobStarted,
+  jobId,
+  imageId,
+  stageUrls,
   initialImageUrl,
   originalImageUrl,
   initialGoal,
   initialIndustry,
 }: RegionEditorProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    initialImageUrl || null,
-  );
-
   // Only two modes: 'edit' and 'restore_original'
   const [mode, setMode] = useState<"edit" | "restore_original">("edit");
   // NOTE: Restore Original temporarily disabled for RealEnhance v2.0 launch.
@@ -133,6 +134,61 @@ export function RegionEditor({
         : (originalImageUrl || initialImageUrl || "");
     console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedFromInitial, derivedBase });
   }, [mode, initialImageUrl, originalImageUrl]);
+
+  // Refresh latest image/original/stage URLs from server by jobId to avoid stale edits
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLatest = async () => {
+      if (!jobId) return;
+      try {
+        const res = await fetch(api(`/api/status/${encodeURIComponent(jobId)}`), {
+          method: "GET",
+          credentials: "include",
+        });
+        const text = await res.text();
+        if (cancelled || !text) return;
+        let data: any = {};
+        try {
+          data = JSON.parse(text);
+        } catch (err) {
+          console.warn("[region-editor] Failed to parse status JSON", err);
+          return;
+        }
+        const item = data?.job || (Array.isArray(data?.items) ? data.items[0] : data);
+        if (!item) return;
+        const latestImageUrl = item.imageUrl || item.resultUrl || item.image || null;
+        const latestOriginal = item.originalUrl || item.originalImageUrl || item.original || null;
+        const latestStageUrls = item.stageUrls || null;
+        setResolvedImageUrl(latestImageUrl || null);
+        setResolvedOriginalUrl(latestOriginal || null);
+        setResolvedStageUrls(latestStageUrls || null);
+        console.log("[region-editor] refreshed status", {
+          jobId,
+          imageId,
+          imageUrl: latestImageUrl,
+          originalUrl: latestOriginal,
+          stageUrls: latestStageUrls,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[region-editor] status refresh failed", { jobId, imageId, err });
+        }
+      }
+    };
+    fetchLatest();
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId, imageId]);
+
+  const effectiveStageUrls = resolvedStageUrls || stageUrls || null;
+  const effectiveInitialImageUrl = resolvedImageUrl || initialImageUrl || effectiveStageUrls?.['2'] || null;
+  const effectiveOriginalImageUrl = resolvedOriginalUrl || originalImageUrl || effectiveStageUrls?.['1B'] || effectiveStageUrls?.['1A'] || null;
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    effectiveInitialImageUrl || null,
+  );
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
@@ -155,9 +211,18 @@ export function RegionEditor({
   const imageRef = useRef<HTMLImageElement>(null);
   const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
 
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
+  const [resolvedOriginalUrl, setResolvedOriginalUrl] = useState<string | null>(null);
+  const [resolvedStageUrls, setResolvedStageUrls] = useState<Record<string, string | null> | null>(null);
+
   const { toast } = useToast();
 
   // Redraw preview and mask canvases whenever previewUrl changes
+  useEffect(() => {
+    if (selectedFile) return;
+    setPreviewUrl(effectiveInitialImageUrl || null);
+  }, [effectiveInitialImageUrl, selectedFile]);
+
   useEffect(() => {
     if (!previewUrl) return;
     setImageLoading(true);
@@ -281,8 +346,8 @@ export function RegionEditor({
 
   // Load initial image URL if provided (first open) – drawing canvas setup
   useEffect(() => {
-    if (initialImageUrl && !selectedFile) {
-      console.log("Loading initial image URL:", initialImageUrl);
+    if (effectiveInitialImageUrl && !selectedFile) {
+      console.log("Loading initial image URL:", effectiveInitialImageUrl);
       setImageLoading(true);
 
       let retryCount = 0;
@@ -329,8 +394,8 @@ export function RegionEditor({
               previewCtx.drawImage(img, 0, 0, img.width, img.height);
             }
           }
-          if (imageRef.current) {
-            imageRef.current.src = initialImageUrl;
+          if (imageRef.current && effectiveInitialImageUrl) {
+            imageRef.current.src = effectiveInitialImageUrl;
           }
         };
 
@@ -338,7 +403,7 @@ export function RegionEditor({
           retryCount++;
           console.error(
             `Failed to load initial image (attempt ${retryCount}/${maxRetries}):`,
-            initialImageUrl,
+            effectiveInitialImageUrl,
             error,
           );
 
@@ -357,12 +422,12 @@ export function RegionEditor({
           }
         };
 
-        img.src = initialImageUrl;
+        img.src = effectiveInitialImageUrl;
       };
 
       loadImage();
     }
-  }, [initialImageUrl, selectedFile, toast]);
+  }, [effectiveInitialImageUrl, selectedFile, toast]);
 
   // Helper: map mouse screen coords to canvas coords
   const screenToCanvas = useCallback(
@@ -688,6 +753,7 @@ export function RegionEditor({
         "[region-editor] 🚀 START: Submitting region-edit request...",
       );
       console.log("[region-editor] API endpoint:", api("/api/region-edit"));
+      console.log("[region-editor] Request identifiers", { jobId, imageId });
 
       let response: Response;
       try {
@@ -717,16 +783,31 @@ export function RegionEditor({
 
       if (!response.ok) {
         let errorText = "";
+        let parsed: any = null;
         try {
           errorText = await response.text();
-          console.error("[region-editor] ❌ HTTP ERROR - Response not OK");
-          console.error("[region-editor]   - Status:", response.status);
-          console.error("[region-editor]   - Response body:", errorText);
+          parsed = errorText ? JSON.parse(errorText) : null;
+          console.error("[region-editor] ❌ HTTP ERROR - Response not OK", {
+            status: response.status,
+            statusText: response.statusText,
+            body: parsed || errorText,
+            jobId,
+            imageId,
+          });
         } catch {
           console.error(
             "[region-editor] ❌ HTTP ERROR - Could not read response body",
           );
         }
+
+        if (parsed?.error === "image_not_found" || parsed?.error === "not_found") {
+          const err: any = new Error("image_not_found");
+          err.code = "image_not_found";
+          err.payload = parsed;
+          err.status = response.status;
+          throw err;
+        }
+
         throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
       }
 
@@ -753,6 +834,11 @@ export function RegionEditor({
           "[region-editor] Full result:",
           JSON.stringify(result, null, 2),
         );
+        console.log("[region-editor] region-edit response identifiers", {
+          jobId,
+          imageId,
+          result,
+        });
       } catch (jsonError) {
         console.error("[region-editor] ❌ JSON PARSE ERROR:", jsonError);
         throw new Error("Failed to parse server response");
@@ -970,6 +1056,15 @@ export function RegionEditor({
         errorMessage = JSON.stringify(error);
       }
 
+      if ((error as any)?.code === "image_not_found" || errorMessage === "image_not_found") {
+        errorMessage = "Image is no longer available for editing. Please refresh or re-run enhancement.";
+        console.warn("[region-editor] image_not_found from region-edit", {
+          jobId,
+          imageId,
+          error,
+        });
+      }
+
       toast({
         title: "Enhancement failed",
         description: errorMessage,
@@ -989,7 +1084,7 @@ export function RegionEditor({
     console.log("[region-editor] selectedFile:", !!selectedFile);
     console.log(
       "[region-editor] initialImageUrl:",
-      initialImageUrl?.substring(0, 80),
+      effectiveInitialImageUrl?.substring(0, 80),
     );
 
     if (mode === "restore_original") {
@@ -1003,8 +1098,8 @@ export function RegionEditor({
     }
 
     // Derive Stage 1 base URL from Stage 2 filename if originalImageUrl not provided
-    const derivedBaseFromInitial = !originalImageUrl
-      ? deriveBaseFromInitial(initialImageUrl)
+    const derivedBaseFromInitial = !effectiveOriginalImageUrl
+      ? deriveBaseFromInitial(effectiveInitialImageUrl)
       : null;
 
     // Compute baseImageUrl:
@@ -1012,17 +1107,17 @@ export function RegionEditor({
     // - For other modes: prefer originalImageUrl, fall back to initialImageUrl
     const baseImageUrl =
       mode === "restore_original"
-        ? (originalImageUrl || derivedBaseFromInitial || "")
-        : (originalImageUrl || initialImageUrl || "");
+        ? (effectiveOriginalImageUrl || derivedBaseFromInitial || "")
+        : (effectiveOriginalImageUrl || effectiveInitialImageUrl || "");
 
     console.log("[region-editor] Mode:", mode);
-    console.log("[region-editor] originalImageUrl:", originalImageUrl);
-    console.log("[region-editor] initialImageUrl:", initialImageUrl);
+    console.log("[region-editor] originalImageUrl:", effectiveOriginalImageUrl);
+    console.log("[region-editor] initialImageUrl:", effectiveInitialImageUrl);
     console.log("[region-editor] derivedBaseFromInitial:", derivedBaseFromInitial);
     console.log("[region-editor] Final baseImageUrl:", baseImageUrl);
 
     try {
-      if (!selectedFile && !initialImageUrl) {
+      if (!selectedFile && !effectiveInitialImageUrl) {
         toast({
           title: "No image",
           description: "Please select an image first",
@@ -1089,12 +1184,18 @@ export function RegionEditor({
       const formData = new FormData();
       if (selectedFile) {
         formData.append("image", selectedFile);
-      } else if (initialImageUrl) {
-        formData.append("imageUrl", initialImageUrl);
+      } else if (effectiveInitialImageUrl) {
+        formData.append("imageUrl", effectiveInitialImageUrl);
       }
       // Always append baseImageUrl if present
       if (baseImageUrl) {
         formData.append("baseImageUrl", baseImageUrl);
+      }
+      if (imageId) {
+        formData.append("imageId", imageId);
+      }
+      if (jobId) {
+        formData.append("jobId", jobId);
       }
       formData.append("mode", mode);
       if (mode === "edit") {
@@ -1157,8 +1258,8 @@ export function RegionEditor({
     }
   }, [
     selectedFile,
-    initialImageUrl,
-    originalImageUrl,
+    effectiveInitialImageUrl,
+    effectiveOriginalImageUrl,
     maskData,
     instructions,
     industry,
@@ -1166,6 +1267,8 @@ export function RegionEditor({
     sceneType,
     roomType,
     smartReinstate,
+    jobId,
+    imageId,
     toast,
     onError,
     regionEditMutation,
@@ -1201,7 +1304,7 @@ export function RegionEditor({
             <CardDescription className="text-sm text-slate-600">Paint over the area you want to change. White = editable region.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 lg:space-y-4">
-            {!initialImageUrl && (
+            {!effectiveInitialImageUrl && (
               <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
                 <Label htmlFor="image-upload" className="text-sm font-medium text-slate-700">Select Image</Label>
                 <Input

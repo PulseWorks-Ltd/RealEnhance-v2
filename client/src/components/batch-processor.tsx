@@ -918,6 +918,9 @@ export default function BatchProcessor() {
             ok: !!norm?.ok,
             image: norm?.image || undefined,
             originalImageUrl: next.result?.originalImageUrl || next.result?.originalUrl || undefined,  // Preserve original URL for comparison slider
+            stageUrls: next.stageUrls || next.result?.stageUrls || null,
+            imageId: next.imageId || next.result?.imageId,
+            jobId: next.jobId,
             error: next.error || norm?.error
           };
           return copy;
@@ -1256,6 +1259,9 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: i,
                 result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
+                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                imageId: item?.imageId,
+                stageUrls: item?.stageUrls || null,
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -1263,6 +1269,8 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: i,
                 error: item.error || "Processing failed",
+                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                imageId: item?.imageId,
                 filename: item.filename || `image-${i + 1}`
               });
             }
@@ -1474,8 +1482,13 @@ export default function BatchProcessor() {
                 imageUrl: url,
                 originalImageUrl: originalUrl,
                 qualityEnhancedUrl: null,
-                mode: it.mode || "enhanced"
+                mode: it.mode || "enhanced",
+                stageUrls: it.stageUrls || null,
+                imageId: it.imageId,
               },
+              jobId: key,
+              imageId: it.imageId,
+              stageUrls: it.stageUrls || null,
               filename: files[idx]?.name || `image-${idx + 1}`
             });
           }
@@ -1486,6 +1499,8 @@ export default function BatchProcessor() {
               index: idx,
               result: null,
               error: it.error || it.message || "Edit failed",
+              jobId: key,
+              imageId: it.imageId,
               filename: files[idx]?.name || `image-${idx + 1}`
             });
           }
@@ -1560,11 +1575,11 @@ export default function BatchProcessor() {
           const idx = jobIdToIndexRef.current[it.id];
           if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, result: { imageUrl: it.imageUrl || null, mode: 'enhanced' }, filename: files[idx]?.name || `image-${idx+1}` });
+            queueRef.current.push({ index: idx, result: { imageUrl: it.imageUrl || null, mode: 'enhanced' }, jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
           if (typeof idx === 'number' && it.status === 'failed' && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, error: 'Processing failed', filename: files[idx]?.name || `image-${idx+1}` });
+            queueRef.current.push({ index: idx, error: 'Processing failed', jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
         }
         schedule();
@@ -2117,6 +2132,16 @@ export default function BatchProcessor() {
             return;
           }
           const err = await response.json().catch(() => ({}));
+          if (err?.error === "image_not_found" || err?.code === "image_not_found") {
+            clearRetryFlags(imageIndex);
+            toast({
+              title: "Image unavailable",
+              description: "The source image is no longer available to retry. Please re-upload and try again.",
+              variant: "destructive"
+            });
+            console.warn("[retry-single] image_not_found", { imageIndex, imageId: imageIdForRetry, err });
+            return;
+          }
           // Handle retry-specific compliance failures
           if (err.code === "RETRY_COMPLIANCE_FAILED") {
             const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
@@ -2143,6 +2168,7 @@ export default function BatchProcessor() {
         if (!jobId) {
           throw new Error("Retry submitted but no jobId returned. Please try again.");
         }
+        console.log("[retry-single] submitted", { imageIndex, jobId, imageId: imageIdForRetry });
 
         // ✅ DO NOT set global progress - retry is image-only operation
         // ❌ setProgressText("Retry submitted. Waiting for enhanced image...");
@@ -2203,10 +2229,14 @@ export default function BatchProcessor() {
 
                 // Update UI with the new image
                 const stamp = Date.now();
+                const stageUrls = job.stageUrls || job.stage_urls || null;
+                const imageIdFromJob = job.imageId || job.image_id || null;
                 const retryResult = {
                   image: job.imageUrl,
                   imageUrl: job.imageUrl,
                   result: { imageUrl: job.imageUrl },
+                  stageUrls,
+                  imageId: imageIdFromJob,
                   error: null,
                   ok: true
                 };
@@ -2226,11 +2256,15 @@ export default function BatchProcessor() {
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    stageUrls: stageUrls || r?.stageUrls || null,
+                    imageId: imageIdFromJob || r?.imageId,
                     result: {
                       ...(normalizedResult || {}),
                       image: job.imageUrl,
                       imageUrl: job.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
+                      stageUrls: stageUrls || (normalizedResult as any)?.stageUrls,
+                      imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl
                     },
                     error: null,
@@ -2272,11 +2306,21 @@ export default function BatchProcessor() {
 
                 clearRetryFlags(imageIndex);
 
-                toast({
-                  title: "Retry failed",
-                  description: job.error || "The retry job failed to process.",
-                  variant: "destructive"
-                });
+                const errMsg = job.error || "The retry job failed to process.";
+                if (job.error === "image_not_found") {
+                  toast({
+                    title: "Image unavailable",
+                    description: "The source image is no longer available to retry. Please re-upload and try again.",
+                    variant: "destructive"
+                  });
+                  console.warn("[retry-poll] image_not_found", { imageIndex, imageId: imageIdForRetry, jobId, job });
+                } else {
+                  toast({
+                    title: "Retry failed",
+                    description: errMsg,
+                    variant: "destructive"
+                  });
+                }
                 return;
               }
             } catch (e) {
