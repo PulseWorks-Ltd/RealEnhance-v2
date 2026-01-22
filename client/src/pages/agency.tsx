@@ -37,7 +37,8 @@ interface AgencyInfo {
       monthlyIncluded: number;
       used: number;
       remaining: number;
-      addonBalance: number;
+        addonBalance: number;
+        addonRemaining?: number;
       monthKey: string;
     };
   };
@@ -53,7 +54,7 @@ interface AgencyInfo {
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
-  const { usage } = useUsage();
+  const { usage, refetch: refetchUsage } = useUsage();
   const navigate = useNavigate();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +77,15 @@ export default function AgencyPage() {
         title: "Subscription Activated!",
         description: "Your subscription has been successfully activated. Welcome aboard!",
       });
+      window.history.replaceState({}, "", "/agency");
+    }
+    if (params.get("bundle") === "success") {
+      toast({
+        title: "Bundle added",
+        description: "Add-on bundle applied. Updating your usage now...",
+      });
+      refetchUsage();
+      loadAgencyData();
       window.history.replaceState({}, "", "/agency");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -362,8 +372,13 @@ export default function AgencyPage() {
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Add-on / carry-over</p>
-              <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
-              <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
+              <p className="text-lg font-semibold">
+                {Math.max(
+                  0,
+                  agencyInfo.subscription.allowance.addonRemaining ?? agencyInfo.subscription.allowance.addonBalance ?? 0
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">Valid 30 days from purchase, used before monthly allowance</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Billing</p>

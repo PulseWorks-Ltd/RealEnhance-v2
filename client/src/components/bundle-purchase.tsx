@@ -144,8 +144,8 @@ export function BundlePurchase() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Expires:</span>
-                    <span className="font-medium">End of month</span>
+                    <span className="text-muted-foreground">Validity:</span>
+                    <span className="font-medium">30 days from purchase</span>
                   </div>
                 </div>
 
@@ -170,8 +170,7 @@ export function BundlePurchase() {
         </div>
 
         <div className="mt-4 p-3 bg-muted rounded-md text-sm text-muted-foreground">
-          <strong>Note:</strong> Bundle images expire at the end of the purchase month and are consumed
-          after your monthly allowance. Secure payment powered by Stripe.
+          <strong>Note:</strong> Bundle images are valid for 30 days from purchase and are consumed before your monthly allowance. Secure payment powered by Stripe.
         </div>
       </CardContent>
     </Card>

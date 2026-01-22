@@ -310,6 +310,7 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       },
       addOns: {
         balance: usage.addonBalance,
+        remaining: usage.addonRemaining,
       },
       upgradeOptions,
       canManage: requireAgencyAdmin(user),

@@ -186,6 +186,7 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
           used: usage.includedUsed,
           remaining: usage.remaining,
           addonBalance: usage.addonBalance,
+          addonRemaining: usage.addonRemaining,
           monthKey: usage.monthKey,
         },
       },
