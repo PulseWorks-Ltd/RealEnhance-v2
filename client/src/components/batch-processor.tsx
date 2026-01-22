@@ -326,6 +326,30 @@ export default function BatchProcessor() {
   useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
   useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
 
+  // Keyboard navigation for studio
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Only active in studio view
+      if (activeTab !== "images") return;
+      
+      if (e.key === 'ArrowLeft') {
+        setCurrentImageIndex(i => Math.max(0, i - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // We need the current index from the state ref or closure
+        // Since this effect depends on [currentImageIndex], it will re-bind
+        handleRemoveImage(currentImageIndex);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
+
   // Compute currentImageIndex from selectedImageId for backwards compatibility
   const currentImageIndex = useMemo(() => {
     if (!selectedImageId) return 0;
@@ -3220,15 +3244,19 @@ export default function BatchProcessor() {
                                 ? "ring-emerald-500" 
                                 : "ring-slate-300";
                             
+                            // User Request: 
+                            // Base: grayscale opacity-70 transition-all duration-300 ease-in-out
+                            // Hover: grayscale-0 opacity-100 scale-105
+                            // Active: grayscale-0 opacity-100 ring-4 ring-emerald-500 ring-offset-2 scale-105
                             const activeRing = isCurrent 
-                              ? `ring-4 ring-emerald-500 ring-offset-2 ring-offset-slate-100 scale-105 shadow-lg z-10` 
-                              : `ring-1 ${statusColor} hover:ring-2 hover:ring-slate-400 opacity-80 hover:opacity-100 grayscale-[0.3] hover:grayscale-0 hover:scale-105`;
+                              ? `grayscale-0 opacity-100 scale-105 ring-4 ring-emerald-500 ring-offset-2 shadow-lg z-10` 
+                              : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${statusColor}`;
 
                             return (
-                              <div key={idx} className="relative group shrink-0 transition-all duration-200 ease-out py-1">
+                              <div key={idx} className="relative group shrink-0 transition-all duration-300 ease-in-out py-1 overflow-hidden p-1">
                                 <button
                                   onClick={() => setCurrentImageIndex(idx)}
-                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-200 bg-slate-200 ${activeRing}`}
+                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-300 ease-in-out bg-slate-200 ${activeRing}`}
                                 >
                                   <img 
                                     src={previewUrls[idx]} 
