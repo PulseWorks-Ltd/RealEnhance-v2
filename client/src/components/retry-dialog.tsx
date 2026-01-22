@@ -19,7 +19,7 @@ interface RetryDialogProps {
   detectedRoomType?: string;
 }
 
-export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl }: RetryDialogProps) {
+export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, detectedRoomType }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
   const safeDetectedRoomType = typeof detectedRoomType === 'undefined' ? "auto" : detectedRoomType;

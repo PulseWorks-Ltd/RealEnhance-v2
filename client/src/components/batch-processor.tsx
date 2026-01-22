@@ -40,7 +40,7 @@ type SceneDetectResult = {
     greenOverall: number;
     meanLum: number;
   };
-  reason: "confident_interior" | "confident_exterior" | "uncertain";
+  reason: "confident_interior" | "confident_exterior" | "uncertain" | "covered_exterior_suspect";
   source?: "client" | "server";
 };
 
@@ -326,29 +326,8 @@ export default function BatchProcessor() {
   useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
   useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
 
-  // Keyboard navigation for studio
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      // Only active in studio view
-      if (activeTab !== "images") return;
-      
-      if (e.key === 'ArrowLeft') {
-        setCurrentImageIndex(i => Math.max(0, i - 1));
-      }
-      if (e.key === 'ArrowRight') {
-        setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
-      }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        // We need the current index from the state ref or closure
-        // Since this effect depends on [currentImageIndex], it will re-bind
-        handleRemoveImage(currentImageIndex);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
+
+
 
   // Compute currentImageIndex from selectedImageId for backwards compatibility
   const currentImageIndex = useMemo(() => {
@@ -2730,6 +2709,30 @@ export default function BatchProcessor() {
     });
     jobIdToIndexRef.current = mapping;
   };
+
+  // Keyboard navigation for studio
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Only active in studio view
+      if (activeTab !== "images") return;
+      
+      if (e.key === 'ArrowLeft') {
+        setCurrentImageIndex(i => Math.max(0, i - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // We need the current index from the state ref or closure
+        // Since this effect depends on [currentImageIndex], it will re-bind
+        handleRemoveImage(currentImageIndex);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
 
   return (
   <div className="w-full">
