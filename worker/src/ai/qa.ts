@@ -1,5 +1,6 @@
 // server/ai/qa.ts
 import type { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface GeometryQA {
   ok: boolean;
@@ -13,7 +14,7 @@ Compare two images of the same room. Decide if the edited image contains impossi
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [{
         role: "user",
         parts: [

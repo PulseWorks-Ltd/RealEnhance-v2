@@ -803,8 +803,8 @@ function readSemanticConfig(): EffectiveValidatorConfig["semanticValidator"] {
 export function buildEffectiveValidatorConfig(): EffectiveValidatorConfig {
   const cfg = loadStageAwareConfig();
   const semantic = readSemanticConfig();
-  const semanticModel = process.env.SEMANTIC_VALIDATOR_MODEL || "gemini-2.0-flash";
-  const placementModel = process.env.PLACEMENT_VALIDATOR_MODEL || "gemini-2.0-flash";
+  const semanticModel = process.env.SEMANTIC_VALIDATOR_MODEL || "gemini-2.5-flash";
+  const placementModel = process.env.PLACEMENT_VALIDATOR_MODEL || "gemini-2.5-flash";
 
   return {
     validatorMode: getValidatorMode("global"),

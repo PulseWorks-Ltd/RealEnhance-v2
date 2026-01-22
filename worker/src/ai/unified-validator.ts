@@ -1,4 +1,5 @@
 import { getGeminiClient } from "./gemini";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 import { toBase64 } from "../utils/images";
 import { validatePerspectivePreservation } from "./perspective-detector";
 import { validateWallPlanes } from "./wall-plane-validator";
@@ -742,7 +743,7 @@ CRITICAL VALIDATION RULES:
 Return ONLY the JSON, no explanatory text.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },

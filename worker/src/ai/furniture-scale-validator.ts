@@ -1,6 +1,7 @@
 // server/ai/furniture-scale-validator.ts
 
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface FurnitureScaleCheck {
   ok: boolean;
@@ -93,7 +94,7 @@ Enhanced: Tiny single bed that looks child-sized in the same space
 Verdict: ok=false, reason="Furniture appears miniaturized - bed scaled down unrealistically, looks dollhouse-scale in room"`;
 
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [{
         role: "user",
         parts: [

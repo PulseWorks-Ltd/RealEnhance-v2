@@ -303,7 +303,7 @@ export async function validateSemanticStageCompliance(args: {
   candidateImagePath: string;
   model?: string;
 }): Promise<SemanticValidationResult> {
-  const { stage, baselineImagePath, candidateImagePath, model = "gemini-2.0-flash" } = args;
+  const { stage, baselineImagePath, candidateImagePath, model = "gemini-2.5-flash" } = args;
   const logRaw = process.env.SEMANTIC_VALIDATOR_LOG_RAW === "1";
 
   try {
@@ -447,7 +447,7 @@ export async function validatePlacement(args: {
   candidateImagePath: string;
   model?: string;
 }): Promise<PlacementValidationResult> {
-  const { baselineImagePath, candidateImagePath, model = "gemini-2.0-flash" } = args;
+  const { baselineImagePath, candidateImagePath, model = "gemini-2.5-flash" } = args;
   const logRaw = process.env.SEMANTIC_VALIDATOR_LOG_RAW === "1";
 
   try {

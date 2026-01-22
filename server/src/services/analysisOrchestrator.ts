@@ -12,7 +12,7 @@ import type { JobAnalysis, AnalysisTrigger } from "@realenhance/shared/analysis/
 import { runGeminiAnalysis, isAnalysisEnabled, PROMPT_VERSION, getAnalysisConfig } from "./geminiAnalysis.js";
 import { packageJobDataForAnalysis } from "./analysisDataPackager.js";
 
-const GEMINI_MODEL_ANALYSIS = process.env.GEMINI_MODEL_ANALYSIS || "gemini-2.0-flash-exp";
+const GEMINI_MODEL_ANALYSIS = process.env.GEMINI_MODEL_ANALYSIS || "gemini-2.5-flash";
 const ANALYSIS_RUN_ON_FAILURE = process.env.ANALYSIS_RUN_ON_FAILURE !== "false"; // default true
 
 /**

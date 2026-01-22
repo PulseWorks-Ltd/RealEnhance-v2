@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export type LayoutPlan = {
   roomType: 'living' | 'kitchen' | 'dining' | 'bedroom' | 'office' | 'unknown';
@@ -18,7 +19,7 @@ async function callGeminiText(prompt: string): Promise<string> {
   
   const ai = new GoogleGenAI({ apiKey: process.env.REALENHANCE_API_KEY });
   const resp = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
+    model: GEMINI_VISION_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }]
   });
   return resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") || "";

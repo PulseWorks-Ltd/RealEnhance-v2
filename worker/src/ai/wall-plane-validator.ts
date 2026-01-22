@@ -1,6 +1,7 @@
 // server/ai/wall-plane-validator.ts
 
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface WallPlaneCheck {
   ok: boolean;
@@ -89,7 +90,7 @@ Return JSON with this structure:
 ⚠️ PREFERENCE: Leaving blank space is better than fabricating false architecture`;
 
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [{
         role: "user",
         parts: [

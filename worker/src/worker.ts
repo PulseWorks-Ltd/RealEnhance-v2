@@ -1,4 +1,3 @@
-import type { ComplianceVerdict } from "./ai/compliance";
 import { Worker, Job } from "bullmq";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
@@ -33,8 +32,8 @@ import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
-import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
+import { createValidator, loadHybridValidatorConfig } from "./validators/hybrid";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
@@ -1096,16 +1095,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
-  // COMPLIANCE VALIDATION (best-effort)
+  // COMPLIANCE VALIDATION (hybrid: Stability AI primary + Gemini fallback)
   let compliance: any = undefined;
   const tVal = Date.now();
   try {
-    const ai = getGeminiClient();
+    const validatorConfig = loadHybridValidatorConfig();
+    const validator = createValidator();
     const base1A = toBase64(path1A);
     const baseFinal = toBase64(path2);
-    compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
+    const verdict = await validator.validate({ originalB64: base1A.data, editedB64: baseFinal.data });
+    compliance = { ok: verdict.pass, reasons: verdict.reasons, provider: verdict.provider, confidence: verdict.confidence, latencyMs: verdict.latencyMs };
     let retries = 0;
-    let maxRetries = 2;
+    const maxRetries = validatorConfig.maxRetries;
     let temperature = 0.5;
     let lastViolationMsg = "";
     let retryPath2 = path2;
@@ -1115,24 +1116,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "processing",
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
-        message: `Validation failed. Retrying with stricter settings (attempt ${retries+2}/3)...`,
+        message: `Validation failed. Retrying with stricter settings (attempt ${retries+2}/${maxRetries+1})...`,
         meta: {
           ...(sceneLabel ? { ...sceneMeta } : {}),
           compliance,
           strictRetry: true,
-          strictRetryReasons: Array.isArray((compliance as any)?.reasons) ? (compliance as any).reasons : ["compliance retry"],
+          strictRetryReasons: Array.isArray(compliance.reasons) ? compliance.reasons : ["compliance retry"],
           strictRetryPhase: "compliance"
         }
       });
-      nLog(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
+      nLog(`[worker] ❌ Job ${payload.jobId} failed compliance (provider=${compliance.provider}, confidence=${compliance.confidence}): ${lastViolationMsg} (retry ${retries+1})`);
       temperature = Math.max(0.1, temperature - 0.1);
-      // Call Gemini enhancement directly with reduced temperature
+      // Re-enhance with reduced temperature then re-validate
       if (!path1B) {
         nLog("[worker] path1B is undefined – skipping retry for 1B.");
       } else {
         retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
         const baseFinalRetry = toBase64(retryPath2);
-        compliance = await checkCompliance(ai, base1A.data, baseFinalRetry.data);
+        const retryVerdict = await validator.validate({ originalB64: base1A.data, editedB64: baseFinalRetry.data });
+        compliance = { ok: retryVerdict.pass, reasons: retryVerdict.reasons, provider: retryVerdict.provider, confidence: retryVerdict.confidence, latencyMs: retryVerdict.latencyMs };
       }
       retries++;
     }
@@ -1143,15 +1145,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "complete", // Mark as complete so UI receives the image
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
-        message: "Image enhancement completed after 1 retry, but failed compliance validation.",
+        message: "Image enhancement completed after retries, but failed compliance validation.",
         meta: { ...(sceneLabel ? { ...sceneMeta } : {}), compliance, complianceFailed: true }
       });
       nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
       // Do NOT return; continue so image is published
     }
   } catch (e) {
-    // proceed if Gemini not configured or any error
-    // nLog("[worker] compliance check skipped:", (e as any)?.message || e);
+    // proceed if validation not configured or any error - fail-open
+    nLog(`[worker] compliance check skipped: ${(e as any)?.message || e}`);
   }
   timings.validateMs = Date.now() - tVal;
 
@@ -1165,7 +1167,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     }
     if (compliance) {
-      nLog(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"}`);
+      nLog(`[worker] Hybrid Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"} (provider=${compliance.provider}, confidence=${compliance.confidence?.toFixed(2) ?? "N/A"}, ${compliance.latencyMs}ms)`);
       if (!compliance.ok && compliance.reasons) {
         nLog(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
       }

@@ -1,5 +1,6 @@
 // server/ai/scene.ts
 import type { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface ScenePlane {
   type: "floor" | "wall";
@@ -40,7 +41,7 @@ ONLY JSON. No extra text.`;
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [{
         role: "user",
         parts: [

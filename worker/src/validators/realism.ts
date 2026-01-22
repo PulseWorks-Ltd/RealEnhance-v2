@@ -1,4 +1,5 @@
 import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
+import { GEMINI_VISION_MODEL } from "../ai/visionModelConfig";
 
 export async function validateRealism(
   finalPath: string
@@ -34,7 +35,7 @@ export async function validateRealism(
   const { toBase64 } = await import('../utils/images.js');
   const { data, mime } = toBase64(finalPath);
   const resp = await ai.models.generateContent({
-    model: gemini-2.0-flash,
+    model: GEMINI_VISION_MODEL,
     contents: [
       { inlineData: { mimeType: mime, data } },
       { text: prompt }

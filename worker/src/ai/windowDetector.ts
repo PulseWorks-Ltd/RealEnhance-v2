@@ -1,5 +1,6 @@
 // server/ai/windowDetector.ts
 import type { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface WindowDetection {
   windowCount: number;
@@ -14,7 +15,7 @@ export interface WindowDetection {
 export async function detectWindows(ai: GoogleGenAI, imageB64: string): Promise<WindowDetection> {
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: imageB64 } },
         { 

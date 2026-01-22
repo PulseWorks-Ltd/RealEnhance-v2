@@ -1,4 +1,5 @@
 import type { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 interface FovCheck {
   ok: boolean;
@@ -72,7 +73,7 @@ CRITICAL VALIDATION:
 CRITICAL: The camera view and spatial boundaries are locked. ANY expansion of field-of-view or invention of spaces beyond original photo boundaries MUST be reported as "Field-of-view violation: ..." to ensure critical handling.`;
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [
         { inlineData: { mimeType: "image/png", data: originalB64 } },
         { inlineData: { mimeType: "image/png", data: editedB64 } },

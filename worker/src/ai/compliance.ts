@@ -1,4 +1,5 @@
 import type { GoogleGenAI } from "@google/genai";
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export type ComplianceVerdict = {
   ok: boolean;
@@ -9,7 +10,7 @@ export type ComplianceVerdict = {
 
 async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
   const resp = await (ai as any).models.generateContent({
-    model: "gemini-2.0-flash",
+    model: GEMINI_VISION_MODEL,
     contents: [{
       role: "user",
       parts: [

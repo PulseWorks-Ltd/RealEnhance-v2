@@ -1,6 +1,7 @@
 // server/ai/furnitureDetector.ts
 
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_VISION_MODEL } from "./visionModelConfig";
 
 export interface FurnitureItem {
   type: 'sofa' | 'chair' | 'table' | 'bed' | 'dresser' | 'bookshelf' | 'tv_stand' | 'coffee_table' | 'dining_table' | 'nightstand' | 'wardrobe' | 'desk' | 'side_table' | 'console_table' | 'display_unit' | 'wall_art' | 'decorative_object' | 'plant' | 'soft_furnishing' | 'counter_clutter' | 'window_sill_item' | 'surface_clutter' | 'other';
@@ -160,7 +161,7 @@ ONLY JSON. No extra text.`;
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: GEMINI_VISION_MODEL,
       contents: [{
         role: "user",
         parts: [

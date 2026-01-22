@@ -8,7 +8,7 @@ const PROMPT_VERSION = "analysis-v1";
 
 // Environment configuration
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL_ANALYSIS = process.env.GEMINI_MODEL_ANALYSIS || "gemini-2.0-flash-exp";
+const GEMINI_MODEL_ANALYSIS = process.env.GEMINI_MODEL_ANALYSIS || "gemini-2.5-flash";
 const ANALYSIS_ENABLED = process.env.ANALYSIS_ENABLED !== "false"; // default true
 const ANALYSIS_TIMEOUT_MS = parseInt(process.env.ANALYSIS_TIMEOUT_MS || "30000");
 const ANALYSIS_MAX_IMAGES = parseInt(process.env.ANALYSIS_MAX_IMAGES || "3");
