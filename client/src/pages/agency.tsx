@@ -403,6 +403,10 @@ export default function AgencyPage() {
               monthKey={usage.monthKey}
               stagingNote={usage.stagingNote}
               topUsers={usage.topUsers}
+              isAdmin={!!isAdminOrOwner}
+              hasRoleInfo={!!agencyInfo?.userRole}
+              billingHref="/agency#billing-section"
+              addonHref="/agency#bundle-purchase"
             />
           </CardContent>
         </Card>
@@ -429,7 +433,11 @@ export default function AgencyPage() {
       )}
 
       {/* Bundle Purchase */}
-      {isAdminOrOwner && <BundlePurchase />}
+      {isAdminOrOwner && (
+        <div id="bundle-purchase">
+          <BundlePurchase />
+        </div>
+      )}
 
     </div>
   );

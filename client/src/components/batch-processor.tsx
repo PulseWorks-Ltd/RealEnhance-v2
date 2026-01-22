@@ -3,11 +3,13 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FixedSelect, FixedSelectItem } from "@/components/ui/FixedSelect";
+import { Button } from "@/components/ui/button";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { getQuotaExceededMessage } from "@/lib/quota-messaging";
 import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
@@ -344,8 +346,37 @@ export default function BatchProcessor() {
   };
   
   const { toast } = useToast();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
+
+  const isAdminUser = user?.role === "owner" || user?.role === "admin";
+  const hasRoleInfo = !!user?.role;
+  const billingHref = "/agency#billing-section";
+  const addonHref = "/agency#bundle-purchase";
+
+  const showQuotaExceededToast = useCallback(() => {
+    const message = getQuotaExceededMessage({ isAdmin: isAdminUser, hasRoleInfo });
+
+    toast({
+      title: "Image allowance used",
+      description: (
+        <div className="space-y-3">
+          <p>{message}</p>
+          {isAdminUser && (
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="secondary">
+                <a href={billingHref}>Go to Billing</a>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={addonHref}>Buy add-on bundle</a>
+              </Button>
+            </div>
+          )}
+        </div>
+      ),
+      variant: "destructive",
+    });
+  }, [addonHref, billingHref, hasRoleInfo, isAdminUser, toast]);
 
   const isSceneAutoAcceptable = (pred?: SceneDetectResult | null) => {
     if (!pred) return false;
@@ -1604,6 +1635,10 @@ export default function BatchProcessor() {
           return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
         }
         const err = await uploadResp.json().catch(() => ({}));
+        if (uploadResp.status === 402 && err?.code === "QUOTA_EXCEEDED") {
+          showQuotaExceededToast();
+          return;
+        }
         return alert(err.message || "Failed to upload files");
       }
 
@@ -1799,6 +1834,13 @@ export default function BatchProcessor() {
       
       if (!res.ok) {
         setRunState("done");
+        if (res.status === 402) {
+          const err = await res.json().catch(() => ({}));
+          if (err?.code === "QUOTA_EXCEEDED") {
+            showQuotaExceededToast();
+            return;
+          }
+        }
         alert("Failed to retry batch processing");
         return;
       }
@@ -1986,6 +2028,10 @@ export default function BatchProcessor() {
         if (!response.ok) {
           if (response.status === 402) {
             const err = await response.json().catch(() => ({}));
+            if (err?.code === "QUOTA_EXCEEDED") {
+              showQuotaExceededToast();
+              return;
+            }
             const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
             if (goBuy) {
               window.open("/buy-credits", "_blank");
