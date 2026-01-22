@@ -40,7 +40,8 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { logValidatorConfig } from "./validators/validatorMode";
+import { logValidatorConfig, getValidatorMode } from "./validators/validatorMode";
+import { getEnvBoolean } from "./utils/env";
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
@@ -80,6 +81,13 @@ import { generateAuditRef, generateTraceId } from "./utils/audit.js";
  * 
  * Maximum reduction: From 3 potential calls → 2 max, 1 typical
  */
+
+// Validation configuration (evaluated once at startup)
+const VALIDATION_BLOCKING_ENABLED = getEnvBoolean(
+  "VALIDATION_BLOCKING_ENABLED",
+  process.env.NODE_ENV !== "production" ? false : false,
+);
+const STRUCT_VALIDATION_STAGE_AWARE = getEnvBoolean("STRUCT_VALIDATION_STAGE_AWARE", false);
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
@@ -259,11 +267,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const timings: Record<string, number> = {};
   const t0 = Date.now();
-
-  // UNIFIED VALIDATION CONFIGURATION
-  // Set to true to enable blocking on validation failures
-  // For now: LOG-ONLY MODE (never blocks images)
-  const VALIDATION_BLOCKING_ENABLED = false;
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -1555,6 +1558,14 @@ nLog('\n'); // Force flush
 
 // Log validator configuration on startup
 logValidatorConfig();
+nLog('╔════════════════════════════════════════════════════════════════╗');
+nLog('║                 VALIDATION CONFIGURATION                       ║');
+nLog('╚════════════════════════════════════════════════════════════════╝');
+nLog(`[VALIDATION] Blocking: ${VALIDATION_BLOCKING_ENABLED ? "ENFORCE (failures block)" : "LOG-ONLY (failures do not block)"}`);
+nLog(`[VALIDATION] VALIDATOR_MODE: ${getValidatorMode("global")}`);
+nLog(`[VALIDATION] STRUCTURE_VALIDATOR_MODE: ${getValidatorMode("structure")}`);
+nLog(`[VALIDATION] STRUCT_VALIDATION_STAGE_AWARE: ${STRUCT_VALIDATION_STAGE_AWARE ? "ON" : "OFF"}`);
+nLog('╚════════════════════════════════════════════════════════════════╝');
 nLog('\n'); // Force flush
 
 // BullMQ worker
