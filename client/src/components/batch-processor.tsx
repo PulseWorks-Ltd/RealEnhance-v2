@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
-import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2 } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
 
@@ -2456,9 +2456,24 @@ export default function BatchProcessor() {
     setImageRoomTypes({});
   };
 
+  const shiftIndexMap = <T,>(map: Record<number, T>, index: number): Record<number, T> => {
+    const next: Record<number, T> = {};
+    Object.entries(map).forEach(([k, value]) => {
+      const i = parseInt(k, 10);
+      if (Number.isNaN(i)) return;
+      if (i < index) next[i] = value;
+      else if (i > index) next[i - 1] = value;
+    });
+    return next;
+  };
+
   const removeFile = (index: number) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
-    // Update selection indices
+    setResults(prev => prev.filter((_, i) => i !== index));
+    setAiSteps(prev => shiftIndexMap(prev, index));
+    setProcessedImages(prev => prev.filter((_, i) => i !== index));
+    setProcessedImagesByIndex(prev => shiftIndexMap(prev, index));
+
     setSelection(prev => {
       const newSelection = new Set<number>();
       prev.forEach(i => {
@@ -2467,36 +2482,46 @@ export default function BatchProcessor() {
       });
       return newSelection;
     });
-    // Update metadata indices
-    setMetaByIndex(prev => {
-      const newMeta: Record<number, LocalItemMeta> = {};
-      Object.entries(prev).forEach(([idx, meta]) => {
-        const i = parseInt(idx);
-        if (i < index) newMeta[i] = meta;
-        else if (i > index) newMeta[i - 1] = meta;
+
+    setMetaByIndex(prev => shiftIndexMap(prev, index));
+    setImageSceneTypes(prev => shiftIndexMap(prev, index));
+    setManualSceneTypes(prev => shiftIndexMap(prev, index));
+    setManualSceneOverrideByIndex(prev => shiftIndexMap(prev, index));
+    setImageSkyReplacement(prev => shiftIndexMap(prev, index));
+    setImageRoomTypes(prev => shiftIndexMap(prev, index));
+    setScenePredictions(prev => shiftIndexMap(prev, index));
+
+    imageSceneTypesRef.current = shiftIndexMap(imageSceneTypesRef.current, index);
+    manualSceneTypesRef.current = shiftIndexMap(manualSceneTypesRef.current, index);
+    scenePredictionsRef.current = shiftIndexMap(scenePredictionsRef.current, index);
+  };
+
+  const removeDisabled = runState !== "idle" || isUploading;
+
+  const handleRemoveImage = (index: number) => {
+    if (removeDisabled) {
+      toast({
+        title: "Cannot remove now",
+        description: "Wait for the current process to finish before removing images.",
+        variant: "destructive",
       });
-      return newMeta;
+      return;
+    }
+
+    const confirmed = window.confirm("Remove this image from the batch?");
+    if (!confirmed) return;
+
+    setCurrentImageIndex(prev => {
+      const total = files.length;
+      if (prev === index) {
+        const hasRight = index < total - 1;
+        return hasRight ? index : Math.max(0, prev - 1);
+      }
+      if (prev > index) return prev - 1;
+      return prev;
     });
-    // Update scene type indices
-    setImageSceneTypes(prev => {
-      const newTypes: Record<number, string> = {};
-      Object.entries(prev).forEach(([idx, type]) => {
-        const i = parseInt(idx);
-        if (i < index) newTypes[i] = type;
-        else if (i > index) newTypes[i - 1] = type;
-      });
-      return newTypes;
-    });
-    // Update room type indices
-    setImageRoomTypes(prev => {
-      const newTypes: Record<number, string> = {};
-      Object.entries(prev).forEach(([idx, type]) => {
-        const i = parseInt(idx);
-        if (i < index) newTypes[i] = type;
-        else if (i > index) newTypes[i - 1] = type;
-      });
-      return newTypes;
-    });
+
+    removeFile(index);
   };
 
   // Dummy state to force re-render when room type detection updates
@@ -2895,101 +2920,149 @@ export default function BatchProcessor() {
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
           <div className="flex h-[calc(100vh-140px)] bg-slate-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden">
-
-            {/* LEFT PANEL: The Canvas */}
-            <div className="flex-1 bg-slate-100 relative flex items-center justify-center p-6 lg:p-8 overflow-hidden">
-              {/* Back Navigation */}
-              <button
-                onClick={() => setActiveTab("describe")}
-                className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back to Settings
-              </button>
-
-              {/* Image Counter Badge */}
-              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 shadow-sm">
-                {currentImageIndex + 1} of {files.length}
-              </div>
-
-              {/* Navigation Arrows */}
-              {files.length > 1 && (
-                <>
-                  <button
-                    onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
-                    disabled={currentImageIndex === 0}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
-                    disabled={currentImageIndex === files.length - 1}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </>
-              )}
-
-              {/* The Image Canvas */}
-              <div className="relative shadow-2xl rounded-lg overflow-hidden max-h-[70vh] max-w-full">
-                <img
-                  src={previewUrls[currentImageIndex]}
-                  alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                  className="max-h-[70vh] w-auto object-contain bg-white"
-                />
-                {/* Zoom Button Overlay */}
-                <button
-                  onClick={() => setPreviewImage({
-                    url: previewUrls[currentImageIndex],
-                    filename: files[currentImageIndex]?.name || '',
-                    index: currentImageIndex
-                  })}
-                  className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
-                  title="View fullscreen"
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Validation reminder above thumbnails */}
-              {files.length > 1 && blockingCount > 0 && (
-                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shadow-sm border border-amber-200 whitespace-nowrap">
-                  Complete required fields for images highlighted in red to continue.
+            {files.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-slate-800">No images in this batch</h3>
+                  <p className="text-sm text-slate-600">Add images to continue to the studio.</p>
+                  <div className="flex justify-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => setActiveTab("upload")}
+                      className="bg-action-600 text-white hover:bg-action-700"
+                    >
+                      Upload images
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setActiveTab("describe")}
+                    >
+                      Back to settings
+                    </Button>
+                  </div>
                 </div>
-              )}
+              </div>
+            ) : (
+              <>
+                {/* LEFT PANEL: The Canvas */}
+                <div className="flex-1 bg-slate-100 relative flex items-center justify-center p-6 lg:p-8 overflow-hidden">
+                  {/* Back Navigation */}
+                  <button
+                    onClick={() => setActiveTab("describe")}
+                    className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Back to Settings
+                  </button>
 
-              {/* Thumbnail Strip (for multiple images) */}
-              {files.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
-                  {files.map((file, idx) => {
-                    const status = imageValidationStatus(idx);
-                    const statusRing = status === "needs_input"
-                      ? "ring-2 ring-red-500 ring-offset-1"
-                      : status === "ok"
-                        ? "ring-2 ring-emerald-500 ring-offset-1"
-                        : "ring-1 ring-slate-200";
-                    const activeState = idx === currentImageIndex
-                      ? "outline outline-2 outline-action-500 outline-offset-2"
-                      : "opacity-60 hover:opacity-100";
-                    return (
+                  {/* Image Counter Badge */}
+                  <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 shadow-sm">
+                    {currentImageIndex + 1} of {files.length}
+                  </div>
+
+                  {/* Navigation Arrows */}
+                  {files.length > 1 && (
+                    <>
                       <button
-                        key={idx}
-                        onClick={() => setCurrentImageIndex(idx)}
-                        className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
-                        title={status === "needs_input" ? "Needs scene/room input" : undefined}
+                        onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                        disabled={currentImageIndex === 0}
+                        className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                       >
-                        <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
+                        <ChevronLeft className="w-5 h-5" />
                       </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      <button
+                        onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                        disabled={currentImageIndex === files.length - 1}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
 
-            {/* RIGHT PANEL: The Inspector Sidebar */}
-            <div className="w-80 lg:w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl">
+                  {/* The Image Canvas */}
+                  <div className="relative shadow-2xl rounded-lg overflow-hidden max-h-[70vh] max-w-full">
+                    <img
+                      src={previewUrls[currentImageIndex]}
+                      alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                      className="max-h-[70vh] w-auto object-contain bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(currentImageIndex)}
+                      disabled={removeDisabled}
+                      aria-label="Remove image from batch"
+                      className="absolute top-3 right-3 bg-red-600 text-white rounded-full p-2 shadow-md border border-white/70 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Remove image"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    {/* Zoom Button Overlay */}
+                    <button
+                      onClick={() => setPreviewImage({
+                        url: previewUrls[currentImageIndex],
+                        filename: files[currentImageIndex]?.name || '',
+                        index: currentImageIndex
+                      })}
+                      className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
+                      title="View fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Validation reminder above thumbnails */}
+                  {files.length > 1 && blockingCount > 0 && (
+                    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shadow-sm border border-amber-200 whitespace-nowrap">
+                      Complete required fields for images highlighted in red to continue.
+                    </div>
+                  )}
+
+                  {/* Thumbnail Strip (for multiple images) */}
+                  {files.length > 1 && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
+                      {files.map((file, idx) => {
+                        const status = imageValidationStatus(idx);
+                        const statusRing = status === "needs_input"
+                          ? "ring-2 ring-red-500 ring-offset-1"
+                          : status === "ok"
+                            ? "ring-2 ring-emerald-500 ring-offset-1"
+                            : "ring-1 ring-slate-200";
+                        const activeState = idx === currentImageIndex
+                          ? "outline outline-2 outline-action-500 outline-offset-2"
+                          : "opacity-60 hover:opacity-100";
+                        return (
+                          <div key={idx} className="relative">
+                            <button
+                              onClick={() => setCurrentImageIndex(idx)}
+                              className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
+                              title={status === "needs_input" ? "Needs scene/room input" : undefined}
+                              type="button"
+                            >
+                              <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemoveImage(idx);
+                              }}
+                              disabled={removeDisabled}
+                              aria-label="Remove image from batch"
+                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1.5 shadow-md border border-white/80 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* RIGHT PANEL: The Inspector Sidebar */}
+                <div className="w-80 lg:w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl">
 
               {/* Sidebar Header */}
               <div className="p-5 border-b border-slate-100">
@@ -3224,6 +3297,8 @@ export default function BatchProcessor() {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
         )}
 
