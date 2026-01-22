@@ -1,3 +1,5 @@
+import { getValidatorMode } from "./validatorMode";
+
 /**
  * Stage-Aware Structural Validation Configuration
  *
@@ -36,7 +38,6 @@
  * - STRUCT_VALIDATION_STAGE2_EDGE_IOU_MIN: 0.0-1.0 (default: 0.60)
  * - STRUCT_VALIDATION_STAGE2_STRUCT_IOU_MIN: 0.0-1.0 (default: 0.80)
  * - STRUCT_VALIDATION_STAGE2_LINEEDGE_MIN: 0.0-1.0 (default: 0.70)
- * - STRUCT_VALIDATION_STAGE2_UNIFIED_MIN: 0.0-1.0 (default: 0.65)
  * - STRUCT_VALIDATION_STAGE2_OPENINGS_MIN_DELTA: integer (default: 2)
  *
  * HARD-FAIL SWITCHES (Stage2 global defaults):
@@ -732,4 +733,137 @@ export function incrementStageAttempts(state: StageRetryState, stage: StageId): 
       break;
   }
   return newState;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EFFECTIVE CONFIG LOGGING (startup only)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type EffectiveValidatorConfig = {
+  validatorMode: string;
+  structureValidatorMode: string;
+  realismValidatorMode: string;
+  semanticValidator: {
+    enabled: boolean;
+    failClosed: boolean;
+    highConfThreshold: number;
+    logRaw: boolean;
+  };
+  geminiModels: {
+    semantic: string;
+    placement: string;
+  };
+  stageAware: {
+    enabled: boolean;
+    gateMinSignals: number;
+    stage2: {
+      structIouMin: number;
+      edgeIouMin: number;
+      excludeLowerPct: number;
+      openingsMinDelta: number;
+      edgeMode: string;
+      lowEdgeEnabled: boolean;
+      lowEdgeSkipEdgeIoU: boolean;
+    };
+    stage1B: {
+      structIouMin: number;
+      edgeIouMin: number;
+      unifiedMin: number;
+      openingsGate: string;
+    };
+    lowEdge: {
+      enabled: boolean;
+      skipEdgeIou: boolean;
+      densityMax: number;
+      centerCropRatio: number;
+    };
+  };
+  flags: {
+    stageAwareEnabled: boolean;
+    geminiEnabled: boolean;
+  };
+};
+
+function readSemanticConfig(): EffectiveValidatorConfig["semanticValidator"] {
+  return {
+    enabled: process.env.SEMANTIC_VALIDATOR_ENABLED !== "0",
+    failClosed: process.env.SEMANTIC_VALIDATOR_FAIL_CLOSED !== "0",
+    highConfThreshold: parseFloat(process.env.SEMANTIC_VALIDATOR_HIGH_CONF_THRESHOLD || "0.85"),
+    logRaw: process.env.SEMANTIC_VALIDATOR_LOG_RAW === "1",
+  };
+}
+
+export function buildEffectiveValidatorConfig(): EffectiveValidatorConfig {
+  const cfg = loadStageAwareConfig();
+  const semantic = readSemanticConfig();
+  const semanticModel = process.env.SEMANTIC_VALIDATOR_MODEL || "gemini-2.0-flash";
+  const placementModel = process.env.PLACEMENT_VALIDATOR_MODEL || "gemini-2.0-flash";
+
+  return {
+    validatorMode: getValidatorMode("global"),
+    structureValidatorMode: getValidatorMode("structure"),
+    realismValidatorMode: getValidatorMode("realism"),
+    semanticValidator: semantic,
+    geminiModels: {
+      semantic: semanticModel,
+      placement: placementModel,
+    },
+    stageAware: {
+      enabled: cfg.enabled,
+      gateMinSignals: cfg.gateMinSignals,
+      stage2: {
+        structIouMin: cfg.stage2Thresholds.structIouMin,
+        edgeIouMin: cfg.stage2Thresholds.edgeIouMin,
+        excludeLowerPct: cfg.stage2ExcludeLowerPct,
+        openingsMinDelta: cfg.stage2Thresholds.openingsMinDelta,
+        edgeMode: cfg.stage2EdgeMode,
+        lowEdgeEnabled: cfg.lowEdgeEnable,
+        lowEdgeSkipEdgeIoU: cfg.lowEdgeSkipEdgeIoU,
+      },
+      stage1B: {
+        structIouMin: cfg.stage1BThresholds.structIouMin,
+        edgeIouMin: cfg.stage1BThresholds.edgeIouMin,
+        unifiedMin: cfg.stage1BThresholds.unifiedMin,
+        openingsGate: cfg.stage1BHardFailSwitches.blockOnOpeningsDelta ? "block" : "allow",
+      },
+      lowEdge: {
+        enabled: cfg.lowEdgeEnable,
+        skipEdgeIou: cfg.lowEdgeSkipEdgeIoU,
+        densityMax: cfg.lowEdgeEdgeDensityMax,
+        centerCropRatio: cfg.lowEdgeCenterCropRatio,
+      },
+    },
+    flags: {
+      stageAwareEnabled: cfg.enabled,
+      geminiEnabled: semantic.enabled,
+    },
+  };
+}
+
+export function logValidatorEnvWarnings(): void {
+  const allowedModes = new Set(["off", "log", "retry", "block"]);
+  const checkMode = (key: string) => {
+    const raw = process.env[key];
+    if (raw && !allowedModes.has(raw)) {
+      console.warn(`[VALIDATOR_ENV_WARN] ${key} has unexpected value="${raw}" (expected off|log|retry|block)`);
+    }
+  };
+
+  if (process.env.SEMANTIC_VALIDATOR_ENABLED === undefined) {
+    console.warn(`[VALIDATOR_ENV_WARN] SEMANTIC_VALIDATOR_ENABLED not set (defaulting to enabled)`);
+  }
+
+  if (process.env.STRUCT_VALIDATION_STAGE2_OPENINGS_MIN_DELTA === undefined) {
+    console.warn(`[VALIDATOR_ENV_WARN] STRUCT_VALIDATION_STAGE2_OPENINGS_MIN_DELTA not set (using default)`);
+  }
+
+  checkMode("VALIDATOR_MODE");
+  checkMode("STRUCTURE_VALIDATOR_MODE");
+  checkMode("REALISM_VALIDATOR_MODE");
+}
+
+export function logEffectiveValidatorConfig(): void {
+  const effective = buildEffectiveValidatorConfig();
+  console.log(`[VALIDATOR_EFFECTIVE_CONFIG] ${JSON.stringify(effective)}`);
+  logValidatorEnvWarnings();
 }
