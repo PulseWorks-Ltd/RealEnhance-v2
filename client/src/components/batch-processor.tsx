@@ -3086,7 +3086,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="flex h-[calc(100vh-140px)] bg-slate-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden">
+          <div className="grid h-[calc(100vh-140px)] w-full grid-cols-1 lg:grid-cols-[3fr_1fr] bg-slate-100 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden shadow-sm">
             {files.length === 0 ? (
               <div className="flex flex-1 items-center justify-center px-6 text-center">
                 <div className="space-y-4">
@@ -3113,7 +3113,7 @@ export default function BatchProcessor() {
             ) : (
               <>
                 {/* LEFT PANEL: The Canvas */}
-                <div className="flex-1 bg-slate-100 relative flex items-center justify-center p-6 lg:p-8 overflow-hidden">
+                <div className="relative flex h-full flex-col bg-slate-100 p-4 sm:p-6 lg:p-8 overflow-hidden">
                   {/* Back Navigation */}
                   <button
                     onClick={() => setActiveTab("describe")}
@@ -3134,33 +3134,35 @@ export default function BatchProcessor() {
                       <button
                         onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
                         disabled={currentImageIndex === 0}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/25 text-white opacity-70 flex items-center justify-center transition-all hover:opacity-100 hover:bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-30"
+                        aria-label="Previous image"
                       >
-                        <ChevronLeft className="w-5 h-5" />
+                        <ChevronLeft className="h-6 w-6" />
                       </button>
                       <button
                         onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
                         disabled={currentImageIndex === files.length - 1}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                        className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-black/25 text-white opacity-70 flex items-center justify-center transition-all hover:opacity-100 hover:bg-black/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 disabled:opacity-30"
+                        aria-label="Next image"
                       >
-                        <ChevronRight className="w-5 h-5" />
+                        <ChevronRight className="h-6 w-6" />
                       </button>
                     </>
                   )}
 
                   {/* The Image Canvas */}
-                  <div className="relative shadow-2xl rounded-lg overflow-hidden max-h-[70vh] max-w-full">
+                  <div className="relative w-full max-w-5xl bg-white/90 rounded-xl shadow-2xl overflow-hidden flex items-center justify-center min-h-[320px] sm:min-h-[420px] lg:min-h-[520px]">
                     <img
                       src={previewUrls[currentImageIndex]}
                       alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                      className="max-h-[70vh] w-auto object-contain bg-white"
+                      className="max-h-[70vh] max-w-full object-contain"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(currentImageIndex)}
                       disabled={removeDisabled}
                       aria-label="Remove image from batch"
-                      className="absolute top-3 right-3 bg-red-600 text-white rounded-full p-2 shadow-md border border-white/70 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="absolute top-3 right-3 h-10 w-10 rounded-full bg-white/80 text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Remove image"
                     >
                       <X className="w-4 h-4" />
@@ -3188,7 +3190,7 @@ export default function BatchProcessor() {
 
                   {/* Thumbnail Strip (for multiple images) */}
                   {files.length > 1 && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-3 bg-white/90 backdrop-blur-sm px-3 py-3 rounded-xl shadow-lg max-w-[88%] overflow-x-auto">
                       {files.map((file, idx) => {
                         const status = imageValidationStatus(idx);
                         const statusRing = status === "needs_input"
@@ -3197,13 +3199,13 @@ export default function BatchProcessor() {
                             ? "ring-2 ring-emerald-500 ring-offset-1"
                             : "ring-1 ring-slate-200";
                         const activeState = idx === currentImageIndex
-                          ? "outline outline-2 outline-action-500 outline-offset-2"
-                          : "opacity-60 hover:opacity-100";
+                          ? "ring-[3px] ring-emerald-500 ring-offset-2 ring-offset-white scale-105"
+                          : "opacity-70 hover:opacity-100";
                         return (
                           <div key={idx} className="relative">
                             <button
                               onClick={() => setCurrentImageIndex(idx)}
-                              className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
+                              className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
                               title={status === "needs_input" ? "Needs scene/room input" : undefined}
                               type="button"
                             >
@@ -3217,7 +3219,7 @@ export default function BatchProcessor() {
                               }}
                               disabled={removeDisabled}
                               aria-label="Remove image from batch"
-                              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full p-1.5 shadow-md border border-white/80 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="absolute -top-2 -right-2 h-7 w-7 rounded-full bg-white/80 text-slate-500 border border-slate-200 shadow-md transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -3229,12 +3231,12 @@ export default function BatchProcessor() {
                 </div>
 
                 {/* RIGHT PANEL: The Inspector Sidebar */}
-                <div className="w-80 lg:w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl">
+                <div className="bg-white border-l border-slate-200 flex flex-col shadow-xl h-full">
 
               {/* Sidebar Header */}
-              <div className="p-5 border-b border-slate-100">
+              <div className="p-6 border-b border-slate-100">
                 <div className="flex justify-between items-center mb-1">
-                  <h2 className="text-lg font-semibold text-slate-900">Settings</h2>
+                  <h2 className="text-xl font-semibold text-slate-900">Settings</h2>
                   <button
                     onClick={() => {
                       if (!currentImageId) return;
@@ -3260,7 +3262,7 @@ export default function BatchProcessor() {
               </div>
 
               {/* Scrollable Settings Area */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div className="flex-1 overflow-y-auto p-6 space-y-8">
 
                 {/* Scene Type Selection - Visual Cards */}
                 <section>
@@ -3350,7 +3352,7 @@ export default function BatchProcessor() {
 
                 {/* Room Type Selection - Only for Interior when staging enabled */}
                 {allowStaging && (currentFinalScene !== "exterior") && (
-                  <section>
+                  <section className="pt-2">
                     <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
                     <FixedSelect
                       value={(currentImageId && imageRoomTypesById[currentImageId]) || ""}
