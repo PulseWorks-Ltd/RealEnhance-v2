@@ -971,6 +971,24 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         "edge_iou",
       ]);
 
+      // Optionally allow openings-based fatals if explicitly enabled and over min delta
+      const openingsIds = new Set([
+        "openings_delta",
+        "masked_edge_openings_created",
+        "masked_edge_openings_closed",
+        "openings_created_maskededge",
+        "openings_closed_maskededge",
+      ]);
+
+      if (effectiveHardFailSwitches.blockOnOpeningsDelta) {
+        const deltaOk = typeof (t.meta as any)?.delta === "number"
+          ? (t.meta as any).delta >= (stage2Thresholds.openingsMinDelta || 1)
+          : true;
+        if (deltaOk && openingsIds.has(t.id)) {
+          fatalWhitelist.add(t.id);
+        }
+      }
+
       if (t.fatal && !fatalWhitelist.has(t.id)) {
         t.fatal = false;
         t.nonBlocking = true;

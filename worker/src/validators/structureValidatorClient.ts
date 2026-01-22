@@ -11,6 +11,8 @@
  */
 
 import axios, { AxiosError } from "axios";
+import type { StageId } from "./stageAwareConfig";
+import { classifyDeviation, loadDeviationConfigFromEnv } from "./structural/deviationClassifier";
 
 /**
  * Line summary statistics from OpenCV analysis
@@ -40,6 +42,12 @@ export interface StructureValidationResult {
   enhanced: LineSummary;
   message: string;
   error?: string;
+  deviation?: {
+    severity: "pass" | "risk" | "fatal";
+    thresholdDeg: number;
+    confirmationsUsed: string[];
+    reason: string;
+  };
 }
 
 /**
@@ -202,13 +210,39 @@ export async function validateStructure(
  *
  * @param originalUrl - Public URL to the original image
  * @param enhancedUrl - Public URL to the enhanced image
- * @throws Error if mode="block" and validation fails
+ * @param stage - Stage hint for deviation thresholds (defaults to stage1A)
+ * @param context - Optional confirmation signals (IoU, openings) for deviation gating
+ * @throws Error if mode="block" and validation fails with fatal severity
  */
 export async function runStructuralCheck(
   originalUrl: string,
-  enhancedUrl: string
+  enhancedUrl: string,
+  stage: StageId = "stage1A",
+  context?: {
+    structIou?: number | null;
+    structIouThreshold?: number;
+    edgeIou?: number | null;
+    edgeIouThreshold?: number;
+    openingsDelta?: number;
+    openingsMinDelta?: number;
+  }
 ): Promise<StructureValidationResult> {
   const result = await validateStructure(originalUrl, enhancedUrl);
+  const deviationConfig = loadDeviationConfigFromEnv();
+
+  const deviationClassification = classifyDeviation(stage, result.deviationScore, {
+    structIou: context?.structIou,
+    structIouThreshold: context?.structIouThreshold,
+    edgeIou: context?.edgeIou,
+    edgeIouThreshold: context?.edgeIouThreshold,
+    openingsDelta: context?.openingsDelta,
+    openingsMinDelta: context?.openingsMinDelta,
+    openingsValidatorActive: context?.openingsMinDelta !== undefined,
+  }, deviationConfig);
+
+  if (deviationClassification) {
+    result.deviation = deviationClassification;
+  }
 
   // Log results (always, for all modes)
   console.log("[structureValidator] === STRUCTURAL VALIDATION RESULT ===");
@@ -231,16 +265,28 @@ export async function runStructuralCheck(
     );
   }
 
-  // Blocking logic
-  if (result.mode === "block" && result.isSuspicious) {
-    console.error("[structureValidator] ⚠️ BLOCKING IMAGE due to structural deviation");
-    console.error(`[structureValidator] Deviation score ${result.deviationScore}° exceeds threshold`);
+  if (deviationClassification) {
+    console.log(
+      `[structureValidator] Deviation classification: severity=${deviationClassification.severity} ` +
+      `deg=${result.deviationScore}° threshold=${deviationClassification.thresholdDeg} ` +
+      `confirmations=[${deviationClassification.confirmationsUsed.join(";")}] reason=${deviationClassification.reason}`
+    );
+  }
+
+  const severity = deviationClassification?.severity || (result.isSuspicious ? "risk" : "pass");
+
+  // Blocking logic with confirmation gating
+  if (severity === "fatal" && result.mode === "block") {
+    console.error("[structureValidator] ⚠️ BLOCKING IMAGE due to confirmed structural deviation");
+    console.error(`[structureValidator] Deviation score ${result.deviationScore}° exceeds threshold and confirmed`);
     throw new Error(
       `Structural validation failed: ${result.message} (deviation: ${result.deviationScore}°)`
     );
-  } else if (result.isSuspicious) {
+  }
+
+  if (severity === "risk") {
     console.warn(
-      `[structureValidator] ⚠️ Structural deviation detected but not blocking (mode=${result.mode})`
+      `[structureValidator] ⚠️ Structural deviation detected but not blocking (mode=${result.mode}, severity=risk)`
     );
   } else {
     console.log("[structureValidator] ✓ Structural validation passed");

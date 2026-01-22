@@ -744,7 +744,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] ═══════════ Running Post-1B Structural Validators ═══════════`);
 
       // Geometry validator (requires published URLs)
-      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl);
+      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl, "stage1B");
 
       const sem = await runSemanticStructureValidator({
         originalImagePath: path1A,
@@ -1277,9 +1277,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // This uses the Python OpenCV microservice for proper line detection
   if (pubFinalUrl && publishedOriginal?.url) {
     try {
+      const finalStage: "stage1A" | "stage1B" | "stage2" = hasStage2
+        ? "stage2"
+        : (payload.options.declutter ? "stage1B" : "stage1A");
+
       structuralValidationResult = await runStructuralCheck(
         publishedOriginal.url,
-        pubFinalUrl
+        pubFinalUrl,
+        finalStage
       );
       // Validation result is logged inside runStructuralCheck
       // If mode="block" and isSuspicious=true, it will throw and abort the job

@@ -57,6 +57,13 @@ import { getValidatorMode } from "./validatorMode";
  * - STRUCT_VALIDATION_LOWEDGE_DENSITY_MAX: 0.0-1.0 (default: 0.045)
  * - STRUCT_VALIDATION_LOWEDGE_CENTER_CROP_RATIO: 0.0-1.0 (default: 0.6)
  * - STRUCT_VALIDATION_LOWEDGE_SKIP_EDGE_IOU: "0" | "1" (default: "1")
+ *
+ * STRUCTURAL DEVIATION (ANGLE) GATING:
+ * - STRUCT_VALIDATION_DEVIATION_FATAL_REQUIRES_CONFIRMATION: "0" | "1" (default: "1")
+ * - STRUCT_VALIDATION_DEVIATION_CONFIRMATION_SIGNALS_MIN: integer (default: 1)
+ * - STRUCT_VALIDATION_MAX_DEVIATION_DEG_STAGE1A: number (default: 20)
+ * - STRUCT_VALIDATION_MAX_DEVIATION_DEG_STAGE1B: number (default: 35)
+ * - STRUCT_VALIDATION_MAX_DEVIATION_DEG_STAGE2: number (default: 45, risk-only)
  */
 
 export type StageId = "stage1A" | "stage1B" | "stage2";
