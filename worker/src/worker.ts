@@ -1,3 +1,4 @@
+import http from "http";
 import { Worker, Job } from "bullmq";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
@@ -1537,13 +1538,25 @@ async function handleEditJob(payload: any) {
 
 // Determine Redis URL with preference for private/internal in hosted environments
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY || 2);
+const PORT = Number(process.env.PORT || 3000);
+const redisHostMasked = (() => {
+  try {
+    const parsed = new URL(REDIS_URL);
+    return parsed.host || REDIS_URL;
+  } catch (_e) {
+    return REDIS_URL;
+  }
+})();
 
 // DEPLOYMENT VERIFICATION
 const BUILD_VERSION = "2025-11-07_16:00_S3_VERBOSE_LOGS";
 nLog('╔════════════════════════════════════════════════════════════════╗');
 nLog('║                   WORKER STARTING                              ║');
 nLog('╚════════════════════════════════════════════════════════════════╝');
+nLog("[WORKER] boot");
 nLog(`[WORKER] BUILD: ${BUILD_VERSION}`);
+nLog(`[WORKER] redis=${redisHostMasked} queue=${JOB_QUEUE_NAME} concurrency=${WORKER_CONCURRENCY}`);
 nLog(`[WORKER] Queue: ${JOB_QUEUE_NAME}`);
 nLog(`[WORKER] Redis: ${REDIS_URL}`);
 nLog('\n'); // Force flush
@@ -1573,6 +1586,40 @@ nLog(`[VALIDATION] STRUCTURE_VALIDATOR_MODE: ${getValidatorMode("structure")}`);
 nLog(`[VALIDATION] STRUCT_VALIDATION_STAGE_AWARE: ${STRUCT_VALIDATION_STAGE_AWARE ? "ON" : "OFF"}`);
 nLog('╚════════════════════════════════════════════════════════════════╝');
 nLog('\n'); // Force flush
+
+const server = http.createServer((req, res) => {
+  if (!req.url) {
+    res.writeHead(400);
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && req.url.startsWith("/health")) {
+    const body = {
+      ok: true,
+      service: "worker",
+      uptimeSec: Math.floor(process.uptime()),
+      queueName: JOB_QUEUE_NAME,
+      concurrency: WORKER_CONCURRENCY,
+    };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("ok");
+    return;
+  }
+
+  res.writeHead(404, { "Content-Type": "text/plain" });
+  res.end("not found");
+});
+
+server.listen(PORT, () => {
+  nLog(`[WORKER] health listening on :${PORT}`);
+});
 
 // BullMQ worker
 const worker = new Worker(
@@ -1745,7 +1792,7 @@ const worker = new Worker(
   },
   {
     connection: { url: REDIS_URL },
-    concurrency: Number(process.env.WORKER_CONCURRENCY || 2)
+    concurrency: WORKER_CONCURRENCY
   }
 );
 
@@ -1755,10 +1802,18 @@ const worker = new Worker(
     // @ts-ignore
     await worker.waitUntilReady?.();
     nLog("[worker] ready and listening");
+    nLog("[WORKER] waiting for jobs…");
   } catch (e) {
     nLog("[worker] failed to initialize", e);
   }
 })();
+
+worker.on("active", (job) => {
+  const payload: any = job.data;
+  const imageId = payload?.imageId || payload?.jobId || job.id;
+  const stage = payload?.stage || payload?.type || "unknown";
+  nLog(`[WORKER] active jobId=${job.id} imageId=${imageId} stage=${stage}`);
+});
 
 worker.on("completed", (job, result: any) => {
   const url =
@@ -1766,11 +1821,47 @@ worker.on("completed", (job, result: any) => {
       ? String((result as any).resultUrl).slice(0, 120)
       : undefined;
 
-  nLog(
-    `[worker] completed job ${job.id}${url ? ` -> ${url}` : ""}`
-  );
+  const payload: any = job.data;
+  const imageId = payload?.imageId || payload?.jobId || job.id;
+  const stage = payload?.stage || payload?.type || "unknown";
+  const duration = job.finishedOn && job.processedOn ? job.finishedOn - job.processedOn : undefined;
+
+  nLog(`[worker] completed job ${job.id}${url ? ` -> ${url}` : ""}`);
+  nLog(`[WORKER] completed jobId=${job.id} imageId=${imageId} stage=${stage} durationMs=${duration ?? "n/a"}`);
 });
 
 worker.on("failed", (job, err) => {
+  const payload: any = job?.data;
+  const imageId = payload?.imageId || payload?.jobId || job?.id;
+  const stage = payload?.stage || payload?.type || "unknown";
+  const duration = job?.finishedOn && job?.processedOn ? job.finishedOn - job.processedOn : undefined;
+
   nLog(`[worker] failed job ${job?.id}`, err);
+  nLog(`[WORKER] failed jobId=${job?.id} imageId=${imageId} stage=${stage} durationMs=${duration ?? "n/a"} error=${err?.stack || err}`);
 });
+
+let shuttingDown = false;
+const shutdown = async (signal: NodeJS.Signals) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  nLog(`[WORKER] received ${signal}, shutting down`);
+
+  try {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    nLog("[WORKER] http server closed");
+  } catch (err) {
+    nLog("[WORKER] http server close error", err);
+  }
+
+  try {
+    await worker.close();
+    nLog("[WORKER] bullmq worker closed");
+  } catch (err) {
+    nLog("[WORKER] bullmq close error", err);
+  }
+
+  process.exit(0);
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
