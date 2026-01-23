@@ -63,6 +63,7 @@ export function uploadRouter() {
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
+    const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode);
@@ -244,6 +245,13 @@ export function uploadRouter() {
       // Apply form-level stagingStyle if no per-item style is set
       if (!opts.stagingStyle && stagingStyleForm) {
         opts.stagingStyle = stagingStyleForm;
+      }
+      // Staging preference override (refresh vs full)
+      const metaStagingPreference = meta.stagingPreference;
+      if (metaStagingPreference === "refresh" || metaStagingPreference === "full") {
+        opts.stagingPreference = metaStagingPreference;
+      } else if (stagingPreferenceForm === "refresh" || stagingPreferenceForm === "full") {
+        opts.stagingPreference = stagingPreferenceForm as "refresh" | "full";
       }
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
@@ -469,6 +477,7 @@ export function uploadRouter() {
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
+          stagingPreference: opts.stagingPreference,
         },
       }, jobId);
 

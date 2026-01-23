@@ -30,6 +30,7 @@ export async function runStage2(
     referenceImagePath?: string;
     stagingRegion?: StagingRegion | null;
     stagingStyle?: string;
+    stagingMode?: "refresh" | "full";
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
     /** Stage1A output path for stage-aware validation baseline */
@@ -49,6 +50,7 @@ export async function runStage2(
   let lastValidatorResults: any = {};
   let tempMultiplier = 1.0;
   let strictPrompt = false;
+  const stagingMode: "refresh" | "full" = opts.stagingMode === "refresh" ? "refresh" : "full";
 
   // Stage-aware validation config
   const stageAwareConfig = loadStageAwareConfig();
@@ -198,6 +200,10 @@ export async function runStage2(
     const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
       textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType);
+    }
+
+    if (stagingMode === "refresh" && scene === "interior") {
+      textPrompt += `\n\nREFRESH STAGING MODE (FURNISHED PROPERTIES):\nThis room is already furnished. Do NOT invent a new layout.\n\nRules:\n- Keep all existing major furniture in the same positions and footprint.\n- Do NOT move, rotate, resize, remove, or add major furniture items.\n- Do NOT add wall-dependent furniture in new locations (TV units, dressers, chests of drawers, desks, wardrobes).\n- Only restyle/modernize existing furniture (e.g. fabric, color, wood tone) while preserving placement and scale.\n- You may add ONLY small decorative elements: cushions, throw blanket, rug, plant, simple wall art, small lamp.\n- Never block doors, closet doors, windows, or walkways.\n- Do NOT change camera angle, perspective, framing, or crop to hide conflicts.\n- Do NOT modify or replace fixed fixtures or finishes.\n\nStyle:\n- Aim for a safe, neutral, MLS-appropriate 'furniture refresh.'\n- If uncertain about clearance or what exists out of frame, stage less rather than risk obstruction.`;
     }
 
     // Apply prompt tightening based on retry attempt

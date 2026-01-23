@@ -173,6 +173,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Run Stage-2 only (using 1B as base)
       // NOTE: In stage-2-only mode, validation baseline is the 1B output (basePath)
       // since we're comparing Stage2 output vs the input we're staging from
+      const stage1BRan = true;
+      const stage1BLightRan = payload.options.declutterMode === "light";
+      const stagingPreference = (payload.options as any)?.stagingPreference as "refresh" | "full" | undefined;
+      const stagingMode = stage1BLightRan ? "refresh" : stagingPreference === "refresh" ? "refresh" : "full";
+      const userOverride = stagingPreference ? (stage1BLightRan ? "null" : stagingPreference === "refresh" ? "yes" : "no") : "null";
+      nLog(`[STAGE2] mode=${stagingMode} stage1BRan=${stage1BRan ? 'true' : 'false'} userOverride=${userOverride} jobId=${payload.jobId} imageId=${payload.imageId}`);
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -182,6 +188,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingRegion: undefined,
         // Use 1B as validation baseline (input to Stage2)
         stage1APath: basePath,
+        stagingMode,
         jobId: payload.jobId,
         imageId: payload.imageId,
       });
@@ -832,6 +839,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   stage12Success = true;
   const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
+  const stage1BRan = !!path1B;
+  const stage1BLightRan = payload.options.declutterMode === "light" && !!path1B;
+  const stagingPreference = (payload.options as any)?.stagingPreference as "refresh" | "full" | undefined;
+  const stagingMode = stage1BLightRan ? "refresh" : stagingPreference === "refresh" ? "refresh" : "full";
+  const userOverride = stagingPreference ? (stage1BLightRan ? "null" : stagingPreference === "refresh" ? "yes" : "no") : "null";
+  nLog(`[STAGE2] mode=${stagingMode} stage1BRan=${stage1BRan ? 'true' : 'false'} userOverride=${userOverride} jobId=${payload.jobId} imageId=${payload.imageId}`);
   let path2: string = stage2InputPath;
   try {
     // Only allow exterior staging if allowStaging is true
@@ -861,6 +874,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             // Stage2 validation will compare against 1B if it ran, otherwise 1A
             stage1APath: path1A,
             stage1BPath: path1B, // Will be undefined if declutter didn't run
+            stagingMode,
             jobId: payload.jobId,
             imageId: payload.imageId,
             onStrictRetry: ({ reasons }) => {

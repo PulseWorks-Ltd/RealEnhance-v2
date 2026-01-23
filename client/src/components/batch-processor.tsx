@@ -279,6 +279,8 @@ export default function BatchProcessor() {
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
   const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
+  const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
+  const [showFurnishedPrompt, setShowFurnishedPrompt] = useState(false);
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -376,6 +378,12 @@ export default function BatchProcessor() {
       setSelectedImageId(getFileId(files[0]));
     }
   }, [files, selectedImageId]);
+
+  useEffect(() => {
+    if (!allowStaging || declutter) {
+      setIsFurnishedOverride(null);
+    }
+  }, [allowStaging, declutter]);
 
   // Helper to set current image by index (for UI that uses indices)
   const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
@@ -1659,7 +1667,7 @@ export default function BatchProcessor() {
   };
 
 
-  const startBatchProcessing = async () => {
+  const startBatchProcessing = async (stagingPreferenceOverride?: "refresh" | "full") => {
     // Guard: no files, no spin
     if (!files.length) {
       alert("Please choose images first.");
@@ -1735,6 +1743,13 @@ export default function BatchProcessor() {
     if (declutter) {
       fd.append("declutterMode", declutterMode);
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
+    }
+    const stage1BLightSelected = declutter && declutterMode === "light";
+    const stagingPreferenceFinal = stage1BLightSelected
+      ? "refresh"
+      : stagingPreferenceOverride ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+    if (stagingPreferenceFinal) {
+      fd.append("stagingPreference", stagingPreferenceFinal);
     }
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
@@ -1904,6 +1919,18 @@ export default function BatchProcessor() {
     } finally {
       setIsDownloadingZip(false);
     }
+  };
+
+  const handleStartEnhance = () => {
+    if (!files.length) return;
+    const shouldPrompt = allowStaging && !declutter;
+    const stage1BLightSelected = declutter && declutterMode === "light";
+    if (shouldPrompt) {
+      setShowFurnishedPrompt(true);
+      return;
+    }
+    setActiveTab("enhance");
+    startBatchProcessing(stage1BLightSelected ? "refresh" : undefined);
   };
 
   const handleRetryFailed = async () => {
@@ -2849,6 +2876,37 @@ export default function BatchProcessor() {
                       onClick={() => toggleSelect(i)}
                       data-testid={`thumbnail-${i}`}
                     >
+                    <Dialog open={showFurnishedPrompt} onOpenChange={setShowFurnishedPrompt}>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Are any of these rooms furnished?</DialogTitle>
+                          <DialogDescription>This helps us choose the safest staging method.</DialogDescription>
+                        </DialogHeader>
+                        <div className="mt-6 flex justify-end gap-3">
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setShowFurnishedPrompt(false);
+                              setIsFurnishedOverride(false);
+                              setActiveTab("enhance");
+                              startBatchProcessing("full");
+                            }}
+                          >
+                            No
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setShowFurnishedPrompt(false);
+                              setIsFurnishedOverride(true);
+                              setActiveTab("enhance");
+                              startBatchProcessing("refresh");
+                            }}
+                          >
+                            Yes
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                       <img 
                         src={url} 
                         alt={`upload-${i}`} 
@@ -3570,10 +3628,7 @@ export default function BatchProcessor() {
                   }}
                 >
                   <button
-                    onClick={() => {
-                      setActiveTab("enhance");
-                      startBatchProcessing();
-                    }}
+                    onClick={handleStartEnhance}
                     disabled={blockingCount > 0 || !files.length}
                     title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
                     className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
@@ -3610,7 +3665,7 @@ export default function BatchProcessor() {
                       Industry: {industryMap[presetKey]} • Structure preserved • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
                     </p>
                     <button
-                      onClick={startBatchProcessing}
+                      onClick={handleStartEnhance}
                       disabled={!files.length || blockingCount > 0}
                       title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
                       className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"

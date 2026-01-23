@@ -51,6 +51,10 @@ export type PromptOptions = {
 
   // declutter level
   declutterLevel?: "light" | "standard" | "heavy";
+
+  // Stage 2 selection helpers
+  stagingPreference?: "refresh" | "full";
+  stage1BRan?: boolean;
 };
 
 function bool(v: unknown): "true" | "false" {
@@ -154,6 +158,13 @@ export function buildPrompt(opts: PromptOptions): string {
     (sceneType === "exterior" ? "exterior"
       : sceneType === "interior" ? "interior"
       : autoSceneFromGoal(goal));
+
+  const stage1BRan = Boolean(opts.stage1BRan);
+  const stagingMode: "refresh" | "full" = stage1BRan
+    ? "refresh"
+    : opts.stagingPreference === "refresh"
+      ? "refresh"
+      : "full";
 
   // ========== ABSOLUTE STRUCTURAL CONSTRAINTS (Single Source of Truth) ==========
   const absoluteConstraints = [
@@ -1117,6 +1128,27 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
 
   lines.push(
     ...stagingLadder,
+    ...(stagingMode === "refresh"
+      ? [
+          "REFRESH STAGING MODE (FURNISHED PROPERTIES):",
+          "This room is already furnished. Do NOT invent a new layout.",
+          "",
+          "Rules:",
+          "- Keep all existing major furniture in the same positions and footprint.",
+          "- Do NOT move, rotate, resize, remove, or add major furniture items.",
+          "- Do NOT add wall-dependent furniture in new locations (TV units, dressers, chests of drawers, desks, wardrobes).",
+          "- Only restyle/modernize existing furniture (e.g. fabric, color, wood tone) while preserving placement and scale.",
+          "- You may add ONLY small decorative elements: cushions, throw blanket, rug, plant, simple wall art, small lamp.",
+          "- Never block doors, closet doors, windows, or walkways.",
+          "- Do NOT change camera angle, perspective, framing, or crop to hide conflicts.",
+          "- Do NOT modify or replace fixed fixtures or finishes.",
+          "",
+          "Style:",
+          "- Aim for a safe, neutral, MLS-appropriate 'furniture refresh.'",
+          "- If uncertain about clearance or what exists out of frame, stage less rather than risk obstruction.",
+          "",
+        ]
+      : []),
     ...immutableElements,
     ...confidentStagingProtocol,
     ...negativeExamples,
