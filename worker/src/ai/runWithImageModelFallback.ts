@@ -221,6 +221,9 @@ export async function runWithImageModelFallback(
     console.info(`[GEMINI][${context}] Success with fallback model ${fallbackModel}`);
     return { resp, modelUsed: fallbackModel };
   }
+
+  // No fallback configured or all attempts failed; surface explicit error
+  throw new Error(`[GEMINI][${context}] no successful model response (primary failed, fallback unavailable)`);
 }
 
 /**
