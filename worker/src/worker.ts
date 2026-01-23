@@ -947,8 +947,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Get the base path (original or Stage 1A for comparison)
       const validationBasePath = path1A;
+      const validationBaseStage = path1B && payload.options.declutter ? "1B" : "1A";
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
+      nLog(`[worker] Stage2 baseline selection: baseStage=${validationBaseStage} stage1A=${path1A} stage1B=${path1B || 'none'}`);
 
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
@@ -959,6 +961,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
+        stage1APath: path1A,
+        stage1BPath: path1B,
       });
 
       const validationElapsed = Date.now() - validationStartTime;

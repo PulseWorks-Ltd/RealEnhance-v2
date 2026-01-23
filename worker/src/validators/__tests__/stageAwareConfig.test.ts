@@ -16,6 +16,7 @@ import {
   loadStage2Thresholds,
   loadHardFailSwitches,
   loadStageAwareConfig,
+  chooseStage2Baseline,
 } from "../stageAwareConfig";
 
 // Simple test runner
@@ -308,6 +309,23 @@ assert(config.dimAspectRatioTolerance !== undefined, "has dimAspectRatioToleranc
 assert(config.dimLargeDeltaPct !== undefined, "has dimLargeDeltaPct field");
 assert(config.dimSmallDeltaPct !== undefined, "has dimSmallDeltaPct field");
 assert(config.dimStrideMultiple !== undefined, "has dimStrideMultiple field");
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// chooseStage2Baseline tests
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nchooseStage2Baseline:");
+
+(() => {
+  const { baselinePath, baselineStage } = chooseStage2Baseline({ stage1APath: "/tmp/1A.webp", stage1BPath: "/tmp/1B.webp" });
+  assertEqual(baselinePath, "/tmp/1B.webp", "uses Stage1B when provided");
+  assertEqual(baselineStage, "1B", "returns baselineStage=1B when 1B present");
+})();
+
+(() => {
+  const { baselinePath, baselineStage } = chooseStage2Baseline({ stage1APath: "/tmp/1A.webp", stage1BPath: undefined });
+  assertEqual(baselinePath, "/tmp/1A.webp", "falls back to Stage1A when 1B missing");
+  assertEqual(baselineStage, "1A", "returns baselineStage=1A when 1B missing");
+})();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Summary

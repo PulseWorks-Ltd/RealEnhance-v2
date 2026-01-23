@@ -20,7 +20,7 @@ import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
 import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
 import { vLog, nLog } from "../logger";
-import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
+import { chooseStage2Baseline, loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
 
 /**
@@ -63,6 +63,11 @@ export interface UnifiedValidationParams {
    * If not provided, falls back to originalPath (legacy behavior).
    */
   stage1APath?: string;
+  /**
+   * Optional Stage1B output path for Stage2 validation baseline.
+   * When present, Stage2 should compare against Stage1B; otherwise Stage1A.
+   */
+  stage1BPath?: string | null;
 }
 
 /**
@@ -127,6 +132,7 @@ export async function runUnifiedValidation(
     jobId,
     stagingStyle,
     stage1APath,
+    stage1BPath,
   } = params;
 
   const validatorMode = getValidatorMode("structure");
@@ -152,6 +158,9 @@ export async function runUnifiedValidation(
   if (stage1APath) {
     nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
   }
+  if (stage1BPath) {
+    nLog(`[unified-validator] Stage1B Path: ${stage1BPath}`);
+  }
 
   // Check if validators are enabled
   if (!isValidatorEnabled("structure")) {
@@ -169,36 +178,33 @@ export async function runUnifiedValidation(
   if (stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
-    // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
-    const validationBaseline = stage1APath || originalPath;
+    // CRITICAL: Use Stage1B when available; otherwise Stage1A. Stage1A must always be present.
     if (!stage1APath) {
-      if (mode === "enforce") {
-        nLog(`[unified-validator] ❌ ERROR: No stage1APath provided for Stage 2 validation in enforce mode`);
-        // Return failed result instead of validating against original (would cause false positives)
-        return {
-          passed: false,
-          score: 0,
-          reasons: ["Missing stage1APath for Stage 2 validation - cannot validate safely in enforce mode"],
-          raw: {
-            missingBaseline: {
-              name: "missingBaseline",
-              passed: false,
-              score: 0,
-              message: "MISSING_STAGE1A_PATH",
-            },
+      nLog(`[unified-validator] ❌ ERROR: No stage1APath provided for Stage 2 validation in enforce mode (jobId=${jobId})`);
+      return {
+        passed: false,
+        score: 0,
+        reasons: ["Missing stage1APath for Stage 2 validation - cannot validate safely in enforce mode"],
+        raw: {
+          missingBaseline: {
+            name: "missingBaseline",
+            passed: false,
+            score: 0,
+            message: "MISSING_STAGE1A_PATH",
           },
-        };
-      }
-      nLog(`[unified-validator] ⚠️ No stage1APath provided - using originalPath as baseline (may cause false positives)`);
+        },
+      };
     }
 
+    const { baselinePath, baselineStage } = chooseStage2Baseline({ stage1APath, stage1BPath });
+
     // Structured baseline log for monitoring
-    nLog(`[STRUCT_BASELINE] stage=2 jobId=${jobId} baseline=${validationBaseline} candidate=${enhancedPath} baselineIsStage1A=${!!stage1APath}`);
+    nLog(`[STRUCT_BASELINE] stage=2 jobId=${jobId} baselineStage=${baselineStage} baseline=${baselinePath} candidate=${enhancedPath} hasStage1B=${!!stage1BPath}`);
 
     try {
       const stageAwareResult = await validateStructureStageAware({
         stage: "stage2",
-        baselinePath: validationBaseline,
+        baselinePath,
         candidatePath: enhancedPath,
         mode: mode === "enforce" ? "block" : "log",
         jobId,
