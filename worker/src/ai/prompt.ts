@@ -786,6 +786,13 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
       : sceneType === "interior" ? "interior"
       : autoSceneFromGoal(goal));
 
+  const stage1BRan = Boolean(opts.stage1BRan);
+  const stagingMode: "refresh" | "full" = stage1BRan
+    ? "refresh"
+    : opts.stagingPreference === "refresh"
+      ? "refresh"
+      : "full";
+
   // ========== ROOM TYPE CONTEXT (if detected from furniture analysis) ==========
   const roomTypeGuidance = roomType ? [
     "[ROOM TYPE & STAGING CONTEXT]",
