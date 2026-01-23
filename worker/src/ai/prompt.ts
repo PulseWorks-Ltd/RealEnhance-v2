@@ -58,18 +58,37 @@ function bool(v: unknown): "true" | "false" {
 }
 
 function getDeclutterInstructions(level: "light" | "standard" | "heavy"): string[] {
+  const fixtureProtection = [
+    "DO NOT REMOVE OR ALTER FIXED FIXTURES OR UTILITIES:",
+    "- Plumbing: taps/faucets/spouts, sinks/basins, shower heads, drains",
+    "- Electrical: plug points/outlets, switches, wall plates, breakers, visible wiring",
+    "- Lighting: ALL fixed light fittings (pendants, sconces, downlights), ceiling fans",
+    "- HVAC/Utilities: heat pump/AC units (indoor wall units and outdoor condensers), vents/grilles, thermostats",
+    "- Exterior fixed equipment: outdoor taps/spigots, meters/utility boxes, mounted hose reels, exterior lighting",
+    "- Built-ins: built-in appliances (cooktops, ovens, rangehoods, dishwashers), built-in cabinetry/wardrobes",
+    "- Architecture: doors/windows/frames/tracks, flooring, walls, ceilings, room geometry",
+    "If unsure whether something is fixed or movable, assume it is FIXED and leave it unchanged.",
+  ];
+
   if (level === "light") {
-    return ["DECLUTTER INTENSITY: LIGHT – remove only obvious items (bins, hoses, visible trash). Minimize other edits."];
+    return [
+      "DECLUTTER INTENSITY: LIGHT – remove only obvious items (bins, hoses, visible trash). Minimize other edits.",
+      ...fixtureProtection,
+    ];
   }
   if (level === "heavy") {
     return [
       "DECLUTTER INTENSITY: HEAVY (COMPLETE ROOM CLEARING) – remove ALL movable furniture and items to create a completely empty room.",
-      "REMOVE: ALL furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL lamps (portable only), ALL wall art (paintings, frames, mirrors, decorations), ALL decorative items (vases, plants, sculptures, candles, ornaments), ALL appliances EXCEPT built-in stoves.",
+      "REMOVE: ALL furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL lamps (portable only), ALL wall art (paintings, frames, mirrors, decorations), ALL decorative items (vases, plants, sculptures, candles, ornaments). REMOVE ONLY PORTABLE / MOVABLE APPLIANCES AND COUNTERTOP ITEMS (e.g., kettles, toasters, freestanding microwaves, coffee machines, loose fans/heaters, small countertop devices). KEEP ALL BUILT-IN / FIXED APPLIANCES AND FIXED EQUIPMENT (e.g., cooktops, ovens, rangehoods, dishwashers, heat pumps/AC units, wall-mounted heaters).",
       "KEEP ONLY: built-in stoves, countertops, cabinets, built-in shelving, recessed lighting, ceiling fans, window frames, door frames, baseboards, crown molding, fireplaces, mantels, ALL curtains, ALL blinds, ALL window treatments (MUST remain 100% visible and unchanged).",
-      "GOAL: Produce a completely empty room with bare walls and floors, preserving ONLY fixed architectural elements, built-in stoves, and ALL window treatments (curtains/blinds)."
+      "GOAL: Produce a completely empty room with bare walls and floors, preserving ONLY fixed architectural elements, built-in stoves, and ALL window treatments (curtains/blinds).",
+      ...fixtureProtection,
     ];
   }
-  return ["DECLUTTER INTENSITY: STANDARD – remove priority items and tidy visible clutter without over-editing."];
+  return [
+    "DECLUTTER INTENSITY: STANDARD – remove priority items and tidy visible clutter without over-editing.",
+    ...fixtureProtection,
+  ];
 }
 
 // Added to reduce fixture changes and unsafe placements in Stage 2 staging; prompt-only mitigation.
