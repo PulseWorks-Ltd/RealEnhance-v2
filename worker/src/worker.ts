@@ -1,5 +1,7 @@
 import http from "http";
 import { Worker, Job } from "bullmq";
+import { randomUUID } from "crypto";
+import os from "os";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
   AnyJobPayload,
@@ -181,6 +183,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         // Use 1B as validation baseline (input to Stage2)
         stage1APath: basePath,
         jobId: payload.jobId,
+        imageId: payload.imageId,
       });
 
       // Handle block mode rejection (stage2Result is null)
@@ -619,6 +622,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return undefined;
     })(),
     skyMode: skyModeForStage1A,
+    jobId: payload.jobId,
+    imageId: payload.imageId,
   });
   timings.stage1AMs = Date.now() - t1A;
   
@@ -695,6 +700,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         declutterMode: declutterMode as "light" | "stage-ready",
         originalPath: origPath,
         jobId: payload.jobId,
+        imageId: payload.imageId,
       });
 
       // Handle block mode rejection (stage1BResult is null)
@@ -856,6 +862,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1APath: path1A,
             stage1BPath: path1B, // Will be undefined if declutter didn't run
             jobId: payload.jobId,
+            imageId: payload.imageId,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -1539,7 +1546,10 @@ async function handleEditJob(payload: any) {
 // Determine Redis URL with preference for private/internal in hosted environments
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY || 2);
+const GEMINI_CONCURRENCY_LIMIT = Math.max(1, Number(process.env.GEMINI_CONCURRENCY_LIMIT || 2));
 const PORT = Number(process.env.PORT || 3000);
+const WORKER_INSTANCE_ID = randomUUID();
+const HOSTNAME = os.hostname();
 const redisHostMasked = (() => {
   try {
     const parsed = new URL(REDIS_URL);
@@ -1555,10 +1565,13 @@ nLog('╔═══════════════════════�
 nLog('║                   WORKER STARTING                              ║');
 nLog('╚════════════════════════════════════════════════════════════════╝');
 nLog("[WORKER] boot");
+nLog(`[WORKER] instance=${WORKER_INSTANCE_ID} host=${HOSTNAME} pid=${process.pid}`);
 nLog(`[WORKER] BUILD: ${BUILD_VERSION}`);
 nLog(`[WORKER] redis=${redisHostMasked} queue=${JOB_QUEUE_NAME} concurrency=${WORKER_CONCURRENCY}`);
+nLog(`[WORKER] GEMINI_CONCURRENCY_LIMIT=${GEMINI_CONCURRENCY_LIMIT}`);
 nLog(`[WORKER] Queue: ${JOB_QUEUE_NAME}`);
 nLog(`[WORKER] Redis: ${REDIS_URL}`);
+nLog(`[WORKER] Models: stage1A=${process.env.REALENHANCE_MODEL_STAGE1A_PRIMARY || "gemini-2.5-flash-image"} stage1B=${process.env.REALENHANCE_MODEL_STAGE1B_PRIMARY || "gemini-3-pro-image-preview"} stage1B_fallback=${process.env.REALENHANCE_MODEL_STAGE1B_FALLBACK || "gemini-2.5-flash-image"} stage2=${process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || "gemini-2.5-flash-image"} stage2_fallback=${process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || "gemini-2.5-flash-image"} fallback_env=${process.env.GEMINI_IMAGE_MODEL_FALLBACK || "none"}`);
 nLog('\n'); // Force flush
 
 // Log S3 configuration on startup
@@ -1626,6 +1639,9 @@ const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
+    const attemptNum = (job.attemptsMade || 0) + 1;
+    const imageId = (payload as any)?.imageId || (payload as any)?.originalFilename || (payload as any)?.jobId || job.id;
+    nLog(`[WORKER] job start jobId=${(payload as any)?.jobId || job.id} imageId=${imageId} type=${(payload as any)?.type || 'unknown'} attempt=${attemptNum}`);
     updateJob((payload as any).jobId, { status: "processing" });
     try {
       if (typeof payload === "object" && payload && "type" in payload) {

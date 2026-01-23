@@ -38,6 +38,7 @@ export async function runStage2(
     stage1BPath?: string;
     /** Job ID for validation tracking */
     jobId?: string;
+    imageId?: string;
   }
 ): Promise<string | null> {
   let out = basePath;
@@ -280,6 +281,7 @@ export async function runStage2(
           generationConfig,
         } as any,
         context: "stage2",
+        logCtx: { jobId, imageId: opts.imageId, stage: "2" },
       });
       const apiElapsed = Date.now() - apiStartTime;
       console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);
@@ -350,6 +352,7 @@ export async function runStage2(
                   generationConfig,
                 } as any,
                 context: "stage2-dimension",
+                logCtx: { jobId, imageId: opts.imageId, stage: "2" },
               });
 
               const strictResponseParts: any[] = (strictResp as any).candidates?.[0]?.content?.parts || [];

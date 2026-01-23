@@ -51,7 +51,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   ];
 
   // Use the same fallback helper as 1A/1B
-  const { resp } = await runWithImageModelFallback(getGeminiClient(), { contents }, "[gemini.regionEdit]");
+  const { resp } = await runWithImageModelFallback(getGeminiClient(), { contents }, "[gemini.regionEdit]", { stage: "region-edit" });
 
   const candidates = resp.candidates ?? [];
   const usable =
@@ -173,9 +173,11 @@ export async function enhanceWithGemini(
     floorClean?: boolean;
     hardscapeClean?: boolean;
     declutterIntensity?: "light" | "standard" | "heavy";
+    jobId?: string;
+    imageId?: string;
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId, imageId } = options;
 
   // Check if Gemini API key is available
   const apiKey = process.env.REALENHANCE_API_KEY;
@@ -185,7 +187,7 @@ export async function enhanceWithGemini(
   }
 
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
-  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'})...`);
+  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'}) jobId=${jobId || 'n/a'} imageId=${imageId || 'n/a'}`);
   console.log(`[Gemini] 🔵 Input path: ${inputPath}`);
   console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
 
@@ -246,7 +248,7 @@ export async function enhanceWithGemini(
       { text: prompt },
     ];
 
-    console.log(`[Gemini] 🚀 Calling Gemini 3 Pro Image model...`);
+    console.log(`[Gemini] 🚀 Calling Gemini 3 Pro Image model... jobId=${jobId || 'n/a'} imageId=${imageId || 'n/a'}`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
@@ -341,7 +343,7 @@ export async function enhanceWithGemini(
 
     if (stage === "1A") {
       // Stage 1A: Gemini 2.5 only (no fallback)
-      const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A");
+      const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A", { jobId, imageId, stage: "1A" });
       resp = result.resp;
       modelUsed = result.modelUsed;
     } else if (stage === "1B") {
@@ -351,6 +353,7 @@ export async function enhanceWithGemini(
         ai: client as any,
         baseRequest,
         context: "enhance-1B",
+        logCtx: { jobId, imageId, stage: "1B" },
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
@@ -362,12 +365,13 @@ export async function enhanceWithGemini(
         ai: client as any,
         baseRequest,
         context: "stage2",
+        logCtx: { jobId, imageId, stage: "2" },
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
     } else {
       // Legacy: no stage specified, use Stage 1A behavior
-      const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance");
+      const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance", { jobId, imageId, stage: stage || "1A" });
       resp = result.resp;
       modelUsed = result.modelUsed;
     }

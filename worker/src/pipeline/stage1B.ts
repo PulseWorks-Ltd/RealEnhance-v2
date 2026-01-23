@@ -31,9 +31,10 @@ export async function runStage1B(
     originalPath?: string;
     /** Job ID for validation tracking */
     jobId?: string;
+    imageId?: string;
   } = {}
 ): Promise<string | null> {
-  const { replaceSky = false, sceneType, roomType, declutterMode, originalPath, jobId: providedJobId } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode, originalPath, jobId: providedJobId, imageId } = options;
 
   // Stage-aware validation config
   const stageAwareConfig = loadStageAwareConfig();
@@ -95,6 +96,8 @@ export async function runStage1B(
       hardscapeClean: sceneType === "exterior",
       declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
       ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+      jobId,
+      imageId,
     } as const;
 
     const declutteredPath = await enhanceWithGemini(stage1APath, geminiRequest);

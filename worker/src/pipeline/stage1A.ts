@@ -73,7 +73,8 @@ async function enhanceWithGeminiStage1A(
   replaceSky: boolean,
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
-  skyMode: "safe" | "strong" = "safe"
+  skyMode: "safe" | "strong" = "safe",
+  logCtx?: { jobId?: string; imageId?: string }
 ): Promise<string> {
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
@@ -117,6 +118,8 @@ async function enhanceWithGeminiStage1A(
     floorClean: false,
     hardscapeClean: sceneType === "exterior",
     ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+    jobId: logCtx?.jobId,
+    imageId: logCtx?.imageId,
   });
 }
 
@@ -140,9 +143,12 @@ export async function runStage1A(
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
     skyMode?: "safe" | "strong";
+    jobId?: string;
+    imageId?: string;
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe" } = options;
+  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId } = options;
+  const logCtx = { jobId, imageId };
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -218,7 +224,8 @@ export async function runStage1A(
   });
   
   // Pass 2: Micro detail and edges
-  img = img.sharpen({
+  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId } = options;
+  const logCtx = { jobId, imageId };
     sigma: 0.5,     // Tight radius for fine detail
     m1: 1.2,        // Moderate amount to avoid halos
     m2: 0.8,        // High threshold = only crisp edges
@@ -263,7 +270,7 @@ export async function runStage1A(
 
     if (forceGemini) {
       console.warn("[stage1A] ⚠️ Low quality detected — forcing Gemini as primary");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, logCtx);
     } else {
       console.log("[stage1A] ✅ Quality acceptable — using Stability primary");
       try {
@@ -276,7 +283,7 @@ export async function runStage1A(
       } catch (err) {
         console.error("[stage1A] ❌ Stability API failed:", err);
         console.warn("[stage1A] 🔁 Falling back to Gemini...");
-        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+         primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, logCtx);
       }
     }
 
@@ -290,7 +297,7 @@ export async function runStage1A(
       console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+         const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, logCtx);
 
         // Run structural validator on Gemini output
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
@@ -344,7 +351,7 @@ export async function runStage1A(
   try {
     console.log("[stage1A] 🟡 Using Gemini (Stability disabled)...");
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, logCtx);
 
     console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
