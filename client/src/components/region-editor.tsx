@@ -181,6 +181,11 @@ export function RegionEditor({
     };
   }, [jobId, imageId]);
 
+  // Keep resolved URL state above derived values to avoid TDZ errors when the module is imported.
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
+  const [resolvedOriginalUrl, setResolvedOriginalUrl] = useState<string | null>(null);
+  const [resolvedStageUrls, setResolvedStageUrls] = useState<Record<string, string | null> | null>(null);
+
   const effectiveStageUrls = resolvedStageUrls || stageUrls || null;
   const effectiveInitialImageUrl = resolvedImageUrl || initialImageUrl || effectiveStageUrls?.['2'] || null;
   const effectiveOriginalImageUrl = resolvedOriginalUrl || originalImageUrl || effectiveStageUrls?.['1B'] || effectiveStageUrls?.['1A'] || null;
@@ -210,10 +215,6 @@ export function RegionEditor({
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
-
-  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
-  const [resolvedOriginalUrl, setResolvedOriginalUrl] = useState<string | null>(null);
-  const [resolvedStageUrls, setResolvedStageUrls] = useState<Record<string, string | null> | null>(null);
 
   const { toast } = useToast();
 
