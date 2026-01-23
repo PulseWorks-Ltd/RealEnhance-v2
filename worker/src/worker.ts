@@ -42,7 +42,7 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { logValidatorConfig, getValidatorMode } from "./validators/validatorMode";
+import { logValidatorConfig, getValidatorMode, shouldValidatorBlock } from "./validators/validatorMode";
 import { getEnvBoolean } from "./utils/env";
 import {
   runUnifiedValidation,
@@ -1113,6 +1113,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     const validatorConfig = loadHybridValidatorConfig();
     const validator = createValidator();
+    const blockCompliance = shouldValidatorBlock("structure");
     const base1A = toBase64(path1A);
     const baseFinal = toBase64(path2);
     const verdict = await validator.validate({ originalB64: base1A.data, editedB64: baseFinal.data });
@@ -1152,13 +1153,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     if (compliance && compliance.ok === false) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+      const baseMeta = { ...(sceneLabel ? { ...sceneMeta } : {}), compliance, complianceFailed: true };
+
+      if (blockCompliance) {
+        nLog(`[worker] Compliance failed for job ${payload.jobId} in block mode: ${lastViolationMsg} (NOT publishing)`);
+        timings.validateMs = Date.now() - tVal;
+        updateJob(payload.jobId, {
+          status: "error",
+          errorMessage: lastViolationMsg,
+          error: lastViolationMsg,
+          message: "Image rejected: compliance validation failed in block mode",
+          meta: { ...baseMeta, blockedByValidator: true, blockedStage: "compliance" }
+        });
+        return;
+      }
+
       // Log the compliance failure, but DO NOT block publishing the image
       updateJob(payload.jobId, {
         status: "complete", // Mark as complete so UI receives the image
         errorMessage: lastViolationMsg,
         error: lastViolationMsg,
         message: "Image enhancement completed after retries, but failed compliance validation.",
-        meta: { ...(sceneLabel ? { ...sceneMeta } : {}), compliance, complianceFailed: true }
+        meta: baseMeta
       });
       nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
       // Do NOT return; continue so image is published
