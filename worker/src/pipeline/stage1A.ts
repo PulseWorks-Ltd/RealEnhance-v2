@@ -224,8 +224,7 @@ export async function runStage1A(
   });
   
   // Pass 2: Micro detail and edges
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId } = options;
-  const logCtx = { jobId, imageId };
+  img = img.sharpen({
     sigma: 0.5,     // Tight radius for fine detail
     m1: 1.2,        // Moderate amount to avoid halos
     m2: 0.8,        // High threshold = only crisp edges
