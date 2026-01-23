@@ -72,6 +72,34 @@ function getDeclutterInstructions(level: "light" | "standard" | "heavy"): string
   return ["DECLUTTER INTENSITY: STANDARD – remove priority items and tidy visible clutter without over-editing."];
 }
 
+// Added to reduce fixture changes and unsafe placements in Stage 2 staging; prompt-only mitigation.
+const STAGE2_SAFETY_RULES_APPENDIX = `IMPORTANT STAGING SAFETY RULES (MUST FOLLOW):
+- Do NOT modify, replace, remove, or reinterpret any fixed fixtures or finishes. Only add removable furniture and décor.
+  Fixed fixtures/finishes include (but are not limited to): faucets, sinks, taps, cooktops (gas/electric), ovens, rangehoods,
+  light fittings, switches, ceiling fans, built-in cabinetry, wardrobes/closets, doors, windows, frames, tracks,
+  flooring materials, wall/ceiling structure, and room geometry.
+- Any change to fixed fixtures/finishes is forbidden.
+
+FURNITURE PLACEMENT RULES:
+- Furniture that normally sits against a wall (e.g., TV units + TVs, dressers/chests of drawers, wardrobes, desks,
+  dressing tables, sideboards/buffets) must ONLY be placed when a full, continuous wall surface is clearly visible
+  in the source image where the item will go.
+- If wall continuity OR clearance cannot be confidently verified from the image, do NOT place wall-dependent furniture in that area.
+- Never block or partially obstruct doors, door swing paths, closet doors, windows, or walkways/circulation paths.
+
+BEDROOM CAUTION:
+- Bedrooms are high-risk. Assume closet doors or entry doors may exist outside the visible frame.
+- Be conservative in bedrooms: prefer minimal staging (bed, rug, lamps, light décor) over dense layouts.
+- Avoid placing dressers/drawers unless the wall is clearly visible and the placement is unquestionably clear.
+
+NO PERSPECTIVE / VISIBILITY CHEATING:
+- Do NOT change camera angle, perspective, framing, crop, or architectural visibility to accommodate furniture.
+- Do NOT hide/remove architectural elements to justify placement.
+
+STYLE:
+- Favor safe, neutral, MLS-appropriate staging over dramatic or “wow” staging.
+- If uncertain, stage less rather than risk obstruction or unrealistic placement.`;
+
 // Optional lightweight auto-detect when sceneType === "auto"
 export function autoSceneFromGoal(goal: string): "interior" | "exterior" {
   const g = goal.toLowerCase();
@@ -1070,6 +1098,7 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     ...immutableElements,
     ...confidentStagingProtocol,
     ...negativeExamples,
+    STAGE2_SAFETY_RULES_APPENDIX,
     ""
   );
 
