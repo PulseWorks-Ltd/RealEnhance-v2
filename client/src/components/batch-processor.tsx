@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
-import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
 
@@ -193,6 +193,35 @@ function clearBatchJobState() {
     console.warn("Failed to clear batch job state:", error);
   }
 }
+
+// Helper component for consistent status badges
+const StatusBadge = ({ status, className }: { status: 'processing' | 'completed' | 'failed' | 'queued', className?: string }) => {
+  if (status === 'processing' || status === 'queued') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 ring-1 ring-slate-200 animate-pulse ${className}`}>
+        <Loader2 className="w-3 h-3 animate-spin" />
+        {status === 'queued' ? 'Queued' : 'Processing'}
+      </span>
+    );
+  }
+  if (status === 'completed') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-600 text-white ring-1 ring-emerald-300/60 shadow-sm ${className}`}>
+        <CheckCircle className="w-3.5 h-3.5" />
+        Enhancement Complete
+      </span>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-600 text-white shadow-sm ${className}`}>
+        <AlertCircle className="w-3.5 h-3.5" />
+        Error
+      </span>
+    );
+  }
+  return null;
+};
 
 export default function BatchProcessor() {
     // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
@@ -3676,7 +3705,7 @@ export default function BatchProcessor() {
                           >
                             {/* Thumbnail with Overlay */}
                             <div
-                              className="relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer"
+                              className={`relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
                                 if (!previewUrl) return;
                                 setPreviewImage({
@@ -3690,21 +3719,18 @@ export default function BatchProcessor() {
                               <img 
                                 src={previewUrl || ''} 
                                 alt={file.name} 
-                                className={`h-full w-full object-cover transition-all ${isProcessing ? 'opacity-80' : ''}`}
+                                className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                 onLoad={() => clearRetryFlags(i)}
                                 onError={() => clearRetryFlags(i)}
                               />
                               {isProcessing && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/20">
-                                  <div className="flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-emerald-700 text-xs font-medium shadow-sm">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    {isRetrying ? 'Retrying…' : 'Processing…'}
-                                  </div>
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
+                                   <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
                                 </div>
                               )}
                               {!isProcessing && isDone && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                  <CheckCircle className="text-white w-6 h-6 shadow-sm" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/10 transition-opacity duration-500 animate-in fade-in zoom-in duration-300">
+                                  <CheckCircle className="text-white w-6 h-6 shadow-sm drop-shadow-md" />
                                 </div>
                               )}
                             </div>
@@ -3719,21 +3745,28 @@ export default function BatchProcessor() {
                                 </span>
                               </div>
                               
-                              {/* The "Transparent AI" Status Text */}
-                              <div className="flex items-center gap-2">
+                              {/* Status Badges */}
+                              <div className="flex items-center gap-3 mt-1.5 h-7">
                                 {isProcessing ? (
-                                   <>
-                                    <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
-                                    <p className="text-sm text-emerald-700 font-medium animate-pulse">
-                                      {displayStatus}
-                                    </p>
-                                   </>
+                                   <StatusBadge status="processing" />
                                 ) : isError ? (
-                                    <p className="text-sm text-red-600 flex items-center gap-2"><XCircle className="w-3 h-3"/> {result.error || "Error"}</p>
+                                    <div className="flex items-center gap-3">
+                                      <StatusBadge status="failed" />
+                                      <button
+                                        onClick={() => handleOpenRetryDialog(i)}
+                                        disabled={retryingImages.has(i)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-sm"
+                                        title="Retry this image"
+                                      >
+                                        <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
+                                        Retry
+                                      </button>
+                                      {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
+                                    </div>
                                 ) : isDone ? (
-                                   <p className="text-sm text-slate-500">Enhancement complete</p> 
+                                   <StatusBadge status="completed" />
                                 ) : (
-                                  <p className="text-sm text-slate-400">{displayStatus}</p>
+                                  <StatusBadge status="queued" />
                                 )}
                               </div>
 
@@ -3741,7 +3774,7 @@ export default function BatchProcessor() {
                               {isProcessing && (
                                 <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                   <div 
-                                    className="h-full bg-emerald-500 transition-all duration-300 animate-pulse" 
+                                    className="h-full bg-slate-400 transition-all duration-300 animate-pulse" 
                                     style={{ width: `${isUploading ? 30 : 60}%` }} 
                                   />
                                 </div>
