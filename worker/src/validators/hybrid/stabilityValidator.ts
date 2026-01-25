@@ -41,6 +41,18 @@ export class StabilityValidator implements ValidationProvider {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
+      const prompt = "Structural consistency check: ensure edited image preserves fixed architecture (walls, windows, doors, ceilings, floors) compared to original. Return similarity score.";
+      const outputFormatEnv = (process.env.STABILITY_OUTPUT_FORMAT || "webp").toLowerCase();
+      const allowedFormats: Array<"webp" | "png" | "jpeg"> = ["webp", "png", "jpeg"];
+      const outputFormat = (allowedFormats as string[]).includes(outputFormatEnv) ? (outputFormatEnv as "webp" | "png" | "jpeg") : "webp";
+
+      if (!prompt.trim()) {
+        throw new Error("Stability: prompt is required");
+      }
+      if (!allowedFormats.includes(outputFormat)) {
+        throw new Error("Stability: invalid output_format");
+      }
+
       const form = new FormData();
       form.append("image", Buffer.from(req.originalB64, "base64"), {
         filename: "original.webp",
@@ -50,7 +62,8 @@ export class StabilityValidator implements ValidationProvider {
         filename: "edited.webp",
         contentType: req.mimeType || "image/webp",
       });
-      form.append("output_format", "json");
+      form.append("prompt", prompt);
+      form.append("output_format", outputFormat);
 
       const res = await fetch(STABILITY_VALIDATION_URL, {
         method: "POST",
