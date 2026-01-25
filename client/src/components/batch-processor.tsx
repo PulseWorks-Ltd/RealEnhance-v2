@@ -102,7 +102,29 @@ function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; erro
 }
 
 function getDisplayUrl(data: any): string | null {
-  return data?.image || data?.imageUrl || data?.result?.image || data?.result?.imageUrl || data?.result?.result?.imageUrl || null;
+  if (!data) return null;
+
+  const stageMap =
+    data?.stageUrls ||
+    data?.result?.stageUrls ||
+    data?.stageOutputs ||
+    data?.result?.stageOutputs ||
+    null;
+
+  const stage2 = stageMap?.['2'] || stageMap?.[2] || data?.stage2Url || data?.result?.stage2Url || null;
+  const stage1B = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.[1] || null;
+  const stage1A = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+
+  const explicitResult =
+    data?.resultUrl ||
+    data?.image ||
+    data?.imageUrl ||
+    data?.result?.image ||
+    data?.result?.imageUrl ||
+    data?.result?.result?.imageUrl ||
+    null;
+
+  return stage2 || stage1B || stage1A || explicitResult;
 }
 
 // Add cache-busting version to force browser reload (only when version exists)
@@ -3785,10 +3807,26 @@ export default function BatchProcessor() {
                           ? "Uploading..."
                           : aiSteps[i] || "Waiting in queue...";
                         
-                        // Image Preview Logic
+                        // Image Preview Logic with stage preference
+                        const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
+                        const stage2Url = stageMap?.['2'] || stageMap?.[2] || result?.stage2Url || result?.result?.stage2Url || null;
+                        const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || null;
+                        const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+                        const fallbackResultUrl = result?.resultUrl || result?.imageUrl || result?.image || null;
                         const baseUrl = getDisplayUrl(result);
-                        const enhancedUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
+                        const displayedUrl = stage2Url || fallbackResultUrl || baseUrl || stage1BUrl || stage1AUrl || previewUrls[i] || null;
+                        const enhancedUrl = withVersion(displayedUrl, result?.version || result?.updatedAt);
                         const previewUrl = enhancedUrl || previewUrls[i];
+                        const stageBadgeLabel = stage2Url ? "Stage 2 (Staged)" : "Stage 1A (Enhanced)";
+
+                        console.log('[ProcessingBatch] selected display url', {
+                          index: i,
+                          displayedUrl: displayedUrl || null,
+                          stage2Url: stage2Url || null,
+                          stage1BUrl: stage1BUrl || null,
+                          stage1AUrl: stage1AUrl || null,
+                          fallbackResultUrl: fallbackResultUrl || null,
+                        });
                         
                         return (
                           <div 
@@ -3860,6 +3898,12 @@ export default function BatchProcessor() {
                                 ) : (
                                   <StatusBadge status="queued" />
                                 )}
+                              </div>
+
+                              <div className="mt-2">
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${stage2Url ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+                                  {stageBadgeLabel}
+                                </span>
                               </div>
 
                               {/* Individual Progress Line - Only when processing */}

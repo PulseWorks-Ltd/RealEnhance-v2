@@ -20,6 +20,7 @@ type StatusItem = {
   originalUrl: string | null;
   maskUrl: string | null;
   stageUrls: Record<string, string> | null;
+  stageOutputs?: Record<string, string> | null;
   meta: any;
   mode?: string;
   error?: string;
@@ -107,7 +108,10 @@ export function statusRouter() {
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
         const stageUrlsRaw: Record<string, string> | null =
-          (rv && rv.stageUrls) || local.stageUrls || null;
+          (rv && (rv.stageUrls || rv.stageOutputs)) ||
+          local.stageUrls ||
+          (local as any).stageOutputs ||
+          null;
 
         const stageUrls: Record<string, string | null> = {
           '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
@@ -115,14 +119,19 @@ export function statusRouter() {
           '2': stageUrlsRaw?.['2'] ?? null,
         };
 
-        const resultUrl: string | null =
-          (rv && rv.resultUrl) ||
-          local.resultUrl ||
-          local.imageUrl ||
+        const stageDerivedResult: string | null =
           stageUrls['2'] ||
           stageUrls['1B'] ||
           stageUrls['1A'] ||
           null;
+
+        const explicitResult: string | null =
+          (rv && (rv.resultUrl || rv.imageUrl)) ||
+          local.resultUrl ||
+          local.imageUrl ||
+          null;
+
+        const resultUrl: string | null = explicitResult || stageDerivedResult;
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -176,6 +185,7 @@ export function statusRouter() {
           maskUrl,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
+          stageOutputs: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           meta: local.meta ?? {},
         };
         // Add mode if it exists
