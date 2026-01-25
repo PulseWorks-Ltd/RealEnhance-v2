@@ -16,7 +16,7 @@ import { CompareSlider } from "./CompareSlider";
 import { RegionEditor } from "./region-editor";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
@@ -280,7 +280,7 @@ export default function BatchProcessor() {
   const [declutter, setDeclutter] = useState<boolean>(false);
   const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
   const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
-  const [showFurnishedPrompt, setShowFurnishedPrompt] = useState(false);
+  const [isStagingConfirmOpen, setIsStagingConfirmOpen] = useState(false);
   const [stagingPreference, setStagingPreference] = useState<"refresh" | "full" | undefined>(undefined);
   
   // Collapsible specific requirements
@@ -1834,6 +1834,12 @@ export default function BatchProcessor() {
     startBatchProcessing(pref);
   };
 
+  const confirmFurnished = (mode: "refresh" | "full") => {
+    console.info("[STAGING_CONFIRM] answer", { mode });
+    setIsStagingConfirmOpen(false);
+    startEnhancementWithPreference(mode);
+  };
+
   const downloadZip = async () => {
     // Check if we have processed images from batch processing
     if (processedImages.length === 0) {
@@ -1970,8 +1976,8 @@ export default function BatchProcessor() {
 
     const shouldPrompt = allowStaging && !declutter && !resolvedPreference;
     if (shouldPrompt) {
-      toast({ title: "Choose staging mode", description: "Are these rooms already furnished?", variant: "default" });
-      setShowFurnishedPrompt(true);
+      console.info("[STAGING_CONFIRM] opened");
+      setIsStagingConfirmOpen(true);
       return;
     }
 
@@ -2847,6 +2853,23 @@ export default function BatchProcessor() {
 
   return (
   <div className="w-full">
+      <AlertDialog open={isStagingConfirmOpen} onOpenChange={setIsStagingConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Choose staging mode</AlertDialogTitle>
+            <AlertDialogDescription>Are these rooms already furnished?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsStagingConfirmOpen(false)}>Cancel</AlertDialogCancel>
+            <Button variant="secondary" onClick={() => confirmFurnished("full")}>
+              No
+            </Button>
+            <Button onClick={() => confirmFurnished("refresh")}>
+              Yes
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
@@ -2921,35 +2944,6 @@ export default function BatchProcessor() {
                       onClick={() => toggleSelect(i)}
                       data-testid={`thumbnail-${i}`}
                     >
-                    <Dialog open={showFurnishedPrompt} onOpenChange={setShowFurnishedPrompt}>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Are any of these rooms furnished?</DialogTitle>
-                          <DialogDescription>This helps us choose the safest staging method.</DialogDescription>
-                        </DialogHeader>
-                        <div className="mt-6 flex justify-end gap-3">
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setShowFurnishedPrompt(false);
-                              setIsFurnishedOverride(false);
-                              startEnhancementWithPreference("full");
-                            }}
-                          >
-                            No
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              setShowFurnishedPrompt(false);
-                              setIsFurnishedOverride(true);
-                              startEnhancementWithPreference("refresh");
-                            }}
-                          >
-                            Yes
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
                       <img 
                         src={url} 
                         alt={`upload-${i}`} 
