@@ -16,6 +16,7 @@ type StatusItem = {
   success: boolean;
   imageId: string | null;
   imageUrl: string | null;
+  resultUrl: string | null;
   originalUrl: string | null;
   maskUrl: string | null;
   stageUrls: Record<string, string> | null;

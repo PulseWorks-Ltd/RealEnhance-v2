@@ -1430,7 +1430,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const finalResultUrl = pubFinalUrl || pub2Url || pub1BUrl || pub1AUrl || null;
 
   updateJob(payload.jobId, {
-    status: "completed",
+    status: "complete",
     completedAt: new Date().toISOString(),
     stageOutputs: {
       "1A": path1A,
