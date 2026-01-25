@@ -519,8 +519,13 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     );
   }
 
-  debug.dimsBaseline = { w: baseMeta.width, h: baseMeta.height };
-  debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
+  const baseWidth = baseMeta.width ?? originalDims.base.w;
+  const baseHeight = baseMeta.height ?? originalDims.base.h;
+  let candWidth = candMeta.width ?? originalDims.candidate.w;
+  let candHeight = candMeta.height ?? originalDims.candidate.h;
+
+  debug.dimsBaseline = { w: baseWidth, h: baseHeight };
+  debug.dimsCandidate = { w: candWidth, h: candHeight };
   const dimensionDecision = classifyDimensionChange({
     baseW: originalDims.base.w,
     baseH: originalDims.base.h,
@@ -542,15 +547,13 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   metrics.dimensionMaxDeltaPct = dimensionDecision.maxDimDeltaPct;
   metrics.dimensionStrideAligned = dimensionDecision.strideAligned ? 1 : 0;
 
-  let candWidth = candMeta.width!;
-  let candHeight = candMeta.height!;
   let alignmentBlocked = dimensionDecision.skipAlignedComparisons;
 
   if (!normalizedForComparison && dimensionDecision.shouldNormalize && dimensionDecision.mismatch) {
     try {
-      candidatePathForAlignment = await normalizeCandidateForAlignment(params.candidatePath, baseMeta.width!, baseMeta.height!, params.jobId);
-      candWidth = baseMeta.width!;
-      candHeight = baseMeta.height!;
+      candidatePathForAlignment = await normalizeCandidateForAlignment(params.candidatePath, baseWidth, baseHeight, params.jobId);
+      candWidth = baseWidth;
+      candHeight = baseHeight;
       metrics.dimensionNormalized = 1;
       debug.dimensionNormalizedPath = candidatePathForAlignment;
     } catch (err) {
@@ -699,7 +702,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
-      const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
+      const baseEdge = sobelBinary(baseGray, baseWidth, baseHeight, edgeThreshold);
       const candEdge = sobelBinary(candGray, candWidth, candHeight, edgeThreshold);
 
       const iouResult = computeMaskedIoU(baseEdge, candEdge, maskBaseline.data);
@@ -745,7 +748,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
-      const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
+      const baseEdge = sobelBinary(baseGray, baseWidth, baseHeight, edgeThreshold);
       const candEdge = sobelBinary(candGray, candWidth, candHeight, edgeThreshold);
 
       let edgeIoU: number | null = null;
@@ -762,8 +765,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
           const result = computeExcludeLowerIoU(
             baseEdge,
             candEdge,
-            baseMeta.width,
-            baseMeta.height,
+            baseWidth,
+            baseHeight,
             config.stage2ExcludeLowerPct
           );
           edgeIoU = result.value;
