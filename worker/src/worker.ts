@@ -1427,8 +1427,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {})
   };
 
+  const finalResultUrl = pubFinalUrl || pub2Url || pub1BUrl || pub1AUrl || null;
+
   updateJob(payload.jobId, {
-    status: "complete",
+    status: "completed",
+    completedAt: new Date().toISOString(),
     stageOutputs: {
       "1A": path1A,
       "1B": payload.options.declutter ? path1B : undefined,
@@ -1437,14 +1440,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     resultVersionId: finalPathVersion?.versionId || undefined,
     meta,
     originalUrl: publishedOriginal?.url,
-    resultUrl: pubFinalUrl,
+    resultUrl: finalResultUrl,
     stageUrls: {
       "1A": pub1AUrl,
       "1B": pub1BUrl,
       "2": hasStage2 ? pub2Url : null
     }
-  });
+    }
+  );
 
+  nLog(`[DB] persisted completion url=${finalResultUrl || 'null'} jobId=${payload.jobId} imageId=${payload.imageId}`);
   // Record enhanced image for "Previously Enhanced Images" history
   // FAIL-SAFE: Non-blocking - if this fails, job still completes successfully
   if (payload.agencyId && pubFinalUrl) {
@@ -1493,7 +1498,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobId: payload.jobId,
     finalPath: finalBasePath,
     originalUrl: publishedOriginal?.url || null,
-    resultUrl: pubFinalUrl || null,
+    resultUrl: finalResultUrl,
     stageUrls: {
       "1A": pub1AUrl || null,
       "1B": pub1BUrl || null,

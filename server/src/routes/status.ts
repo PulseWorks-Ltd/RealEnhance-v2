@@ -105,10 +105,22 @@ export function statusRouter() {
         const local = await getJob(id) || ({} as any);
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
+        const stageUrlsRaw: Record<string, string> | null =
+          (rv && rv.stageUrls) || local.stageUrls || null;
+
+        const stageUrls: Record<string, string | null> = {
+          '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+          '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+          '2': stageUrlsRaw?.['2'] ?? null,
+        };
+
         const resultUrl: string | null =
           (rv && rv.resultUrl) ||
           local.resultUrl ||
           local.imageUrl ||
+          stageUrls['2'] ||
+          stageUrls['1B'] ||
+          stageUrls['1A'] ||
           null;
 
         const originalUrl: string | null =
@@ -116,16 +128,6 @@ export function statusRouter() {
 
         const maskUrl: string | null =
           (rv && rv.maskUrl) || local.maskUrl || null;
-
-        const stageUrlsRaw: Record<string, string> | null =
-          (rv && rv.stageUrls) || local.stageUrls || null;
-
-        // Normalize stageUrls into a predictable shape so clients can rely on keys
-        const stageUrls: Record<string, string | null> = {
-          '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
-          '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
-          '2': stageUrlsRaw?.['2'] ?? null,
-        };
 
         const imageId: string | null =
           payload?.imageId || local.imageId || null;
@@ -151,6 +153,11 @@ export function statusRouter() {
           console.log(`[STATUS_MERGE] jobId=${id} dbStatus=${localStatus || (isBlocked ? "blocked" : "unknown")} queueState=${state} -> using DB terminal state`);
         }
 
+        if (status === "completed" && !resultUrl) {
+          status = "failed";
+          console.error(`[status/batch] completed_no_url jobId=${id} imageId=${imageId || 'unknown'}`);
+        }
+
         const success =
           status === "completed" && typeof resultUrl === "string";
 
@@ -163,6 +170,7 @@ export function statusRouter() {
           success,
           imageId,
           imageUrl: resultUrl,
+          resultUrl,
           originalUrl,
           maskUrl,
           // ensure stageUrls is either an object map or null
@@ -175,7 +183,10 @@ export function statusRouter() {
         }
         // Only set error if job is not successful
         if (!success) {
-          item.error = local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : undefined);
+          item.error = local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : (status === "failed" && !resultUrl ? "completed_no_url" : undefined));
+          if (status === "failed" && !resultUrl) {
+            (item as any).errorCode = "completed_no_url";
+          }
         }
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
@@ -276,15 +287,6 @@ export function statusRouter() {
       }
       const queueStatus = normalizeStateToStatus(state);
       const local = await getJob(jobId) || ({} as any);
-      const resultUrl: string | null =
-        (rv && rv.resultUrl) ||
-        local.resultUrl ||
-        local.imageUrl ||
-        null;
-      const originalUrl: string | null =
-        (rv && rv.originalUrl) || local.originalUrl || null;
-      const maskUrl: string | null =
-        (rv && rv.maskUrl) || local.maskUrl || null;
       const stageUrlsRaw: Record<string, string> | null =
         (rv && rv.stageUrls) || local.stageUrls || null;
 
@@ -293,6 +295,19 @@ export function statusRouter() {
         '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
         '2': stageUrlsRaw?.['2'] ?? null,
       };
+
+      const resultUrl: string | null =
+        (rv && rv.resultUrl) ||
+        local.resultUrl ||
+        local.imageUrl ||
+        stageUrls['2'] ||
+        stageUrls['1B'] ||
+        stageUrls['1A'] ||
+        null;
+      const originalUrl: string | null =
+        (rv && rv.originalUrl) || local.originalUrl || null;
+      const maskUrl: string | null =
+        (rv && rv.maskUrl) || local.maskUrl || null;
       const imageId: string | null =
         payload?.imageId || local.imageId || null;
       const localStatus: string | undefined = local?.status;
@@ -312,6 +327,10 @@ export function statusRouter() {
         console.log(`[STATUS_MERGE] jobId=${jobId} dbStatus=${localStatus || (isBlocked ? "blocked" : "unknown")} queueState=${state} -> using DB terminal state`);
       }
 
+      if (status === "completed" && !resultUrl) {
+        status = "failed";
+        console.error(`[status/single] completed_no_url jobId=${jobId} imageId=${imageId || 'unknown'}`);
+      }
       const success =
         status === "completed" && typeof resultUrl === "string";
       const item: StatusItem = {
@@ -321,12 +340,16 @@ export function statusRouter() {
         success,
         imageId,
         imageUrl: resultUrl,
+        resultUrl,
         originalUrl,
         maskUrl,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
-        error: local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : undefined),
+        error: local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : (status === "failed" && !resultUrl ? "completed_no_url" : undefined)),
       };
+      if (status === "failed" && !resultUrl) {
+        (item as any).errorCode = "completed_no_url";
+      }
       const base: any = {
         success: true,
         items: [item],
@@ -335,6 +358,7 @@ export function statusRouter() {
         total: 1,
         jobId: item.id,
         imageUrl: item.imageUrl,
+        resultUrl: item.resultUrl,
         originalUrl: item.originalUrl,
         stageUrls: item.stageUrls,
         state: item.state,
