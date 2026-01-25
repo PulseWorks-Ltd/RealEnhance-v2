@@ -12,7 +12,7 @@ import { getJob } from "../services/jobs.js";
 type StatusItem = {
   id: string;
   state: string | null;
-  status: "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
+  status: "queued" | "active" | "completed" | "failed" | "delayed" | "blocked" | "unknown";
   success: boolean;
   imageId: string | null;
   imageUrl: string | null;
@@ -99,7 +99,7 @@ export function statusRouter() {
           state = null;
         }
 
-        const status = normalizeStateToStatus(state);
+        const queueStatus = normalizeStateToStatus(state);
 
         // Merge in Redis job record (written by worker via updateJob)
         const local = await getJob(id) || ({} as any);
@@ -133,6 +133,24 @@ export function statusRouter() {
         const mode: string | null =
           payload?.mode || local.mode || null;
 
+        const localStatus: string | undefined = local?.status;
+        const isBlocked = Boolean(local?.meta?.blockedByValidator) || local?.error === "BLOCKED_BY_VALIDATOR";
+        const hasFinalUrls = Boolean(resultUrl) || Object.values(stageUrls).some(Boolean);
+
+        let status: StatusItem["status"] = queueStatus;
+
+        if (isBlocked) {
+          status = "blocked";
+        } else if (localStatus === "complete" || hasFinalUrls) {
+          status = "completed";
+        } else if (localStatus === "error") {
+          status = "failed";
+        }
+
+        if ((isBlocked || localStatus === "complete" || localStatus === "error" || hasFinalUrls) && status !== queueStatus) {
+          console.log(`[STATUS_MERGE] jobId=${id} dbStatus=${localStatus || (isBlocked ? "blocked" : "unknown")} queueState=${state} -> using DB terminal state`);
+        }
+
         const success =
           status === "completed" && typeof resultUrl === "string";
 
@@ -157,7 +175,7 @@ export function statusRouter() {
         }
         // Only set error if job is not successful
         if (!success) {
-          item.error = local.errorMessage || failedReason || undefined;
+          item.error = local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : undefined);
         }
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
@@ -182,7 +200,7 @@ export function statusRouter() {
 
       // Check if all jobs are in a terminal state (completed or failed)
       const allDone = items.every((item: StatusItem) =>
-        item.status === 'completed' || item.status === 'failed'
+        item.status === 'completed' || item.status === 'failed' || item.status === 'blocked'
       );
 
       const base: any = {
@@ -256,7 +274,7 @@ export function statusRouter() {
       } catch (e) {
         state = null;
       }
-      const status = normalizeStateToStatus(state);
+      const queueStatus = normalizeStateToStatus(state);
       const local = await getJob(jobId) || ({} as any);
       const resultUrl: string | null =
         (rv && rv.resultUrl) ||
@@ -277,6 +295,23 @@ export function statusRouter() {
       };
       const imageId: string | null =
         payload?.imageId || local.imageId || null;
+      const localStatus: string | undefined = local?.status;
+      const isBlocked = Boolean(local?.meta?.blockedByValidator) || local?.error === "BLOCKED_BY_VALIDATOR";
+      const hasFinalUrls = Boolean(resultUrl) || Object.values(stageUrls).some(Boolean);
+
+      let status: StatusItem["status"] = queueStatus;
+      if (isBlocked) {
+        status = "blocked";
+      } else if (localStatus === "complete" || hasFinalUrls) {
+        status = "completed";
+      } else if (localStatus === "error") {
+        status = "failed";
+      }
+
+      if ((isBlocked || localStatus === "complete" || localStatus === "error" || hasFinalUrls) && status !== queueStatus) {
+        console.log(`[STATUS_MERGE] jobId=${jobId} dbStatus=${localStatus || (isBlocked ? "blocked" : "unknown")} queueState=${state} -> using DB terminal state`);
+      }
+
       const success =
         status === "completed" && typeof resultUrl === "string";
       const item: StatusItem = {
@@ -290,7 +325,7 @@ export function statusRouter() {
         maskUrl,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
-        error: local.errorMessage || failedReason || undefined,
+        error: local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : undefined),
       };
       const base: any = {
         success: true,

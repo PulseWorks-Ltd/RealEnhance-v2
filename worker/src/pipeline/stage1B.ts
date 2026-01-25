@@ -211,6 +211,7 @@ export async function runStage1B(
             candidatePath: stage1BPath,
             mode: validationMode,
             jobId,
+            imageId,
             sceneType: (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as "interior" | "exterior",
             roomType,
             config: stageAwareConfig,

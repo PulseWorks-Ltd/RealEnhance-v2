@@ -430,6 +430,7 @@ export async function runStage2(
             candidatePath: out, // Stage2 output
             mode: validationMode, // Controlled by STRUCTURE_VALIDATOR_MODE env var
             jobId,
+            imageId: opts.imageId,
             sceneType: opts.sceneType || "interior",
             roomType: opts.roomType,
             retryAttempt: attempt,

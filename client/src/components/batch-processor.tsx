@@ -281,6 +281,7 @@ export default function BatchProcessor() {
   const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
   const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
   const [showFurnishedPrompt, setShowFurnishedPrompt] = useState(false);
+  const [stagingPreference, setStagingPreference] = useState<"refresh" | "full" | undefined>(undefined);
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -380,8 +381,13 @@ export default function BatchProcessor() {
   }, [files, selectedImageId]);
 
   useEffect(() => {
-    if (!allowStaging || declutter) {
+    if (!allowStaging) {
       setIsFurnishedOverride(null);
+      setStagingPreference(undefined);
+    }
+    if (declutter) {
+      setIsFurnishedOverride(null);
+      setStagingPreference(undefined);
     }
   }, [allowStaging, declutter]);
 
@@ -1670,7 +1676,8 @@ export default function BatchProcessor() {
   const startBatchProcessing = async (stagingPreferenceOverride?: "refresh" | "full") => {
     // Guard: no files, no spin
     if (!files.length) {
-      alert("Please choose images first.");
+      toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
+      console.info("[ENHANCE_CLICK] blocked:no_files");
       return;
     }
 
@@ -1708,7 +1715,8 @@ export default function BatchProcessor() {
         }
         return;
       }
-      alert(e.message || "Unable to start batch - please sign in and try again.");
+      toast({ title: "Cannot start", description: e.message || "Sign in and try again.", variant: "destructive" });
+      console.error("[ENHANCE_REQUEST] credits/auth failed", e);
       return;
     }
 
@@ -1747,7 +1755,9 @@ export default function BatchProcessor() {
     const stage1BLightSelected = declutter && declutterMode === "light";
     const stagingPreferenceFinal = stage1BLightSelected
       ? "refresh"
-      : stagingPreferenceOverride ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+      : stagingPreferenceOverride
+        ?? stagingPreference
+        ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
     if (stagingPreferenceFinal) {
       fd.append("stagingPreference", stagingPreferenceFinal);
     }
@@ -1757,6 +1767,13 @@ export default function BatchProcessor() {
     
     try {
       setIsUploading(true);
+      console.info("[ENHANCE_REQUEST] sending", {
+        files: files.length,
+        allowStaging,
+        declutter,
+        declutterMode,
+        stagingPreference: stagingPreferenceFinal,
+      });
       // Phase 1: Start batch processing with files
       const uploadResp = await fetch(api("/api/upload"), {
         method: "POST",
@@ -1770,29 +1787,33 @@ export default function BatchProcessor() {
         setIsUploading(false);
         setRunState("idle");
         if (uploadResp.status === 401) {
-          return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
+          toast({ title: "Login required", description: "Login and retry to start enhancement.", variant: "destructive" });
+          return;
         }
         const err = await uploadResp.json().catch(() => ({}));
         if (uploadResp.status === 402 && err?.code === "QUOTA_EXCEEDED") {
           showQuotaExceededToast();
           return;
         }
-        return alert(err.message || "Failed to upload files");
+        console.error("[ENHANCE_REQUEST] failed", err);
+        toast({ title: "Upload failed", description: err.message || "Failed to upload files", variant: "destructive" });
+        return;
       }
 
-  const uploadResult = await uploadResp.json();
-  setIsUploading(false);
-  const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
-  if (!jobs.length) throw new Error("Upload response missing jobs");
-  const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
-  setJobIds(ids);
-  setCancelIds(ids);
-  jobIdToIndexRef.current = {};
-  jobIdToImageIdRef.current = {};
-  jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
+      const uploadResult = await uploadResp.json();
+      setIsUploading(false);
+      const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
+      if (!jobs.length) throw new Error("Upload response missing jobs");
+      const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
+      console.info("[ENHANCE_REQUEST] ok", { jobs: ids.length });
+      setJobIds(ids);
+      setCancelIds(ids);
+      jobIdToIndexRef.current = {};
+      jobIdToImageIdRef.current = {};
+      jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
       
-  // Phase 2: Poll multi-job status
-  await pollForBatch(ids, controller);
+      // Phase 2: Poll multi-job status
+      await pollForBatch(ids, controller);
       
     } catch (error: any) {
       setIsUploading(false);
@@ -1800,10 +1821,17 @@ export default function BatchProcessor() {
       setProgressText("");
       setAbortController(null);
       if (error.name !== 'AbortError') {
-        console.error("Batch processing error:", error);
-        return alert(error.message || "Failed to start batch processing");
+        console.error("[ENHANCE_REQUEST] failed", error);
+        toast({ title: "Start failed", description: error.message || "Failed to start batch processing", variant: "destructive" });
+        return;
       }
     }
+  };
+
+  const startEnhancementWithPreference = (pref?: "refresh" | "full") => {
+    setStagingPreference(pref);
+    setActiveTab("enhance");
+    startBatchProcessing(pref);
   };
 
   const downloadZip = async () => {
@@ -1922,15 +1950,32 @@ export default function BatchProcessor() {
   };
 
   const handleStartEnhance = () => {
-    if (!files.length) return;
-    const shouldPrompt = allowStaging && !declutter;
     const stage1BLightSelected = declutter && declutterMode === "light";
+    const resolvedPreference = stage1BLightSelected
+      ? "refresh"
+      : stagingPreference ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+
+    console.info("[ENHANCE_CLICK] start", {
+      count: files.length,
+      allowStaging,
+      declutter,
+      declutterMode,
+      stagingPreference: resolvedPreference,
+    });
+
+    if (!files.length) {
+      toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
+      return;
+    }
+
+    const shouldPrompt = allowStaging && !declutter && !resolvedPreference;
     if (shouldPrompt) {
+      toast({ title: "Choose staging mode", description: "Are these rooms already furnished?", variant: "default" });
       setShowFurnishedPrompt(true);
       return;
     }
-    setActiveTab("enhance");
-    startBatchProcessing(stage1BLightSelected ? "refresh" : undefined);
+
+    startEnhancementWithPreference(resolvedPreference);
   };
 
   const handleRetryFailed = async () => {
@@ -2888,8 +2933,7 @@ export default function BatchProcessor() {
                             onClick={() => {
                               setShowFurnishedPrompt(false);
                               setIsFurnishedOverride(false);
-                              setActiveTab("enhance");
-                              startBatchProcessing("full");
+                              startEnhancementWithPreference("full");
                             }}
                           >
                             No
@@ -2898,8 +2942,7 @@ export default function BatchProcessor() {
                             onClick={() => {
                               setShowFurnishedPrompt(false);
                               setIsFurnishedOverride(true);
-                              setActiveTab("enhance");
-                              startBatchProcessing("refresh");
+                              startEnhancementWithPreference("refresh");
                             }}
                           >
                             Yes

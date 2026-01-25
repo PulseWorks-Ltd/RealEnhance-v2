@@ -117,6 +117,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (typeof rawVirtualStage !== 'boolean') {
     nLog(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
   }
+
+  console.info("[JOB_START]", {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    allowStaging: payload.options.virtualStage,
+    declutterLevel: payload.options.declutterMode || null,
+    stagingPreference: (payload.options as any)?.stagingPreference || null,
+  });
   
   // Check if we have a remote original URL (multi-service deployment)
   const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;

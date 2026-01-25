@@ -134,6 +134,15 @@ export async function enqueueEnhanceJob(params: {
     stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;
 
+  try {
+    console.info("[JOB_CREATE]", {
+      jobId,
+      allowStaging: params.options.virtualStage,
+      declutterLevel: params.options.declutterMode || null,
+      stagingPreference: params.options.stagingPreference || null,
+    });
+  } catch {}
+
 
 
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });

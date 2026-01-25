@@ -667,6 +667,8 @@ export interface ValidateParams {
   mode?: "log" | "block";
   /** Job ID for cache keys and logging */
   jobId?: string;
+  /** Image ID for logging */
+  imageId?: string;
   /** Scene type */
   sceneType?: "interior" | "exterior";
   /** Room type */

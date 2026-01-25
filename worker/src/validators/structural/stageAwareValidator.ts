@@ -357,6 +357,9 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   let skipEdgeIoUTriggers = false;
   let largeDrift = false;
   let maxDelta = 0;
+  let baselinePathForAlignment = params.baselinePath;
+  let candidatePathForAlignment = params.candidatePath;
+  let normalizedForComparison = false;
 
   console.log(`[stageAware] blockOnDimensionMismatch=${config.blockOnDimensionMismatch ? "ENABLED" : "DISABLED (non-fatal)"}`);
 
@@ -435,8 +438,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   };
 
   console.log(`[stageAware] === Stage-Aware Validation (${params.stage}) ===`);
-  console.log(`[stageAware] Baseline: ${params.baselinePath}`);
-  console.log(`[stageAware] Candidate: ${params.candidatePath}`);
+  console.log(`[stageAware] Baseline: ${baselinePathForAlignment}`);
+  console.log(`[stageAware] Candidate: ${candidatePathForAlignment}`);
   console.log(`[stageAware] Mode: ${mode}`);
   if (isStage1A) {
     console.log(`[stageAware] Stage1A Thresholds: edgeIouMin=${effectiveThresholds.globalEdgeIouMin}, structIouMin=${effectiveThresholds.structuralMaskIouMin}`);
@@ -456,8 +459,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   try {
     [baseMeta, candMeta] = await Promise.all([
-      sharp(params.baselinePath).metadata(),
-      sharp(params.candidatePath).metadata(),
+      sharp(baselinePathForAlignment).metadata(),
+      sharp(candidatePathForAlignment).metadata(),
     ]);
   } catch (err) {
     console.error(`[stageAware] Error loading image metadata:`, err);
@@ -469,13 +472,60 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     return buildFailedSummary(params.stage, "invalid_dimensions", mode);
   }
 
+  const originalDims = {
+    base: { w: baseMeta.width!, h: baseMeta.height! },
+    candidate: { w: candMeta.width!, h: candMeta.height! },
+  };
+
+  const needsCanvasNormalize =
+    baseMeta.width !== candMeta.width ||
+    baseMeta.height !== candMeta.height ||
+    baseMeta.hasAlpha !== candMeta.hasAlpha ||
+    baseMeta.channels !== candMeta.channels;
+
+  if (needsCanvasNormalize) {
+    const targetW = baseMeta.width!;
+    const targetH = baseMeta.height!;
+    const outDir = process.env.STRUCT_DIM_NORMALIZE_DIR || os.tmpdir();
+    const stamp = `${params.jobId || "job"}-${params.stage}-${Date.now()}`;
+    const baseParsed = path.parse(params.baselinePath);
+    const candParsed = path.parse(params.candidatePath);
+
+    const normalizedBaselinePath = path.join(outDir, `${baseParsed.name}-${stamp}-base-norm.png`);
+    const normalizedCandidatePath = path.join(outDir, `${candParsed.name}-${stamp}-cand-norm.png`);
+
+    await Promise.all([
+      sharp(params.baselinePath)
+        .ensureAlpha()
+        .resize(targetW, targetH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .toFile(normalizedBaselinePath),
+      sharp(params.candidatePath)
+        .ensureAlpha()
+        .resize(targetW, targetH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .toFile(normalizedCandidatePath),
+    ]);
+
+    baselinePathForAlignment = normalizedBaselinePath;
+    candidatePathForAlignment = normalizedCandidatePath;
+    normalizedForComparison = true;
+    metrics.dimensionNormalized = 1;
+    debug.dimensionNormalizedPath = normalizedCandidatePath;
+
+    baseMeta = { ...baseMeta, width: targetW, height: targetH };
+    candMeta = { ...candMeta, width: targetW, height: targetH };
+
+    console.log(
+      `[VALIDATE_NORMALIZE] stage=${params.stage} baseline=${originalDims.base.w}x${originalDims.base.h} candidate=${originalDims.candidate.w}x${originalDims.candidate.h} -> normalized=${targetW}x${targetH} jobId=${params.jobId || "n/a"} imageId=${params.imageId || "n/a"}`
+    );
+  }
+
   debug.dimsBaseline = { w: baseMeta.width, h: baseMeta.height };
   debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
   const dimensionDecision = classifyDimensionChange({
-    baseW: baseMeta.width,
-    baseH: baseMeta.height,
-    candW: candMeta.width,
-    candH: candMeta.height,
+    baseW: originalDims.base.w,
+    baseH: originalDims.base.h,
+    candW: originalDims.candidate.w,
+    candH: originalDims.candidate.h,
     config,
   });
 
@@ -492,12 +542,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   metrics.dimensionMaxDeltaPct = dimensionDecision.maxDimDeltaPct;
   metrics.dimensionStrideAligned = dimensionDecision.strideAligned ? 1 : 0;
 
-  let candidatePathForAlignment = params.candidatePath;
   let candWidth = candMeta.width!;
   let candHeight = candMeta.height!;
   let alignmentBlocked = dimensionDecision.skipAlignedComparisons;
 
-  if (dimensionDecision.shouldNormalize && dimensionDecision.mismatch) {
+  if (!normalizedForComparison && dimensionDecision.shouldNormalize && dimensionDecision.mismatch) {
     try {
       candidatePathForAlignment = await normalizeCandidateForAlignment(params.candidatePath, baseMeta.width!, baseMeta.height!, params.jobId);
       candWidth = baseMeta.width!;
@@ -515,6 +564,15 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const heightDelta = dimensionDecision.heightDeltaPct;
   maxDelta = dimensionDecision.maxDimDeltaPct;
 
+  const dimContext = params.dimContext ?? {
+    baseline: { width: originalDims.base.w, height: originalDims.base.h },
+    candidateOriginal: { width: originalDims.candidate.w, height: originalDims.candidate.h },
+    dw: originalDims.candidate.w - originalDims.base.w,
+    dh: originalDims.candidate.h - originalDims.base.h,
+    maxDelta: dimensionDecision.maxDimDeltaPct,
+    wasNormalized: normalizedForComparison,
+  };
+
   if (params.dimContext) {
     debug.originalDims = {
       base: { w: params.dimContext.baseline.width, h: params.dimContext.baseline.height },
@@ -523,12 +581,19 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       maxDelta: params.dimContext.maxDelta,
     };
     console.log(`[stageAware] DimContext provided: base=${params.dimContext.baseline.width}x${params.dimContext.baseline.height} candOrig=${params.dimContext.candidateOriginal.width}x${params.dimContext.candidateOriginal.height} maxDelta=${params.dimContext.maxDelta.toFixed(4)} wasNormalized=${params.dimContext.wasNormalized ? "yes" : "no"}`);
+  } else {
+    debug.originalDims = {
+      base: { w: originalDims.base.w, h: originalDims.base.h },
+      candidate: { w: originalDims.candidate.w, h: originalDims.candidate.h },
+      wasNormalized: normalizedForComparison,
+      maxDelta: dimensionDecision.maxDimDeltaPct,
+    };
   }
 
   const dimTolerance = getDimensionTolerancePct();
   const driftDecision = computeLargeDriftFlag({
     stage: params.stage,
-    dimContext: params.dimContext,
+    dimContext,
     computedMaxDelta: maxDelta,
     tolerance: dimTolerance,
     largeDriftIouSignalOnly: config.largeDriftIouSignalOnly,
@@ -539,15 +604,15 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   // ===== 2. DIMENSION MISMATCH HANDLING (STAGE-AWARE) =====
   if (dimensionDecision.mismatch) {
-    console.warn(`[stageAware] Dimension mismatch: base=${baseMeta.width}x${baseMeta.height}, cand=${candMeta.width}x${candMeta.height} classification=${dimensionDecision.classification}`);
+    console.warn(`[stageAware] Dimension mismatch: base=${originalDims.base.w}x${originalDims.base.h}, cand=${originalDims.candidate.w}x${originalDims.candidate.h} classification=${dimensionDecision.classification}`);
     triggers.push({
       id: dimensionDecision.classification === "fatal_aspect_ratio" ? "dimension_aspect_ratio_mismatch" : "dimension_mismatch",
-      message: `Dimensions changed: ${candMeta.width}x${candMeta.height} -> ${baseMeta.width}x${baseMeta.height}; ${dimensionDecision.reason}`,
+      message: `Dimensions changed: ${originalDims.candidate.w}x${originalDims.candidate.h} -> ${originalDims.base.w}x${originalDims.base.h}; ${dimensionDecision.reason}`,
       value: Number(dimensionDecision.maxDimDeltaPct.toFixed(4)),
       threshold: dimensionDecision.fatal ? Math.max(config.dimLargeDeltaPct, config.dimAspectRatioTolerance) : config.dimSmallDeltaPct,
       stage: params.stage,
-      fatal: dimensionDecision.fatal && config.blockOnDimensionMismatch,
-      nonBlocking: dimensionDecision.nonBlocking,
+      fatal: dimensionDecision.fatal && config.blockOnDimensionMismatch && !normalizedForComparison,
+      nonBlocking: dimensionDecision.nonBlocking || normalizedForComparison,
       meta: {
         aspectRatioDelta: dimensionDecision.aspectRatioDelta,
         widthDeltaPct: widthDelta,
@@ -566,7 +631,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   try {
     [maskBaseline, maskCandidate] = await Promise.all([
-      loadOrComputeStructuralMask(jobId + "-base", params.baselinePath),
+      loadOrComputeStructuralMask(jobId + "-base", baselinePathForAlignment),
       loadOrComputeStructuralMask(maskCandidateKey, candidatePathForAlignment),
     ]);
   } catch (err) {
@@ -626,7 +691,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     // Load grayscale images and compute edges
     try {
       const [baseRaw, candRaw] = await Promise.all([
-        sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(baselinePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
         sharp(candidatePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
@@ -672,7 +737,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (!alignmentBlocked) {
     try {
       const [baseRaw, candRaw] = await Promise.all([
-        sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(baselinePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
         sharp(candidatePathForAlignment).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
@@ -763,7 +828,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (isStage2 && !alignmentBlocked) {
     try {
       const { validateWindows } = await import("../windowValidator.js");
-      const windowResult = await validateWindows(params.baselinePath, candidatePathForAlignment);
+      const windowResult = await validateWindows(baselinePathForAlignment, candidatePathForAlignment);
 
       // Add window validation metrics to debug
       if (windowResult) {
@@ -813,7 +878,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     try {
       const { runSemanticStructureValidator } = await import("../semanticStructureValidator.js");
       const semanticResult = await runSemanticStructureValidator({
-        originalImagePath: params.baselinePath,
+        originalImagePath: baselinePathForAlignment,
         enhancedImagePath: candidatePathForAlignment,
         scene: params.sceneType || "interior",
         mode: "log",
@@ -856,7 +921,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     try {
       const { runPaintOverCheck } = await import("./paintOverDetector.js");
       const paintOverResult = await runPaintOverCheck({
-        baselinePath: params.baselinePath,
+        baselinePath: baselinePathForAlignment,
         candidatePath: candidatePathForAlignment,
         config,
         jobId: params.jobId,
@@ -885,7 +950,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if ((isStage1B || isStage2) && !alignmentBlocked) {
     try {
       const lineResult = await runLineGeometryCheck({
-        baselinePath: params.baselinePath,
+        baselinePath: baselinePathForAlignment,
         candidatePath: candidatePathForAlignment,
         stage: params.stage,
         threshold: effectiveThresholds.lineEdgeMin,
@@ -911,7 +976,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if ((isStage1B || isStage2) && !alignmentBlocked) {
     try {
       const openingsResult = await runOpeningsIntegrityCheck({
-        baselinePath: params.baselinePath,
+        baselinePath: baselinePathForAlignment,
         candidatePath: candidatePathForAlignment,
         stage: params.stage,
         scene: params.sceneType || "interior",
