@@ -304,6 +304,13 @@ export default function BatchProcessor() {
   const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
   const [isStagingConfirmOpen, setIsStagingConfirmOpen] = useState(false);
   const [stagingPreference, setStagingPreference] = useState<"refresh" | "full" | undefined>(undefined);
+  const [clientBatchId, setClientBatchId] = useState<string | null>(null);
+
+  const isFurnishedOverrideRef = useRef<boolean | null>(null);
+  const stagingPreferenceRef = useRef<"refresh" | "full" | undefined>(undefined);
+  const furnishedPromptShownRef = useRef<boolean>(false);
+  const clientBatchIdRef = useRef<string | null>(null);
+  const previousFileCountRef = useRef<number>(0);
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -379,6 +386,20 @@ export default function BatchProcessor() {
   useEffect(() => { manualSceneTypesByIdRef.current = manualSceneTypesById; }, [manualSceneTypesById]);
   useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
   useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
+  useEffect(() => { isFurnishedOverrideRef.current = isFurnishedOverride; }, [isFurnishedOverride]);
+  useEffect(() => { stagingPreferenceRef.current = stagingPreference; }, [stagingPreference]);
+  
+  const resetFurnishedStateForNewBatch = useCallback((reason: string) => {
+    setIsFurnishedOverride(null);
+    setStagingPreference(undefined);
+    isFurnishedOverrideRef.current = null;
+    stagingPreferenceRef.current = undefined;
+    furnishedPromptShownRef.current = false;
+    if (IS_DEV) {
+      console.log('[BATCH][RESET_FURNISHED]', { reason, isFurnishedOverride: isFurnishedOverrideRef.current, stagingPreference: stagingPreferenceRef.current });
+      console.assert(isFurnishedOverrideRef.current === null && stagingPreferenceRef.current === undefined, "[DEV_ASSERT] furnished choice should reset for new batch");
+    }
+  }, []);
 
 
 
@@ -412,6 +433,23 @@ export default function BatchProcessor() {
       setStagingPreference(undefined);
     }
   }, [allowStaging, declutter]);
+
+  // Detect brand new batch (first files added after empty state) and clear furnished choice
+  useEffect(() => {
+    const prev = previousFileCountRef.current;
+    const isNewBatch = prev === 0 && files.length > 0 && runState !== 'running';
+    if (isNewBatch) {
+      resetFurnishedStateForNewBatch('files_added_new_batch');
+      const newClientBatchId = `client-batch-${Date.now()}`;
+      clientBatchIdRef.current = newClientBatchId;
+      setClientBatchId(newClientBatchId);
+    }
+    if (files.length === 0) {
+      clientBatchIdRef.current = null;
+      setClientBatchId(null);
+    }
+    previousFileCountRef.current = files.length;
+  }, [files.length, runState, resetFurnishedStateForNewBatch]);
 
   // Helper to set current image by index (for UI that uses indices)
   const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
@@ -1780,6 +1818,23 @@ export default function BatchProcessor() {
       : stagingPreferenceOverride
         ?? stagingPreference
         ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+
+    const activeClientBatchId = clientBatchIdRef.current || (() => {
+      const gen = `client-batch-${Date.now()}`;
+      clientBatchIdRef.current = gen;
+      setClientBatchId(gen);
+      return gen;
+    })();
+
+    console.log("[BATCH] start payload", {
+      clientBatchId: activeClientBatchId,
+      batchId: "pending",
+      furnishedChoice: stagingPreferenceFinal ?? null,
+      furnishedOverride: isFurnishedOverrideRef.current,
+      allowStaging,
+      declutter,
+      files: files.length,
+    });
     if (stagingPreferenceFinal) {
       fd.append("stagingPreference", stagingPreferenceFinal);
     }
@@ -1828,6 +1883,14 @@ export default function BatchProcessor() {
       if (!jobs.length) throw new Error("Upload response missing jobs");
       const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
       console.info("[ENHANCE_REQUEST] ok", { jobs: ids.length });
+      console.log("[BATCH] start", {
+        clientBatchId: activeClientBatchId,
+        batchId: ids[0] || "unknown",
+        furnishedChoice: stagingPreferenceFinal ?? null,
+        furnishedOverride: isFurnishedOverrideRef.current,
+        allowStaging,
+        declutter,
+      });
       setJobIds(ids);
       setCancelIds(ids);
       jobIdToIndexRef.current = {};
@@ -1989,6 +2052,7 @@ export default function BatchProcessor() {
       declutter,
       declutterMode,
       stagingPreference: resolvedPreference,
+      clientBatchId,
     });
 
     if (!files.length) {
@@ -1998,6 +2062,9 @@ export default function BatchProcessor() {
 
     const shouldPrompt = allowStaging && !declutter && !resolvedPreference;
     if (shouldPrompt) {
+      if (IS_DEV) {
+        console.assert(stagingPreferenceRef.current === undefined && isFurnishedOverrideRef.current === null, "[DEV_ASSERT] furnished choice unset; prompt should display for new batch");
+      }
       console.info("[STAGING_CONFIRM] opened");
       setIsStagingConfirmOpen(true);
       return;
@@ -2627,6 +2694,7 @@ export default function BatchProcessor() {
 
   const handleRestart = () => {
     // Clear all state to start fresh
+    resetFurnishedStateForNewBatch('handle_restart_button');
     setFiles([]);
     setGlobalGoal("");
     setPreserveStructure(true);
@@ -2638,6 +2706,7 @@ export default function BatchProcessor() {
     setProcessedImages([]);
     setProcessedImagesByIndex({});
     setActiveTab("upload"); // Reset to first tab
+    setIsStagingConfirmOpen(false);
     // Cancel any ongoing processing
     if (abortController) {
       abortController.abort();
@@ -2651,6 +2720,14 @@ export default function BatchProcessor() {
     // Clear room linking state
     setSelection(new Set());
     setMetaByIndex({});
+
+    // Reset per-batch image-level selections
+    setImageRoomTypesById({});
+    setImageSceneTypesById({});
+    setManualSceneTypesById({});
+    setManualSceneOverrideById({});
+    setImageSkyReplacementById({});
+    setLinkImages(false);
 
     // Clear client-side scene prediction state/caches to avoid cross-batch reuse
     setScenePredictionsById({});
