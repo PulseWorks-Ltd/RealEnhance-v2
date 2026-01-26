@@ -600,16 +600,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const defaultExterior = sceneLabel === "exterior";
     return explicitBool === undefined ? defaultExterior : explicitBool;
   })();
+  const explicitReplaceSky = typeof (payload.options.replaceSky as any) === 'boolean' ? (payload.options.replaceSky as boolean) : undefined;
 
   // Force-safe when user was involved (uncertain scene or manual override)
   const effectiveSceneForSafe = sceneLabel !== "auto" ? sceneLabel : (scenePrimary?.label || "interior");
   const forceSkySafeForReplace = effectiveSceneForSafe === "exterior" && (requiresSceneConfirm || hasManualSceneOverride);
-  if (forceSkySafeForReplace) {
+  if (forceSkySafeForReplace && explicitReplaceSky !== true) {
     safeReplaceSky = false;
     nLog(`[WORKER] Sky Safeguard: forceSkySafe=1 (requiresSceneConfirm=${requiresSceneConfirm}, hasManualSceneOverride=${hasManualSceneOverride}) → disable sky replacement`);
   }
 
-  if (manualSceneOverride) {
+  if (manualSceneOverride && explicitReplaceSky !== true) {
     safeReplaceSky = false;
     nLog(`[WORKER] Sky Safeguard: manualSceneOverride=1 → disable sky replacement`);
   }
