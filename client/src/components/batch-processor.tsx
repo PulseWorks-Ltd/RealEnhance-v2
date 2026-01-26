@@ -1491,8 +1491,11 @@ export default function BatchProcessor() {
     const BACKOFF_START_MS = 1000;
     const BACKOFF_MAX_MS = 5000;
     const BACKOFF_FACTOR = 1.5;
+    const TERMINAL_STATUSES = new Set(["completed", "complete", "done", "failed", "error", "cancelled", "canceled"]);
+    const STALE_DONE_GRACE_MS = 15_000;
     let delay = BACKOFF_START_MS;
     const deadline = Date.now() + MAX_POLL_MS;
+    let doneSeenAt: number | null = null;
 
     while (Date.now() < deadline) {
       try {
@@ -1568,10 +1571,13 @@ export default function BatchProcessor() {
           setStrictRetryingIndices(currentStrict);
         } catch {}
 
-        // progress
-        const completed = items.filter((it: any) => it && it.status === 'completed').length;
+        const statusCounts: Record<string, number> = {};
+        const nonTerminalIndices: number[] = [];
+        let hasUnmappedNonTerminal = false;
         const total = ids.length;
-        setProgressText(`Processing images: ${completed}/${total} completed`);
+
+        // progress + status merge
+        const completed = items.filter((it: any) => it && it.status === 'completed').length;
 
         // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
@@ -1579,6 +1585,7 @@ export default function BatchProcessor() {
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
           const statusRaw = String(it?.status || "");
           const status = statusRaw.toLowerCase();
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
           const stageUrls = it?.stageUrls || it?.stage_urls || null;
           const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const resultUrl = it?.resultUrl || null;
@@ -1588,6 +1595,9 @@ export default function BatchProcessor() {
           const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
 
           if (typeof idx === "number") {
+            if (!TERMINAL_STATUSES.has(status)) {
+              nonTerminalIndices.push(idx);
+            }
             const filename = files[idx]?.name || `image-${idx + 1}`;
             setResults(prev => {
               const copy = prev ? [...prev] : [];
@@ -1651,7 +1661,7 @@ export default function BatchProcessor() {
               });
             }
 
-            if (status === "failed" && !processedSetRef.current.has(idx)) {
+            if ((status === "failed" || status === "error" || status === "cancelled" || status === "canceled") && !processedSetRef.current.has(idx)) {
               processedSetRef.current.add(idx);
               queueRef.current.push({
                 index: idx,
@@ -1662,15 +1672,69 @@ export default function BatchProcessor() {
                 filename,
               });
             }
+          } else if (!TERMINAL_STATUSES.has(status)) {
+            hasUnmappedNonTerminal = true;
           }
         }
         schedule();
 
-        if (data.done) {
+        const terminalCount = Object.entries(statusCounts).reduce((acc, [st, count]) => acc + (TERMINAL_STATUSES.has(st) ? count : 0), 0);
+        const queuedCount = statusCounts['queued'] || 0;
+        const processingCount = statusCounts['processing'] || 0;
+        setProgressText(`Processing images: ${terminalCount}/${total} finished`);
+
+        if (IS_DEV) {
+          console.debug('[BATCH][poll] status counts', { queued: queuedCount, processing: processingCount, completed, terminal: terminalCount, total });
+        }
+
+        const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
+        const serverSignaledDone = !!data.done;
+
+        // Stale-state self-heal: server says done but we still see queued/processing
+        if (serverSignaledDone && !allTerminal) {
+          if (doneSeenAt === null) {
+            doneSeenAt = Date.now();
+            if (IS_DEV) {
+              console.warn('[BATCH][poll] server done but non-terminal items present; extending polling', { nonTerminalIndices, hasUnmappedNonTerminal });
+            }
+          }
+          const waited = Date.now() - doneSeenAt;
+          if (waited >= STALE_DONE_GRACE_MS) {
+            if (nonTerminalIndices.length) {
+              setResults(prev => {
+                const copy = prev ? [...prev] : [];
+                for (const idx of nonTerminalIndices) {
+                  const existing = copy[idx] || {};
+                  copy[idx] = {
+                    ...existing,
+                    status: 'failed',
+                    error: existing.error || 'stuck_queued',
+                    errorCode: 'stuck_queued',
+                  } as any;
+                  processedSetRef.current.add(idx);
+                }
+                return copy;
+              });
+              setProgressText(`Marked ${nonTerminalIndices.length} item(s) as stuck. You can retry them.`);
+              if (IS_DEV) {
+                console.warn('[BATCH][poll] marking stuck queued items as failed', { nonTerminalIndices });
+              }
+            }
+          } else {
+            delay = BACKOFF_START_MS; // poll again quickly during grace window
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+
+        if (allTerminal || serverSignaledDone) {
+          if (IS_DEV) {
+            console.debug('[BATCH][poll] stopping — all items terminal', { nonTerminalIndices, hasUnmappedNonTerminal });
+          }
           setRunState("done");
           setAbortController(null);
           await refreshUser();
-          setProgressText(`Batch complete! ${items.filter((i:any)=>i.status==='completed').length} images enhanced successfully.`);
+          setProgressText(`Batch complete! ${terminalCount} images finished.`);
           localStorage.removeItem(ACTIVE_BATCH_KEY);
           localStorage.removeItem("activeJobId");
           return;

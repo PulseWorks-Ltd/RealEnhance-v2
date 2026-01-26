@@ -1,318 +1,211 @@
-/**
- * Stage 1A Real Estate Enhancement Prompts
- *
- * These prompts are used for Gemini fallback when Stability Conservative Upscaler
- * is unavailable or fails validation. They provide scene-adaptive enhancement
- * while maintaining strict real estate compliance.
- */
+// Stage 1A must remain enhancement-only. No declutter, no staging, no object changes.
 
-// IMPORTANT:
-// Stage 1A must remain enhancement-only.
-// Do NOT add declutter, furniture, or staging behavior here.
-// Those belong exclusively to Stage 1B and Stage 2.
+type SceneVariant = "interior" | "exterior";
 
-/**
- * Stage 1A prompt for dark/low-light interiors
- *
- * Use when: Room looks dim, flat, shadow-heavy, evening interiors, poor lighting
- */
-export const STAGE1A_PROMPT_DARK_INTERIOR = `You are enhancing a real estate photograph taken in low or poor lighting for professional property marketing.
+const ABSOLUTE_CONSTRAINTS_INTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ABSOLUTE STAGE 1A CONSTRAINTS
+(OVERRIDES ALL OTHER INSTRUCTIONS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
 You MUST NOT:
-- remove furniture or objects
-- add furniture or objects
-- replace furniture or objects
-- move, resize, rotate, or re-arrange furniture or objects
-- declutter, simplify, clean up, or reduce visible items
-- fill empty rooms or make them appear staged
-- hallucinate décor, furnishings, or fixtures
+- Remove, add, replace, move, resize, rotate, or alter any furniture or objects
+- Declutter, simplify, tidy, clean up, or reduce visible items
+- Add décor, styling, or furnishings
+- Alter walls, floors, ceilings, doors, windows, or fixtures
+- Change room layout, geometry, or camera perspective
+- Hallucinate or invent any objects or details
 
 If the room is cluttered, leave it cluttered.
 If the room is empty, leave it empty.
-If furniture is dated or unattractive, DO NOT change or replace it.
+If furniture is dated or unattractive, leave it exactly as-is.`;
 
-Stage 1A is enhancement-only.
+const STRUCTURAL_PRESERVATION_INTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STRUCTURAL & GEOMETRY PRESERVATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Stage 1A MAY ONLY:
-- adjust exposure and dynamic range
-- correct white balance
-- improve lighting realism
-- enhance contrast and clarity
-- apply subtle sharpening
-- reduce noise
-- preserve exact geometry and object placement
+- Preserve exact room dimensions and proportions
+- Preserve all architectural features and openings
+- Preserve camera angle, field of view, and lens characteristics`;
 
-This is a QUALITY ENHANCEMENT ONLY task.
+const ALLOWED_ENHANCEMENTS_INTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 1A – INTERIOR ALLOWED ENHANCEMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PRIMARY GOAL:
-Gently lift brightness and clarity while keeping the image fully realistic and structurally identical to the original.
+You MAY ONLY perform photographic enhancements:
 
-YOU MUST:
-• Lift overall exposure slightly to a natural daylight-balanced level
-• Recover detail in shadows without flattening depth
-• Reduce digital noise associated with low-light photography
-• Improve midtone contrast carefully
-• Improve edge clarity and definition without sharpening halos
-• Normalise white balance to neutral indoor daylight
+- Improve exposure balance, focusing on lifting midtones and shadow areas (walls, ceilings, corners) without flattening contrast
+- Protect highlights around windows and light sources; avoid blown-out pure white window regions
+- Correct white balance to achieve natural, neutral whites while preserving subtle warmth where appropriate
+- Reduce mixed lighting colour casts gently (e.g. warm artificial + cool daylight)
+- Apply subtle noise reduction in darker areas
+- Apply very light sharpening and clarity to improve crispness (avoid halos, over-sharpening, or crunchy textures)
+- Apply modest saturation only if needed to restore realism`;
 
-TONE & COLOUR (REAL ESTATE STANDARD):
-• Keep the look bright, clean, neutral, and inviting (not cinematic or moody)
-• Keep shadows slightly lifted; avoid crushed blacks or heavy vignetting
-• Maintain moderate contrast; no HDR-style or dramatic grading
-• Use vibrance gently and keep saturation restrained
-• Keep whites neutral and free of colour casts
-• Do not deepen blacks; lift shadows slightly while preserving natural depth
+const STYLE_REALISM_INTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STYLE & REALISM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-YOU MUST NOT:
-• Add, remove, replace, or move ANY objects
-• Change furniture, décor, wall art, or clutter
-• Change any kitchen, bench, shelf, or table items
-• Change curtains, blinds, windows, doors, or cabinetry
-• Change wall colours, flooring, or fixed features
-• Modify room layout, geometry, or perspective
-• Add artificial lighting sources
-• Stylise, dramatise, or apply HDR effects
-• Make the image look staged, artificial, or heavily edited
+- Natural, realistic interior appearance
+- No HDR look
+- No over-processing
+- The result must look like the same room photographed in better light`;
 
-The image must still feel:
-• Naturally lit
-• Realistic
-• Trustworthy for property listings
+const OUTPUT_REQ_INTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT REQUIREMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-This must look like the SAME photograph captured with:
-• Better exposure
-• Cleaner shadows
-• A higher quality camera sensor
+- The final image must look identical in content to the original
+- Only lighting, colour, and clarity may differ`;
 
-The final result MUST be:
-• Structurally identical to the original
-• Object-for-object identical
-• Layout-for-layout identical
-• But brighter, cleaner, and more professional.
+const ABSOLUTE_CONSTRAINTS_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ABSOLUTE STAGE 1A CONSTRAINTS
+(OVERRIDES ALL OTHER INSTRUCTIONS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DO NOT generate new details.
-DO NOT reinterpret surfaces.
-DO NOT replace any visible items.
-
-Enhance only.`;
-
-/**
- * Stage 1A prompt for bright/daylight interiors
- *
- * Use when: Space is well lit, daytime interiors, sunlit rooms
- */
-export const STAGE1A_PROMPT_BRIGHT_INTERIOR = `You are enhancing a well-lit real estate photograph for professional property marketing.
-
-[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
 You MUST NOT:
-- remove furniture or objects
-- add furniture or objects
-- replace furniture or objects
-- move, resize, rotate, or re-arrange furniture or objects
-- declutter, simplify, clean up, or reduce visible items
-- fill empty rooms or make them appear staged
-- hallucinate décor, furnishings, or fixtures
+- Remove, add, replace, move, resize, rotate, or alter any objects or structures
+- Alter buildings, roofs, chimneys, trees, fences, paths, or landscaping
+- Declutter or simplify the scene
+- Add people, vehicles, or décor
+- Change camera angle, geometry, or perspective
 
-If the room is cluttered, leave it cluttered.
-If the room is empty, leave it empty.
-If furniture is dated or unattractive, DO NOT change or replace it.
+If elements appear messy or imperfect, leave them exactly as-is.`;
 
-Stage 1A is enhancement-only.
+const STRUCTURAL_PRESERVATION_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STRUCTURAL & GEOMETRY PRESERVATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Stage 1A MAY ONLY:
-- adjust exposure and dynamic range
-- correct white balance
-- improve lighting realism
-- enhance contrast and clarity
-- apply subtle sharpening
-- reduce noise
-- preserve exact geometry and object placement
+- Preserve exact rooflines, horizons, and silhouettes
+- Preserve all architectural features and boundaries
+- Preserve natural lighting direction and shadow placement`;
 
-This is a QUALITY ENHANCEMENT ONLY task.
+const ALLOWED_ENHANCEMENTS_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 1A – EXTERIOR ALLOWED ENHANCEMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PRIMARY GOAL:
-Refine clarity and tonal balance while keeping the image fully realistic and structurally identical to the original.
+You MAY ONLY perform photographic enhancements:
 
-YOU MUST:
-• Preserve the existing lighting direction and brightness
-• Improve micro-clarity and texture definition gently
-• Improve tonal separation between highlights, midtones, and shadows
-• Recover minor highlight clipping near windows if present
-• Improve image cleanliness and compression artefact reduction
-• Maintain true-to-life colour balance
+- Reduce haze and improve clarity subtly while maintaining realism
+- Improve overall contrast and exposure balance
+- Reduce harsh glare and excessive specular highlights (do not remove reflections entirely)
+- Improve grass and foliage colour slightly toward natural greens (never neon or over-saturated)
+- If surfaces appear wet or dull due to lighting, you may lift midtones and reduce excessive shine to improve exposure balance (tonal correction only; do NOT change materials)
+- Apply light sharpening and clarity
+- Maintain natural shadow depth and lighting realism`;
 
-TONE & COLOUR (REAL ESTATE STANDARD):
-• Keep the look bright, clean, neutral, and inviting (not cinematic or moody)
-• Keep shadows slightly lifted; avoid crushed blacks or heavy vignetting
-• Maintain moderate contrast; no HDR-style or dramatic grading
-• Use vibrance gently and keep saturation restrained
-• Keep whites neutral and free of colour casts
+const SKY_ENHANCEMENT_BLOCK = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXTERIOR SKY ENHANCEMENT – CONDITIONAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-YOU MUST NOT:
-• Add, remove, replace, or move ANY objects
-• Change furniture, décor, wall art, or clutter
-• Change any kitchen, bench, shelf, or table items
-• Change curtains, blinds, windows, doors, or cabinetry
-• Change wall colours, flooring, or fixed features
-• Modify room layout, geometry, or perspective
-• Add artificial lighting sources
-• Stylise, dramatise, or apply HDR effects
-• Over-brighten or over-contrast the image
+ONLY APPLY THIS SECTION IF:
+- The image is an exterior scene
+- Scene type was AUTO-DETECTED as exterior
+- Sky enhancement is explicitly enabled
 
-The result must feel:
-• Naturally bright
-• Clean but not edited
-• Professionally photographed, not AI-generated
+You MAY:
+- Enhance or replace the SKY ONLY
+- Improve sky colour, brightness, and cloud definition
+- Replace a dull or overcast sky with a natural blue sky
 
-This must look like the SAME photograph captured with:
-• A higher quality lens
-• Better clarity
-• Better tonal control
+You MUST:
+- Treat the sky strictly as a background element
+- Preserve exact rooflines, trees, buildings, and horizons
+- Match sky lighting direction to the original scene
+- Keep skies realistic and natural (no exaggerated drama)
 
-The final result MUST be:
-• Structurally identical to the original
-• Object-for-object identical
-• Layout-for-layout identical
-• But more refined and professional.
-
-DO NOT generate new details.
-DO NOT reinterpret surfaces.
-DO NOT replace any visible items.
-
-Enhance only.`;
-
-/**
- * Stage 1A prompt for exterior/daylight scenes
- *
- * Use when: Exterior photos, daylight outdoor shots, facades, decks, gardens
- */
-export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = `You are enhancing a real estate EXTERIOR photograph taken in daylight for professional property marketing.
-
-[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
 You MUST NOT:
-- remove furniture or objects
-- add furniture or objects
-- replace furniture or objects
-- move, resize, rotate, or re-arrange furniture or objects
-- declutter, simplify, clean up, or reduce visible items
-- fill empty rooms or make them appear staged
-- hallucinate décor, furnishings, or fixtures
+- Extend sky into non-sky regions
+- Alter or remove roofs, trees, antennas, or structures
+- Change shadows on buildings or ground
+- Apply sky enhancement if the sky boundary is ambiguous
 
-If the area is cluttered, leave it cluttered.
-If the area is empty, leave it empty.
-If any objects are dated or unattractive, DO NOT change or replace them.
+If the sky region is unclear or risky, DO NOT modify it.`;
 
-Stage 1A is enhancement-only.
+const STYLE_REALISM_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STYLE & REALISM
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Stage 1A MAY ONLY:
-- adjust exposure and dynamic range
-- correct white balance
-- improve lighting realism
-- enhance contrast and clarity
-- apply subtle sharpening
-- reduce noise
-- preserve exact geometry and object placement
+- Clean, natural, real-estate appropriate appearance
+- No artificial HDR or surreal effects
+- The result must still look like a real photograph`;
 
-This is a QUALITY ENHANCEMENT ONLY task.
+const OUTPUT_REQ_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT REQUIREMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PRIMARY GOAL:
-Refine clarity, sharpness, and tonal balance while keeping the image fully realistic and structurally identical to the original.
+- The final image must match the original scene content
+- Only lighting, colour, clarity, and (when allowed) sky may differ`;
 
-YOU MUST:
-• Improve global sharpness and edge clarity gently
-• Maintain clear separation between sky, building, and landscaping while keeping the scene bright and open (do not increase overall contrast)
-• Recover minor highlight clipping in bright sky areas if present
-• Improve shadow detail under eaves and shaded zones naturally
-• Reduce compression artefacts
-• Maintain true-to-life exterior colour balance (no artificial saturation)
-
-TONE & COLOUR (REAL ESTATE STANDARD):
-• Keep the scene bright, open, and neutral; avoid moody or dark looks
-• Avoid heavy shadows or increased overall contrast; keep tonal balance gentle
-• Keep greens and browns natural and restrained (no rich or overly saturated grading)
-• Avoid wet or glossy-looking ground; do not darken pavement or exterior surfaces
-• Do not darken global exposure; preserve the daylight openness of the scene
-
-YOU MUST NOT:
-• Add, remove, replace, or move ANY objects
-• Change buildings, fencing, decking, paving, or outdoor furniture
-• Change plants, trees, grass, or landscaping layout
-• Change sky content, cloud shapes, sun position, or weather
-• Change reflections in windows or doors
-• Modify perspective, camera angle, or lens distortion
-• Add artificial lighting, lens flares, or sun rays
-• Stylise, dramatise, or apply HDR effects
-• Make the image look staged, fake, or AI-generated
-
-The result must feel:
-• Naturally lit
-• Clean and crisp
-• Photographically accurate
-• Suitable for property listings
-
-This must look like the SAME photograph captured with:
-• A better lens
-• Better sensor clarity
-• Improved dynamic range handling
-
-The final result MUST be:
-• Structurally identical to the original
-• Object-for-object identical
-• Layout-for-layout identical
-• But cleaner, sharper, and more professional.
-
-DO NOT generate new sky content.
-DO NOT reinterpret landscaping.
-DO NOT replace any visible items.
-
-Enhance only.`;
-
-/**
- * Calculate average luminance of an image to determine if it's dark or bright
- */
-export async function getAverageLuminance(imagePath: string): Promise<number> {
-  try {
-    const sharp = (await import("sharp")).default;
-
-    // Get image stats
-    const stats = await sharp(imagePath).stats();
-
-    // Calculate average luminance across all channels
-    // Luminance = 0.299*R + 0.587*G + 0.114*B (standard formula)
-    const avgLuminance =
-      stats.channels[0].mean * 0.299 +
-      stats.channels[1].mean * 0.587 +
-      stats.channels[2].mean * 0.114;
-
-    return avgLuminance;
-  } catch (err) {
-    console.error("[Stage1A] Error calculating luminance:", err);
-    return 128; // Default to mid-brightness if error
-  }
+/** Build Stage 1A Interior prompt (enhancement-only) */
+export function buildStage1AInteriorPrompt(): string {
+  return [
+    "You are a professional real-estate photo editor.",
+    "",
+    "Your task is to ENHANCE the photographic quality of an INTERIOR image.",
+    "This is NOT decluttering and NOT staging.",
+    "",
+    ABSOLUTE_CONSTRAINTS_INTERIOR,
+    "",
+    STRUCTURAL_PRESERVATION_INTERIOR,
+    "",
+    ALLOWED_ENHANCEMENTS_INTERIOR,
+    "",
+    STYLE_REALISM_INTERIOR,
+    "",
+    OUTPUT_REQ_INTERIOR,
+    "",
+    "The final image must be structurally identical and object-for-object identical.",
+    "Enhance only."
+  ].join("\n");
 }
 
+/** Build Stage 1A Exterior prompt (enhancement + conditional sky) */
+export function buildStage1AExteriorPrompt(opts: { skyEnhancementEnabled: boolean; sceneSource: "auto" | "manual" }): string {
+  const { skyEnhancementEnabled, sceneSource } = opts;
+  const blocks = [
+    "You are a professional real-estate photo editor.",
+    "",
+    "Your task is to ENHANCE the photographic quality of an EXTERIOR image.",
+    "This is NOT decluttering and NOT staging.",
+    "",
+    ABSOLUTE_CONSTRAINTS_EXTERIOR,
+    "",
+    STRUCTURAL_PRESERVATION_EXTERIOR,
+    "",
+    ALLOWED_ENHANCEMENTS_EXTERIOR,
+  ];
+
+  if (skyEnhancementEnabled && sceneSource === "auto") {
+    blocks.push("", SKY_ENHANCEMENT_BLOCK);
+  }
+
+  blocks.push("", STYLE_REALISM_EXTERIOR, "", OUTPUT_REQ_EXTERIOR, "", "The final image must be structurally identical and object-for-object identical.", "Enhance only.");
+
+  return blocks.join("\n");
+}
+
+type SceneSource = "auto" | "manual";
+
 /**
- * Select the appropriate Stage 1A prompt based on scene type and lighting
+ * Select the appropriate Stage 1A prompt based on scene type.
+ * - Interior: canonical enhancement-only prompt
+ * - Exterior: enhancement-only plus conditional sky block when auto-detected & enabled
  */
 export async function selectStage1APrompt(
-  sceneType: "interior" | "exterior" | string | undefined,
-  inputPath: string,
-  _skyMode: "safe" | "strong" = "safe"
+  sceneType: SceneVariant | string | undefined,
+  _inputPath: string,
+  _skyMode: "safe" | "strong" = "safe",
+  opts: { sceneSource?: SceneSource; enableSkyEnhancement?: boolean } = {}
 ): Promise<string> {
+  const sceneSource: SceneSource = opts.sceneSource || (sceneType && sceneType !== "auto" ? "manual" : "auto");
+  const enableSkyEnhancement = opts.enableSkyEnhancement === true;
+
   if (sceneType === "exterior") {
-    return STAGE1A_PROMPT_EXTERIOR_DAYLIGHT;
+    const prompt = buildStage1AExteriorPrompt({ skyEnhancementEnabled: enableSkyEnhancement && sceneSource === "auto", sceneSource });
+    console.log(`[STAGE1A] variant=exterior skyEnhancement=${enableSkyEnhancement && sceneSource === "auto" ? "enabled" : "disabled"} source=${sceneSource}`);
+    return prompt;
   }
 
-  // For interiors, analyze brightness
-  const meanBrightness = await getAverageLuminance(inputPath);
-
-  // Threshold: < 110 = dark interior, >= 110 = bright interior
-  if (meanBrightness < 110) {
-    console.log(`[Stage1A] Scene brightness: ${meanBrightness.toFixed(1)} - using DARK_INTERIOR prompt`);
-    return STAGE1A_PROMPT_DARK_INTERIOR;
-  } else {
-    console.log(`[Stage1A] Scene brightness: ${meanBrightness.toFixed(1)} - using BRIGHT_INTERIOR prompt`);
-    return STAGE1A_PROMPT_BRIGHT_INTERIOR;
-  }
+  console.log(`[STAGE1A] variant=interior`);
+  return buildStage1AInteriorPrompt();
 }
