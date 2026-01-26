@@ -6,12 +6,42 @@
  * while maintaining strict real estate compliance.
  */
 
+// IMPORTANT:
+// Stage 1A must remain enhancement-only.
+// Do NOT add declutter, furniture, or staging behavior here.
+// Those belong exclusively to Stage 1B and Stage 2.
+
 /**
  * Stage 1A prompt for dark/low-light interiors
  *
  * Use when: Room looks dim, flat, shadow-heavy, evening interiors, poor lighting
  */
 export const STAGE1A_PROMPT_DARK_INTERIOR = `You are enhancing a real estate photograph taken in low or poor lighting for professional property marketing.
+
+[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
+You MUST NOT:
+- remove furniture or objects
+- add furniture or objects
+- replace furniture or objects
+- move, resize, rotate, or re-arrange furniture or objects
+- declutter, simplify, clean up, or reduce visible items
+- fill empty rooms or make them appear staged
+- hallucinate décor, furnishings, or fixtures
+
+If the room is cluttered, leave it cluttered.
+If the room is empty, leave it empty.
+If furniture is dated or unattractive, DO NOT change or replace it.
+
+Stage 1A is enhancement-only.
+
+Stage 1A MAY ONLY:
+- adjust exposure and dynamic range
+- correct white balance
+- improve lighting realism
+- enhance contrast and clarity
+- apply subtle sharpening
+- reduce noise
+- preserve exact geometry and object placement
 
 This is a QUALITY ENHANCEMENT ONLY task.
 
@@ -74,6 +104,31 @@ Enhance only.`;
  */
 export const STAGE1A_PROMPT_BRIGHT_INTERIOR = `You are enhancing a well-lit real estate photograph for professional property marketing.
 
+[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
+You MUST NOT:
+- remove furniture or objects
+- add furniture or objects
+- replace furniture or objects
+- move, resize, rotate, or re-arrange furniture or objects
+- declutter, simplify, clean up, or reduce visible items
+- fill empty rooms or make them appear staged
+- hallucinate décor, furnishings, or fixtures
+
+If the room is cluttered, leave it cluttered.
+If the room is empty, leave it empty.
+If furniture is dated or unattractive, DO NOT change or replace it.
+
+Stage 1A is enhancement-only.
+
+Stage 1A MAY ONLY:
+- adjust exposure and dynamic range
+- correct white balance
+- improve lighting realism
+- enhance contrast and clarity
+- apply subtle sharpening
+- reduce noise
+- preserve exact geometry and object placement
+
 This is a QUALITY ENHANCEMENT ONLY task.
 
 PRIMARY GOAL:
@@ -133,6 +188,31 @@ Enhance only.`;
  * Use when: Exterior photos, daylight outdoor shots, facades, decks, gardens
  */
 export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = `You are enhancing a real estate EXTERIOR photograph taken in daylight for professional property marketing.
+
+[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
+You MUST NOT:
+- remove furniture or objects
+- add furniture or objects
+- replace furniture or objects
+- move, resize, rotate, or re-arrange furniture or objects
+- declutter, simplify, clean up, or reduce visible items
+- fill empty rooms or make them appear staged
+- hallucinate décor, furnishings, or fixtures
+
+If the area is cluttered, leave it cluttered.
+If the area is empty, leave it empty.
+If any objects are dated or unattractive, DO NOT change or replace them.
+
+Stage 1A is enhancement-only.
+
+Stage 1A MAY ONLY:
+- adjust exposure and dynamic range
+- correct white balance
+- improve lighting realism
+- enhance contrast and clarity
+- apply subtle sharpening
+- reduce noise
+- preserve exact geometry and object placement
 
 This is a QUALITY ENHANCEMENT ONLY task.
 

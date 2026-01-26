@@ -11,6 +11,31 @@ This is STAGE 1A: ENHANCEMENT ONLY.
 You must apply ONLY global photographic corrections.
 You must NOT modify, add, remove, replace, move, or restage any objects.
 
+[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
+You MUST NOT:
+- remove furniture or objects
+- add furniture or objects
+- replace furniture or objects
+- move, resize, rotate, or re-arrange furniture or objects
+- declutter, simplify, clean up, or reduce visible items
+- fill empty rooms or make them appear staged
+- hallucinate décor, furnishings, or fixtures
+
+If the room is cluttered, leave it cluttered.
+If the room is empty, leave it empty.
+If furniture is dated or unattractive, DO NOT change or replace it.
+
+Stage 1A is enhancement-only.
+
+Stage 1A MAY ONLY:
+- adjust exposure and dynamic range
+- correct white balance
+- improve lighting realism
+- enhance contrast and clarity
+- apply subtle sharpening
+- reduce noise
+- preserve exact geometry and object placement
+
 ────────────────────────────────
 PRIMARY OBJECTIVE
 ────────────────────────────────
@@ -85,7 +110,7 @@ You MUST NOT:
 
 - Add or remove any furniture, decor, or objects.
 - Add props such as bowls, bottles, plants, artwork, food, or styling items.
-- Remove clutter, even small items.
+- Keep all clutter exactly as captured, including small items.
 - Move, resize, or reposition anything.
 - Modify walls, floors, ceilings, trims, windows, curtains, or fixtures.
 - Change the outdoor scene or sky.
@@ -130,6 +155,31 @@ This is STAGE 1A: ENHANCEMENT ONLY (EXTERIOR).
 You must apply ONLY global photographic corrections.
 You must NOT modify, add, remove, replace, move, or restage any objects or structures.
 
+[ABSOLUTE STAGE 1A CONSTRAINTS – OVERRIDE ALL OTHER INSTRUCTIONS]
+You MUST NOT:
+- remove furniture or objects
+- add furniture or objects
+- replace furniture or objects
+- move, resize, rotate, or re-arrange furniture or objects
+- declutter, simplify, clean up, or reduce visible items
+- fill empty rooms or make them appear staged
+- hallucinate décor, furnishings, or fixtures
+
+If the area is cluttered, leave it cluttered.
+If the area is empty, leave it empty.
+If any visible items are dated or unattractive, DO NOT change or replace them.
+
+Stage 1A is enhancement-only.
+
+Stage 1A MAY ONLY:
+- adjust exposure and dynamic range
+- correct white balance
+- improve lighting realism
+- enhance contrast and clarity
+- apply subtle sharpening
+- reduce noise
+- preserve exact geometry and object placement
+
 ────────────────────────────────
 PRIMARY OBJECTIVE
 ────────────────────────────────
@@ -153,7 +203,6 @@ First, visually assess the lighting and sky quality of the original image:
     • Lifting exposure and midtones first (not contrast)
     • Keeping shadows open; do not deepen blacks
     • Keeping saturation restrained (especially greens and browns)
-    • If sky replacement is allowed, keep it natural; do not darken the scene to emphasize the sky
 
 2) If the image has DECENT LIGHTING but looks DULL (most mobile photos):
    → Apply MODERATE enhancement profile. This is the DEFAULT behavior.
@@ -189,13 +238,9 @@ ALLOWED GLOBAL ADJUSTMENTS ONLY
 ────────────────────────────────
 You may apply ONLY these global photographic corrections:
 
-- Sky replacement (ONLY if clearly overcast AND permitted by sky safety rules):
-  Replace gray/overcast skies with a natural, softly balanced New Zealand blue sky with soft clouds.
-  Do NOT darken the overall exposure or increase contrast to emphasize the sky.
 - Exposure and brightness lift for the entire scene
 - White balance normalization to clean daylight
 - Grass and vegetation enhancement (healthy green, natural and restrained)
-- Gentle surface cleaning (remove dirt/mold from driveways, decks, fences) while preserving texture
 - Gentle midtone contrast increase
 - Subtle micro-clarity and texture recovery on building surfaces
 - Soft, natural sharpening (no halos)
@@ -215,7 +260,7 @@ You MUST NOT:
 - Add or remove any buildings, structures, or architectural elements.
 - Add or remove vehicles, driveways, paths, decks, or patios.
 - Add props such as furniture, planters, decorations, or styling items.
-- Remove clutter or objects (even temporary items like bins or toys).
+- Keep all visible objects, including temporary items like bins or toys, exactly as captured.
 - Move, resize, or reposition anything.
 - Modify building colors, materials, roofing, or siding.
 - Change landscape layout, tree positions, or garden beds.
@@ -231,7 +276,7 @@ STYLE TARGET
 ────────────────────────────────
 Target the look of:
 - High-end professional New Zealand real estate photography
-- Bright, vibrant blue skies with soft white clouds (Trade Me standard)
+- Natural daylight skies as captured (no sky replacement) with balanced blue tones when present
 - Healthy, well-maintained green lawns and gardens
 - Clean, bright building surfaces
 - Natural daylight exterior exposure
@@ -244,7 +289,7 @@ OUTPUT REQUIREMENT
 ────────────────────────────────
 Return ONLY the enhanced image.
 The contents and layout of the image must be visually identical.
-Only sky, color, clarity, exposure, and surface quality may change.
+Only color, clarity, exposure, and surface quality may change; sky content must remain as captured.
 
 Do not explain.
 Do not annotate.

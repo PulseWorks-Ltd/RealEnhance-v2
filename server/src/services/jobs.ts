@@ -109,6 +109,8 @@ export async function enqueueEnhanceJob(params: {
     declutterIntensity?: "light" | "standard" | "heavy";
     stagingStyle?: string;
     stagingPreference?: "refresh" | "full";
+    stage2Variant?: "2A" | "2B";
+    furnishedState?: "furnished" | "empty";
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {

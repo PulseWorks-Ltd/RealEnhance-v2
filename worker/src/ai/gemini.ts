@@ -230,8 +230,9 @@ export async function enhanceWithGemini(
       }
     }
     // Ensure sceneType matches PromptOptions type
-    const prompt = (typeof promptOverride === 'string' && promptOverride.length > 0)
-      ? promptOverride
+    const isOverride = typeof promptOverride === 'string' && promptOverride.length > 0;
+    const prompt = isOverride
+      ? (promptOverride as string)
       : buildGeminiPrompt({
           goal: declutter ? "Declutter and enhance image" : "Enhance image", // Default goal
           sceneType: sceneType === "interior" || sceneType === "exterior" ? sceneType : "auto",
@@ -240,6 +241,7 @@ export async function enhanceWithGemini(
           strictMode: strictMode,
           // Add other valid PromptOptions properties here as needed
         });
+    console.log(`[Gemini] 📝 Prompt source: ${isOverride ? 'OVERRIDE (likely prompts.nzRealEstate.ts)' : 'DEFAULT (prompt.ts)'}`);
     console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);

@@ -305,6 +305,10 @@ export function uploadRouter() {
       if (!hasPerItemOptions || typeof opts.virtualStage !== 'boolean') {
         opts.virtualStage = allowStagingForm;
       }
+      // If user explicitly chose a Stage 2 variant or furnished state, force-enable virtualStage
+      if (!opts.virtualStage && (opts.stage2Variant || opts.furnishedState)) {
+        opts.virtualStage = true;
+      }
       // If no per-item declutter provided, inherit from form-level declutter
       // Use typeof check to ensure false is not overridden by true default
       try { console.log(`[upload] item ${i} before declutter assign: hasPerItemOptions=${hasPerItemOptions} opts.declutter=${opts.declutter} declutterForm=${declutterForm}`); } catch {}
@@ -532,6 +536,8 @@ export function uploadRouter() {
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
           stagingPreference: opts.stagingPreference,
+          stage2Variant: opts.stage2Variant,
+          furnishedState: opts.furnishedState,
         },
       }, jobId);
 
