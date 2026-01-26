@@ -162,6 +162,10 @@ export interface EnhanceJobPayload {
     stagingStyle?: string;           // Staging style (defaults to nz_standard)
     declutterMode?: DeclutterMode;   // Stage 1B mode
     declutterIntensity?: "light" | "standard" | "heavy";
+    /** Stage 2 variant selector: 2A (refresh existing furniture) or 2B (empty-room staging) */
+    stage2Variant?: "2A" | "2B";
+    /** Furnished state declared by user for Stage 2 routing */
+    furnishedState?: "furnished" | "empty";
     manualSceneOverride?: boolean;   // Per-image manual scene flag
     scenePrediction?: {              // Client-side scene prediction for SKY_SAFE forcing
       scene: string | null;

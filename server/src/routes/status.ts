@@ -147,6 +147,8 @@ export function statusRouter() {
 
         const localStatus: string | undefined = local?.status;
         const isBlocked = Boolean(local?.meta?.blockedByValidator) || local?.error === "BLOCKED_BY_VALIDATOR";
+        const stage2Requested = Boolean(local?.meta?.stage2Requested || payload?.options?.virtualStage);
+        const stage2BlockedReason = local?.meta?.stage2BlockedReason || null;
         const hasFinalUrls = Boolean(resultUrl) || Object.values(stageUrls).some(Boolean);
 
         let status: StatusItem["status"] = queueStatus;
@@ -188,6 +190,13 @@ export function statusRouter() {
           stageOutputs: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           meta: local.meta ?? {},
         };
+        if (stage2Requested && !stage2BlockedReason && !stageUrls['2']) {
+          console.error(`[status/batch] stage2_missing jobId=${id} imageId=${imageId || 'unknown'} stage2Requested=true blocked=${stage2BlockedReason || 'none'}`);
+          (item as any).stage2Missing = true;
+          if (!(item as any).errorCode) {
+            (item as any).errorCode = "stage2_missing";
+          }
+        }
         // Add mode if it exists
         if (mode) {
           item.mode = mode;
@@ -197,6 +206,11 @@ export function statusRouter() {
           item.error = local.errorMessage || failedReason || (status === "blocked" ? "blocked_by_validator" : (status === "failed" && !resultUrl ? "completed_no_url" : undefined));
           if (status === "failed" && !resultUrl) {
             (item as any).errorCode = "completed_no_url";
+          }
+          if (stage2Requested && !stage2BlockedReason && !stageUrls['2'] && !item.errorCode) {
+            (item as any).errorCode = "stage2_missing";
+            item.error = item.error || "stage2_missing";
+            console.error(`[status/batch] stage2_missing jobId=${id} imageId=${imageId || 'unknown'} stage2Requested=true blocked=${stage2BlockedReason || 'none'}`);
           }
         }
 

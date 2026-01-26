@@ -109,8 +109,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
   const rawDeclutter = (payload as any).options.declutter;
   const rawVirtualStage = (payload as any).options.virtualStage;
+  const stage2OriginallyRequested = strictBool(rawVirtualStage);
   (payload as any).options.declutter = strictBool(rawDeclutter);
-  (payload as any).options.virtualStage = strictBool(rawVirtualStage);
+  (payload as any).options.virtualStage = stage2OriginallyRequested;
   if (typeof rawDeclutter !== 'boolean') {
     nLog(`[WORKER] Normalized declutter '${rawDeclutter}' → ${payload.options.declutter}`);
   }
@@ -814,6 +815,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
+  const stage2Variant = ((payload as any)?.options?.stage2Variant === "2A" || (payload as any)?.options?.stage2Variant === "2B")
+    ? (payload as any).options.stage2Variant as "2A" | "2B"
+    : undefined;
+  const furnishedState = ((payload as any)?.options?.furnishedState === "furnished" || (payload as any)?.options?.furnishedState === "empty")
+    ? (payload as any).options.furnishedState as "furnished" | "empty"
+    : undefined;
   nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -826,6 +833,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     roomType: payload.options.roomType,
     outdoorStagingEnabled: false // ALWAYS false for V1 - exterior staging blocked
   });
+  let stagingBlockedReason: string | null = null;
 
   // If staging was requested but not allowed, log and skip
   if (payload.options.virtualStage && !stagingGuardResult.allowed) {
@@ -838,6 +846,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] ⚠️ Staging blocked: ${stagingGuardResult.reason} - ${stagingGuardResult.message}`);
     // Don't error - just skip staging and return enhanced image
     payload.options.virtualStage = false;
+    stagingBlockedReason = stagingGuardResult.reason || "blocked";
   }
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
@@ -846,12 +855,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   stage12Success = true;
   const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
-  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   const stage1BRan = !!path1B;
   const stage1BLightRan = payload.options.declutterMode === "light" && !!path1B;
   const stagingPreference = (payload.options as any)?.stagingPreference as "refresh" | "full" | undefined;
-  const stagingMode = stage1BLightRan ? "refresh" : stagingPreference === "refresh" ? "refresh" : "full";
+  const stagingModeFromVariant: "refresh" | "full" | undefined = stage2Variant === "2A" ? "refresh" : stage2Variant === "2B" ? "full" : undefined;
+  const stagingMode = stagingModeFromVariant
+    ?? (stage1BLightRan ? "refresh" : stagingPreference === "refresh" ? "refresh" : "full");
   const userOverride = stagingPreference ? (stage1BLightRan ? "null" : stagingPreference === "refresh" ? "yes" : "no") : "null";
+  nLog(`[ROUTER] stagesRequested=${["1A", payload.options.declutterMode ? "1B" : null, payload.options.virtualStage ? "2" : null].filter(Boolean).join(",")} stage1BRan=${stage1BRan} stage2Variant=${stage2Variant || 'unset'} baselineStageUsed=${stage2BaseStage} stagingBlockedReason=${stagingBlockedReason || 'none'}`);
+  nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   nLog(`[STAGE2] mode=${stagingMode} stage1BRan=${stage1BRan ? 'true' : 'false'} userOverride=${userOverride} jobId=${payload.jobId} imageId=${payload.imageId}`);
   let path2: string = stage2InputPath;
   try {
@@ -1420,6 +1432,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     roomTypeDetected: detectedRoom,
     roomType: payload.options.roomType || undefined,
     allowStaging,
+    stage2Variant: stage2Variant || undefined,
+    furnishedState: furnishedState || undefined,
+    stage2Requested: stage2OriginallyRequested,
+    stage2BlockedReason: stagingBlockedReason || undefined,
     stagingRegion: stagingRegionGlobal,
     timings: { ...timings, totalMs: Date.now() - t0 },
     ...(compliance ? { compliance } : {}),
@@ -1428,6 +1444,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const finalResultUrl = pubFinalUrl || pub2Url || pub1BUrl || pub1AUrl || null;
+  if (!finalResultUrl) {
+    console.error(`[WORKER][WARN] completed_no_url jobId=${payload.jobId} imageId=${payload.imageId}`);
+  }
+  if (stage2OriginallyRequested && payload.options.virtualStage && !stagingBlockedReason && !pub2Url) {
+    console.error(`[WORKER][WARN] stage2_requested_missing_url jobId=${payload.jobId} imageId=${payload.imageId}`);
+  }
+  const resultStage: "1A" | "1B" | "2" = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
 
   updateJob(payload.jobId, {
     status: "complete",
@@ -1441,10 +1464,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: finalResultUrl,
+    resultStage,
     stageUrls: {
-      "1A": pub1AUrl,
-      "1B": pub1BUrl,
-      "2": hasStage2 ? pub2Url : null
+      "1A": pub1AUrl || null,
+      "1B": pub1BUrl || null,
+      "2": hasStage2 ? (pub2Url || null) : null
     }
     }
   );
@@ -1499,6 +1523,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     finalPath: finalBasePath,
     originalUrl: publishedOriginal?.url || null,
     resultUrl: finalResultUrl,
+    resultStage,
     stageUrls: {
       "1A": pub1AUrl || null,
       "1B": pub1BUrl || null,
