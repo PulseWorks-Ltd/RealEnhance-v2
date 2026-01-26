@@ -1573,44 +1573,95 @@ export default function BatchProcessor() {
         const total = ids.length;
         setProgressText(`Processing images: ${completed}/${total} completed`);
 
-        // surface completed items (fix: resolve job index using id || jobId || job_id)
+        // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
-          const url = it?.imageUrl || it?.resultUrl || it?.image || null;
+          const statusRaw = String(it?.status || "");
+          const status = statusRaw.toLowerCase();
+          const stageUrls = it?.stageUrls || it?.stage_urls || null;
+          const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
+          const resultUrl = it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
-          const status = String(it?.status || "").toLowerCase();
-          const isCompleted = status === "completed" || status === "complete" || status === "done";
+          const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
+          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
+          const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
 
-          if (typeof idx === "number" && isCompleted && !processedSetRef.current.has(idx)) {
-            processedSetRef.current.add(idx);
-            queueRef.current.push({
-              index: idx,
-              result: {
-                imageUrl: url,
-                originalImageUrl: originalUrl,
-                qualityEnhancedUrl: null,
-                mode: it.mode || "enhanced",
-                stageUrls: it.stageUrls || null,
+          if (typeof idx === "number") {
+            const filename = files[idx]?.name || `image-${idx + 1}`;
+            setResults(prev => {
+              const copy = prev ? [...prev] : [];
+              const existing = copy[idx] || {};
+              copy[idx] = {
+                ...existing,
+                status,
+                resultStage: resultStage || existing.resultStage || null,
+                resultUrl: resultUrl || existing.resultUrl || null,
+                stageUrls: stageUrls || existing.stageUrls || null,
+                imageId: it.imageId || existing.imageId,
+                originalUrl: originalUrl || existing.originalUrl,
+                filename,
+                // Preserve prior result object but refresh URLs and status fields
+                result: {
+                  ...(existing.result || {}),
+                  imageUrl: completedFinal ? (resultUrl || (existing.result?.imageUrl)) : (existing.result?.imageUrl || undefined),
+                  resultUrl: resultUrl || existing.result?.resultUrl,
+                  stageUrls: stageUrls || existing.result?.stageUrls || null,
+                  status,
+                  resultStage: resultStage || existing.result?.resultStage,
+                },
+                // Preview URL used while processing
+                previewUrl: chosenPreview || existing.previewUrl || null,
+                error: status === "failed" ? (it.error || it.message || existing.error || "Processing failed") : existing.error,
+              };
+              return copy;
+            });
+
+            if (IS_DEV) {
+              const stageKeys = stageUrls ? Object.keys(stageUrls).filter(k => stageUrls[k]) : [];
+              console.debug('[BATCH][stage-preview]', {
+                jobId: key,
+                index: idx,
+                status,
+                stageKeys,
+                resultStage: resultStage || null,
+                resultUrl: resultUrl || null,
+                chosenPreview: chosenPreview || null,
+              });
+            }
+
+            if (completedFinal && !processedSetRef.current.has(idx)) {
+              processedSetRef.current.add(idx);
+              queueRef.current.push({
+                index: idx,
+                result: {
+                  imageUrl: resultUrl,
+                  originalImageUrl: originalUrl,
+                  qualityEnhancedUrl: null,
+                  mode: it.mode || "enhanced",
+                  stageUrls: stageUrls || null,
+                  imageId: it.imageId,
+                  status,
+                  resultStage,
+                },
+                jobId: key,
                 imageId: it.imageId,
-              },
-              jobId: key,
-              imageId: it.imageId,
-              stageUrls: it.stageUrls || null,
-              filename: files[idx]?.name || `image-${idx + 1}`
-            });
-          }
+                stageUrls: stageUrls || null,
+                filename,
+              });
+            }
 
-          if (typeof idx === "number" && status === "failed" && !processedSetRef.current.has(idx)) {
-            processedSetRef.current.add(idx);
-            queueRef.current.push({
-              index: idx,
-              result: null,
-              error: it.error || it.message || "Edit failed",
-              jobId: key,
-              imageId: it.imageId,
-              filename: files[idx]?.name || `image-${idx + 1}`
-            });
+            if (status === "failed" && !processedSetRef.current.has(idx)) {
+              processedSetRef.current.add(idx);
+              queueRef.current.push({
+                index: idx,
+                result: null,
+                error: it.error || it.message || "Processing failed",
+                jobId: key,
+                imageId: it.imageId,
+                filename,
+              });
+            }
           }
         }
         schedule();
@@ -3904,10 +3955,12 @@ export default function BatchProcessor() {
                 <div className="space-y-4">
                     {files.map((file, i) => {
                         const result = results[i];
+                        const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const isDone = !!(result?.result?.image || result?.result?.imageUrl || result?.image || result?.imageUrl);
-                        const isError = !!(result?.error) && !isRetrying;
-                        const isProcessing = ((runState === 'running' || isUploading) && !isDone && !isError) || isRetrying;
+                        const finalResultUrl = status === "completed" ? (result?.resultUrl || result?.result?.resultUrl || null) : null;
+                        const isDone = !!finalResultUrl && status === "completed";
+                        const isError = (status === "failed") || (status === "completed" && !finalResultUrl);
+                        const isProcessing = ((runState === 'running' || isUploading || status === "processing" || status === "queued") && !isDone && !isError) || isRetrying;
                         const displayStatus = isError
                           ? "Failed"
                           : isDone
@@ -3923,8 +3976,7 @@ export default function BatchProcessor() {
                         const stage2Url = stageMap?.['2'] || stageMap?.[2] || result?.stage2Url || result?.result?.stage2Url || null;
                         const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || null;
                         const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
-                        const fallbackResultUrl = result?.resultUrl || result?.imageUrl || result?.image || null;
-                        const baseUrl = getDisplayUrl(result);
+                        const stagePreviewUrl = stage2Url || stage1BUrl || stage1AUrl || null;
                         const availableStages: { key: StageKey; label: string; url: string | null }[] = (
                           [
                             stage2Url ? { key: "2" as StageKey, label: "Stage 2", url: stage2Url } : null,
@@ -3934,7 +3986,7 @@ export default function BatchProcessor() {
                         );
                         const defaultStage: StageKey | undefined = stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined;
                         const selectedStage = displayStageByIndex[i] || defaultStage;
-                        const defaultUrl = stage2Url || fallbackResultUrl || baseUrl || stage1BUrl || stage1AUrl || previewUrls[i] || null;
+                        const defaultUrl = isDone ? (finalResultUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
                           if (!selectedStage) return defaultUrl;
                           if (selectedStage === "2") return stage2Url || defaultUrl;
@@ -3944,23 +3996,28 @@ export default function BatchProcessor() {
                         })();
                         const enhancedUrl = withVersion(displayedUrl, result?.version || result?.updatedAt);
                         const previewUrl = enhancedUrl || previewUrls[i];
-                        const stageBadgeLabel = selectedStage === "2" && stage2Url
-                          ? "Stage 2 (Staged)"
-                          : selectedStage === "1B"
-                            ? "Stage 1B (Decluttered)"
-                            : "Stage 1A (Enhanced)";
+                        const stageBadgeLabel = (() => {
+                          const stageLabel = selectedStage === "2" && stage2Url
+                            ? "Stage 2"
+                            : selectedStage === "1B"
+                              ? "Stage 1B"
+                              : "Stage 1A";
+                          return isDone ? `${stageLabel} (Final)` : `Preview • ${stageLabel}`;
+                        })();
 
                         console.log('[ProcessingBatch] stage selection', {
                           index: i,
+                          status,
+                          isDone,
                           selectedStage: selectedStage || null,
                           displayedUrl: displayedUrl || null,
                           stage2Url: stage2Url || null,
                           stage1BUrl: stage1BUrl || null,
                           stage1AUrl: stage1AUrl || null,
-                          fallbackResultUrl: fallbackResultUrl || null,
+                          finalResultUrl: finalResultUrl || null,
                           availableStages: availableStages.map(s => s.key),
                         });
-                        if (stage2Url && !displayStageByIndex[i]) {
+                        if (stage2Url && !displayStageByIndex[i] && !isDone) {
                           console.assert(displayedUrl === stage2Url, "[DEV_ASSERT] Stage 2 should be the default when available", { index: i, displayedUrl, stage2Url });
                         }
                         

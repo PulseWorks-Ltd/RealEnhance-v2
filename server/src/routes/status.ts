@@ -128,13 +128,14 @@ export function statusRouter() {
           stageUrls['1A'] ||
           null;
 
+        // Canonical final result: only trust explicit final resultUrl written by worker
         const explicitResult: string | null =
           (rv && (rv.resultUrl || rv.imageUrl)) ||
           local.resultUrl ||
           local.imageUrl ||
           null;
 
-        const resultUrl: string | null = explicitResult || stageDerivedResult;
+        const resultUrl: string | null = explicitResult || null;
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -152,7 +153,7 @@ export function statusRouter() {
         const isBlocked = Boolean(local?.meta?.blockedByValidator) || local?.error === "BLOCKED_BY_VALIDATOR";
         const stage2Requested = Boolean(local?.meta?.stage2Requested || payload?.options?.virtualStage);
         const stage2BlockedReason = local?.meta?.stage2BlockedReason || null;
-        const hasFinalUrls = Boolean(resultUrl) || Object.values(stageUrls).some(Boolean);
+        const hasResultUrl = Boolean(resultUrl);
         const resultStageRaw = (local as any)?.resultStage || (local?.meta as any)?.resultStage || (rv as any)?.resultStage || null;
         const resultStage: "1A" | "1B" | "2" | null =
           resultStageRaw === "1A" || resultStageRaw === "1B" || resultStageRaw === "2"
@@ -163,7 +164,7 @@ export function statusRouter() {
 
         if (isBlocked) {
           status = "blocked";
-        } else if (localStatus === "complete" || hasFinalUrls) {
+        } else if (localStatus === "complete" || hasResultUrl) {
           status = "completed";
         } else if (localStatus === "error") {
           status = "failed";
