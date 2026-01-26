@@ -154,6 +154,7 @@ export function statusRouter() {
         const stage2Requested = Boolean(local?.meta?.stage2Requested || payload?.options?.virtualStage);
         const stage2BlockedReason = local?.meta?.stage2BlockedReason || null;
         const hasResultUrl = Boolean(resultUrl);
+        const hasStageUrls = Object.values(stageUrls).some(Boolean);
         const resultStageRaw = (local as any)?.resultStage || (local?.meta as any)?.resultStage || (rv as any)?.resultStage || null;
         const resultStage: "1A" | "1B" | "2" | null =
           resultStageRaw === "1A" || resultStageRaw === "1B" || resultStageRaw === "2"
@@ -170,7 +171,7 @@ export function statusRouter() {
           status = "failed";
         }
 
-        if ((isBlocked || localStatus === "complete" || localStatus === "error" || hasFinalUrls) && status !== queueStatus) {
+        if ((isBlocked || localStatus === "complete" || localStatus === "error" || hasResultUrl || hasStageUrls) && status !== queueStatus) {
           console.log(`[STATUS_MERGE] jobId=${id} dbStatus=${localStatus || (isBlocked ? "blocked" : "unknown")} queueState=${state} -> using DB terminal state`);
         }
 
