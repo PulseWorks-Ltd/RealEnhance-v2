@@ -24,6 +24,8 @@ type StatusItem = {
   meta: any;
   mode?: string;
   error?: string;
+  errorCode?: string;
+  stage2Missing?: boolean;
 };
 
 function normalizeStateToStatus(state: string | null): StatusItem["status"] {
