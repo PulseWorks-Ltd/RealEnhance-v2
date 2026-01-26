@@ -1269,18 +1269,25 @@ export default function BatchProcessor() {
         });
 
         if (!resp.ok) {
-          setRunState("idle");
-          setAbortController(null);
-          clearBatchJobState();
-          localStorage.removeItem("activeJobId"); // Clear resume flag on terminal errors
+          // Treat transient/missing as queued; keep polling instead of surfacing error
+          if (resp.status === 404 || resp.status === 204) {
+            setProgressText("Preparing job…");
+            await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+            delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+            continue;
+          }
           if (resp.status === 401) {
+            setRunState("idle");
+            setAbortController(null);
+            clearBatchJobState();
+            localStorage.removeItem("activeJobId");
             return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
           }
-          if (resp.status === 404) {
-            return alert("Batch job not found. Please try again.");
-          }
           const err = await resp.json().catch(() => ({}));
-          return alert(err.message || "Batch polling failed");
+          console.warn("[status-poll] transient error", { status: resp.status, body: err });
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+          continue;
         }
 
   const data = await resp.json();
@@ -1511,15 +1518,11 @@ export default function BatchProcessor() {
           signal: controller.signal
         });
         if (!resp.ok) {
-          // Treat not-ready/not-found as transient queued; fallback to legacy on true route miss
-          if (resp.status === 404) {
-            console.error("❌ BATCH STATUS 404 – WRONG ROUTE MATCH!", {
-              url: `/api/status/batch?ids=${qs}`,
-              status: resp.status,
-              hint: "Check if Express is matching 'batch' as :jobId parameter"
-            });
-            await pollForBatchLegacy(ids, controller);
-            return;
+          // Treat missing/empty as queued and continue polling (no red errors)
+          if (resp.status === 404 || resp.status === 204) {
+            await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+            delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+            continue;
           }
           const err = await resp.json().catch(() => ({}));
           console.warn("[BATCH] poll error treated as transient", { status: resp.status, body: err });
@@ -1528,6 +1531,13 @@ export default function BatchProcessor() {
         }
         const data = await resp.json();
         const items = Array.isArray(data.items) ? data.items : [];
+
+        if (!items.length && !data.done) {
+          // Empty payload → treat as queued and keep polling
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+          continue;
+        }
 
         // Debug logging to see what we're receiving
         if (items.length > 0) {
@@ -1569,10 +1579,11 @@ export default function BatchProcessor() {
           setStrictRetryingIndices(currentStrict);
         } catch {}
 
-        const statusCounts: Record<string, number> = {};
+          const statusCounts: Record<string, number> = {};
         const nonTerminalIndices: number[] = [];
         let hasUnmappedNonTerminal = false;
         const queuedWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
+          const errorWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
         const total = ids.length;
 
         // progress + status merge
@@ -1586,10 +1597,7 @@ export default function BatchProcessor() {
           let status = statusRaw.toLowerCase();
           const jobState = (it?.jobState || it?.state || "").toLowerCase();
           if (!status) status = jobState || "queued";
-          if (status === "error" && (it?.finalStatus || "").toLowerCase() !== "failed") {
-            // Treat transient errors as processing
-            status = "processing";
-          }
+          const isTerminalFlag = typeof it?.isTerminal === 'boolean' ? it.isTerminal : TERMINAL_STATUSES.has(status);
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
             : typeof it?.progress_percent === "number" ? it.progress_percent
@@ -1602,11 +1610,21 @@ export default function BatchProcessor() {
           const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
           const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
+
+          if (status === "error" && !isTerminalFlag) {
+            status = "processing";
+          }
+
           if (hasOutputs && status === "queued") {
             status = completedFinal ? "completed" : "processing";
             queuedWithOutputs.push({ idx, jobId: key });
           } else if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
             queuedWithOutputs.push({ idx, jobId: key });
+          }
+
+          if (status === "error" && hasOutputs) {
+            errorWithOutputs.push({ idx, jobId: key });
+            status = completedFinal ? "completed" : "processing";
           }
           statusCounts[status] = (statusCounts[status] || 0) + 1;
           const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
@@ -1642,10 +1660,10 @@ export default function BatchProcessor() {
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
-                error: status === "failed"
+                error: (status === "failed" || (it.errorCode && isTerminalFlag))
                   ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
                   : existing.error,
-                errorCode: (status === "failed") ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
+                errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
               };
               return copy;
             });
@@ -1684,7 +1702,7 @@ export default function BatchProcessor() {
               });
             }
 
-            if ((status === "failed") && !processedSetRef.current.has(idx)) {
+            if ((status === "failed" || (it.errorCode && isTerminalFlag)) && !processedSetRef.current.has(idx)) {
               processedSetRef.current.add(idx);
               queueRef.current.push({
                 index: idx,
@@ -1710,6 +1728,9 @@ export default function BatchProcessor() {
           console.debug('[BATCH][poll] status counts', { queued: queuedCount, processing: processingCount, completed, terminal: terminalCount, total });
           if (queuedWithOutputs.length) {
             console.warn('[BATCH][poll] queued-with-outputs', queuedWithOutputs);
+          }
+          if (errorWithOutputs.length) {
+            console.warn('[BATCH][poll] error-with-outputs', errorWithOutputs);
           }
         }
 
