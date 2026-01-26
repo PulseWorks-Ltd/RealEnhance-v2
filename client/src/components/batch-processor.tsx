@@ -1496,6 +1496,7 @@ export default function BatchProcessor() {
     let delay = BACKOFF_START_MS;
     const deadline = Date.now() + MAX_POLL_MS;
     let doneSeenAt: number | null = null;
+    let finalRefreshRequested = false;
 
     while (Date.now() < deadline) {
       try {
@@ -1584,14 +1585,26 @@ export default function BatchProcessor() {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
           const statusRaw = String(it?.status || "");
-          const status = statusRaw.toLowerCase();
-          statusCounts[status] = (statusCounts[status] || 0) + 1;
+          let status = statusRaw.toLowerCase();
+          const progress = typeof it?.progress === "number" ? it.progress
+            : typeof it?.progressPct === "number" ? it.progressPct
+            : typeof it?.progress_percent === "number" ? it.progress_percent
+            : typeof it?.meta?.progress === "number" ? it.meta.progress
+            : null;
           const stageUrls = it?.stageUrls || it?.stage_urls || null;
           const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const resultUrl = it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
+          const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
+          if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
+            if (IS_DEV && (status === "queued" || status === "processing")) {
+              console.warn('[BATCH][poll] outputs present but non-terminal status', { jobId: key, idx, status, hasOutputs, resultUrl, stageKeys: stageUrls ? Object.keys(stageUrls).filter(k => stageUrls[k]) : [] });
+            }
+            status = "completed";
+          }
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
           const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
 
           if (typeof idx === "number") {
@@ -1605,9 +1618,11 @@ export default function BatchProcessor() {
               copy[idx] = {
                 ...existing,
                 status,
-                resultStage: resultStage || existing.resultStage || null,
-                resultUrl: resultUrl || existing.resultUrl || null,
-                stageUrls: stageUrls || existing.stageUrls || null,
+                progress,
+                resultStage: resultStage ?? null,
+                resultUrl: resultUrl ?? null,
+                stageUrls: stageUrls ?? null,
+                updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: it.imageId || existing.imageId,
                 originalUrl: originalUrl || existing.originalUrl,
                 filename,
@@ -1615,14 +1630,18 @@ export default function BatchProcessor() {
                 result: {
                   ...(existing.result || {}),
                   imageUrl: completedFinal ? (resultUrl || (existing.result?.imageUrl)) : (existing.result?.imageUrl || undefined),
-                  resultUrl: resultUrl || existing.result?.resultUrl,
-                  stageUrls: stageUrls || existing.result?.stageUrls || null,
+                  resultUrl: resultUrl ?? null,
+                  stageUrls: stageUrls ?? null,
                   status,
-                  resultStage: resultStage || existing.result?.resultStage,
+                  resultStage: resultStage ?? null,
+                  progress,
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
-                error: status === "failed" ? (it.error || it.message || existing.error || "Processing failed") : existing.error,
+                error: status === "failed" || status === "error" || status === "cancelled" || status === "canceled"
+                  ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
+                  : existing.error,
+                errorCode: (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) ?? (status === "failed" ? existing.errorCode : undefined),
               };
               return copy;
             });
@@ -1666,7 +1685,7 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: idx,
                 result: null,
-                error: it.error || it.message || "Processing failed",
+                error: it.error || it.message || it.errorMessage || "Processing failed",
                 jobId: key,
                 imageId: it.imageId,
                 filename,
@@ -1689,6 +1708,16 @@ export default function BatchProcessor() {
 
         const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
         const serverSignaledDone = !!data.done;
+
+        if ((allTerminal || serverSignaledDone) && !finalRefreshRequested) {
+          finalRefreshRequested = true;
+          delay = BACKOFF_START_MS;
+          if (IS_DEV) {
+            console.debug('[BATCH][poll] requesting final refresh before stopping');
+          }
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
 
         // Stale-state self-heal: server says done but we still see queued/processing
         if (serverSignaledDone && !allTerminal) {
