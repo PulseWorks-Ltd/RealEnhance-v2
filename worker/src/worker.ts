@@ -16,6 +16,7 @@ import sharp from "sharp";
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2 } from "./pipeline/stage2";
+import { ModelPipelineError } from "./ai/runWithImageModelFallback";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
@@ -932,11 +933,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e: any) {
     const errMsg = e?.message || String(e);
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
+    const failureMeta = (e instanceof ModelPipelineError) ? e.meta : undefined;
+    if (failureMeta) {
+      nLog(`[MODEL_FAIL] stage=2 primary=${failureMeta.primaryModel} fallback=${failureMeta.fallbackModel} primaryCode=${failureMeta.primaryError?.code || 'n/a'} fallbackCode=${failureMeta.fallbackError?.code || 'n/a'}`);
+    }
+    const baseStage = payload.options.declutter && path1B ? "1B" : "1A";
+    const fallbackUrl = baseStage === "1B" ? pub1BUrl || pub1AUrl : pub1AUrl;
+    const stageUrls = { ...(pub1AUrl ? { "1A": pub1AUrl } : {}), ...(pub1BUrl ? { "1B": pub1BUrl } : {}) } as any;
+
     updateJob(payload.jobId, {
-      status: "error",
+      status: failureMeta ? "error" : "error",
+      stage: baseStage,
+      progress: baseStage === "1B" ? 55 : 45,
+      errorCode: failureMeta ? "stage2_model_failure" : undefined,
       errorMessage: errMsg,
       error: errMsg,
-      meta: { ...sceneMeta }
+      imageUrl: fallbackUrl,
+      stageUrls,
+      meta: {
+        ...sceneMeta,
+        stage2Failed: true,
+        stage2ModelFailure: failureMeta || null,
+        stage2DeliveredFallbackStage: baseStage,
+      }
     });
     return;
   }

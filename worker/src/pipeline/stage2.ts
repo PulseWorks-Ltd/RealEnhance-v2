@@ -16,6 +16,36 @@ import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/
 import { getValidatorMode, shouldValidatorBlock } from "../validators/validatorMode";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel, applySamplingBackoff, formatSamplingParams, SamplingParams } from "../ai/promptTightening";
 import { compareImageDimensions, STRICT_DIMENSION_PROMPT_SUFFIX, isWithinDimensionTolerance, normalizeCandidateToBaseline, calculateDimensionDelta, getDimensionTolerancePct } from "../utils/dimensionGuard";
+const MULTI_LIVING_KEYS = new Set(["multi-living", "multiple-living-areas", "multiple_living_areas", "multiple_living"]);
+
+export function resolveStage2Models(opts: {
+  roomType: string;
+  stage2Variant: "2A" | "2B";
+  jobId?: string;
+  imageId?: string;
+  multiLivingModelEnv?: string;
+}): { primaryModel: string; fallbackModel: string; source: "override" | "config"; endpoint: "image_gen"; isMultiLiving: boolean } {
+  const basePrimary = MODEL_CONFIG.stage2.primary;
+  const baseFallback = MODEL_CONFIG.stage2.fallback || MODEL_CONFIG.stage2.primary;
+  const envFallback = (process.env.GEMINI_STAGE2_MODEL_FALLBACK || "").trim();
+  const fallbackModel = envFallback || baseFallback || basePrimary;
+  const rawOverride = (opts.multiLivingModelEnv || process.env.GEMINI_STAGE2_MULTI_LIVING_MODEL || "").trim();
+  const isMultiLiving = Boolean(opts.roomType && MULTI_LIVING_KEYS.has(opts.roomType.toLowerCase()));
+
+  let primaryModel = isMultiLiving ? rawOverride : basePrimary;
+  let source: "override" | "config" = isMultiLiving ? "override" : "config";
+
+  if (!primaryModel) {
+    primaryModel = basePrimary;
+    source = "config";
+    console.warn(`[MODEL_SELECT_WARN] stage=2 reason=missing_override roomType=${opts.roomType} fallback=${primaryModel}`);
+  }
+
+  const endpoint: "image_gen" = "image_gen";
+  console.log(`[MODEL_SELECT] stage=2 roomType=${opts.roomType} model=${primaryModel} endpoint=${endpoint} source=${source} stage2Variant=${opts.stage2Variant} jobId=${opts.jobId || 'n/a'} imageId=${opts.imageId || 'n/a'} fallback=${fallbackModel}`);
+
+  return { primaryModel, fallbackModel, source, endpoint, isMultiLiving };
+}
 
 // Stage 2: virtual staging (add furniture)
 
@@ -52,9 +82,7 @@ export async function runStage2(
   let strictPrompt = false;
   const stagingMode: "refresh" | "full" = opts.stagingMode === "refresh" ? "refresh" : "full";
   const stagingVariant: "2A" | "2B" = stagingMode === "refresh" ? "2A" : "2B";
-  const multiLivingKeys = new Set(["multi-living", "multiple-living-areas", "multiple_living_areas", "multiple_living"]);
-  const isMultiLiving = typeof opts.roomType === "string" && multiLivingKeys.has(opts.roomType.toLowerCase());
-  const multiLivingModel = process.env.GEMINI_STAGE2_MULTI_LIVING_MODEL || "gemini-3-pro-image-preview";
+  const isMultiLiving = typeof opts.roomType === "string" && MULTI_LIVING_KEYS.has(opts.roomType.toLowerCase());
 
   // Stage-aware validation config
   const stageAwareConfig = loadStageAwareConfig();
@@ -286,13 +314,16 @@ export async function runStage2(
         generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
         currentSamplingParams = { temperature, topP: preset.topP, topK: preset.topK };
       }
-      // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
-      const baseStage2Primary = MODEL_CONFIG.stage2.primary;
-      const baseStage2Fallback = MODEL_CONFIG.stage2.fallback;
-      const primaryOverride = isMultiLiving ? multiLivingModel : baseStage2Primary;
-      const fallbackOverride = isMultiLiving ? baseStage2Primary : baseStage2Fallback;
+      const modelSelection = resolveStage2Models({
+        roomType: opts.roomType,
+        stage2Variant: stagingVariant,
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+        multiLivingModelEnv: process.env.GEMINI_STAGE2_MULTI_LIVING_MODEL,
+      });
 
-      console.log(`[MODEL_SELECT] stage=2 roomType=${opts.roomType} model=${primaryOverride} fallback=${fallbackOverride || 'none'} variant=${stagingVariant}`);
+      const primaryOverride = modelSelection.primaryModel;
+      const fallbackOverride = modelSelection.fallbackModel;
 
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
         stageLabel: "2",

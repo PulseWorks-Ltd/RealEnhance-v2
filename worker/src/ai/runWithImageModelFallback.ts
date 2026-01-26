@@ -12,6 +12,17 @@ const GEMINI_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_MAX_RETRIES || 
 const GEMINI_RETRY_BASE_MS = Math.max(1, Number(process.env.GEMINI_RETRY_BASE_MS || 1500));
 const GEMINI_RETRY_MAX_MS = Math.max(GEMINI_RETRY_BASE_MS, Number(process.env.GEMINI_RETRY_MAX_MS || 20000));
 
+type ModelErrorInfo = { message: string; code?: string | number };
+
+export class ModelPipelineError extends Error {
+  meta: { primaryModel: string; fallbackModel: string | null; primaryError?: ModelErrorInfo | null; fallbackError?: ModelErrorInfo | null };
+  constructor(message: string, meta: { primaryModel: string; fallbackModel: string | null; primaryError?: ModelErrorInfo | null; fallbackError?: ModelErrorInfo | null }) {
+    super(message);
+    this.name = "ModelPipelineError";
+    this.meta = meta;
+  }
+}
+
 let inflight = 0;
 const waiters: Array<() => void> = [];
 
@@ -41,6 +52,12 @@ function isTransientGeminiError(err: any): boolean {
     if (["econnreset", "etimedout", "econnaborted"].includes(lc)) return true;
   }
   return false;
+}
+
+function summarizeError(err: any): ModelErrorInfo {
+  const code = (err as any)?.code || (err as any)?.status || (err as any)?.response?.status;
+  const message = (err as any)?.message || String(err);
+  return { message, code };
 }
 
 function delay(ms: number): Promise<void> {
@@ -114,7 +131,7 @@ export const MODEL_CONFIG = {
   },
   stage2: {
     primary: process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || "gemini-2.5-flash-image",
-    fallback: process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || "gemini-2.5-flash-image",
+    fallback: process.env.GEMINI_STAGE2_MODEL_FALLBACK || process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || "gemini-2.5-flash-image",
   },
 };
 
@@ -278,6 +295,7 @@ export async function runWithPrimaryThenFallback({
 
     if (!validation.valid) {
       primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
+      console.warn(`[MODEL_FAIL] stage=${stageLabel} model=${primaryModel} code=invalid_response message=${validation.reason}`);
       console.warn(`[stage${stageLabel}] Gemini primary failed: ${validation.reason} → falling back to ${fallbackModel}`);
     } else {
       console.info(`[GEMINI][${context}] Success with primary model ${primaryModel}`);
@@ -287,6 +305,8 @@ export async function runWithPrimaryThenFallback({
   } catch (err) {
     primaryError = err;
     logGeminiError(`${context}:${primaryModel}`, err);
+    const info = summarizeError(err);
+    console.warn(`[MODEL_FAIL] stage=${stageLabel} model=${primaryModel} code=${info.code ?? 'n/a'} message=${info.message}`);
     console.warn(`[stage${stageLabel}] Gemini primary failed: ${(err as any)?.message || err} → falling back to ${fallbackModel}`);
   }
 
@@ -294,7 +314,7 @@ export async function runWithPrimaryThenFallback({
   let fallbackError: any = null;
   if (fallbackModel) {
     if (primaryError) {
-      console.warn(`[MODEL_FALLBACK] reason=${(primaryError as any)?.message || primaryError} from=${primaryModel} to=${fallbackModel}`);
+      console.warn(`[MODEL_FALLBACK] from=${primaryModel} to=${fallbackModel}`);
     }
     try {
       console.log(`[stage${stageLabel}] Attempting fallback model: ${fallbackModel}`);
@@ -312,6 +332,7 @@ export async function runWithPrimaryThenFallback({
 
       if (!validation.valid) {
         fallbackError = new Error(`Fallback model ${fallbackModel} ${validation.reason}`);
+        console.error(`[MODEL_FAIL] stage=${stageLabel} model=${fallbackModel} code=invalid_response message=${validation.reason}`);
         console.error(`[stage${stageLabel}] Fallback model failed: ${validation.reason}`);
       } else {
         console.info(`[GEMINI][${context}] Success with fallback model ${fallbackModel}`);
@@ -321,6 +342,8 @@ export async function runWithPrimaryThenFallback({
     } catch (err) {
       fallbackError = err;
       logGeminiError(`${context}:${fallbackModel}`, err);
+      const info = summarizeError(err);
+      console.error(`[MODEL_FAIL] stage=${stageLabel} model=${fallbackModel} code=${info.code ?? 'n/a'} message=${info.message}`);
       console.error(`[stage${stageLabel}] Fallback model failed: ${(err as any)?.message || err}`);
     }
   }
@@ -336,5 +359,10 @@ export async function runWithPrimaryThenFallback({
     `Fallback (${fallbackModel}): ${fallbackError?.message || fallbackError}`,
   ].join(". ");
 
-  throw new Error(errorMsg);
+  throw new ModelPipelineError(errorMsg, {
+    primaryModel,
+    fallbackModel,
+    primaryError: primaryError ? summarizeError(primaryError) : null,
+    fallbackError: fallbackError ? summarizeError(fallbackError) : null,
+  });
 }
