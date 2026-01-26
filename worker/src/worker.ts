@@ -632,6 +632,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
     sceneType: sceneLabel,
+    sceneSource: hasManualSceneOverride ? "manual" : "auto",
     interiorProfile: ((): any => {
       const p = (payload.options as any)?.interiorProfile;
       if (p === 'nz_high_end' || p === 'nz_standard') return p;

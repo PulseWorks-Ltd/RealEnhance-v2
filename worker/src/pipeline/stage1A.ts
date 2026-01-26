@@ -150,12 +150,13 @@ export async function runStage1A(
     skyMode?: "safe" | "strong";
     jobId?: string;
     imageId?: string;
+    sceneSource?: "auto" | "manual";
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId } = options;
+  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, sceneSource: providedSceneSource } = options;
   const logCtx = { jobId, imageId };
   const isInterior = sceneType === "interior";
-  const sceneSource: "auto" | "manual" = sceneType && sceneType !== "auto" ? "manual" : "auto";
+  const sceneSource: "auto" | "manual" = providedSceneSource ?? (sceneType && sceneType !== "auto" ? "manual" : "auto");
   console.log(`[stage1A] sceneType=${sceneType ?? "auto"} source=${sceneSource} replaceSky=${replaceSky}`);
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
