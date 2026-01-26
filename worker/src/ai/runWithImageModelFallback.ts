@@ -241,18 +241,23 @@ export async function runWithPrimaryThenFallback({
   baseRequest,
   context,
   logCtx,
+  primaryOverride,
+  fallbackOverride,
 }: {
   stageLabel: "1B" | "2";
   ai: GoogleGenAI;
   baseRequest: Omit<GenerateContentParams, "model">;
   context: string;
   logCtx?: GeminiLogContext;
+  primaryOverride?: string | null;
+  fallbackOverride?: string | null;
 }): Promise<{ resp: any; modelUsed: string }> {
   const config = stageLabel === "1B" ? MODEL_CONFIG.stage1B : MODEL_CONFIG.stage2;
-  const fallbackOverride = process.env.GEMINI_IMAGE_MODEL_FALLBACK?.trim() || null;
+  const fallbackOverrideEnv = process.env.GEMINI_IMAGE_MODEL_FALLBACK?.trim() || null;
   const failoverPolicy = process.env.IMAGE_FAILOVER_POLICY || "gemini_only";
-  const primaryModel = config.primary;
-  const fallbackModel = failoverPolicy === "gemini_only" ? (fallbackOverride || config.fallback) : null;
+  const primaryModel = primaryOverride !== undefined ? primaryOverride || config.primary : config.primary;
+  const fallbackFromConfig = fallbackOverride !== undefined ? fallbackOverride : config.fallback;
+  const fallbackModel = failoverPolicy === "gemini_only" ? (fallbackOverrideEnv || fallbackFromConfig) : null;
 
   console.log(`[stage${stageLabel}] Primary model: ${primaryModel}, fallback: ${fallbackModel}`);
 
@@ -288,6 +293,9 @@ export async function runWithPrimaryThenFallback({
   // ✅ ATTEMPT FALLBACK MODEL (if allowed)
   let fallbackError: any = null;
   if (fallbackModel) {
+    if (primaryError) {
+      console.warn(`[MODEL_FALLBACK] reason=${(primaryError as any)?.message || primaryError} from=${primaryModel} to=${fallbackModel}`);
+    }
     try {
       console.log(`[stage${stageLabel}] Attempting fallback model: ${fallbackModel}`);
       const resp = await callGeminiWithRetry({

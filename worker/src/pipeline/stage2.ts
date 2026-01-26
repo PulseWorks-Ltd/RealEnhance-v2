@@ -1,5 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
-import { runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
+import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -51,6 +51,10 @@ export async function runStage2(
   let tempMultiplier = 1.0;
   let strictPrompt = false;
   const stagingMode: "refresh" | "full" = opts.stagingMode === "refresh" ? "refresh" : "full";
+  const stagingVariant: "2A" | "2B" = stagingMode === "refresh" ? "2A" : "2B";
+  const multiLivingKeys = new Set(["multi-living", "multiple-living-areas", "multiple_living_areas", "multiple_living"]);
+  const isMultiLiving = typeof opts.roomType === "string" && multiLivingKeys.has(opts.roomType.toLowerCase());
+  const multiLivingModel = process.env.GEMINI_STAGE2_MULTI_LIVING_MODEL || "gemini-3-pro-image-preview";
 
   // Stage-aware validation config
   const stageAwareConfig = loadStageAwareConfig();
@@ -206,6 +210,10 @@ export async function runStage2(
       textPrompt += `\n\nREFRESH STAGING MODE (FURNISHED PROPERTIES):\nThis room is already furnished. Do NOT invent a new layout.\n\nRules:\n- Keep all existing major furniture in the same positions and footprint.\n- Do NOT move, rotate, resize, remove, or add major furniture items.\n- Do NOT add wall-dependent furniture in new locations (TV units, dressers, chests of drawers, desks, wardrobes).\n- Only restyle/modernize existing furniture (e.g. fabric, color, wood tone) while preserving placement and scale.\n- You may add ONLY small decorative elements: cushions, throw blanket, rug, plant, simple wall art, small lamp.\n- Never block doors, closet doors, windows, or walkways.\n- Do NOT change camera angle, perspective, framing, or crop to hide conflicts.\n- Do NOT modify or replace fixed fixtures or finishes.\n\nStyle:\n- Aim for a safe, neutral, MLS-appropriate 'furniture refresh.'\n- If uncertain about clearance or what exists out of frame, stage less rather than risk obstruction.`;
     }
 
+    if (isMultiLiving) {
+      textPrompt += `\n\nMULTIPLE LIVING AREAS (TWO DISTINCT ZONES):\n- Stage two clear zones (e.g., lounge + dining, or lounge + sitting nook).\n- Keep a clear walkway between doors, kitchen, and primary circulation paths.\n- Use consistent style and palette across both zones; avoid overcrowding.\n- Do not block doorways, windows, or kitchen access.`;
+    }
+
     // Apply prompt tightening based on retry attempt
     if (stageAwareConfig.enabled && attempt > 0) {
       currentTightenLevel = getTightenLevelFromAttempt(attempt);
@@ -279,6 +287,13 @@ export async function runStage2(
         currentSamplingParams = { temperature, topP: preset.topP, topK: preset.topK };
       }
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
+      const baseStage2Primary = MODEL_CONFIG.stage2.primary;
+      const baseStage2Fallback = MODEL_CONFIG.stage2.fallback;
+      const primaryOverride = isMultiLiving ? multiLivingModel : baseStage2Primary;
+      const fallbackOverride = isMultiLiving ? baseStage2Primary : baseStage2Fallback;
+
+      console.log(`[MODEL_SELECT] stage=2 roomType=${opts.roomType} model=${primaryOverride} fallback=${fallbackOverride || 'none'} variant=${stagingVariant}`);
+
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
         stageLabel: "2",
         ai: ai as any,
@@ -288,6 +303,8 @@ export async function runStage2(
         } as any,
         context: "stage2",
         logCtx: { jobId, imageId: opts.imageId, stage: "2" },
+        primaryOverride,
+        fallbackOverride,
       });
       const apiElapsed = Date.now() - apiStartTime;
       console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);

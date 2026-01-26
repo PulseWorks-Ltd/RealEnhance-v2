@@ -167,6 +167,28 @@ assert(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Test: Stage 2 model selection override for multiple living areas
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log("\nStage 2 model selection (multiple living areas):");
+
+function selectStage2Models(roomType: string, basePrimary: string, baseFallback: string, multiModel: string) {
+  const keys = new Set(["multi-living", "multiple-living-areas", "multiple_living", "multiple_living_areas"]);
+  const isMulti = roomType && keys.has(roomType.toLowerCase());
+  return {
+    primary: isMulti ? multiModel : basePrimary,
+    fallback: isMulti ? basePrimary : baseFallback,
+  };
+}
+
+let models = selectStage2Models("multi-living", "base-primary", "base-fallback", "gemini-3-pro-image-preview");
+assertEqual(models.primary, "gemini-3-pro-image-preview", "Multi-living uses Gemini3 primary override");
+assertEqual(models.fallback, "base-primary", "Multi-living fallback is existing Stage2 primary");
+
+models = selectStage2Models("bedroom-1", "base-primary", "base-fallback", "gemini-3-pro-image-preview");
+assertEqual(models.primary, "base-primary", "Non-multi-living keeps existing primary");
+assertEqual(models.fallback, "base-fallback", "Non-multi-living keeps existing fallback");
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Test: chooseStage2Baseline helper function
 // ═══════════════════════════════════════════════════════════════════════════════
 console.log("\nchooseStage2Baseline helper:");
