@@ -593,13 +593,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
-  // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection
-  let safeReplaceSky: boolean = ((): boolean => {
+  // SKY SAFEGUARD: compute intent (user/default) then apply safety gating
+  const replaceSkyIntent: boolean = ((): boolean => {
     const explicit = (payload.options.replaceSky as any);
     const explicitBool = typeof explicit === 'boolean' ? explicit : undefined;
     const defaultExterior = sceneLabel === "exterior";
     return explicitBool === undefined ? defaultExterior : explicitBool;
   })();
+  let safeReplaceSky: boolean = replaceSkyIntent;
   const explicitReplaceSky = typeof (payload.options.replaceSky as any) === 'boolean' ? (payload.options.replaceSky as boolean) : undefined;
 
   // Force-safe when user was involved (uncertain scene or manual override)
@@ -629,9 +630,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Determine sky mode from scene detection results (already force-safe applied in detection block)
   const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
-  nLog(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
+  nLog(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} replaceSkyIntent=${replaceSkyIntent} safeReplaceSky=${safeReplaceSky}`);
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
+    replaceSkyIntent,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
     sceneType: sceneLabel,
     sceneSource: hasManualSceneOverride ? "manual" : "auto",

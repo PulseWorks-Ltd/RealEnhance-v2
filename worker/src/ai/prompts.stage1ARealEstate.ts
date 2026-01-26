@@ -80,54 +80,39 @@ STRUCTURAL & GEOMETRY PRESERVATION
 - Preserve natural lighting direction and shadow placement`;
 
 const ALLOWED_ENHANCEMENTS_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STAGE 1A – EXTERIOR ALLOWED ENHANCEMENTS
+EXTERIOR ENHANCEMENT RECIPE (PHOTOGRAPHIC ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-You MAY ONLY perform photographic enhancements:
+- Reduce atmospheric haze / washed-out look with subtle dehaze and gentle micro-contrast.
+- Improve midtone contrast for a crisp exterior; avoid HDR or halo artifacts.
+- Balance exposure: lift shadows under eaves/darker areas while preserving highlights.
+- Neutral, accurate white balance; clean natural tones (no color casts).
+- Improve natural greens in foliage/grass slightly toward realistic greens (never neon or oversaturated).
+- Soften harsh glare/specular hotspots without removing reflections entirely.
+- Improve ground/surface tonal balance without changing materials or textures; no "drying" or material alteration.
+- Apply light sharpening only; avoid halos and over-sharpening.`;
 
-- Reduce haze and improve clarity subtly while maintaining realism
-- Improve overall contrast and exposure balance
-- Reduce harsh glare and excessive specular highlights (do not remove reflections entirely)
-- Improve grass and foliage colour slightly toward natural greens (never neon or over-saturated)
-- If surfaces appear wet or dull due to lighting, you may lift midtones and reduce excessive shine to improve exposure balance (tonal correction only; do NOT change materials)
-- Apply light sharpening and clarity
-- Maintain natural shadow depth and lighting realism`;
-
-const SKY_ENHANCEMENT_BLOCK = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXTERIOR SKY ENHANCEMENT – CONDITIONAL
+const EXTERIOR_QUALITY_TARGET = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXTERIOR QUALITY TARGET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ONLY APPLY THIS SECTION IF:
-- The image is an exterior scene
-- Scene type was AUTO-DETECTED as exterior
-- Sky enhancement is explicitly enabled
+- Output should look like a professional real-estate exterior photo with crisp contrast and clean tones.
+- Avoid flat or gray output; keep the scene natural and realistic.`;
 
-You MAY:
-- Enhance or replace the SKY ONLY
-- Improve sky colour, brightness, and cloud definition
-- Replace a dull or overcast sky with a natural blue sky
-
-You MUST:
-- Treat the sky strictly as a background element
-- Preserve exact rooflines, trees, buildings, and horizons
-- Match sky lighting direction to the original scene
-- Keep skies realistic and natural (no exaggerated drama)
-
-You MUST NOT:
-- Extend sky into non-sky regions
-- Alter or remove roofs, trees, antennas, or structures
-- Change shadows on buildings or ground
-- Apply sky enhancement if the sky boundary is ambiguous
-
-If the sky region is unclear or risky, DO NOT modify it.`;
+const SKY_ENHANCEMENT_BLOCK = `SKY ENHANCEMENT (SKY ONLY — DO NOT TOUCH ROOFS/TREES/BUILDINGS)
+- Improve the sky to a natural, attractive blue sky with realistic soft clouds.
+- Edit the sky region only. Do not change anything outside the sky.
+- Preserve rooflines, antennas, trees, foliage edges, and horizon perfectly (no cutouts, no warping).
+- Match scene lighting and exposure; avoid over-saturated or fake skies.
+- If the sky boundary is ambiguous or risky, skip sky changes entirely rather than damaging roofs/trees.`;
 
 const STYLE_REALISM_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STYLE & REALISM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- Clean, natural, real-estate appropriate appearance
-- No artificial HDR or surreal effects
-- The result must still look like a real photograph`;
+- Natural, realistic exterior appearance (real-estate ready).
+- No surreal effects; no heavy HDR; no artificial textures.
+- The result must still look like a real photograph.`;
 
 const OUTPUT_REQ_EXTERIOR = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT REQUIREMENT
@@ -173,9 +158,11 @@ export function buildStage1AExteriorPrompt(opts: { skyEnhancementEnabled: boolea
     STRUCTURAL_PRESERVATION_EXTERIOR,
     "",
     ALLOWED_ENHANCEMENTS_EXTERIOR,
+    "",
+    EXTERIOR_QUALITY_TARGET,
   ];
 
-  if (skyEnhancementEnabled && sceneSource === "auto") {
+  if (skyEnhancementEnabled) {
     blocks.push("", SKY_ENHANCEMENT_BLOCK);
   }
 
@@ -195,14 +182,19 @@ export async function selectStage1APrompt(
   sceneType: SceneVariant | string | undefined,
   _inputPath: string,
   _skyMode: "safe" | "strong" = "safe",
-  opts: { sceneSource?: SceneSource; enableSkyEnhancement?: boolean } = {}
+  opts: { sceneSource?: SceneSource; enableSkyEnhancement?: boolean; replaceSkyIntent?: boolean } = {}
 ): Promise<string> {
   const sceneSource: SceneSource = opts.sceneSource || (sceneType && sceneType !== "auto" ? "manual" : "auto");
-  const enableSkyEnhancement = opts.enableSkyEnhancement === true;
+  const skySafetyPass = opts.enableSkyEnhancement === true;
+  const replaceSkyIntent = opts.replaceSkyIntent === true;
 
   if (sceneType === "exterior") {
-    const prompt = buildStage1AExteriorPrompt({ skyEnhancementEnabled: enableSkyEnhancement && sceneSource === "auto", sceneSource });
-    console.log(`[STAGE1A] variant=exterior skyEnhancement=${enableSkyEnhancement && sceneSource === "auto" ? "enabled" : "disabled"} source=${sceneSource}`);
+    const finalReplaceSky = replaceSkyIntent && skySafetyPass && sceneSource === "auto";
+    const skyBlockInjected = finalReplaceSky;
+    console.log(`[SKY_DECISION] variant=exterior sceneSource=${sceneSource} replaceSkyIntent=${replaceSkyIntent} safetyPass=${skySafetyPass} finalReplaceSky=${finalReplaceSky} skyBlockInjected=${skyBlockInjected}`);
+    console.log(`[STAGE1A_VARIANT] variant=exterior finalReplaceSky=${finalReplaceSky}`);
+    const prompt = buildStage1AExteriorPrompt({ skyEnhancementEnabled: finalReplaceSky, sceneSource });
+    console.log(`[STAGE1A] variant=exterior skyEnhancement=${finalReplaceSky ? "enabled" : "disabled"} source=${sceneSource}`);
     return prompt;
   }
 
