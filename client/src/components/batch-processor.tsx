@@ -1491,7 +1491,7 @@ export default function BatchProcessor() {
     const BACKOFF_START_MS = 1000;
     const BACKOFF_MAX_MS = 5000;
     const BACKOFF_FACTOR = 1.5;
-    const TERMINAL_STATUSES = new Set(["completed", "complete", "done", "failed", "error", "cancelled", "canceled"]);
+    const TERMINAL_STATUSES = new Set(["completed", "complete", "done", "failed", "cancelled", "canceled"]);
     const STALE_DONE_GRACE_MS = 15_000;
     let delay = BACKOFF_START_MS;
     const deadline = Date.now() + MAX_POLL_MS;
@@ -1511,11 +1511,7 @@ export default function BatchProcessor() {
           signal: controller.signal
         });
         if (!resp.ok) {
-          setRunState("idle");
-          setAbortController(null);
-          localStorage.removeItem(ACTIVE_BATCH_KEY);
-          localStorage.removeItem("activeJobId");
-          // Fallback: if 404 (route missing on older deploy), poll per-id legacy endpoint
+          // Treat not-ready/not-found as transient queued; fallback to legacy on true route miss
           if (resp.status === 404) {
             console.error("❌ BATCH STATUS 404 – WRONG ROUTE MATCH!", {
               url: `/api/status/batch?ids=${qs}`,
@@ -1526,8 +1522,9 @@ export default function BatchProcessor() {
             return;
           }
           const err = await resp.json().catch(() => ({}));
-          alert(err.message || "Batch polling failed");
-          return;
+          console.warn("[BATCH] poll error treated as transient", { status: resp.status, body: err });
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          continue;
         }
         const data = await resp.json();
         const items = Array.isArray(data.items) ? data.items : [];
@@ -1575,10 +1572,11 @@ export default function BatchProcessor() {
         const statusCounts: Record<string, number> = {};
         const nonTerminalIndices: number[] = [];
         let hasUnmappedNonTerminal = false;
+        const queuedWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
         const total = ids.length;
 
         // progress + status merge
-        const completed = items.filter((it: any) => it && it.status === 'completed').length;
+        const completed = items.filter((it: any) => it && (String(it.status || it.jobState || it.state || "").toLowerCase() === 'completed')).length;
 
         // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
@@ -1586,6 +1584,12 @@ export default function BatchProcessor() {
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
           const statusRaw = String(it?.status || "");
           let status = statusRaw.toLowerCase();
+          const jobState = (it?.jobState || it?.state || "").toLowerCase();
+          if (!status) status = jobState || "queued";
+          if (status === "error" && (it?.finalStatus || "").toLowerCase() !== "failed") {
+            // Treat transient errors as processing
+            status = "processing";
+          }
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
             : typeof it?.progress_percent === "number" ? it.progress_percent
@@ -1598,11 +1602,11 @@ export default function BatchProcessor() {
           const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
           const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
-          if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
-            if (IS_DEV && (status === "queued" || status === "processing")) {
-              console.warn('[BATCH][poll] outputs present but non-terminal status', { jobId: key, idx, status, hasOutputs, resultUrl, stageKeys: stageUrls ? Object.keys(stageUrls).filter(k => stageUrls[k]) : [] });
-            }
-            status = "completed";
+          if (hasOutputs && status === "queued") {
+            status = completedFinal ? "completed" : "processing";
+            queuedWithOutputs.push({ idx, jobId: key });
+          } else if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
+            queuedWithOutputs.push({ idx, jobId: key });
           }
           statusCounts[status] = (statusCounts[status] || 0) + 1;
           const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
@@ -1638,10 +1642,10 @@ export default function BatchProcessor() {
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
-                error: status === "failed" || status === "error" || status === "cancelled" || status === "canceled"
+                error: status === "failed"
                   ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
                   : existing.error,
-                errorCode: (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) ?? (status === "failed" ? existing.errorCode : undefined),
+                errorCode: (status === "failed") ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
               };
               return copy;
             });
@@ -1680,7 +1684,7 @@ export default function BatchProcessor() {
               });
             }
 
-            if ((status === "failed" || status === "error" || status === "cancelled" || status === "canceled") && !processedSetRef.current.has(idx)) {
+            if ((status === "failed") && !processedSetRef.current.has(idx)) {
               processedSetRef.current.add(idx);
               queueRef.current.push({
                 index: idx,
@@ -1704,6 +1708,9 @@ export default function BatchProcessor() {
 
         if (IS_DEV) {
           console.debug('[BATCH][poll] status counts', { queued: queuedCount, processing: processingCount, completed, terminal: terminalCount, total });
+          if (queuedWithOutputs.length) {
+            console.warn('[BATCH][poll] queued-with-outputs', queuedWithOutputs);
+          }
         }
 
         const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
@@ -1928,8 +1935,8 @@ export default function BatchProcessor() {
 
     // Start SSE batch processing
     setRunState("running");
-    // Pre-size results array with nulls for immediate placeholder rendering
-    setResults(Array.from({ length: files.length }, () => null));
+    // Pre-size results array with queued placeholders to avoid flicker to error
+    setResults(Array.from({ length: files.length }, (_, idx) => ({ index: idx, status: 'queued' })) as any);
     setProgressText("");
     setJobId("");
     setJobIds([]);
