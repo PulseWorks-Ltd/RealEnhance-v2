@@ -13,6 +13,7 @@ import { BundlePurchase } from "@/components/bundle-purchase";
 import { BillingSection } from "@/components/BillingSection";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -107,10 +108,13 @@ export default function AgencyPage() {
   const [loading, setLoading] = useState(true);
   const [agencyName, setAgencyName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [activeTab, setActiveTab] = useState<"billing" | "agency" | "team">("billing");
 
   const isAdminOrOwner = agencyInfo && (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin");
+  const isAdmin = Boolean(isAdminOrOwner);
 
   const scrollToBilling = () => {
+    setActiveTab("billing");
     const el = document.getElementById("billing-section");
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
@@ -383,8 +387,8 @@ export default function AgencyPage() {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Billing & Team"
-          description="Manage your subscription and team members"
+          title="Billing & Plan"
+          description="Manage your subscription, agency details, and team"
         />
         <div className="flex flex-col items-center justify-center py-12">
           <Loader2 className="w-8 h-8 text-muted-foreground animate-spin mb-3" />
@@ -448,294 +452,333 @@ export default function AgencyPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Billing & Team"
-        description={`Manage ${agencyInfo.name}'s subscription and team`}
+        title="Billing & Plan"
+        description={`Manage ${agencyInfo.name}'s subscription, agency details, and team`}
       />
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="billing">Billing & Plan</TabsTrigger>
+          <TabsTrigger value="agency">Agency</TabsTrigger>
+          {isAdmin && <TabsTrigger value="team">Team</TabsTrigger>}
+        </TabsList>
 
-      {/* Trial Banner */}
-      {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
-        <Card className="border-gold-400 bg-gold-50">
-          <CardContent className="py-4">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2 rounded-full bg-gold-100">
-                  <Sparkles className="w-4 h-4 text-gold-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-foreground">
-                    {agencyInfo.trial.status === "active"
-                      ? `${agencyInfo.trial.remaining} trial enhancements remaining`
-                      : agencyInfo.trial.status === "expired"
-                      ? "Your trial has ended"
-                      : agencyInfo.trial.status === "converted"
-                      ? "You've upgraded! Trial complete."
-                      : "Trial status updated"}
-                  </p>
-                  {agencyInfo.trial.expiresAt && agencyInfo.trial.status === "active" && (
-                    <p className="text-sm text-muted-foreground">
-                      Expires {new Date(agencyInfo.trial.expiresAt).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <Button variant="brand" onClick={scrollToBilling}>
-                Upgrade Now
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {agencyInfo.subscription && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <span>Plan & Images</span>
-              <Badge variant={agencyInfo.subscription.status === "ACTIVE" ? "default" : "secondary"}>
-                {agencyInfo.subscription.status.toLowerCase()}
-              </Badge>
-            </CardTitle>
-            <CardDescription>
-              {agencyInfo.subscription.planName} • {agencyInfo.subscription.allowance.monthKey}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Monthly included</p>
-              <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyIncluded}</p>
-              <p className="text-xs text-muted-foreground">
-                Used {agencyInfo.subscription.allowance.used} • Remaining {agencyInfo.subscription.allowance.remaining}
-              </p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Add-on / carry-over</p>
-              <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
-              <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
-            </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Billing</p>
-              <p className="text-lg font-semibold">
-                {agencyInfo.subscription.billingCurrency?.toUpperCase() || agencyInfo.billingCurrency?.toUpperCase() || ""}
-              </p>
-              {agencyInfo.subscription.currentPeriodEnd && (
-                <p className="text-xs text-muted-foreground">
-                  Renews on {new Date(agencyInfo.subscription.currentPeriodEnd).toLocaleDateString()}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Monthly Usage Card */}
-      {isAdminOrOwner && usage && usage.hasAgency && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span>Monthly Usage</span>
-            </CardTitle>
-            <CardDescription>
-              Your plan includes {usage.mainAllowance} enhanced images per month
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <UsageSummary
-              mainUsed={usage.mainUsed || 0}
-              mainTotal={usage.mainAllowance || 0}
-              mainWarning={usage.mainWarning || "none"}
-              stagingUsed={usage.stagingUsed}
-              stagingTotal={usage.stagingAllowance}
-              stagingWarning={usage.stagingWarning}
-              planName={usage.planName || ""}
-              monthKey={usage.monthKey}
-              stagingNote={usage.stagingNote}
-              topUsers={usage.topUsers}
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Billing Section */}
-      {isAdminOrOwner && (
-        <div id="billing-section">
-          <BillingSection
-            agency={{
-              agencyId: agencyInfo.agencyId,
-              name: agencyInfo.name,
-              planTier: agencyInfo.planTier,
-              subscriptionStatus: agencyInfo.subscriptionStatus,
-              stripeCustomerId: agencyInfo.stripeCustomerId,
-              stripeSubscriptionId: agencyInfo.stripeSubscriptionId,
-              billingCountry: agencyInfo.billingCountry,
-              billingCurrency: agencyInfo.billingCurrency,
-              currentPeriodEnd: agencyInfo.currentPeriodEnd,
-            }}
-          />
-        </div>
-      )}
-
-      {/* Bundle Purchase */}
-      {isAdminOrOwner && <BundlePurchase />}
-
-      {/* Organization Info Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-muted-foreground" />
-            {agencyInfo.name}
-          </CardTitle>
-          <CardDescription>
-            {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)} Plan
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {agencyInfo.activeUsers !== undefined && (
-              <div className="flex items-center justify-between py-2 border-b border-border">
-                <span className="text-sm text-muted-foreground">Team Size</span>
-                <span className="text-sm font-medium">
-                  {agencyInfo.activeUsers} {agencyInfo.activeUsers === 1 ? 'member' : 'members'}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">Your Role</span>
-              <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
-                {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
-              </Badge>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Invite Section */}
-      {isAdminOrOwner && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="w-5 h-5 text-muted-foreground" />
-              Invite Team Member
-            </CardTitle>
-            <CardDescription>
-              Send an invitation to add a new team member
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <Input
-                type="email"
-                placeholder="colleague@example.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                className="flex-1"
-              />
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as "admin" | "member")}>
-                <SelectTrigger className="w-full sm:w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={handleInvite}>
-                Send Invite
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Pending Invites */}
-      {isAdminOrOwner && invites.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-muted-foreground" />
-              Pending Invitations
-            </CardTitle>
-            <CardDescription>
-              {invites.length} invitation{invites.length !== 1 ? 's' : ''} awaiting response
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {invites.map((invite) => (
-                <div
-                  key={invite.token}
-                  className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
-                >
-                  <div>
-                    <p className="font-medium text-foreground">{invite.email}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <StatusBadge status="pending" label="Pending" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Team Members */}
-      {isAdminOrOwner && members.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-muted-foreground" />
-              Team Members
-            </CardTitle>
-            <CardDescription>
-              {members.length} team member{members.length !== 1 ? 's' : ''}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {members.map((member) => {
-                const RoleIcon = roleIcons[member.role];
-                return (
-                  <div
-                    key={member.id}
-                    className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                        <RoleIcon className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-foreground truncate">
-                          {member.displayName || member.name || member.email.split('@')[0]}
-                        </p>
-                        <p className="text-sm text-muted-foreground truncate">{member.email}</p>
-                      </div>
+        <TabsContent value="billing" className="space-y-6">
+          {/* Trial Banner */}
+          {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
+            <Card className="border-gold-400 bg-gold-50">
+              <CardContent className="py-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-full bg-gold-100">
+                      <Sparkles className="w-4 h-4 text-gold-600" />
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
-                      <Badge variant={member.role === "owner" ? "default" : "secondary"}>
-                        {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-                      </Badge>
-                      <StatusBadge
-                        status={member.isActive ? "success" : "error"}
-                        label={member.isActive ? "Active" : "Disabled"}
-                      />
-                      {member.role !== "owner" && agencyInfo.userRole === "owner" && (
-                        <Button
-                          size="sm"
-                          variant={member.isActive ? "outline" : "default"}
-                          onClick={() => handleToggleUser(member.id, !member.isActive)}
-                        >
-                          {member.isActive ? "Disable" : "Enable"}
-                        </Button>
+                    <div>
+                      <p className="font-medium text-foreground">
+                        {agencyInfo.trial.status === "active"
+                          ? `${agencyInfo.trial.remaining} trial enhancements remaining`
+                          : agencyInfo.trial.status === "expired"
+                          ? "Your trial has ended"
+                          : agencyInfo.trial.status === "converted"
+                          ? "You've upgraded! Trial complete."
+                          : "Trial status updated"}
+                      </p>
+                      {agencyInfo.trial.expiresAt && agencyInfo.trial.status === "active" && (
+                        <p className="text-sm text-muted-foreground">
+                          Expires {new Date(agencyInfo.trial.expiresAt).toLocaleDateString()}
+                        </p>
                       )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                  <Button variant="brand" onClick={scrollToBilling}>
+                    Upgrade Now
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {agencyInfo.subscription && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <span>Plan & Images</span>
+                  <Badge variant={agencyInfo.subscription.status === "ACTIVE" ? "default" : "secondary"}>
+                    {agencyInfo.subscription.status.toLowerCase()}
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  {agencyInfo.subscription.planName} • {agencyInfo.subscription.allowance.monthKey}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Monthly included</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyIncluded}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Used {agencyInfo.subscription.allowance.used} • Remaining {agencyInfo.subscription.allowance.remaining}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Add-on / carry-over</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
+                  <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <p className="text-xs text-muted-foreground">Billing</p>
+                  <p className="text-lg font-semibold">
+                    {agencyInfo.subscription.billingCurrency?.toUpperCase() || agencyInfo.billingCurrency?.toUpperCase() || ""}
+                  </p>
+                  {agencyInfo.subscription.currentPeriodEnd && (
+                    <p className="text-xs text-muted-foreground">
+                      Renews on {new Date(agencyInfo.subscription.currentPeriodEnd).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Monthly Usage Card (read-only for members) */}
+          {usage && usage.hasAgency && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <span>Monthly Usage</span>
+                </CardTitle>
+                <CardDescription>
+                  Your plan includes {usage.mainAllowance} enhanced images per month
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <UsageSummary
+                  mainUsed={usage.mainUsed || 0}
+                  mainTotal={usage.mainAllowance || 0}
+                  mainWarning={usage.mainWarning || "none"}
+                  stagingUsed={usage.stagingUsed}
+                  stagingTotal={usage.stagingAllowance}
+                  stagingWarning={usage.stagingWarning}
+                  planName={usage.planName || ""}
+                  monthKey={usage.monthKey}
+                  stagingNote={usage.stagingNote}
+                  topUsers={usage.topUsers}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Billing Section */}
+          <div id="billing-section" className="space-y-4">
+            {isAdmin ? (
+              <BillingSection
+                agency={{
+                  agencyId: agencyInfo.agencyId,
+                  name: agencyInfo.name,
+                  planTier: agencyInfo.planTier,
+                  subscriptionStatus: agencyInfo.subscriptionStatus,
+                  stripeCustomerId: agencyInfo.stripeCustomerId,
+                  stripeSubscriptionId: agencyInfo.stripeSubscriptionId,
+                  billingCountry: agencyInfo.billingCountry,
+                  billingCurrency: agencyInfo.billingCurrency,
+                  currentPeriodEnd: agencyInfo.currentPeriodEnd,
+                }}
+              />
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Billing is managed by your admin</CardTitle>
+                  <CardDescription>
+                    You can view plan details and usage above. Contact an admin to change billing.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+          </div>
+
+          {/* Bundle Purchase */}
+          {isAdmin && <BundlePurchase />}
+        </TabsContent>
+
+        <TabsContent value="agency" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-muted-foreground" />
+                Agency Details
+              </CardTitle>
+              <CardDescription>
+                Organization name, plan, and region
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">Name</span>
+                  <span className="text-sm font-medium">{agencyInfo.name}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">Plan</span>
+                  <Badge variant="secondary">
+                    {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)}
+                  </Badge>
+                </div>
+                {agencyInfo.billingCountry && (
+                  <div className="flex items-center justify-between py-2 border-b border-border">
+                    <span className="text-sm text-muted-foreground">Region</span>
+                    <span className="text-sm font-medium">{agencyInfo.billingCountry}</span>
+                  </div>
+                )}
+                {agencyInfo.activeUsers !== undefined && (
+                  <div className="flex items-center justify-between py-2 border-b border-border">
+                    <span className="text-sm text-muted-foreground">Team Size</span>
+                    <span className="text-sm font-medium">
+                      {agencyInfo.activeUsers} {agencyInfo.activeUsers === 1 ? "member" : "members"}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">Your Role</span>
+                  <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
+                    {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
+                  </Badge>
+                </div>
+              </div>
+              {!isAdmin && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  Agency details are read-only. Contact an admin to update settings.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="team" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-muted-foreground" />
+                  Invite Team Member
+                </CardTitle>
+                <CardDescription>
+                  Send an invitation to add a new team member
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Input
+                    type="email"
+                    placeholder="colleague@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as "admin" | "member")}>
+                    <SelectTrigger className="w-full sm:w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={handleInvite}>
+                    Send Invite
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {invites.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-muted-foreground" />
+                    Pending Invitations
+                  </CardTitle>
+                  <CardDescription>
+                    {invites.length} invitation{invites.length !== 1 ? "s" : ""} awaiting response
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {invites.map((invite) => (
+                      <div
+                        key={invite.token}
+                        className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
+                      >
+                        <div>
+                          <p className="font-medium text-foreground">{invite.email}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <StatusBadge status="pending" label="Pending" />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {members.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-muted-foreground" />
+                    Team Members
+                  </CardTitle>
+                  <CardDescription>
+                    {members.length} team member{members.length !== 1 ? "s" : ""}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {members.map((member) => {
+                      const RoleIcon = roleIcons[member.role];
+                      return (
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between p-3 bg-surface-subtle rounded-lg border border-border"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                              <RoleIcon className="w-4 h-4 text-muted-foreground" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium text-foreground truncate">
+                                {member.displayName || member.name || member.email.split("@")[0]}
+                              </p>
+                              <p className="text-sm text-muted-foreground truncate">{member.email}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 ml-4">
+                            <Badge variant={member.role === "owner" ? "default" : "secondary"}>
+                              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                            </Badge>
+                            <StatusBadge
+                              status={member.isActive ? "success" : "error"}
+                              label={member.isActive ? "Active" : "Disabled"}
+                            />
+                            {member.role !== "owner" && agencyInfo.userRole === "owner" && (
+                              <Button
+                                size="sm"
+                                variant={member.isActive ? "outline" : "default"}
+                                onClick={() => handleToggleUser(member.id, !member.isActive)}
+                              >
+                                {member.isActive ? "Disable" : "Enable"}
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }
