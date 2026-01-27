@@ -1,16 +1,11 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 
-export type GeminiSemanticResponse = {
-  structural_ok: boolean;
-  walkway_ok: boolean;
-  hard_fail: boolean;
-  confidence: number;
+export type GeminiSemanticVerdict = {
+  hardFail: boolean;
+  category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
   reasons: string[];
-  notes: string;
-};
-
-export type GeminiSemanticVerdict = GeminiSemanticResponse & {
+  confidence: number;
   rawText?: string;
 };
 
@@ -20,48 +15,42 @@ function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
   const stageLabel = stage === "2" ? "Stage 2 (virtual staging)" : stage === "1B" ? "Stage 1B (declutter)" : "Stage 1A (color/cleanup)";
   const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
   return `You are a structural integrity judge for real estate imagery.
-Return a SMALL JSON ONLY. No prose outside JSON.
-Compare BEFORE vs AFTER images. Focus ONLY on hard architectural facts:
-- walls, ceilings/roof planes, floors, staircases, columns
-- door and window openings (position/size/visibility)
-- patios/driveways/paths if exterior
-- camera/viewpoint: no missing room sections or new viewpoints
-- walkability: furniture may change, but must NOT block doorways or main circulation paths; there must be a passable gap to each doorway.
+Return JSON only. No prose outside JSON.
 
-IGNORE the following (do NOT fail for them): furniture additions/removals/changes, decor, wall art, rugs, plants, curtains, pillows, styling, color/paint/lighting/contrast/material/finish changes or texture changes.
+STRUCTURE means ONLY: walls, ceilings/rooflines, floors, stairs, columns, permanent openings (doors, windows, arches, closets), built-in boundaries.
+NON-STRUCTURAL (never hard fail): all furniture/decor (beds, HEADBOARDS, couches, tables), lighting/fixtures, style/color/brightness/contrast/material changes.
 
-Hard fail ONLY if architecture is removed/moved/added OR doorways/windows blocked. If unsure or low confidence, DO NOT hard fail.
+Categories you must choose:
+- structure: architectural element moved/removed/added (wall/ceiling/floor/roofline/closet/arch/stair/door/window changed)
+- opening_blocked: doorway/window fully occluded or path not passable
+- furniture_change: furniture/decor added/removed/changed
+- style_only: style/color/exposure/lighting-only change
+  - unknown: can't tell
 
-Output JSON EXACTLY in this shape:
+Rules:
+- structure => hardFail=true
+- opening_blocked => hardFail=true ONLY if fully blocked or no passable path; otherwise warning
+- furniture_change => hardFail=false (warning only)
+- style_only => hardFail=false
+- If confidence < ${MIN_CONFIDENCE}, set hardFail=false (warning)
+
+Output JSON EXACTLY:
 {
-  "structural_ok": boolean,
-  "walkway_ok": boolean,
-  "hard_fail": boolean,
-  "confidence": 0..1 number,
+  "hardFail": boolean,
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": string[],
-  "notes": string
+  "confidence": 0..1 number
 }
 
-Hard fail rules:
-- missing room area / room_deleted / missing_room_area
-- wall moved/removed/added
-- doorway/window removed/moved/resized materially
-- ceiling/roof line materially changed
-- floor plane materially changed
-- patio/driveway/path removed/moved (exterior)
-- doorway blocked or no passable path (walkway_ok=false with high confidence)
-
-Soft warnings only when confidence < ${MIN_CONFIDENCE}. Stage: ${stageLabel}. Scene: ${sceneLabel}.`;
+Stage: ${stageLabel}. Scene: ${sceneLabel}.`;
 }
 
 export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
   const fallback: GeminiSemanticVerdict = {
-    structural_ok: true,
-    walkway_ok: true,
-    hard_fail: false,
-    confidence: 0,
+    hardFail: false,
+    category: "unknown",
     reasons: [],
-    notes: "no-parse",
+    confidence: 0,
     rawText: text,
   };
   if (!text) return fallback;
@@ -70,12 +59,10 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
   try {
     const parsed = JSON.parse(target);
     return {
-      structural_ok: Boolean(parsed.structural_ok),
-      walkway_ok: parsed.walkway_ok === false ? false : true,
-      hard_fail: Boolean(parsed.hard_fail),
-      confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+      hardFail: Boolean(parsed.hardFail),
+      category: parsed.category || "unknown",
       reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map(String) : [],
-      notes: typeof parsed.notes === "string" ? parsed.notes : "",
+      confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
       rawText: text,
     };
   } catch (err) {
@@ -121,41 +108,36 @@ export async function runGeminiSemanticValidator(opts: {
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
-    // Confidence gating
+    // Confidence gating & category-based rules
     const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
-    const structuralRisk = parsed.structural_ok === false;
-    const walkwayRisk = parsed.walkway_ok === false;
-    const hardSignals = parsed.hard_fail === true || parsed.reasons?.some((r: string) => typeof r === "string" && r.toLowerCase().includes("missing_room_area")) || false;
+    const category = parsed.category as GeminiSemanticVerdict["category"];
 
-    const shouldHardFail = !lowConfidence && (hardSignals || structuralRisk || walkwayRisk);
+    let hardFail = parsed.hardFail;
+    if (category === "structure") hardFail = true;
+    else if (category === "opening_blocked") hardFail = parsed.hardFail;
+    else if (category === "furniture_change" || category === "style_only") hardFail = false;
+
+    if (lowConfidence) hardFail = false;
+
     const verdict: GeminiSemanticVerdict = {
-      ...parsed,
-      hard_fail: shouldHardFail,
-      confidence: parsed.confidence ?? 0,
+      hardFail,
+      category,
       reasons: parsed.reasons || [],
-      notes: parsed.notes || "",
-      structural_ok: parsed.structural_ok !== false,
-      walkway_ok: parsed.walkway_ok !== false,
+      confidence: parsed.confidence ?? 0,
       rawText: text,
     };
 
-    // If low confidence, never hard fail
-    if (lowConfidence) {
-      verdict.hard_fail = false;
-    }
-
     const ms = Date.now() - start;
-    console.log(`[gemini-semantic] completed in ${ms}ms (hard_fail=${verdict.hard_fail} conf=${verdict.confidence})`);
+    console.log(`[gemini-semantic] completed in ${ms}ms (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
     return verdict;
   } catch (err: any) {
     console.warn("[gemini-semantic] error (fail-open):", err?.message || err);
     return {
-      structural_ok: true,
-      walkway_ok: true,
-      hard_fail: false,
+      hardFail: false,
+      category: "unknown",
       confidence: 0,
       reasons: ["gemini_error"],
-      notes: err?.message || "gemini_error",
+      rawText: err?.message,
     };
   }
 }

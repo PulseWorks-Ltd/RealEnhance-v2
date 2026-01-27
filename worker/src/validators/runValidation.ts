@@ -23,6 +23,7 @@ import { vLog, nLog } from "../logger";
 import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
+import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
 
 /**
  * Result from a single validator
@@ -48,6 +49,26 @@ export type UnifiedValidationResult = {
   raw: Record<string, ValidatorResult>;  // per-validator raw results
   profile?: "SOFT" | "STRICT";  // Geometry profile used
 };
+
+export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
+  const category = verdict.category || "unknown";
+  const reasonsList = (verdict.reasons && verdict.reasons.length ? verdict.reasons : [category]).map(String);
+
+  const hard = verdict.hardFail && (category === "structure" || category === "opening_blocked");
+
+  const summary = {
+    category,
+    hardFail: hard,
+    passed: !hard,
+    reasons: hard ? [`Gemini ${category}: ${reasonsList.join(", ")}`] : [],
+    warnings: hard ? [] : reasonsList,
+    message: hard
+      ? `Gemini flagged ${category}`
+      : `Gemini warning: ${category}`,
+  };
+
+  return summary;
+}
 
 /**
  * Parameters for unified validation
@@ -440,33 +461,24 @@ export async function runUnifiedValidation(
       sceneType,
     });
 
-    const semanticPassed = !geminiResult.hard_fail;
-    const details = {
-      structural_ok: geminiResult.structural_ok,
-      walkway_ok: geminiResult.walkway_ok,
-      confidence: geminiResult.confidence,
-      reasons: geminiResult.reasons,
-      notes: geminiResult.notes,
-    };
+    const semantic = summarizeGeminiSemantic(geminiResult);
 
     results.geminiSemantic = {
       name: "geminiSemantic",
-      passed: semanticPassed,
+      passed: semantic.passed,
       score: geminiResult.confidence || 0,
-      message: semanticPassed ? "Gemini semantic OK" : "Gemini structural violation",
-      details,
+      message: semantic.message,
+      details: {
+        category: geminiResult.category,
+        reasons: geminiResult.reasons,
+        confidence: geminiResult.confidence,
+      },
     };
 
-    // Hard fail only when Gemini is confident and flags structure/walkway
-    if (geminiResult.hard_fail) {
-      reasons.push("Gemini semantic hard fail: " + (geminiResult.reasons?.join(", ") || geminiResult.notes || "structural"));
+    if (semantic.hardFail) {
+      reasons.push(...semantic.reasons);
     } else {
-      // Collect warnings when soft issues present
-      if (geminiResult.structural_ok === false || geminiResult.walkway_ok === false) {
-        const warnLabel = geminiResult.reasons?.length ? geminiResult.reasons.join(", ") : "semantic_warning";
-        warnings.push(warnLabel);
-      }
-      if (geminiResult.notes) warnings.push(geminiResult.notes);
+      warnings.push(...semantic.warnings);
     }
   } catch (err) {
     console.warn("[unified-validator] Gemini semantic check failed open", err);
@@ -510,7 +522,15 @@ export async function runUnifiedValidation(
       },
     };
     if (!lineResult.passed) {
-      reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+      const openingsIntact = (results.windows?.passed !== false) && (results.walls?.passed !== false) && (results.structuralMask?.passed !== false);
+      if (openingsIntact) {
+        // Downgrade to warning when openings/boundaries still pass
+        warnings.push(`Line/edge deviation (openings intact): ${lineResult.score.toFixed(3)}`);
+        results.lineEdge.message = `Line deviation warning (openings intact)`;
+        results.lineEdge.passed = true;
+      } else {
+        reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+      }
     }
   } catch (err) {
     console.warn("[unified-validator] Line/edge validation error:", err);
