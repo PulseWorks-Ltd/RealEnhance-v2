@@ -22,6 +22,7 @@ import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
 import { vLog, nLog } from "../logger";
 import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
+import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 
 /**
  * Result from a single validator
@@ -427,6 +428,55 @@ export async function runUnifiedValidation(
         details: { error: String(err) },
       };
     }
+  }
+
+  // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK =====
+  // Harden only on architectural/walkway violations; ignore style/furniture changes
+  try {
+    const geminiResult = await runGeminiSemanticValidator({
+      basePath: originalPath,
+      candidatePath: enhancedPath,
+      stage,
+      sceneType,
+    });
+
+    const semanticPassed = !geminiResult.hard_fail;
+    const details = {
+      structural_ok: geminiResult.structural_ok,
+      walkway_ok: geminiResult.walkway_ok,
+      confidence: geminiResult.confidence,
+      reasons: geminiResult.reasons,
+      notes: geminiResult.notes,
+    };
+
+    results.geminiSemantic = {
+      name: "geminiSemantic",
+      passed: semanticPassed,
+      score: geminiResult.confidence || 0,
+      message: semanticPassed ? "Gemini semantic OK" : "Gemini structural violation",
+      details,
+    };
+
+    // Hard fail only when Gemini is confident and flags structure/walkway
+    if (geminiResult.hard_fail) {
+      reasons.push("Gemini semantic hard fail: " + (geminiResult.reasons?.join(", ") || geminiResult.notes || "structural"));
+    } else {
+      // Collect warnings when soft issues present
+      if (geminiResult.structural_ok === false || geminiResult.walkway_ok === false) {
+        const warnLabel = geminiResult.reasons?.length ? geminiResult.reasons.join(", ") : "semantic_warning";
+        warnings.push(warnLabel);
+      }
+      if (geminiResult.notes) warnings.push(geminiResult.notes);
+    }
+  } catch (err) {
+    console.warn("[unified-validator] Gemini semantic check failed open", err);
+    results.geminiSemantic = {
+      name: "geminiSemantic",
+      passed: true,
+      score: 0.5,
+      message: "Gemini semantic error (fail-open)",
+      details: { error: String(err) },
+    };
   }
 
   // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
