@@ -84,6 +84,7 @@ export interface EnhanceJobPayload {
             topK?: number;
         };
         declutterIntensity?: "light" | "standard" | "heavy";
+        stagingPreference?: "refresh" | "full";
         manualSceneOverride?: boolean;
         scenePrediction?: {
             scene: string | null;
