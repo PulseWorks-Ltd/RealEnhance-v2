@@ -24,6 +24,7 @@ import {
 } from "../stageAwareConfig";
 import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
 import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
+import { normalizeImagePairForValidator } from "../dimensionUtils";
 
 /**
  * Sobel edge detection with binary threshold
@@ -219,11 +220,13 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ===== 1. LOAD AND VERIFY DIMENSIONS =====
   let baseMeta: sharp.Metadata;
   let candMeta: sharp.Metadata;
+  let baselinePath = params.baselinePath;
+  let candidatePath = params.candidatePath;
 
   try {
     [baseMeta, candMeta] = await Promise.all([
-      sharp(params.baselinePath).metadata(),
-      sharp(params.candidatePath).metadata(),
+      sharp(baselinePath).metadata(),
+      sharp(candidatePath).metadata(),
     ]);
   } catch (err) {
     console.error(`[stageAware] Error loading image metadata:`, err);
@@ -235,22 +238,31 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     return buildFailedSummary(params.stage, "invalid_dimensions", mode);
   }
 
+  // ===== 2. DIMENSION NORMALIZATION (fail-open) =====
+  const dimNormalized = await normalizeImagePairForValidator({
+    basePath: baselinePath,
+    candidatePath,
+    jobId: params.jobId,
+  });
+
+  if (dimNormalized.normalized) {
+    baselinePath = dimNormalized.basePath;
+    candidatePath = dimNormalized.candidatePath;
+    baseMeta = { width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata;
+    candMeta = { width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata;
+    const logFn = dimNormalized.severity === "warn" ? console.warn : console.log;
+    logFn(
+      `[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${dimNormalized.baseOrig?.width || "?"}x${dimNormalized.baseOrig?.height || "?"} candidate=${dimNormalized.candidateOrig?.width || "?"}x${dimNormalized.candidateOrig?.height || "?"} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=${dimNormalized.severity}`
+    );
+  } else if ((baseMeta.width !== candMeta.width) || (baseMeta.height !== candMeta.height)) {
+    console.warn(`[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${baseMeta.width}x${baseMeta.height} candidate=${candMeta.width}x${candMeta.height} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=warn`);
+  }
+
+  const dimsMatch = baseMeta.width === candMeta.width && baseMeta.height === candMeta.height;
   debug.dimsBaseline = { w: baseMeta.width, h: baseMeta.height };
   debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
-  debug.dimensionMismatch = baseMeta.width !== candMeta.width || baseMeta.height !== candMeta.height;
-
-  // ===== 2. DIMENSION MISMATCH HANDLING =====
-  // Per spec: treat dimension mismatch as a trigger, do NOT auto-resize
-  if (debug.dimensionMismatch) {
-    console.warn(`[stageAware] Dimension mismatch: base=${baseMeta.width}x${baseMeta.height}, cand=${candMeta.width}x${candMeta.height}`);
-    triggers.push({
-      id: "dimension_mismatch",
-      message: `Dimensions changed: ${candMeta.width}x${candMeta.height} vs expected ${baseMeta.width}x${baseMeta.height}`,
-      value: 1,
-      threshold: 0,
-      stage: params.stage,
-    });
-  }
+  debug.dimensionMismatch = !dimsMatch;
+  debug.dimensionNormalized = dimNormalized.normalized;
 
   // ===== 3. LOAD/COMPUTE STRUCTURAL MASKS =====
   const jobId = params.jobId || "default";
@@ -259,8 +271,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   try {
     [maskBaseline, maskCandidate] = await Promise.all([
-      loadOrComputeStructuralMask(jobId + "-base", params.baselinePath),
-      loadOrComputeStructuralMask(jobId + "-cand", params.candidatePath),
+      loadOrComputeStructuralMask(jobId + "-base", baselinePath),
+      loadOrComputeStructuralMask(jobId + "-cand", candidatePath),
     ]);
   } catch (err) {
     console.error(`[stageAware] Error computing structural masks:`, err);
@@ -288,7 +300,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (debug.dimensionMismatch) {
     debug.structuralIoUSkipped = true;
     debug.structuralIoUSkipReason = "dimension_mismatch";
-    console.warn(`[stageAware] Skipping structural IoU: dimension mismatch`);
+    console.warn(`[stageAware] Skipping structural IoU: dimension mismatch (post-normalization)`);
   } else if (debug.maskARatio < config.iouMinPixelsRatio || debug.maskBRatio < config.iouMinPixelsRatio) {
     debug.structuralIoUSkipped = true;
     debug.structuralIoUSkipReason = "mask_too_small";
@@ -297,8 +309,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     // Load grayscale images and compute edges
     try {
       const [baseRaw, candRaw] = await Promise.all([
-        sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(params.candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
       const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
@@ -342,8 +354,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (!debug.dimensionMismatch) {
     try {
       const [baseRaw, candRaw] = await Promise.all([
-        sharp(params.baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(params.candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
       ]);
 
       const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
@@ -428,8 +440,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     try {
       const { runPaintOverCheck } = await import("./paintOverDetector.js");
       const paintOverResult = await runPaintOverCheck({
-        baselinePath: params.baselinePath,
-        candidatePath: params.candidatePath,
+        baselinePath,
+        candidatePath,
         config,
         jobId: params.jobId,
       });

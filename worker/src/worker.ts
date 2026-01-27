@@ -194,6 +194,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path2,
         scene: sceneLabel as any,
         mode: "log",
+        jobId: payload.jobId,
       });
 
       // Publish Stage-2 result
@@ -729,6 +730,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path1B,
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
+        jobId: payload.jobId,
       });
 
       // ✅ Aggregate structural safety decision
@@ -933,14 +935,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...(sceneLabel ? { ...sceneMeta } : {}),
           unifiedValidation: {
             passed: unifiedValidation.passed,
+            hardFail: unifiedValidation.hardFail,
             score: unifiedValidation.score,
             reasons: unifiedValidation.reasons,
+            warnings: unifiedValidation.warnings,
+            normalized: unifiedValidation.normalized,
           },
         },
       });
 
       // Handle blocking logic (currently disabled)
-      if (VALIDATION_BLOCKING_ENABLED && !unifiedValidation.passed) {
+      if (VALIDATION_BLOCKING_ENABLED && unifiedValidation.hardFail) {
         const failureMsg = `Structural validation failed: ${unifiedValidation.reasons.join("; ")}`;
         nLog(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
         nLog(`[worker] Validation score: ${unifiedValidation.score}`);
@@ -1009,6 +1014,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
+        jobId: payload.jobId,
       });
 
       nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
@@ -1083,9 +1089,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (unifiedValidation || compliance) {
     nLog(`[worker] ═══════════ Validation Summary ═══════════`);
     if (unifiedValidation) {
-      nLog(`[worker] Unified Structural: ${unifiedValidation.passed ? "✓ PASSED" : "✗ FAILED"} (score: ${unifiedValidation.score})`);
-      if (!unifiedValidation.passed && unifiedValidation.reasons.length > 0) {
+      nLog(`[worker] Unified Structural: ${unifiedValidation.hardFail ? "✗ FAILED" : "✓ PASSED"} (score: ${unifiedValidation.score})`);
+      if (unifiedValidation.hardFail && unifiedValidation.reasons.length > 0) {
         nLog(`[worker] Structural issues: ${unifiedValidation.reasons.join("; ")}`);
+      }
+      if (!unifiedValidation.hardFail && unifiedValidation.warnings.length > 0) {
+        nLog(`[worker] Structural warnings: ${unifiedValidation.warnings.join("; ")}`);
       }
     }
     if (compliance) {
@@ -1291,7 +1300,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     timings: { ...timings, totalMs: Date.now() - t0 },
     ...(compliance ? { compliance } : {}),
     // ✅ Save Stage-1B structural safety flag for smart retry routing
-    ...(path1B ? { stage1BStructuralSafe } : {})
+    ...(path1B ? { stage1BStructuralSafe } : {}),
+    ...(unifiedValidation ? { unifiedValidation } : {}),
   };
 
   updateJob(payload.jobId, {
@@ -1311,6 +1321,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": hasStage2 ? pub2Url : null
     }
   });
+
+  const finalWarningCount = unifiedValidation?.warnings?.length || 0;
+  nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${unifiedValidation?.hardFail ?? false} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);
 
   // Record enhanced image for "Previously Enhanced Images" history
   // FAIL-SAFE: Non-blocking - if this fails, job still completes successfully

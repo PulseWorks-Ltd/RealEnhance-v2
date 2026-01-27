@@ -11,6 +11,7 @@ import {
   compareVehicles,
 } from "./classComparisons";
 import { loadStageAwareConfig } from "./stageAwareConfig";
+import { normalizeImagePairForValidator } from "./dimensionUtils";
 
 interface Stage2StructParams {
   canonicalPath: string;
@@ -120,9 +121,20 @@ export async function validateStage2Structural(
   const config = loadStageAwareConfig();
   const debug: Stage2ValidationResult["debug"] = {};
 
-  // Get dimensions
-  const baseMeta = await sharp(canonicalBasePath).metadata();
-  const outMeta = await sharp(stage2Path).metadata();
+  const dimNormalized = await normalizeImagePairForValidator({
+    basePath: canonicalBasePath,
+    candidatePath: stage2Path,
+  });
+
+  let baselinePath = dimNormalized.normalized ? dimNormalized.basePath : canonicalBasePath;
+  let candidatePath = dimNormalized.normalized ? dimNormalized.candidatePath : stage2Path;
+
+  const baseMeta = dimNormalized.normalized
+    ? ({ width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata)
+    : await sharp(canonicalBasePath).metadata();
+  const outMeta = dimNormalized.normalized
+    ? ({ width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata)
+    : await sharp(stage2Path).metadata();
 
   const baseW = baseMeta.width!;
   const baseH = baseMeta.height!;
@@ -133,17 +145,27 @@ export async function validateStage2Structural(
   debug.baseHeight = baseH;
   debug.candWidth = candW;
   debug.candHeight = candH;
-  debug.dimensionMismatch = baseW !== candW || baseH !== candH;
+  const dimsMatch = baseW === candW && baseH === candH;
+  debug.dimensionMismatch = !dimsMatch;
 
-  // Dimension change check: log but do not block
-  if (debug.dimensionMismatch) {
-    console.warn(`[stage2] Dimension mismatch: base=${baseW}x${baseH}, candidate=${candW}x${candH}`);
-    // For now, do not block - just note it. The caller can decide.
+  if (dimNormalized.normalized) {
+    const logFn = dimNormalized.severity === "warn" ? console.warn : console.log;
+    logFn(
+      `[VALIDATOR][DIM_NORMALIZE] stage=stage2 job=unknown baseline=${dimNormalized.baseOrig?.width || "?"}x${dimNormalized.baseOrig?.height || "?"} candidate=${dimNormalized.candidateOrig?.width || "?"}x${dimNormalized.candidateOrig?.height || "?"} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=${dimNormalized.severity}`
+    );
+  } else if (!dimsMatch) {
+    console.warn(
+      `[VALIDATOR][DIM_NORMALIZE] stage=stage2 job=unknown baseline=${baseW}x${baseH} candidate=${candW}x${candH} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=warn`
+    );
+  }
+
+  if (!dimsMatch) {
+    console.warn(`[stage2] Dimension mismatch (post-normalization attempt): base=${baseW}x${baseH}, candidate=${candW}x${candH}`);
   }
 
   // Segment both images for semantic checks
-  const baseSeg = await segmentImageClasses(canonicalBasePath);
-  const candSeg = await segmentImageClasses(stage2Path);
+  const baseSeg = await segmentImageClasses(baselinePath);
+  const candSeg = await segmentImageClasses(candidatePath);
 
   // Run per-class checks
   const wallRes = compareWalls(baseSeg, candSeg);
@@ -186,12 +208,12 @@ export async function validateStage2Structural(
       structuralIoUSkipReason = "dimension_mismatch";
     } else {
       // Compute edge maps for both images
-      const { data: baseGray } = await sharp(canonicalBasePath)
+      const { data: baseGray } = await sharp(baselinePath)
         .greyscale()
         .raw()
         .toBuffer({ resolveWithObject: true });
 
-      const { data: candGray } = await sharp(stage2Path)
+      const { data: candGray } = await sharp(candidatePath)
         .greyscale()
         .raw()
         .toBuffer({ resolveWithObject: true });

@@ -188,6 +188,7 @@ export interface ValidationSummary {
     dimsBaseline: { w: number; h: number };
     dimsCandidate: { w: number; h: number };
     dimensionMismatch: boolean;
+    dimensionNormalized?: boolean;
     maskAPixels: number;
     maskBPixels: number;
     maskARatio: number;

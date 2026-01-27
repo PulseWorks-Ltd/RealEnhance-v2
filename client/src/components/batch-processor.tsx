@@ -1607,6 +1607,9 @@ export default function BatchProcessor() {
           const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const resultUrl = it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
+          const unified = it?.meta?.unifiedValidation || it?.meta?.unified_validation || null;
+          const warnings = Array.isArray(unified?.warnings) ? (unified.warnings as string[]) : [];
+          const hardFail = !!unified?.hardFail;
           const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
           const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
@@ -1648,6 +1651,8 @@ export default function BatchProcessor() {
                 imageId: it.imageId || existing.imageId,
                 originalUrl: originalUrl || existing.originalUrl,
                 filename,
+                warnings,
+                hardFail,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
@@ -1657,6 +1662,8 @@ export default function BatchProcessor() {
                   status,
                   resultStage: resultStage ?? null,
                   progress,
+                  warnings,
+                  hardFail,
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
@@ -4091,6 +4098,9 @@ export default function BatchProcessor() {
                           : isUploading
                           ? "Uploading..."
                           : aiSteps[i] || "Waiting in queue...";
+                        const warnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
+                        const warningCount = warnings.length;
+                        const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         
                         // Image Preview Logic with stage preference
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
@@ -4208,7 +4218,15 @@ export default function BatchProcessor() {
                                       {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
                                     </div>
                                 ) : isDone ? (
-                                   <StatusBadge status="completed" />
+                                   <div className="flex items-center gap-2">
+                                     <StatusBadge status="completed" />
+                                     {!hardFail && warningCount > 0 && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                         <AlertCircle className="w-3 h-3" />
+                                         {warningCount} warning{warningCount === 1 ? "" : "s"}
+                                       </span>
+                                     )}
+                                   </div>
                                 ) : (
                                   <StatusBadge status="queued" />
                                 )}

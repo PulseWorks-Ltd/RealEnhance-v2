@@ -15,6 +15,7 @@
  */
 
 import sharp from "sharp";
+import { normalizeImagePairForValidator } from "./dimensionUtils";
 
 /**
  * Result from masked edge validation
@@ -241,38 +242,38 @@ export async function runMaskedEdgeValidator({
   enhancedImagePath,
   scene,
   mode = "log",
+  jobId,
 }: {
   originalImagePath: string;
   enhancedImagePath: string;
   scene: "interior" | "exterior";
   mode?: "log";
+  jobId?: string;
 }): Promise<MaskedEdgeResult> {
   console.log(`[MASK][stage2] Starting masked edge geometry validation (${scene})`);
 
   try {
-    // Build structural masks for both images (parallel execution)
-    const [originalStructure, enhancedStructure] = await Promise.all([
-      buildStructuralMask(originalImagePath),
-      buildStructuralMask(enhancedImagePath),
-    ]);
+    const normalized = await normalizeImagePairForValidator({
+      basePath: originalImagePath,
+      candidatePath: enhancedImagePath,
+      jobId,
+    });
 
-    // Ensure dimensions match
-    if (
-      originalStructure.width !== enhancedStructure.width ||
-      originalStructure.height !== enhancedStructure.height
-    ) {
-      console.warn(
-        `[MASK][stage2] Dimension mismatch: ${originalStructure.width}x${originalStructure.height} vs ${enhancedStructure.width}x${enhancedStructure.height}`
+    if (normalized.normalized) {
+      const logFn = normalized.severity === "warn" ? console.warn : console.log;
+      logFn(
+        `[VALIDATOR][DIM_NORMALIZE] stage=stage2 job=${jobId || "unknown"} baseline=${normalized.baseOrig?.width || "?"}x${normalized.baseOrig?.height || "?"} candidate=${normalized.candidateOrig?.width || "?"}x${normalized.candidateOrig?.height || "?"} normalized=${normalized.width}x${normalized.height} method=${normalized.method} severity=${normalized.severity}`
       );
-      // Return fail-open result
-      return {
-        createdOpenings: 0,
-        closedOpenings: 0,
-        maskedEdgeDrift: 0,
-      };
     }
 
-    const { width, height } = originalStructure;
+    // Build structural masks for both images (parallel execution)
+    const [originalStructure, enhancedStructure] = await Promise.all([
+      buildStructuralMask(normalized.basePath),
+      buildStructuralMask(normalized.candidatePath),
+    ]);
+
+    const width = normalized.width;
+    const height = normalized.height;
 
     // Compute masked edge drift
     const maskedDrift = computeMaskedEdgeDrift(

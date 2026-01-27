@@ -39,8 +39,11 @@ export type ValidatorResult = {
  */
 export type UnifiedValidationResult = {
   passed: boolean;
+  hardFail: boolean;         // true only when enforcement mode blocks the image
   score: number;             // aggregate structural score 0–1
-  reasons: string[];         // human-readable reasons / warnings
+  reasons: string[];         // human-readable hard-fail reasons
+  warnings: string[];        // non-fatal warnings
+  normalized?: boolean;      // whether dimensions were normalized
   raw: Record<string, ValidatorResult>;  // per-validator raw results
   profile?: "SOFT" | "STRICT";  // Geometry profile used
 };
@@ -131,6 +134,7 @@ export async function runUnifiedValidation(
 
   const validatorMode = getValidatorMode("structure");
   const stageAwareConfig = loadStageAwareConfig();
+  const warnings: string[] = [];
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -158,8 +162,11 @@ export async function runUnifiedValidation(
     nLog(`[unified-validator] Structural validators disabled (mode=off)`);
     return {
       passed: true,
+      hardFail: false,
       score: 1.0,
-      reasons: ["Validators disabled"],
+      reasons: [],
+      warnings: ["Validators disabled"],
+      normalized: false,
       raw: {},
     };
   }
@@ -198,7 +205,7 @@ export async function runUnifiedValidation(
       const results: Record<string, ValidatorResult> = {
         stageAware: {
           name: "stageAware",
-          passed: !stageAwareResult.risk,
+          passed: mode === "enforce" ? !stageAwareResult.risk : true,
           score: stageAwareResult.score,
           message: stageAwareResult.risk
             ? `Risk detected: ${stageAwareResult.triggers.length} triggers`
@@ -211,6 +218,10 @@ export async function runUnifiedValidation(
         },
       };
 
+      if (stageAwareResult.debug?.dimensionNormalized) {
+        warnings.push("dimension_normalized");
+      }
+
       nLog(`[unified-validator] Stage-aware result: risk=${stageAwareResult.risk}, score=${stageAwareResult.score.toFixed(3)}`);
       if (stageAwareResult.risk) {
         nLog(`[unified-validator] Triggers (${stageAwareResult.triggers.length}/${stageAwareConfig.gateMinSignals} required):`);
@@ -219,10 +230,19 @@ export async function runUnifiedValidation(
         });
       }
 
+      const hardFail = mode === "enforce" && stageAwareResult.risk;
+
+      if (!hardFail) {
+        stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));
+      }
+
       return {
-        passed: !stageAwareResult.risk || mode === "log",
+        passed: hardFail ? false : true,
+        hardFail,
         score: stageAwareResult.score,
-        reasons,
+        reasons: hardFail ? reasons : [],
+        warnings,
+        normalized: stageAwareResult.debug?.dimensionNormalized,
         raw: results,
         profile: "STRICT", // Stage-aware always uses strict mode
       };
@@ -393,6 +413,10 @@ export async function runUnifiedValidation(
           debug: structResult.debug,
         },
       };
+
+      if (structResult.debug?.dimensionNormalized) {
+        warnings.push("dimension_normalized");
+      }
     } catch (err) {
       console.warn("[unified-validator] Structural mask validation error:", err);
       results.structuralMask = {
@@ -511,7 +535,8 @@ export async function runUnifiedValidation(
 
   // Determine overall pass/fail
   // In log-only mode, we still compute passed for metric collection
-  const allPassed = Object.values(results).every(r => r.passed);
+  const failedValidators = Object.values(results).filter(r => !r.passed);
+  const allPassed = failedValidators.length === 0;
 
   // Log detailed results (normal mode)
   nLog(`[unified-validator] === Validation Results ===`);
@@ -528,6 +553,18 @@ export async function runUnifiedValidation(
     reasons.forEach(reason => nLog(`[unified-validator]   - ${reason}`));
   }
 
+  if (warnings.length > 0) {
+    nLog(`[unified-validator] Warnings:`);
+    warnings.forEach(w => nLog(`[unified-validator]   - ${w}`));
+  }
+
+  // Collect non-fatal warnings when in log mode
+  if (mode !== "enforce" && failedValidators.length > 0) {
+    failedValidators.forEach((r) => {
+      if (r.message) warnings.push(r.message);
+    });
+  }
+
   // Handle blocking logic
   if (mode === "enforce" && !allPassed) {
     console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (mode=enforce)`);
@@ -537,10 +574,16 @@ export async function runUnifiedValidation(
 
   nLog(`[unified-validator] ===============================`);
 
+  const hardFail = mode === "enforce" && !allPassed;
+  const uniqueWarnings = Array.from(new Set(warnings));
+
   const finalResult: UnifiedValidationResult = {
-    passed: allPassed,
+    passed: hardFail ? false : true,
+    hardFail,
     score: Math.round(aggregateScore * 1000) / 1000,
-    reasons,
+    reasons: hardFail ? reasons : [],
+    warnings: uniqueWarnings,
+    normalized: uniqueWarnings.includes("dimension_normalized"),
     raw: results,
     profile: softScene ? "SOFT" : "STRICT",
   };
@@ -620,5 +663,9 @@ export function logUnifiedValidationCompact(
   // Failures
   if (!result.passed && result.reasons.length > 0) {
     vLog(`[VAL][job=${jobId}]   failures=${result.reasons.join("; ")}`);
+  }
+
+  if (result.warnings.length > 0) {
+    vLog(`[VAL][job=${jobId}]   warnings=${result.warnings.join("; ")}`);
   }
 }
