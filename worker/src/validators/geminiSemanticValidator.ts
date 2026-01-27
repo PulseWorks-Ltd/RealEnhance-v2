@@ -107,7 +107,7 @@ export async function runGeminiSemanticValidator(opts: {
 
   try {
     const start = Date.now();
-    const response = await ai.responses.generate({
+    const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents,
       generationConfig: {
@@ -116,7 +116,8 @@ export async function runGeminiSemanticValidator(opts: {
         maxOutputTokens: 512,
       },
     });
-    const text = response?.response?.text()?.trim() || "";
+    const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
+    const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
