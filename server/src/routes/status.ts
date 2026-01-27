@@ -10,12 +10,14 @@ import { getJob } from "../services/jobs.js";
  * (Kept inline to avoid import cycles / build issues.)
  */
 type UiStatus = "ok" | "warning" | "error";
+type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
+type NormalizedState = "queued" | "processing" | "completed" | "failed" | "unknown";
 
 type StatusItem = {
   id: string;
-  state: "queued" | "processing" | "completed" | "failed" | "unknown";
+  state: NormalizedState;
   status: UiStatus; // UI-facing
-  queueStatus: "queued" | "active" | "completed" | "failed" | "delayed" | "unknown"; // legacy
+  queueStatus: QueueStatus; // legacy
   success: boolean;
   imageId: string | null;
   imageUrl: string | null;
@@ -30,7 +32,7 @@ type StatusItem = {
   error?: string | null;
 };
 
-function normalizeStateToStatus(state: string | null): StatusItem["status"] {
+function normalizeStateToQueueStatus(state: string | null): QueueStatus {
   switch (state) {
     case "waiting":
     case "waiting-children":
@@ -47,8 +49,8 @@ function normalizeStateToStatus(state: string | null): StatusItem["status"] {
   }
 }
 
-function normalizeQueueState(state: string | null): StatusItem["state"] {
-  const s = normalizeStateToStatus(state);
+function normalizeQueueState(state: string | null): NormalizedState {
+  const s = normalizeStateToQueueStatus(state);
   if (s === "active") return "processing";
   return s as any;
 }
@@ -111,7 +113,7 @@ export function statusRouter() {
           state = null;
         }
 
-        const queueStatus = normalizeStateToStatus(state);
+        const queueStatus = normalizeStateToQueueStatus(state);
         const stateNormalized = normalizeQueueState(state);
 
         // Merge in Redis job record (written by worker via updateJob)
@@ -201,7 +203,7 @@ export function statusRouter() {
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
         // Reduce log verbosity: Only log failed jobs or every 50th request
-        if (item.status === 'failed' || Math.floor(Math.random() * 50) === 0) {
+        if (item.state === 'failed' || Math.floor(Math.random() * 50) === 0) {
           console.log('[status/batch] Merged job status for', id, JSON.stringify(item, null, 2));
         }
 
@@ -221,7 +223,7 @@ export function statusRouter() {
 
       // Check if all jobs are in a terminal state (completed or failed)
       const allDone = items.every((item: StatusItem) =>
-        item.status === 'completed' || item.status === 'failed'
+        item.state === 'completed' || item.state === 'failed'
       );
 
       const base: any = {
@@ -295,7 +297,7 @@ export function statusRouter() {
       } catch (e) {
         state = null;
       }
-      const queueStatus = normalizeStateToStatus(state);
+      const queueStatus = normalizeStateToQueueStatus(state);
       const stateNormalized = normalizeQueueState(state);
       const local = await getJob(jobId) || ({} as any);
       const resultUrl: string | null =
