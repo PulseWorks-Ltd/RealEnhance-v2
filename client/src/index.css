@@ -112,6 +112,21 @@
   }
 }
 
+/* Subtle Ken Burns effect for auth hero image */
+@keyframes kenburns-slow {
+  0% {
+    transform: scale(1.05) translateY(0);
+  }
+  100% {
+    transform: scale(1.12) translateY(-2%);
+  }
+}
+
+.ken-burns {
+  animation: kenburns-slow 22s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
 /* ✅ HARD FAILSAFE: Force room type dropdowns to ALWAYS open downward */
 /* Prevents Radix Select from auto-flipping upward over images */
 [data-radix-popper-content-wrapper] {
