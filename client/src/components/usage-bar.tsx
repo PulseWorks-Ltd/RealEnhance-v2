@@ -1,6 +1,8 @@
 import React from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { getQuotaExceededMessage } from "@/lib/quota-messaging";
 
 interface UsageBarProps {
   label: string;
@@ -8,10 +10,13 @@ interface UsageBarProps {
   total: number;
   warningLevel: "none" | "approaching" | "critical" | "exhausted";
   type?: "main" | "staging";
+  isAdmin?: boolean;
+  hasRoleInfo?: boolean;
 }
 
-export function UsageBar({ label, used, total, warningLevel, type = "main" }: UsageBarProps) {
+export function UsageBar({ label, used, total, warningLevel, type = "main", isAdmin, hasRoleInfo }: UsageBarProps) {
   const percent = total > 0 ? Math.round((used / total) * 100) : 0;
+  const quotaMessage = getQuotaExceededMessage({ isAdmin, hasRoleInfo });
 
   // Determine color based on warning level
   const getColorClass = () => {
@@ -56,7 +61,7 @@ export function UsageBar({ label, used, total, warningLevel, type = "main" }: Us
       </div>
       {warningLevel === "exhausted" && (
         <p className="text-xs text-red-600 font-medium">
-          Limit reached. Upgrade your plan to continue.
+          {quotaMessage}
         </p>
       )}
       {warningLevel === "critical" && (
@@ -84,6 +89,10 @@ interface UsageSummaryProps {
   monthKey: string;
   stagingNote?: string;
   topUsers?: Array<{ userId: string; name: string; used: number }>;
+  isAdmin?: boolean;
+  hasRoleInfo?: boolean;
+  billingHref?: string;
+  addonHref?: string;
 }
 
 export function UsageSummary({
@@ -97,6 +106,10 @@ export function UsageSummary({
   monthKey,
   stagingNote,
   topUsers,
+  isAdmin,
+  hasRoleInfo,
+  billingHref,
+  addonHref,
 }: UsageSummaryProps) {
   const top10 = (topUsers || [])
     .slice()
@@ -117,12 +130,30 @@ export function UsageSummary({
         total={mainTotal}
         warningLevel={mainWarning}
         type="main"
+        isAdmin={isAdmin}
+        hasRoleInfo={hasRoleInfo}
       />
 
       {mainWarning === "exhausted" && (
         <Alert variant="destructive">
           <AlertDescription>
-            Your agency has reached its monthly image limit. Please upgrade your plan or wait until next month to continue enhancing images.
+            <div className="space-y-3">
+              <p>{getQuotaExceededMessage({ isAdmin, hasRoleInfo })}</p>
+              {isAdmin && (
+                <div className="flex flex-wrap gap-2">
+                  {billingHref && (
+                    <Button asChild size="sm" variant="secondary">
+                      <a href={billingHref}>Go to Billing</a>
+                    </Button>
+                  )}
+                  {addonHref && (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={addonHref}>Buy add-on bundle</a>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </AlertDescription>
         </Alert>
       )}

@@ -12,6 +12,7 @@ export interface UsageSummary {
   mainRemaining?: number;
   mainUsagePercent?: number;
   mainWarning?: "none" | "approaching" | "critical" | "exhausted";
+  addonRemaining?: number;
   stagingAllowance?: number;
   stagingUsed?: number;
   stagingRemaining?: number;

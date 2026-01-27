@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { getCheckoutRedirect } from "@/lib/checkoutRedirect";
+import { loadStripe } from "@stripe/stripe-js";
 import { Loader2, Package, Sparkles } from "lucide-react";
 
 interface BundleOption {
@@ -39,9 +41,27 @@ const BUNDLES: BundleOption[] = [
 export function BundlePurchase() {
   const { toast } = useToast();
   const [loading, setLoading] = useState<string | null>(null);
+  const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "");
+
+  const redirectWithStripeSession = async (sessionId: string) => {
+    if (!import.meta.env.VITE_STRIPE_PUBLIC_KEY) {
+      throw new Error("Stripe publishable key missing for session redirect");
+    }
+
+    const stripe = await stripePromise;
+    if (!stripe) {
+      throw new Error("Stripe failed to initialize for checkout");
+    }
+
+    const { error } = await stripe.redirectToCheckout({ sessionId });
+    if (error) {
+      throw new Error(error.message || "Stripe redirect failed");
+    }
+  };
 
   const handlePurchase = async (bundleCode: string) => {
     try {
+      if (loading) return; // guard against double clicks
       setLoading(bundleCode);
 
       const res = await apiFetch("/api/agency/bundles/checkout", {
@@ -50,19 +70,26 @@ export function BundlePurchase() {
         body: JSON.stringify({ bundleCode }),
       });
 
-      if (res.ok && res.data?.checkoutUrl) {
-        // Redirect to Stripe Checkout
-        window.location.href = res.data.checkoutUrl;
-      } else {
-        throw new Error(res.error || "Failed to create checkout session");
+      const data = await res.json().catch(() => ({}));
+      const redirect = getCheckoutRedirect(data);
+
+      if (redirect.type === "url") {
+        window.location.assign(redirect.url);
+        return;
       }
+
+      await redirectWithStripeSession(redirect.sessionId);
     } catch (error: any) {
       console.error("Purchase error:", error);
+      const description = error?.message
+        ? error.message
+        : "Network error creating checkout session";
       toast({
         title: "Purchase Failed",
-        description: error.message || "Failed to initiate purchase",
+        description,
         variant: "destructive",
       });
+    } finally {
       setLoading(null);
     }
   };
@@ -117,8 +144,8 @@ export function BundlePurchase() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Expires:</span>
-                    <span className="font-medium">End of month</span>
+                    <span className="text-muted-foreground">Validity:</span>
+                    <span className="font-medium">30 days from purchase</span>
                   </div>
                 </div>
 
@@ -143,8 +170,7 @@ export function BundlePurchase() {
         </div>
 
         <div className="mt-4 p-3 bg-muted rounded-md text-sm text-muted-foreground">
-          <strong>Note:</strong> Bundle images expire at the end of the purchase month and are consumed
-          after your monthly allowance. Secure payment powered by Stripe.
+          <strong>Note:</strong> Bundle images are valid for 30 days from purchase and are consumed before your monthly allowance. Secure payment powered by Stripe.
         </div>
       </CardContent>
     </Card>

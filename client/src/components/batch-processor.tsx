@@ -3,24 +3,28 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FixedSelect, FixedSelectItem } from "@/components/ui/FixedSelect";
+import { Button } from "@/components/ui/button";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { getQuotaExceededMessage } from "@/lib/quota-messaging";
 import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
 import { RegionEditor } from "./region-editor";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
-import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2 } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
+import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
 
 type RunState = "idle" | "running" | "done";
+type StageKey = "1A" | "1B" | "2";
 
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
@@ -37,11 +41,16 @@ type SceneDetectResult = {
     greenOverall: number;
     meanLum: number;
   };
-  reason: "confident_interior" | "confident_exterior" | "uncertain";
+  reason: "confident_interior" | "confident_exterior" | "uncertain" | "covered_exterior_suspect";
   source?: "client" | "server";
 };
 
 const EMPTY_SCENE_FEATURES = { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 };
+
+// Generate a stable ID for a file based on its properties (not array index)
+function getFileId(f: File): string {
+  return `${f.name}:${f.size}:${f.lastModified}`;
+}
 
 // Clamp a number into [0,1]; return null when not finite
 const clamp01 = (value: number | null | undefined): number | null => {
@@ -94,7 +103,29 @@ function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; erro
 }
 
 function getDisplayUrl(data: any): string | null {
-  return data?.image || data?.imageUrl || data?.result?.image || data?.result?.imageUrl || data?.result?.result?.imageUrl || null;
+  if (!data) return null;
+
+  const stageMap =
+    data?.stageUrls ||
+    data?.result?.stageUrls ||
+    data?.stageOutputs ||
+    data?.result?.stageOutputs ||
+    null;
+
+  const stage2 = stageMap?.['2'] || stageMap?.[2] || data?.stage2Url || data?.result?.stage2Url || null;
+  const stage1B = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.[1] || null;
+  const stage1A = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+
+  const explicitResult =
+    data?.resultUrl ||
+    data?.image ||
+    data?.imageUrl ||
+    data?.result?.image ||
+    data?.result?.imageUrl ||
+    data?.result?.result?.imageUrl ||
+    null;
+
+  return stage2 || stage1B || stage1A || explicitResult;
 }
 
 // Add cache-busting version to force browser reload (only when version exists)
@@ -186,6 +217,35 @@ function clearBatchJobState() {
   }
 }
 
+// Helper component for consistent status badges
+const StatusBadge = ({ status, className }: { status: 'processing' | 'completed' | 'failed' | 'queued', className?: string }) => {
+  if (status === 'processing' || status === 'queued') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 ring-1 ring-slate-200 animate-pulse ${className}`}>
+        <Loader2 className="w-3 h-3 animate-spin" />
+        {status === 'queued' ? 'Queued' : 'Processing'}
+      </span>
+    );
+  }
+  if (status === 'completed') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-600 text-white ring-1 ring-emerald-300/60 shadow-sm ${className}`}>
+        <CheckCircle className="w-3.5 h-3.5" />
+        Enhancement Complete
+      </span>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-600 text-white shadow-sm ${className}`}>
+        <AlertCircle className="w-3.5 h-3.5" />
+        Error
+      </span>
+    );
+  }
+  return null;
+};
+
 export default function BatchProcessor() {
     // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
@@ -228,6 +288,7 @@ export default function BatchProcessor() {
   const jobIdToIndexRef = useRef<Record<string, number>>({});
   const jobIdToImageIdRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<any[]>([]);
+  const [displayStageByIndex, setDisplayStageByIndex] = useState<Record<number, StageKey>>({});
   const [progressText, setProgressText] = useState<string>("");
   const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
   const [processedImages, setProcessedImages] = useState<string[]>([]); // Track processed image URLs for ZIP download
@@ -242,6 +303,16 @@ export default function BatchProcessor() {
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
   const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
+  const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
+  const [isStagingConfirmOpen, setIsStagingConfirmOpen] = useState(false);
+  const [stagingPreference, setStagingPreference] = useState<"refresh" | "full" | undefined>(undefined);
+  const [clientBatchId, setClientBatchId] = useState<string | null>(null);
+
+  const isFurnishedOverrideRef = useRef<boolean | null>(null);
+  const stagingPreferenceRef = useRef<"refresh" | "full" | undefined>(undefined);
+  const furnishedPromptShownRef = useRef<boolean>(false);
+  const clientBatchIdRef = useRef<string | null>(null);
+  const previousFileCountRef = useRef<number>(0);
   
   // Collapsible specific requirements
   const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
@@ -299,16 +370,111 @@ export default function BatchProcessor() {
   const [selection, setSelection] = useState<Set<number>>(new Set()); // indexes user has selected
   const [metaByIndex, setMetaByIndex] = useState<Record<number, LocalItemMeta>>({});
   
-  // Images tab state
-  const [imageSceneTypes, setImageSceneTypes] = useState<Record<number, string>>({});
-  const [scenePredictions, setScenePredictions] = useState<Record<number, SceneDetectResult>>({});
-  const [imageRoomTypes, setImageRoomTypes] = useState<Record<number, string>>({});
-  const [imageSkyReplacement, setImageSkyReplacement] = useState<Record<number, boolean>>({});
+  // Images tab state - keyed by stable imageId (not array index) to survive removals
+  const [imageSceneTypesById, setImageSceneTypesById] = useState<Record<string, string>>({});
+  const [manualSceneTypesById, setManualSceneTypesById] = useState<Record<string, SceneLabel | null>>({});
+  const [scenePredictionsById, setScenePredictionsById] = useState<Record<string, SceneDetectResult>>({});
+  const [imageRoomTypesById, setImageRoomTypesById] = useState<Record<string, string>>({});
+  const [imageSkyReplacementById, setImageSkyReplacementById] = useState<Record<string, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
-  const [manualSceneOverrideByIndex, setManualSceneOverrideByIndex] = useState<Record<number, boolean>>({});
+  const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
-  // Studio view: current image being configured
-  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+  // Studio view: current image being configured (by stable imageId)
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+
+  const manualSceneTypesByIdRef = useRef<Record<string, SceneLabel | null>>({});
+  const imageSceneTypesByIdRef = useRef<Record<string, string>>({});
+  const scenePredictionsByIdRef = useRef<Record<string, SceneDetectResult>>({});
+  useEffect(() => { manualSceneTypesByIdRef.current = manualSceneTypesById; }, [manualSceneTypesById]);
+  useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
+  useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
+  useEffect(() => { isFurnishedOverrideRef.current = isFurnishedOverride; }, [isFurnishedOverride]);
+  useEffect(() => { stagingPreferenceRef.current = stagingPreference; }, [stagingPreference]);
+  
+  const resetFurnishedStateForNewBatch = useCallback((reason: string) => {
+    setIsFurnishedOverride(null);
+    setStagingPreference(undefined);
+    isFurnishedOverrideRef.current = null;
+    stagingPreferenceRef.current = undefined;
+    furnishedPromptShownRef.current = false;
+    if (IS_DEV) {
+      console.log('[BATCH][RESET_FURNISHED]', { reason, isFurnishedOverride: isFurnishedOverrideRef.current, stagingPreference: stagingPreferenceRef.current });
+      console.assert(isFurnishedOverrideRef.current === null && stagingPreferenceRef.current === undefined, "[DEV_ASSERT] furnished choice should reset for new batch");
+    }
+  }, []);
+
+
+
+
+  // Compute currentImageIndex from selectedImageId for backwards compatibility
+  const currentImageIndex = useMemo(() => {
+    if (!selectedImageId) return 0;
+    const idx = files.findIndex(f => getFileId(f) === selectedImageId);
+    return idx >= 0 ? idx : 0;
+  }, [files, selectedImageId]);
+
+  // Set initial selectedImageId when files change
+  useEffect(() => {
+    if (files.length > 0 && !selectedImageId) {
+      setSelectedImageId(getFileId(files[0]));
+    } else if (files.length === 0) {
+      setSelectedImageId(null);
+    } else if (selectedImageId && !files.some(f => getFileId(f) === selectedImageId)) {
+      // Selected image was removed, select first available
+      setSelectedImageId(getFileId(files[0]));
+    }
+  }, [files, selectedImageId]);
+
+  useEffect(() => {
+    if (!allowStaging) {
+      setIsFurnishedOverride(null);
+      setStagingPreference(undefined);
+    }
+    if (declutter) {
+      setIsFurnishedOverride(null);
+      setStagingPreference(undefined);
+    }
+  }, [allowStaging, declutter]);
+
+  // Detect brand new batch (first files added after empty state) and clear furnished choice
+  useEffect(() => {
+    const prev = previousFileCountRef.current;
+    const isNewBatch = prev === 0 && files.length > 0 && runState !== 'running';
+    if (isNewBatch) {
+      resetFurnishedStateForNewBatch('files_added_new_batch');
+      const newClientBatchId = `client-batch-${Date.now()}`;
+      clientBatchIdRef.current = newClientBatchId;
+      setClientBatchId(newClientBatchId);
+    }
+    if (files.length === 0) {
+      clientBatchIdRef.current = null;
+      setClientBatchId(null);
+    }
+    previousFileCountRef.current = files.length;
+  }, [files.length, runState, resetFurnishedStateForNewBatch]);
+
+  // Helper to set current image by index (for UI that uses indices)
+  const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
+    if (typeof indexOrFn === 'function') {
+      const newIdx = indexOrFn(currentImageIndex);
+      if (newIdx >= 0 && newIdx < files.length) {
+        setSelectedImageId(getFileId(files[newIdx]));
+      }
+    } else {
+      if (indexOrFn >= 0 && indexOrFn < files.length) {
+        setSelectedImageId(getFileId(files[indexOrFn]));
+      }
+    }
+  }, [currentImageIndex, files]);
+
+  // Get imageId for a given index
+  const getImageIdForIndex = useCallback((index: number): string | null => {
+    if (index < 0 || index >= files.length) return null;
+    return getFileId(files[index]);
+  }, [files]);
+
+  // Get current imageId
+  const currentImageId = selectedImageId || (files.length > 0 ? getFileId(files[0]) : null);
 
   // Tuning controls (apply to all images in this batch; optional)
   // Declutter intensity removed: always heavy/preset in backend
@@ -335,15 +501,44 @@ export default function BatchProcessor() {
   };
   
   const { toast } = useToast();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
+
+  const isAdminUser = user?.role === "owner" || user?.role === "admin";
+  const hasRoleInfo = !!user?.role;
+  const billingHref = "/agency#billing-section";
+  const addonHref = "/agency#bundle-purchase";
+
+  const showQuotaExceededToast = useCallback(() => {
+    const message = getQuotaExceededMessage({ isAdmin: isAdminUser, hasRoleInfo });
+
+    toast({
+      title: "Image allowance used",
+      description: (
+        <div className="space-y-3">
+          <p>{message}</p>
+          {isAdminUser && (
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="secondary">
+                <a href={billingHref}>Go to Billing</a>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <a href={addonHref}>Buy add-on bundle</a>
+              </Button>
+            </div>
+          )}
+        </div>
+      ),
+      variant: "destructive",
+    });
+  }, [addonHref, billingHref, hasRoleInfo, isAdminUser, toast]);
 
   const isSceneAutoAcceptable = (pred?: SceneDetectResult | null) => {
     if (!pred) return false;
     if (!pred.scene) return false;
     const conf = clamp01(pred.confidence);
     if (conf === null) return false;
-    if (pred.reason === "uncertain") return false;
+    if (pred.reason === "uncertain" || pred.reason === "covered_exterior_suspect") return false;
     return conf >= SCENE_CONFIDENCE_GUARD;
   };
 
@@ -415,6 +610,32 @@ export default function BatchProcessor() {
         meanLum: luminanceSum / denom,
       };
 
+      // Covered exterior suspect guard (align with worker defaults)
+      const coveredExteriorSuspect =
+        features.skyTop10 > 0.02 &&
+        features.blueOverall < 0.06 &&
+        features.skyTop40 > 0.05;
+
+      if (coveredExteriorSuspect) {
+        const unsure: SceneDetectResult = {
+          scene: null,
+          confidence: 0,
+          signal: Math.max(features.skyTop10, features.skyTop40, features.blueOverall),
+          features,
+          reason: "covered_exterior_suspect",
+          source: "client",
+        };
+        console.debug('[SceneDetect][client] covered_exterior_suspect → unsure', {
+          skyTop10: features.skyTop10,
+          skyTop40: features.skyTop40,
+          blueOverall: features.blueOverall,
+          meanLum: features.meanLum,
+          decision: unsure,
+        });
+        sceneDetectCacheRef.current[cacheKey] = unsure;
+        return unsure;
+      }
+
       // Aggregate signal (pre-penalty)
       let signal = Math.max(
         features.skyTop10,
@@ -479,26 +700,48 @@ export default function BatchProcessor() {
     }
   }
 
-  // When a brand-new file selection is made by the user (not a restore),
-  // clear all per-image settings so previous batch state doesn't bleed over.
-  function fingerprintFiles(list: File[]): string {
-    return list.map((f: any) => `${f.name}:${f.size}:${f.lastModified}:${f.__restored ? 'R' : 'U'}`).join('|');
-  }
+  // Track previous file IDs to detect additions vs removals
+  const prevFileIdsRef = useRef<Set<string>>(new Set());
 
+  // When files change, only clear state for completely new batches (not removals)
   useEffect(() => {
-    const fp = fingerprintFiles(files);
-    if (fp !== filesFingerprintRef.current) {
-      const userSelected = files.some(f => !(f as any).__restored);
-      if (userSelected) {
-        setImageSceneTypes({});
-        setImageRoomTypes({});
-        setImageSkyReplacement({});
-        setMetaByIndex({});
-        setSelection(new Set());
-        sceneDetectCacheRef.current = {};
-      }
-      filesFingerprintRef.current = fp;
+    const currentIds = new Set(files.map(getFileId));
+    const prevIds = prevFileIdsRef.current;
+
+    // Check if this is a completely new batch (no overlap with previous)
+    const hasOverlap = [...currentIds].some(id => prevIds.has(id));
+    const hasNewFiles = [...currentIds].some(id => !prevIds.has(id));
+    const userSelected = files.some(f => !(f as any).__restored);
+
+    // Only clear all state if user selected completely new files (no overlap)
+    if (userSelected && hasNewFiles && !hasOverlap && prevIds.size > 0) {
+      // Completely new batch - clear all state
+      setImageSceneTypesById({});
+      setManualSceneTypesById({});
+      setImageRoomTypesById({});
+      setImageSkyReplacementById({});
+      setMetaByIndex({});
+      setSelection(new Set());
+      setManualSceneOverrideById({});
+      setScenePredictionsById({});
+      scenePredictionsByIdRef.current = {};
+      sceneDetectCacheRef.current = {};
+    } else if (prevIds.size === 0 && currentIds.size > 0 && userSelected) {
+      // First batch selection - clear any stale state
+      setImageSceneTypesById({});
+      setManualSceneTypesById({});
+      setImageRoomTypesById({});
+      setImageSkyReplacementById({});
+      setMetaByIndex({});
+      setSelection(new Set());
+      setManualSceneOverrideById({});
+      setScenePredictionsById({});
+      scenePredictionsByIdRef.current = {};
+      sceneDetectCacheRef.current = {};
     }
+    // For removals or additions to existing batch, state is preserved (keyed by ID)
+
+    prevFileIdsRef.current = currentIds;
   }, [files]);
 
   // Cleanup retry timeout on unmount
@@ -512,74 +755,116 @@ export default function BatchProcessor() {
   }, []);
 
   // When user enters the Images tab, prefill scene predictions using client-side detector
+  // NOTE: This effect only runs on file list changes / initial load, NOT on scene type changes
+  // to prevent re-running detection when user clicks Interior/Exterior buttons
+  // IMPORTANT: Only detect for NEW images whose imageId is not already in scenePredictionsById
   useEffect(() => {
     if (activeTab !== "images" || !files.length) return;
     let cancelled = false;
+    console.log("[SceneDetect] starting auto-detect pass", { fileCount: files.length });
     (async () => {
-      const nextPreds: Record<number, SceneDetectResult> = {};
-      const skyDefaults: Record<number, boolean> = {};
-      await Promise.all(files.map(async (f, i) => {
-        // only auto-fill if user hasn't set it
-        if (imageSceneTypes[i] && imageSceneTypes[i] !== "auto") return;
+      const nextPreds: Record<string, SceneDetectResult> = {};
+      const skyDefaults: Record<string, boolean> = {};
+
+      // Process files sequentially with microtask yields to prevent UI blocking
+      for (let i = 0; i < files.length; i++) {
+        if (cancelled) break;
+        const f = files[i];
+        const imageId = getFileId(f);
+
+        // Skip files with manual scene override already set
+        const manualScene = manualSceneTypesByIdRef.current[imageId];
+        if (manualScene) {
+          console.log("[SceneDetect] skip manual scene", { imageId, scene: manualScene });
+          continue;
+        }
+        const explicit = imageSceneTypesByIdRef.current[imageId];
+        if (explicit && explicit !== "auto") {
+          console.log("[SceneDetect] skip existing scene", { imageId, scene: explicit });
+          continue;
+        }
+        const existingPrediction = scenePredictionsByIdRef.current[imageId];
+        if (existingPrediction) {
+          console.log("[SceneDetect] reuse cached prediction", { imageId, scene: existingPrediction.scene, source: existingPrediction.source });
+          nextPreds[imageId] = existingPrediction;
+          continue;
+        }
+
+        // Yield to main thread between file processing to keep UI responsive
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (cancelled) break;
+
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
-          nextPreds[i] = prediction;
-          if (isSceneAutoAcceptable(prediction) && prediction.scene) {
-            setImageSceneTypes(prev => {
-              if (prev[i] && prev[i] !== "auto") return prev;
-              return { ...prev, [i]: prediction.scene as string };
+          nextPreds[imageId] = prediction;
+          if (isSceneAutoAcceptable(prediction) && prediction.scene && !manualSceneTypesByIdRef.current[imageId]) {
+            setImageSceneTypesById(prev => {
+              if (prev[imageId] && prev[imageId] !== "auto") return prev;
+              return { ...prev, [imageId]: prediction.scene as string };
             });
-            if (prediction.scene === "exterior" && imageSkyReplacement[i] === undefined) {
-              skyDefaults[i] = true;
+            if (prediction.scene === "exterior" && imageSkyReplacementById[imageId] === undefined) {
+              skyDefaults[imageId] = true;
             }
           } else {
-            setImageSceneTypes(prev => {
-              const copy = { ...prev } as Record<number, string>;
-              delete copy[i];
+            setImageSceneTypesById(prev => {
+              const copy = { ...prev } as Record<string, string>;
+              delete copy[imageId];
               return copy;
             });
           }
         }
-      }));
+      }
+
       if (!cancelled && Object.keys(nextPreds).length) {
-        setScenePredictions(prev => ({ ...prev, ...nextPreds }));
+        setScenePredictionsById(prev => ({ ...prev, ...nextPreds }));
         if (Object.keys(skyDefaults).length) {
-          setImageSkyReplacement(prev => ({ ...prev, ...skyDefaults }));
+          setImageSkyReplacementById(prev => ({ ...prev, ...skyDefaults }));
         }
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, files, imageSceneTypes, imageSkyReplacement]);
+  }, [activeTab, files, imageSkyReplacementById]);
 
   const finalSceneForIndex = useCallback((index: number): SceneLabel | null => {
-    const explicit = imageSceneTypes[index];
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return null;
+    const manual = manualSceneTypesById[imageId];
+    if (manual === "interior" || manual === "exterior") return manual;
+    const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return explicit;
-    const pred = scenePredictions[index];
+    const pred = scenePredictionsById[imageId];
     if (isSceneAutoAcceptable(pred) && pred?.scene) return pred.scene;
     return null;
-  }, [imageSceneTypes, scenePredictions]);
+  }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const sceneRequiresInput = useCallback((index: number) => {
-    const explicit = imageSceneTypes[index];
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return true;
+    const manual = manualSceneTypesById[imageId];
+    if (manual === "interior" || manual === "exterior") return false;
+    const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return false;
-    const pred = scenePredictions[index];
+    const pred = scenePredictionsById[imageId];
     if (isSceneAutoAcceptable(pred)) return false;
     return true; // no confident prediction and no user selection
-  }, [imageSceneTypes, scenePredictions]);
+  }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const roomTypeRequiresInput = useCallback((index: number) => {
     if (!allowStaging) return false;
     const scene = finalSceneForIndex(index);
     if (scene === "exterior") return false;
-    return !(imageRoomTypes[index]);
-  }, [allowStaging, finalSceneForIndex, imageRoomTypes]);
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return true;
+    return !(imageRoomTypesById[imageId]);
+  }, [allowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
 
   const imageValidationStatus = useCallback((index: number): "needs_input" | "ok" | "unknown" => {
     if (sceneRequiresInput(index) || roomTypeRequiresInput(index)) return "needs_input";
     const hasScene = !!finalSceneForIndex(index);
-    const hasRoom = !!imageRoomTypes[index];
+    const imageId = getImageIdForIndex(index);
+    const hasRoom = imageId ? !!imageRoomTypesById[imageId] : false;
     return hasScene || hasRoom ? "ok" : "unknown";
-  }, [finalSceneForIndex, imageRoomTypes, roomTypeRequiresInput, sceneRequiresInput]);
+  }, [finalSceneForIndex, getImageIdForIndex, imageRoomTypesById, roomTypeRequiresInput, sceneRequiresInput]);
 
   const blockingIndices = useMemo(() => {
     const blockers: number[] = [];
@@ -590,6 +875,8 @@ export default function BatchProcessor() {
   }, [files, imageValidationStatus]);
 
   const recordScenePrediction = useCallback((index: number, prediction: SceneDetectResult) => {
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return;
     const normalized: SceneDetectResult = {
       scene: prediction?.scene ?? null,
       confidence: clamp01(prediction?.confidence) ?? 0,
@@ -598,20 +885,21 @@ export default function BatchProcessor() {
       reason: prediction?.reason ?? "uncertain",
       source: prediction?.source || "server",
     };
-    setScenePredictions(prev => ({ ...prev, [index]: normalized }));
+    setScenePredictionsById(prev => ({ ...prev, [imageId]: normalized }));
     if (isSceneAutoAcceptable(normalized) && normalized.scene) {
-      setImageSceneTypes(prev => {
-        if (prev[index] && prev[index] !== "auto") return prev;
-        return { ...prev, [index]: normalized.scene as string };
+      setImageSceneTypesById(prev => {
+        if (prev[imageId] && prev[imageId] !== "auto") return prev;
+        return { ...prev, [imageId]: normalized.scene as string };
       });
-      if (normalized.scene === "exterior" && imageSkyReplacement[index] === undefined) {
-        setImageSkyReplacement(prev => ({ ...prev, [index]: true }));
+      if (normalized.scene === "exterior" && imageSkyReplacementById[imageId] === undefined) {
+        setImageSkyReplacementById(prev => ({ ...prev, [imageId]: true }));
       }
     }
-  }, [imageSkyReplacement]);
+  }, [getImageIdForIndex, imageSkyReplacementById]);
 
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
+  const currentFinalScene = finalSceneForIndex(currentImageIndex);
 
   // Manual room linking functions
   function toggleSelect(i: number) {
@@ -655,39 +943,39 @@ export default function BatchProcessor() {
   }
 
   // Build metaJson to send with the batch request
-  // Build metaJson to send with the batch request
   const metaJson = useMemo(() => {
     // Build array of metadata for each image
     const arr: any[] = [];
     files.forEach((file, i) => {
+      const imageId = getFileId(file);
       const metaItem: any = { index: i };
       // Room linking
       if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
       if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
       // Scene type
-        const sceneType = finalSceneForIndex(i) || "auto";
-        if (sceneType !== "auto") metaItem.sceneType = sceneType;
-        const pred = scenePredictions[i];
-        const predConf = clamp01(pred?.confidence ?? null);
-        if (pred) {
-          metaItem.scenePrediction = {
-            scene: pred.scene,
-            confidence: predConf,
-            signal: clamp01(pred.signal) ?? pred.signal ?? null,
-            reason: pred.reason,
-            features: pred.features,
-            source: pred.source || "client",
-          };
-        }
-      if (manualSceneOverrideByIndex[i]) metaItem.manualSceneOverride = true;
+      const sceneType = finalSceneForIndex(i) || "auto";
+      if (sceneType !== "auto") metaItem.sceneType = sceneType;
+      const pred = scenePredictionsById[imageId];
+      const predConf = clamp01(pred?.confidence ?? null);
+      if (pred) {
+        metaItem.scenePrediction = {
+          scene: pred.scene,
+          confidence: predConf,
+          signal: clamp01(pred.signal) ?? pred.signal ?? null,
+          reason: pred.reason,
+          features: pred.features,
+          source: pred.source || "client",
+        };
+      }
+      if (manualSceneOverrideById[imageId]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
       if (allowStaging && (sceneType !== "exterior")) {
-        const roomType = imageRoomTypes[i];
+        const roomType = imageRoomTypesById[imageId];
         if (roomType) metaItem.roomType = roomType;
       }
       // Sky replacement (only for exteriors)
-      if (sceneType === "exterior" && imageSkyReplacement[i] !== undefined) {
-        metaItem.replaceSky = imageSkyReplacement[i];
+      if (sceneType === "exterior" && imageSkyReplacementById[imageId] !== undefined) {
+        metaItem.replaceSky = imageSkyReplacementById[imageId];
       }
       // Tuning controls
       if (samplingUiEnabled) {
@@ -701,7 +989,7 @@ export default function BatchProcessor() {
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypes, imageRoomTypes, imageSkyReplacement, manualSceneOverrideByIndex, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictions]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictionsById]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -738,6 +1026,9 @@ export default function BatchProcessor() {
             ok: !!norm?.ok,
             image: norm?.image || undefined,
             originalImageUrl: next.result?.originalImageUrl || next.result?.originalUrl || undefined,  // Preserve original URL for comparison slider
+            stageUrls: next.stageUrls || next.result?.stageUrls || null,
+            imageId: next.imageId || next.result?.imageId,
+            jobId: next.jobId,
             error: next.error || norm?.error
           };
           return copy;
@@ -978,18 +1269,25 @@ export default function BatchProcessor() {
         });
 
         if (!resp.ok) {
-          setRunState("idle");
-          setAbortController(null);
-          clearBatchJobState();
-          localStorage.removeItem("activeJobId"); // Clear resume flag on terminal errors
+          // Treat transient/missing as queued; keep polling instead of surfacing error
+          if (resp.status === 404 || resp.status === 204) {
+            setProgressText("Preparing job…");
+            await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+            delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+            continue;
+          }
           if (resp.status === 401) {
+            setRunState("idle");
+            setAbortController(null);
+            clearBatchJobState();
+            localStorage.removeItem("activeJobId");
             return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
           }
-          if (resp.status === 404) {
-            return alert("Batch job not found. Please try again.");
-          }
           const err = await resp.json().catch(() => ({}));
-          return alert(err.message || "Batch polling failed");
+          console.warn("[status-poll] transient error", { status: resp.status, body: err });
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+          continue;
         }
 
   const data = await resp.json();
@@ -1076,6 +1374,9 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: i,
                 result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
+                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                imageId: item?.imageId,
+                stageUrls: item?.stageUrls || null,
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -1083,6 +1384,8 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: i,
                 error: item.error || "Processing failed",
+                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                imageId: item?.imageId,
                 filename: item.filename || `image-${i + 1}`
               });
             }
@@ -1101,12 +1404,13 @@ export default function BatchProcessor() {
             // Merge room type detection (user override precedence)
             try {
               const detected = item?.meta?.roomTypeDetected || item?.meta?.roomType;
-              if (detected) {
-                setImageRoomTypes(prev => {
-                  const current = prev[i];
+              if (detected && i < files.length) {
+                const imgIdForDetection = getFileId(files[i]);
+                setImageRoomTypesById(prev => {
+                  const current = prev[imgIdForDetection];
                   if (!current || current === 'auto') {
                     setRoomTypeDetectionTick(tick => tick + 1); // Force re-render
-                    return { ...prev, [i]: detected };
+                    return { ...prev, [imgIdForDetection]: detected };
                   }
                   return prev;
                 });
@@ -1194,8 +1498,12 @@ export default function BatchProcessor() {
     const BACKOFF_START_MS = 1000;
     const BACKOFF_MAX_MS = 5000;
     const BACKOFF_FACTOR = 1.5;
+    const TERMINAL_STATUSES = new Set(["completed", "complete", "done", "failed", "cancelled", "canceled"]);
+    const STALE_DONE_GRACE_MS = 15_000;
     let delay = BACKOFF_START_MS;
     const deadline = Date.now() + MAX_POLL_MS;
+    let doneSeenAt: number | null = null;
+    let finalRefreshRequested = false;
 
     while (Date.now() < deadline) {
       try {
@@ -1210,26 +1518,26 @@ export default function BatchProcessor() {
           signal: controller.signal
         });
         if (!resp.ok) {
-          setRunState("idle");
-          setAbortController(null);
-          localStorage.removeItem(ACTIVE_BATCH_KEY);
-          localStorage.removeItem("activeJobId");
-          // Fallback: if 404 (route missing on older deploy), poll per-id legacy endpoint
-          if (resp.status === 404) {
-            console.error("❌ BATCH STATUS 404 – WRONG ROUTE MATCH!", {
-              url: `/api/status/batch?ids=${qs}`,
-              status: resp.status,
-              hint: "Check if Express is matching 'batch' as :jobId parameter"
-            });
-            await pollForBatchLegacy(ids, controller);
-            return;
+          // Treat missing/empty as queued and continue polling (no red errors)
+          if (resp.status === 404 || resp.status === 204) {
+            await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+            delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+            continue;
           }
           const err = await resp.json().catch(() => ({}));
-          alert(err.message || "Batch polling failed");
-          return;
+          console.warn("[BATCH] poll error treated as transient", { status: resp.status, body: err });
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          continue;
         }
         const data = await resp.json();
         const items = Array.isArray(data.items) ? data.items : [];
+
+        if (!items.length && !data.done) {
+          // Empty payload → treat as queued and keep polling
+          await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
+          delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
+          continue;
+        }
 
         // Debug logging to see what we're receiving
         if (items.length > 0) {
@@ -1271,51 +1579,219 @@ export default function BatchProcessor() {
           setStrictRetryingIndices(currentStrict);
         } catch {}
 
-        // progress
-        const completed = items.filter((it: any) => it && it.status === 'completed').length;
+          const statusCounts: Record<string, number> = {};
+        const nonTerminalIndices: number[] = [];
+        let hasUnmappedNonTerminal = false;
+        const queuedWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
+          const errorWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
         const total = ids.length;
-        setProgressText(`Processing images: ${completed}/${total} completed`);
 
-        // surface completed items (fix: resolve job index using id || jobId || job_id)
+        // progress + status merge
+        const completed = items.filter((it: any) => it && (String(it.status || it.jobState || it.state || "").toLowerCase() === 'completed')).length;
+
+        // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
-          const url = it?.imageUrl || it?.resultUrl || it?.image || null;
+          const statusRaw = String(it?.status || "");
+          let status = statusRaw.toLowerCase();
+          const jobState = (it?.jobState || it?.state || "").toLowerCase();
+          if (!status) status = jobState || "queued";
+          const isTerminalFlag = typeof it?.isTerminal === 'boolean' ? it.isTerminal : TERMINAL_STATUSES.has(status);
+          const progress = typeof it?.progress === "number" ? it.progress
+            : typeof it?.progressPct === "number" ? it.progressPct
+            : typeof it?.progress_percent === "number" ? it.progress_percent
+            : typeof it?.meta?.progress === "number" ? it.meta.progress
+            : null;
+          const stageUrls = it?.stageUrls || it?.stage_urls || null;
+          const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
+          const resultUrl = it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
-          const status = String(it?.status || "").toLowerCase();
-          const isCompleted = status === "completed" || status === "complete" || status === "done";
+          const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
+          const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
+          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
 
-          if (typeof idx === "number" && isCompleted && !processedSetRef.current.has(idx)) {
-            processedSetRef.current.add(idx);
-            queueRef.current.push({
-              index: idx,
-              result: {
-                imageUrl: url,
-                originalImageUrl: originalUrl,
-                qualityEnhancedUrl: null,
-                mode: it.mode || "enhanced"
-              },
-              filename: files[idx]?.name || `image-${idx + 1}`
-            });
+          if (status === "error" && !isTerminalFlag) {
+            status = "processing";
           }
 
-          if (typeof idx === "number" && status === "failed" && !processedSetRef.current.has(idx)) {
-            processedSetRef.current.add(idx);
-            queueRef.current.push({
-              index: idx,
-              result: null,
-              error: it.error || it.message || "Edit failed",
-              filename: files[idx]?.name || `image-${idx + 1}`
+          if (hasOutputs && status === "queued") {
+            status = completedFinal ? "completed" : "processing";
+            queuedWithOutputs.push({ idx, jobId: key });
+          } else if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
+            queuedWithOutputs.push({ idx, jobId: key });
+          }
+
+          if (status === "error" && hasOutputs) {
+            errorWithOutputs.push({ idx, jobId: key });
+            status = completedFinal ? "completed" : "processing";
+          }
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
+          const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
+
+          if (typeof idx === "number") {
+            if (!TERMINAL_STATUSES.has(status)) {
+              nonTerminalIndices.push(idx);
+            }
+            const filename = files[idx]?.name || `image-${idx + 1}`;
+            setResults(prev => {
+              const copy = prev ? [...prev] : [];
+              const existing = copy[idx] || {};
+              copy[idx] = {
+                ...existing,
+                status,
+                progress,
+                resultStage: resultStage ?? null,
+                resultUrl: resultUrl ?? null,
+                stageUrls: stageUrls ?? null,
+                updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
+                imageId: it.imageId || existing.imageId,
+                originalUrl: originalUrl || existing.originalUrl,
+                filename,
+                // Preserve prior result object but refresh URLs and status fields
+                result: {
+                  ...(existing.result || {}),
+                  imageUrl: completedFinal ? (resultUrl || (existing.result?.imageUrl)) : (existing.result?.imageUrl || undefined),
+                  resultUrl: resultUrl ?? null,
+                  stageUrls: stageUrls ?? null,
+                  status,
+                  resultStage: resultStage ?? null,
+                  progress,
+                },
+                // Preview URL used while processing
+                previewUrl: chosenPreview || existing.previewUrl || null,
+                error: (status === "failed" || (it.errorCode && isTerminalFlag))
+                  ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
+                  : existing.error,
+                errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
+              };
+              return copy;
             });
+
+            if (IS_DEV) {
+              const stageKeys = stageUrls ? Object.keys(stageUrls).filter(k => stageUrls[k]) : [];
+              console.debug('[BATCH][stage-preview]', {
+                jobId: key,
+                index: idx,
+                status,
+                stageKeys,
+                resultStage: resultStage || null,
+                resultUrl: resultUrl || null,
+                chosenPreview: chosenPreview || null,
+              });
+            }
+
+            if (completedFinal && !processedSetRef.current.has(idx)) {
+              processedSetRef.current.add(idx);
+              queueRef.current.push({
+                index: idx,
+                result: {
+                  imageUrl: resultUrl,
+                  originalImageUrl: originalUrl,
+                  qualityEnhancedUrl: null,
+                  mode: it.mode || "enhanced",
+                  stageUrls: stageUrls || null,
+                  imageId: it.imageId,
+                  status,
+                  resultStage,
+                },
+                jobId: key,
+                imageId: it.imageId,
+                stageUrls: stageUrls || null,
+                filename,
+              });
+            }
+
+            if ((status === "failed" || (it.errorCode && isTerminalFlag)) && !processedSetRef.current.has(idx)) {
+              processedSetRef.current.add(idx);
+              queueRef.current.push({
+                index: idx,
+                result: null,
+                error: it.error || it.message || it.errorMessage || "Processing failed",
+                jobId: key,
+                imageId: it.imageId,
+                filename,
+              });
+            }
+          } else if (!TERMINAL_STATUSES.has(status)) {
+            hasUnmappedNonTerminal = true;
           }
         }
         schedule();
 
-        if (data.done) {
+        const terminalCount = Object.entries(statusCounts).reduce((acc, [st, count]) => acc + (TERMINAL_STATUSES.has(st) ? count : 0), 0);
+        const queuedCount = statusCounts['queued'] || 0;
+        const processingCount = statusCounts['processing'] || 0;
+        setProgressText(`Processing images: ${terminalCount}/${total} finished`);
+
+        if (IS_DEV) {
+          console.debug('[BATCH][poll] status counts', { queued: queuedCount, processing: processingCount, completed, terminal: terminalCount, total });
+          if (queuedWithOutputs.length) {
+            console.warn('[BATCH][poll] queued-with-outputs', queuedWithOutputs);
+          }
+          if (errorWithOutputs.length) {
+            console.warn('[BATCH][poll] error-with-outputs', errorWithOutputs);
+          }
+        }
+
+        const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
+        const serverSignaledDone = !!data.done;
+
+        if ((allTerminal || serverSignaledDone) && !finalRefreshRequested) {
+          finalRefreshRequested = true;
+          delay = BACKOFF_START_MS;
+          if (IS_DEV) {
+            console.debug('[BATCH][poll] requesting final refresh before stopping');
+          }
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+
+        // Stale-state self-heal: server says done but we still see queued/processing
+        if (serverSignaledDone && !allTerminal) {
+          if (doneSeenAt === null) {
+            doneSeenAt = Date.now();
+            if (IS_DEV) {
+              console.warn('[BATCH][poll] server done but non-terminal items present; extending polling', { nonTerminalIndices, hasUnmappedNonTerminal });
+            }
+          }
+          const waited = Date.now() - doneSeenAt;
+          if (waited >= STALE_DONE_GRACE_MS) {
+            if (nonTerminalIndices.length) {
+              setResults(prev => {
+                const copy = prev ? [...prev] : [];
+                for (const idx of nonTerminalIndices) {
+                  const existing = copy[idx] || {};
+                  copy[idx] = {
+                    ...existing,
+                    status: 'failed',
+                    error: existing.error || 'stuck_queued',
+                    errorCode: 'stuck_queued',
+                  } as any;
+                  processedSetRef.current.add(idx);
+                }
+                return copy;
+              });
+              setProgressText(`Marked ${nonTerminalIndices.length} item(s) as stuck. You can retry them.`);
+              if (IS_DEV) {
+                console.warn('[BATCH][poll] marking stuck queued items as failed', { nonTerminalIndices });
+              }
+            }
+          } else {
+            delay = BACKOFF_START_MS; // poll again quickly during grace window
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+
+        if (allTerminal || serverSignaledDone) {
+          if (IS_DEV) {
+            console.debug('[BATCH][poll] stopping — all items terminal', { nonTerminalIndices, hasUnmappedNonTerminal });
+          }
           setRunState("done");
           setAbortController(null);
           await refreshUser();
-          setProgressText(`Batch complete! ${items.filter((i:any)=>i.status==='completed').length} images enhanced successfully.`);
+          setProgressText(`Batch complete! ${terminalCount} images finished.`);
           localStorage.removeItem(ACTIVE_BATCH_KEY);
           localStorage.removeItem("activeJobId");
           return;
@@ -1379,11 +1855,11 @@ export default function BatchProcessor() {
           const idx = jobIdToIndexRef.current[it.id];
           if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, result: { imageUrl: it.imageUrl || null, mode: 'enhanced' }, filename: files[idx]?.name || `image-${idx+1}` });
+            queueRef.current.push({ index: idx, result: { imageUrl: it.imageUrl || null, mode: 'enhanced' }, jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
           if (typeof idx === 'number' && it.status === 'failed' && !processedSetRef.current.has(idx)) {
             processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, error: 'Processing failed', filename: files[idx]?.name || `image-${idx+1}` });
+            queueRef.current.push({ index: idx, error: 'Processing failed', jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
         }
         schedule();
@@ -1431,10 +1907,11 @@ export default function BatchProcessor() {
   };
 
 
-  const startBatchProcessing = async () => {
+  const startBatchProcessing = async (stagingPreferenceOverride?: "refresh" | "full") => {
     // Guard: no files, no spin
     if (!files.length) {
-      alert("Please choose images first.");
+      toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
+      console.info("[ENHANCE_CLICK] blocked:no_files");
       return;
     }
 
@@ -1472,19 +1949,25 @@ export default function BatchProcessor() {
         }
         return;
       }
-      alert(e.message || "Unable to start batch - please sign in and try again.");
+      toast({ title: "Cannot start", description: e.message || "Sign in and try again.", variant: "destructive" });
+      console.error("[ENHANCE_REQUEST] credits/auth failed", e);
       return;
     }
 
     // Start SSE batch processing
     setRunState("running");
-    // Pre-size results array with nulls for immediate placeholder rendering
-    setResults(Array.from({ length: files.length }, () => null));
+    // Pre-size results array with queued placeholders to avoid flicker to error
+    setResults(Array.from({ length: files.length }, (_, idx) => ({ index: idx, status: 'queued' })) as any);
     setProgressText("");
     setJobId("");
     setJobIds([]);
     setProcessedImages([]);
     setProcessedImagesByIndex({});
+    setDisplayStageByIndex({});
+    setIsFurnishedOverride(null);
+    isFurnishedOverrideRef.current = null;
+    stagingPreferenceRef.current = undefined;
+    setStagingPreference(undefined);
     processedSetRef.current.clear(); // Reset processed tracking for new batch
     
     // Create abort controller for cleanup
@@ -1508,12 +1991,72 @@ export default function BatchProcessor() {
       fd.append("declutterMode", declutterMode);
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
+    const stage1BLightSelected = declutter && declutterMode === "light";
+    const stagingPreferenceFinal = stage1BLightSelected
+      ? "refresh"
+      : stagingPreferenceOverride
+        ?? stagingPreference
+        ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+
+    const stage2Variant: "2A" | "2B" | undefined = (() => {
+      if (!allowStaging) return undefined;
+      if (declutter) return declutterMode === "stage-ready" ? "2B" : "2A";
+      if (stagingPreferenceFinal === "refresh") return "2A";
+      if (stagingPreferenceFinal === "full") return "2B";
+      return undefined;
+    })();
+    const furnishedState: "furnished" | "empty" | undefined = stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined;
+
+    if (IS_DEV && declutter) {
+      console.assert(!!declutterMode, "[DEV_ASSERT] declutterMode must be non-null when declutter is enabled");
+    }
+
+    const activeClientBatchId = clientBatchIdRef.current || (() => {
+      const gen = `client-batch-${Date.now()}`;
+      clientBatchIdRef.current = gen;
+      setClientBatchId(gen);
+      return gen;
+    })();
+
+    console.log("[BATCH] start payload", {
+      clientBatchId: activeClientBatchId,
+      batchId: "pending",
+      furnishedChoice: stagingPreferenceFinal ?? null,
+      furnishedOverride: isFurnishedOverrideRef.current,
+      allowStaging,
+      declutter,
+      files: files.length,
+    });
+    if (stagingPreferenceFinal) {
+      fd.append("stagingPreference", stagingPreferenceFinal);
+    }
+    if (stage2Variant) {
+      fd.append("stage2Variant", stage2Variant);
+    }
+    if (furnishedState) {
+      fd.append("furnishedState", furnishedState);
+    }
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);
     
     try {
       setIsUploading(true);
+      console.info("[ENHANCE_REQUEST] sending", {
+        files: files.length,
+        allowStaging,
+        declutter,
+        declutterMode,
+        stagingPreference: stagingPreferenceFinal,
+        stage2Variant,
+        furnishedState,
+      });
+      console.log("[ENHANCE_REQUEST] image payload preview", {
+        stage2Variant,
+        furnishedState,
+        declutterMode,
+        stagesSelected: { stage1A: true, stage1B: declutter, stage2: allowStaging },
+      });
       // Phase 1: Start batch processing with files
       const uploadResp = await fetch(api("/api/upload"), {
         method: "POST",
@@ -1527,25 +2070,41 @@ export default function BatchProcessor() {
         setIsUploading(false);
         setRunState("idle");
         if (uploadResp.status === 401) {
-          return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
+          toast({ title: "Login required", description: "Login and retry to start enhancement.", variant: "destructive" });
+          return;
         }
         const err = await uploadResp.json().catch(() => ({}));
-        return alert(err.message || "Failed to upload files");
+        if (uploadResp.status === 402 && err?.code === "QUOTA_EXCEEDED") {
+          showQuotaExceededToast();
+          return;
+        }
+        console.error("[ENHANCE_REQUEST] failed", err);
+        toast({ title: "Upload failed", description: err.message || "Failed to upload files", variant: "destructive" });
+        return;
       }
 
-  const uploadResult = await uploadResp.json();
-  setIsUploading(false);
-  const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
-  if (!jobs.length) throw new Error("Upload response missing jobs");
-  const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
-  setJobIds(ids);
-  setCancelIds(ids);
-  jobIdToIndexRef.current = {};
-  jobIdToImageIdRef.current = {};
-  jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
+      const uploadResult = await uploadResp.json();
+      setIsUploading(false);
+      const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
+      if (!jobs.length) throw new Error("Upload response missing jobs");
+      const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
+      console.info("[ENHANCE_REQUEST] ok", { jobs: ids.length });
+      console.log("[BATCH] start", {
+        clientBatchId: activeClientBatchId,
+        batchId: ids[0] || "unknown",
+        furnishedChoice: stagingPreferenceFinal ?? null,
+        furnishedOverride: isFurnishedOverrideRef.current,
+        allowStaging,
+        declutter,
+      });
+      setJobIds(ids);
+      setCancelIds(ids);
+      jobIdToIndexRef.current = {};
+      jobIdToImageIdRef.current = {};
+      jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
       
-  // Phase 2: Poll multi-job status
-  await pollForBatch(ids, controller);
+      // Phase 2: Poll multi-job status
+      await pollForBatch(ids, controller);
       
     } catch (error: any) {
       setIsUploading(false);
@@ -1553,10 +2112,23 @@ export default function BatchProcessor() {
       setProgressText("");
       setAbortController(null);
       if (error.name !== 'AbortError') {
-        console.error("Batch processing error:", error);
-        return alert(error.message || "Failed to start batch processing");
+        console.error("[ENHANCE_REQUEST] failed", error);
+        toast({ title: "Start failed", description: error.message || "Failed to start batch processing", variant: "destructive" });
+        return;
       }
     }
+  };
+
+  const startEnhancementWithPreference = (pref?: "refresh" | "full") => {
+    setStagingPreference(pref);
+    setActiveTab("enhance");
+    startBatchProcessing(pref);
+  };
+
+  const confirmFurnished = (mode: "refresh" | "full") => {
+    console.info("[STAGING_CONFIRM] answer", { mode });
+    setIsStagingConfirmOpen(false);
+    startEnhancementWithPreference(mode);
   };
 
   const downloadZip = async () => {
@@ -1674,6 +2246,39 @@ export default function BatchProcessor() {
     }
   };
 
+  const handleStartEnhance = () => {
+    const stage1BLightSelected = declutter && declutterMode === "light";
+    const resolvedPreference = stage1BLightSelected
+      ? "refresh"
+      : stagingPreference ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
+
+    console.info("[ENHANCE_CLICK] start", {
+      count: files.length,
+      allowStaging,
+      declutter,
+      declutterMode,
+      stagingPreference: resolvedPreference,
+      clientBatchId,
+    });
+
+    if (!files.length) {
+      toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
+      return;
+    }
+
+    const shouldPrompt = allowStaging && !declutter && !resolvedPreference;
+    if (shouldPrompt) {
+      if (IS_DEV) {
+        console.assert(stagingPreferenceRef.current === undefined && isFurnishedOverrideRef.current === null, "[DEV_ASSERT] furnished choice unset; prompt should display for new batch");
+      }
+      console.info("[STAGING_CONFIRM] opened");
+      setIsStagingConfirmOpen(true);
+      return;
+    }
+
+    startEnhancementWithPreference(resolvedPreference);
+  };
+
   const handleRetryFailed = async () => {
     // Only treat images as failed if they have a real error (not validator-failed)
     const failedImages = results.filter(r => r && r.error && r.error !== 'validator_failed');
@@ -1725,6 +2330,13 @@ export default function BatchProcessor() {
       
       if (!res.ok) {
         setRunState("done");
+        if (res.status === 402) {
+          const err = await res.json().catch(() => ({}));
+          if (err?.code === "QUOTA_EXCEEDED") {
+            showQuotaExceededToast();
+            return;
+          }
+        }
         alert("Failed to retry batch processing");
         return;
       }
@@ -1875,7 +2487,9 @@ export default function BatchProcessor() {
     
     try {
       // Determine explicit scene type - prefer provided, then metadata, then auto
-      const explicitScene = sceneType || imageSceneTypes[imageIndex] || "auto";
+      const imageIdForRetry = getImageIdForIndex(imageIndex);
+      const storedScene = imageIdForRetry ? imageSceneTypesById[imageIdForRetry] : null;
+      const explicitScene = sceneType || storedScene || "auto";
       
       // Build retry-focused goal based on scene
       const baseGoal = (globalGoal?.trim() || "General, realistic enhancement for the selected industry.").trim();
@@ -1912,6 +2526,10 @@ export default function BatchProcessor() {
         if (!response.ok) {
           if (response.status === 402) {
             const err = await response.json().catch(() => ({}));
+            if (err?.code === "QUOTA_EXCEEDED") {
+              showQuotaExceededToast();
+              return;
+            }
             const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
             if (goBuy) {
               window.open("/buy-credits", "_blank");
@@ -1919,6 +2537,16 @@ export default function BatchProcessor() {
             return;
           }
           const err = await response.json().catch(() => ({}));
+          if (err?.error === "image_not_found" || err?.code === "image_not_found") {
+            clearRetryFlags(imageIndex);
+            toast({
+              title: "Image unavailable",
+              description: "The source image is no longer available to retry. Please re-upload and try again.",
+              variant: "destructive"
+            });
+            console.warn("[retry-single] image_not_found", { imageIndex, imageId: imageIdForRetry, err });
+            return;
+          }
           // Handle retry-specific compliance failures
           if (err.code === "RETRY_COMPLIANCE_FAILED") {
             const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
@@ -1945,6 +2573,7 @@ export default function BatchProcessor() {
         if (!jobId) {
           throw new Error("Retry submitted but no jobId returned. Please try again.");
         }
+        console.log("[retry-single] submitted", { imageIndex, jobId, imageId: imageIdForRetry });
 
         // ✅ DO NOT set global progress - retry is image-only operation
         // ❌ setProgressText("Retry submitted. Waiting for enhanced image...");
@@ -2005,10 +2634,14 @@ export default function BatchProcessor() {
 
                 // Update UI with the new image
                 const stamp = Date.now();
+                const stageUrls = job.stageUrls || job.stage_urls || null;
+                const imageIdFromJob = job.imageId || job.image_id || null;
                 const retryResult = {
                   image: job.imageUrl,
                   imageUrl: job.imageUrl,
                   result: { imageUrl: job.imageUrl },
+                  stageUrls,
+                  imageId: imageIdFromJob,
                   error: null,
                   ok: true
                 };
@@ -2028,11 +2661,15 @@ export default function BatchProcessor() {
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    stageUrls: stageUrls || r?.stageUrls || null,
+                    imageId: imageIdFromJob || r?.imageId,
                     result: {
                       ...(normalizedResult || {}),
                       image: job.imageUrl,
                       imageUrl: job.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
+                      stageUrls: stageUrls || (normalizedResult as any)?.stageUrls,
+                      imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl
                     },
                     error: null,
@@ -2074,11 +2711,21 @@ export default function BatchProcessor() {
 
                 clearRetryFlags(imageIndex);
 
-                toast({
-                  title: "Retry failed",
-                  description: job.error || "The retry job failed to process.",
-                  variant: "destructive"
-                });
+                const errMsg = job.error || "The retry job failed to process.";
+                if (job.error === "image_not_found") {
+                  toast({
+                    title: "Image unavailable",
+                    description: "The source image is no longer available to retry. Please re-upload and try again.",
+                    variant: "destructive"
+                  });
+                  console.warn("[retry-poll] image_not_found", { imageIndex, imageId: imageIdForRetry, jobId, job });
+                } else {
+                  toast({
+                    title: "Retry failed",
+                    description: errMsg,
+                    variant: "destructive"
+                  });
+                }
                 return;
               }
             } catch (e) {
@@ -2253,6 +2900,7 @@ export default function BatchProcessor() {
 
   const handleRestart = () => {
     // Clear all state to start fresh
+    resetFurnishedStateForNewBatch('handle_restart_button');
     setFiles([]);
     setGlobalGoal("");
     setPreserveStructure(true);
@@ -2264,6 +2912,7 @@ export default function BatchProcessor() {
     setProcessedImages([]);
     setProcessedImagesByIndex({});
     setActiveTab("upload"); // Reset to first tab
+    setIsStagingConfirmOpen(false);
     // Cancel any ongoing processing
     if (abortController) {
       abortController.abort();
@@ -2277,6 +2926,19 @@ export default function BatchProcessor() {
     // Clear room linking state
     setSelection(new Set());
     setMetaByIndex({});
+
+    // Reset per-batch image-level selections
+    setImageRoomTypesById({});
+    setImageSceneTypesById({});
+    setManualSceneTypesById({});
+    setManualSceneOverrideById({});
+    setImageSkyReplacementById({});
+    setLinkImages(false);
+
+    // Clear client-side scene prediction state/caches to avoid cross-batch reuse
+    setScenePredictionsById({});
+    scenePredictionsByIdRef.current = {};
+    sceneDetectCacheRef.current = {};
     
     // Clear persisted batch job state
     clearBatchJobState();
@@ -2327,13 +2989,51 @@ export default function BatchProcessor() {
     setFiles([]);
     setSelection(new Set());
     setMetaByIndex({});
-    setImageSceneTypes({});
-    setImageRoomTypes({});
+    setImageSceneTypesById({});
+    setImageRoomTypesById({});
+    setManualSceneTypesById({});
+    setManualSceneOverrideById({});
+    setImageSkyReplacementById({});
+    setScenePredictionsById({});
+    setSelectedImageId(null);
+  };
+
+  const shiftIndexMap = <T,>(map: Record<number, T>, index: number): Record<number, T> => {
+    const next: Record<number, T> = {};
+    Object.entries(map).forEach(([k, value]) => {
+      const i = parseInt(k, 10);
+      if (Number.isNaN(i)) return;
+      if (i < index) next[i] = value;
+      else if (i > index) next[i - 1] = value;
+    });
+    return next;
   };
 
   const removeFile = (index: number) => {
+    // Get the imageId for the file being removed BEFORE modifying files array
+    const imageIdToRemove = index < files.length ? getFileId(files[index]) : null;
+
+    // Update selection to select next image (right neighbor, else left neighbor)
+    const total = files.length;
+    if (selectedImageId && imageIdToRemove && selectedImageId === imageIdToRemove) {
+      // Currently selected image is being removed - select next
+      const hasRight = index < total - 1;
+      const nextIndex = hasRight ? index + 1 : Math.max(0, index - 1);
+      if (nextIndex !== index && nextIndex < total) {
+        setSelectedImageId(getFileId(files[nextIndex]));
+      } else if (total <= 1) {
+        setSelectedImageId(null);
+      }
+    }
+
+    // Remove from files array
     setFiles(prev => prev.filter((_, i) => i !== index));
-    // Update selection indices
+    setResults(prev => prev.filter((_, i) => i !== index));
+    setAiSteps(prev => shiftIndexMap(prev, index));
+    setProcessedImages(prev => prev.filter((_, i) => i !== index));
+    setProcessedImagesByIndex(prev => shiftIndexMap(prev, index));
+
+    // Shift index-based selection state
     setSelection(prev => {
       const newSelection = new Set<number>();
       prev.forEach(i => {
@@ -2342,36 +3042,68 @@ export default function BatchProcessor() {
       });
       return newSelection;
     });
-    // Update metadata indices
-    setMetaByIndex(prev => {
-      const newMeta: Record<number, LocalItemMeta> = {};
-      Object.entries(prev).forEach(([idx, meta]) => {
-        const i = parseInt(idx);
-        if (i < index) newMeta[i] = meta;
-        else if (i > index) newMeta[i - 1] = meta;
+
+    // Shift index-based meta state
+    setMetaByIndex(prev => shiftIndexMap(prev, index));
+
+    // Clean up scene state by imageId (optional - state persists for potential undo)
+    // Note: We delete the removed image's data to prevent memory leaks over time
+    if (imageIdToRemove) {
+      setImageSceneTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
       });
-      return newMeta;
-    });
-    // Update scene type indices
-    setImageSceneTypes(prev => {
-      const newTypes: Record<number, string> = {};
-      Object.entries(prev).forEach(([idx, type]) => {
-        const i = parseInt(idx);
-        if (i < index) newTypes[i] = type;
-        else if (i > index) newTypes[i - 1] = type;
+      setManualSceneTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
       });
-      return newTypes;
-    });
-    // Update room type indices
-    setImageRoomTypes(prev => {
-      const newTypes: Record<number, string> = {};
-      Object.entries(prev).forEach(([idx, type]) => {
-        const i = parseInt(idx);
-        if (i < index) newTypes[i] = type;
-        else if (i > index) newTypes[i - 1] = type;
+      setManualSceneOverrideById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
       });
-      return newTypes;
-    });
+      setImageSkyReplacementById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setImageRoomTypesById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setScenePredictionsById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+
+      // Clean up refs too
+      delete imageSceneTypesByIdRef.current[imageIdToRemove];
+      delete manualSceneTypesByIdRef.current[imageIdToRemove];
+      delete scenePredictionsByIdRef.current[imageIdToRemove];
+    }
+  };
+
+  const removeDisabled = runState !== "idle" || isUploading;
+
+  const handleRemoveImage = (index: number) => {
+    if (removeDisabled) {
+      toast({
+        title: "Cannot remove now",
+        description: "Wait for the current process to finish before removing images.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm("Remove this image from the batch?");
+    if (!confirmed) return;
+
+    // removeFile handles selection update internally
+    removeFile(index);
   };
 
   // Dummy state to force re-render when room type detection updates
@@ -2390,12 +3122,63 @@ export default function BatchProcessor() {
     jobIdToIndexRef.current = mapping;
   };
 
+  // Keyboard navigation for studio
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      // Only active in studio view
+      if (activeTab !== "images") return;
+      
+      if (e.key === 'ArrowLeft') {
+        setCurrentImageIndex(i => Math.max(0, i - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // We need the current index from the state ref or closure
+        // Since this effect depends on [currentImageIndex], it will re-bind
+        handleRemoveImage(currentImageIndex);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
+
+  // Scroll sync for carousel - Auto-scroll active thumbnail into view
+  useEffect(() => {
+    if (activeTab === "images") {
+      const element = document.getElementById(`thumbnail-btn-${currentImageIndex}`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      }
+    }
+  }, [currentImageIndex, activeTab]);
+
   return (
   <div className="w-full">
+      <AlertDialog open={isStagingConfirmOpen} onOpenChange={setIsStagingConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Choose staging mode</AlertDialogTitle>
+            <AlertDialogDescription>Are these rooms already furnished?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsStagingConfirmOpen(false)}>Cancel</AlertDialogCancel>
+            <Button variant="secondary" onClick={() => confirmFurnished("full")}>
+              No
+            </Button>
+            <Button onClick={() => confirmFurnished("refresh")}>
+              Yes
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
-  <div className={activeTab === 'enhance' ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
+  <div className={(activeTab === 'enhance' || activeTab === 'images') ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
@@ -2647,21 +3430,6 @@ export default function BatchProcessor() {
                       </button>
                     </div>
                   )}
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-white">Scene Selector</label>
-                    <select
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                      value={outdoorStaging}
-                      onChange={(e) => setOutdoorStaging(e.target.value as "auto" | "none")}
-                      data-testid="select-scene-selector"
-                      title="Affects exterior images only"
-                    >
-                      <option value="auto">Auto</option>
-                      <option value="none">None (polish only)</option>
-                    </select>
-                    <p className="text-xs text-gray-400">Affects exterior images only</p>
-                  </div>
                 </div>
 
                 {/* Image Consumption Notice */}
@@ -2684,6 +3452,11 @@ export default function BatchProcessor() {
                       </>
                     )}
                   </p>
+                  {!declutter && !allowStaging && (
+                    <p className="text-xs text-blue-200/80 mt-2 border-t border-blue-500/20 pt-2">
+                      Enhancement-only mode: Your images will be professionally enhanced with improved lighting, color balance, and clarity. No furniture will be added or removed.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -2729,9 +3502,13 @@ export default function BatchProcessor() {
                       />
                     ))}
                     {files.length > 4 && (
-                      <div className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center">
+                      <button
+                        onClick={() => setActiveTab("images")}
+                        className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center hover:bg-gray-700 hover:border-action-500 transition-colors cursor-pointer"
+                        title="Click to view all images"
+                      >
                         <span className="text-gray-400 text-sm">+{files.length - 4} more</span>
-                      </div>
+                      </button>
                     )}
                   </div>
                 )}
@@ -2775,224 +3552,330 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="flex h-[calc(100vh-140px)] bg-slate-50 -mx-4 sm:-mx-6 lg:-mx-8 -my-6 lg:-my-8 rounded-lg overflow-hidden">
-
-            {/* LEFT PANEL: The Canvas */}
-            <div className="flex-1 bg-slate-100 relative flex items-center justify-center p-6 lg:p-8 overflow-hidden">
-              {/* Back Navigation */}
-              <button
-                onClick={() => setActiveTab("describe")}
-                className="absolute top-4 left-4 flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors text-sm"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back to Settings
-              </button>
-
-              {/* Image Counter Badge */}
-              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 shadow-sm">
-                {currentImageIndex + 1} of {files.length}
-              </div>
-
-              {/* Navigation Arrows */}
-              {files.length > 1 && (
-                <>
-                  <button
-                    onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
-                    disabled={currentImageIndex === 0}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
-                    disabled={currentImageIndex === files.length - 1}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full shadow-md flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                </>
-              )}
-
-              {/* The Image Canvas */}
-              <div className="relative shadow-2xl rounded-lg overflow-hidden max-h-[70vh] max-w-full">
-                <img
-                  src={previewUrls[currentImageIndex]}
-                  alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                  className="max-h-[70vh] w-auto object-contain bg-white"
-                />
-                {/* Zoom Button Overlay */}
-                <button
-                  onClick={() => setPreviewImage({
-                    url: previewUrls[currentImageIndex],
-                    filename: files[currentImageIndex]?.name || '',
-                    index: currentImageIndex
-                  })}
-                  className="absolute bottom-3 right-3 bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg transition-colors"
-                  title="View fullscreen"
-                >
-                  <Maximize2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Validation reminder above thumbnails */}
-              {files.length > 1 && blockingCount > 0 && (
-                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-full bg-amber-50 text-amber-700 text-[11px] font-medium shadow-sm border border-amber-200 whitespace-nowrap">
-                  Complete required fields for images highlighted in red to continue.
+          /* WORKBENCH LAYOUT: Full width container with side-by-side grid */
+          <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 overflow-hidden shadow-sm border-t border-slate-200">
+            {files.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center px-6 text-center">
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold text-slate-800">No images in this batch</h3>
+                  <p className="text-sm text-slate-600">Add images to continue to the studio.</p>
+                  <div className="flex justify-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => setActiveTab("upload")}
+                      className="bg-action-600 text-white hover:bg-action-700"
+                    >
+                      Upload images
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setActiveTab("describe")}
+                    >
+                      Back to settings
+                    </Button>
+                  </div>
                 </div>
-              )}
+              </div>
+            ) : (
+              <>
+                {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
+                <div className="flex-1 relative flex flex-col bg-slate-50/50 overflow-hidden">
+                  
+                  {/* Top Bar: Nav & Counter */}
+                  <div className="absolute top-0 left-0 right-0 z-10 flex justify-between items-center p-4 pointer-events-none">
+                    <button
+                      onClick={() => setActiveTab("describe")}
+                      className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-white/80 backdrop-blur-md rounded-lg shadow-sm border border-white/20 text-slate-600 hover:text-slate-900 transition-all hover:shadow-md text-sm font-medium"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Back
+                    </button>
 
-              {/* Thumbnail Strip (for multiple images) */}
-              {files.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-nowrap gap-2 bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-md max-w-[80%] overflow-x-auto">
-                  {files.map((file, idx) => {
-                    const status = imageValidationStatus(idx);
-                    const statusRing = status === "needs_input"
-                      ? "ring-2 ring-red-500 ring-offset-1"
-                      : status === "ok"
-                        ? "ring-2 ring-emerald-500 ring-offset-1"
-                        : "ring-1 ring-slate-200";
-                    const activeState = idx === currentImageIndex
-                      ? "outline outline-2 outline-action-500 outline-offset-2"
-                      : "opacity-60 hover:opacity-100";
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setCurrentImageIndex(idx)}
-                        className={`w-12 h-12 rounded-md overflow-hidden flex-shrink-0 transition-all ${statusRing} ${activeState}`}
-                        title={status === "needs_input" ? "Needs scene/room input" : undefined}
-                      >
-                        <img src={previewUrls[idx]} alt="" className="w-full h-full object-cover" />
-                      </button>
-                    );
-                  })}
+                    <div className="pointer-events-auto bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-white/20">
+                      Image {currentImageIndex + 1} of {files.length}
+                    </div>
+                  </div>
+
+                  {/* Main Viewer Area */}
+                  <div className="flex-1 relative w-full h-full flex items-center justify-center p-8 lg:p-12">
+                     {/* The Viewer Frame */}
+                     <div className="relative w-full h-full flex items-center justify-center max-w-[1600px] mx-auto">
+                        
+                        {/* The Image */}
+                        <div className="relative flex items-center justify-center w-full h-full"> 
+                            <img
+                              src={previewUrls[currentImageIndex]}
+                              alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                              className="max-h-full max-w-full object-contain shadow-2xl rounded-lg"
+                            />
+                            
+                            {/* Delete Button (Overlay) - Centered & Refined */}
+                            <div className="absolute top-4 right-4 z-20">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(currentImageIndex)}
+                                disabled={removeDisabled}
+                                className="group h-8 w-8 rounded-full bg-slate-200/80 hover:bg-red-600 backdrop-blur-md border border-white/40 shadow-lg flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Remove image"
+                              >
+                                <X className="w-4 h-4 text-slate-600 group-hover:text-white group-hover:scale-110 transition-transform group-hover:stroke-2" />
+                              </button>
+                            </div>
+
+                             {/* Fullscreen Button (Overlay) */}
+                             <div className="absolute bottom-4 right-4 z-20">
+                                <button
+                                  onClick={() => setPreviewImage({
+                                    url: previewUrls[currentImageIndex],
+                                    filename: files[currentImageIndex]?.name || '',
+                                    index: currentImageIndex
+                                  })}
+                                  className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center text-white transition-all hover:scale-105"
+                                  title="View fullscreen"
+                                >
+                                  <Maximize2 className="w-4 h-4 drop-shadow-sm" />
+                                </button>
+                             </div>
+                        </div>
+
+                        {/* Navigation Arrows (Outside Image) */}
+                         {files.length > 1 && (
+                            <>
+                              <button
+                                onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                                disabled={currentImageIndex === 0}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 lg:-ml-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                aria-label="Previous image"
+                              >
+                                <ChevronLeft className="h-5 w-5 mr-0.5" />
+                              </button>
+                              <button
+                                onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                                disabled={currentImageIndex === files.length - 1}
+                                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 lg:-mr-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                aria-label="Next image"
+                              >
+                                <ChevronRight className="h-5 w-5 ml-0.5" />
+                              </button>
+                            </>
+                          )}
+                     </div>
+                  </div>
+
+                  {/* Bottom: Thumbnail Strip */}
+                  {files.length > 1 && (
+                    <div className="relative h-32 bg-slate-100/50 border-t border-slate-200 backdrop-blur-sm flex items-center justify-center px-8 z-10 w-full">
+                       {/* Validation Alert Overlay (if needed) */}
+                       {blockingCount > 0 && (
+                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-xs font-semibold shadow-sm border border-amber-200 flex items-center gap-2 animate-bounce-subtle">
+                             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                             Complete settings for highlighted images
+                          </div>
+                       )}
+                       
+                       <div className="flex gap-4 overflow-x-auto pb-2 pt-2 snap-x px-4 max-w-full no-scrollbar">
+                          {files.map((file, idx) => {
+                            const status = imageValidationStatus(idx);
+                            const isCurrent = idx === currentImageIndex;
+                            const isMissingInput = status === "needs_input";
+                            
+                            // Status indicators
+                            // Restore Red Outline logic:
+                            // If incomplete: red outline (ring-red-500)
+                            // If active & complete: green (emerald) active ring
+                            // If active & incomplete: red ring + active glow
+                            
+                            let ringClass = "ring-slate-300"; // Default grey
+                            if (isMissingInput) {
+                                ringClass = isCurrent ? "ring-red-500 ring-offset-red-50" : "ring-red-500";
+                            } else if (status === "ok") {
+                                ringClass = "ring-emerald-500";
+                            }
+                            
+                            // Apply active scaling and opacity
+                            // Desaturation: grayscale opacity-70 for inactive
+                            const baseClass = isCurrent 
+                              ? `grayscale-0 opacity-100 scale-105 ring-4 ${ringClass} ring-offset-2 shadow-lg z-10` 
+                              : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
+
+                            return (
+                              <div key={idx} className="relative group shrink-0 transition-all duration-300 ease-in-out py-1 overflow-hidden p-1">
+                                <button
+                                  id={`thumbnail-btn-${idx}`}
+                                  onClick={() => setCurrentImageIndex(idx)}
+                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-300 ease-in-out bg-slate-200 ${baseClass}`}
+                                >
+                                  <img 
+                                    src={previewUrls[idx]} 
+                                    alt="" 
+                                    className="w-full h-full object-cover" 
+                                    loading="lazy"
+                                  />
+                                </button>
+                                
+                                {/* Thumbnail Delete - Explicit X button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveImage(idx);
+                                  }}
+                                  disabled={removeDisabled}
+                                  className={`absolute top-2 right-2 h-6 w-6 rounded-full bg-slate-200/90 text-slate-600 shadow-sm flex items-center justify-center transition-all hover:bg-red-600 hover:text-white hover:scale-110 z-20 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                                  title="Remove image"
+                                >
+                                  <X className="w-3 h-3 hover:stroke-2" />
+                                </button>
+
+                                {/* Alert Icon for Needs Input */}
+                                {isMissingInput && (
+                                   <div className="absolute bottom-2 right-2 bg-red-500 text-white p-0.5 rounded-full shadow-sm z-10 pointer-events-none">
+                                      <Info className="w-3 h-3" />
+                                   </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                       </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* RIGHT PANEL: The Inspector Sidebar */}
-            <div className="w-80 lg:w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl">
+                {/* RIGHT PANEL: Settings Sidebar (Fixed Width) */}
+                <div className="w-96 flex-shrink-0 bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
 
               {/* Sidebar Header */}
-              <div className="p-5 border-b border-slate-100">
+              <div className="p-6 border-b border-slate-100 bg-white sticky top-0 z-10">
                 <div className="flex justify-between items-center mb-1">
-                  <h2 className="text-lg font-semibold text-slate-900">Settings</h2>
+                  <h2 className="text-xl font-semibold text-slate-900 tracking-tight">Image Settings</h2>
                   <button
                     onClick={() => {
+                      if (!currentImageId) return;
                       // Reset current image settings to auto
-                      setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "auto" }));
-                      setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: false }));
-                      setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: true }));
-                      setImageRoomTypes(prev => ({ ...prev, [currentImageIndex]: "" }));
+                      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "auto" }));
+                      setManualSceneTypesById(prev => {
+                        const next = { ...prev } as Record<string, SceneLabel | null>;
+                        delete next[currentImageId];
+                        return next;
+                      });
+                      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: false }));
+                      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
+                      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
                     }}
-                    className="text-xs text-action-600 font-medium hover:text-action-700"
+                    className="text-xs text-action-600 font-medium hover:text-action-700 bg-action-50 px-2 py-1 rounded transition-colors"
                   >
                     Reset
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 truncate" title={files[currentImageIndex]?.name}>
-                  {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                <p className="text-xs text-slate-500 truncate font-mono mt-1" title={files[currentImageIndex]?.name}>
+                   {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
                 </p>
               </div>
 
               {/* Scrollable Settings Area */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-white no-scrollbar">
 
                 {/* Scene Type Selection - Visual Cards */}
                 <section>
-                  <label className="text-sm font-medium text-slate-900 mb-3 block">Scene Type</label>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Scene Type</label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => {
-                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "exterior" }));
-                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
+                        if (!currentImageId) return;
+                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "exterior" });
+                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
                       }}
                       data-testid={`select-scene-${currentImageIndex}`}
-                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
-                        imageSceneTypes[currentImageIndex] === "exterior"
-                          ? 'border-action-500 bg-action-50 text-action-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
+                        currentFinalScene === "exterior"
+                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <Home className="w-6 h-6" />
+                      <div className={`p-2 rounded-full ${currentFinalScene === "exterior" ? 'bg-white' : 'bg-slate-100'}`}>
+                         <Home className="w-5 h-5" />
+                      </div>
                       <span className="text-sm font-medium">Exterior</span>
                     </button>
                     <button
                       onClick={() => {
-                        setImageSceneTypes(prev => ({ ...prev, [currentImageIndex]: "interior" }));
-                        setManualSceneOverrideByIndex(prev => ({ ...prev, [currentImageIndex]: true }));
-                        setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: false }));
+                        if (!currentImageId) return;
+                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "interior" });
+                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
+                        setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
                       }}
-                      className={`p-4 rounded-lg border-2 flex flex-col items-center gap-2 transition-all ${
-                        imageSceneTypes[currentImageIndex] === "interior"
-                          ? 'border-action-500 bg-action-50 text-action-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
+                        currentFinalScene === "interior"
+                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      <Armchair className="w-6 h-6" />
+                       <div className={`p-2 rounded-full ${currentFinalScene === "interior" ? 'bg-white' : 'bg-slate-100'}`}>
+                         <Armchair className="w-5 h-5" />
+                      </div>
                       <span className="text-sm font-medium">Interior</span>
                     </button>
                   </div>
                 </section>
 
                 {/* AI Enhancements Section */}
-                <section className="space-y-4">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
+                <section className="space-y-4 pt-2 border-t border-slate-100">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
 
                   {/* Sky Replacement Toggle - Only for Exterior */}
-                  {imageSceneTypes[currentImageIndex] === "exterior" && (
-                    <div className="flex items-start justify-between gap-4">
+                  {currentFinalScene === "exterior" && (
+                    <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors bg-slate-50/50">
                       <div className="flex gap-3">
-                        <div className="mt-0.5 text-slate-400"><CloudSun className="w-5 h-5" /></div>
+                        <div className="mt-0.5 text-blue-500"><CloudSun className="w-5 h-5" /></div>
                         <div>
-                          <label className="text-sm font-medium text-slate-900 block">Blue Sky Replacement</label>
-                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies with clear blue.</p>
+                          <label className="text-sm font-medium text-slate-900 block">Blue Sky</label>
+                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies</p>
                         </div>
                       </div>
                       <Switch
                         checked={(() => {
-                          const val = imageSkyReplacement[currentImageIndex] !== undefined ? imageSkyReplacement[currentImageIndex] : true;
-                          return manualSceneOverrideByIndex[currentImageIndex] ? false : val;
+                          if (!currentImageId) return true;
+                          const val = imageSkyReplacementById[currentImageId] !== undefined ? imageSkyReplacementById[currentImageId] : true;
+                          return manualSceneOverrideById[currentImageId] ? false : val;
                         })()}
                         onCheckedChange={(checked: boolean) => {
-                          if (manualSceneOverrideByIndex[currentImageIndex]) return;
-                          setImageSkyReplacement(prev => ({ ...prev, [currentImageIndex]: checked }));
+                          if (!currentImageId || manualSceneOverrideById[currentImageId]) return;
+                          setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: checked }));
                         }}
-                        disabled={!!manualSceneOverrideByIndex[currentImageIndex]}
+                        disabled={!currentImageId || !!manualSceneOverrideById[currentImageId]}
                         data-testid={`toggle-sky-${currentImageIndex}`}
                         className="data-[state=checked]:bg-action-600"
                       />
                     </div>
                   )}
 
-                  {/* Link Images Toggle */}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex gap-3">
-                      <div className="mt-0.5 text-slate-400">
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-slate-900 block">Link Images</label>
-                        <p className="text-xs text-slate-500 mt-0.5">Group multi-angle shots of same room.</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={linkImages}
-                      onCheckedChange={setLinkImages}
-                      data-testid="checkbox-link-images"
-                      className="data-[state=checked]:bg-action-600"
-                    />
-                  </div>
+                  {/* Link Images Toggle - Hidden for V1, code preserved for future use */}
                 </section>
 
+                {/* Staging Not Available Message - For exterior images when staging enabled globally */}
+                {allowStaging && currentFinalScene === "exterior" && (
+                  <section className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <p className="text-sm text-amber-700">
+                      <strong>Note:</strong> {getStagingDisabledMessage("exterior")}
+                    </p>
+                  </section>
+                )}
+
                 {/* Room Type Selection - Only for Interior when staging enabled */}
-                {allowStaging && (finalSceneForIndex(currentImageIndex) !== "exterior") && (
-                  <section>
-                    <label className="text-sm font-medium text-slate-900 mb-2 block">Room Type</label>
+                {allowStaging && (currentFinalScene !== "exterior") && (
+                  <section className="pt-2 border-t border-slate-100">
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Room Staging</label>
                     <FixedSelect
-                      value={imageRoomTypes[currentImageIndex] || ""}
-                      onValueChange={(v) => setImageRoomTypes((prev) => ({ ...prev, [currentImageIndex]: v }))}
+                      value={(currentImageId && imageRoomTypesById[currentImageId]) || ""}
+                      onValueChange={(v) => {
+                        if (!currentImageId) return;
+                        setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
+                      }}
                       placeholder="Select room type…"
                       className="w-full"
                     >
@@ -3025,7 +3908,7 @@ export default function BatchProcessor() {
                 {(() => {
                   const sceneNeeds = sceneRequiresInput(currentImageIndex);
                   const roomNeeds = roomTypeRequiresInput(currentImageIndex);
-                  const prediction = scenePredictions[currentImageIndex];
+                  const prediction = currentImageId ? scenePredictionsById[currentImageId] : undefined;
                   const conf = clamp01(prediction?.confidence ?? null);
                   const autoAccepted = isSceneAutoAcceptable(prediction);
                   const detectedLine = autoAccepted && prediction?.scene
@@ -3038,7 +3921,7 @@ export default function BatchProcessor() {
                   if (!lines.length && detectedLine) lines.push(detectedLine);
                   if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
                   return (
-                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3`}>
+                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3 shadow-sm`}>
                       <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isAlert ? 'text-red-500' : 'text-blue-500'}`} />
                       <div className="text-xs leading-relaxed space-y-1">
                         {lines.map((line, idx) => (
@@ -3087,13 +3970,10 @@ export default function BatchProcessor() {
                   }}
                 >
                   <button
-                    onClick={() => {
-                      setActiveTab("enhance");
-                      startBatchProcessing();
-                    }}
+                    onClick={handleStartEnhance}
                     disabled={blockingCount > 0 || !files.length}
                     title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
-                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
                     data-testid="button-proceed-enhance"
                   >
                     Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
@@ -3106,6 +3986,8 @@ export default function BatchProcessor() {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
         )}
 
@@ -3125,7 +4007,7 @@ export default function BatchProcessor() {
                       Industry: {industryMap[presetKey]} • Structure preserved • {allowStaging ? (furnitureReplacement ? "Furniture upgrade mode" : "Staging enabled") : "No staging"}
                     </p>
                     <button
-                      onClick={startBatchProcessing}
+                      onClick={handleStartEnhance}
                       disabled={!files.length || blockingCount > 0}
                       title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
                       className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
@@ -3194,10 +4076,12 @@ export default function BatchProcessor() {
                 <div className="space-y-4">
                     {files.map((file, i) => {
                         const result = results[i];
+                        const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const isDone = !!(result?.result?.image || result?.result?.imageUrl || result?.image || result?.imageUrl);
-                        const isError = !!(result?.error) && !isRetrying;
-                        const isProcessing = ((runState === 'running' || isUploading) && !isDone && !isError) || isRetrying;
+                        const finalResultUrl = status === "completed" ? (result?.resultUrl || result?.result?.resultUrl || null) : null;
+                        const isDone = !!finalResultUrl && status === "completed";
+                        const isError = (status === "failed") || (status === "completed" && !finalResultUrl);
+                        const isProcessing = ((runState === 'running' || isUploading || status === "processing" || status === "queued") && !isDone && !isError) || isRetrying;
                         const displayStatus = isError
                           ? "Failed"
                           : isDone
@@ -3208,10 +4092,55 @@ export default function BatchProcessor() {
                           ? "Uploading..."
                           : aiSteps[i] || "Waiting in queue...";
                         
-                        // Image Preview Logic
-                        const baseUrl = getDisplayUrl(result);
-                        const enhancedUrl = withVersion(baseUrl, result?.version || result?.updatedAt);
+                        // Image Preview Logic with stage preference
+                        const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
+                        const stage2Url = stageMap?.['2'] || stageMap?.[2] || result?.stage2Url || result?.result?.stage2Url || null;
+                        const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || null;
+                        const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+                        const stagePreviewUrl = stage2Url || stage1BUrl || stage1AUrl || null;
+                        const availableStages: { key: StageKey; label: string; url: string | null }[] = (
+                          [
+                            stage2Url ? { key: "2" as StageKey, label: "Stage 2", url: stage2Url } : null,
+                            stage1BUrl ? { key: "1B" as StageKey, label: "Stage 1B", url: stage1BUrl } : null,
+                            stage1AUrl ? { key: "1A" as StageKey, label: "Stage 1A", url: stage1AUrl } : null,
+                          ].filter(Boolean) as { key: StageKey; label: string; url: string | null }[]
+                        );
+                        const defaultStage: StageKey | undefined = stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined;
+                        const selectedStage = displayStageByIndex[i] || defaultStage;
+                        const defaultUrl = isDone ? (finalResultUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
+                        const displayedUrl = (() => {
+                          if (!selectedStage) return defaultUrl;
+                          if (selectedStage === "2") return stage2Url || defaultUrl;
+                          if (selectedStage === "1B") return stage1BUrl || defaultUrl;
+                          if (selectedStage === "1A") return stage1AUrl || defaultUrl;
+                          return defaultUrl;
+                        })();
+                        const enhancedUrl = withVersion(displayedUrl, result?.version || result?.updatedAt);
                         const previewUrl = enhancedUrl || previewUrls[i];
+                        const stageBadgeLabel = (() => {
+                          const stageLabel = selectedStage === "2" && stage2Url
+                            ? "Stage 2"
+                            : selectedStage === "1B"
+                              ? "Stage 1B"
+                              : "Stage 1A";
+                          return isDone ? `${stageLabel} (Final)` : `Preview • ${stageLabel}`;
+                        })();
+
+                        console.log('[ProcessingBatch] stage selection', {
+                          index: i,
+                          status,
+                          isDone,
+                          selectedStage: selectedStage || null,
+                          displayedUrl: displayedUrl || null,
+                          stage2Url: stage2Url || null,
+                          stage1BUrl: stage1BUrl || null,
+                          stage1AUrl: stage1AUrl || null,
+                          finalResultUrl: finalResultUrl || null,
+                          availableStages: availableStages.map(s => s.key),
+                        });
+                        if (stage2Url && !displayStageByIndex[i] && !isDone) {
+                          console.assert(displayedUrl === stage2Url, "[DEV_ASSERT] Stage 2 should be the default when available", { index: i, displayedUrl, stage2Url });
+                        }
                         
                         return (
                           <div 
@@ -3220,7 +4149,7 @@ export default function BatchProcessor() {
                           >
                             {/* Thumbnail with Overlay */}
                             <div
-                              className="relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer"
+                              className={`relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
                                 if (!previewUrl) return;
                                 setPreviewImage({
@@ -3234,21 +4163,18 @@ export default function BatchProcessor() {
                               <img 
                                 src={previewUrl || ''} 
                                 alt={file.name} 
-                                className={`h-full w-full object-cover transition-all ${isProcessing ? 'opacity-80' : ''}`}
+                                className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                 onLoad={() => clearRetryFlags(i)}
                                 onError={() => clearRetryFlags(i)}
                               />
                               {isProcessing && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/20">
-                                  <div className="flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-emerald-700 text-xs font-medium shadow-sm">
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    {isRetrying ? 'Retrying…' : 'Processing…'}
-                                  </div>
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
+                                   <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
                                 </div>
                               )}
                               {!isProcessing && isDone && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-                                  <CheckCircle className="text-white w-6 h-6 shadow-sm" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/10 transition-opacity duration-500 animate-in fade-in zoom-in duration-300">
+                                  <CheckCircle className="text-white w-6 h-6 shadow-sm drop-shadow-md" />
                                 </div>
                               )}
                             </div>
@@ -3263,21 +4189,49 @@ export default function BatchProcessor() {
                                 </span>
                               </div>
                               
-                              {/* The "Transparent AI" Status Text */}
-                              <div className="flex items-center gap-2">
+                              {/* Status Badges */}
+                              <div className="flex items-center gap-3 mt-1.5 h-7">
                                 {isProcessing ? (
-                                   <>
-                                    <Loader2 className="w-3 h-3 text-emerald-600 animate-spin" />
-                                    <p className="text-sm text-emerald-700 font-medium animate-pulse">
-                                      {displayStatus}
-                                    </p>
-                                   </>
+                                   <StatusBadge status="processing" />
                                 ) : isError ? (
-                                    <p className="text-sm text-red-600 flex items-center gap-2"><XCircle className="w-3 h-3"/> {result.error || "Error"}</p>
+                                    <div className="flex items-center gap-3">
+                                      <StatusBadge status="failed" />
+                                      <button
+                                        onClick={() => handleOpenRetryDialog(i)}
+                                        disabled={retryingImages.has(i)}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-sm"
+                                        title="Retry this image"
+                                      >
+                                        <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
+                                        Retry
+                                      </button>
+                                      {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
+                                    </div>
                                 ) : isDone ? (
-                                   <p className="text-sm text-slate-500">Enhancement complete</p> 
+                                   <StatusBadge status="completed" />
                                 ) : (
-                                  <p className="text-sm text-slate-400">{displayStatus}</p>
+                                  <StatusBadge status="queued" />
+                                )}
+                              </div>
+
+                              <div className="mt-2 space-y-1.5">
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedStage === '2' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+                                  {stageBadgeLabel}
+                                </span>
+                                {availableStages.length > 1 && (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[11px] uppercase tracking-wide text-slate-500">Outputs:</span>
+                                    {availableStages.map(({ key, label }) => (
+                                      <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => setDisplayStageByIndex(prev => ({ ...prev, [i]: key }))}
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold rounded border transition-colors ${selectedStage === key ? 'border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                                      >
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
 
@@ -3285,7 +4239,7 @@ export default function BatchProcessor() {
                               {isProcessing && (
                                 <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                   <div 
-                                    className="h-full bg-emerald-500 transition-all duration-300 animate-pulse" 
+                                    className="h-full bg-slate-400 transition-all duration-300 animate-pulse" 
                                     style={{ width: `${isUploading ? 30 : 60}%` }} 
                                   />
                                 </div>
@@ -3552,7 +4506,10 @@ export default function BatchProcessor() {
         imageIndex={retryDialog.imageIndex || 0}
         originalImageUrl={retryDialog.imageIndex !== null ? (results[retryDialog.imageIndex]?.result?.originalImageUrl || results[retryDialog.imageIndex]?.originalImageUrl || previewUrls[retryDialog.imageIndex]) : undefined}
         enhancedImageUrl={retryDialog.imageIndex !== null ? withVersion(getDisplayUrl(results[retryDialog.imageIndex]), results[retryDialog.imageIndex]?.version || results[retryDialog.imageIndex]?.updatedAt) || undefined : undefined}
-        detectedRoomType={retryDialog.imageIndex !== null ? imageRoomTypes[retryDialog.imageIndex] : undefined}
+        detectedRoomType={retryDialog.imageIndex !== null ? (() => {
+          const imgId = getImageIdForIndex(retryDialog.imageIndex);
+          return imgId ? imageRoomTypesById[imgId] : undefined;
+        })() : undefined}
       />
 
       {/* Editing in Progress Alert */}
