@@ -78,6 +78,7 @@ export function usageRouter() {
         mainAllowance: snapshot.includedLimit,
         mainUsed: snapshot.includedUsed,
         mainRemaining: snapshot.remaining,
+        addonRemaining: snapshot.addonRemaining,
         mainUsagePercent: Math.round(mainUsagePercent),
         mainWarning,
         stagingAllowance: 0,

@@ -1,6 +1,7 @@
 import { PoolClient } from "pg";
 import { pool, withTransaction } from "../db/index.js";
 import { getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
+import { getTotalBundleRemaining, consumeBundleImages } from "@realenhance/shared/usage/imageBundles.js";
 import { PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import { getAgency } from "@realenhance/shared/agencies.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
@@ -10,7 +11,8 @@ export type ReservationStatus = "reserved" | "consumed" | "released" | "partiall
 export interface UsageSnapshot {
   includedLimit: number;
   includedUsed: number;
-  addonBalance: number;
+  addonBalance: number; // legacy name for compatibility
+  addonRemaining: number; // canonical add-on remaining (non-negative)
   addonUsed: number;
   remaining: number;
   monthKey: string;
@@ -27,6 +29,18 @@ async function getPlanLimitForAgency(agencyId: string): Promise<number> {
   const tier = (agency?.planTier as PlanTier) || "starter";
   const limits = PLAN_LIMITS[tier];
   return limits.mainAllowance;
+}
+
+async function getBillingCycleKey(agencyId: string): Promise<string> {
+  try {
+    const agency = await getAgency(agencyId);
+    if (agency?.currentPeriodStart) {
+      return agency.currentPeriodStart.slice(0, 10);
+    }
+  } catch (err) {
+    console.warn(`[USAGE] Billing cycle key fallback for ${agencyId}:`, err);
+  }
+  return getCurrentMonthKey();
 }
 
 async function upsertAgencyAccount(client: PoolClient, agencyId: string, includedLimit: number, planTier?: string) {
@@ -62,14 +76,16 @@ async function ensureMonthUsage(client: PoolClient, agencyId: string, monthKey: 
   return res.rows[0];
 }
 
-function buildSnapshot(row: any, addonBalance: number, monthKey: string): UsageSnapshot {
+function buildSnapshot(row: any, addonRemaining: number, monthKey: string): UsageSnapshot {
+  const safeAddon = Math.max(0, addonRemaining);
   const includedRemaining = Math.max(0, row.included_limit - row.included_used);
   return {
     includedLimit: row.included_limit,
     includedUsed: row.included_used,
-    addonBalance,
+    addonBalance: safeAddon,
+    addonRemaining: safeAddon,
     addonUsed: row.addon_used,
-    remaining: includedRemaining + addonBalance,
+    remaining: includedRemaining + safeAddon,
     monthKey,
   };
 }
@@ -82,7 +98,7 @@ export async function reserveAllowance(params: {
   requestedStage12: boolean;
   requestedStage2: boolean;
 }): Promise<ReservationResult> {
-  const monthKey = getCurrentMonthKey();
+  const monthKey = await getBillingCycleKey(params.agencyId);
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(params.agencyId);
     const agency = await getAgency(params.agencyId);
@@ -91,10 +107,10 @@ export async function reserveAllowance(params: {
     const usage = await ensureMonthUsage(client, params.agencyId, monthKey, includedLimit);
 
     const includedRemaining = Math.max(0, usage.included_limit - usage.included_used);
-    const addonBalance = acct.addon_images_balance ?? 0;
-    const totalRemaining = includedRemaining + addonBalance;
+    const addonRemaining = await getTotalBundleRemaining(params.agencyId, monthKey);
+    const totalRemaining = includedRemaining + addonRemaining;
     if (params.requiredImages > totalRemaining) {
-      const snap = buildSnapshot(usage, addonBalance, monthKey);
+      const snap = buildSnapshot(usage, addonRemaining, monthKey);
       const err: any = new Error("QUOTA_EXCEEDED");
       err.code = "QUOTA_EXCEEDED";
       err.snapshot = snap;
@@ -105,7 +121,7 @@ export async function reserveAllowance(params: {
     const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number }[] = [];
     let remainingNeed = params.requiredImages;
     let remainingIncluded = includedRemaining;
-    let remainingAddon = addonBalance;
+    let remainingAddon = addonRemaining;
 
     const stages: Array<{ key: "1" | "2"; requested: boolean }> = [
       { key: "1", requested: params.requestedStage12 },
@@ -114,12 +130,12 @@ export async function reserveAllowance(params: {
 
     for (const s of stages) {
       if (!s.requested || remainingNeed <= 0) continue;
-      const takeIncluded = Math.min(remainingNeed, remainingIncluded);
-      remainingIncluded -= takeIncluded;
-      remainingNeed -= takeIncluded;
       const takeAddon = Math.min(remainingNeed, remainingAddon);
       remainingAddon -= takeAddon;
       remainingNeed -= takeAddon;
+      const takeIncluded = Math.min(remainingNeed, remainingIncluded);
+      remainingIncluded -= takeIncluded;
+      remainingNeed -= takeIncluded;
       allocations.push({ stage: s.key, fromIncluded: takeIncluded, fromAddon: takeAddon });
     }
 
@@ -136,6 +152,7 @@ export async function reserveAllowance(params: {
       [reservedFromIncluded, reservedFromAddon, params.agencyId, monthKey]
     );
 
+    // addon_images_balance is legacy; bundles are tracked in Redis. Keep update for backward compatibility.
     await client.query(
       `UPDATE agency_accounts
          SET addon_images_balance = addon_images_balance - $1,
@@ -180,7 +197,7 @@ export async function reserveAllowance(params: {
 
     const snapshot = buildSnapshot(
       { ...usage, included_used: usage.included_used + reservedFromIncluded, addon_used: usage.addon_used + reservedFromAddon, included_limit: usage.included_limit },
-      addonBalance - reservedFromAddon,
+      remainingAddon,
       monthKey
     );
 
@@ -198,7 +215,6 @@ export async function finalizeReservation(params: {
   stage12Success: boolean;
   stage2Success: boolean;
 }): Promise<void> {
-  const monthKey = getCurrentMonthKey();
   await withTransaction(async (client) => {
     const res = await client.query(
       `SELECT * FROM job_reservations WHERE job_id = $1 FOR UPDATE`,
@@ -281,6 +297,12 @@ export async function finalizeReservation(params: {
       );
     }
 
+    // Consume bundle allowance on success (extras-first alignment)
+    const addonToConsume = (consumeStage12 ? jr.stage12_from_addon : 0) + (consumeStage2 ? jr.stage2_from_addon : 0);
+    if (addonToConsume > 0) {
+      await consumeBundleImages(jr.agency_id, addonToConsume, jr.yyyymm);
+    }
+
     const newStatus: ReservationStatus = params.stage12Success && (!jr.requested_stage2 || params.stage2Success)
       ? "consumed"
       : (!params.stage12Success && (!jr.requested_stage2 || !params.stage2Success))
@@ -330,19 +352,19 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
 }
 
 export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot> {
-  const monthKey = getCurrentMonthKey();
+  const monthKey = await getBillingCycleKey(agencyId);
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(agencyId);
     const agency = await getAgency(agencyId);
     await upsertAgencyAccount(client, agencyId, includedLimit, agency?.planTier);
-    const acct = await lockAgencyAccount(client, agencyId);
     const usage = await ensureMonthUsage(client, agencyId, monthKey, includedLimit);
-    return buildSnapshot(usage, acct.addon_images_balance ?? 0, monthKey);
+    const addonRemaining = await getTotalBundleRemaining(agencyId, monthKey);
+    return buildSnapshot(usage, addonRemaining, monthKey);
   });
 }
 
 export async function getTopUsersByUsage(agencyId: string): Promise<Array<{ userId: string; used: number }>> {
-  const monthKey = getCurrentMonthKey();
+  const monthKey = await getBillingCycleKey(agencyId);
   const res = await pool.query(
     `SELECT user_id, SUM(CASE WHEN stage12_consumed THEN 1 ELSE 0 END + CASE WHEN stage2_consumed THEN 1 ELSE 0 END) AS used
      FROM job_reservations

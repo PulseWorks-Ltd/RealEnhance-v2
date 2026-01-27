@@ -4,8 +4,7 @@
 import {
   incrementUsage,
   getRemainingUsage,
-  getCurrentMonthKey,
-  type AgencyUsageMonthly,
+  getCurrentBillingCycleKey,
 } from "./monthlyUsage.js";
 import {
   recordBillableUsageEvent,
@@ -42,7 +41,7 @@ export interface ChargeUsageResult {
 export async function chargeUsageForOutput(
   params: ChargeUsageParams
 ): Promise<ChargeUsageResult> {
-  const monthKey = getCurrentMonthKey();
+  const monthKey = await getCurrentBillingCycleKey(params.agencyId);
 
   try {
     console.log(

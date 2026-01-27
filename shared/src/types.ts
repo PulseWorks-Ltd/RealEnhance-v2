@@ -106,6 +106,7 @@ export interface EnhanceJobPayload {
       topK?: number;
     };
     declutterIntensity?: "light" | "standard" | "heavy";
+    stagingPreference?: "refresh" | "full";
     manualSceneOverride?: boolean; // Per-image manual scene flag
     scenePrediction?: {  // Client-side scene prediction for SKY_SAFE forcing
       scene: string | null;

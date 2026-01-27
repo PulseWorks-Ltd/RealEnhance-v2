@@ -63,10 +63,13 @@ export function uploadRouter() {
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
+    const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
+    const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
+    const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     try {
-      console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode);
-      console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm));
+      console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s stage2Variant=%s furnishedState=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode, (req.body as any)?.stage2Variant, (req.body as any)?.furnishedState);
+      console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s stage2VariantForm=%s furnishedStateForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm), stage2VariantForm || 'unset', furnishedStateForm || 'unset');
     } catch {}
     
     // Parse metaJson if provided (contains per-image metadata like sceneType, roomType, replaceSky)
@@ -241,9 +244,35 @@ export function uploadRouter() {
       if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
         opts.stagingStyle = String(meta.stagingStyle).trim();
       }
+      if (meta.stage2Variant === "2A" || meta.stage2Variant === "2B") {
+        opts.stage2Variant = meta.stage2Variant;
+      }
+      if (meta.furnishedState === "furnished" || meta.furnishedState === "empty") {
+        opts.furnishedState = meta.furnishedState;
+      }
       // Apply form-level stagingStyle if no per-item style is set
       if (!opts.stagingStyle && stagingStyleForm) {
         opts.stagingStyle = stagingStyleForm;
+      }
+      // Staging preference override (refresh vs full)
+      const metaStagingPreference = meta.stagingPreference;
+      if (metaStagingPreference === "refresh" || metaStagingPreference === "full") {
+        opts.stagingPreference = metaStagingPreference;
+      } else if (stagingPreferenceForm === "refresh" || stagingPreferenceForm === "full") {
+        opts.stagingPreference = stagingPreferenceForm as "refresh" | "full";
+      }
+      // Stage 2 variant & furnished state (per-batch or per-item)
+      const metaStage2Variant = meta.stage2Variant;
+      if (metaStage2Variant === "2A" || metaStage2Variant === "2B") {
+        opts.stage2Variant = metaStage2Variant;
+      } else if (stage2VariantForm === "2A" || stage2VariantForm === "2B") {
+        opts.stage2Variant = stage2VariantForm as "2A" | "2B";
+      }
+      const metaFurnishedState = meta.furnishedState;
+      if (metaFurnishedState === "furnished" || metaFurnishedState === "empty") {
+        opts.furnishedState = metaFurnishedState;
+      } else if (furnishedStateForm === "furnished" || furnishedStateForm === "empty") {
+        opts.furnishedState = furnishedStateForm as "furnished" | "empty";
       }
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
@@ -275,6 +304,10 @@ export function uploadRouter() {
       // Use typeof check to ensure false is not overridden by true default
       if (!hasPerItemOptions || typeof opts.virtualStage !== 'boolean') {
         opts.virtualStage = allowStagingForm;
+      }
+      // If user explicitly chose a Stage 2 variant or furnished state, force-enable virtualStage
+      if (!opts.virtualStage && (opts.stage2Variant || opts.furnishedState)) {
+        opts.virtualStage = true;
       }
       // If no per-item declutter provided, inherit from form-level declutter
       // Use typeof check to ensure false is not overridden by true default
@@ -314,6 +347,30 @@ export function uploadRouter() {
 
       // Set authoritative mode
       opts.declutterMode = declutterMode;
+      // Align declutter boolean with authoritative mode to avoid null skips downstream
+      opts.declutter = declutterMode !== null;
+
+      // Derive Stage 2 variant defaults if still unset
+      if (!opts.stage2Variant && opts.virtualStage) {
+        if (opts.stagingPreference === "refresh") {
+          opts.stage2Variant = "2A";
+        } else if (opts.stagingPreference === "full") {
+          opts.stage2Variant = "2B";
+        }
+      }
+      if (!opts.stage2Variant && opts.virtualStage && opts.declutterMode === "light") {
+        opts.stage2Variant = "2A";
+      }
+      if (!opts.stage2Variant && opts.virtualStage) {
+        opts.stage2Variant = "2B"; // safest default: empty-room staging
+      }
+
+      // Furnished state derives from variant when missing
+      if (!opts.furnishedState && opts.stage2Variant === "2A") {
+        opts.furnishedState = "furnished";
+      } else if (!opts.furnishedState && opts.stage2Variant === "2B") {
+        opts.furnishedState = "empty";
+      }
 
       // Logging for debugging
       console.log(`[upload] item ${i} RESOLVED MODE:`, {
@@ -324,6 +381,15 @@ export function uploadRouter() {
       });
 
       try { console.log(`[upload] item ${i} after declutterMode assign: opts.declutterMode=${opts.declutterMode}`); } catch {}
+      try {
+        const stagesSelected = ["1A", opts.declutterMode ? "1B" : null, opts.virtualStage ? "2" : null].filter(Boolean);
+        console.log(`[upload] item ${i} outbound payload`, {
+          declutterMode: opts.declutterMode,
+          stage2Variant: opts.stage2Variant || 'unset',
+          furnishedState: opts.furnishedState || 'unset',
+          stagesSelected,
+        });
+      } catch {}
       // Auto-enable sky replacement for exterior images if not explicitly set
       // Can be explicitly disabled by user setting replaceSky: false
       if (opts.sceneType === "exterior" && opts.replaceSky === undefined) {
@@ -469,6 +535,9 @@ export function uploadRouter() {
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
+          stagingPreference: opts.stagingPreference,
+          stage2Variant: opts.stage2Variant,
+          furnishedState: opts.furnishedState,
         },
       }, jobId);
 
