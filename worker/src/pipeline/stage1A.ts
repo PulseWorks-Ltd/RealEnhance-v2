@@ -150,6 +150,8 @@ export async function runStage1A(
   } = {}
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
+  const jobIdResolved = jobId || (global as any).__jobId || "default";
+  const roomTypeResolved = roomType || (global as any).__jobRoomType;
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -270,7 +272,7 @@ export async function runStage1A(
 
     if (forceGemini) {
       console.warn("[stage1A] ⚠️ Low quality detected — forcing Gemini as primary");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
     } else {
       console.log("[stage1A] ✅ Quality acceptable — using Stability primary");
       try {
@@ -283,7 +285,7 @@ export async function runStage1A(
       } catch (err) {
         console.error("[stage1A] ❌ Stability API failed:", err);
         console.warn("[stage1A] 🔁 Falling back to Gemini...");
-        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
+        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
       }
     }
 
@@ -297,13 +299,12 @@ export async function runStage1A(
       console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
 
         // Run structural validator on Gemini output
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
         const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-        const jobId = (global as any).__jobId || "default";
-        const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+        const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
         const masks = { structuralMask: maskPath };
         let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
         console.log(`[stage1A] Structural validator verdict (Gemini):`, verdict);
@@ -331,8 +332,7 @@ export async function runStage1A(
     // Run structural validator on primary output
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
     const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-    const jobId = (global as any).__jobId || "default";
-    const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+    const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
     const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
     console.log(`[stage1A] Structural validator verdict:`, verdict);
@@ -351,15 +351,14 @@ export async function runStage1A(
   try {
     console.log("[stage1A] 🟡 Using Gemini (Stability disabled)...");
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
 
     console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
     if (geminiOutputPath !== sharpOutputPath) {
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
       const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-      const jobId = (global as any).__jobId || "default";
-      const maskPath = await loadOrComputeStructuralMask(jobId, sharpOutputPath);
+      const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
       const masks = { structuralMask: maskPath };
       let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
       console.log(`[stage1A] Structural validator verdict:`, verdict);
