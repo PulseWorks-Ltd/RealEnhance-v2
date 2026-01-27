@@ -535,7 +535,6 @@ export function uploadRouter() {
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
-          stagingPreference: opts.stagingPreference,
           stage2Variant: opts.stage2Variant,
           furnishedState: opts.furnishedState,
         },
