@@ -1587,31 +1587,53 @@ export default function BatchProcessor() {
         const total = ids.length;
 
         // progress + status merge
-        const completed = items.filter((it: any) => it && (String(it.status || it.jobState || it.state || "").toLowerCase() === 'completed')).length;
+        const completed = items.filter((it: any) => it && (String(it.state || it.jobState || it.queueStatus || "").toLowerCase() === 'completed')).length;
 
         // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
-          const statusRaw = String(it?.status || "");
-          let status = statusRaw.toLowerCase();
-          const jobState = (it?.jobState || it?.state || "").toLowerCase();
-          if (!status) status = jobState || "queued";
+          const uiStatusRaw = String(it?.status || "").toLowerCase(); // ok | warning | error (new contract)
+          const queueStateRaw = String(it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
+          const jobState = queueStateRaw === "active" ? "processing" : (queueStateRaw || "queued");
+          let status = jobState || "queued"; // rendering state
           const isTerminalFlag = typeof it?.isTerminal === 'boolean' ? it.isTerminal : TERMINAL_STATUSES.has(status);
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
             : typeof it?.progress_percent === "number" ? it.progress_percent
             : typeof it?.meta?.progress === "number" ? it.meta.progress
             : null;
-          const stageUrls = it?.stageUrls || it?.stage_urls || null;
+          const stageUrlsRaw = it?.stageUrls || it?.stage_urls || null;
+          const stageUrls = stageUrlsRaw ? {
+            '2': stageUrlsRaw['2'] || stageUrlsRaw.stage2 || null,
+            '1B': stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || stageUrlsRaw.stage1B || null,
+            '1A': stageUrlsRaw['1A'] || stageUrlsRaw['1'] || stageUrlsRaw.stage1A || null,
+            stage2: stageUrlsRaw.stage2 || stageUrlsRaw['2'] || null,
+            stage1B: stageUrlsRaw.stage1B || stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || null,
+            stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
+          } : null;
           const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
-          const resultUrl = it?.resultUrl || null;
+          const resultUrl = it?.publishedUrl || it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const unified = it?.meta?.unifiedValidation || it?.meta?.unified_validation || null;
-          const warnings = Array.isArray(unified?.warnings) ? (unified.warnings as string[]) : [];
-          const hardFail = !!unified?.hardFail;
-          const stagePreview = stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || null;
-          const hasOutputs = !!(stageUrls?.['2'] || stageUrls?.['1B'] || stageUrls?.['1A'] || resultUrl);
+          const warnings = Array.isArray(it?.warnings) ? it.warnings as string[] : Array.isArray(unified?.warnings) ? (unified.warnings as string[]) : [];
+          let hardFail = typeof it?.hardFail === 'boolean' ? it.hardFail : !!unified?.hardFail;
+          const stagePreview = stageUrls?.['2'] || stageUrls?.stage2 || stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1A'] || stageUrls?.stage1A || null;
+          const hasOutputs = !!(stagePreview || resultUrl);
+
+          let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
+          const downgradedFromError = uiStatus === 'error' && hasOutputs;
+          if (downgradedFromError) {
+            uiStatus = 'warning';
+            console.warn('[BATCH][ui] server reported error but outputs exist; downgrading to warning', { jobId: key, idx, stagePreview, resultUrl });
+          }
+          const warningList = downgradedFromError ? [...warnings, 'Output generated but flagged — see warnings.'] : warnings;
+
+          // Apply contract mapping: only truly failed when no outputs and hard fail or queue failed
+          if (status === "failed" && hasOutputs) status = "completed";
+          if (hardFail && !hasOutputs) status = "failed";
+          if (hardFail && hasOutputs) status = "completed";
+
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
 
           if (status === "error" && !isTerminalFlag) {
@@ -1651,7 +1673,8 @@ export default function BatchProcessor() {
                 imageId: it.imageId || existing.imageId,
                 originalUrl: originalUrl || existing.originalUrl,
                 filename,
-                warnings,
+                warnings: warningList,
+                uiStatus,
                 hardFail,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
@@ -1662,7 +1685,8 @@ export default function BatchProcessor() {
                   status,
                   resultStage: resultStage ?? null,
                   progress,
-                  warnings,
+                  warnings: warningList,
+                  uiStatus,
                   hardFail,
                 },
                 // Preview URL used while processing
@@ -4084,15 +4108,28 @@ export default function BatchProcessor() {
                     {files.map((file, i) => {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
+                        const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const finalResultUrl = status === "completed" ? (result?.resultUrl || result?.result?.resultUrl || null) : null;
-                        const isDone = !!finalResultUrl && status === "completed";
-                        const isError = (status === "failed") || (status === "completed" && !finalResultUrl);
+
+                        // Stage URL resolution (supports new stage1A/1B keys)
+                        const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
+                        const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || null;
+                        const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+                        const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+
+                        const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || stage2Url || stage1BUrl || stage1AUrl || null;
+                        const hasOutputs = !!(stage2Url || stage1BUrl || stage1AUrl || finalResultUrl);
+                        let derivedUiStatus = uiStatus;
+                        if (derivedUiStatus === "ok" && status === "failed" && hasOutputs) {
+                          derivedUiStatus = "warning";
+                        }
+                        const isError = (!hasOutputs && (status === "failed" || derivedUiStatus === "error"));
+                        const isDone = hasOutputs && derivedUiStatus !== "error";
                         const isProcessing = ((runState === 'running' || isUploading || status === "processing" || status === "queued") && !isDone && !isError) || isRetrying;
                         const displayStatus = isError
                           ? "Failed"
                           : isDone
-                          ? "Complete"
+                          ? (derivedUiStatus === "warning" ? "Warning" : "Complete")
                           : isRetrying
                           ? "Retrying..."
                           : isUploading
@@ -4103,10 +4140,6 @@ export default function BatchProcessor() {
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         
                         // Image Preview Logic with stage preference
-                        const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-                        const stage2Url = stageMap?.['2'] || stageMap?.[2] || result?.stage2Url || result?.result?.stage2Url || null;
-                        const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || null;
-                        const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
                         const stagePreviewUrl = stage2Url || stage1BUrl || stage1AUrl || null;
                         const availableStages: { key: StageKey; label: string; url: string | null }[] = (
                           [

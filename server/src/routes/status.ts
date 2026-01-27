@@ -9,19 +9,25 @@ import { getJob } from "../services/jobs.js";
  * Normalized job item type we send to the client.
  * (Kept inline to avoid import cycles / build issues.)
  */
+type UiStatus = "ok" | "warning" | "error";
+
 type StatusItem = {
   id: string;
-  state: string | null;
-  status: "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
+  state: "queued" | "processing" | "completed" | "failed" | "unknown";
+  status: UiStatus; // UI-facing
+  queueStatus: "queued" | "active" | "completed" | "failed" | "delayed" | "unknown"; // legacy
   success: boolean;
   imageId: string | null;
   imageUrl: string | null;
   originalUrl: string | null;
   maskUrl: string | null;
-  stageUrls: Record<string, string> | null;
+  stageUrls: Record<string, string | null> | null; // normalized + legacy keys
+  publishedUrl?: string | null;
+  warnings?: string[];
+  hardFail?: boolean;
   meta: any;
   mode?: string;
-  error?: string;
+  error?: string | null;
 };
 
 function normalizeStateToStatus(state: string | null): StatusItem["status"] {
@@ -39,6 +45,12 @@ function normalizeStateToStatus(state: string | null): StatusItem["status"] {
     default:
       return "unknown";
   }
+}
+
+function normalizeQueueState(state: string | null): StatusItem["state"] {
+  const s = normalizeStateToStatus(state);
+  if (s === "active") return "processing";
+  return s as any;
 }
 
 export function statusRouter() {
@@ -99,7 +111,8 @@ export function statusRouter() {
           state = null;
         }
 
-        const status = normalizeStateToStatus(state);
+        const queueStatus = normalizeStateToStatus(state);
+        const stateNormalized = normalizeQueueState(state);
 
         // Merge in Redis job record (written by worker via updateJob)
         const local = await getJob(id) || ({} as any);
@@ -122,6 +135,10 @@ export function statusRouter() {
 
         // Normalize stageUrls into a predictable shape so clients can rely on keys
         const stageUrls: Record<string, string | null> = {
+          stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+          stage1B: stageUrlsRaw?.['stage1B'] ?? stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+          stage2: stageUrlsRaw?.['stage2'] ?? stageUrlsRaw?.['2'] ?? null,
+          // Legacy keys retained for backward compatibility
           '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
           '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
           '2': stageUrlsRaw?.['2'] ?? null,
@@ -133,31 +150,53 @@ export function statusRouter() {
         const mode: string | null =
           payload?.mode || local.mode || null;
 
-        const success =
-          status === "completed" && typeof resultUrl === "string";
+        const unified = (local?.meta || {})?.unifiedValidation || {};
+        const warnings: string[] = Array.isArray(unified?.warnings) ? unified.warnings : [];
+        const hardFail = !!unified?.hardFail || !!local?.hardFail;
 
-        if (status === "completed") completed++;
+        const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
+        let uiStatus: UiStatus = "ok";
+
+        if (hardFail && !hasOutputs) uiStatus = "error";
+        else if (hardFail && hasOutputs) uiStatus = "warning";
+        else if (warnings.length) uiStatus = "warning";
+
+        const success =
+          stateNormalized === "completed" && typeof resultUrl === "string";
+
+        if (stateNormalized === "completed") completed++;
+
+        // Apply hardFail-driven state remap per contract
+        let stateOut = stateNormalized;
+        if (hardFail && !hasOutputs) stateOut = "failed";
+        if (hardFail && hasOutputs) stateOut = "completed";
 
         const item: StatusItem = {
           id,
-          state,
-          status,
+          state: stateOut,
+          status: uiStatus,
+          queueStatus,
           success,
           imageId,
           imageUrl: resultUrl,
           originalUrl,
           maskUrl,
+          publishedUrl: resultUrl,
+          warnings,
+          hardFail,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           meta: local.meta ?? {},
+          error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
         };
         // Add mode if it exists
         if (mode) {
           item.mode = mode;
         }
-        // Only set error if job is not successful
-        if (!success) {
-          item.error = local.errorMessage || failedReason || undefined;
+
+        // Edge case: hardFail + outputs → downgrade error into warning text
+        if (uiStatus === "warning" && hardFail && hasOutputs) {
+          item.warnings = [...(item.warnings || []), local.errorMessage || failedReason || "Output generated but flagged"];
         }
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
@@ -256,7 +295,8 @@ export function statusRouter() {
       } catch (e) {
         state = null;
       }
-      const status = normalizeStateToStatus(state);
+      const queueStatus = normalizeStateToStatus(state);
+      const stateNormalized = normalizeQueueState(state);
       const local = await getJob(jobId) || ({} as any);
       const resultUrl: string | null =
         (rv && rv.resultUrl) ||
@@ -271,27 +311,51 @@ export function statusRouter() {
         (rv && rv.stageUrls) || local.stageUrls || null;
 
       const stageUrls: Record<string, string | null> = {
+        stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+        stage1B: stageUrlsRaw?.['stage1B'] ?? stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+        stage2: stageUrlsRaw?.['stage2'] ?? stageUrlsRaw?.['2'] ?? null,
         '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
         '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
         '2': stageUrlsRaw?.['2'] ?? null,
       };
       const imageId: string | null =
         payload?.imageId || local.imageId || null;
+      const unified = (local?.meta || {})?.unifiedValidation || {};
+      const warnings: string[] = Array.isArray(unified?.warnings) ? unified.warnings : [];
+      const hardFail = !!unified?.hardFail || !!local?.hardFail;
+      const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
+
+      let uiStatus: UiStatus = "ok";
+      if (hardFail && !hasOutputs) uiStatus = "error";
+      else if (hardFail && hasOutputs) uiStatus = "warning";
+      else if (warnings.length) uiStatus = "warning";
+
+      let stateOut = normalizeQueueState(state);
+      if (hardFail && !hasOutputs) stateOut = "failed";
+      if (hardFail && hasOutputs) stateOut = "completed";
+
       const success =
-        status === "completed" && typeof resultUrl === "string";
+        stateOut === "completed" && typeof resultUrl === "string";
       const item: StatusItem = {
         id: jobId,
-        state,
-        status,
+        state: stateOut,
+        status: uiStatus,
+        queueStatus,
         success,
         imageId,
         imageUrl: resultUrl,
         originalUrl,
         maskUrl,
+        publishedUrl: resultUrl,
+        warnings,
+        hardFail,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
-        error: local.errorMessage || failedReason || undefined,
+        error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
       };
+      if (uiStatus === "warning" && hardFail && hasOutputs) {
+        item.warnings = [...(item.warnings || []), local.errorMessage || failedReason || "Output generated but flagged"];
+      }
       const base: any = {
         success: true,
         items: [item],
