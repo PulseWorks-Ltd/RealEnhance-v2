@@ -100,7 +100,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
-import { runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
+import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
@@ -163,6 +163,9 @@ export async function enhanceWithGemini(
     sceneType?: "interior" | "exterior" | string;
     stage?: "1A" | "1B" | "2";  // Added to determine model selection
     strictMode?: boolean;          // Stricter constraints
+    jobId?: string;                // For logging which job triggered the call
+    roomType?: string;             // For logging + prompt context
+    modelReason?: string;          // Human-readable reason for model choice
     // Sampling controls (optional overrides)
     temperature?: number;
     topP?: number;
@@ -175,7 +178,10 @@ export async function enhanceWithGemini(
     declutterIntensity?: "light" | "standard" | "heavy";
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason } = options;
+  const jobId = jobIdOpt || (global as any).__jobId;
+  const roomType = roomTypeOpt || (global as any).__jobRoomType;
+  const filename = path.basename(inputPath || "");
 
   // Check if Gemini API key is available
   const apiKey = process.env.REALENHANCE_API_KEY;
@@ -245,7 +251,8 @@ export async function enhanceWithGemini(
       { inlineData: { mimeType: mime, data } },
       { text: prompt },
     ];
-
+    const modelLogReason = modelReason
+      || (roomType ? `${roomType} → ${stage === "1B" ? "declutter" : (stage === "2" ? "staging" : "enhance")}` : (stage === "1B" ? "declutter" : (stage === "2" ? "staging" : "enhance")));
     console.log(`[Gemini] 🚀 Calling Gemini 3 Pro Image model...`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
@@ -341,7 +348,15 @@ export async function enhanceWithGemini(
 
     if (stage === "1A") {
       // Stage 1A: Gemini 2.5 only (no fallback)
-      const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A");
+      const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A", {
+        stage: "1A",
+        jobId,
+        filename,
+        roomType,
+        reason: modelLogReason,
+        selectedModel: MODEL_CONFIG.stage1A.primary,
+        fallbackModel: MODEL_CONFIG.stage1A.fallback,
+      });
       resp = result.resp;
       modelUsed = result.modelUsed;
     } else if (stage === "1B") {
@@ -351,6 +366,15 @@ export async function enhanceWithGemini(
         ai: client as any,
         baseRequest,
         context: "enhance-1B",
+        meta: {
+          stage: "1B",
+          jobId,
+          filename,
+          roomType,
+          reason: modelLogReason,
+          selectedModel: MODEL_CONFIG.stage1B.primary,
+          fallbackModel: MODEL_CONFIG.stage1B.fallback,
+        },
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
@@ -362,12 +386,29 @@ export async function enhanceWithGemini(
         ai: client as any,
         baseRequest,
         context: "stage2",
+        meta: {
+          stage: "2",
+          jobId,
+          filename,
+          roomType,
+          reason: modelLogReason,
+          selectedModel: MODEL_CONFIG.stage2.primary,
+          fallbackModel: MODEL_CONFIG.stage2.fallback,
+        },
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
     } else {
       // Legacy: no stage specified, use Stage 1A behavior
-      const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance");
+      const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance", {
+        stage: stage || (declutter ? "1B" : "1A"),
+        jobId,
+        filename,
+        roomType,
+        reason: modelLogReason,
+        selectedModel: MODEL_CONFIG.stage1A.primary,
+        fallbackModel: MODEL_CONFIG.stage1A.fallback,
+      });
       resp = result.resp;
       modelUsed = result.modelUsed;
     }

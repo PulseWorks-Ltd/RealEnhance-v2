@@ -85,6 +85,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   let stage12Success = false;
   let stage2Success = false;
+  // Surface job metadata globally for downstream logging
+  (global as any).__jobId = payload.jobId;
+  (global as any).__jobRoomType = (payload.options as any)?.roomType;
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
   const strictBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v;
@@ -167,6 +170,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         angleHint: undefined,
         profile: undefined,
         stagingRegion: undefined,
+        jobId: payload.jobId,
       });
 
       timings.stage2Ms = Date.now() - t2;
@@ -596,6 +600,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return undefined;
     })(),
     skyMode: skyModeForStage1A,
+    jobId: payload.jobId,
+    roomType: payload.options.roomType,
   });
   timings.stage1AMs = Date.now() - t1A;
   
@@ -669,6 +675,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
         declutterMode: declutterMode as "light" | "stage-ready",
+        jobId: payload.jobId,
       });
     } catch (e: any) {
       const errMsg = e?.message || String(e);
@@ -811,6 +818,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
+            jobId: payload.jobId,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length

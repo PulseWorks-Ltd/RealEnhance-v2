@@ -73,7 +73,9 @@ async function enhanceWithGeminiStage1A(
   replaceSky: boolean,
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
-  skyMode: "safe" | "strong" = "safe"
+  skyMode: "safe" | "strong" = "safe",
+  jobId?: string,
+  roomType?: string
 ): Promise<string> {
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
@@ -110,6 +112,9 @@ async function enhanceWithGeminiStage1A(
     declutter: false,
     sceneType: sceneType,
     stage: "1A",
+    jobId,
+    roomType,
+    modelReason: sceneType ? `${sceneType} enhance` : "enhance",
     promptOverride: enhancementPrompt,
     temperature: nzTemp,
     topP: nzTopP,
@@ -140,9 +145,11 @@ export async function runStage1A(
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
     skyMode?: "safe" | "strong";
+    jobId?: string;
+    roomType?: string;
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe" } = options;
+  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -263,7 +270,7 @@ export async function runStage1A(
 
     if (forceGemini) {
       console.warn("[stage1A] ⚠️ Low quality detected — forcing Gemini as primary");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
     } else {
       console.log("[stage1A] ✅ Quality acceptable — using Stability primary");
       try {
@@ -276,7 +283,7 @@ export async function runStage1A(
       } catch (err) {
         console.error("[stage1A] ❌ Stability API failed:", err);
         console.warn("[stage1A] 🔁 Falling back to Gemini...");
-        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
       }
     }
 
@@ -290,7 +297,7 @@ export async function runStage1A(
       console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
 
         // Run structural validator on Gemini output
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
@@ -344,7 +351,7 @@ export async function runStage1A(
   try {
     console.log("[stage1A] 🟡 Using Gemini (Stability disabled)...");
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobId, roomType);
 
     console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 

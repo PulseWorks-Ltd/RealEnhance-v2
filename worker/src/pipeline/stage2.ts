@@ -1,5 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
-import { runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
+import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -9,6 +9,7 @@ import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPreset
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
+import path from "path";
 import type { StagingRegion } from "../ai/region-detector";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
@@ -223,6 +224,20 @@ export async function runStage2(
           generationConfig,
         } as any,
         context: "stage2",
+        meta: {
+          stage: "2",
+          jobId,
+          filename: path.basename(inputForStage2 || ""),
+          roomType: opts.roomType,
+          reason: ((): string => {
+            if (stagingStyleNorm && stagingStyleNorm !== "none") {
+              return `${opts.roomType || "unknown"} → ${stagingStyleNorm}`;
+            }
+            return opts.roomType ? `${opts.roomType} → stage2` : "stage2";
+          })(),
+          selectedModel: MODEL_CONFIG.stage2.primary,
+          fallbackModel: MODEL_CONFIG.stage2.fallback,
+        },
       });
       const apiElapsed = Date.now() - apiStartTime;
       console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);

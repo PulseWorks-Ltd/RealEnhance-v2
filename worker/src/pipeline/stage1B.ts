@@ -23,9 +23,11 @@ export async function runStage1B(
     sceneType?: "interior" | "exterior" | string;
     roomType?: string;
     declutterMode?: "light" | "stage-ready";
+    jobId?: string;
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt } = options;
+  const jobId = jobIdOpt || (global as any).__jobId;
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
   if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
@@ -71,6 +73,9 @@ export async function runStage1B(
       declutter: true,
       sceneType,
       stage: "1B",
+      jobId,
+      roomType,
+      modelReason: declutterMode ? `declutter:${declutterMode}` : "declutter",
       // Low-temp for deterministic, aggressive removal
       temperature: 0.30,
       topP: 0.70,

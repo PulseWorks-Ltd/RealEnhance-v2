@@ -10,7 +10,7 @@ import { logGeminiError } from "../utils/logGeminiError";
  */
 
 // ✅ ENVIRONMENT-DRIVEN MODEL CONFIGURATION (no hard-coded models)
-const MODEL_CONFIG = {
+export const MODEL_CONFIG = {
   stage1A: {
     primary: process.env.REALENHANCE_MODEL_STAGE1A_PRIMARY || "gemini-2.5-flash-image",
     fallback: null, // Stage 1A has no fallback
@@ -58,6 +58,26 @@ function isValidImageResponse(resp: any): { valid: boolean; reason?: string } {
   return { valid: true };
 }
 
+type ModelLogMeta = {
+  jobId?: string;
+  filename?: string;
+  roomType?: string;
+  stage?: string;
+  reason?: string;
+  selectedModel?: string;
+  fallbackModel?: string | null;
+};
+
+function logModelResolution(meta: ModelLogMeta) {
+  const stageLabel = meta.stage || "n/a";
+  const models = meta.fallbackModel
+    ? `${meta.selectedModel || 'n/a'} (fallback=${meta.fallbackModel})`
+    : (meta.selectedModel || 'n/a');
+  console.log(
+    `[MODEL][${stageLabel}] job=${meta.jobId || 'n/a'} file=${meta.filename || 'n/a'} stage=${stageLabel} room=${meta.roomType || 'n/a'} models=${models} reason=${meta.reason || 'n/a'}`
+  );
+}
+
 /**
  * Legacy function for Stage 1A (Gemini 2.5 only, no fallback)
  *
@@ -69,13 +89,23 @@ function isValidImageResponse(resp: any): { valid: boolean; reason?: string } {
 export async function runWithImageModelFallback(
   ai: GoogleGenAI,
   baseRequest: Omit<GenerateContentParams, "model">,
-  context: string
+  context: string,
+  meta?: ModelLogMeta
 ): Promise<{ resp: any; modelUsed: string }> {
   // This function is kept for backward compatibility with Stage 1A
   // Stage 1A always uses Gemini 2.5 (primary model only, no fallback)
   const model = MODEL_CONFIG.stage1A.primary;
 
   console.log(`[stage1A] Model: ${model}`);
+  logModelResolution({
+    stage: meta?.stage || "1A",
+    jobId: meta?.jobId,
+    filename: meta?.filename,
+    roomType: meta?.roomType,
+    reason: meta?.reason || context,
+    selectedModel: model,
+    fallbackModel: MODEL_CONFIG.stage1A.fallback,
+  });
 
   try {
     const resp = await ai.models.generateContent({
@@ -115,17 +145,28 @@ export async function runWithPrimaryThenFallback({
   ai,
   baseRequest,
   context,
+  meta,
 }: {
   stageLabel: "1B" | "2";
   ai: GoogleGenAI;
   baseRequest: Omit<GenerateContentParams, "model">;
   context: string;
+  meta?: ModelLogMeta;
 }): Promise<{ resp: any; modelUsed: string }> {
   const config = stageLabel === "1B" ? MODEL_CONFIG.stage1B : MODEL_CONFIG.stage2;
   const primaryModel = config.primary;
   const fallbackModel = config.fallback!;
 
   console.log(`[stage${stageLabel}] Primary model: ${primaryModel}, fallback: ${fallbackModel}`);
+  logModelResolution({
+    stage: meta?.stage || stageLabel,
+    jobId: meta?.jobId,
+    filename: meta?.filename,
+    roomType: meta?.roomType,
+    reason: meta?.reason || context,
+    selectedModel: primaryModel,
+    fallbackModel,
+  });
 
   // ✅ ATTEMPT PRIMARY MODEL FIRST
   let primaryError: any = null;
