@@ -258,9 +258,14 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     console.warn(`[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${baseMeta.width}x${baseMeta.height} candidate=${candMeta.width}x${candMeta.height} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=warn`);
   }
 
-  const dimsMatch = baseMeta.width === candMeta.width && baseMeta.height === candMeta.height;
-  debug.dimsBaseline = { w: baseMeta.width, h: baseMeta.height };
-  debug.dimsCandidate = { w: candMeta.width, h: candMeta.height };
+  const baseW = baseMeta.width!;
+  const baseH = baseMeta.height!;
+  const candW = candMeta.width!;
+  const candH = candMeta.height!;
+
+  const dimsMatch = baseW === candW && baseH === candH;
+  debug.dimsBaseline = { w: baseW, h: baseH };
+  debug.dimsCandidate = { w: candW, h: candH };
   debug.dimensionMismatch = !dimsMatch;
   debug.dimensionNormalized = dimNormalized.normalized;
 
@@ -317,8 +322,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
-      const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
-      const candEdge = sobelBinary(candGray, candMeta.width, candMeta.height, edgeThreshold);
+        const baseEdge = sobelBinary(baseGray, baseW, baseH, edgeThreshold);
+        const candEdge = sobelBinary(candGray, candW, candH, edgeThreshold);
 
       const iouResult = computeMaskedIoU(baseEdge, candEdge, maskBaseline.data);
       debug.intersectionPixels = iouResult.inter;
@@ -362,8 +367,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
-      const baseEdge = sobelBinary(baseGray, baseMeta.width, baseMeta.height, edgeThreshold);
-      const candEdge = sobelBinary(candGray, candMeta.width, candMeta.height, edgeThreshold);
+      const baseEdge = sobelBinary(baseGray, baseW, baseH, edgeThreshold);
+      const candEdge = sobelBinary(candGray, candW, candH, edgeThreshold);
 
       let edgeIoU: number | null = null;
       let edgeThresholdValue: number;
@@ -379,8 +384,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
           const result = computeExcludeLowerIoU(
             baseEdge,
             candEdge,
-            baseMeta.width,
-            baseMeta.height,
+            baseW,
+            baseH,
             config.stage2ExcludeLowerPct
           );
           edgeIoU = result.value;

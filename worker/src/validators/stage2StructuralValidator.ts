@@ -110,6 +110,7 @@ export type Stage2ValidationResult = {
     candWidth?: number;
     candHeight?: number;
     dimensionMismatch?: boolean;
+    dimensionNormalized?: boolean;
   };
 };
 
@@ -125,6 +126,8 @@ export async function validateStage2Structural(
     basePath: canonicalBasePath,
     candidatePath: stage2Path,
   });
+
+  debug.dimensionNormalized = dimNormalized.normalized;
 
   let baselinePath = dimNormalized.normalized ? dimNormalized.basePath : canonicalBasePath;
   let candidatePath = dimNormalized.normalized ? dimNormalized.candidatePath : stage2Path;
