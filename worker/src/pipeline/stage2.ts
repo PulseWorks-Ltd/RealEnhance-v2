@@ -356,7 +356,8 @@ export async function runStage2(
           if (!result2.ok) {
             validatorFailed = true;
             validationRisk = true;
-            localReasons = [result2.reason || "opencv_structural_risk"];
+            const reason = (result2 as any)?.reason || (result2 as any)?.errors?.[0] || "opencv_structural_risk";
+            localReasons = [reason];
           }
         } catch (e) {
           validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
