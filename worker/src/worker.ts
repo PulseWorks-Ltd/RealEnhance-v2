@@ -1178,16 +1178,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     if (compliance && compliance.ok === false) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      // Log the compliance failure, but DO NOT block publishing the image
-      updateJob(payload.jobId, {
-        status: "complete", // Mark as complete so UI receives the image
-        errorMessage: lastViolationMsg,
-        error: lastViolationMsg,
-        message: "Image enhancement completed after 1 retry, but failed compliance validation.",
-        meta: { ...(sceneLabel ? { ...sceneMeta } : {}), compliance, complianceFailed: true }
-      });
+      // Record the violation for the final status update but keep the job in-flight
+      compliance = {
+        ...compliance,
+        complianceFailed: true,
+        complianceFailureReason: lastViolationMsg,
+      } as any;
       nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
-      // Do NOT return; continue so image is published
+      // Do NOT return; continue so image is published and final status is set once done
     }
   } catch (e) {
     // proceed if Gemini not configured or any error
