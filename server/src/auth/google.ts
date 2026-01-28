@@ -244,10 +244,12 @@ export function attachGoogleAuth(app: Express) {
           }
         } catch (e) {}
         tryClose();
-        setTimeout(tryClose, 120);
+        const interval = setInterval(tryClose, 150);
         setTimeout(function() {
+          clearInterval(interval);
+          tryClose();
           try { if (!window.closed) window.location.replace(${JSON.stringify(toClient)}); } catch (e) {}
-        }, 300);
+        }, 900);
       })();
     </script>
   </body>
