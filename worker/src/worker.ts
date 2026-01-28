@@ -761,7 +761,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Gemini confirmation layer for Stage1B
       if (stage1BNeedsConfirm && path1B) {
-        const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure");
+        const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
         nLog(`[LOCAL_VALIDATE] stage=1B status=needs_confirm reasons=${JSON.stringify(stage1BLocalReasons)}`);
         const confirm = await confirmWithGeminiStructure({
           baselinePathOrUrl: path1A,
@@ -1194,7 +1194,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Gemini confirmation gate for Stage 2
   if (payload.options.virtualStage && stage2CandidatePath && (stage2NeedsConfirm || stage2ValidationRisk)) {
-    const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure");
+    const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
     const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
     nLog(`[LOCAL_VALIDATE] stage=2 status=needs_confirm reasons=${JSON.stringify(stage2LocalReasons)}`);
     const confirm = await confirmWithGeminiStructure({
