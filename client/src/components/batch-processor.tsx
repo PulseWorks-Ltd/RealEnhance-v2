@@ -128,6 +128,56 @@ function getDisplayUrl(data: any): string | null {
   return stage2 || stage1B || stage1A || explicitResult;
 }
 
+function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
+  if (!data) return { url: null, stage: null };
+
+  const status = String(data?.status || data?.result?.status || "").toLowerCase();
+  const validation = data?.validation || data?.result?.validation || data?.meta?.unifiedValidation || {};
+  const blockedStage = (validation as any)?.blockedStage || data?.blockedStage || data?.result?.blockedStage || data?.meta?.blockedStage || null;
+  const fallbackStage = (validation as any)?.fallbackStage ?? data?.fallbackStage ?? data?.result?.fallbackStage ?? data?.meta?.fallbackStage ?? null;
+  const hardFail = !!((validation as any)?.hardFail || data?.hardFail || data?.result?.hardFail);
+
+  const stageMap =
+    data?.stageUrls ||
+    data?.result?.stageUrls ||
+    data?.stageOutputs ||
+    data?.result?.stageOutputs ||
+    null;
+
+  const stage2 = stageMap?.['2'] || stageMap?.[2] || data?.stage2Url || data?.result?.stage2Url || null;
+  const stage1B = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.[1] || null;
+  const stage1A = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+
+  const explicitResult =
+    data?.resultUrl ||
+    data?.image ||
+    data?.imageUrl ||
+    data?.result?.image ||
+    data?.result?.imageUrl ||
+    data?.result?.result?.imageUrl ||
+    null;
+
+  const pickFallback = (): { url: string | null; stage: StageKey | null } => {
+    if (fallbackStage === "1B" && stage1B) return { url: stage1B, stage: "1B" };
+    if (fallbackStage === "1A" && stage1A) return { url: stage1A, stage: "1A" };
+    if (stage1B) return { url: stage1B, stage: "1B" };
+    if (stage1A) return { url: stage1A, stage: "1A" };
+    return { url: null, stage: null };
+  };
+
+  const isFailed = status === "failed" || hardFail;
+  if (isFailed) return pickFallback();
+  if (blockedStage) {
+    const fb = pickFallback();
+    if (fb.url) return fb;
+  }
+
+  if (stage2) return { url: stage2, stage: "2" };
+  if (stage1B) return { url: stage1B, stage: "1B" };
+  if (stage1A) return { url: stage1A, stage: "1A" };
+  return { url: explicitResult, stage: explicitResult ? ("2" as StageKey) : null };
+}
+
 // Add cache-busting version to force browser reload (only when version exists)
 function withVersion(url?: string | null, version?: string | number): string | null {
   if (!url) return null;
@@ -2194,8 +2244,9 @@ export default function BatchProcessor() {
       const imagesToDownload: { url: string; filename: string }[] = [];
       
       for (let i = 0; i < results.length; i++) {
-        // Mirror gallery display logic: processedImagesByIndex first, then fallback to getDisplayUrl
-        const imageUrl = processedImagesByIndex[i] ?? getDisplayUrl(results[i]);
+        // Prefer safe (non-failed) stage URLs; fall back to stored processed URLs only if safe
+        const safe = resolveSafeStageUrl(results[i]);
+        const imageUrl = safe.url || processedImagesByIndex[i] || null;
         
         if (imageUrl) {
           // Generate filename - use original file name if available, otherwise generate one
@@ -4167,18 +4218,26 @@ export default function BatchProcessor() {
                         const warnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
                         const warningCount = warnings.length;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
+                        const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
+                        const fallbackStage = (result?.validation as any)?.fallbackStage || (result?.result?.validation as any)?.fallbackStage || result?.fallbackStage || result?.result?.fallbackStage || result?.meta?.fallbackStage || null;
+                        const safeStage = resolveSafeStageUrl(result);
                         
-                        // Image Preview Logic with stage preference
-                        const stagePreviewUrl = stage2Url || stage1BUrl || stage1AUrl || null;
+                        // Image Preview Logic with stage preference (avoid failed/blocked outputs)
+                        const disallowStage2 = (status === "failed") || !!blockedStage || hardFail;
+                        const stagePreviewUrl = safeStage.url || null;
                         const availableStages: { key: StageKey; label: string; url: string | null }[] = (
                           [
-                            stage2Url ? { key: "2" as StageKey, label: "Stage 2", url: stage2Url } : null,
+                            (!disallowStage2 && stage2Url) ? { key: "2" as StageKey, label: "Stage 2", url: stage2Url } : null,
                             stage1BUrl ? { key: "1B" as StageKey, label: "Stage 1B", url: stage1BUrl } : null,
                             stage1AUrl ? { key: "1A" as StageKey, label: "Stage 1A", url: stage1AUrl } : null,
                           ].filter(Boolean) as { key: StageKey; label: string; url: string | null }[]
                         );
-                        const defaultStage: StageKey | undefined = stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined;
-                        const selectedStage = displayStageByIndex[i] || defaultStage;
+                        const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
+                        const selectedStage = (() => {
+                          const requested = displayStageByIndex[i] as StageKey | undefined;
+                          if (disallowStage2 && requested === "2") return defaultStage;
+                          return requested || defaultStage;
+                        })();
                         const defaultUrl = isDone ? (finalResultUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
                           if (!selectedStage) return defaultUrl;
