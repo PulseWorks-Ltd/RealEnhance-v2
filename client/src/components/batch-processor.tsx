@@ -4062,8 +4062,22 @@ export default function BatchProcessor() {
                 <div className="mb-8">
                     <div className="flex justify-between items-end mb-4">
                     <div>
-                        <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">Processing Batch</h1>
-                        <p className="text-slate-500 mt-1">Please keep this tab open. {files.length - results.filter(r => r?.result?.image && !r?.error).length} images remaining.</p>
+                        {(() => {
+                          const completedCount = results.filter(r => (r?.result?.image || r?.result?.imageUrl) || r?.error).length;
+                          const total = files.length || 0;
+                          const remaining = Math.max(total - completedCount, 0);
+                          const isComplete = runState === 'done' || remaining === 0;
+                          const title = isComplete ? "Enhancement Complete" : "Processing Batch";
+                          const subtitle = isComplete
+                            ? "Please review and download your images."
+                            : `Please keep this tab open. ${remaining} image${remaining === 1 ? '' : 's'} remaining.`;
+                          return (
+                            <>
+                              <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">{title}</h1>
+                              <p className="text-slate-500 mt-1">{subtitle}</p>
+                            </>
+                          );
+                        })()}
                     </div>
                     <div className="text-right">
                         {(runState === 'running' || isUploading) && (
