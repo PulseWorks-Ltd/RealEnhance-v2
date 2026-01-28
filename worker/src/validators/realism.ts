@@ -1,19 +1,11 @@
-import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
+import { getLocalValidatorMode } from "./validationModes";
 
 export async function validateRealism(
   finalPath: string
 ): Promise<{ ok: boolean; notes?: string[]; disabled?: boolean }> {
   // Check if realism validator is enabled
-  const mode = getValidatorMode("realism");
-
-  if (!isValidatorEnabled("realism")) {
-    console.log("[realism-validator] Realism validator disabled (mode=off)");
-    return {
-      ok: true,
-      notes: ["Realism validator disabled - skipping Gemini check"],
-      disabled: true,
-    };
-  }
+  const mode = getLocalValidatorMode();
+  console.log(`[realism-validator] Mode=${mode} (Gemini realism checks are disabled by design)`);
 
   // IMPORTANT: Gemini-based validators must remain disabled for now
   // This is a safety measure to prevent Gemini API calls during log-only testing

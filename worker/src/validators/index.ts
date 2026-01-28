@@ -4,13 +4,7 @@ import { computeBrightnessDiff } from "./brightnessValidator";
 import { StructuralMask, loadOrComputeStructuralMask } from "./structuralMask";
 import { validateStage1BStructural } from "./stage1BValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
-import {
-  getValidatorMode,
-  isValidatorEnabled,
-  shouldValidatorBlock,
-  isLogOnlyMode,
-  ValidatorMode,
-} from "./validatorMode";
+import { getLocalValidatorMode, type Mode } from "./validationModes";
 
 // OpenCV-based structural validator
 import { validateStructureWithOpenCV } from "../ai/validators/structural-opencv";
@@ -29,7 +23,7 @@ export type ValidationResult = {
   ok: boolean;
   reason?: string; // structural_change | dimension_change | validator_error
   details?: Record<string, unknown>;
-  mode?: ValidatorMode; // The mode used for this validation
+  mode?: Mode; // The mode used for this validation
   blocked?: boolean; // true if validation blocked the image
 };
 
@@ -174,19 +168,7 @@ export async function validateStageOutput(
   outputPath: string,
   context: { sceneType: "interior" | "exterior"; roomType?: string; jobId?: string }
 ): Promise<ValidationResult> {
-  const mode = getValidatorMode("structure");
-
-  // Check if validator is enabled
-  if (!isValidatorEnabled("structure")) {
-    console.log(`[validator:${stage}] Structural validator disabled (mode=off)`);
-    return {
-      ok: true,
-      reason: "validator_disabled",
-      mode,
-      blocked: false,
-      details: { stage, sceneType: context.sceneType },
-    };
-  }
+  const mode = getLocalValidatorMode();
 
   console.log(`[validator:${stage}] Running structural validation (mode=${mode}, scene=${context.sceneType})`);
 
@@ -218,17 +200,11 @@ export async function validateStageOutput(
   }
 
   // Determine if we should block based on mode
-  const shouldBlock = !result.ok && shouldValidatorBlock("structure");
-  result.blocked = shouldBlock;
+  result.blocked = false;
 
-  if (!result.ok && isLogOnlyMode("structure")) {
-    console.warn(`[validator:${stage}] ⚠️ Validation failed but not blocking (log-only mode)`);
-    console.warn(`[validator:${stage}] Failure reason: ${result.reason}`);
-    // Override to ok=true in log-only mode so the image continues
-    result.ok = true;
-  } else if (shouldBlock) {
-    console.error(`[validator:${stage}] ❌ Validation failed - BLOCKING image`);
-  } else if (result.ok) {
+  if (!result.ok) {
+    console.warn(`[validator:${stage}] ⚠️ Validation failed (advisory only; gemini-gated)`);
+  } else {
     console.log(`[validator:${stage}] ✓ Validation passed`);
   }
 

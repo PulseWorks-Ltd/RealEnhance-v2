@@ -40,14 +40,12 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { logValidatorConfig, getValidatorMode, getValidatorBlockingEnabled, getEffectiveValidationMode } from "./validators/validatorMode";
+import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
   type UnifiedValidationResult
 } from "./validators/runValidation";
-const STAGE1B_VALIDATION_MODE = ((process.env.STAGE1B_VALIDATION_MODE || "log").toLowerCase() === "block") ? "enforce" : "log";
-const STAGE1B_LOCAL_VALIDATE_MODE = ((process.env.STAGE1B_LOCAL_VALIDATE_MODE || "log").toLowerCase() === "block") ? "enforce" : "log";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
@@ -97,6 +95,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
   let stage2LocalReasons: string[] = [];
+  const localValidatorMode = getLocalValidatorMode();
+  const geminiValidatorMode = getGeminiValidatorMode();
+  const geminiBlockingEnabled = isGeminiBlockingEnabled();
+  const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
+  const structureValidatorMode = localValidatorMode;
+  logValidationModes();
   // Surface job metadata globally for downstream logging
   (global as any).__jobId = payload.jobId;
   (global as any).__jobRoomType = (payload.options as any)?.roomType;
@@ -259,8 +263,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t0 = Date.now();
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
-  const structureValidatorMode = getValidatorMode("structure");
-  const VALIDATION_BLOCKING_ENABLED = getValidatorBlockingEnabled();
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, blocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}`);
 
   // VALIDATOR FOCUS MODE: Print session header
@@ -617,6 +619,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobId: payload.jobId,
     roomType: payload.options.roomType,
   });
+  nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   timings.stage1AMs = Date.now() - t1A;
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)
@@ -704,13 +707,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1APath: path1A,
       });
 
-      const needsConfirm = !verdict.passed;
-      if (needsConfirm) {
-        const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "Stage 1B structural validation flagged issues";
+      const needsConfirm = localValidatorMode === "block" ? !verdict.passed : false;
+      const advisoryReasons = verdict.reasons || [];
+      if (!verdict.passed) {
+        const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
         nLog(`[stage1B][attempt=${attempt}] validation advisory: ${msg}`);
       }
 
-      return { output, verdict, needsConfirm };
+      return { output, verdict, needsConfirm, advisoryReasons };
     };
 
     let stage1BAttempts = 0;
@@ -725,12 +729,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const currentMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as any;
       nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
       try {
-        const { output, verdict, needsConfirm } = await runStage1BWithValidation(currentMode, stage1BAttempts);
+        const { output, verdict, needsConfirm, advisoryReasons } = await runStage1BWithValidation(currentMode, stage1BAttempts);
         path1B = output;
-        stage1BStructuralSafe = !needsConfirm;
+        stage1BStructuralSafe = verdict.passed;
         stage1BNeedsConfirm = needsConfirm;
-        stage1BLocalReasons = verdict.reasons || [];
-        if (needsConfirm && stage1BAttempts < maxAttempts && !useLightFallback) {
+        stage1BLocalReasons = advisoryReasons;
+        if (needsConfirm && VALIDATION_BLOCKING_ENABLED && stage1BAttempts < maxAttempts && !useLightFallback) {
           const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "stage1B validation flagged";
           nLog(`[stage1B] advisory failure, retrying: ${msg}`);
           continue;
@@ -758,24 +762,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return;
         }
       }
+    }
 
-      // Gemini confirmation layer for Stage1B
-      if (stage1BNeedsConfirm && path1B) {
-        const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-        nLog(`[LOCAL_VALIDATE] stage=1B status=needs_confirm reasons=${JSON.stringify(stage1BLocalReasons)}`);
-        const confirm = await confirmWithGeminiStructure({
-          baselinePathOrUrl: path1A,
-          candidatePathOrUrl: path1B,
-          stage: "stage1b",
-          roomType: payload.options.roomType,
-          sceneType: sceneLabel as any,
-          jobId: payload.jobId,
-          localReasons: stage1BLocalReasons,
-        });
-        nLog(`[GEMINI_CONFIRM] stage=1B status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+    const stage1BLocalStatus = stage1BNeedsConfirm ? "needs_confirm" : "pass";
+    nLog(`[LOCAL_VALIDATE] stage=1B status=${stage1BLocalStatus} reasons=${JSON.stringify(stage1BLocalReasons)}`);
 
-        if (confirm.confirmedFail) {
-          const errMsg = confirm.reasons.join("; ") || "Stage1B blocked by Gemini confirmation";
+    // Gemini confirmation layer for Stage1B (only when local mode requires confirm)
+    if (stage1BNeedsConfirm && path1B) {
+      const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
+      const confirm = await confirmWithGeminiStructure({
+        baselinePathOrUrl: path1A,
+        candidatePathOrUrl: path1B,
+        stage: "stage1b",
+        roomType: payload.options.roomType,
+        sceneType: sceneLabel as any,
+        jobId: payload.jobId,
+        localReasons: stage1BLocalReasons,
+      });
+      nLog(`[GEMINI_CONFIRM] stage=1B status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+
+      if (confirm.confirmedFail) {
+        const errMsg = confirm.reasons.join("; ") || "Stage1B blocked by Gemini confirmation";
+        if (geminiBlockingEnabled) {
+          nLog(`[VALIDATE_FINAL] stage=1B decision=block blockedBy=gemini_confirm override=false`);
           updateJob(payload.jobId, {
             status: "failed",
             errorMessage: errMsg,
@@ -784,16 +793,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           return;
         }
-        // Override: accept Stage1B despite local advisory
-        updateJob(payload.jobId, {
-          meta: {
-            ...sceneMeta,
-            stage1BAttempts,
-            stage1BLocalReasons,
-            geminiConfirm: { ...confirm, override: true },
-          }
-        });
       }
+
+      updateJob(payload.jobId, {
+        meta: {
+          ...sceneMeta,
+          stage1BAttempts,
+          stage1BLocalReasons,
+          geminiConfirm: { ...confirm, override: !confirm.confirmedFail },
+        }
+      });
+      nLog(`[VALIDATE_FINAL] stage=1B decision=accept blockedBy=${confirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${confirm.confirmedFail ? !geminiBlockingEnabled : true}`);
+    } else {
+      nLog(`[VALIDATE_FINAL] stage=1B decision=accept blockedBy=none override=${!stage1BNeedsConfirm}`);
     }
 
     timings.stage1BMs = Date.now() - t1B;
@@ -822,7 +834,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] ═══════════ Running Post-1B Structural Validators ═══════════`);
 
       // Geometry validator (requires published URLs)
-      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl);
+      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl, { stage: "stage1B", jobId: payload.jobId });
 
       const sem = await runSemanticStructureValidator({
         originalImagePath: path1A,
@@ -927,7 +939,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
             jobId: payload.jobId,
-            validationConfig: { configuredMode: getValidatorMode("structure"), blockingEnabled: false },
+            validationConfig: { localMode: localValidatorMode },
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -953,10 +965,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
-        if (stage2ValidationRisk) {
-          stage2NeedsConfirm = true;
-          stage2LocalReasons.push("stage2_validation_risk");
-        }
+        stage2LocalReasons = stage2Outcome.localReasons || [];
+        stage2NeedsConfirm = VALIDATION_BLOCKING_ENABLED && stage2ValidationRisk;
       }
     }
   } catch (e: any) {
@@ -1010,7 +1020,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
         stagingStyle: stagingStyleFallback,
         jobId: payload.jobId,
-        validationConfig: { configuredMode: getValidatorMode("structure"), blockingEnabled: false },
+        validationConfig: { localMode: localValidatorMode },
         onStrictRetry: ({ reasons }) => {
           try {
             const msg = reasons && reasons.length
@@ -1035,10 +1045,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
-        if (stage2ValidationRisk) {
-          stage2NeedsConfirm = true;
-          stage2LocalReasons.push("stage2_validation_risk");
-        }
+        stage2LocalReasons = stage2Outcome.localReasons || [];
+        stage2NeedsConfirm = VALIDATION_BLOCKING_ENABLED && stage2ValidationRisk;
       }
 
       fallbackUsed = "light_declutter_backstop";
@@ -1130,7 +1138,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       if (unifiedValidation && !unifiedValidation.passed) {
-        stage2NeedsConfirm = true;
+        if (VALIDATION_BLOCKING_ENABLED) {
+          stage2NeedsConfirm = true;
+        }
         stage2LocalReasons.push(...(unifiedValidation.reasons || []));
       }
 
@@ -1192,40 +1202,48 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
-  // Gemini confirmation gate for Stage 2
-  if (payload.options.virtualStage && stage2CandidatePath && (stage2NeedsConfirm || stage2ValidationRisk)) {
-    const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-    const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
-    nLog(`[LOCAL_VALIDATE] stage=2 status=needs_confirm reasons=${JSON.stringify(stage2LocalReasons)}`);
-    const confirm = await confirmWithGeminiStructure({
-      baselinePathOrUrl: baselineForConfirm,
-      candidatePathOrUrl: stage2CandidatePath,
-      stage: "stage2",
-      roomType: payload.options.roomType,
-      sceneType: sceneLabel as any,
-      jobId: payload.jobId,
-      localReasons: stage2LocalReasons,
-    });
-    nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+  if (payload.options.virtualStage) {
+    const stage2LocalStatus = stage2NeedsConfirm ? "needs_confirm" : "pass";
+    nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
 
-    if (confirm.confirmedFail) {
-      stage2Blocked = true;
-      stage2BlockedReason = confirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
-      updateJob(payload.jobId, {
-        status: "failed",
-        errorMessage: stage2BlockedReason,
-        error: stage2BlockedReason,
-        meta: { ...sceneMeta, stage2LocalReasons, geminiConfirm: confirm },
+    // Gemini confirmation gate for Stage 2
+    if (stage2CandidatePath && stage2NeedsConfirm) {
+      const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
+      const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
+      const confirm = await confirmWithGeminiStructure({
+        baselinePathOrUrl: baselineForConfirm,
+        candidatePathOrUrl: stage2CandidatePath,
+        stage: "stage2",
+        roomType: payload.options.roomType,
+        sceneType: sceneLabel as any,
+        jobId: payload.jobId,
+        localReasons: stage2LocalReasons,
       });
-      return;
-    } else {
+      nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+
+      if (confirm.confirmedFail && geminiBlockingEnabled) {
+        stage2Blocked = true;
+        stage2BlockedReason = confirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
+        nLog(`[VALIDATE_FINAL] stage=2 decision=block blockedBy=gemini_confirm override=false`);
+        updateJob(payload.jobId, {
+          status: "failed",
+          errorMessage: stage2BlockedReason,
+          error: stage2BlockedReason,
+          meta: { ...sceneMeta, stage2LocalReasons, geminiConfirm: confirm },
+        });
+        return;
+      }
+
       updateJob(payload.jobId, {
         meta: {
           ...sceneMeta,
           stage2LocalReasons,
-          geminiConfirm: { ...confirm, override: true },
+          geminiConfirm: { ...confirm, override: !confirm.confirmedFail },
         }
       });
+      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=${confirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${confirm.confirmedFail ? !geminiBlockingEnabled : true}`);
+    } else {
+      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=${!stage2NeedsConfirm}`);
     }
   }
 
@@ -1453,7 +1471,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       structuralValidationResult = await runStructuralCheck(
         publishedOriginal.url,
-        pubFinalUrl
+        pubFinalUrl,
+        { stage: finalStageLabel, jobId: payload.jobId }
       );
       // Validation result is logged inside runStructuralCheck
       // If mode="block" and isSuspicious=true, it will throw and abort the job
@@ -1565,12 +1584,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           warnings: unifiedValidation.warnings,
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
-          modeEffective: getEffectiveValidationMode({
-            configuredMode: structureValidatorMode as any,
-            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
-            attempt: Math.max(0, stage2AttemptsUsed ? stage2AttemptsUsed - 1 : 0),
-            maxAttempts: Math.max(stage2MaxAttempts || 1, stage2AttemptsUsed || 1),
-          }),
+          modeEffective: VALIDATION_BLOCKING_ENABLED ? "block" : "log",
           blockingEnabled: VALIDATION_BLOCKING_ENABLED,
           blockedStage: stage2Blocked ? "2" : undefined,
           fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
@@ -1583,7 +1597,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           warnings: stage2BlockedReason ? [stage2BlockedReason] : [],
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
-          modeEffective: effectiveValidationMode,
+          modeEffective: VALIDATION_BLOCKING_ENABLED ? "block" : "log",
           blockingEnabled: VALIDATION_BLOCKING_ENABLED,
           blockedStage: "2",
           fallbackStage: stage2FallbackStage,
@@ -1773,7 +1787,7 @@ nLog('╚═══════════════════════�
 nLog('\n'); // Force flush
 
 // Log validator configuration on startup
-logValidatorConfig();
+logValidationModes();
 nLog('\n'); // Force flush
 
 // BullMQ worker

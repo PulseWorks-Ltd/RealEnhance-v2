@@ -15,7 +15,7 @@ import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
-import { getEffectiveValidationMode, type ValidatorMode } from "../validators/validatorMode";
+import type { Mode } from "../validators/validationModes";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -25,6 +25,7 @@ export type Stage2Result = {
   maxAttempts: number;
   validationRisk: boolean;
   fallbackUsed: boolean;
+  localReasons: string[];
 };
 
 export async function runStage2(
@@ -44,8 +45,8 @@ export async function runStage2(
     stage1APath?: string;
     /** Job ID for validation tracking */
     jobId?: string;
-    /** Validation configuration (configured + blocking flag) */
-    validationConfig?: { configuredMode: ValidatorMode; blockingEnabled: boolean };
+    /** Validation configuration (local-mode driven) */
+    validationConfig?: { localMode?: Mode };
   }
 ): Promise<Stage2Result> {
   let out = basePath;
@@ -55,6 +56,9 @@ export async function runStage2(
   let lastValidatorResults: any = {};
   let tempMultiplier = 1.0;
   let strictPrompt = false;
+  const localMode: Mode = opts.validationConfig?.localMode || "log";
+  const allowRetries = localMode === "block";
+  let localReasons: string[] = [];
 
   const stageAwareConfig = loadStageAwareConfig();
   const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
@@ -82,7 +86,7 @@ export async function runStage2(
   if (process.env.USE_GEMINI_STAGE2 !== "1") {
     console.log(`[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
     if (dbg) console.log(`[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
   // Run OpenCV validator after Stage 1B (before staging) - legacy behavior
@@ -103,7 +107,7 @@ export async function runStage2(
   // Check API key before attempting Gemini calls
   if (!process.env.REALENHANCE_API_KEY) {
     console.warn(`[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
   if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
@@ -114,6 +118,8 @@ export async function runStage2(
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     needsRetry = false;
+    validationRisk = false;
+    localReasons = [];
     let inputForStage2 = out;
     if (opts.stagingRegion) {
       try {
@@ -273,22 +279,11 @@ export async function runStage2(
         // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====
         // CRITICAL: Use Stage1A output as baseline, NOT original
         try {
-          const configuredMode = opts.validationConfig?.configuredMode || "log";
-          const blockingEnabled = opts.validationConfig?.blockingEnabled || false;
-          const effectiveMode = getEffectiveValidationMode({
-            configuredMode,
-            blockingEnabled,
-            attempt,
-            maxAttempts,
-          });
-
-          console.log(`[stage2] Validation mode: configured=${configuredMode} effective=${effectiveMode} blocking=${blockingEnabled ? 'ON' : 'OFF'} attempt=${attempt + 1}/${maxAttempts}`);
-
           const validationResult = await validateStructureStageAware({
             stage: "stage2",
             baselinePath: validationBaseline, // Stage1A output
             candidatePath: out, // Stage2 output
-            mode: effectiveMode === "enforce" ? "block" : "log",
+            mode: localMode === "block" ? "block" : "log",
             jobId,
             sceneType: opts.sceneType || "interior",
             roomType: opts.roomType,
@@ -302,34 +297,40 @@ export async function runStage2(
           if (validationResult.risk) {
             validatorFailed = true;
             validationRisk = true;
+            localReasons = validationResult.triggers.map((t) => t.message || t.id);
             console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers)`);
             validationResult.triggers.forEach((t, i) => {
               console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
             });
 
-            // Use retry manager to decide if we should retry
-            const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
+            // Use retry manager to decide if we should retry (only when local mode is block)
+            if (allowRetries) {
+              const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
 
-            if (retryDecision.shouldRetry) {
-              currentTightenLevel = retryDecision.tightenLevel;
-              needsRetry = true;
-              retryCount++;
-              console.log(`[stage2] ${retryDecision.reason}`);
+              if (retryDecision.shouldRetry) {
+                currentTightenLevel = retryDecision.tightenLevel;
+                needsRetry = true;
+                retryCount++;
+                console.log(`[stage2] ${retryDecision.reason}`);
 
-              if (opts.onStrictRetry) {
-                opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
+                if (opts.onStrictRetry) {
+                  opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
+                }
+
+                if (retryDecision.isFinalAttempt) {
+                  console.warn(`[stage2] ⚠️ This is the FINAL retry attempt`);
+                }
+                continue;
+              } else {
+                // Max retries reached
+                if (retryDecision.reason.includes("Max attempts")) {
+                  markStageFailed(jobId, "stage2", validationResult.triggers);
+                  console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
+                }
+                attemptsUsed = attempt + 1;
+                break;
               }
-
-              if (retryDecision.isFinalAttempt) {
-                console.warn(`[stage2] ⚠️ This is the FINAL retry attempt`);
-              }
-              continue;
             } else {
-              // Max retries reached
-              if (retryDecision.reason.includes("Max attempts")) {
-                markStageFailed(jobId, "stage2", validationResult.triggers);
-                console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
-              }
               attemptsUsed = attempt + 1;
               break;
             }
@@ -352,14 +353,20 @@ export async function runStage2(
           const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
           validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
           lastValidatorResults['2'] = result2;
-          if (!result2.ok) validatorFailed = true;
+          if (!result2.ok) {
+            validatorFailed = true;
+            validationRisk = true;
+            localReasons = [result2.reason || "opencv_structural_risk"];
+          }
         } catch (e) {
           validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
           lastValidatorResults['2'] = { ok: false, error: String(e) };
           validatorFailed = true;
+          validationRisk = true;
+          localReasons = ["opencv_structural_error"];
         }
 
-        if (validatorFailed && attempt === 0) {
+        if (validatorFailed && allowRetries && attempt === 0) {
           needsRetry = true;
           retryCount++;
           console.log(`[stage2] Validator requested retry (single retry)`);
@@ -379,5 +386,5 @@ export async function runStage2(
   }
   // After retry, always return the last output and notes
   if (attemptsUsed === 0) attemptsUsed = Math.max(1, maxAttempts);
-  return { outputPath: out, attempts: attemptsUsed, maxAttempts, validationRisk, fallbackUsed: false };
+  return { outputPath: out, attempts: attemptsUsed, maxAttempts, validationRisk, fallbackUsed: false, localReasons };
 }

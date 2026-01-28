@@ -2,70 +2,61 @@
 
 ## Production Configuration (Recommended)
 
-For Railway worker service, set these environment variables:
+For the worker service, set these environment variables:
 
 ```bash
-# Enable log-only mode for all structural validators
-VALIDATOR_MODE=log
+# Local validators (OpenCV, stage-aware, unified validators)
+LOCAL_VALIDATOR_MODE=log        # advisory only; no blocking
 
-# Optional: Explicitly set structure validator mode (inherits from VALIDATOR_MODE if not set)
-STRUCTURE_VALIDATOR_MODE=log
+# Gemini confirmation gate (ONLY blocker)
+GEMINI_VALIDATOR_MODE=block     # block on Gemini-confirmed fails
 
-# OpenCV structural validator configuration
+# Fail-open behavior if Gemini confirm errors
+GEMINI_CONFIRM_FAIL_OPEN=1      # default fail-open (set 0 to fail-closed)
+
+# OpenCV structural validator configuration (still advisory)
 STRUCTURE_VALIDATOR_URL=https://your-opencv-validator.railway.app
 STRUCTURE_VALIDATOR_SENSITIVITY=5.0
-
-# Keep realism validators disabled during log-only phase
-# REALISM_VALIDATOR_MODE=off  # Optional, already disabled by default
 ```
 
 ## All Available Variables
 
 | Variable | Default | Values | Description |
 |----------|---------|--------|-------------|
-| `VALIDATOR_MODE` | `off` | `off`, `log`, `retry`, `block` | Global default for all validators |
-| `STRUCTURE_VALIDATOR_MODE` | (inherits) | `off`, `log`, `retry`, `block` | Overrides for structural validators |
-| `REALISM_VALIDATOR_MODE` | (inherits) | `off`, `log`, `retry`, `block` | Overrides for Gemini realism validators |
-| `STRUCTURE_VALIDATOR_URL` | (none) | URL | OpenCV microservice endpoint |
+| `LOCAL_VALIDATOR_MODE` | `log` | `log`, `block` | Local validators advisory-only; `block` means "needs Gemini confirm" (never hard-block locally) |
+| `GEMINI_VALIDATOR_MODE` | `block` | `log`, `block` | Gemini confirm gating; only blocker when set to `block` |
+| `GEMINI_CONFIRM_FAIL_OPEN` | `1` | `0`, `1` | When Gemini confirm errors: `1` = allow, `0` = block |
+| `STRUCTURE_VALIDATOR_URL` | (none) | URL | OpenCV microservice endpoint (advisory) |
 | `STRUCTURE_VALIDATOR_SENSITIVITY` | `5.0` | Number | Deviation threshold in degrees (higher = more permissive) |
 | `STAGE1A_MIN_EDGE_IOU` | `0.65` | 0.0-1.0 | Edge IoU threshold for Stage 1A |
+| `VALIDATOR_MODE`, `STRUCTURE_VALIDATOR_MODE`, `REALISM_VALIDATOR_MODE`, `STAGE1B_VALIDATION_MODE` | (deprecated) | legacy | Supported for backward compatibility; mapped to `LOCAL_VALIDATOR_MODE` / `GEMINI_VALIDATOR_MODE` with startup warnings |
 
 ## Mode Behavior
 
-| Mode | Validator Runs? | Logs Results? | Blocks Images? | Use Case |
-|------|----------------|---------------|----------------|----------|
-| `off` | ❌ No | ❌ No | ❌ No | Development, debugging |
-| `log` | ✅ Yes | ✅ Yes | ❌ No | **Production metric collection** |
-| `retry` | ✅ Yes | ✅ Yes | ⚠️ Triggers retry | Future: smart retries |
-| `block` | ✅ Yes | ✅ Yes | ✅ Yes | Testing, strict QC |
+| Mode | Local Validators | Gemini Confirm | Blocks Images? | Use Case |
+|------|------------------|----------------|----------------|----------|
+| `log` | Run + log only | Optional (non-blocking) | ❌ No | Production advisory/telemetry |
+| `block` | Run + mark needsConfirm | Runs; only blocker | ✅ Yes (Gemini-confirmed only) | Tighten+confirm flow |
 
 ## Configuration Precedence
 
-The system resolves validator modes in this order:
-
-1. **Kind-specific environment variable** (e.g., `STRUCTURE_VALIDATOR_MODE`)
-2. **Global `VALIDATOR_MODE`**
-3. **Default: `off`** (safe default)
+New primary vars are `LOCAL_VALIDATOR_MODE` and `GEMINI_VALIDATOR_MODE`.
+Legacy vars (`VALIDATOR_MODE`, `STRUCTURE_VALIDATOR_MODE`, `STAGE1B_VALIDATION_MODE`, `REALISM_VALIDATOR_MODE`) are still read for backward compatibility and will emit a startup warning. Defaults: local=`log`, gemini=`block`.
 
 ### Examples
 
 ```bash
-# Example 1: All validators in log mode
-VALIDATOR_MODE=log
-# Result: structure=log, realism=log (but realism is disabled in code)
+# Gemini-only blocking (recommended)
+LOCAL_VALIDATOR_MODE=log
+GEMINI_VALIDATOR_MODE=block
 
-# Example 2: Structure log, realism off
-VALIDATOR_MODE=log
-REALISM_VALIDATOR_MODE=off
-# Result: structure=log, realism=off
+# Fully advisory (no blocking anywhere)
+LOCAL_VALIDATOR_MODE=log
+GEMINI_VALIDATOR_MODE=log
 
-# Example 3: Structure block, everything else off
-STRUCTURE_VALIDATOR_MODE=block
-# Result: structure=block, realism=off (global default)
-
-# Example 4: Everything off (development)
-VALIDATOR_MODE=off
-# Result: structure=off, realism=off
+# Force confirm on local risk (still Gemini-only blocking)
+LOCAL_VALIDATOR_MODE=block
+GEMINI_VALIDATOR_MODE=block
 ```
 
 ## Startup Verification
@@ -73,41 +64,29 @@ VALIDATOR_MODE=off
 After setting variables, verify configuration in Railway worker logs:
 
 ```
-[validator-config] === Validator Configuration ===
-[validator-config] VALIDATOR_MODE: log
-[validator-config] STRUCTURE_VALIDATOR_MODE: (not set)
-[validator-config] REALISM_VALIDATOR_MODE: (not set)
-[validator-config] Resolved modes:
-[validator-config]   - global: log
-[validator-config]   - structure: log
-[validator-config]   - realism: log
-[validator-config] ================================
+[validator-config] Resolved modes: local=log gemini=block
+[validator-config] Legacy env vars in play: VALIDATOR_MODE (if used)
+[validator-config] Legacy env snapshot: {"VALIDATOR_MODE":"log",...}
 ```
 
 ## Common Configurations
 
-### Production (Current Phase: Metric Collection)
+### Gemini-only Blocking (current)
 ```bash
-VALIDATOR_MODE=log
-STRUCTURE_VALIDATOR_URL=https://opencv-validator.railway.app
-STRUCTURE_VALIDATOR_SENSITIVITY=5.0
+LOCAL_VALIDATOR_MODE=log
+GEMINI_VALIDATOR_MODE=block
 ```
 
-### Development (No Validation)
+### Fully Advisory (no blocking)
 ```bash
-VALIDATOR_MODE=off
+LOCAL_VALIDATOR_MODE=log
+GEMINI_VALIDATOR_MODE=log
 ```
 
-### Testing (Blocking Mode)
+### Local Risk → Gemini Confirm
 ```bash
-VALIDATOR_MODE=block
-STRUCTURE_VALIDATOR_URL=http://localhost:8000
-```
-
-### Selective Blocking (Future Phase)
-```bash
-VALIDATOR_MODE=log
-STRUCTURE_VALIDATOR_MODE=block  # Only structure validators block
+LOCAL_VALIDATOR_MODE=block
+GEMINI_VALIDATOR_MODE=block
 ```
 
 ## Troubleshooting

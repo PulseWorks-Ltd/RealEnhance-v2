@@ -25,13 +25,14 @@ export interface LineSummary {
   avgHorizontalAngle: number;
 }
 
-import { ValidatorMode, getValidatorMode, isValidatorEnabled } from "./validatorMode";
+import { getLocalValidatorMode, assertNoLocalBlocking } from "./validationModes";
+import type { Mode } from "./validationModes";
 
 /**
  * Structural validation result
  */
 export interface StructureValidationResult {
-  mode: ValidatorMode;
+  mode: Mode;
   isSuspicious: boolean;
   deviationScore: number;
   verticalShift: number;
@@ -47,7 +48,7 @@ export interface StructureValidationResult {
  */
 function getValidatorConfig() {
   const url = process.env.STRUCTURE_VALIDATOR_URL;
-  const mode = getValidatorMode("structure");
+  const mode = getLocalValidatorMode();
   const sensitivity = parseFloat(process.env.STRUCTURE_VALIDATOR_SENSITIVITY ?? "5.0");
 
   return { url, mode, sensitivity };
@@ -58,7 +59,7 @@ function getValidatorConfig() {
  */
 function createDisabledResult(reason: string): StructureValidationResult {
   return {
-    mode: "off",
+    mode: "log",
     isSuspicious: false,
     deviationScore: 0,
     verticalShift: 0,
@@ -105,8 +106,8 @@ export async function validateStructure(
   const { url, mode, sensitivity } = getValidatorConfig();
 
   // Check if validator is disabled
-  if (!url || mode === "off") {
-    console.log("[structureValidator] Validator disabled (mode=off or no URL configured)");
+  if (!url) {
+    console.log("[structureValidator] Validator disabled (no URL configured)");
     return createDisabledResult("Validator disabled");
   }
 
@@ -206,7 +207,8 @@ export async function validateStructure(
  */
 export async function runStructuralCheck(
   originalUrl: string,
-  enhancedUrl: string
+  enhancedUrl: string,
+  opts: { stage?: string; jobId?: string } = {}
 ): Promise<StructureValidationResult> {
   const result = await validateStructure(originalUrl, enhancedUrl);
 
@@ -231,16 +233,13 @@ export async function runStructuralCheck(
     );
   }
 
-  // Blocking logic
-  if (result.mode === "block" && result.isSuspicious) {
-    console.error("[structureValidator] ⚠️ BLOCKING IMAGE due to structural deviation");
-    console.error(`[structureValidator] Deviation score ${result.deviationScore}° exceeds threshold`);
-    throw new Error(
-      `Structural validation failed: ${result.message} (deviation: ${result.deviationScore}°)`
-    );
-  } else if (result.isSuspicious) {
+  // Blocking logic is suppressed; Gemini confirm is the only blocker
+  if (result.isSuspicious) {
+    if (result.mode === "block") {
+      assertNoLocalBlocking(opts.stage || "final", [result.message || "structural_deviation"], opts.jobId);
+    }
     console.warn(
-      `[structureValidator] ⚠️ Structural deviation detected but not blocking (mode=${result.mode})`
+      `[structureValidator] ⚠️ Structural deviation detected (mode=${result.mode})`
     );
   } else {
     console.log("[structureValidator] ✓ Structural validation passed");

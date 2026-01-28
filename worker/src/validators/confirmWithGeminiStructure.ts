@@ -1,4 +1,5 @@
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
+import { getGeminiValidatorMode, isGeminiBlockingEnabled } from "./validationModes";
 
 type StageKey = "stage1b" | "stage2";
 
@@ -12,7 +13,9 @@ export async function confirmWithGeminiStructure(params: {
   localReasons: string[];
   localMetrics?: any;
 }): Promise<{ confirmedFail: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "error" }> {
-  const failOpen = (process.env.GEMINI_CONFIRM_FAIL_OPEN || "1") === "1";
+  const failOpen = (process.env.GEMINI_CONFIRM_FAIL_OPEN ?? "1") === "1";
+  const geminiMode = getGeminiValidatorMode();
+  const geminiBlocking = isGeminiBlockingEnabled();
   const reasons: string[] = [];
 
   try {
@@ -28,8 +31,14 @@ export async function confirmWithGeminiStructure(params: {
       reasons.push(...(verdict.reasons || []));
     }
 
+    const confirmedFail = geminiBlocking ? !pass : false;
+
+    if (!geminiBlocking && !pass) {
+      reasons.push("gemini_mode=log");
+    }
+
     return {
-      confirmedFail: !pass,
+      confirmedFail,
       reasons,
       confidence: verdict.confidence,
       raw: verdict,
@@ -38,9 +47,7 @@ export async function confirmWithGeminiStructure(params: {
   } catch (err: any) {
     const msg = err?.message || String(err);
     reasons.push(`gemini_confirm_error: ${msg}`);
-    if (failOpen) {
-      return { confirmedFail: false, reasons, status: "error" };
-    }
-    return { confirmedFail: true, reasons, status: "error" };
+    const confirmedFail = geminiBlocking ? !failOpen : false;
+    return { confirmedFail, reasons, status: "error" };
   }
 }

@@ -18,7 +18,7 @@ import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
-import { getValidatorMode, isValidatorEnabled } from "./validatorMode";
+import { getLocalValidatorMode } from "./validationModes";
 import { vLog, nLog } from "../logger";
 import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
@@ -154,7 +154,7 @@ export async function runUnifiedValidation(
     stage1APath,
   } = params;
 
-  const validatorMode = getValidatorMode("structure");
+  const validatorMode = getLocalValidatorMode();
   const stageAwareConfig = loadStageAwareConfig();
   const warnings: string[] = [];
 
@@ -177,20 +177,6 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
   if (stage1APath) {
     nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
-  }
-
-  // Check if validators are enabled
-  if (!isValidatorEnabled("structure")) {
-    nLog(`[unified-validator] Structural validators disabled (mode=off)`);
-    return {
-      passed: true,
-      hardFail: false,
-      score: 1.0,
-      reasons: [],
-      warnings: ["Validators disabled"],
-      normalized: false,
-      raw: {},
-    };
   }
 
   // ===== STAGE-AWARE VALIDATION PATH =====
