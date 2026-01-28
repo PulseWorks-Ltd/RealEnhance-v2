@@ -100,6 +100,13 @@ export interface EnhanceJobPayload {
     };
     remoteOriginalUrl?: string;
     remoteOriginalKey?: string;
+    retryType?: string;
+    retrySourceStage?: string | null;
+    retrySourceUrl?: string | null;
+    retrySourceKey?: string | null;
+    retryParentImageId?: string | null;
+    retryParentJobId?: string | null;
+    retryClientBatchId?: string | null;
     createdAt: string;
 }
 export interface EditJobPayload {
@@ -147,8 +154,11 @@ export interface JobRecord {
         fallbackStage?: string | null;
         note?: string | null;
     };
+    /** Which stage was blocked by validators (if any) */
     blockedStage?: string | null;
+    /** Which stage we fell back to when a later stage was blocked */
     fallbackStage?: string | null;
+    /** Human-friendly validation note for display */
     validationNote?: string | null;
     stageOutputs?: {
         "1A"?: string;

@@ -24,6 +24,7 @@ import { classifyScene } from "./validators/scene-classifier";
 
 import {
   updateJob,
+  getJob,
   pushImageVersion,
   readImageRecord,
   getVersionPath,
@@ -32,6 +33,8 @@ import {
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
+import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
+import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64 } from "./utils/images";
@@ -1695,15 +1698,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage2: pub2Url || undefined,
       publish: pubFinalUrl || undefined,
     };
+    const stage2ModeUsed: "refresh" | "empty" | undefined = hasStage2
+      ? ((payload as any).options?.stagingPreference === "refresh"
+        ? "refresh"
+        : (payload as any).options?.stagingPreference === "full"
+          ? "empty"
+          : undefined)
+      : undefined;
+
     const debugMeta = {
       ...(existingMeta?.debug || {}),
-      stage2ModeUsed: hasStage2
-        ? ((payload as any).options?.stagingPreference === "refresh"
-          ? "refresh"
-          : (payload as any).options?.stagingPreference === "full"
-            ? "empty"
-            : "auto")
-        : undefined,
+      stage2ModeUsed,
       validatorSummary: unifiedValidation || (stage2Blocked ? { blocked: true, reason: stage2BlockedReason } : undefined),
     };
 

@@ -8,6 +8,8 @@ import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
 import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
+import { getJobMetadata } from "@realenhance/shared/imageStore";
+import { findByPublicUrlRedis } from "@realenhance/shared";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
