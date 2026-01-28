@@ -17,8 +17,16 @@
  */
 
 export type ValidatorMode = "off" | "log" | "retry" | "block";
+export type EffectiveValidationMode = "log" | "enforce";
 
 export type ValidatorKind = "global" | "structure" | "realism";
+
+/** Parse a boolean-ish env var value */
+function asBool(value: string | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
 
 /**
  * Get the configured validator mode for a specific validator kind.
@@ -54,6 +62,31 @@ export function getValidatorMode(kind: ValidatorKind = "global"): ValidatorMode 
 
   // Safe default: off
   return "off";
+}
+
+/** Read global blocking feature flag (env VALIDATION_BLOCKING_ENABLED) */
+export function getValidatorBlockingEnabled(): boolean {
+  return asBool(process.env.VALIDATION_BLOCKING_ENABLED);
+}
+
+/**
+ * Derive effective enforcement mode for this attempt.
+ * "block" and "retry" both map to enforcement on the final attempt when blocking is enabled.
+ */
+export function getEffectiveValidationMode(opts: {
+  configuredMode: ValidatorMode;
+  blockingEnabled: boolean;
+  attempt: number; // zero-based
+  maxAttempts: number; // total attempts planned (>=1)
+}): EffectiveValidationMode {
+  const { configuredMode, blockingEnabled, attempt, maxAttempts } = opts;
+  const isFinalAttempt = attempt >= Math.max(0, maxAttempts - 1);
+
+  if (!blockingEnabled) return "log";
+  if (configuredMode === "off") return "log";
+  if (configuredMode === "log") return "log";
+
+  return isFinalAttempt ? "enforce" : "log";
 }
 
 /**

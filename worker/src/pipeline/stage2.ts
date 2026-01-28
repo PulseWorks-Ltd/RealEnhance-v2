@@ -15,8 +15,17 @@ import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
+import { getEffectiveValidationMode, type ValidatorMode } from "../validators/validatorMode";
 
 // Stage 2: virtual staging (add furniture)
+
+export type Stage2Result = {
+  outputPath: string;
+  attempts: number;
+  maxAttempts: number;
+  validationRisk: boolean;
+  fallbackUsed: boolean;
+};
 
 export async function runStage2(
   basePath: string,
@@ -35,18 +44,22 @@ export async function runStage2(
     stage1APath?: string;
     /** Job ID for validation tracking */
     jobId?: string;
+    /** Validation configuration (configured + blocking flag) */
+    validationConfig?: { configuredMode: ValidatorMode; blockingEnabled: boolean };
+  let attemptsUsed = 0;
+  let validationRisk = false;
   }
-): Promise<string> {
+): Promise<Stage2Result> {
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
   const validatorNotes: any[] = [];
-  let retryCount = 0;
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   let needsRetry = false;
   let lastValidatorResults: any = {};
   let tempMultiplier = 1.0;
   let strictPrompt = false;
 
-  // Stage-aware validation config
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   const stageAwareConfig = loadStageAwareConfig();
   const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
 
@@ -261,11 +274,20 @@ export async function runStage2(
         // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====
         // CRITICAL: Use Stage1A output as baseline, NOT original
         try {
+          const configuredMode = opts.validationConfig?.configuredMode || "log";
+          const blockingEnabled = opts.validationConfig?.blockingEnabled || false;
+          const effectiveMode = getEffectiveValidationMode({
+            configuredMode,
+            blockingEnabled,
+            attempt,
+            maxAttempts,
+          });
+
           const validationResult = await validateStructureStageAware({
             stage: "stage2",
             baselinePath: validationBaseline, // Stage1A output
             candidatePath: out, // Stage2 output
-            mode: "log", // Non-blocking by default
+            mode: effectiveMode === "enforce" ? "block" : "log",
             jobId,
             sceneType: opts.sceneType || "interior",
             roomType: opts.roomType,
@@ -278,6 +300,7 @@ export async function runStage2(
 
           if (validationResult.risk) {
             validatorFailed = true;
+            validationRisk = true;
             console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers)`);
             validationResult.triggers.forEach((t, i) => {
               console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
@@ -306,16 +329,19 @@ export async function runStage2(
                 markStageFailed(jobId, "stage2", validationResult.triggers);
                 console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
               }
+              attemptsUsed = attempt + 1;
               break;
             }
           } else {
             console.log(`[stage2] ✅ Stage-aware validation passed (risk=false)`);
+            attemptsUsed = attempt + 1;
             break;
           }
         } catch (e) {
           console.error(`[stage2] Stage-aware validation error:`, e);
           validatorNotes.push({ stage: '2', validator: 'StageAware', error: String(e) });
           // On error, don't retry - just continue with the output
+          attemptsUsed = attempt + 1;
           break;
         }
       } else {
@@ -338,6 +364,7 @@ export async function runStage2(
           console.log(`[stage2] Validator requested retry (single retry)`);
           continue;
         } else {
+          attemptsUsed = attempt + 1;
           break;
         }
       }
@@ -345,9 +372,11 @@ export async function runStage2(
       validatorNotes.push({ stage: '2', validator: 'Gemini', error: String(e) });
       lastValidatorResults['2'] = { ok: false, error: String(e) };
       console.error("[stage2] ❌ Gemini API error:", e?.message || String(e));
+      attemptsUsed = attempt + 1;
       break;
     }
   }
   // After retry, always return the last output and notes
-  return out;
+  if (attemptsUsed === 0) attemptsUsed = Math.max(1, maxAttempts);
+  return { outputPath: out, attempts: attemptsUsed, maxAttempts, validationRisk, fallbackUsed: false };
 }

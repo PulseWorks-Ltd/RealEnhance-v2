@@ -40,7 +40,7 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { logValidatorConfig } from "./validators/validatorMode";
+import { logValidatorConfig, getValidatorMode, getValidatorBlockingEnabled } from "./validators/validatorMode";
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
@@ -85,6 +85,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   let stage12Success = false;
   let stage2Success = false;
+  let stage2AttemptsUsed = 0;
+  let stage2MaxAttempts = 1;
+  let stage2ValidationRisk = false;
   // Surface job metadata globally for downstream logging
   (global as any).__jobId = payload.jobId;
   (global as any).__jobRoomType = (payload.options as any)?.roomType;
@@ -163,7 +166,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
 
       // Run Stage-2 only (using 1B as base)
-      const path2 = await runStage2(basePath, "1B", {
+      const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
         sceneType: payload.options.sceneType as any,
@@ -172,6 +175,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingRegion: undefined,
         jobId: payload.jobId,
       });
+      const path2 = stage2Result.outputPath;
 
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
@@ -807,20 +811,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
       const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
-      path2 = payload.options.virtualStage
+      const stage2Outcome = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
             )
               ? String(detectedRoom || "living_room")
-              : payload.options.roomType,
+        if (typeof stage2Outcome === "string") {
+          path2 = stage2Outcome;
+        } else {
+          path2 = stage2Outcome.outputPath;
+          stage2AttemptsUsed = stage2Outcome.attempts;
+          stage2MaxAttempts = stage2Outcome.maxAttempts;
+          stage2ValidationRisk = stage2Outcome.validationRisk;
+        }
             sceneType: sceneLabel as any,
             profile,
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
             jobId: payload.jobId,
+            validationConfig: { configuredMode: getValidatorMode("structure"), blockingEnabled: getValidatorBlockingEnabled() },
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -836,6 +848,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 });
               } catch {}
             }
+          path2 = typeof stage2Outcome === "string" ? stage2Outcome : stage2Outcome.outputPath;
           })
         : (payload.options.declutter && path1B ? path1B : path1A);
     }
