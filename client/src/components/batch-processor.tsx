@@ -1621,13 +1621,18 @@ export default function BatchProcessor() {
           const resultUrl = it?.publishedUrl || it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
+          const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
+          const fallbackStage = (validation as any)?.fallbackStage || it?.fallbackStage || it?.meta?.fallbackStage || null;
+          const validationNote = (validation as any)?.note || it?.validationNote || it?.meta?.validationNote || null;
           const warnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
+          if (validationNote) warnings.push(validationNote);
           let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
           const stagePreview = stageUrls?.['2'] || stageUrls?.stage2 || stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1A'] || stageUrls?.stage1A || null;
           const hasOutputs = !!(stagePreview || resultUrl);
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
-          if (hardFail) uiStatus = 'error';
+          if (blockedStage && hasOutputs) uiStatus = 'warning';
+          else if (hardFail) uiStatus = 'error';
 
           // Completion requires explicit completed status
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
@@ -1692,6 +1697,9 @@ export default function BatchProcessor() {
                   ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
                   : existing.error,
                 errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
+                blockedStage: blockedStage || existing.blockedStage,
+                fallbackStage: fallbackStage || existing.fallbackStage,
+                validationNote: validationNote || existing.validationNote,
               };
               return copy;
             });

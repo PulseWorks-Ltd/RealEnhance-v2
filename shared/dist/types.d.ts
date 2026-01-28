@@ -143,7 +143,13 @@ export interface JobRecord {
         modeConfigured?: string;
         modeEffective?: string;
         blockingEnabled?: boolean;
+        blockedStage?: string;
+        fallbackStage?: string | null;
+        note?: string | null;
     };
+    blockedStage?: string | null;
+    fallbackStage?: string | null;
+    validationNote?: string | null;
     stageOutputs?: {
         "1A"?: string;
         "1B"?: string;

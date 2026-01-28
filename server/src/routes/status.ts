@@ -43,6 +43,9 @@ type StatusItem = {
   resultUrl?: string | null;
   fallbackUsed?: string | null;
   retryReason?: string | null;
+  blockedStage?: string | null;
+  fallbackStage?: string | null;
+  validationNote?: string | null;
   meta: any;
   mode?: string;
   error?: string | null;
@@ -188,15 +191,24 @@ export function statusRouter() {
           } : undefined) ||
           undefined;
 
-        const warnings: string[] = Array.isArray(validationRaw?.warnings)
+        const blockedStage = (validationRaw as any)?.blockedStage || local.blockedStage || null;
+        const fallbackStageMeta = (validationRaw as any)?.fallbackStage ?? local.fallbackStage ?? null;
+        const validationNote = (validationRaw as any)?.note || local.validationNote || local?.meta?.validationNote || null;
+
+        const warningSet = new Set<string>(Array.isArray(validationRaw?.warnings)
           ? validationRaw!.warnings as string[]
-          : [];
-        const hardFail = validationRaw?.hardFail === true;
+          : []);
+        if (validationNote) warningSet.add(validationNote);
+        const warnings = Array.from(warningSet);
+
+        const hardFailRaw = validationRaw?.hardFail === true;
+        const hardFail = hardFailRaw;
 
         const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
         let uiStatus: UiStatus = "ok";
 
-        if (hardFail && !hasOutputs) uiStatus = "error";
+        if (blockedStage && hasOutputs) uiStatus = "warning";
+        else if (hardFail && !hasOutputs) uiStatus = "error";
         else if (hardFail && hasOutputs) uiStatus = "warning";
         else if (warnings.length) uiStatus = "warning";
 
@@ -233,6 +245,9 @@ export function statusRouter() {
           resultUrl: resultUrl ?? null,
           fallbackUsed: fallbackUsed || null,
           retryReason: retryReason || null,
+          blockedStage: blockedStage || null,
+          fallbackStage: fallbackStageMeta || null,
+          validationNote: validationNote || null,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           mode: mode || undefined,
@@ -370,13 +385,29 @@ export function statusRouter() {
       };
       const imageId: string | null =
         payload?.imageId || local.imageId || null;
+      const validationRaw =
+        local?.validation ||
+        (local?.meta && local.meta.unifiedValidation ? {
+          hardFail: local.meta.unifiedValidation.hardFail,
+          warnings: local.meta.unifiedValidation.warnings,
+          normalized: local.meta.unifiedValidation.normalized,
+        } : undefined) ||
+        undefined;
+
       const unified = (local?.meta || {})?.unifiedValidation || {};
-      const warnings: string[] = Array.isArray(unified?.warnings) ? unified.warnings : [];
-      const hardFail = !!unified?.hardFail || !!local?.hardFail;
+      const blockedStage = (validationRaw as any)?.blockedStage || local.blockedStage || null;
+      const fallbackStageMeta = (validationRaw as any)?.fallbackStage ?? local.fallbackStage ?? null;
+      const validationNote = (validationRaw as any)?.note || local.validationNote || local?.meta?.validationNote || null;
+
+      const warningSet = new Set<string>(Array.isArray(unified?.warnings) ? unified.warnings : (Array.isArray(validationRaw?.warnings) ? validationRaw.warnings : []));
+      if (validationNote) warningSet.add(validationNote);
+      const warnings: string[] = Array.from(warningSet);
+      const hardFail = !!validationRaw?.hardFail || !!unified?.hardFail || !!local?.hardFail;
       const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
 
       let uiStatus: UiStatus = "ok";
-      if (hardFail && !hasOutputs) uiStatus = "error";
+      if (blockedStage && hasOutputs) uiStatus = "warning";
+      else if (hardFail && !hasOutputs) uiStatus = "error";
       else if (hardFail && hasOutputs) uiStatus = "warning";
       else if (warnings.length) uiStatus = "warning";
 
@@ -400,6 +431,9 @@ export function statusRouter() {
         publishedUrl: resultUrl,
         warnings,
         hardFail,
+        blockedStage: blockedStage || null,
+        fallbackStage: fallbackStageMeta || null,
+        validationNote: validationNote || null,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
         error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,

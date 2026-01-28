@@ -88,6 +88,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2AttemptsUsed = 0;
   let stage2MaxAttempts = 1;
   let stage2ValidationRisk = false;
+  let stage2Blocked = false;
+  let stage2BlockedReason: string | undefined;
+  let stage2FallbackStage: "1A" | "1B" | null = null;
   let fallbackUsed: string | null = null;
   // Surface job metadata globally for downstream logging
   (global as any).__jobId = payload.jobId;
@@ -941,6 +944,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // Preserve the staged candidate path before validation decides whether it can ship
+  const stage2CandidatePath = path2;
+
   timings.stage2Ms = Date.now() - t2;
   updateJob(payload.jobId, { status: "processing", currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
 
@@ -949,38 +955,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
-  // Publish Stage 2 immediately if virtualStage was requested
+  // Publish Stage 2 after validation (deferred); keep placeholder for URL
   let pub2Url: string | undefined = undefined;
-  if (payload.options.virtualStage && path2 !== path1B) {
-    let v2: any = null;
-    try {
-      v2 = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "2", filePath: path2, note: "Virtual staging" });
-    } catch (e) {
-      nLog(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
-    }
-    try {
-      const pub2 = await publishImage(path2);
-      pub2Url = pub2.url;
-      stage2Success = true;
-      if (v2) {
-        try {
-          setVersionPublicUrl(payload.imageId, v2.versionId, pub2.url);
-        } catch (e) {
-          // Ignore
-        }
-      }
-      updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
-      // VALIDATOR FOCUS: Log Stage 2 URL
-      vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
-      nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
-    } catch (e) {
-      nLog('[worker] failed to publish Stage 2', e);
-    }
-  }
 
   // ===== UNIFIED STRUCTURAL VALIDATION =====
   // Run unified validation pipeline for Stage 2
   let unifiedValidation: UnifiedValidationResult | undefined = undefined;
+  let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
   if (path2 && payload.options.virtualStage) {
     try {
       const validationStartTime = Date.now();
@@ -994,7 +975,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
 
-      const effectiveValidationMode = getEffectiveValidationMode({
+      effectiveValidationMode = getEffectiveValidationMode({
         configuredMode: structureValidatorMode as any,
         blockingEnabled: VALIDATION_BLOCKING_ENABLED,
         attempt: Math.max(0, stage2AttemptsUsed ? stage2AttemptsUsed - 1 : 0),
@@ -1012,6 +993,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         mode: effectiveValidationMode === "enforce" ? "enforce" : "log",
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
+        stage1APath: path1A,
       });
 
       const validationElapsed = Date.now() - validationStartTime;
@@ -1047,22 +1029,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
       });
 
-      // Handle blocking logic using effective mode
+      // Handle blocking logic using effective mode (fallback to last safe stage)
       if (unifiedValidation.hardFail && effectiveValidationMode === "enforce") {
-        const failureMsg = `Structural validation failed: ${unifiedValidation.reasons.join("; ")}`;
-        nLog(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
-        nLog(`[worker] Validation score: ${unifiedValidation.score}`);
-        nLog(`[worker] Reasons: ${unifiedValidation.reasons.join("; ")}`);
+        stage2Blocked = true;
+        stage2BlockedReason = unifiedValidation.reasons.join("; ") || "Structural validation failed";
+        stage2FallbackStage = stage2BaseStage === "1B" && path1B ? "1B" : "1A";
+        const fallbackPath = stage2FallbackStage === "1B" && path1B ? path1B : path1A;
+        path2 = fallbackPath;
+        stage2Success = false;
+        fallbackUsed = fallbackUsed || "stage2_structural_block";
 
+        const warningNote = `Stage 2 blocked: ${stage2BlockedReason}`;
+        unifiedValidation.warnings = Array.from(new Set([...(unifiedValidation.warnings || []), warningNote]));
+
+        nLog(`[worker] ❌ BLOCKING Stage 2 output; falling back to ${stage2FallbackStage}`);
         updateJob(payload.jobId, {
-          status: "failed",
-          errorMessage: failureMsg,
-          error: failureMsg,
-          message: `Image failed structural validation (score: ${unifiedValidation.score})`,
+          status: "processing",
+          currentStage: stage2FallbackStage,
+          stage: stage2FallbackStage,
+          errorMessage: warningNote,
+          message: "Staged image failed structural validation; reverting to last safe stage.",
           meta: {
             ...(sceneLabel ? { ...sceneMeta } : {}),
             unifiedValidation,
             structuralValidationFailed: true,
+            validationNote: warningNote,
+            stage2Blocked: true,
           },
           validation: {
             hardFail: true,
@@ -1071,11 +1063,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             modeConfigured: structureValidatorMode,
             modeEffective: effectiveValidationMode,
             blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            blockedStage: "2",
+            fallbackStage: stage2FallbackStage,
+            note: warningNote,
           },
         });
-
-        // In blocking mode, stop here and don't publish
-        return;
       }
 
     } catch (validationError: any) {
@@ -1133,6 +1125,42 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
       nLog(`[worker] Stack:`, maskedEdgeError?.stack);
       // Continue processing - fail-open behavior
+    }
+  }
+
+  // Publish Stage 2 only if it passed blocking validation
+  if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
+    // If Stage 2 equals Stage 1B (no change), reuse the Stage 1B URL to avoid duplicate uploads
+    if (stage2CandidatePath === path1B && pub1BUrl) {
+      pub2Url = pub1BUrl;
+      stage2Success = true;
+      updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
+      vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url} (reused 1B)`);
+    } else {
+      let v2: any = null;
+      try {
+        v2 = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "2", filePath: stage2CandidatePath, note: "Virtual staging" });
+      } catch (e) {
+        nLog(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
+      }
+      try {
+        const pub2 = await publishImage(stage2CandidatePath);
+        pub2Url = pub2.url;
+        stage2Success = true;
+        if (v2) {
+          try {
+            setVersionPublicUrl(payload.imageId, v2.versionId, pub2.url);
+          } catch (e) {
+            // Ignore
+          }
+        }
+        updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
+        // VALIDATOR FOCUS: Log Stage 2 URL
+        vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
+        nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
+      } catch (e) {
+        nLog('[worker] failed to publish Stage 2', e);
+      }
     }
   }
 
@@ -1247,11 +1275,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Decide final base path for versioning + final publish.
   // Preference order:
-  //   1) Stage 2 (if virtualStage requested and validator succeeded)
+  //   1) Stage 2 (if virtualStage requested AND not blocked)
   //   2) Stage 1B (decluttered) if available
   //   3) Stage 1A
-  const hasStage2 = payload.options.virtualStage && !!pub2Url;
-  const finalBasePath = hasStage2 ? path2 : (payload.options.declutter && path1B ? path1B! : path1A);
+  const hasStage2 = payload.options.virtualStage && !stage2Blocked && !!pub2Url;
+  const finalBasePath = hasStage2 ? stage2CandidatePath : (payload.options.declutter && path1B ? path1B! : path1A);
   const finalStageLabel = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
 
   let finalPathVersion: any = null;
@@ -1411,6 +1439,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // ✅ Save Stage-1B structural safety flag for smart retry routing
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
+    ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
   };
 
   updateJob(payload.jobId, {
@@ -1440,12 +1469,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             maxAttempts: Math.max(stage2MaxAttempts || 1, stage2AttemptsUsed || 1),
           }),
           blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          blockedStage: stage2Blocked ? "2" : undefined,
+          fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
+          note: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined,
         }
-      : undefined,
+      : stage2Blocked
+        ? {
+            hardFail: true,
+            warnings: stage2BlockedReason ? [stage2BlockedReason] : [],
+            normalized: unifiedValidation?.normalized,
+            modeConfigured: structureValidatorMode,
+            modeEffective: effectiveValidationMode,
+            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            blockedStage: "2",
+            fallbackStage: stage2FallbackStage,
+            note: stage2BlockedReason,
+          }
+        : undefined,
     attempts: stage2AttemptsUsed || stage2MaxAttempts
       ? { current: stage2AttemptsUsed || undefined, max: stage2MaxAttempts || undefined }
       : undefined,
     fallbackUsed,
+    blockedStage: stage2Blocked ? "2" : undefined,
+    fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
+    validationNote: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined,
     stageUrls: {
       "1A": pub1AUrl ?? null,
       "1B": pub1BUrl ?? null,

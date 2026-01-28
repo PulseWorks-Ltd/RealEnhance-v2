@@ -170,7 +170,17 @@ export interface JobRecord {
     modeConfigured?: string;
     modeEffective?: string;
     blockingEnabled?: boolean;
+    blockedStage?: string;
+    fallbackStage?: string | null;
+    note?: string | null;
   };
+
+  /** Which stage was blocked by validators (if any) */
+  blockedStage?: string | null;
+  /** Which stage we fell back to when a later stage was blocked */
+  fallbackStage?: string | null;
+  /** Human-friendly validation note for display */
+  validationNote?: string | null;
 
   // enhancement results:
   stageOutputs?: {
