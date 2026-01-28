@@ -2666,6 +2666,15 @@ export default function BatchProcessor() {
             console.warn("[retry-single] image_not_found", { imageIndex, imageId: imageIdForRetry, err });
             return;
           }
+          if (err?.error === "forbidden_source") {
+            clearRetryFlags(imageIndex);
+            toast({
+              title: "Pick a current output",
+              description: "Please refresh the page and choose a current output before retrying.",
+              variant: "destructive"
+            });
+            return;
+          }
           // Handle retry-specific compliance failures
           if (err.code === "RETRY_COMPLIANCE_FAILED") {
             const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";

@@ -119,6 +119,7 @@ export async function enqueueEnhanceJob(params: {
     stagingStyle?: string;
     stage2Variant?: "2A" | "2B";
     furnishedState?: "furnished" | "empty";
+    stagingPreference?: "refresh" | "full";
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {
@@ -171,6 +172,32 @@ export async function enqueueEditJob(params: {
   allowStaging?: boolean;
   stagingStyle?: string;
 }) {
+  const jobId: JobId = "job_" + crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const payload: AnyJobPayload = {
+    jobId,
+    userId: params.userId,
+    imageId: params.imageId,
+    type: "edit",
+    baseVersionId: params.baseVersionId,
+    mode: params.mode,
+    instruction: params.instruction,
+    mask: params.mask,
+    createdAt: now,
+    ...(params.remoteBaseUrl ? { remoteBaseUrl: params.remoteBaseUrl } : {}),
+    ...(params.remoteRestoreUrl ? { remoteRestoreUrl: params.remoteRestoreUrl } : {}),
+    ...(params.allowStaging !== undefined ? { allowStaging: params.allowStaging } : {}),
+    ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
+  } as any;
+
+
+
+  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  return { jobId };
+}
+
+// (Legacy getJob removed; now async and Redis-based)
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
 

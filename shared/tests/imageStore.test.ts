@@ -58,6 +58,21 @@ describe("Key normalization and lookup", () => {
     expect(result.baseKey).toBe("xyz.jpg");
     expect(result.retry).toBe(0);
   });
+
+  it("accepts fallback version key when versionId is null", async () => {
+    const url = "https://foo.com/bar/abc.jpg";
+    const baseKey = "abc.jpg";
+    const spy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(recordEnhancedImageRedis({
+      userId: "user-fallback",
+      imageId: "img-fallback",
+      publicUrl: url,
+      baseKey,
+      versionId: undefined as any,
+      fallbackVersionKey: "abc123",
+    })).resolves.not.toThrow();
+    spy.mockRestore();
+  });
 });
 
 // Contract test (pseudo, as redis is not mocked):

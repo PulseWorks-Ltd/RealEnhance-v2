@@ -87,6 +87,59 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if ((payload as any).retryType === "manual_retry") {
     nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
   }
+
+  // Re-hydrate and repair job metadata contract for ownership validation
+  const buildRequestedStages = (): any => ({
+    stage1a: true,
+    stage1b: (payload as any).options?.declutter
+      ? ((payload as any).options?.declutterMode === "light" ? "light" : "full")
+      : undefined,
+    stage2: !!(payload as any).options?.virtualStage,
+    stage2Mode: (payload as any).options?.virtualStage
+      ? ((payload as any).options?.stagingPreference === "refresh"
+        ? "refresh"
+        : (payload as any).options?.stagingPreference === "full"
+          ? "empty"
+          : "auto")
+      : undefined,
+  });
+
+  try {
+    const [liveJob, savedMeta] = await Promise.all([
+      getJob(payload.jobId),
+      getJobMetadata(payload.jobId),
+    ]);
+
+    const existingMeta = (liveJob as any)?.metadata as JobOwnershipMetadata | undefined;
+    const merged: JobOwnershipMetadata = {
+      userId: savedMeta?.userId || existingMeta?.userId || payload.userId,
+      imageId: savedMeta?.imageId || existingMeta?.imageId || payload.imageId,
+      jobId: payload.jobId,
+      createdAt: savedMeta?.createdAt || existingMeta?.createdAt || payload.createdAt || new Date().toISOString(),
+      requestedStages: savedMeta?.requestedStages || existingMeta?.requestedStages || buildRequestedStages(),
+      stageUrls: savedMeta?.stageUrls || existingMeta?.stageUrls,
+      resultUrl: savedMeta?.resultUrl || existingMeta?.resultUrl,
+      s3: savedMeta?.s3 || existingMeta?.s3,
+      warnings: savedMeta?.warnings || existingMeta?.warnings,
+      debug: savedMeta?.debug || existingMeta?.debug,
+    };
+
+    const missingFields: string[] = [];
+    if (!savedMeta?.userId && !existingMeta?.userId) missingFields.push("userId");
+    if (!savedMeta?.imageId && !existingMeta?.imageId) missingFields.push("imageId");
+    if (!savedMeta?.requestedStages && !existingMeta?.requestedStages) missingFields.push("requestedStages");
+    if (missingFields.length) {
+      nLog(`[JOB_META_REPAIRED] jobId=${payload.jobId} missingFields=${missingFields.join(",")}`);
+    }
+
+    await Promise.all([
+      updateJob(payload.jobId, { metadata: merged }),
+      saveJobMetadata(merged, JOB_META_TTL_PROCESSING_SECONDS),
+    ]);
+  } catch (metaErr: any) {
+    nLog(`[JOB_META_WARN] Failed to repair metadata for job ${payload.jobId}: ${metaErr?.message || metaErr}`);
+  }
+
   let stage12Success = false;
   let stage2Success = false;
   let stage2AttemptsUsed = 0;
@@ -1496,12 +1549,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     if (pubFinalUrl) {
       const baseKey = pubFinalUrl.split("?")[0].split("/").pop() || "";
+      const finalPathKey = (() => {
+        try {
+          const u = new URL(pubFinalUrl);
+          return u.pathname.replace(/^\/+/, "");
+        } catch {
+          return baseKey;
+        }
+      })();
+      const fallbackVersionKey = finalPathKey ? computeFallbackVersionKey(finalPathKey) : undefined;
       await recordEnhancedImageRedis({
         userId: payload.userId,
         imageId: payload.imageId,
         publicUrl: pubFinalUrl,
         baseKey, // recordEnhancedImageRedis will normalize & log if it tweaks this
-        versionId: finalPathVersion?.versionId || "",
+        versionId: finalPathVersion?.versionId || fallbackVersionKey || "",
+        fallbackVersionKey,
         stage: ((): "1A" | "1B" | "2" | "final" => {
           if (hasStage2) return "2";
           if (payload.options.declutter) return "1B";
@@ -1622,6 +1685,48 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": hasStage2 ? (pub2Url ?? null) : null
     }
   });
+
+  // Persist finalized metadata with longer history TTL
+  try {
+    const existingMeta = await getJobMetadata(payload.jobId);
+    const stageUrlsMeta = {
+      stage1a: pub1AUrl || undefined,
+      stage1b: pub1BUrl || undefined,
+      stage2: pub2Url || undefined,
+      publish: pubFinalUrl || undefined,
+    };
+    const debugMeta = {
+      ...(existingMeta?.debug || {}),
+      stage2ModeUsed: hasStage2
+        ? ((payload as any).options?.stagingPreference === "refresh"
+          ? "refresh"
+          : (payload as any).options?.stagingPreference === "full"
+            ? "empty"
+            : "auto")
+        : undefined,
+      validatorSummary: unifiedValidation || (stage2Blocked ? { blocked: true, reason: stage2BlockedReason } : undefined),
+    };
+
+    const mergedMeta: JobOwnershipMetadata = {
+      userId: existingMeta?.userId || payload.userId,
+      imageId: existingMeta?.imageId || payload.imageId,
+      jobId: payload.jobId,
+      createdAt: existingMeta?.createdAt || payload.createdAt || new Date().toISOString(),
+      requestedStages: existingMeta?.requestedStages || buildRequestedStages(),
+      stageUrls: stageUrlsMeta,
+      resultUrl: pubFinalUrl || existingMeta?.resultUrl,
+      s3: existingMeta?.s3,
+      warnings: existingMeta?.warnings,
+      debug: debugMeta,
+    };
+
+    await Promise.all([
+      updateJob(payload.jobId, { metadata: mergedMeta }),
+      saveJobMetadata(mergedMeta, JOB_META_TTL_HISTORY_SECONDS),
+    ]);
+  } catch (metaFinalizeErr: any) {
+    nLog(`[JOB_META_WARN] Failed to persist finalized metadata for job ${payload.jobId}: ${metaFinalizeErr?.message || metaFinalizeErr}`);
+  }
 
   const finalWarningCount = unifiedValidation?.warnings?.length || 0;
   nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${unifiedValidation?.hardFail ?? false} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);

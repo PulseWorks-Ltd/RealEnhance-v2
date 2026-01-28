@@ -20,3 +20,4 @@ export * from "./usage/usageCharging";
 // Analysis modules
 export * from "./analysis/types";
 export * from "./analysis/storage";
+export * from "./types/jobMetadata";

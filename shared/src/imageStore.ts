@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import { getRedis } from "./redisClient";
-import type { JobMetadata } from "./jobTypes";
+import type { JobOwnershipMetadata } from "./types/jobMetadata";
 
 export type RetryInfo = {
   noQuery: string;
@@ -74,7 +75,8 @@ export async function recordEnhancedImageRedis(opts: {
   imageId: string;
   publicUrl: string;
   baseKey: string; // now required
-  versionId: string;
+  versionId?: string;
+  fallbackVersionKey?: string;
   stage?: string;
   stage2?: string;
   isRetry?: boolean;
@@ -84,7 +86,8 @@ export async function recordEnhancedImageRedis(opts: {
 
   // Allow empty versionId for region-edit and edit stages which don't have S3 versions
   const isEditStage = opts.stage === "region-edit" || opts.stage === "edit";
-  if (!opts.userId || !opts.imageId || !opts.publicUrl || (!opts.versionId && !isEditStage)) {
+  const versionId = opts.versionId || opts.fallbackVersionKey;
+  if (!opts.userId || !opts.imageId || !opts.publicUrl || (!versionId && !isEditStage)) {
     throw new Error("[imageStore] recordEnhancedImageRedis: unusable input (missing userId, imageId, publicUrl, or versionId)");
   }
 
@@ -104,7 +107,7 @@ export async function recordEnhancedImageRedis(opts: {
     ownerUserId: opts.userId,
     publicUrl: opts.publicUrl,
     baseKey,
-    versionId: opts.versionId,
+    versionId: versionId || "",
     stage: opts.stage,
     stage2: opts.stage2,
     isRetry: opts.isRetry ?? retryFromFilename,
@@ -230,25 +233,36 @@ export async function findByPublicUrlRedis(
   return null;
 }
 
-// === Job metadata helpers (for Retry) ===
+// === Job metadata helpers (for Retry/ownership contract) ===
 const JOB_META_PREFIX = "jobmeta:";
 function jobMetaKey(jobId: string): string { return JOB_META_PREFIX + jobId; }
 
-export async function saveJobMetadata(meta: JobMetadata): Promise<void> {
+const PROCESSING_TTL = Number(process.env.JOB_META_TTL_PROCESSING_SECONDS || 86400);
+const HISTORY_TTL = Number(process.env.JOB_META_TTL_HISTORY_SECONDS || 2592000);
+
+export function computeFallbackVersionKey(key: string): string {
+  return crypto.createHash("sha1").update(key).digest("hex");
+}
+
+export async function saveJobMetadata(meta: JobOwnershipMetadata, ttlSeconds?: number): Promise<void> {
   const redis = getRedis() as any;
   if (!meta || !meta.jobId) throw new Error("[jobmeta] save: missing jobId");
   const json = JSON.stringify(meta);
-  await redis.set(jobMetaKey(meta.jobId), json);
+  const ttl = Number.isFinite(ttlSeconds) && ttlSeconds ? ttlSeconds : PROCESSING_TTL;
+  await redis.set(jobMetaKey(meta.jobId), json, { EX: ttl });
 }
 
-export async function getJobMetadata(jobId: string): Promise<JobMetadata | null> {
+export async function getJobMetadata(jobId: string): Promise<JobOwnershipMetadata | null> {
   const redis = getRedis() as any;
   const val = await redis.get(jobMetaKey(jobId));
   if (!val) return null;
   try {
-    return JSON.parse(val) as JobMetadata;
+    return JSON.parse(val) as JobOwnershipMetadata;
   } catch {
     return null;
   }
 }
+
+export const JOB_META_TTL_PROCESSING_SECONDS = PROCESSING_TTL;
+export const JOB_META_TTL_HISTORY_SECONDS = HISTORY_TTL;
 

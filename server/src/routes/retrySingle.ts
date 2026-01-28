@@ -122,14 +122,33 @@ export function retrySingleRouter() {
         }
 
         if (parentJobId) {
-          const parentJob = await getJob(parentJobId);
-          if (!parentJob || parentJob.userId !== sessUser.id) {
+          const [parentJob, parentMeta] = await Promise.all([
+            getJob(parentJobId),
+            getJobMetadata(parentJobId),
+          ]);
+
+          const owningUser = (parentJob as any)?.userId || parentMeta?.userId;
+          if (owningUser && owningUser !== sessUser.id) {
             return res.status(403).json({ success: false, error: "forbidden_source", message: "Source job does not belong to this user" });
           }
+
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
-          const values = parentStageUrls ? Object.values(parentStageUrls).filter(Boolean) as string[] : [];
-          if (values.length > 0 && !values.includes(sourceUrlRaw)) {
+          const metaStageUrls = parentMeta?.stageUrls;
+          const collectedUrls = [parentStageUrls, metaStageUrls]
+            .filter(Boolean)
+            .flatMap((m: any) => Object.values(m as Record<string, string | null>))
+            .filter(Boolean) as string[];
+
+          if (collectedUrls.length > 0 && !collectedUrls.includes(sourceUrlRaw)) {
             return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Provided source URL does not match recorded job outputs" });
+          }
+
+          if (collectedUrls.length === 0) {
+            // Fallback to history lookup; allow but warn if missing
+            const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, sourceUrlRaw).catch(() => null) : null;
+            if (!history) {
+              console.warn("[RETRY_META_MISSING_ALLOW]", { jobId: parentJobId, reason: "no_stage_urls_or_history", sourceUrlRaw });
+            }
           }
         }
 
