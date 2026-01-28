@@ -147,7 +147,7 @@ export function statusRouter() {
         const localStatusRaw: string | null = local.status || (rv && rv.status) || null;
         const stateFromLocal = normalizePipelineState(localStatusRaw);
         const stateNormalized = stateFromLocal !== "unknown" ? stateFromLocal : normalizeQueueState(state);
-        const pipelineStatus = stateNormalized;
+        let pipelineStatus = stateNormalized;
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
         const resultUrl: string | null =
@@ -155,6 +155,11 @@ export function statusRouter() {
           local.resultUrl ||
           local.imageUrl ||
           null;
+
+        // If we have a final URL but no reliable state, assume completion to avoid stuck queued items
+        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && resultUrl) {
+          pipelineStatus = "completed";
+        }
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
