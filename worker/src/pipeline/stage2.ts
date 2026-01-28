@@ -46,22 +46,21 @@ export async function runStage2(
     jobId?: string;
     /** Validation configuration (configured + blocking flag) */
     validationConfig?: { configuredMode: ValidatorMode; blockingEnabled: boolean };
-  let attemptsUsed = 0;
-  let validationRisk = false;
   }
 ): Promise<Stage2Result> {
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
   const validatorNotes: any[] = [];
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   let needsRetry = false;
   let lastValidatorResults: any = {};
   let tempMultiplier = 1.0;
   let strictPrompt = false;
 
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   const stageAwareConfig = loadStageAwareConfig();
   const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
+  let attemptsUsed = 0;
+  let validationRisk = false;
+  let retryCount = 0;
 
   // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
   // If stage1APath not provided, fallback to basePath with warning
@@ -83,7 +82,7 @@ export async function runStage2(
   if (process.env.USE_GEMINI_STAGE2 !== "1") {
     console.log(`[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
     if (dbg) console.log(`[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
-    return out;
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   }
 
   // Run OpenCV validator after Stage 1B (before staging) - legacy behavior
@@ -104,7 +103,7 @@ export async function runStage2(
   // Check API key before attempting Gemini calls
   if (!process.env.REALENHANCE_API_KEY) {
     console.warn(`[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
-    return out;
+    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false };
   }
 
   if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);

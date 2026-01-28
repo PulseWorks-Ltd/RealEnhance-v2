@@ -818,14 +818,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
             )
               ? String(detectedRoom || "living_room")
-        if (typeof stage2Outcome === "string") {
-          path2 = stage2Outcome;
-        } else {
-          path2 = stage2Outcome.outputPath;
-          stage2AttemptsUsed = stage2Outcome.attempts;
-          stage2MaxAttempts = stage2Outcome.maxAttempts;
-          stage2ValidationRisk = stage2Outcome.validationRisk;
-        }
+              : payload.options.roomType,
             sceneType: sceneLabel as any,
             profile,
             angleHint,
@@ -848,9 +841,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 });
               } catch {}
             }
-          path2 = typeof stage2Outcome === "string" ? stage2Outcome : stage2Outcome.outputPath;
           })
         : (payload.options.declutter && path1B ? path1B : path1A);
+
+      if (typeof stage2Outcome === "string") {
+        path2 = stage2Outcome;
+      } else {
+        path2 = stage2Outcome.outputPath;
+        stage2AttemptsUsed = stage2Outcome.attempts;
+        stage2MaxAttempts = stage2Outcome.maxAttempts;
+        stage2ValidationRisk = stage2Outcome.validationRisk;
+      }
     }
   } catch (e: any) {
     const errMsg = e?.message || String(e);
