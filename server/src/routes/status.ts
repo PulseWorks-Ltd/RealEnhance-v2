@@ -122,6 +122,8 @@ export function statusRouter() {
         let payload: any = null;
         let rv: any = null;
         let failedReason: string | undefined;
+        // Merge in Redis job record (written by worker via updateJob)
+        const local = await getJob(id) || ({} as any);
 
         try {
           const job = await queue.getJob(id);
@@ -143,9 +145,6 @@ export function statusRouter() {
         const stateFromLocal = normalizePipelineState(localStatusRaw);
         const stateNormalized = stateFromLocal !== "unknown" ? stateFromLocal : normalizeQueueState(state);
         const pipelineStatus = stateNormalized;
-
-        // Merge in Redis job record (written by worker via updateJob)
-        const local = await getJob(id) || ({} as any);
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
         const resultUrl: string | null =
@@ -390,7 +389,8 @@ export function statusRouter() {
       const item: StatusItem = {
         id: jobId,
         state: stateOut,
-        status: uiStatus,
+        status: stateOut,
+        uiStatus,
         queueStatus,
         success,
         imageId,
