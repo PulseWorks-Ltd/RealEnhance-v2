@@ -4106,6 +4106,7 @@ export default function BatchProcessor() {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
+                        const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
 
                         // Stage URL resolution (supports new stage1A/1B keys)
@@ -4114,15 +4115,22 @@ export default function BatchProcessor() {
                         const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
                         const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
 
-                        const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || stage2Url || stage1BUrl || stage1AUrl || null;
-                        const hasOutputs = !!(stage2Url || stage1BUrl || stage1AUrl || finalResultUrl);
+                        const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
+                        const hasPreviewOutputs = !!(stage2Url || stage1BUrl || stage1AUrl);
+                        const hasOutputs = hasPreviewOutputs || !!finalResultUrl;
                         let derivedUiStatus = uiStatus;
                         if (derivedUiStatus === "ok" && status === "failed" && hasOutputs) {
                           derivedUiStatus = "warning";
                         }
-                        const isError = (!hasOutputs && (status === "failed" || derivedUiStatus === "error"));
-                        const isDone = hasOutputs && derivedUiStatus !== "error";
-                        const isProcessing = ((runState === 'running' || isUploading || status === "processing" || status === "queued") && !isDone && !isError) || isRetrying;
+                        const isSuccessStatus = ["completed", "complete", "done"].includes(status);
+                        if (isSuccessStatus && !finalResultUrl && hasPreviewOutputs) {
+                          // Partial outputs arrived but final URL missing: treat as warning while still processing
+                          derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
+                        }
+                        const isError = (status === "failed") || derivedUiStatus === "error";
+                        const isDone = isSuccessStatus && !!finalResultUrl && !isError;
+                        const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
+                        const isProcessing = (!isDone && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
                         const displayStatus = isError
                           ? "Failed"
                           : isDone
@@ -4131,6 +4139,8 @@ export default function BatchProcessor() {
                           ? "Retrying..."
                           : isUploading
                           ? "Uploading..."
+                          : isProcessing
+                          ? "Processing..."
                           : aiSteps[i] || "Waiting in queue...";
                         const warnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
                         const warningCount = warnings.length;
@@ -4163,7 +4173,14 @@ export default function BatchProcessor() {
                             : selectedStage === "1B"
                               ? "Stage 1B"
                               : "Stage 1A";
-                          return isDone ? `${stageLabel} (Final)` : `Preview • ${stageLabel}`;
+                          const finalStageLabel = resultStage === "2"
+                            ? "Stage 2"
+                            : resultStage === "1B"
+                              ? "Stage 1B"
+                              : resultStage === "1A"
+                                ? "Stage 1A"
+                                : stageLabel;
+                          return isDone ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
                         })();
 
                         console.log('[ProcessingBatch] stage selection', {
