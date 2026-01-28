@@ -46,6 +46,9 @@ import {
   logUnifiedValidationCompact,
   type UnifiedValidationResult
 } from "./validators/runValidation";
+const STAGE1B_VALIDATION_MODE = ((process.env.STAGE1B_VALIDATION_MODE || "log").toLowerCase() === "block") ? "enforce" : "log";
+const STAGE1B_LOCAL_VALIDATE_MODE = ((process.env.STAGE1B_LOCAL_VALIDATE_MODE || "log").toLowerCase() === "block") ? "enforce" : "log";
+const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
@@ -649,6 +652,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
   let path1B: string | undefined = undefined;
+  let stage1BStructuralSafe = true;
   
   // ✅ STRICT PAYLOAD MODE ONLY — NO INFERENCE OR DEFAULTS
   const declutterMode = (payload.options as any).declutterMode;
@@ -677,26 +681,80 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
     nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Remove clutter/mess, keep furniture" : "Remove ALL furniture (empty room ready for staging)"}`);
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
-    try {
-      // Stage 1B: Always run as a separate Gemini call, only for furniture/clutter removal
-      path1B = await runStage1B(path1A, {
-        replaceSky: false, // Never combine with sky replacement
+
+    const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
+      const output = await runStage1B(path1A, {
+        replaceSky: false,
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
-        declutterMode: declutterMode as "light" | "stage-ready",
+        declutterMode: mode,
         jobId: payload.jobId,
       });
-    } catch (e: any) {
-      const errMsg = e?.message || String(e);
-      nLog(`[worker] Stage 1B failed: ${errMsg}`);
-      updateJob(payload.jobId, {
-        status: "failed",
-        errorMessage: errMsg,
-        error: errMsg,
-        meta: { ...sceneMeta }
-      });
-      return;
+
+      try {
+        const verdict = await runUnifiedValidation({
+          originalPath: path1A,
+          enhancedPath: output,
+          stage: "1B",
+          sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+          roomType: payload.options.roomType,
+          mode: STAGE1B_VALIDATION_MODE,
+          jobId: payload.jobId,
+          stage1APath: path1A,
+        });
+
+        const hardFail = verdict.hardFail && STAGE1B_VALIDATION_MODE === "enforce";
+        if (hardFail) {
+          const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "Stage 1B structural validation failed";
+          throw new Error(msg);
+        }
+
+        return { output, verdict };
+      } catch (valErr: any) {
+        const msg = valErr?.message || String(valErr);
+        nLog(`[stage1B][attempt=${attempt}] validation failed: ${msg}`);
+        throw new Error(msg);
+      }
+    };
+
+    let stage1BAttempts = 0;
+    const maxAttempts = STAGE1B_MAX_ATTEMPTS;
+    let useLightFallback = false;
+    let lastError: string | undefined;
+
+    while (true) {
+      stage1BAttempts += 1;
+      const currentMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as any;
+      nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
+      try {
+        const { output, verdict } = await runStage1BWithValidation(currentMode, stage1BAttempts);
+        path1B = output;
+        stage1BStructuralSafe = !verdict.hardFail;
+        break;
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        nLog(`[stage1B] attempt ${stage1BAttempts} failed: ${lastError}`);
+        const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
+        if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
+          // Switch to light declutter fallback for one attempt
+          useLightFallback = true;
+          stage1BAttempts = 0;
+          nLog(`[stage1B] Switching to light declutter fallback after failures in stage-ready mode`);
+          continue;
+        }
+        if (exhausted) {
+          const errMsg = `Stage 1B failed after ${stage1BAttempts} attempt(s): ${lastError}`;
+          updateJob(payload.jobId, {
+            status: "failed",
+            errorMessage: errMsg,
+            error: errMsg,
+            meta: { ...sceneMeta, stage1BAttempts }
+          });
+          return;
+        }
+      }
     }
+
     timings.stage1BMs = Date.now() - t1B;
     if (await isCancelled(payload.jobId)) {
       updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
@@ -717,7 +775,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // ═══════════ Post-1B Structural Validation (LOG-ONLY) ═══════════
-  let stage1BStructuralSafe = true;
 
   if (path1B && pub1AUrl && pub1BUrl) {
     try {
@@ -968,10 +1025,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Determine which stage to validate
       const validationStage: "1A" | "1B" | "2" = payload.options.virtualStage ? "2" :
-                                                 (payload.options.declutter ? "1B" : "1A");
+                     (payload.options.declutter ? "1B" : "1A");
 
-      // Get the base path (original or Stage 1A for comparison)
-      const validationBasePath = path1A;
+      // Get the base path (prefer Stage 1B when available for Stage 2)
+      const validationBasePath = (validationStage === "2" && path1B) ? path1B : path1A;
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
 
@@ -993,7 +1050,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         mode: effectiveValidationMode === "enforce" ? "enforce" : "log",
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
-        stage1APath: path1A,
+        stage1APath: validationBasePath,
       });
 
       const validationElapsed = Date.now() - validationStartTime;
