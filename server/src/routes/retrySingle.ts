@@ -104,6 +104,7 @@ export function retrySingleRouter() {
       let retrySourceStage: string | undefined = undefined;
       let retrySourceUrl: string | undefined = undefined;
       let retrySourceKey: string | undefined = undefined;
+      let rec: any = undefined;
 
       if (useStageSource) {
         const bucket = process.env.S3_BUCKET;
@@ -152,6 +153,9 @@ export function retrySingleRouter() {
         const buf = Buffer.from(await resp.arrayBuffer());
         await fs.writeFile(finalPath, buf);
       } else {
+        if (!file) {
+          return res.status(400).json({ success: false, error: "missing_image", message: "No image provided for retry" });
+        }
         const tempPath = (file as any).path || path.join((file as any).destination ?? uploadRoot, file.filename);
         const isImage = await isLikelyImage(tempPath, file.mimetype);
         if (!isImage) {
@@ -194,6 +198,16 @@ export function retrySingleRouter() {
           }
         }
       }
+
+      // Create image record for the new retry job (regardless of source path)
+      rec = createImageRecord({
+        userId: sessUser.id,
+        originalPath: finalPath,
+        roomType,
+        sceneType,
+        ...(parentImageId ? { retryParentImageId: parentImageId } : {}),
+      });
+      await addImageToUser(sessUser.id, (rec as any).imageId);
 
       console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'upload'} sourceUrl=${retrySourceUrl || 'upload'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
