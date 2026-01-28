@@ -1456,11 +1456,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: pubFinalUrl,
-    validation: unifiedValidation
-      ? {
+    validation: (() => {
+      const normalizedFlag = unifiedValidation?.normalized;
+      if (unifiedValidation) {
+        return {
           hardFail: unifiedValidation.hardFail,
           warnings: unifiedValidation.warnings,
-          normalized: unifiedValidation.normalized,
+          normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
           modeEffective: getEffectiveValidationMode({
             configuredMode: structureValidatorMode as any,
@@ -1472,20 +1474,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           blockedStage: stage2Blocked ? "2" : undefined,
           fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
           note: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined,
-        }
-      : stage2Blocked
-        ? {
-            hardFail: true,
-            warnings: stage2BlockedReason ? [stage2BlockedReason] : [],
-            normalized: unifiedValidation?.normalized,
-            modeConfigured: structureValidatorMode,
-            modeEffective: effectiveValidationMode,
-            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
-            blockedStage: "2",
-            fallbackStage: stage2FallbackStage,
-            note: stage2BlockedReason,
-          }
-        : undefined,
+        };
+      }
+      if (stage2Blocked) {
+        return {
+          hardFail: true,
+          warnings: stage2BlockedReason ? [stage2BlockedReason] : [],
+          normalized: normalizedFlag,
+          modeConfigured: structureValidatorMode,
+          modeEffective: effectiveValidationMode,
+          blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          blockedStage: "2",
+          fallbackStage: stage2FallbackStage,
+          note: stage2BlockedReason,
+        };
+      }
+      return undefined;
+    })(),
     attempts: stage2AttemptsUsed || stage2MaxAttempts
       ? { current: stage2AttemptsUsed || undefined, max: stage2MaxAttempts || undefined }
       : undefined,
