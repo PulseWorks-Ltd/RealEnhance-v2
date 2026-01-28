@@ -1,5 +1,6 @@
 import {
   PutObjectCommand,
+  CopyObjectCommand,
   S3Client,
   HeadBucketCommand,
   GetObjectCommand,
@@ -38,6 +39,11 @@ function getClient() {
     };
   }
   return new S3Client(cfg);
+}
+
+// Exposed for callers that need direct S3 access (e.g., server-side copy for retries)
+export function getS3Client(): S3Client {
+  return getClient();
 }
 
 function guessMime(p: string): string {
@@ -100,6 +106,57 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
   const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
   return { key, url, bucket, size, contentType };
+}
+
+export interface S3CopyResult {
+  key: string;
+  url: string;
+  bucket: string;
+}
+
+export function extractKeyFromS3Url(url: string): string | null {
+  if (!url) return null;
+  try {
+    const bucket = process.env.S3_BUCKET;
+    const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
+    const base = (process.env.S3_PUBLIC_BASEURL || "").replace(/\/+$/, "");
+    if (base && url.startsWith(base + "/")) {
+      return url.slice(base.length + 1).replace(/^\/+/, "");
+    }
+    const u = new URL(url);
+    const host = u.host.toLowerCase();
+    if (bucket) {
+      const s3HostA = `${bucket}.s3.${region}.amazonaws.com`.toLowerCase();
+      const s3HostB = `${bucket}.s3.amazonaws.com`.toLowerCase();
+      if (host === s3HostA || host === s3HostB) {
+        return u.pathname.replace(/^\/+/, "");
+      }
+    }
+    // Fallback for virtual-host or path-style variants
+    if (bucket && host.startsWith(`${bucket}.s3`)) {
+      return u.pathname.replace(/^\/+/, "");
+    }
+  } catch (e) {
+    console.warn(`[S3] Failed to parse key from URL: ${e}`);
+  }
+  return null;
+}
+
+export async function copyS3Object(sourceKey: string, targetKey: string): Promise<S3CopyResult> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+
+  const client = getClient();
+  await client.send(new CopyObjectCommand({
+    Bucket: bucket,
+    Key: targetKey,
+    CopySource: `${bucket}/${sourceKey}`,
+  }));
+
+  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
+  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
+  const url = base ? `${base}/${targetKey}` : `https://${bucket}.s3.${region}.amazonaws.com/${targetKey}`;
+  return { key: targetKey, url, bucket };
 }
 
 export interface S3Status {

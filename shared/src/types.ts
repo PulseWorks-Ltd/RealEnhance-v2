@@ -123,6 +123,13 @@ export interface EnhanceJobPayload {
   };
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   remoteOriginalKey?: string; // S3 key of original if uploaded
+  retryType?: string;
+  retrySourceStage?: string | null;
+  retrySourceUrl?: string | null;
+  retrySourceKey?: string | null;
+  retryParentImageId?: string | null;
+  retryParentJobId?: string | null;
+  retryClientBatchId?: string | null;
   createdAt: string;
 }
 

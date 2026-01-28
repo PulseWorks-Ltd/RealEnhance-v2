@@ -2577,6 +2577,33 @@ export default function BatchProcessor() {
       const imageIdForRetry = getImageIdForIndex(imageIndex);
       const storedScene = imageIdForRetry ? imageSceneTypesById[imageIdForRetry] : null;
       const explicitScene = sceneType || storedScene || "auto";
+
+      // Resolve which stage the user is currently viewing so we can retry from that exact output
+      const resultForRetry = results[imageIndex];
+      const stageMap = resultForRetry?.stageUrls || resultForRetry?.result?.stageUrls || resultForRetry?.stageOutputs || resultForRetry?.result?.stageOutputs || {};
+      const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+      const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+      const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+      const requestedStage = displayStageByIndex[imageIndex];
+      const selectedStageKey: StageKey | undefined = (() => {
+        if (requestedStage) return requestedStage;
+        if (stage2Url) return "2";
+        if (stage1BUrl) return "1B";
+        if (stage1AUrl) return "1A";
+        return undefined;
+      })();
+
+      const retrySource = (() => {
+        if (selectedStageKey === "2" && stage2Url) return { stage: "stage2" as const, url: stage2Url };
+        if (selectedStageKey === "1B" && stage1BUrl) return { stage: "stage1b" as const, url: stage1BUrl };
+        if (selectedStageKey === "1A" && stage1AUrl) return { stage: "stage1a" as const, url: stage1AUrl };
+        if (stage2Url) return { stage: "stage2" as const, url: stage2Url };
+        if (stage1BUrl) return { stage: "stage1b" as const, url: stage1BUrl };
+        if (stage1AUrl) return { stage: "stage1a" as const, url: stage1AUrl };
+        return { stage: "original" as const, url: originalFromStoreUrl || null };
+      })();
+      const parentJobId = resultForRetry?.jobId || jobIds[imageIndex] || null;
+      const clientBatchIdToSend = clientBatchIdRef.current || clientBatchId || null;
       
       // Build retry-focused goal based on scene
       const baseGoal = (globalGoal?.trim() || "General, realistic enhancement for the selected industry.").trim();
@@ -2602,6 +2629,11 @@ export default function BatchProcessor() {
       if (roomType) fd.append("roomType", roomType);
       if (windowCount !== undefined) fd.append("windowCount", String(windowCount));
       if (referenceImage) fd.append("referenceImage", referenceImage);
+      if (imageIdForRetry) fd.append("imageId", imageIdForRetry);
+      if (parentJobId) fd.append("parentJobId", parentJobId);
+      if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
+      if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
+      if (retrySource.url) fd.append("sourceUrl", retrySource.url);
 
       try {
         const response = await fetch(api("/api/batch/retry-single"), withDevice({

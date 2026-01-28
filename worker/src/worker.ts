@@ -84,6 +84,9 @@ import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  if ((payload as any).retryType === "manual_retry") {
+    nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
+  }
   let stage12Success = false;
   let stage2Success = false;
   let stage2AttemptsUsed = 0;

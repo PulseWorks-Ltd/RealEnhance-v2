@@ -86,6 +86,15 @@ export async function enqueueEnhanceJob(params: {
   agencyId?: string | null; // Optional: agency ID for usage billing
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   remoteOriginalKey?: string; // S3 key of original if uploaded
+  retryInfo?: {
+    retryType?: "manual_retry";
+    sourceStage?: string | null;
+    sourceUrl?: string | null;
+    sourceKey?: string | null;
+    parentImageId?: string | null;
+    parentJobId?: string | null;
+    clientBatchId?: string | null;
+  };
   options: {
     declutter: boolean;
     declutterMode?: "light" | "stage-ready";
@@ -131,6 +140,13 @@ export async function enqueueEnhanceJob(params: {
     // add non-typed extension field for worker consumption
     remoteOriginalUrl: params.remoteOriginalUrl as any,
     remoteOriginalKey: params.remoteOriginalKey as any,
+    retryType: params.retryInfo?.retryType,
+    retrySourceStage: params.retryInfo?.sourceStage,
+    retrySourceUrl: params.retryInfo?.sourceUrl,
+    retrySourceKey: params.retryInfo?.sourceKey,
+    retryParentImageId: params.retryInfo?.parentImageId,
+    retryParentJobId: params.retryInfo?.parentJobId,
+    retryClientBatchId: params.retryInfo?.clientBatchId,
     // ✅ Pass stage2OnlyMode to worker
     stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;

@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
-import { uploadOriginalToS3 } from "../utils/s3.js";
+import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -69,15 +69,6 @@ export function retrySingleRouter() {
       if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });
 
       const file = (req.file as Express.Multer.File | undefined);
-      if (!file) return res.status(400).json({ success: false, error: "missing_image" });
-
-      // Basic validation to avoid placeholder/non-image retries
-      const tempPath = (file as any).path || path.join((file as any).destination ?? uploadRoot, file.filename);
-      const isImage = await isLikelyImage(tempPath, file.mimetype);
-      if (!isImage) {
-        await fs.unlink(tempPath).catch(() => {});
-        return res.status(400).json({ success: false, error: "invalid_image_format", message: "Invalid image format for retry" });
-      }
 
       // REMOVED: Credit gating - execution is now always allowed
       // Usage tracking happens after job enqueuing
@@ -91,53 +82,120 @@ export function retrySingleRouter() {
       const declutter = toBool(body.declutter, false);
       const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
+      const sourceStageRaw = String(body.sourceStage || "").toLowerCase();
+      const sourceUrlRaw = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
+      const parentImageId = body.imageId || body.retryParentImageId || null;
+      const parentJobId = body.parentJobId || body.retryParentJobId || null;
+      const clientBatchId = body.clientBatchId || body.batchId || null;
+      const useStageSource = !!sourceUrlRaw;
+
       // Optional tuning
       const temperature = parseNumber(body.temperature);
       const topP = parseNumber(body.topP);
       const topK = parseNumber(body.topK);
 
-      // Move file to per-user folder
-      const userDir = path.join(uploadRoot, sessUser.id);
-      await fs.mkdir(userDir, { recursive: true });
-      const finalPath = path.join(userDir, file.filename || file.originalname);
-      if ((file as any).path) {
-        const src = path.join((file as any).destination ?? uploadRoot, file.filename);
-        await fs
-          .rename(src, finalPath)
-          .catch(async () => {
-            const buf = await fs.readFile((file as any).path);
-            await fs.writeFile(finalPath, buf);
-            await fs.unlink((file as any).path).catch(() => {});
-          });
+      if (!useStageSource && !file) {
+        return res.status(400).json({ success: false, error: "missing_image", message: "No image provided for retry" });
       }
 
-      // Create record and enqueue enhance job
-      const rec = createImageRecord({ userId: sessUser.id, originalPath: finalPath, roomType, sceneType });
-      await addImageToUser(sessUser.id, (rec as any).imageId);
-
-      // Upload original to S3 so worker can download it (required for multi-service deployments)
+      let finalPath: string;
       let remoteOriginalUrl: string | undefined = undefined;
-      const requireS3 = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
-      
-      if (requireS3 || process.env.S3_BUCKET) {
-        try {
-          const up = await uploadOriginalToS3(finalPath);
-          remoteOriginalUrl = up.url;
-          console.log(`[retrySingle] Original uploaded to S3: ${remoteOriginalUrl}`);
-        } catch (e) {
-          const msg = (e as any)?.message || String(e);
-          console.error('[retrySingle] S3 upload failed:', msg);
-          if (requireS3) {
-            return res.status(503).json({ success: false, error: 's3_upload_failed', message: msg });
-          }
-          console.warn('[retrySingle] Continuing without S3 (dev mode)');
+      let remoteOriginalKey: string | undefined = undefined;
+      let retrySourceStage: string | undefined = undefined;
+      let retrySourceUrl: string | undefined = undefined;
+      let retrySourceKey: string | undefined = undefined;
+
+      if (useStageSource) {
+        const bucket = process.env.S3_BUCKET;
+        if (!bucket) {
+          return res.status(400).json({ success: false, error: "s3_not_configured", message: "S3 bucket is required to retry from a stage output" });
         }
+
+        if (file && (file as any).path) {
+          await fs.unlink((file as any).path).catch(() => {});
+        }
+
+        const parsedKey = extractKeyFromS3Url(sourceUrlRaw);
+        if (!parsedKey) {
+          return res.status(400).json({ success: false, error: "invalid_source_url", message: "Retry source URL is not in the expected bucket" });
+        }
+
+        if (parentJobId) {
+          const parentJob = await getJob(parentJobId);
+          if (!parentJob || parentJob.userId !== sessUser.id) {
+            return res.status(403).json({ success: false, error: "forbidden_source", message: "Source job does not belong to this user" });
+          }
+          const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
+          const values = parentStageUrls ? Object.values(parentStageUrls).filter(Boolean) as string[] : [];
+          if (values.length > 0 && !values.includes(sourceUrlRaw)) {
+            return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Provided source URL does not match recorded job outputs" });
+          }
+        }
+
+        const prefix = (process.env.S3_PREFIX || "realenhance/originals").replace(/\/+$/, "");
+        const targetKey = `${prefix}/retry/${sessUser.id}/${Date.now()}-${path.basename(parsedKey)}`.replace(/^\/+/, "");
+
+        const copy = await copyS3Object(parsedKey, targetKey);
+        remoteOriginalUrl = copy.url;
+        remoteOriginalKey = copy.key;
+        retrySourceStage = sourceStageRaw || "stage2";
+        retrySourceUrl = sourceUrlRaw;
+        retrySourceKey = parsedKey;
+
+        const userDir = path.join(uploadRoot, sessUser.id);
+        await fs.mkdir(userDir, { recursive: true });
+        finalPath = path.join(userDir, path.basename(targetKey));
+        const resp = await fetch(copy.url);
+        if (!resp.ok) {
+          return res.status(503).json({ success: false, error: "source_download_failed", message: "Could not download copied stage output" });
+        }
+        const buf = Buffer.from(await resp.arrayBuffer());
+        await fs.writeFile(finalPath, buf);
       } else {
-        // Dev mode without S3: verify local file exists
-        if (!fss.existsSync(finalPath)) {
-          return res.status(404).json({ success: false, error: 'local_file_missing' });
+        const tempPath = (file as any).path || path.join((file as any).destination ?? uploadRoot, file.filename);
+        const isImage = await isLikelyImage(tempPath, file.mimetype);
+        if (!isImage) {
+          await fs.unlink(tempPath).catch(() => {});
+          return res.status(400).json({ success: false, error: "invalid_image_format", message: "Invalid image format for retry" });
+        }
+
+        const userDir = path.join(uploadRoot, sessUser.id);
+        await fs.mkdir(userDir, { recursive: true });
+        finalPath = path.join(userDir, file.filename || file.originalname);
+        if ((file as any).path) {
+          const src = path.join((file as any).destination ?? uploadRoot, file.filename);
+          await fs
+            .rename(src, finalPath)
+            .catch(async () => {
+              const buf = await fs.readFile((file as any).path);
+              await fs.writeFile(finalPath, buf);
+              await fs.unlink((file as any).path).catch(() => {});
+            });
+        }
+
+        const requireS3 = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+        if (requireS3 || process.env.S3_BUCKET) {
+          try {
+            const up = await uploadOriginalToS3(finalPath);
+            remoteOriginalUrl = up.url;
+            remoteOriginalKey = up.key;
+            console.log(`[retrySingle] Original uploaded to S3: ${remoteOriginalUrl}`);
+          } catch (e) {
+            const msg = (e as any)?.message || String(e);
+            console.error('[retrySingle] S3 upload failed:', msg);
+            if (requireS3) {
+              return res.status(503).json({ success: false, error: 's3_upload_failed', message: msg });
+            }
+            console.warn('[retrySingle] Continuing without S3 (dev mode)');
+          }
+        } else {
+          if (!fss.existsSync(finalPath)) {
+            return res.status(404).json({ success: false, error: 'local_file_missing' });
+          }
         }
       }
+
+      console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'upload'} sourceUrl=${retrySourceUrl || 'upload'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
       const options: any = {
         declutter,
@@ -166,8 +224,18 @@ export function retrySingleRouter() {
         userId: sessUser.id,
         imageId: (rec as any).imageId,
         remoteOriginalUrl,
+        remoteOriginalKey,
         options,
-        stage2OnlyMode
+        stage2OnlyMode,
+        retryInfo: {
+          retryType: "manual_retry",
+          sourceStage: retrySourceStage,
+          sourceUrl: retrySourceUrl,
+          sourceKey: retrySourceKey,
+          parentImageId,
+          parentJobId,
+          clientBatchId,
+        }
       });
 
       // Track usage for analytics (non-blocking)
