@@ -60,7 +60,7 @@ export interface ImageRecord {
   updatedAt: string;
 }
 
-export type JobStatus = "queued" | "processing" | "complete" | "error";
+export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed";
 
 /**
  * Declutter mode controls Stage 1B behavior:
@@ -150,6 +150,27 @@ export interface JobRecord {
   type: "enhance" | "edit";
   status: JobStatus;
   errorMessage?: string;
+
+  // Canonical pipeline tracking
+  currentStage?: string;          // e.g., "upload-original" | "1A" | "1B" | "2" | "finalizing"
+  finalStage?: string;            // stage that produced the final output ("1A" | "1B" | "2")
+  resultStage?: string;           // alias for finalStage (legacy compatibility)
+  resultUrl?: string | null;      // final public URL when complete
+  originalUrl?: string | null;    // published original URL for before/after
+  stageUrls?: Record<string, string | null>; // per-stage URLs surfaced mid-pipeline
+  attempts?: { current?: number; max?: number };
+  retryReason?: string | null;
+  fallbackUsed?: string | null;   // e.g., "light_declutter_backstop"
+
+  // Validation summary surfaced to UI (non-sensitive)
+  validation?: {
+    hardFail?: boolean;
+    warnings?: string[];
+    normalized?: boolean;
+    modeConfigured?: string;
+    modeEffective?: string;
+    blockingEnabled?: boolean;
+  };
 
   // enhancement results:
   stageOutputs?: {

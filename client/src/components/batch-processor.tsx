@@ -1593,10 +1593,15 @@ export default function BatchProcessor() {
         for (const it of items) {
           const key = it?.id || it?.jobId || it?.job_id;
           const idx = key ? jobIdToIndexRef.current[key] : undefined;
-          const uiStatusRaw = String(it?.status || "").toLowerCase(); // ok | warning | error (new contract)
-          const queueStateRaw = String(it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
-          const jobState = queueStateRaw === "active" ? "processing" : (queueStateRaw || "queued");
-          let status = jobState || "queued"; // rendering state
+          const uiStatusRaw = String(it?.uiStatus || it?.status || "").toLowerCase(); // ok | warning | error (preferred uiStatus)
+          const pipelineStatusRaw = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
+          const status = ((): string => {
+            if (["failed", "error"].includes(pipelineStatusRaw)) return "failed";
+            if (["complete", "completed", "done"].includes(pipelineStatusRaw)) return "completed";
+            if (["processing", "active"].includes(pipelineStatusRaw)) return "processing";
+            if (["queued", "waiting", "delayed"].includes(pipelineStatusRaw)) return "queued";
+            return pipelineStatusRaw || "queued";
+          })();
           const isTerminalFlag = typeof it?.isTerminal === 'boolean' ? it.isTerminal : TERMINAL_STATUSES.has(status);
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
@@ -1612,45 +1617,37 @@ export default function BatchProcessor() {
             stage1B: stageUrlsRaw.stage1B || stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || null,
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
-          const resultStage = it?.resultStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
+          const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const resultUrl = it?.publishedUrl || it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
-          const unified = it?.meta?.unifiedValidation || it?.meta?.unified_validation || null;
-          const warnings = Array.isArray(it?.warnings) ? it.warnings as string[] : Array.isArray(unified?.warnings) ? (unified.warnings as string[]) : [];
-          let hardFail = typeof it?.hardFail === 'boolean' ? it.hardFail : !!unified?.hardFail;
+          const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
+          const warnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
+          let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
           const stagePreview = stageUrls?.['2'] || stageUrls?.stage2 || stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1A'] || stageUrls?.stage1A || null;
           const hasOutputs = !!(stagePreview || resultUrl);
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
-          const downgradedFromError = uiStatus === 'error' && hasOutputs;
-          if (downgradedFromError) {
-            uiStatus = 'warning';
-            console.warn('[BATCH][ui] server reported error but outputs exist; downgrading to warning', { jobId: key, idx, stagePreview, resultUrl });
-          }
-          const warningList = downgradedFromError ? [...warnings, 'Output generated but flagged — see warnings.'] : warnings;
+          if (hardFail) uiStatus = 'error';
 
-          // Apply contract mapping: only truly failed when no outputs and hard fail or queue failed
-          if (status === "failed" && hasOutputs) status = "completed";
-          if (hardFail && !hasOutputs) status = "failed";
-          if (hardFail && hasOutputs) status = "completed";
-
+          // Completion requires explicit completed status
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
 
-          if (status === "error" && !isTerminalFlag) {
-            status = "processing";
+          // Missing final URL while marked complete is a warning bug surface
+          const warningList = (() => {
+            const base = warnings.slice();
+            if ((status === "completed" || status === "complete" || status === "done") && !resultUrl) {
+              base.push("Result URL missing while status=complete (inconsistent state)");
+              uiStatus = uiStatus === 'error' ? 'error' : 'warning';
+            }
+            return base;
+          })();
+
+          if (status === "failed") {
+            hardFail = true;
+            uiStatus = 'error';
           }
 
-          if (hasOutputs && status === "queued") {
-            status = completedFinal ? "completed" : "processing";
-            queuedWithOutputs.push({ idx, jobId: key });
-          } else if (!TERMINAL_STATUSES.has(status) && hasOutputs) {
-            queuedWithOutputs.push({ idx, jobId: key });
-          }
-
-          if (status === "error" && hasOutputs) {
-            errorWithOutputs.push({ idx, jobId: key });
-            status = completedFinal ? "completed" : "processing";
-          }
+          // No downgrades: keep processing/queued/failed/completed as reported
           statusCounts[status] = (statusCounts[status] || 0) + 1;
           const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
 

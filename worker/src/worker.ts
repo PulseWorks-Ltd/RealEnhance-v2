@@ -40,7 +40,7 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { logValidatorConfig, getValidatorMode, getValidatorBlockingEnabled } from "./validators/validatorMode";
+import { logValidatorConfig, getValidatorMode, getValidatorBlockingEnabled, getEffectiveValidationMode } from "./validators/validatorMode";
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
@@ -88,6 +88,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2AttemptsUsed = 0;
   let stage2MaxAttempts = 1;
   let stage2ValidationRisk = false;
+  let fallbackUsed: string | null = null;
   // Surface job metadata globally for downstream logging
   (global as any).__jobId = payload.jobId;
   (global as any).__jobRoomType = (payload.options as any)?.roomType;
@@ -125,7 +126,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
     } catch (e) {
       nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
-      updateJob(payload.jobId, { status: "error", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` });
+      updateJob(payload.jobId, { status: "failed", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` });
       return;
     }
   } else {
@@ -136,13 +137,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const rec = readImageRecord(payload.imageId);
     if (!rec) {
       nLog(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
-      updateJob(payload.jobId, { status: "error", errorMessage: "image not found - no remote URL and local record missing" });
+      updateJob(payload.jobId, { status: "failed", errorMessage: "image not found - no remote URL and local record missing" });
       return;
     }
     origPath = getOriginalPath(rec);
     if (!fs.existsSync(origPath)) {
       nLog(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
-      updateJob(payload.jobId, { status: "error", errorMessage: "original file not accessible in this container" });
+      updateJob(payload.jobId, { status: "failed", errorMessage: "original file not accessible in this container" });
       return;
     }
   }
@@ -249,10 +250,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const timings: Record<string, number> = {};
   const t0 = Date.now();
 
-  // UNIFIED VALIDATION CONFIGURATION
-  // Set to true to enable blocking on validation failures
-  // For now: LOG-ONLY MODE (never blocks images)
-  const VALIDATION_BLOCKING_ENABLED = false;
+  // UNIFIED VALIDATION CONFIGURATION (env-driven)
+  const structureValidatorMode = getValidatorMode("structure");
+  const VALIDATION_BLOCKING_ENABLED = getValidatorBlockingEnabled();
+  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, blocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}`);
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -267,7 +268,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const publishedOriginal = await publishImage(origPath);
   nLog(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
   // surface early so UI can show before/after immediately
-  updateJob(payload.jobId, { stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
+  updateJob(payload.jobId, { status: "processing", currentStage: "upload-original", stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
 
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
@@ -522,7 +523,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const sceneMeta = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
     return;
   }
 
@@ -636,9 +637,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e) {
     nLog('[worker] failed to publish 1A', e);
   }
-  updateJob(payload.jobId, { stage: "1A", progress: 35, stageUrls: { "1A": pub1AUrl } });
+  updateJob(payload.jobId, { status: "processing", currentStage: "1A", stage: "1A", progress: 35, stageUrls: { "1A": pub1AUrl ?? null } });
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
     return;
   }
 
@@ -662,7 +663,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       console.error(`❌ ${errMsg}`);
       console.error(`Payload options:`, JSON.stringify(payload.options, null, 2));
       updateJob(payload.jobId, {
-        status: "error",
+        status: "failed",
         errorMessage: errMsg,
         error: errMsg,
         meta: { ...sceneMeta }
@@ -686,7 +687,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const errMsg = e?.message || String(e);
       nLog(`[worker] Stage 1B failed: ${errMsg}`);
       updateJob(payload.jobId, {
-        status: "error",
+        status: "failed",
         errorMessage: errMsg,
         error: errMsg,
         meta: { ...sceneMeta }
@@ -695,7 +696,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     timings.stage1BMs = Date.now() - t1B;
     if (await isCancelled(payload.jobId)) {
-      updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+      updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
       return;
     }
   }
@@ -706,7 +707,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
-      updateJob(payload.jobId, { stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl });
+      updateJob(payload.jobId, { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl });
     } catch (e) {
       nLog('[worker] failed to publish 1B', e);
     }
@@ -757,7 +758,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
     return;
   }
 
@@ -795,9 +796,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
-  const stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
+  let stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   stage12Success = true;
-  const stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
   try {
@@ -857,18 +858,94 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const errMsg = e?.message || String(e);
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
     updateJob(payload.jobId, {
-      status: "error",
+      status: "failed",
       errorMessage: errMsg,
       error: errMsg,
       meta: { ...sceneMeta }
     });
     return;
   }
+
+  // Fallback: if full removal (stage-ready) exhausted retries with validation risk, try light declutter then rerun Stage 2
+  const declutterModeFallback = (payload.options as any).declutterMode;
+  const shouldFallbackLightDeclutter =
+    payload.options.virtualStage &&
+    stage2ValidationRisk &&
+    stage2AttemptsUsed >= stage2MaxAttempts &&
+    declutterModeFallback === "stage-ready";
+
+  if (shouldFallbackLightDeclutter) {
+    try {
+      nLog(`[worker] [FALLBACK] using light declutter backstop after full-removal retries exhausted`);
+      const lightPath1B = await runStage1B(path1A, {
+        replaceSky: false,
+        sceneType: sceneLabel,
+        roomType: payload.options.roomType,
+        declutterMode: "light",
+        jobId: payload.jobId,
+      });
+
+      stage2InputPath = lightPath1B;
+      stage2BaseStage = "1B";
+      const stagingStyleFallback = (() => {
+        const raw: any = (payload as any)?.options?.stagingStyle;
+        return raw && typeof raw === "string" ? raw.trim() : undefined;
+      })();
+
+      const stage2Outcome = await runStage2(stage2InputPath, stage2BaseStage, {
+        roomType: (
+          !payload.options.roomType ||
+          ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+        )
+          ? String(detectedRoom || "living_room")
+          : payload.options.roomType,
+        sceneType: sceneLabel as any,
+        profile,
+        angleHint,
+        stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+        stagingStyle: stagingStyleFallback,
+        jobId: payload.jobId,
+        validationConfig: { configuredMode: getValidatorMode("structure"), blockingEnabled: getValidatorBlockingEnabled() },
+        onStrictRetry: ({ reasons }) => {
+          try {
+            const msg = reasons && reasons.length
+              ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+              : "Validation failed. Retrying with stricter settings...";
+            updateJob(payload.jobId, {
+              message: msg,
+              meta: {
+                ...(sceneLabel ? { ...sceneMeta } : {}),
+                strictRetry: true,
+                strictRetryReasons: reasons || []
+              }
+            });
+          } catch {}
+        }
+      });
+
+      if (typeof stage2Outcome === "string") {
+        path2 = stage2Outcome;
+      } else {
+        path2 = stage2Outcome.outputPath;
+        stage2AttemptsUsed = stage2Outcome.attempts;
+        stage2MaxAttempts = stage2Outcome.maxAttempts;
+        stage2ValidationRisk = stage2Outcome.validationRisk;
+      }
+
+      fallbackUsed = "light_declutter_backstop";
+    } catch (fallbackErr: any) {
+      const errMsg = fallbackErr?.message || String(fallbackErr);
+      nLog(`[worker] Fallback light declutter failed: ${errMsg}`);
+      updateJob(payload.jobId, { status: "failed", errorMessage: errMsg, error: errMsg, meta: { ...sceneMeta }, fallbackUsed: "light_declutter_backstop" });
+      return;
+    }
+  }
+
   timings.stage2Ms = Date.now() - t2;
-  updateJob(payload.jobId, { stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
+  updateJob(payload.jobId, { status: "processing", currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "error", errorMessage: "cancelled" });
+    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
     return;
   }
 
@@ -892,7 +969,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // Ignore
         }
       }
-      updateJob(payload.jobId, { stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
+      updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
       // VALIDATOR FOCUS: Log Stage 2 URL
       vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
       nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
@@ -917,13 +994,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
 
+      const effectiveValidationMode = getEffectiveValidationMode({
+        configuredMode: structureValidatorMode as any,
+        blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+        attempt: Math.max(0, stage2AttemptsUsed ? stage2AttemptsUsed - 1 : 0),
+        maxAttempts: Math.max(stage2MaxAttempts || 1, stage2AttemptsUsed || 1),
+      });
+
+      nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? 'ON' : 'OFF'}`);
+
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
         stage: validationStage,
         sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         roomType: payload.options.roomType,
-        mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
+        mode: effectiveValidationMode === "enforce" ? "enforce" : "log",
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
       });
@@ -954,19 +1040,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             reasons: unifiedValidation.reasons,
             warnings: unifiedValidation.warnings,
             normalized: unifiedValidation.normalized,
+            modeConfigured: structureValidatorMode,
+            modeEffective: effectiveValidationMode,
+            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
           },
         },
       });
 
-      // Handle blocking logic (currently disabled)
-      if (VALIDATION_BLOCKING_ENABLED && unifiedValidation.hardFail) {
+      // Handle blocking logic using effective mode
+      if (unifiedValidation.hardFail && effectiveValidationMode === "enforce") {
         const failureMsg = `Structural validation failed: ${unifiedValidation.reasons.join("; ")}`;
         nLog(`[worker] ❌ BLOCKING IMAGE due to structural validation failure`);
         nLog(`[worker] Validation score: ${unifiedValidation.score}`);
         nLog(`[worker] Reasons: ${unifiedValidation.reasons.join("; ")}`);
 
         updateJob(payload.jobId, {
-          status: "error",
+          status: "failed",
           errorMessage: failureMsg,
           error: failureMsg,
           message: `Image failed structural validation (score: ${unifiedValidation.score})`,
@@ -975,10 +1064,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             unifiedValidation,
             structuralValidationFailed: true,
           },
+          validation: {
+            hardFail: true,
+            warnings: unifiedValidation.warnings,
+            normalized: unifiedValidation.normalized,
+            modeConfigured: structureValidatorMode,
+            modeEffective: effectiveValidationMode,
+            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          },
         });
 
         // In blocking mode, stop here and don't publish
-        // For now this code path never runs (VALIDATION_BLOCKING_ENABLED = false)
         return;
       }
 
@@ -1158,6 +1254,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   //   3) Stage 1A
   const hasStage2 = payload.options.virtualStage && !!pub2Url;
   const finalBasePath = hasStage2 ? path2 : (payload.options.declutter && path1B ? path1B! : path1A);
+  const finalStageLabel = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
 
   let finalPathVersion: any = null;
   try {
@@ -1320,6 +1417,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   updateJob(payload.jobId, {
     status: "complete",
+    currentStage: "finalizing",
+    finalStage: finalStageLabel,
+    resultStage: finalStageLabel,
     stageOutputs: {
       "1A": path1A,
       "1B": payload.options.declutter ? path1B : undefined,
@@ -1329,10 +1429,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: pubFinalUrl,
+    validation: unifiedValidation
+      ? {
+          hardFail: unifiedValidation.hardFail,
+          warnings: unifiedValidation.warnings,
+          normalized: unifiedValidation.normalized,
+          modeConfigured: structureValidatorMode,
+          modeEffective: getEffectiveValidationMode({
+            configuredMode: structureValidatorMode as any,
+            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            attempt: Math.max(0, stage2AttemptsUsed ? stage2AttemptsUsed - 1 : 0),
+            maxAttempts: Math.max(stage2MaxAttempts || 1, stage2AttemptsUsed || 1),
+          }),
+          blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+        }
+      : undefined,
+    attempts: stage2AttemptsUsed || stage2MaxAttempts
+      ? { current: stage2AttemptsUsed || undefined, max: stage2MaxAttempts || undefined }
+      : undefined,
+    fallbackUsed,
     stageUrls: {
-      "1A": pub1AUrl,
-      "1B": pub1BUrl,
-      "2": hasStage2 ? pub2Url : null
+      "1A": pub1AUrl ?? null,
+      "1B": pub1BUrl ?? null,
+      "2": hasStage2 ? (pub2Url ?? null) : null
     }
   });
 
@@ -1664,14 +1783,14 @@ const worker = new Worker(
             maskUrl: pubMask.url,
           };
         } else {
-          updateJob((payload as any).jobId, { status: "error", errorMessage: "unknown job type" });
+          updateJob((payload as any).jobId, { status: "failed", errorMessage: "unknown job type" });
         }
       } else {
         throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
       nLog("[worker] job failed", err);
-      updateJob((payload as any).jobId, { status: "error", errorMessage: err?.message || "unhandled worker error" });
+      updateJob((payload as any).jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" });
       throw err;
     }
   },

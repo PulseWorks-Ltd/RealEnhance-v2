@@ -54,7 +54,7 @@ export interface ImageRecord {
     createdAt: string;
     updatedAt: string;
 }
-export type JobStatus = "queued" | "processing" | "complete" | "error";
+export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed";
 /**
  * Declutter mode controls Stage 1B behavior:
  * - "light": Remove clutter/mess only, preserve all main furniture
@@ -124,6 +124,26 @@ export interface JobRecord {
     type: "enhance" | "edit";
     status: JobStatus;
     errorMessage?: string;
+    currentStage?: string;
+    finalStage?: string;
+    resultStage?: string;
+    resultUrl?: string | null;
+    originalUrl?: string | null;
+    stageUrls?: Record<string, string | null>;
+    attempts?: {
+        current?: number;
+        max?: number;
+    };
+    retryReason?: string | null;
+    fallbackUsed?: string | null;
+    validation?: {
+        hardFail?: boolean;
+        warnings?: string[];
+        normalized?: boolean;
+        modeConfigured?: string;
+        modeEffective?: string;
+        blockingEnabled?: boolean;
+    };
     stageOutputs?: {
         "1A"?: string;
         "1B"?: string;

@@ -282,6 +282,8 @@ export async function runStage2(
             maxAttempts,
           });
 
+          console.log(`[stage2] Validation mode: configured=${configuredMode} effective=${effectiveMode} blocking=${blockingEnabled ? 'ON' : 'OFF'} attempt=${attempt + 1}/${maxAttempts}`);
+
           const validationResult = await validateStructureStageAware({
             stage: "stage2",
             baselinePath: validationBaseline, // Stage1A output

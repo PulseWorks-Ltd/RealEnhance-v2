@@ -14,3 +14,5 @@ server/.env
 
 package-lock.json
 server/package-lock.json
+worker/src/validators/testPromptStrength.ts
+worker/test-data/Rental 03.jpg

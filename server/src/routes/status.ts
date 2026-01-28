@@ -15,9 +15,10 @@ type NormalizedState = "queued" | "processing" | "completed" | "failed" | "unkno
 
 type StatusItem = {
   id: string;
-  state: NormalizedState;
-  status: UiStatus; // UI-facing
-  queueStatus: QueueStatus; // legacy
+  state: NormalizedState;               // canonical pipeline status
+  status: NormalizedState;              // alias for backward compatibility
+  uiStatus: UiStatus;                   // UI severity (ok/warning/error)
+  queueStatus: QueueStatus;             // raw BullMQ state (legacy)
   success: boolean;
   imageId: string | null;
   imageUrl: string | null;
@@ -27,6 +28,21 @@ type StatusItem = {
   publishedUrl?: string | null;
   warnings?: string[];
   hardFail?: boolean;
+  validation?: {
+    hardFail?: boolean;
+    warnings?: string[];
+    normalized?: boolean;
+    modeConfigured?: string;
+    modeEffective?: string;
+    blockingEnabled?: boolean;
+  };
+  attempts?: { current?: number; max?: number };
+  currentStage?: string;
+  finalStage?: string;
+  resultStage?: string | null;
+  resultUrl?: string | null;
+  fallbackUsed?: string | null;
+  retryReason?: string | null;
   meta: any;
   mode?: string;
   error?: string | null;
@@ -53,6 +69,15 @@ function normalizeQueueState(state: string | null): NormalizedState {
   const s = normalizeStateToQueueStatus(state);
   if (s === "active") return "processing";
   return s as any;
+}
+
+function normalizePipelineState(raw: string | null | undefined): NormalizedState {
+  const s = (raw || "").toLowerCase();
+  if (s === "processing" || s === "active") return "processing";
+  if (s === "complete" || s === "completed" || s === "done") return "completed";
+  if (s === "failed" || s === "error") return "failed";
+  if (s === "queued" || s === "waiting" || s === "waiting-children" || s === "delayed") return "queued";
+  return "unknown";
 }
 
 export function statusRouter() {
@@ -114,7 +139,10 @@ export function statusRouter() {
         }
 
         const queueStatus = normalizeStateToQueueStatus(state);
-        const stateNormalized = normalizeQueueState(state);
+        const localStatusRaw: string | null = local.status || (rv && rv.status) || null;
+        const stateFromLocal = normalizePipelineState(localStatusRaw);
+        const stateNormalized = stateFromLocal !== "unknown" ? stateFromLocal : normalizeQueueState(state);
+        const pipelineStatus = stateNormalized;
 
         // Merge in Redis job record (written by worker via updateJob)
         const local = await getJob(id) || ({} as any);
@@ -152,9 +180,19 @@ export function statusRouter() {
         const mode: string | null =
           payload?.mode || local.mode || null;
 
-        const unified = (local?.meta || {})?.unifiedValidation || {};
-        const warnings: string[] = Array.isArray(unified?.warnings) ? unified.warnings : [];
-        const hardFail = !!unified?.hardFail || !!local?.hardFail;
+        const validationRaw =
+          local?.validation ||
+          (local?.meta && local.meta.unifiedValidation ? {
+            hardFail: local.meta.unifiedValidation.hardFail,
+            warnings: local.meta.unifiedValidation.warnings,
+            normalized: local.meta.unifiedValidation.normalized,
+          } : undefined) ||
+          undefined;
+
+        const warnings: string[] = Array.isArray(validationRaw?.warnings)
+          ? validationRaw!.warnings as string[]
+          : [];
+        const hardFail = validationRaw?.hardFail === true;
 
         const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
         let uiStatus: UiStatus = "ok";
@@ -164,19 +202,21 @@ export function statusRouter() {
         else if (warnings.length) uiStatus = "warning";
 
         const success =
-          stateNormalized === "completed" && typeof resultUrl === "string";
+          pipelineStatus === "completed" && typeof resultUrl === "string";
 
-        if (stateNormalized === "completed") completed++;
+        if (pipelineStatus === "completed") completed++;
 
-        // Apply hardFail-driven state remap per contract
-        let stateOut = stateNormalized;
-        if (hardFail && !hasOutputs) stateOut = "failed";
-        if (hardFail && hasOutputs) stateOut = "completed";
+        const currentStage: string | null = local.currentStage || null;
+        const finalStage: string | null = local.finalStage || local.resultStage || (rv && (rv.finalStage || rv.resultStage)) || null;
+        const attempts = local.attempts || (rv && rv.attempts) || null;
+        const fallbackUsed = local.fallbackUsed || (rv && rv.fallbackUsed) || null;
+        const retryReason = local.retryReason || (rv && rv.retryReason) || null;
 
         const item: StatusItem = {
           id,
-          state: stateOut,
-          status: uiStatus,
+          state: pipelineStatus,
+          status: pipelineStatus,
+          uiStatus,
           queueStatus,
           success,
           imageId,
@@ -186,8 +226,17 @@ export function statusRouter() {
           publishedUrl: resultUrl,
           warnings,
           hardFail,
+          validation: validationRaw,
+          attempts,
+          currentStage: currentStage || undefined,
+          finalStage: finalStage || undefined,
+          resultStage: finalStage ?? null,
+          resultUrl: resultUrl ?? null,
+          fallbackUsed: fallbackUsed || null,
+          retryReason: retryReason || null,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
+          mode: mode || undefined,
           meta: local.meta ?? {},
           error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
         };
