@@ -231,12 +231,20 @@ export function attachGoogleAuth(app: Express) {
     <p>Signed in. You can close this window.</p>
     <script>
       (function() {
+        function tryClose() {
+          try { window.close(); } catch (e) {}
+          try {
+            const selfWin = window.open("", "_self");
+            if (selfWin) selfWin.close();
+          } catch (e) {}
+        }
         try {
           if (window.opener && typeof window.opener.postMessage === "function") {
             window.opener.postMessage({ type: "auth:success" }, ${JSON.stringify(client)});
           }
         } catch (e) {}
-        try { window.close(); } catch (e) {}
+        tryClose();
+        setTimeout(tryClose, 120);
         setTimeout(function() {
           try { if (!window.closed) window.location.replace(${JSON.stringify(toClient)}); } catch (e) {}
         }, 300);
