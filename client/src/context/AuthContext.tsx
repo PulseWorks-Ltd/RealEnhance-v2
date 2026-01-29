@@ -1,6 +1,7 @@
 // client/src/context/AuthContext.tsx
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import clientApi, { apiFetch } from "@/lib/api";
+import { requestClearEnhancementState } from "@/lib/enhancement-state";
 
 type AuthUser = {
   id: string;
@@ -66,6 +67,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn("logout:", e);
     } finally {
+      // Clear any persisted or in-memory enhancement state so new sessions start clean
+      try { requestClearEnhancementState(user?.id || null); } catch {}
       setUser(null);
       // Redirect to public landing after logout
       const landing = (import.meta as any)?.env?.VITE_PUBLIC_LANDING_URL || "https://www.realenhance.co.nz/";

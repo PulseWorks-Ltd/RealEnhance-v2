@@ -9,6 +9,14 @@ import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import {
+  CLEAR_EVENT,
+  makeActiveKey,
+  makeBatchKey,
+  migrateLegacyKeysOnce,
+  clearEnhancementStateStorage,
+  requestClearEnhancementState,
+} from "@/lib/enhancement-state";
 import { getQuotaExceededMessage } from "@/lib/quota-messaging";
 import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
@@ -197,6 +205,7 @@ interface PersistedFileMetadata {
 }
 
 interface PersistedBatchJob {
+  ownerUserId?: string | null;
   jobId: string;
   jobIds: string[];
   runState: RunState;
@@ -220,24 +229,24 @@ interface PersistedBatchJob {
   jobIdToIndex: Record<string, number>;
 }
 
-const BATCH_JOB_KEY = "pmf_batch_job";
-const ACTIVE_BATCH_KEY = "activeBatchJobIds";
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
 
-function saveBatchJobState(state: PersistedBatchJob) {
+function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   try {
-    localStorage.setItem(BATCH_JOB_KEY, JSON.stringify(state));
+    const payload = { ...state, ownerUserId: userId ?? null };
+    localStorage.setItem(makeBatchKey(userId), JSON.stringify(payload));
   } catch (error) {
     console.warn("Failed to save batch job state:", error);
   }
 }
 
-function loadBatchJobState(): PersistedBatchJob | null {
+function loadBatchJobState(userId: string | null): PersistedBatchJob | null {
   try {
-    const saved = localStorage.getItem(BATCH_JOB_KEY);
+    migrateLegacyKeysOnce(userId);
+    const saved = localStorage.getItem(makeBatchKey(userId));
     if (!saved) return null;
     
     const state = JSON.parse(saved) as PersistedBatchJob;
@@ -257,11 +266,13 @@ function loadBatchJobState(): PersistedBatchJob | null {
   }
 }
 
-function clearBatchJobState() {
+function clearBatchJobState(userId?: string | null, opts?: { resetUI?: boolean }) {
   try {
-    localStorage.removeItem(BATCH_JOB_KEY);
-    localStorage.removeItem(ACTIVE_BATCH_KEY);
-    localStorage.removeItem("activeJobId");
+    if (opts?.resetUI) {
+      requestClearEnhancementState(userId ?? null);
+    } else {
+      clearEnhancementStateStorage(userId ?? null);
+    }
   } catch (error) {
     console.warn("Failed to clear batch job state:", error);
   }
@@ -551,8 +562,18 @@ export default function BatchProcessor() {
   };
   
   const { toast } = useToast();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, signOut } = useAuth();
   const { ensureLoggedInAndCredits } = useAuthGuard();
+  const currentUserId = user?.id || null;
+
+  const prevUserIdRef = useRef<string | null>(null);
+
+  const handleAuthFailure = useCallback(() => {
+    clearBatchJobState(currentUserId, { resetUI: true });
+    setRunState("idle");
+    setAbortController(null);
+    try { signOut?.(); } catch {}
+  }, [currentUserId, signOut]);
 
   const isAdminUser = user?.role === "owner" || user?.role === "admin";
   const hasRoleInfo = !!user?.role;
@@ -1168,80 +1189,107 @@ export default function BatchProcessor() {
 
   // Restore batch job state on component mount
   useEffect(() => {
-    const savedState = loadBatchJobState();
-    if (savedState) {
-      console.log("Restoring batch job state:", savedState.jobId);
-      setJobId(savedState.jobId);
-      setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
-      setRunState(savedState.runState);
-      setResults(savedState.results);
-      setProcessedImages(savedState.processedImages);
-      setProcessedImagesByIndex(savedState.processedImagesByIndex);
-      jobIdToIndexRef.current = savedState.jobIdToIndex || {};
-      if (!Object.keys(jobIdToIndexRef.current).length) {
-        rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
-      }
-      setGlobalGoal(savedState.goal);
-      setPreserveStructure?.(savedState.settings.preserveStructure);
-      setAllowStaging(savedState.settings.allowStaging);
-      setAllowRetouch?.(savedState.settings.allowRetouch);
-      setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
-      setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
-      setDeclutter(savedState.settings.declutter ?? false);
-      // DO NOT restore stagingStyle - always default to NZ Standard Real Estate
-      // User must explicitly select a different style for each new session
-      
-      // Restore file metadata if available
-      if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
-        console.log("Restoring file metadata for", savedState.fileMetadata.length, "files");
-        // Create placeholder File objects from metadata so the UI shows the upload queue
-        const restoredFiles = savedState.fileMetadata.map((meta, index) => {
-          // Create a minimal File-like object for display purposes
-          const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
-          const file = new File([blob], meta.name, {
-            type: meta.type,
-            lastModified: meta.lastModified
-          });
-          // Add a flag to identify this as a restored file (for display only)
-          (file as any).__restored = true;
-          return file;
-        });
-        setFiles(restoredFiles);
-      }
-      
-      // If the job was running, continue polling
-      if (savedState.runState === "running") {
-        setActiveTab("enhance");
-        startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
-      } else if (savedState.runState === "done") {
-        setActiveTab("enhance");
-      }
-    } else {
-      // Fallback: check for active batch ids from enhanced polling (user may have navigated away)
-      const activeBatchIdsRaw = localStorage.getItem(ACTIVE_BATCH_KEY);
-      if (activeBatchIdsRaw) {
-        try {
-          const activeIds: string[] = JSON.parse(activeBatchIdsRaw);
-          if (Array.isArray(activeIds) && activeIds.length) {
-            console.log("Resuming polling for active batch:", activeIds);
-            setJobId(activeIds[0]);
-            setJobIds(activeIds);
-            setRunState("running");
-            setActiveTab("enhance");
-            rebuildJobIndexMapping(activeIds, files.length || activeIds.length);
-            startPollingExistingBatch(activeIds);
-          }
-        } catch {
-          localStorage.removeItem(ACTIVE_BATCH_KEY);
-        }
-      }
+    const userId = currentUserId;
+    if (!userId) {
+      console.log("[BATCH_RESTORE_SKIPPED_NO_USER]");
+      clearBatchJobState(undefined, { resetUI: true });
+      return;
     }
-  }, []);
+
+    const savedState = loadBatchJobState(userId);
+    if (!savedState) return;
+
+    if (savedState.ownerUserId && savedState.ownerUserId !== userId) {
+      console.log("[BATCH_RESTORE_SKIPPED_DIFFERENT_USER]", { stored: savedState.ownerUserId, current: userId });
+      clearBatchJobState(userId, { resetUI: true });
+      return;
+    }
+
+    console.log("[BATCH_RESTORE_OK]", { userId, jobId: savedState.jobId });
+    setJobId(savedState.jobId);
+    setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
+    setRunState(savedState.runState);
+    setResults(savedState.results);
+    setProcessedImages(savedState.processedImages);
+    setProcessedImagesByIndex(savedState.processedImagesByIndex);
+    jobIdToIndexRef.current = savedState.jobIdToIndex || {};
+    if (!Object.keys(jobIdToIndexRef.current).length) {
+      rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
+    }
+    setGlobalGoal(savedState.goal);
+    setPreserveStructure?.(savedState.settings.preserveStructure);
+    setAllowStaging(savedState.settings.allowStaging);
+    setAllowRetouch?.(savedState.settings.allowRetouch);
+    setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
+    setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
+    setDeclutter(savedState.settings.declutter ?? false);
+    // DO NOT restore stagingStyle - always default to NZ Standard Real Estate
+    // User must explicitly select a different style for each new session
+    
+    // Restore file metadata if available
+    if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
+      console.log("Restoring file metadata for", savedState.fileMetadata.length, "files");
+      // Create placeholder File objects from metadata so the UI shows the upload queue
+      const restoredFiles = savedState.fileMetadata.map((meta) => {
+        const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
+        const file = new File([blob], meta.name, {
+          type: meta.type,
+          lastModified: meta.lastModified
+        });
+        (file as any).__restored = true; // display-only placeholder
+        return file;
+      });
+      setFiles(restoredFiles);
+    }
+    
+    if (savedState.runState === "running") {
+      setActiveTab("enhance");
+      startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
+    } else if (savedState.runState === "done") {
+      setActiveTab("enhance");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId]);
+
+  // Clear enhancement state when user changes (cross-account guard)
+  useEffect(() => {
+    const prev = prevUserIdRef.current;
+    if (prev && prev !== currentUserId) {
+      requestClearEnhancementState(prev);
+      requestClearEnhancementState(currentUserId);
+    }
+    prevUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
+  // Listen for global clear requests (logout or manual clear) to reset component state and abort polling
+  useEffect(() => {
+    const handler = () => {
+      if (abortController) {
+        abortController.abort();
+        setAbortController(null);
+      }
+      queueRef.current = [];
+      processedSetRef.current = new Set();
+      jobIdToIndexRef.current = {};
+      setJobId("");
+      setJobIds([]);
+      setResults([]);
+      setProcessedImages([]);
+      setProcessedImagesByIndex({});
+      setRunState("idle");
+      setProgressText("");
+      setFiles([]);
+      setActiveTab("upload");
+    };
+    window.addEventListener(CLEAR_EVENT, handler);
+    return () => window.removeEventListener(CLEAR_EVENT, handler);
+  }, [abortController]);
 
   // Auto-save state when key values change
   useEffect(() => {
-    if (runState !== "idle" && (jobId || jobIds.length)) {
+    if (runState !== "idle" && (jobId || jobIds.length) && currentUserId) {
       const state: PersistedBatchJob = {
+        ownerUserId: currentUserId,
         jobId,
         jobIds,
         runState,
@@ -1269,9 +1317,9 @@ export default function BatchProcessor() {
         })),
         jobIdToIndex: { ...jobIdToIndexRef.current }
       };
-      saveBatchJobState(state);
+      saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle]);
+  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -1290,8 +1338,11 @@ export default function BatchProcessor() {
 
   // Extracted polling logic for reuse
   const pollForResults = async (currentJobId: string, controller: AbortController) => {
-    // Persist so we can resume after reload/nav
+    // Persist so we can resume after reload/nav (per-user key)
     localStorage.setItem("activeJobId", currentJobId);
+    if (currentUserId) {
+      localStorage.setItem(makeActiveKey(currentUserId), JSON.stringify([currentJobId]));
+    }
     
     const MAX_POLL_MINUTES = 45;                         // Extended from 5 minutes to 45 minutes
     const MAX_POLL_MS = MAX_POLL_MINUTES * 60 * 1000;
@@ -1326,12 +1377,9 @@ export default function BatchProcessor() {
             delay = Math.min(BACKOFF_MAX_MS, Math.floor(delay * BACKOFF_FACTOR));
             continue;
           }
-          if (resp.status === 401) {
-            setRunState("idle");
-            setAbortController(null);
-            clearBatchJobState();
-            localStorage.removeItem("activeJobId");
-            return alert("Unable to process as you're not logged in. Please login and click retry to continue.");
+          if (resp.status === 401 || resp.status === 403) {
+            handleAuthFailure();
+            return alert("Session expired. Please login and retry.");
           }
           const err = await resp.json().catch(() => ({}));
           console.warn("[status-poll] transient error", { status: resp.status, body: err });
@@ -1491,7 +1539,7 @@ export default function BatchProcessor() {
           if (data.status === 'completed') {
             setRunState('done');
             setAbortController(null);
-            localStorage.removeItem('activeJobId');
+            clearBatchJobState(currentUserId);
             await refreshUser();
             setProgressText('Batch complete! 1 images enhanced successfully.');
             return;
@@ -1499,7 +1547,7 @@ export default function BatchProcessor() {
           if (['failed','error'].includes(data.status)) {
             setRunState('idle');
             setAbortController(null);
-            localStorage.removeItem('activeJobId');
+            clearBatchJobState(currentUserId);
             setProgressText('Batch failed');
             return;
           }
@@ -1508,7 +1556,7 @@ export default function BatchProcessor() {
         if (data.done) {
           setRunState("done");
           setAbortController(null);
-          localStorage.removeItem("activeJobId");
+          clearBatchJobState(currentUserId);
           await refreshUser(); // Refresh to show updated credits
           
           const completedCount = data.items ? data.items.filter((item: any) => item && item.status === 'completed').length : 0;
@@ -1834,7 +1882,7 @@ export default function BatchProcessor() {
         }
 
         // Stale-state self-heal: server says done but we still see queued/processing
-        if (serverSignaledDone && !allTerminal) {
+          if (serverSignaledDone && !allTerminal) {
           if (doneSeenAt === null) {
             doneSeenAt = Date.now();
             if (IS_DEV) {
@@ -1878,8 +1926,7 @@ export default function BatchProcessor() {
           setAbortController(null);
           await refreshUser();
           setProgressText(`Batch complete! ${terminalCount} images finished.`);
-          localStorage.removeItem(ACTIVE_BATCH_KEY);
-          localStorage.removeItem("activeJobId");
+          clearBatchJobState(currentUserId);
           return;
         }
 
@@ -1890,8 +1937,7 @@ export default function BatchProcessor() {
       }
       await new Promise(r => setTimeout(r, delay));
     }
-    localStorage.removeItem(ACTIVE_BATCH_KEY);
-    localStorage.removeItem("activeJobId");
+    clearBatchJobState(currentUserId);
   };
 
   // Helper: start polling a single region-edit job via the global batch status endpoint
@@ -1919,7 +1965,7 @@ export default function BatchProcessor() {
     const MAX_POLL_MS = 45 * 60 * 1000;
     const BACKOFF_START_MS = 1000, BACKOFF_MAX_MS = 5000, BACKOFF_FACTOR = 1.5;
     let delay = BACKOFF_START_MS; const deadline = Date.now() + MAX_POLL_MS;
-    localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(ids));
+    if (currentUserId) localStorage.setItem(makeActiveKey(currentUserId), JSON.stringify(ids));
     while (Date.now() < deadline) {
       if (controller.signal.aborted) return;
       try {
@@ -1951,8 +1997,7 @@ export default function BatchProcessor() {
         schedule();
         if (completed === ids.length) {
           setRunState('done'); setAbortController(null); await refreshUser();
-          localStorage.removeItem(ACTIVE_BATCH_KEY);
-          localStorage.removeItem("activeJobId");
+          clearBatchJobState(currentUserId);
           return;
         }
         delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
@@ -1962,8 +2007,7 @@ export default function BatchProcessor() {
       }
       await new Promise(r=>setTimeout(r, delay));
     }
-    localStorage.removeItem(ACTIVE_BATCH_KEY);
-    localStorage.removeItem("activeJobId");
+    clearBatchJobState(currentUserId);
   };
 
   // Cancel entire batch: abort client polling and notify server to cancel queued jobs
@@ -1984,11 +2028,12 @@ export default function BatchProcessor() {
       }
       setRunState("idle");
       setProgressText("Cancelled");
-      localStorage.removeItem("activeJobId");
-      localStorage.removeItem(ACTIVE_BATCH_KEY);
-      toast({ title: 'Batch cancelled', description: ids.length ? `Requested cancel for ${ids.length} job(s).` : 'Stopped polling.' });
+      clearBatchJobState(currentUserId, { resetUI: true });
+      toast({ title: 'Enhancement cancelled', description: ids.length ? `Requested cancel for ${ids.length} job(s).` : 'Stopped polling.' });
     } catch (e: any) {
-      toast({ title: 'Cancel failed', description: e?.message || 'Unable to cancel batch on server', variant: 'destructive' });
+      // Even if server cancel fails, clear local state to avoid stuck UI
+      clearBatchJobState(currentUserId, { resetUI: true });
+      toast({ title: 'Cancelled locally; some jobs may still complete', description: e?.message || 'Unable to cancel batch on server', variant: 'destructive' });
     }
   };
 
@@ -2155,7 +2200,8 @@ export default function BatchProcessor() {
       if (!uploadResp.ok) {
         setIsUploading(false);
         setRunState("idle");
-        if (uploadResp.status === 401) {
+        if (uploadResp.status === 401 || uploadResp.status === 403) {
+          handleAuthFailure();
           toast({ title: "Login required", description: "Login and retry to start enhancement.", variant: "destructive" });
           return;
         }
@@ -2185,6 +2231,10 @@ export default function BatchProcessor() {
       });
       setJobIds(ids);
       setCancelIds(ids);
+      if (currentUserId) {
+        localStorage.setItem(makeActiveKey(currentUserId), JSON.stringify(ids));
+        localStorage.setItem("activeJobId", ids[0]);
+      }
       jobIdToIndexRef.current = {};
       jobIdToImageIdRef.current = {};
       jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
@@ -3008,7 +3058,8 @@ export default function BatchProcessor() {
       console.error("Batch refine error:", error);
       
       // Handle authentication errors (batch refine is free, so no credit issues)
-      if (error.code === 401) {
+      if (error.code === 401 || error.code === 403) {
+        handleAuthFailure();
         toast({ 
           title: "Authentication Required", 
           description: "Please sign in to refine batch images.",
@@ -4191,6 +4242,16 @@ export default function BatchProcessor() {
                                 <CheckCircle className="w-3 h-3 mr-2" />
                                 Complete
                             </span>
+                        )}
+                        {runState === 'running' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-3"
+                            onClick={cancelBatchProcessing}
+                          >
+                            Cancel enhancement
+                          </Button>
                         )}
                     </div>
                     </div>
