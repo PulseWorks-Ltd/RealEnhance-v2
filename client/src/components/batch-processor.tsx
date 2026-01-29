@@ -227,6 +227,7 @@ interface PersistedBatchJob {
   };
   fileMetadata: PersistedFileMetadata[];
   jobIdToIndex: Record<string, number>;
+  imageIdToIndex?: Record<string, number>;
 }
 
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
@@ -355,6 +356,7 @@ export default function BatchProcessor() {
   const [jobId, setJobId] = useState<string>("");
   const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
   const jobIdToIndexRef = useRef<Record<string, number>>({});
+  const imageIdToIndexRef = useRef<Record<string, number>>({});
   const jobIdToImageIdRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<any[]>([]);
   const [displayStageByIndex, setDisplayStageByIndex] = useState<Record<number, StageKey>>({});
@@ -566,6 +568,7 @@ export default function BatchProcessor() {
   const statusUnknownLoggedRef = useRef<Set<string>>(new Set());
   const idxMissingLoggedRef = useRef<Set<string>>(new Set());
   const statusHasUrlLoggedRef = useRef<Set<string>>(new Set());
+  const retryChildMappingLoggedRef = useRef<Set<string>>(new Set());
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -1224,8 +1227,17 @@ export default function BatchProcessor() {
     setProcessedImages(savedState.processedImages);
     setProcessedImagesByIndex(savedState.processedImagesByIndex);
     jobIdToIndexRef.current = savedState.jobIdToIndex || {};
+    imageIdToIndexRef.current = savedState.imageIdToIndex || {};
     if (!Object.keys(jobIdToIndexRef.current).length) {
       rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
+    }
+    if (!Object.keys(imageIdToIndexRef.current).length && Array.isArray(savedState.results)) {
+      savedState.results.forEach((res, idx) => {
+        const imgId = res?.imageId || res?.result?.imageId;
+        if (imgId && imageIdToIndexRef.current[imgId] === undefined) {
+          imageIdToIndexRef.current[imgId] = idx;
+        }
+      });
     }
     setGlobalGoal(savedState.goal);
     setPreserveStructure?.(savedState.settings.preserveStructure);
@@ -1282,6 +1294,8 @@ export default function BatchProcessor() {
       queueRef.current = [];
       processedSetRef.current = new Set();
       jobIdToIndexRef.current = {};
+      imageIdToIndexRef.current = {};
+      jobIdToImageIdRef.current = {};
       setJobId("");
       setJobIds([]);
       setResults([]);
@@ -1326,7 +1340,8 @@ export default function BatchProcessor() {
           type: file.type,
           lastModified: file.lastModified
         })),
-        jobIdToIndex: { ...jobIdToIndexRef.current }
+        jobIdToIndex: { ...jobIdToIndexRef.current },
+        imageIdToIndex: { ...imageIdToIndexRef.current }
       };
       saveBatchJobState(state, currentUserId);
     }
@@ -1703,9 +1718,47 @@ export default function BatchProcessor() {
         // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
           const polledId = it?.jobId || it?.id || it?.job_id || it?.job?.id || it?.job?.jobId || it?.result?.jobId;
-          const parentJobId = it?.parentJobId || it?.parent_job_id || null;
+          const retryInfo = it?.retryInfo || it?.retry_info || it?.meta?.retryInfo || it?.meta?.retry_info || {};
+          const metaParentJobId = it?.meta?.parentJobId || it?.meta?.parent_job_id || null;
+          const jobParentJobId = it?.job?.parentJobId || it?.job?.parent_job_id || null;
+          const parentJobId = it?.parentJobId || it?.parent_job_id || retryInfo?.parentJobId || retryInfo?.parent_job_id || metaParentJobId || jobParentJobId || null;
+          const imageId = it?.imageId || it?.image_id || it?.meta?.imageId || it?.meta?.image_id || retryInfo?.imageId || retryInfo?.image_id || jobIdToImageIdRef.current[polledId || ''] || null;
           let idx = polledId ? jobIdToIndexRef.current[polledId] : undefined;
-          if (typeof idx === 'undefined' && parentJobId) idx = jobIdToIndexRef.current[parentJobId];
+          let mappedViaParent = false;
+          let mappedViaImage = false;
+
+          if (typeof idx === 'undefined' && parentJobId) {
+            const parentIdx = jobIdToIndexRef.current[parentJobId];
+            if (typeof parentIdx === 'number') {
+              idx = parentIdx;
+              mappedViaParent = true;
+            }
+          }
+
+          if (typeof idx === 'undefined' && imageId) {
+            const imageIdx = imageIdToIndexRef.current[imageId];
+            if (typeof imageIdx === 'number') {
+              idx = imageIdx;
+              mappedViaImage = true;
+            }
+          }
+
+          const resolvedJobKey = polledId || parentJobId || (typeof idx === 'number' ? jobIds[idx] : null) || imageId || null;
+          const key = resolvedJobKey || 'unknown';
+
+          if (typeof idx === 'number') {
+            if ((mappedViaParent || mappedViaImage) && !retryChildMappingLoggedRef.current.has(String(polledId || `${parentJobId || ''}:${imageId || ''}:${idx}`))) {
+              retryChildMappingLoggedRef.current.add(String(polledId || `${parentJobId || ''}:${imageId || ''}:${idx}`));
+              console.log('[BATCH][retry_child_mapped_to_parent]', { childJobId: polledId || null, parentJobId, imageId, idx });
+            }
+            if (polledId && jobIdToIndexRef.current[polledId] === undefined) {
+              jobIdToIndexRef.current[polledId] = idx;
+            }
+            if (imageId) {
+              imageIdToIndexRef.current[imageId] = idx;
+            }
+          }
+
           const uiStatusRaw = String(it?.uiStatus || it?.status || "").toLowerCase(); // ok | warning | error (preferred uiStatus)
           const pipelineStatusRaw = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
           const normalizedStatus = normalizeJobStatus(pipelineStatusRaw);
@@ -1799,9 +1852,9 @@ export default function BatchProcessor() {
           }
 
           const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
-          if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(polledId || parentJobId || 'unknown'))) {
-            statusHasUrlLoggedRef.current.add(String(polledId || parentJobId || 'unknown'));
-            console.log('[BATCH][status_unmapped_but_has_url]', { polledId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrl } });
+          if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
+            statusHasUrlLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
+            console.log('[BATCH][status_unmapped_but_has_url]', { polledId, parentJobId, imageId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrl } });
           }
 
           // No downgrades: keep processing/queued/failed/completed as reported
@@ -1826,7 +1879,8 @@ export default function BatchProcessor() {
                 stageUrls: stageUrls ?? null,
                 completionSource,
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
-                imageId: it.imageId || existing.imageId,
+                imageId: imageId || existing.imageId,
+                jobId: polledId || parentJobId || existing.jobId,
                 originalUrl: originalUrl || existing.originalUrl,
                 filename,
                 warnings: warningList,
@@ -1881,12 +1935,12 @@ export default function BatchProcessor() {
                   qualityEnhancedUrl: null,
                   mode: it.mode || "enhanced",
                   stageUrls: stageUrls || null,
-                  imageId: it.imageId,
+                  imageId,
                   status,
                   resultStage,
                 },
                 jobId: key,
-                imageId: it.imageId,
+                imageId,
                 stageUrls: stageUrls || null,
                 filename,
               });
@@ -1899,17 +1953,19 @@ export default function BatchProcessor() {
                 result: null,
                 error: it.error || it.message || it.errorMessage || "Processing failed",
                 jobId: key,
-                imageId: it.imageId,
+                imageId,
                 filename,
               });
             }
           } else {
             const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
-            if (!idxMissingLoggedRef.current.has(String(polledId || parentJobId || 'unknown'))) {
-              idxMissingLoggedRef.current.add(String(polledId || parentJobId || 'unknown'));
+            const missingKey = String(resolvedJobKey || polledId || parentJobId || imageId || 'unknown');
+            if (!idxMissingLoggedRef.current.has(missingKey)) {
+              idxMissingLoggedRef.current.add(missingKey);
               console.log('[BATCH][poll_idx_missing]', {
                 polledId,
                 parentJobId,
+                imageId,
                 candidates: { jobId: it?.jobId, id: it?.id, job_id: it?.job_id },
                 status: pipelineStatusRaw,
                 hasAnyUrl,
@@ -2314,8 +2370,13 @@ export default function BatchProcessor() {
         localStorage.setItem("activeJobId", ids[0]);
       }
       jobIdToIndexRef.current = {};
+      imageIdToIndexRef.current = {};
       jobIdToImageIdRef.current = {};
-      jobs.forEach((j:any, i:number) => { jobIdToIndexRef.current[j.jobId] = i; jobIdToImageIdRef.current[j.jobId] = j.imageId; });
+      jobs.forEach((j:any, i:number) => {
+        jobIdToIndexRef.current[j.jobId] = i;
+        jobIdToImageIdRef.current[j.jobId] = j.imageId;
+        if (j.imageId) imageIdToIndexRef.current[j.imageId] = i;
+      });
       
       // Phase 2: Poll multi-job status
       await pollForBatch(ids, controller);
