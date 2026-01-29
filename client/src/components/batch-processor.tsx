@@ -1590,7 +1590,9 @@ export default function BatchProcessor() {
 
   // Multi-job polling using server batch endpoint
   const pollForBatch = async (ids: string[], controller: AbortController) => {
-    localStorage.setItem(ACTIVE_BATCH_KEY, JSON.stringify(ids));
+    if (currentUserId) {
+      localStorage.setItem(makeActiveKey(currentUserId), JSON.stringify(ids));
+    }
     const MAX_POLL_MINUTES = 45;
     const MAX_POLL_MS = MAX_POLL_MINUTES * 60 * 1000;
     const BACKOFF_START_MS = 1000;
