@@ -1718,8 +1718,7 @@ export default function BatchProcessor() {
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
-          // Some responses return imageUrl but not resultUrl; treat any final-stage URL as completion
-          const resultUrl = it?.publishedUrl || it?.resultUrl || it?.imageUrl || null;
+          const resultUrl = it?.publishedUrl || it?.resultUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
@@ -1728,15 +1727,47 @@ export default function BatchProcessor() {
           const warnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
           if (validationNote) warnings.push(validationNote);
           let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
-          const stagePreview = stageUrls?.['2'] || stageUrls?.stage2 || stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1A'] || stageUrls?.stage1A || null;
-          const hasOutputs = !!(stagePreview || resultUrl);
+          const stage2Url = stageUrls?.['2'] || stageUrls?.stage2 || null;
+          const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1b'] || null;
+          const stage1aUrl = stageUrls?.['1A'] || stageUrls?.stage1A || stageUrls?.['1'] || null;
+          const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
+          const hasOutputs = !!(stagePreview || resultUrl || it?.imageUrl);
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
           else if (hardFail) uiStatus = 'error';
 
           // Completion requires explicit completed status
-          const displayUrl = resultUrl || stagePreview || null;
+          let completionSource: string = "none";
+          let displayUrl: string | null = resultUrl || null;
+          if (!displayUrl) {
+            if (allowStaging) {
+              if (stage2Url) {
+                displayUrl = stage2Url; completionSource = "stage2";
+              } else if (it?.imageUrl) {
+                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              }
+            } else if (declutter) {
+              if (stage1bUrl) {
+                displayUrl = stage1bUrl; completionSource = "stage1b";
+              } else if (it?.imageUrl) {
+                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              }
+            } else {
+              if (stage1aUrl) {
+                displayUrl = stage1aUrl; completionSource = "stage1a";
+              } else if (it?.imageUrl) {
+                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              }
+            }
+          } else {
+            completionSource = "resultUrl";
+          }
+
+          if (!resultUrl && displayUrl && completionSource !== "resultUrl") {
+            console.log('[BATCH][completion_fallback]', { jobId: key, source: completionSource, status, hasResult: !!resultUrl });
+          }
+
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl;
 
           // Missing final URL while marked complete is a warning bug surface
@@ -1773,6 +1804,7 @@ export default function BatchProcessor() {
                 resultStage: resultStage ?? null,
                 resultUrl: displayUrl ?? null,
                 stageUrls: stageUrls ?? null,
+                completionSource,
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: it.imageId || existing.imageId,
                 originalUrl: originalUrl || existing.originalUrl,
