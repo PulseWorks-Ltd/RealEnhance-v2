@@ -1718,7 +1718,8 @@ export default function BatchProcessor() {
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
-          const resultUrl = it?.publishedUrl || it?.resultUrl || null;
+          // Some responses return imageUrl but not resultUrl; treat any final-stage URL as completion
+          const resultUrl = it?.publishedUrl || it?.resultUrl || it?.imageUrl || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
@@ -1735,12 +1736,13 @@ export default function BatchProcessor() {
           else if (hardFail) uiStatus = 'error';
 
           // Completion requires explicit completed status
-          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!resultUrl;
+          const displayUrl = resultUrl || stagePreview || null;
+          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl;
 
           // Missing final URL while marked complete is a warning bug surface
           const warningList = (() => {
             const base = warnings.slice();
-            if ((status === "completed" || status === "complete" || status === "done") && !resultUrl) {
+            if ((status === "completed" || status === "complete" || status === "done") && !displayUrl) {
               base.push("Result URL missing while status=complete (inconsistent state)");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
@@ -1754,7 +1756,7 @@ export default function BatchProcessor() {
 
           // No downgrades: keep processing/queued/failed/completed as reported
           statusCounts[status] = (statusCounts[status] || 0) + 1;
-          const chosenPreview = completedFinal ? (resultUrl || stagePreview) : (stagePreview || null);
+          const chosenPreview = completedFinal ? displayUrl : (stagePreview || null);
 
           if (typeof idx === "number") {
             if (!TERMINAL_STATUSES.has(status)) {
@@ -1769,7 +1771,7 @@ export default function BatchProcessor() {
                 status,
                 progress,
                 resultStage: resultStage ?? null,
-                resultUrl: resultUrl ?? null,
+                resultUrl: displayUrl ?? null,
                 stageUrls: stageUrls ?? null,
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: it.imageId || existing.imageId,
@@ -1781,8 +1783,8 @@ export default function BatchProcessor() {
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
-                  imageUrl: completedFinal ? (resultUrl || (existing.result?.imageUrl)) : (existing.result?.imageUrl || undefined),
-                  resultUrl: resultUrl ?? null,
+                  imageUrl: completedFinal ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
+                  resultUrl: displayUrl ?? null,
                   stageUrls: stageUrls ?? null,
                   status,
                   resultStage: resultStage ?? null,
@@ -1822,7 +1824,7 @@ export default function BatchProcessor() {
               queueRef.current.push({
                 index: idx,
                 result: {
-                  imageUrl: resultUrl,
+                  imageUrl: displayUrl,
                   originalImageUrl: originalUrl,
                   qualityEnhancedUrl: null,
                   mode: it.mode || "enhanced",
