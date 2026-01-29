@@ -307,7 +307,7 @@ export async function runStage1A(
         const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
         const masks = { structuralMask: maskPath };
         let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
-        console.log(`[stage1A] Structural validator verdict (Gemini):`, verdict);
+        console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);
 
         if (!verdict.ok) {
           console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
@@ -335,7 +335,7 @@ export async function runStage1A(
     const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
     const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
-    console.log(`[stage1A] Structural validator verdict:`, verdict);
+    console.log(`[stage1A] Structural validator verdict (primary output):`, verdict);
 
     if (!verdict.ok) {
       console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
@@ -361,7 +361,7 @@ export async function runStage1A(
       const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
       const masks = { structuralMask: maskPath };
       let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
-      console.log(`[stage1A] Structural validator verdict:`, verdict);
+      console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);
 
       if (!verdict.ok) {
         console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);

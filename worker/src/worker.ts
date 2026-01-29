@@ -769,7 +769,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1APath: path1A,
       });
 
-      const needsConfirm = localValidatorMode === "block" ? !verdict.passed : false;
+      const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? !verdict.passed : false;
       const advisoryReasons = verdict.reasons || [];
       if (!verdict.passed) {
         const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
