@@ -1589,34 +1589,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   }
 
-  updateJob(payload.jobId, { stage: "upload-final", progress: 90, resultUrl: pubFinalUrl });
-
-  // ===== USAGE TRACKING (BEST-EFFORT, NON-BLOCKING) =====
-  // Record a single bundled usage event following pricing rules
-  try {
-    const agencyId = (payload as any).agencyId || null;
-    const imagesUsed = payload.options.declutter && payload.options.virtualStage ? 2 : 1;
-    await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
-  } catch (usageErr) {
-    // Usage tracking must never block job completion
-    nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
-  }
-
-  // ===== RESERVATION FINALIZATION =====
-  // Finalize reservation based on actual stage completion
-  try {
-    await finalizeReservationFromWorker({
-      jobId: payload.jobId,
-      stage12Success,
-      stage2Success,
-    });
-    nLog(`[BILLING] Finalized reservation for ${payload.jobId}: stage12=${stage12Success}, stage2=${stage2Success}`);
-  } catch (billingErr) {
-    // Billing must never block job completion, but log error for reconciliation
-    nLog("[BILLING] Failed to finalize reservation (non-blocking):", (billingErr as any)?.message || billingErr);
-    // In production, you might want to queue this for retry or manual reconciliation
-  }
-
+  // Build metadata BEFORE any async operations that could fail
   const meta = {
     ...sceneMeta,
     roomTypeDetected: detectedRoom,
@@ -1630,6 +1603,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(unifiedValidation ? { unifiedValidation } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
   };
+
+  // ⚡ CRITICAL: Mark job as complete IMMEDIATELY with final URL
+  // This must happen BEFORE any non-essential operations (usage tracking, billing)
+  // to prevent jobs getting stuck in "processing" if those operations fail/timeout
+  
+  // Extract retry information from payload to preserve parent job linkage
+  const retryInfo = (payload as any).retryType ? {
+    retryType: (payload as any).retryType,
+    sourceStage: (payload as any).retrySourceStage,
+    sourceUrl: (payload as any).retrySourceUrl,
+    sourceKey: (payload as any).retrySourceKey,
+    parentImageId: (payload as any).retryParentImageId,
+    parentJobId: (payload as any).retryParentJobId,
+    clientBatchId: (payload as any).retryClientBatchId,
+  } : undefined;
 
   updateJob(payload.jobId, {
     status: "complete",
@@ -1645,6 +1633,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: pubFinalUrl,
+    parentJobId: (payload as any).retryParentJobId || undefined,
+    retryInfo,
     validation: (() => {
       const normalizedFlag = unifiedValidation?.normalized;
       if (unifiedValidation) {
@@ -1688,6 +1678,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "2": hasStage2 ? (pub2Url ?? null) : null
     }
   });
+
+  // ===== POST-COMPLETION OPERATIONS (BEST-EFFORT, NON-BLOCKING) =====
+  // These run AFTER marking the job complete to ensure the user sees results even if these fail
+
+  // ===== USAGE TRACKING =====
+  // Record a single bundled usage event following pricing rules
+  try {
+    const agencyId = (payload as any).agencyId || null;
+    const imagesUsed = payload.options.declutter && payload.options.virtualStage ? 2 : 1;
+    await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
+  } catch (usageErr) {
+    // Usage tracking must never block job completion
+    nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
+
+  // ===== RESERVATION FINALIZATION =====
+  // Finalize reservation based on actual stage completion
+  try {
+    await finalizeReservationFromWorker({
+      jobId: payload.jobId,
+      stage12Success,
+      stage2Success,
+    });
+    nLog(`[BILLING] Finalized reservation for ${payload.jobId}: stage12=${stage12Success}, stage2=${stage2Success}`);
+  } catch (billingErr) {
+    // Billing must never block job completion, but log error for reconciliation
+    nLog("[BILLING] Failed to finalize reservation (non-blocking):", (billingErr as any)?.message || billingErr);
+    // In production, you might want to queue this for retry or manual reconciliation
+  }
 
   // Persist finalized metadata with longer history TTL
   try {

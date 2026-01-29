@@ -46,6 +46,16 @@ type StatusItem = {
   blockedStage?: string | null;
   fallbackStage?: string | null;
   validationNote?: string | null;
+  parentJobId?: string | null;
+  retryInfo?: {
+    retryType?: string;
+    sourceStage?: string;
+    sourceUrl?: string;
+    sourceKey?: string;
+    parentImageId?: string;
+    parentJobId?: string;
+    clientBatchId?: string;
+  };
   meta: any;
   mode?: string;
   error?: string | null;
@@ -165,28 +175,24 @@ export function statusRouter() {
         const stageUrlsRaw: Record<string, string> | null =
           (rv && rv.stageUrls) || local.stageUrls || null;
 
-        // Check if we have ANY output URL (resultUrl OR stage URLs)
-        const hasAnyOutput = !!(
-          resultUrl || 
-          stageUrlsRaw?.['2'] || 
-          stageUrlsRaw?.stage2 || 
-          stageUrlsRaw?.['1B'] || 
-          stageUrlsRaw?.stage1B || 
-          stageUrlsRaw?.['1b'] ||
-          stageUrlsRaw?.['1A'] || 
-          stageUrlsRaw?.stage1A ||
-          stageUrlsRaw?.['1']
-        );
-
-        // If we have outputs but no reliable state, assume completion to avoid stuck items
-        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && hasAnyOutput) {
-          console.log('[status/batch] Auto-completing job with outputs:', { 
+        // Log status details for debugging stuck jobs
+        if (stageUrlsRaw && Object.values(stageUrlsRaw).some(Boolean)) {
+          const stageKeys = Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k]);
+          console.log('[status/batch] Job with stages:', { 
             id, 
-            pipelineStatus, 
+            pipelineStatus,
+            stateFromLocal,
+            localStatusRaw,
+            bullMQState: state,
             hasResultUrl: !!resultUrl,
-            hasStageUrls: !!stageUrlsRaw,
-            stageKeys: stageUrlsRaw ? Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k]) : []
+            stageKeys,
+            localStatus: local.status,
+            rvStatus: rv?.status
           });
+        }
+
+        // If we have a final URL but no reliable state, assume completion to avoid stuck queued items
+        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && resultUrl) {
           pipelineStatus = "completed";
         }
 
@@ -247,6 +253,8 @@ export function statusRouter() {
         const attempts = local.attempts || (rv && rv.attempts) || null;
         const fallbackUsed = local.fallbackUsed || (rv && rv.fallbackUsed) || null;
         const retryReason = local.retryReason || (rv && rv.retryReason) || null;
+        const parentJobId = local.parentJobId || (rv && rv.parentJobId) || null;
+        const retryInfo = local.retryInfo || (rv && rv.retryInfo) || null;
 
         const item: StatusItem = {
           id,
@@ -273,6 +281,8 @@ export function statusRouter() {
           blockedStage: blockedStage || null,
           fallbackStage: fallbackStageMeta || null,
           validationNote: validationNote || null,
+          parentJobId: parentJobId || null,
+          retryInfo: retryInfo || undefined,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           mode: mode || undefined,
