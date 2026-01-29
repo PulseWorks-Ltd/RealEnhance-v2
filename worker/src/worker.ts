@@ -1459,6 +1459,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const hasStage2 = payload.options.virtualStage && !stage2Blocked && !!pub2Url;
   const finalBasePath = hasStage2 ? stage2CandidatePath : (payload.options.declutter && path1B ? path1B! : path1A);
   const finalStageLabel = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
+  
+  nLog(`[FINAL_STAGE_DECISION] finalStageLabel=${finalStageLabel} hasStage2=${hasStage2} stage2Blocked=${stage2Blocked} pub2Url=${!!pub2Url} virtualStage=${payload.options.virtualStage} declutter=${payload.options.declutter}`);
 
   let finalPathVersion: any = null;
   try {
@@ -1524,15 +1526,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // 🔍 RUN OPENCV STRUCTURAL VALIDATION
-  // Now that we have public URLs for both original and final, validate structure
-  // This uses the Python OpenCV microservice for proper line detection
-  if (pubFinalUrl && publishedOriginal?.url) {
+  // Only run on Stage 1B and Stage 2, NOT on Stage 1A
+  // Stage 1A is the base enhancement and doesn't need structural validation
+  // Stage 1B has its own validation at line 896
+  const shouldRunFinalValidation = finalStageLabel === "1B" || finalStageLabel === "2";
+  
+  nLog(`[FINAL_VALIDATION_CHECK] finalStageLabel=${finalStageLabel} shouldRunFinalValidation=${shouldRunFinalValidation} hasPubFinalUrl=${!!pubFinalUrl} hasOriginalUrl=${!!publishedOriginal?.url}`);
+  
+  if (shouldRunFinalValidation && pubFinalUrl && publishedOriginal?.url) {
     try {
+      nLog(`[worker] ═══════════ Running final structural validation for stage ${finalStageLabel} ═══════════`);
       structuralValidationResult = await runStructuralCheck(
         publishedOriginal.url,
         pubFinalUrl,
         { stage: finalStageLabel, jobId: payload.jobId }
       );
+      nLog(`[worker] ═══════════ Final structural validation completed for stage ${finalStageLabel} ═══════════`);
       // Validation result is logged inside runStructuralCheck
       // If mode="block" and isSuspicious=true, it will throw and abort the job
     } catch (validationError: any) {
@@ -1545,7 +1554,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[worker] Structural validation error (non-blocking):", validationError.message);
     }
   } else {
-    nLog("[worker] Skipping structural validation (no public URLs available)");
+    if (!shouldRunFinalValidation) {
+      nLog(`[worker] Skipping final structural validation for stage ${finalStageLabel} (only runs for 1B and 2)`);
+    } else {
+      nLog("[worker] Skipping structural validation (no public URLs available)");
+    }
   }
 
   // 🔹 Record final output in Redis for later region-edit lookups
