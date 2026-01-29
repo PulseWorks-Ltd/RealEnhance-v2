@@ -157,7 +157,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const localValidatorMode = getLocalValidatorMode();
   const geminiValidatorMode = getGeminiValidatorMode();
   const geminiBlockingEnabled = isGeminiBlockingEnabled();
+  // Local validators run in their configured mode (log/block)
+  // Gemini confirmation is triggered based on geminiBlockingEnabled
   const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
+  const GEMINI_CONFIRMATION_ENABLED = geminiBlockingEnabled;
   const structureValidatorMode = localValidatorMode;
   logValidationModes();
   // Surface job metadata globally for downstream logging
@@ -322,7 +325,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t0 = Date.now();
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
-  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, blocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}`);
+  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}`);
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -793,7 +796,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BStructuralSafe = verdict.passed;
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
-        if (needsConfirm && VALIDATION_BLOCKING_ENABLED && stage1BAttempts < maxAttempts && !useLightFallback) {
+        if (needsConfirm && GEMINI_CONFIRMATION_ENABLED && stage1BAttempts < maxAttempts && !useLightFallback) {
           const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "stage1B validation flagged";
           nLog(`[stage1B] advisory failure, retrying: ${msg}`);
           continue;
@@ -1025,7 +1028,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
         stage2LocalReasons = stage2Outcome.localReasons || [];
-        stage2NeedsConfirm = VALIDATION_BLOCKING_ENABLED && stage2ValidationRisk;
+        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED && stage2ValidationRisk;
       }
     }
   } catch (e: any) {
@@ -1105,7 +1108,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
         stage2LocalReasons = stage2Outcome.localReasons || [];
-        stage2NeedsConfirm = VALIDATION_BLOCKING_ENABLED && stage2ValidationRisk;
+        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED && stage2ValidationRisk;
       }
 
       fallbackUsed = "light_declutter_backstop";
@@ -1191,13 +1194,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             normalized: unifiedValidation.normalized,
             modeConfigured: structureValidatorMode,
             modeEffective: effectiveValidationMode,
-            blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
           },
         },
       });
 
       if (unifiedValidation && !unifiedValidation.passed) {
-        if (VALIDATION_BLOCKING_ENABLED) {
+        if (GEMINI_CONFIRMATION_ENABLED) {
           stage2NeedsConfirm = true;
         }
         stage2LocalReasons.push(...(unifiedValidation.reasons || []));
@@ -1417,7 +1421,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
       }
     }
-    nLog(`[worker] Blocking mode: ${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED (log-only)"}`);
+    nLog(`[worker] Blocking mode: Local=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, GeminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED (log-only)"}`);
     nLog(`[worker] ═══════════════════════════════════════════`);
   }
 
@@ -1657,7 +1661,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
           modeEffective: VALIDATION_BLOCKING_ENABLED ? "block" : "log",
-          blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
           blockedStage: stage2Blocked ? "2" : undefined,
           fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
           note: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined,
@@ -1670,7 +1675,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
           modeEffective: VALIDATION_BLOCKING_ENABLED ? "block" : "log",
-          blockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
+          geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
           blockedStage: "2",
           fallbackStage: stage2FallbackStage,
           note: stage2BlockedReason,
