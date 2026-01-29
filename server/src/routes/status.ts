@@ -156,11 +156,6 @@ export function statusRouter() {
           local.imageUrl ||
           null;
 
-        // If we have a final URL but no reliable state, assume completion to avoid stuck queued items
-        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && resultUrl) {
-          pipelineStatus = "completed";
-        }
-
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
 
@@ -169,6 +164,31 @@ export function statusRouter() {
 
         const stageUrlsRaw: Record<string, string> | null =
           (rv && rv.stageUrls) || local.stageUrls || null;
+
+        // Check if we have ANY output URL (resultUrl OR stage URLs)
+        const hasAnyOutput = !!(
+          resultUrl || 
+          stageUrlsRaw?.['2'] || 
+          stageUrlsRaw?.stage2 || 
+          stageUrlsRaw?.['1B'] || 
+          stageUrlsRaw?.stage1B || 
+          stageUrlsRaw?.['1b'] ||
+          stageUrlsRaw?.['1A'] || 
+          stageUrlsRaw?.stage1A ||
+          stageUrlsRaw?.['1']
+        );
+
+        // If we have outputs but no reliable state, assume completion to avoid stuck items
+        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && hasAnyOutput) {
+          console.log('[status/batch] Auto-completing job with outputs:', { 
+            id, 
+            pipelineStatus, 
+            hasResultUrl: !!resultUrl,
+            hasStageUrls: !!stageUrlsRaw,
+            stageKeys: stageUrlsRaw ? Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k]) : []
+          });
+          pipelineStatus = "completed";
+        }
 
         // Normalize stageUrls into a predictable shape so clients can rely on keys
         const stageUrls: Record<string, string | null> = {
