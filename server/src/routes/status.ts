@@ -176,10 +176,12 @@ export function statusRouter() {
           (rv && rv.stageUrls) || local.stageUrls || null;
 
         // Log status details for debugging stuck jobs
-        if (stageUrlsRaw && Object.values(stageUrlsRaw).some(Boolean)) {
-          const stageKeys = Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k]);
-          console.log('[status/batch] Job with stages:', { 
-            id, 
+        const stageKeys = stageUrlsRaw && Object.values(stageUrlsRaw).some(Boolean)
+          ? Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k])
+          : [];
+        if (stageKeys.length) {
+          console.log('[status/batch] Job with stages:', {
+            id,
             pipelineStatus,
             stateFromLocal,
             localStatusRaw,
@@ -188,6 +190,20 @@ export function statusRouter() {
             stageKeys,
             localStatus: local.status,
             rvStatus: rv?.status
+          });
+        }
+
+        if (resultUrl && pipelineStatus === "processing") {
+          console.log('[status/batch] Processing despite resultUrl:', {
+            id,
+            pipelineStatus,
+            stateFromLocal,
+            localStatusRaw,
+            bullMQState: state,
+            rvStatus: rv?.status,
+            hasResultUrl: true,
+            stageKeys,
+            localStatus: local.status
           });
         }
 

@@ -1636,6 +1636,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     clientBatchId: (payload as any).retryClientBatchId,
   } : undefined;
 
+  nLog("[worker] Marking job complete", {
+    jobId: payload.jobId,
+    finalStageLabel,
+    resultUrl: pubFinalUrl,
+    originalUrl: publishedOriginal?.url,
+    stageUrls: {
+      "1A": pub1AUrl ?? null,
+      "1B": pub1BUrl ?? null,
+      "2": hasStage2 ? (pub2Url ?? null) : null,
+    },
+    stage2Blocked,
+    fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
+    parentJobId: (payload as any).retryParentJobId || undefined,
+  });
+
   updateJob(payload.jobId, {
     status: "complete",
     currentStage: "finalizing",
@@ -1696,6 +1711,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       "1B": pub1BUrl ?? null,
       "2": hasStage2 ? (pub2Url ?? null) : null
     }
+  });
+
+  nLog("[worker] Completion status write queued", {
+    jobId: payload.jobId,
+    status: "complete",
+    resultUrl: pubFinalUrl,
+    finalStage: finalStageLabel,
   });
 
   // ===== POST-COMPLETION OPERATIONS (BEST-EFFORT, NON-BLOCKING) =====
