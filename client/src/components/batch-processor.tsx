@@ -234,6 +234,14 @@ const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
 
+function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' {
+  const val = (raw || "").toLowerCase();
+  if (["completed", "complete", "done", "success", "succeeded", "finished", "ok"].includes(val)) return "completed";
+  if (["failed", "error", "errored", "blocked", "rejected"].includes(val)) return "failed";
+  if (["cancelled", "canceled", "aborted", "terminated"].includes(val)) return "cancelled";
+  return "processing";
+}
+
 function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   try {
     const payload = { ...state, ownerUserId: userId ?? null };
@@ -555,6 +563,9 @@ export default function BatchProcessor() {
   const strictNotifiedRef = useRef<Set<string>>(new Set());
   // Track which indices are currently undergoing strict validator retry
   const [strictRetryingIndices, setStrictRetryingIndices] = useState<Set<number>>(new Set());
+  const statusUnknownLoggedRef = useRef<Set<string>>(new Set());
+  const idxMissingLoggedRef = useRef<Set<string>>(new Set());
+  const statusHasUrlLoggedRef = useRef<Set<string>>(new Set());
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -1691,18 +1702,19 @@ export default function BatchProcessor() {
 
         // surface per-item updates (processing or completed) and merge stage URLs progressively
         for (const it of items) {
-          const key = it?.id || it?.jobId || it?.job_id;
-          const idx = key ? jobIdToIndexRef.current[key] : undefined;
+          const polledId = it?.jobId || it?.id || it?.job_id || it?.job?.id || it?.job?.jobId || it?.result?.jobId;
+          const parentJobId = it?.parentJobId || it?.parent_job_id || null;
+          let idx = polledId ? jobIdToIndexRef.current[polledId] : undefined;
+          if (typeof idx === 'undefined' && parentJobId) idx = jobIdToIndexRef.current[parentJobId];
           const uiStatusRaw = String(it?.uiStatus || it?.status || "").toLowerCase(); // ok | warning | error (preferred uiStatus)
           const pipelineStatusRaw = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
-          const status = ((): string => {
-            if (["failed", "error"].includes(pipelineStatusRaw)) return "failed";
-            if (["complete", "completed", "done"].includes(pipelineStatusRaw)) return "completed";
-            if (["processing", "active"].includes(pipelineStatusRaw)) return "processing";
-            if (["queued", "waiting", "delayed"].includes(pipelineStatusRaw)) return "queued";
-            return pipelineStatusRaw || "queued";
-          })();
-          const isTerminalFlag = typeof it?.isTerminal === 'boolean' ? it.isTerminal : TERMINAL_STATUSES.has(status);
+          const normalizedStatus = normalizeJobStatus(pipelineStatusRaw);
+          if (normalizedStatus === "processing" && pipelineStatusRaw && !statusUnknownLoggedRef.current.has(pipelineStatusRaw)) {
+            statusUnknownLoggedRef.current.add(pipelineStatusRaw);
+            console.log('[BATCH][status_unknown]', { raw: pipelineStatusRaw });
+          }
+          const status = normalizedStatus === "cancelled" ? "failed" : normalizedStatus === "failed" ? "failed" : normalizedStatus === "completed" ? "completed" : "processing";
+          const isTerminalFlag = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled" || TERMINAL_STATUSES.has(status) || it?.isTerminal === true;
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
             : typeof it?.progress_percent === "number" ? it.progress_percent
@@ -1718,7 +1730,8 @@ export default function BatchProcessor() {
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
-          const resultUrl = it?.publishedUrl || it?.resultUrl || null;
+          const extraResult = it?.result || {};
+          const resultUrl = it?.publishedUrl || it?.resultUrl || it?.publishUrl || it?.outputUrl || it?.finalUrl || extraResult?.resultUrl || extraResult?.imageUrl || extraResult?.url || null;
           const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
@@ -1731,7 +1744,7 @@ export default function BatchProcessor() {
           const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1b'] || null;
           const stage1aUrl = stageUrls?.['1A'] || stageUrls?.stage1A || stageUrls?.['1'] || null;
           const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
-          const hasOutputs = !!(stagePreview || resultUrl || it?.imageUrl);
+          const hasOutputs = !!(stagePreview || resultUrl || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
@@ -1744,20 +1757,20 @@ export default function BatchProcessor() {
             if (allowStaging) {
               if (stage2Url) {
                 displayUrl = stage2Url; completionSource = "stage2";
-              } else if (it?.imageUrl) {
-                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              } else if (it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url) {
+                displayUrl = it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || null; completionSource = "imageUrl_fallback";
               }
             } else if (declutter) {
               if (stage1bUrl) {
                 displayUrl = stage1bUrl; completionSource = "stage1b";
-              } else if (it?.imageUrl) {
-                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              } else if (it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url) {
+                displayUrl = it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || null; completionSource = "imageUrl_fallback";
               }
             } else {
               if (stage1aUrl) {
                 displayUrl = stage1aUrl; completionSource = "stage1a";
-              } else if (it?.imageUrl) {
-                displayUrl = it.imageUrl; completionSource = "imageUrl_fallback";
+              } else if (it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url) {
+                displayUrl = it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || null; completionSource = "imageUrl_fallback";
               }
             }
           } else {
@@ -1785,12 +1798,19 @@ export default function BatchProcessor() {
             uiStatus = 'error';
           }
 
+          const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
+          if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(polledId || parentJobId || 'unknown'))) {
+            statusHasUrlLoggedRef.current.add(String(polledId || parentJobId || 'unknown'));
+            console.log('[BATCH][status_unmapped_but_has_url]', { polledId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrl } });
+          }
+
           // No downgrades: keep processing/queued/failed/completed as reported
           statusCounts[status] = (statusCounts[status] || 0) + 1;
           const chosenPreview = completedFinal ? displayUrl : (stagePreview || null);
 
           if (typeof idx === "number") {
-            if (!TERMINAL_STATUSES.has(status)) {
+            const isTerminalNormalized = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled";
+            if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
               nonTerminalIndices.push(idx);
             }
             const filename = files[idx]?.name || `image-${idx + 1}`;
@@ -1872,7 +1892,7 @@ export default function BatchProcessor() {
               });
             }
 
-            if ((status === "failed" || (it.errorCode && isTerminalFlag)) && !processedSetRef.current.has(idx)) {
+            if ((status === "failed" || normalizedStatus === "failed" || normalizedStatus === "cancelled" || (it.errorCode && isTerminalFlag)) && !processedSetRef.current.has(idx)) {
               processedSetRef.current.add(idx);
               queueRef.current.push({
                 index: idx,
@@ -1883,8 +1903,30 @@ export default function BatchProcessor() {
                 filename,
               });
             }
-          } else if (!TERMINAL_STATUSES.has(status)) {
-            hasUnmappedNonTerminal = true;
+          } else {
+            const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
+            if (!idxMissingLoggedRef.current.has(String(polledId || parentJobId || 'unknown'))) {
+              idxMissingLoggedRef.current.add(String(polledId || parentJobId || 'unknown'));
+              console.log('[BATCH][poll_idx_missing]', {
+                polledId,
+                parentJobId,
+                candidates: { jobId: it?.jobId, id: it?.id, job_id: it?.job_id },
+                status: pipelineStatusRaw,
+                hasAnyUrl,
+                urlsPresent: {
+                  resultUrl: !!resultUrl,
+                  stage2Url: !!stage2Url,
+                  stage1bUrl: !!stage1bUrl,
+                  stage1aUrl: !!stage1aUrl,
+                  imageUrl: !!it?.imageUrl,
+                  image: !!it?.image,
+                  extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url)
+                }
+              });
+            }
+            if (!isTerminalFlag && !isTerminalNormalized) {
+              hasUnmappedNonTerminal = true;
+            }
           }
         }
         schedule();
