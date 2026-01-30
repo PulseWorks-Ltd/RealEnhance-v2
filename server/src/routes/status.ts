@@ -47,6 +47,7 @@ type StatusItem = {
   fallbackStage?: string | null;
   validationNote?: string | null;
   parentJobId?: string | null;
+  requestedStages?: any;
   retryInfo?: {
     retryType?: string;
     sourceStage?: string;
@@ -226,6 +227,21 @@ export function statusRouter() {
           '2': stageUrlsRaw?.['2'] ?? null,
         };
 
+        const requestedStages =
+          local?.metadata?.requestedStages ||
+          local?.requestedStages ||
+          (payload as any)?.requestedStages ||
+          (payload as any)?.metadata?.requestedStages ||
+          null;
+
+        const finalStageRaw: string | null =
+          local.finalStage || local.resultStage || (rv && (rv.finalStage || rv.resultStage)) || null;
+
+        const stage2Present = !!(stageUrls.stage2 || stageUrls['2']);
+        const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
+          ? requestedStages.stage2
+          : (requestedStages?.stage2 === "true");
+
         const imageId: string | null =
           payload?.imageId || local.imageId || null;
 
@@ -252,6 +268,9 @@ export function statusRouter() {
         if (pipelineStatus === "completed" && !resultUrl) {
           warningSet.add("Image Enhancement didn’t finalise. Please retry image.");
         }
+        if (requestedStage2 === false && (stage2Present || String(finalStageRaw || "").toLowerCase() === "2")) {
+          warningSet.add("Stage 2 output present but not requested.");
+        }
         const warnings = Array.from(warningSet);
 
         const hardFailRaw = validationRaw?.hardFail === true;
@@ -271,7 +290,7 @@ export function statusRouter() {
         if (pipelineStatus === "completed") completed++;
 
         const currentStage: string | null = local.currentStage || null;
-        const finalStage: string | null = local.finalStage || local.resultStage || (rv && (rv.finalStage || rv.resultStage)) || null;
+        const finalStage: string | null = finalStageRaw;
         const attempts = local.attempts || (rv && rv.attempts) || null;
         const fallbackUsed = local.fallbackUsed || (rv && rv.fallbackUsed) || null;
         const retryReason = local.retryReason || (rv && rv.retryReason) || null;
@@ -304,6 +323,7 @@ export function statusRouter() {
           fallbackStage: fallbackStageMeta || null,
           validationNote: validationNote || null,
           parentJobId: parentJobId || null,
+          requestedStages: requestedStages || null,
           retryInfo: retryInfo || undefined,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,

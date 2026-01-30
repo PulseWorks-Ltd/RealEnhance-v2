@@ -107,6 +107,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       : undefined,
   });
 
+  let requestedStages: any | undefined;
+
   try {
     const [liveJob, savedMeta] = await Promise.all([
       getJob(payload.jobId),
@@ -127,6 +129,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       debug: savedMeta?.debug || existingMeta?.debug,
     };
 
+    requestedStages = merged.requestedStages;
+
     const missingFields: string[] = [];
     if (!savedMeta?.userId && !existingMeta?.userId) missingFields.push("userId");
     if (!savedMeta?.imageId && !existingMeta?.imageId) missingFields.push("imageId");
@@ -141,6 +145,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ]);
   } catch (metaErr: any) {
     nLog(`[JOB_META_WARN] Failed to repair metadata for job ${payload.jobId}: ${metaErr?.message || metaErr}`);
+  }
+
+  if (!requestedStages) {
+    requestedStages = buildRequestedStages();
   }
 
   let stage12Success = false;
@@ -227,7 +235,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
-  if (payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
+  const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+  if (!stage2Requested && payload.stage2OnlyMode?.enabled) {
+    nLog(`[worker] Stage-2-only retry requested but stage2 was not requested; skipping stage2-only mode.`);
+  }
+  if (stage2Requested && payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
 
@@ -971,6 +983,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
+  if (!stage2Requested && payload.options.virtualStage) {
+    nLog(`[WORKER] Stage 2 was not requested; skipping virtualStage despite payload.options.virtualStage=true`);
+    payload.options.virtualStage = false;
+    updateJob(payload.jobId, {
+      warnings: ["Stage 2 output suppressed (not requested)."],
+      meta: { ...(sceneLabel ? { ...sceneMeta } : {}), stage2Skipped: true, stage2SkipReason: "not_requested" }
+    });
+  }
   nLog(`[WORKER] Stage 2 ${payload.options.virtualStage ? 'ENABLED' : 'DISABLED'}; USE_GEMINI_STAGE2=${process.env.USE_GEMINI_STAGE2 || 'unset'}`);
 
   // ═══════════════════════════════════════════════════════════════════════════════

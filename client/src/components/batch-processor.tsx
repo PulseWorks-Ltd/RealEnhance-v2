@@ -1782,6 +1782,8 @@ export default function BatchProcessor() {
             stage1B: stageUrlsRaw.stage1B || stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || null,
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
+          const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
+          const requestedStage2 = typeof requestedStages?.stage2 === "boolean" ? requestedStages.stage2 : null;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const extraResult = it?.result || {};
           const resultUrl = it?.publishedUrl || it?.resultUrl || it?.publishUrl || it?.outputUrl || it?.finalUrl || extraResult?.resultUrl || extraResult?.imageUrl || extraResult?.url || null;
@@ -1793,11 +1795,15 @@ export default function BatchProcessor() {
           const warnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
           if (validationNote) warnings.push(validationNote);
           let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
-          const stage2Url = stageUrls?.['2'] || stageUrls?.stage2 || null;
+          const stage2UrlRaw = stageUrls?.['2'] || stageUrls?.stage2 || null;
           const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1b'] || null;
           const stage1aUrl = stageUrls?.['1A'] || stageUrls?.stage1A || stageUrls?.['1'] || null;
+          const resultStageNorm = String(resultStage || "").toUpperCase();
+          const stage2Mismatch = requestedStage2 === false && (stage2UrlRaw || resultStageNorm === "2");
+          const stage2Url = stage2Mismatch ? null : stage2UrlRaw;
+          const resultUrlSafe = stage2Mismatch ? null : resultUrl;
           const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
-          const hasOutputs = !!(stagePreview || resultUrl || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
+          const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
@@ -1805,7 +1811,7 @@ export default function BatchProcessor() {
 
           // Completion requires explicit completed status
           let completionSource: string = "none";
-          let displayUrl: string | null = resultUrl || null;
+          let displayUrl: string | null = resultUrlSafe || null;
           if (!displayUrl) {
             if (allowStaging) {
               if (stage2Url) {
@@ -1830,8 +1836,8 @@ export default function BatchProcessor() {
             completionSource = "resultUrl";
           }
 
-          if (!resultUrl && displayUrl && completionSource !== "resultUrl") {
-            console.log('[BATCH][completion_fallback]', { jobId: key, source: completionSource, status, hasResult: !!resultUrl });
+          if (!resultUrlSafe && displayUrl && completionSource !== "resultUrl") {
+            console.log('[BATCH][completion_fallback]', { jobId: key, source: completionSource, status, hasResult: !!resultUrlSafe });
           }
 
           const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl;
@@ -1839,10 +1845,14 @@ export default function BatchProcessor() {
           // Missing final URL while marked complete is a warning bug surface
           const warningList = (() => {
             const base = warnings.slice();
-              if ((status === "completed" || status === "complete" || status === "done") && !resultUrl) {
+              if ((status === "completed" || status === "complete" || status === "done") && !resultUrlSafe) {
                 base.push("Image Enhancement didn’t finalise. Please retry image.");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
+                if (stage2Mismatch) {
+                  base.push("Stage 2 output present but not requested.");
+                  uiStatus = uiStatus === 'error' ? 'error' : 'warning';
+                }
             return base;
           })();
 
@@ -1851,7 +1861,7 @@ export default function BatchProcessor() {
             uiStatus = 'error';
           }
 
-          const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
+          const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrlSafe);
           if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
             statusHasUrlLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
             console.log('[BATCH][status_unmapped_but_has_url]', { polledId, parentJobId, imageId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrl } });
