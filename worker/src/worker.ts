@@ -1284,12 +1284,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════`);
 
-      await runSemanticStructureValidator({
+      const semanticResult = await runSemanticStructureValidator({
         originalImagePath: path1A,  // Pre-staging baseline
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
       });
+
+      if (semanticResult && !semanticResult.passed) {
+        if (GEMINI_CONFIRMATION_ENABLED) {
+          stage2NeedsConfirm = true;
+        }
+        stage2LocalReasons.push(
+          `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`
+        );
+      }
 
       nLog(`[worker] Semantic validation completed (log-only, non-blocking)`);
     } catch (semanticError: any) {
@@ -1309,13 +1318,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
 
-      await runMaskedEdgeValidator({
+      const maskedEdgeResult = await runMaskedEdgeValidator({
         originalImagePath: path1A,  // Pre-staging baseline
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         mode: "log",
         jobId: payload.jobId,
       });
+
+      if (maskedEdgeResult) {
+        const maskedDriftPct = maskedEdgeResult.maskedEdgeDrift * 100;
+        const maskedEdgeFailed =
+          maskedEdgeResult.createdOpenings > 0 ||
+          maskedEdgeResult.closedOpenings > 0 ||
+          maskedEdgeResult.maskedEdgeDrift > 0.18;
+
+        if (maskedEdgeFailed) {
+          if (GEMINI_CONFIRMATION_ENABLED) {
+            stage2NeedsConfirm = true;
+          }
+          stage2LocalReasons.push(
+            `masked_edge_failed: drift ${maskedDriftPct.toFixed(2)}%, openings +${maskedEdgeResult.createdOpenings}/-${maskedEdgeResult.closedOpenings}`
+          );
+        }
+      }
 
       nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
     } catch (maskedEdgeError: any) {
@@ -1332,6 +1358,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     // Gemini confirmation gate for Stage 2
     if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath && stage2NeedsConfirm) {
+        nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
       const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
       const confirm = await confirmWithGeminiStructure({
