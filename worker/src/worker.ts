@@ -769,14 +769,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1APath: path1A,
       });
 
-      const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? !verdict.passed : false;
-      const advisoryReasons = verdict.reasons || [];
-      if (!verdict.passed) {
+      const rawResults = verdict?.raw ? Object.values(verdict.raw) : [];
+      const anyFailed = rawResults.some((r) => r && r.passed === false);
+      const advisoryReasons = (verdict.reasons && verdict.reasons.length)
+        ? verdict.reasons
+        : (verdict.warnings && verdict.warnings.length)
+          ? verdict.warnings
+          : [];
+      const localIssues = anyFailed || advisoryReasons.length > 0;
+      const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? localIssues : false;
+      if (localIssues) {
         const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
         nLog(`[stage1B][attempt=${attempt}] validation advisory: ${msg}`);
       }
 
-      return { output, verdict, needsConfirm, advisoryReasons };
+      return { output, verdict, needsConfirm, advisoryReasons, localIssues };
     };
 
     let stage1BAttempts = 0;
@@ -785,19 +792,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let lastError: string | undefined;
     let stage1BNeedsConfirm = false;
     let stage1BLocalReasons: string[] = [];
+    let stage1BLocalIssues = false;
 
     while (true) {
       stage1BAttempts += 1;
       const currentMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as any;
       nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
       try {
-        const { output, verdict, needsConfirm, advisoryReasons } = await runStage1BWithValidation(currentMode, stage1BAttempts);
+        const { output, verdict, needsConfirm, advisoryReasons, localIssues } = await runStage1BWithValidation(currentMode, stage1BAttempts);
         path1B = output;
-        stage1BStructuralSafe = verdict.passed;
+        stage1BStructuralSafe = !localIssues;
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
-        if (!verdict.passed && VALIDATION_BLOCKING_ENABLED) {
-          const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "stage1B validation blocked";
+        stage1BLocalIssues = localIssues;
+        if (localIssues && VALIDATION_BLOCKING_ENABLED) {
+          const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "stage1B validation blocked";
           nLog(`[stage1B] local block failure: ${msg}`);
           const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
           if (!exhausted && !useLightFallback) {
@@ -994,6 +1003,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   stage12Success = true;
   let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  const stage2ValidationBaseline = stage2BaseStage === "1B" && path1B ? path1B : path1A;
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
   try {
@@ -1022,6 +1032,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stagingStyle: stagingStyleNorm,
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
+            stage1APath: stage2ValidationBaseline,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -1103,6 +1114,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingStyle: stagingStyleFallback,
         jobId: payload.jobId,
         validationConfig: { localMode: localValidatorMode },
+        stage1APath: stage2ValidationBaseline,
         onStrictRetry: ({ reasons }) => {
           try {
             const msg = reasons && reasons.length
@@ -1167,7 +1179,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                      (payload.options.declutter ? "1B" : "1A");
 
       // Get the base path (prefer Stage 1B when available for Stage 2)
-      const validationBasePath = (validationStage === "2" && path1B) ? path1B : path1A;
+      const validationBasePath = validationStage === "2" ? stage2ValidationBaseline : path1A;
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
 
@@ -1220,11 +1232,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
       });
 
-      if (unifiedValidation && !unifiedValidation.passed) {
-        if (GEMINI_CONFIRMATION_ENABLED) {
-          stage2NeedsConfirm = true;
+      if (unifiedValidation) {
+        const rawResults = unifiedValidation.raw ? Object.values(unifiedValidation.raw) : [];
+        const anyFailed = rawResults.some((r) => r && r.passed === false);
+        const localNotes = (unifiedValidation.reasons && unifiedValidation.reasons.length)
+          ? unifiedValidation.reasons
+          : (unifiedValidation.warnings && unifiedValidation.warnings.length)
+            ? unifiedValidation.warnings
+            : [];
+        if (anyFailed || localNotes.length) {
+          if (GEMINI_CONFIRMATION_ENABLED) {
+            stage2NeedsConfirm = true;
+          }
+          stage2LocalReasons.push(...localNotes);
         }
-        stage2LocalReasons.push(...(unifiedValidation.reasons || []));
       }
 
     } catch (validationError: any) {
