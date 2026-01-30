@@ -17,19 +17,26 @@ function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
   return `You are a structural integrity judge for real estate imagery.
 Return JSON only. No prose outside JSON.
 
-STRUCTURE means ONLY: walls, ceilings/rooflines, floors, stairs, columns, permanent openings (doors, windows, arches, closets), built-in boundaries.
-NON-STRUCTURAL (never hard fail): all furniture/decor (beds, HEADBOARDS, couches, tables), lighting/fixtures, style/color/brightness/contrast/material changes.
+STRUCTURE includes anything fixed to or integral with the property and expected to remain after a tenant/owner leaves. Treat ALL of these as structural:
+- Walls, ceilings/rooflines, floors, stairs, columns, beams
+- Permanent openings and boundaries: doors, windows, arches, closet openings, garage openings
+- Built-ins and fixtures: cabinetry, built-in wardrobes, built-in shelving, kitchen islands, countertops, sinks/faucets, built-in stoves/ovens/cooktops, range hoods
+- Fixed electrical/lighting: pendant lights, ceiling fans, wall sconces, recessed lights, light switches, power outlets
+- Fixed hardware and coverings: curtains, blinds, curtain rods, rails, door handles, doorbell screens, thermostats
+- Mirrors or frames mounted to walls (if they cover openings or replace fixed items)
+
+NON-STRUCTURAL (never hard fail): movable furniture and decor only (beds, sofas, chairs, tables, rugs, pillows, art that is clearly freestanding), and minor style-only changes.
 
 Categories you must choose:
-- structure: architectural element moved/removed/added (wall/ceiling/floor/roofline/closet/arch/stair/door/window changed)
-- opening_blocked: doorway/window fully occluded or path not passable
-- furniture_change: furniture/decor added/removed/changed
-- style_only: style/color/exposure/lighting-only change
-  - unknown: can't tell
+- structure: any structural or fixed item added/removed/changed; counts change in doors/windows; wall openings created/removed; fixtures changed/removed/added; cabinetry/built-ins altered; floor or wall coverings changed.
+- opening_blocked: doorway/window fully occluded, painted over, or blocked by objects (including curtains/blinds/mirrors/wall art placed over openings) or path not passable.
+- furniture_change: movable furniture/decor added/removed/changed (no fixed items).
+- style_only: exposure/brightness/color/style-only change with no object changes.
+- unknown: can't tell.
 
 Rules:
 - structure => hardFail=true
-- opening_blocked => hardFail=true ONLY if fully blocked or no passable path; otherwise warning
+- opening_blocked => hardFail=true if any opening is fully blocked/painted/covered or no passable path
 - furniture_change => hardFail=false (warning only)
 - style_only => hardFail=false
 - If confidence < ${MIN_CONFIDENCE}, set hardFail=false (warning)
