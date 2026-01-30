@@ -112,8 +112,12 @@ export async function runStage2(
 
   if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
-  // Retry loop: use config.maxRetryAttempts (default 3) if stage-aware enabled
-  const maxAttempts = stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2;
+  // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
+  const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
+  const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw) ? Math.max(0, Math.floor(geminiMaxRetriesRaw)) : null;
+  const maxAttempts = geminiMaxRetries !== null
+    ? Math.max(1, geminiMaxRetries + 1)
+    : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
   let currentTightenLevel: TightenLevel = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -325,7 +329,8 @@ export async function runStage2(
                 // Max retries reached
                 if (retryDecision.reason.includes("Max attempts")) {
                   markStageFailed(jobId, "stage2", validationResult.triggers);
-                  console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${stageAwareConfig.maxRetryAttempts} retries`);
+                  const retryCountLabel = geminiMaxRetries !== null ? geminiMaxRetries : stageAwareConfig.maxRetryAttempts;
+                  console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${retryCountLabel} retries`);
                 }
                 attemptsUsed = attempt + 1;
                 break;

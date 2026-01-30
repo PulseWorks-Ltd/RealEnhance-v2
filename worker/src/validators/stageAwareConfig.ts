@@ -34,6 +34,10 @@ export interface StageAwareConfig {
  * Load stage-aware configuration from environment variables
  */
 export function loadStageAwareConfig(): StageAwareConfig {
+  const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
+  const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw)
+    ? Math.max(0, Math.floor(geminiMaxRetriesRaw))
+    : null;
   return {
     enabled: process.env.STRUCT_VALIDATION_STAGE_AWARE === "1",
     stage2EdgeMode: parseEdgeMode(process.env.STRUCT_VALIDATION_STAGE2_EDGE_MODE),
@@ -41,7 +45,9 @@ export function loadStageAwareConfig(): StageAwareConfig {
     gateMinSignals: parseInt(process.env.STRUCT_VALIDATION_GATE_MIN_SIGNALS || "2", 10),
     iouMinPixelsRatio: parseFloat(process.env.STRUCT_VALIDATION_IOU_MIN_PIXELS_RATIO || "0.005"),
     logArtifactsOnFail: process.env.STRUCT_VALIDATION_LOG_ARTIFACTS_ON_FAIL !== "0",
-    maxRetryAttempts: parseInt(process.env.STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS || "3", 10),
+    maxRetryAttempts: geminiMaxRetries !== null
+      ? geminiMaxRetries
+      : parseInt(process.env.STRUCT_VALIDATION_MAX_RETRY_ATTEMPTS || "3", 10),
 
     paintOverEnable: process.env.STRUCT_VALIDATION_PAINTOVER_ENABLE !== "0",
     paintOverEdgeRatioMin: parseFloat(process.env.STRUCT_VALIDATION_PAINTOVER_EDGE_RATIO_MIN || "0.35"),

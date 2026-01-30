@@ -158,9 +158,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const geminiValidatorMode = getGeminiValidatorMode();
   const geminiBlockingEnabled = isGeminiBlockingEnabled();
   // Local validators run in their configured mode (log/block)
-  // Gemini confirmation is triggered based on geminiBlockingEnabled
+  // Gemini confirmation is triggered only when local mode is log
   const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
-  const GEMINI_CONFIRMATION_ENABLED = geminiBlockingEnabled;
+  const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
   const structureValidatorMode = localValidatorMode;
   logValidationModes();
   // Surface job metadata globally for downstream logging
@@ -325,7 +325,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t0 = Date.now();
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
-  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}`);
+  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}`);
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -764,7 +764,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage: "1B",
         sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         roomType: payload.options.roomType,
-        mode: "log", // Advisory only; never block locally
+        mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
         jobId: payload.jobId,
         stage1APath: path1A,
       });
@@ -796,10 +796,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BStructuralSafe = verdict.passed;
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
-        if (needsConfirm && GEMINI_CONFIRMATION_ENABLED && stage1BAttempts < maxAttempts && !useLightFallback) {
-          const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "stage1B validation flagged";
-          nLog(`[stage1B] advisory failure, retrying: ${msg}`);
-          continue;
+        if (!verdict.passed && VALIDATION_BLOCKING_ENABLED) {
+          const msg = verdict.reasons?.length ? verdict.reasons.join("; ") : "stage1B validation blocked";
+          nLog(`[stage1B] local block failure: ${msg}`);
+          const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
+          if (!exhausted && !useLightFallback) {
+            nLog(`[stage1B] retrying after local block failure (${stage1BAttempts}/${maxAttempts})`);
+            continue;
+          }
+          if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
+            useLightFallback = true;
+            stage1BAttempts = 0;
+            nLog(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
+            continue;
+          }
+          const errMsg = `Stage 1B blocked by local validation after ${stage1BAttempts} attempt(s): ${msg}`;
+          updateJob(payload.jobId, {
+            status: "failed",
+            errorMessage: errMsg,
+            error: errMsg,
+            meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons }
+          });
+          return;
         }
         break;
       } catch (err: any) {
@@ -826,11 +844,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     }
 
-    const stage1BLocalStatus = stage1BNeedsConfirm ? "needs_confirm" : "pass";
+    const stage1BLocalStatus = stage1BStructuralSafe
+      ? "pass"
+      : (VALIDATION_BLOCKING_ENABLED ? "fail" : "needs_confirm");
     nLog(`[LOCAL_VALIDATE] stage=1B status=${stage1BLocalStatus} reasons=${JSON.stringify(stage1BLocalReasons)}`);
 
     // Gemini confirmation layer for Stage1B (only when local mode requires confirm)
-    if (stage1BNeedsConfirm && path1B) {
+    if (GEMINI_CONFIRMATION_ENABLED && stage1BNeedsConfirm && path1B) {
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
       const confirm = await confirmWithGeminiStructure({
         baselinePathOrUrl: path1A,
@@ -1270,7 +1290,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
 
     // Gemini confirmation gate for Stage 2
-    if (stage2CandidatePath && stage2NeedsConfirm) {
+    if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath && stage2NeedsConfirm) {
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
       const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
       const confirm = await confirmWithGeminiStructure({

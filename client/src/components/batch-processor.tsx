@@ -1839,8 +1839,8 @@ export default function BatchProcessor() {
           // Missing final URL while marked complete is a warning bug surface
           const warningList = (() => {
             const base = warnings.slice();
-            if ((status === "completed" || status === "complete" || status === "done") && !displayUrl) {
-              base.push("Result URL missing while status=complete (inconsistent state)");
+              if ((status === "completed" || status === "complete" || status === "done") && !resultUrl) {
+                base.push("Image Enhancement didn’t finalise. Please retry image.");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
             return base;

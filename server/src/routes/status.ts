@@ -155,9 +155,6 @@ export function statusRouter() {
 
         const queueStatus = normalizeStateToQueueStatus(state);
         const localStatusRaw: string | null = local.status || (rv && rv.status) || null;
-        const stateFromLocal = normalizePipelineState(localStatusRaw);
-        const stateNormalized = stateFromLocal !== "unknown" ? stateFromLocal : normalizeQueueState(state);
-        let pipelineStatus = stateNormalized;
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
         const resultUrl: string | null =
@@ -165,6 +162,17 @@ export function statusRouter() {
           local.resultUrl ||
           local.imageUrl ||
           null;
+
+        const stateFromLocal = normalizePipelineState(localStatusRaw);
+        const stateFromQueue = normalizeQueueState(state);
+        const queueCompleted = queueStatus === "completed";
+        const queueFailed = queueStatus === "failed";
+        let pipelineStatus: NormalizedState;
+        if (queueFailed) pipelineStatus = "failed";
+        else if (queueCompleted) pipelineStatus = "completed";
+        else if (resultUrl) pipelineStatus = "completed";
+        else if (stateFromLocal !== "unknown") pipelineStatus = stateFromLocal;
+        else pipelineStatus = stateFromQueue;
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -207,11 +215,6 @@ export function statusRouter() {
           });
         }
 
-        // If we have a final URL but no reliable state, assume completion to avoid stuck queued items
-        if ((pipelineStatus === "unknown" || pipelineStatus === "queued") && resultUrl) {
-          pipelineStatus = "completed";
-        }
-
         // Normalize stageUrls into a predictable shape so clients can rely on keys
         const stageUrls: Record<string, string | null> = {
           stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
@@ -246,6 +249,9 @@ export function statusRouter() {
           ? validationRaw!.warnings as string[]
           : []);
         if (validationNote) warningSet.add(validationNote);
+        if (pipelineStatus === "completed" && !resultUrl) {
+          warningSet.add("Image Enhancement didn’t finalise. Please retry image.");
+        }
         const warnings = Array.from(warningSet);
 
         const hardFailRaw = validationRaw?.hardFail === true;
