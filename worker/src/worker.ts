@@ -1741,6 +1741,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   updateJob(payload.jobId, {
     status: "complete",
+    success: true,  // ✅ Explicitly set success flag
+    completed: true, // ✅ Add completed flag for status checks
     currentStage: "finalizing",
     finalStage: finalStageLabel,
     resultStage: finalStageLabel,
@@ -1753,6 +1755,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     meta,
     originalUrl: publishedOriginal?.url,
     resultUrl: pubFinalUrl,
+    imageUrl: pubFinalUrl, // ✅ Add imageUrl alias for backward compatibility
     parentJobId: (payload as any).retryParentJobId || undefined,
     retryInfo,
     validation: (() => {

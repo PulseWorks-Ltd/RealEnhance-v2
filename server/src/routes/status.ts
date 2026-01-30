@@ -168,9 +168,14 @@ export function statusRouter() {
         const stateFromQueue = normalizeQueueState(state);
         const queueCompleted = queueStatus === "completed";
         const queueFailed = queueStatus === "failed";
+        
+        // ✅ Check for explicit completion flags in local record
+        const localCompleted = local.completed === true || local.success === true;
+        
         let pipelineStatus: NormalizedState;
         if (queueFailed) pipelineStatus = "failed";
         else if (queueCompleted) pipelineStatus = "completed";
+        else if (localCompleted) pipelineStatus = "completed";  // ✅ Check completion flag
         else if (resultUrl) pipelineStatus = "completed";
         else if (stateFromLocal !== "unknown") pipelineStatus = stateFromLocal;
         else pipelineStatus = stateFromQueue;
@@ -488,9 +493,14 @@ export function statusRouter() {
       else if (hardFail && hasOutputs) uiStatus = "warning";
       else if (warnings.length) uiStatus = "warning";
 
+      // ✅ Check for explicit completion flags in local record
+      const localCompleted = local.completed === true || local.success === true;
+
       let stateOut = normalizeQueueState(state);
       if (hardFail && !hasOutputs) stateOut = "failed";
       if (hardFail && hasOutputs) stateOut = "completed";
+      // ✅ Override with completion flag if present
+      if (localCompleted) stateOut = "completed";
 
       const success =
         stateOut === "completed" && typeof resultUrl === "string";
