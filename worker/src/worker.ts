@@ -1023,6 +1023,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
   stage12Success = true;
   let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
+    ? "1A"
+    : (payload.options.declutter && path1B
+      ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
+      : "1A");
   const stage2ValidationBaseline = stage2BaseStage === "1B" && path1B ? path1B : path1A;
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
@@ -1050,6 +1055,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             angleHint,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
+            sourceStage: stage2SourceStage,
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,

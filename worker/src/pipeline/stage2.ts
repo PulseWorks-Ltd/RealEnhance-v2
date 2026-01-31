@@ -39,6 +39,7 @@ export async function runStage2(
     referenceImagePath?: string;
     stagingRegion?: StagingRegion | null;
     stagingStyle?: string;
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
     /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
@@ -167,7 +168,7 @@ export async function runStage2(
 
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, opts.roomType)
-      : buildStage2PromptNZStyle(opts.roomType, scene, { stagingStyle: stagingStyleNorm });
+      : buildStage2PromptNZStyle(opts.roomType, scene, { stagingStyle: stagingStyleNorm, sourceStage: opts.sourceStage });
     // Build a high-priority staging style directive (system-like block)
     const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
