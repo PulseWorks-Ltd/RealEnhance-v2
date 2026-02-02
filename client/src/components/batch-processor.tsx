@@ -4453,11 +4453,12 @@ export default function BatchProcessor() {
                         }
                         const isError = (status === "failed") || derivedUiStatus === "error";
                         const isDone = isSuccessStatus && !!finalResultUrl && !isError;
+                        const isUiComplete = isDone || (!!stage2Url && allowStaging && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
-                        const isProcessing = (!isDone && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
                         const displayStatus = isError
                           ? "Failed"
-                          : isDone
+                          : isUiComplete
                           ? (derivedUiStatus === "warning" ? "Warning" : "Complete")
                           : isRetrying
                           ? "Retrying..."
@@ -4512,7 +4513,7 @@ export default function BatchProcessor() {
                               : resultStage === "1A"
                                 ? "Stage 1A"
                                 : stageLabel;
-                          return isDone ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
+                          return isUiComplete ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
                         })();
 
                         console.log('[ProcessingBatch] stage selection', {
@@ -4561,7 +4562,7 @@ export default function BatchProcessor() {
                                    <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
                                 </div>
                               )}
-                              {!isProcessing && isDone && (
+                              {!isProcessing && isUiComplete && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/10 transition-opacity duration-500 animate-in fade-in zoom-in duration-300">
                                   <CheckCircle className="text-white w-6 h-6 shadow-sm drop-shadow-md" />
                                 </div>
@@ -4580,7 +4581,7 @@ export default function BatchProcessor() {
                               
                               {/* Status Badges */}
                               <div className="flex items-center gap-3 mt-1.5 h-7">
-                                {isProcessing ? (
+                                  {isProcessing ? (
                                    <StatusBadge status="processing" />
                                 ) : isError ? (
                                     <div className="flex items-center gap-3">
@@ -4596,7 +4597,7 @@ export default function BatchProcessor() {
                                       </button>
                                       {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
                                     </div>
-                                ) : isDone ? (
+                                ) : isUiComplete ? (
                                    <div className="flex items-center gap-2">
                                      <StatusBadge status="completed" />
                                      {!hardFail && warningCount > 0 && (
@@ -4633,7 +4634,7 @@ export default function BatchProcessor() {
                               </div>
 
                               {/* Individual Progress Line - Only when processing */}
-                              {isProcessing && (
+                                {isProcessing && (
                                 <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                   <div 
                                     className="h-full bg-slate-400 transition-all duration-300 animate-pulse" 
@@ -4645,7 +4646,7 @@ export default function BatchProcessor() {
 
                             {/* Action / Cancel Column */}
                             <div className="shrink-0 flex gap-2">
-                                {isDone && (
+                                {isUiComplete && (
                                     <>
                                         <button 
                                             onClick={() => setPreviewImage({

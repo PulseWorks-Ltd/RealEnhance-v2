@@ -1,0 +1,1441 @@
+2026-02-02T06:56:34.000000000Z [inf]  Starting Container
+2026-02-02T06:56:35.379327524Z [inf]  
+2026-02-02T06:56:35.379331951Z [inf]  > @realenhance/worker@1.0.0 start /app/worker
+2026-02-02T06:56:35.379335546Z [inf]  > NODE_ENV=production node dist/worker/src/worker.js
+2026-02-02T06:56:35.379338881Z [inf]  
+2026-02-02T06:56:35.462744860Z [inf]  ╔════════════════════════════════════════════════════════════════╗
+2026-02-02T06:56:35.462753083Z [inf]  ║                   WORKER STARTING                              ║
+2026-02-02T06:56:35.462757539Z [inf]  ╚════════════════════════════════════════════════════════════════╝
+2026-02-02T06:56:35.462761385Z [inf]  [WORKER] BUILD: 2025-11-07_16:00_S3_VERBOSE_LOGS
+2026-02-02T06:56:35.462765301Z [inf]  [WORKER] Queue: image-jobs
+2026-02-02T06:56:35.462769107Z [inf]  [WORKER] Redis: redis://default:GWlDMYvWAFGbVvdCWPnpyvrDhNWmjhcy@redis.railway.internal:6379
+2026-02-02T06:56:35.462772542Z [inf]  
+2026-02-02T06:56:35.462775747Z [inf]  
+2026-02-02T06:56:35.462778831Z [inf]  ╔════════════════════════════════════════════════════════════════╗
+2026-02-02T06:56:35.462783228Z [inf]  ║                   S3 CONFIGURATION                             ║
+2026-02-02T06:56:35.462786443Z [inf]  ╚════════════════════════════════════════════════════════════════╝
+2026-02-02T06:56:35.462793703Z [inf]    S3_BUCKET: realenhance-bucket
+2026-02-02T06:56:35.462796668Z [inf]    AWS_REGION: Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:56:35.462799923Z [inf]    AWS_ACCESS_KEY_ID: ✅ SET (AKIA3Y3F...)
+2026-02-02T06:56:35.462803869Z [inf]    AWS_SECRET_ACCESS_KEY: ✅ SET
+2026-02-02T06:56:35.462806883Z [inf]    S3_PUBLIC_BASEURL: NOT SET (will use S3 direct URLs)
+2026-02-02T06:56:35.462809858Z [inf]    📊 Status: ✅ ENABLED - Images will upload to S3
+2026-02-02T06:56:35.463001445Z [inf]  ╚════════════════════════════════════════════════════════════════╝
+2026-02-02T06:56:35.463001745Z [inf]  
+2026-02-02T06:56:35.463005982Z [inf]  
+2026-02-02T06:56:35.463010028Z [inf]  
+2026-02-02T06:56:35.463013393Z [inf]  [validator-config] DEPRECATED env var VALIDATOR_MODE detected; use LOCAL_VALIDATOR_MODE / GEMINI_VALIDATOR_MODE instead.
+2026-02-02T06:56:35.463016027Z [inf]  [validator-config] DEPRECATED env var STRUCTURE_VALIDATOR_MODE detected; use LOCAL_VALIDATOR_MODE instead.
+2026-02-02T06:56:35.463018631Z [inf]  [validator-config] DEPRECATED env var REALISM_VALIDATOR_MODE detected; use LOCAL_VALIDATOR_MODE instead.
+2026-02-02T06:56:35.463021255Z [inf]  [validator-config] DEPRECATED env var STAGE1B_VALIDATION_MODE detected; use LOCAL_VALIDATOR_MODE instead.
+2026-02-02T06:56:35.463023839Z [inf]  [validator-config] Resolved modes: local=log gemini=block
+2026-02-02T06:56:35.463026963Z [inf]  [validator-config] Legacy env vars in play: VALIDATOR_MODE, STRUCTURE_VALIDATOR_MODE, REALISM_VALIDATOR_MODE, STAGE1B_VALIDATION_MODE, STAGE1B_LOCAL_VALIDATE_MODE
+2026-02-02T06:56:35.463030158Z [inf]  [validator-config] Legacy env snapshot: {"VALIDATOR_MODE":"log","STRUCTURE_VALIDATOR_MODE":"log","REALISM_VALIDATOR_MODE":"block","STAGE1B_VALIDATION_MODE":"Block","STAGE1B_LOCAL_VALIDATE_MODE":"Log"}
+2026-02-02T06:56:35.463033123Z [inf]  
+2026-02-02T06:56:35.533126412Z [inf]  [worker] ready and listening
+2026-02-02T06:58:05.548510983Z [inf]  ========== PROCESSING JOB job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 ==========
+2026-02-02T06:58:05.548517433Z [inf]  [redis] connecting to redis://default:GWlDMYvWAFGbVvdCWPnpyvrDhNWmjhcy@redis.railway.internal:6379
+2026-02-02T06:58:05.548521599Z [inf]  [JOB_META_REPAIRED] jobId=job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 missingFields=userId,imageId,requestedStages
+2026-02-02T06:58:05.548526156Z [inf]  [WORKER] Remote original detected, downloading: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/1770015479960-Rental 02.jpg
+2026-02-02T06:58:05.548530082Z [inf]  
+2026-02-02T06:58:05.548533597Z [inf]  [WORKER] Remote original downloaded to: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m.jpg
+2026-02-02T06:58:05.548538024Z [inf]  
+2026-02-02T06:58:05.548541539Z [inf]  [worker] Validator config: structureMode=log, localBlocking=DISABLED, geminiConfirmation=ENABLED, geminiMode=block
+2026-02-02T06:58:05.548544754Z [inf]  
+2026-02-02T06:58:05.548548019Z [inf]  [WORKER] ═══════════ Publishing original image ═══════════
+2026-02-02T06:58:05.548551344Z [inf]  
+2026-02-02T06:58:05.548554689Z [inf]  ========================================
+2026-02-02T06:58:05.548558425Z [inf]  [PUBLISH] File: realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m.jpg
+2026-02-02T06:58:05.548562030Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:05.548565555Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:05.548569361Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:05.548572976Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:05.548576632Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:05.548580267Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:05.548583763Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:05.548586857Z [inf]  [WORKER] Remote original detected, downloading: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/1770015480858-Rental 03.jpg
+2026-02-02T06:58:05.548587548Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015481598-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m.jpg
+2026-02-02T06:58:05.548591304Z [inf]  [PUBLISH] Size: 134052 bytes
+2026-02-02T06:58:05.548595009Z [inf]  
+2026-02-02T06:58:05.548595390Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:05.548599817Z [inf]  ========== PROCESSING JOB job_a5a98906-c47b-4e47-a702-483e9f35d3b6 ==========
+2026-02-02T06:58:05.548600828Z [inf]  [WORKER] Remote original downloaded to: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q.jpg
+2026-02-02T06:58:05.548603923Z [inf]  [JOB_META_REPAIRED] jobId=job_a5a98906-c47b-4e47-a702-483e9f35d3b6 missingFields=userId,imageId,requestedStages
+2026-02-02T06:58:05.548605315Z [inf]  
+2026-02-02T06:58:05.548609401Z [inf]  [worker] Validator config: structureMode=log, localBlocking=DISABLED, geminiConfirmation=ENABLED, geminiMode=block
+2026-02-02T06:58:05.548637543Z [inf]  
+2026-02-02T06:58:05.548642060Z [inf]  [WORKER] ═══════════ Publishing original image ═══════════
+2026-02-02T06:58:05.548646226Z [inf]  
+2026-02-02T06:58:05.548650543Z [inf]  ========================================
+2026-02-02T06:58:05.548654599Z [inf]  [PUBLISH] File: realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q.jpg
+2026-02-02T06:58:05.548658365Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:05.548663012Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:05.548666917Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:05.548671164Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:05.548951074Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:05.548993367Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:05.548998294Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:05.549002571Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015481847-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q.jpg
+2026-02-02T06:58:05.549006557Z [inf]  [PUBLISH] Size: 172917 bytes
+2026-02-02T06:58:05.549010312Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:05.549014218Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:05.549018415Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=134052, ETag="d314bca80e9d35d0531f9a1b2beb5c28"
+2026-02-02T06:58:05.549022331Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:05.549027018Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015481598-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m.jpg
+2026-02-02T06:58:05.549033157Z [inf]  ========================================
+2026-02-02T06:58:05.549037113Z [inf]  
+2026-02-02T06:58:05.549041299Z [inf]  [WORKER] Original published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:05.549045005Z [inf]  
+2026-02-02T06:58:05.549049692Z [inf]  
+2026-02-02T06:58:05.549053507Z [inf]  [SCENE] primary=exterior conf=0.950 sky=0.048 grass=0.008 deck=0.601
+2026-02-02T06:58:05.549057924Z [inf]  [SKY_MODE_DECISION] mode=safe allowStrongSky=false reason=low_sky_coverage coveredSuspect=false features={skyTop10:0.003,skyTop40:0.048,blueOverall:0.000} thresholds={skyTop40Min:0.16,blueOverallMin:0.1} meetsThresholds=false
+2026-02-02T06:58:05.549061950Z [inf]  [SKY_MODE] mode=safe allowStrongSky=false coveredSuspect=false
+2026-02-02T06:58:05.549066727Z [inf]  [SKY_MODE] features: skyTop10=0.003 skyTop40=0.048 blueOverall=0.000
+2026-02-02T06:58:05.549201710Z [inf]  [SKY_MODE] thresholds: skyTop40Min=0.16 blueOverallMin=0.1
+2026-02-02T06:58:05.549206056Z [inf]  [SCENE_SKY_DECISION] imageId=img_6342873a-3447-4ce5-94b8-b1d52a2cf9d2 scene=interior skyMode=safe confidence=0.950 coveredExteriorSuspect=false skyReplacementAllowed=false reason=features_below_threshold envThresholds={skyTop40Min:0.16,blueOverallMin:0.1} features={skyTop10:0.003,skyTop40:0.048,blueOverall:0.000} clientPrediction=interior/0.206/confident_interior manualOverride=false requiresConfirm=true
+2026-02-02T06:58:05.549210172Z [inf]  [WORKER] Scene resolved: primary=exterior(0.95) → resolved=interior, room=living_room
+2026-02-02T06:58:05.549214849Z [inf]  [WORKER] Structural mask computed: 1325x883
+2026-02-02T06:58:05.549219146Z [inf]  [STAGE1A] Final: sceneLabel=interior skyMode=safe safeReplaceSky=false
+2026-02-02T06:58:05.549223342Z [inf]  [stage1A] Interior profile applied: nz_standard (brightness=1.22, sat=1.20)
+2026-02-02T06:58:05.549296241Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:05.549299847Z [inf]  [WORKER] Original published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:05.549302180Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=172917, ETag="4ced66713b539f3152ff16cdaab52d71"
+2026-02-02T06:58:05.549307248Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:05.549307338Z [inf]  
+2026-02-02T06:58:05.549312446Z [inf]  
+2026-02-02T06:58:05.549313007Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015481847-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q.jpg
+2026-02-02T06:58:05.549316652Z [inf]  [SCENE] primary=exterior conf=0.950 sky=0.023 grass=0.013 deck=0.755
+2026-02-02T06:58:05.549317874Z [inf]  ========================================
+2026-02-02T06:58:05.549321459Z [inf]  [SKY_MODE_DECISION] mode=safe allowStrongSky=false reason=low_sky_coverage coveredSuspect=false features={skyTop10:0.000,skyTop40:0.013,blueOverall:0.000} thresholds={skyTop40Min:0.16,blueOverallMin:0.1} meetsThresholds=false
+2026-02-02T06:58:05.549322731Z [inf]  
+2026-02-02T06:58:05.549411374Z [inf]  [WORKER] Scene resolved: primary=exterior(0.95) → resolved=interior, room=living_room
+2026-02-02T06:58:05.549416462Z [inf]  [WORKER] Structural mask computed: 1325x883
+2026-02-02T06:58:05.549422401Z [inf]  [STAGE1A] Final: sceneLabel=interior skyMode=safe safeReplaceSky=false
+2026-02-02T06:58:05.549423883Z [inf]  }
+2026-02-02T06:58:05.549424404Z [inf]    noiseStdDev: 54.70413820257129,
+2026-02-02T06:58:05.549428069Z [inf]  [stage1A] Interior profile applied: nz_standard (brightness=1.22, sat=1.20)
+2026-02-02T06:58:05.549429321Z [err]  [stage1A] ⚠️ Low quality detected — forcing Gemini as primary
+2026-02-02T06:58:05.549430543Z [inf]    dynamicRange: 173,
+2026-02-02T06:58:05.549433137Z [inf]  [SKY_MODE] mode=safe allowStrongSky=false coveredSuspect=false
+2026-02-02T06:58:05.549434198Z [inf]  [stage1A] Sharp enhancement complete: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical.webp → /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp.webp
+2026-02-02T06:58:05.549436702Z [inf]    laplacianEstimate: 0.3143915988653523,
+2026-02-02T06:58:05.549441179Z [inf]  [stage1A] Quality Scan: {
+2026-02-02T06:58:05.549443592Z [inf]    forceGemini: true
+2026-02-02T06:58:05.549447078Z [inf]  [SKY_MODE] features: skyTop10=0.000 skyTop40=0.013 blueOverall=0.000
+2026-02-02T06:58:05.549448830Z [inf]    meanBrightness: 170.504859505545,
+2026-02-02T06:58:05.549454439Z [inf]  [SKY_MODE] thresholds: skyTop40Min=0.16 blueOverallMin=0.1
+2026-02-02T06:58:05.549460768Z [inf]  [SCENE_SKY_DECISION] imageId=img_90a422c5-6d28-4712-8c32-88172956ba8c scene=interior skyMode=safe confidence=0.950 coveredExteriorSuspect=false skyReplacementAllowed=false reason=features_below_threshold envThresholds={skyTop40Min:0.16,blueOverallMin:0.1} features={skyTop10:0.000,skyTop40:0.013,blueOverall:0.000} clientPrediction=interior/0.236/confident_interior manualOverride=false requiresConfirm=true
+2026-02-02T06:58:05.549622110Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:05.549626307Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp.webp
+2026-02-02T06:58:05.549631564Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:05.549636953Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:05.549641319Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:05.549646337Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:05.549651294Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:05.549656021Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:05.549660438Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:05.549665125Z [inf]  [MODEL][1A] job=job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 file=realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp.webp stage=1A room=kitchen models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:05.549669652Z [inf]  [stage1A] Sharp enhancement complete: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical.webp → /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp.webp
+2026-02-02T06:58:05.549673557Z [inf]  [stage1A] Quality Scan: {
+2026-02-02T06:58:05.549677934Z [inf]    meanBrightness: 166.166225774055,
+2026-02-02T06:58:05.549682521Z [inf]    noiseStdDev: 54.50340586819485,
+2026-02-02T06:58:05.549686817Z [inf]    dynamicRange: 190,
+2026-02-02T06:58:05.549691204Z [inf]    laplacianEstimate: 0.2853581459067793,
+2026-02-02T06:58:05.549697583Z [inf]    forceGemini: true
+2026-02-02T06:58:05.549703062Z [inf]  }
+2026-02-02T06:58:05.549707398Z [err]  [stage1A] ⚠️ Low quality detected — forcing Gemini as primary
+2026-02-02T06:58:05.549822220Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:05.549826817Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp.webp
+2026-02-02T06:58:05.549831104Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:05.549835480Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:05.549839576Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:05.549844193Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:05.549848310Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:05.549852626Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:05.549857533Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:05.549862451Z [inf]  [MODEL][1A] job=job_a5a98906-c47b-4e47-a702-483e9f35d3b6 file=realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp.webp stage=1A room=multi-living models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:12.501241012Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=2 hasImage=true
+2026-02-02T06:58:12.501245308Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:58:12.501248764Z [inf]  [Gemini] ✅ API responded in 9018 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:12.501288724Z [inf]  [Gemini] 📊 Response parts: 2
+2026-02-02T06:58:12.501294252Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:58:12.504947692Z [err]  [stage1A] 🚨 Content diff FAIL — rerouting to Gemini
+2026-02-02T06:58:12.504951618Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:12.504954853Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp.webp
+2026-02-02T06:58:12.504957958Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:12.504961012Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:12.504964387Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:12.504966971Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:12.504969745Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:12.504972630Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:12.504975604Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:12.504978619Z [inf]  [MODEL][1A] job=job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 file=realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp.webp stage=1A room=kitchen models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:15.561481318Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:15.561499426Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=2 hasImage=true
+2026-02-02T06:58:15.561504463Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:58:15.561509451Z [inf]  [Gemini] ✅ API responded in 11674 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:15.561514698Z [inf]  [Gemini] 📊 Response parts: 2
+2026-02-02T06:58:15.561519035Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:58:15.561523261Z [err]  [stage1A] 🚨 Content diff FAIL — rerouting to Gemini
+2026-02-02T06:58:15.561527307Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:15.561530803Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp.webp
+2026-02-02T06:58:15.561534678Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:15.561538094Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:15.561542430Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:15.562234388Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:15.562239025Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:15.562242841Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:15.562255219Z [inf]  [MODEL][1A] job=job_a5a98906-c47b-4e47-a702-483e9f35d3b6 file=realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp.webp stage=1A room=multi-living models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:24.313858942Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=2 hasImage=true
+2026-02-02T06:58:24.313861866Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:58:24.313864851Z [inf]  [Gemini] ✅ API responded in 11805 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:24.313868817Z [inf]  [Gemini] 📊 Response parts: 2
+2026-02-02T06:58:24.317932452Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:58:24.554320835Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2026-02-02T06:58:24.554323529Z [inf]  [stage1A] Professional enhancement complete: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical.webp → /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:24.554326053Z [inf]  [stage1a] Gemini validation skipped by design (local-only sanity checks)
+2026-02-02T06:58:24.554328988Z [inf]  
+2026-02-02T06:58:24.554331982Z [inf]  ========================================
+2026-02-02T06:58:24.554334346Z [inf]  [PUBLISH] File: realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:24.554336930Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:24.554340425Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:24.554343379Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:24.554345963Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:24.554348627Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:24.554351201Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:24.554353544Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:24.554355968Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015504538-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:24.554358692Z [inf]  [PUBLISH] Size: 1574402 bytes
+2026-02-02T06:58:24.554361416Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:25.797183522Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:25.874554098Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1574402, ETag="87e2d8e2983df7b790f778a0d0d46a66"
+2026-02-02T06:58:25.874557754Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:25.874560638Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015504538-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:25.874563352Z [inf]  ========================================
+2026-02-02T06:58:25.874566026Z [inf]  
+2026-02-02T06:58:25.878357222Z [inf]  [WORKER] Checking Stage 1B: payload.options.declutter=false
+2026-02-02T06:58:25.878362420Z [inf]  [WORKER] Stage 1B declutterMode from payload: null
+2026-02-02T06:58:25.878365996Z [inf]  [WORKER] Stage 1B virtualStage: true
+2026-02-02T06:58:25.878369561Z [inf]  [WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping
+2026-02-02T06:58:25.878372976Z [inf]  [WORKER] Stage 2 ENABLED; USE_GEMINI_STAGE2=1
+2026-02-02T06:58:25.878376301Z [inf]  [WORKER] Stage 2 source: baseStage=1A, inputPath=/tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:25.878379927Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:58:25.878690853Z [inf]  [stage2] 🔵 Starting virtual staging...
+2026-02-02T06:58:25.878695780Z [inf]  [stage2] Input: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:25.878699586Z [inf]  [stage2] Validation baseline: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:25.878703201Z [inf]  [stage2] Source stage: Stage1A (enhanced)
+2026-02-02T06:58:25.878706466Z [inf]  [stage2] Room type: kitchen
+2026-02-02T06:58:25.878709932Z [inf]  [stage2] Scene type: interior
+2026-02-02T06:58:25.878713247Z [inf]  [stage2] Profile: default
+2026-02-02T06:58:25.878716632Z [inf]  [stage2] Stage-aware validation: ENABLED
+2026-02-02T06:58:25.878720117Z [inf]  [stage2] starting with roomType=kitchen, base=/tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:25.878869381Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:58:25.879459536Z [inf]  • Primary: bed + headboard (bedrooms), sofa (living), dining table + chairs (dining), desk + cha
+2026-02-02T06:58:25.879464564Z [inf]  ...[truncated]
+2026-02-02T06:58:25.879464774Z [inf]  
+2026-02-02T06:58:25.879472115Z [inf]  
+2026-02-02T06:58:25.879472215Z [inf]  Purpose:
+2026-02-02T06:58:25.879472225Z [inf]  [stage2] [PROMPT_ASSEMBLED] stagingStyle=NZ Standard Real Estate len=2440
+2026-02-02T06:58:25.879472305Z [inf]  INPUT CONTEXT: Stage 1A enhanced only (room may be empty). You may stage freely.
+2026-02-02T06:58:25.879478324Z [inf]  Furniture Priority (add ONLY if space allows; never cram):
+2026-02-02T06:58:25.879484353Z [inf]  You are a professional New Zealand real estate photo retoucher and virtual stager.
+2026-02-02T06:58:25.879485876Z [inf]  - This image must remain believable as a real NZ residential property listing photo.
+2026-02-02T06:58:25.879487408Z [inf]  Stage this kitchen interior for high-end real estate marketing.
+2026-02-02T06:58:25.879491965Z [inf]  
+2026-02-02T06:58:25.879492095Z [inf]  - Enhancements must appear subtle, professional, and agency-safe.
+2026-02-02T06:58:25.879497473Z [inf]  
+2026-02-02T06:58:25.879497783Z [inf]  Rules:
+2026-02-02T06:58:25.879502731Z [inf]  - Maintain exact architectural structure
+2026-02-02T06:58:25.879506857Z [inf]  - Do NOT add or remove doors or windows
+2026-02-02T06:58:25.879511394Z [inf]  - Do NOT change wall positions, ceiling height, or floor layout
+2026-02-02T06:58:25.879516001Z [inf]  - Do NOT introduce unrealistic furniture
+2026-02-02T06:58:25.879520808Z [inf]  - Do NOT block natural light sources
+2026-02-02T06:58:25.879525605Z [inf]  
+2026-02-02T06:58:25.879530332Z [inf]  Style:
+2026-02-02T06:58:25.879534148Z [inf]  - Clean, neutral, lived-in but uncluttered look
+2026-02-02T06:58:25.879537503Z [inf]  - Soft natural lighting
+2026-02-02T06:58:25.879541138Z [inf]  - Subtle warmth (not over-stylised)
+2026-02-02T06:58:25.879544784Z [inf]  - Realistic, modest furniture only where context-appropriate
+2026-02-02T06:58:25.879547889Z [inf]  - No dramatic shadows, no editorial lighting
+2026-02-02T06:58:25.879551153Z [inf]  
+2026-02-02T06:58:25.880050302Z [inf]  [stage2][PROMPT_ASSEMBLED] {
+2026-02-02T06:58:25.880055400Z [inf]    stagingStyle: 'NZ Standard Real Estate',
+2026-02-02T06:58:25.880060357Z [inf]      '- Soft natural lighting\n' +
+2026-02-02T06:58:25.880061269Z [inf]    len: 2440,
+2026-02-02T06:58:25.880067748Z [inf]    preview: 'You are a professional New Zealand real estate photo retoucher and virtual stager.\n' +
+2026-02-02T06:58:25.880068660Z [inf]      '- Subt'
+2026-02-02T06:58:25.880073387Z [inf]      '\n' +
+2026-02-02T06:58:25.880075460Z [inf]  }
+2026-02-02T06:58:25.880079336Z [inf]      'Rules:\n' +
+2026-02-02T06:58:25.880081870Z [inf]  [stage2] invoking Gemini with roomType=kitchen
+2026-02-02T06:58:25.880085124Z [inf]      '- Maintain exact architectural structure\n' +
+2026-02-02T06:58:25.880089181Z [inf]  [stage2] 🤖 Calling Gemini API for virtual staging... (attempt 1)
+2026-02-02T06:58:25.880091534Z [inf]      '- Do NOT add or remove doors or windows\n' +
+2026-02-02T06:58:25.880097433Z [inf]      '- Do NOT change wall positions, ceiling height, or floor layout\n' +
+2026-02-02T06:58:25.880097743Z [inf]  [stage2] Primary model: gemini-2.5-flash-image, fallback: gemini-2.5-flash-image
+2026-02-02T06:58:25.880104634Z [inf]      '- Do NOT introduce unrealistic furniture\n' +
+2026-02-02T06:58:25.880105495Z [inf]  [MODEL][2] job=job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 file=realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp stage=2 room=kitchen models=gemini-2.5-flash-image (fallback=gemini-2.5-flash-image) reason=kitchen → NZ Standard Real Estate
+2026-02-02T06:58:25.880109421Z [inf]      '- Do NOT block natural light sources\n' +
+2026-02-02T06:58:25.880112826Z [inf]      '\n' +
+2026-02-02T06:58:25.880116081Z [inf]      'Style:\n' +
+2026-02-02T06:58:25.880119156Z [inf]      '- Clean, neutral, lived-in but uncluttered look\n' +
+2026-02-02T06:58:28.432492110Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=2 hasImage=true
+2026-02-02T06:58:28.432495385Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:58:28.432498850Z [inf]  [Gemini] ✅ API responded in 12851 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:28.432502656Z [inf]  [Gemini] 📊 Response parts: 2
+2026-02-02T06:58:28.432506351Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:58:28.677442146Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:28.677448685Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:28.677453883Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:28.677456998Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:28.677458170Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2026-02-02T06:58:28.677460213Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:28.677461314Z [inf]  [stage1A] Professional enhancement complete: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical.webp → /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:28.677464048Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:28.677465400Z [inf]  [stage1a] Gemini validation skipped by design (local-only sanity checks)
+2026-02-02T06:58:28.677468004Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:28.677469046Z [inf]  
+2026-02-02T06:58:28.677471019Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015508663-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:28.677471950Z [inf]  ========================================
+2026-02-02T06:58:28.677474093Z [inf]  [PUBLISH] Size: 1726953 bytes
+2026-02-02T06:58:28.677475876Z [inf]  [PUBLISH] File: realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:28.677476998Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:29.879317501Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:29.994854707Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1726953, ETag="444f10756f69dcc2fe490e8c35553096"
+2026-02-02T06:58:29.994861176Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:29.994864852Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015508663-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:29.994868057Z [inf]  ========================================
+2026-02-02T06:58:29.994871191Z [inf]  
+2026-02-02T06:58:29.994875608Z [inf]  [WORKER] Checking Stage 1B: payload.options.declutter=false
+2026-02-02T06:58:29.994878893Z [inf]  [WORKER] Stage 1B declutterMode from payload: null
+2026-02-02T06:58:29.994882078Z [inf]  [WORKER] Stage 1B virtualStage: true
+2026-02-02T06:58:29.994884962Z [inf]  [WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping
+2026-02-02T06:58:29.994888628Z [inf]  [WORKER] Stage 2 ENABLED; USE_GEMINI_STAGE2=1
+2026-02-02T06:58:29.994891342Z [inf]  [WORKER] Stage 2 source: baseStage=1A, inputPath=/tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:29.994894016Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:58:29.994896700Z [inf]  [stage2] 🔵 Starting virtual staging...
+2026-02-02T06:58:29.994899444Z [inf]  [stage2] Input: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:29.994902538Z [inf]  [stage2] Validation baseline: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:29.994905643Z [inf]  [stage2] Source stage: Stage1A (enhanced)
+2026-02-02T06:58:29.994909309Z [inf]  [stage2] Room type: multi-living
+2026-02-02T06:58:29.994912223Z [inf]  [stage2] Scene type: interior
+2026-02-02T06:58:29.994914817Z [inf]  [stage2] Profile: default
+2026-02-02T06:58:29.995157150Z [inf]  [stage2] Stage-aware validation: ENABLED
+2026-02-02T06:58:29.995162488Z [inf]  [stage2] starting with roomType=multi-living, base=/tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:29.995168077Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:58:29.995171862Z [inf]  [stage2] [PROMPT_ASSEMBLED] stagingStyle=NZ Standard Real Estate len=2445
+2026-02-02T06:58:29.995175858Z [inf]  You are a professional New Zealand real estate photo retoucher and virtual stager.
+2026-02-02T06:58:29.995179694Z [inf]  
+2026-02-02T06:58:29.995183420Z [inf]  Rules:
+2026-02-02T06:58:29.995187115Z [inf]  - Maintain exact architectural structure
+2026-02-02T06:58:29.995190681Z [inf]  - Do NOT add or remove doors or windows
+2026-02-02T06:58:29.995194406Z [inf]  - Do NOT change wall positions, ceiling height, or floor layout
+2026-02-02T06:58:29.995198773Z [inf]  - Do NOT introduce unrealistic furniture
+2026-02-02T06:58:29.995202899Z [inf]  - Do NOT block natural light sources
+2026-02-02T06:58:29.995206675Z [inf]  
+2026-02-02T06:58:29.995210110Z [inf]  Style:
+2026-02-02T06:58:29.995214026Z [inf]  - Clean, neutral, lived-in but uncluttered look
+2026-02-02T06:58:29.995217661Z [inf]  - Soft natural lighting
+2026-02-02T06:58:29.995221247Z [inf]  - Subtle warmth (not over-stylised)
+2026-02-02T06:58:29.995226144Z [inf]  - Realistic, modest furniture only where context-appropriate
+2026-02-02T06:58:29.995229509Z [inf]  - No dramatic shadows, no editorial lighting
+2026-02-02T06:58:29.995233865Z [inf]  
+2026-02-02T06:58:29.995237541Z [inf]  Purpose:
+2026-02-02T06:58:29.995241086Z [inf]  - This image must remain believable as a real NZ residential property listing photo.
+2026-02-02T06:58:29.995244551Z [inf]  - Enhancements must appear subtle, professional, and agency-safe.
+2026-02-02T06:58:29.995248007Z [inf]  
+2026-02-02T06:58:29.995517080Z [inf]  Stage this multi-living interior for high-end real estate marketing.
+2026-02-02T06:58:29.995521086Z [inf]  
+2026-02-02T06:58:29.995525643Z [inf]  INPUT CONTEXT: Stage 1A enhanced only (room may be empty). You may stage freely.
+2026-02-02T06:58:29.995526735Z [inf]  [stage2] 🤖 Calling Gemini API for virtual staging... (attempt 1)
+2026-02-02T06:58:29.995529990Z [inf]  
+2026-02-02T06:58:29.995532744Z [inf]  [stage2] Primary model: gemini-2.5-flash-image, fallback: gemini-2.5-flash-image
+2026-02-02T06:58:29.995533295Z [inf]      '- Do NOT introduce unrealistic furniture\n' +
+2026-02-02T06:58:29.995533835Z [inf]  Furniture Priority (add ONLY if space allows; never cram):
+2026-02-02T06:58:29.995537751Z [inf]  [MODEL][2] job=job_a5a98906-c47b-4e47-a702-483e9f35d3b6 file=realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp stage=2 room=multi-living models=gemini-2.5-flash-image (fallback=gemini-2.5-flash-image) reason=multi-living → NZ Standard Real Estate
+2026-02-02T06:58:29.995538102Z [inf]      '- Do NOT block natural light sources\n' +
+2026-02-02T06:58:29.995538182Z [inf]  • Primary: bed + headboard (bedrooms), sofa (living), dining table + chairs (dining), desk 
+2026-02-02T06:58:29.995541867Z [inf]  ...[truncated]
+2026-02-02T06:58:29.995543600Z [inf]      '\n' +
+2026-02-02T06:58:29.995545573Z [inf]  [stage2][PROMPT_ASSEMBLED] {
+2026-02-02T06:58:29.995547436Z [inf]      'Style:\n' +
+2026-02-02T06:58:29.995549349Z [inf]    stagingStyle: 'NZ Standard Real Estate',
+2026-02-02T06:58:29.995551151Z [inf]      '- Clean, neutral, lived-in but uncluttered look\n' +
+2026-02-02T06:58:29.995552964Z [inf]    len: 2445,
+2026-02-02T06:58:29.995554707Z [inf]      '- Soft natural lighting\n' +
+2026-02-02T06:58:29.995557060Z [inf]    preview: 'You are a professional New Zealand real estate photo retoucher and virtual stager.\n' +
+2026-02-02T06:58:29.995558813Z [inf]      '- Subt'
+2026-02-02T06:58:29.995561507Z [inf]      '\n' +
+2026-02-02T06:58:29.995562508Z [inf]  }
+2026-02-02T06:58:29.995565283Z [inf]      'Rules:\n' +
+2026-02-02T06:58:29.995566434Z [inf]  [stage2] invoking Gemini with roomType=multi-living
+2026-02-02T06:58:29.995569128Z [inf]      '- Maintain exact architectural structure\n' +
+2026-02-02T06:58:29.995572523Z [inf]      '- Do NOT add or remove doors or windows\n' +
+2026-02-02T06:58:29.995575999Z [inf]      '- Do NOT change wall positions, ceiling height, or floor layout\n' +
+2026-02-02T06:58:35.392332554Z [inf]  [GEMINI][stage2] Primary attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:58:35.392336770Z [inf]  [GEMINI][stage2] Success with primary model gemini-2.5-flash-image
+2026-02-02T06:58:35.392341227Z [inf]  [stage2] Completed using model: gemini-2.5-flash-image
+2026-02-02T06:58:35.392345704Z [inf]  [stage2] ✅ Gemini API responded in 9504 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:35.392349469Z [inf]  [stage2] 📊 Response parts: 1
+2026-02-02T06:58:35.392353305Z [inf]  [stage2] 💾 Saved staged image to: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:35.392356941Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:58:35.392362249Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:35.392365654Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:35.392368989Z [inf]  [stageAware] Mode: log
+2026-02-02T06:58:35.547398523Z [inf]  [stageAware] Mask A: 154474 pixels (14.88%)
+2026-02-02T06:58:35.547404783Z [inf]  [stageAware] Mask B: 160991 pixels (15.50%)
+2026-02-02T06:58:35.579614758Z [inf]  [stageAware] Structural IoU (masked): 0.999 (inter=154283, union=154474)
+2026-02-02T06:58:35.634930081Z [inf]  [stageAware] Edge IoU (structure_only): 0.998
+2026-02-02T06:58:35.699571373Z [inf]  [paintOver] ROI=(465,198,47,143) edgeRatio=1.009 texRatio=1.020 baseEdge=0.3386 candEdge=0.3418 baseTex=2392.63 candTex=2441.16
+2026-02-02T06:58:35.703550902Z [inf]  [paintOver] ROI=(424,218,24,73) edgeRatio=1.004 texRatio=0.990 baseEdge=0.1376 candEdge=0.1381 baseTex=144.64 candTex=143.16
+2026-02-02T06:58:35.703557582Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:58:35.703562320Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:58:35.703565925Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:58:35.703569250Z [inf]  [stageAware] ===============================
+2026-02-02T06:58:35.703572635Z [inf]  [stage2] ✅ Stage-aware validation passed (risk=false)
+2026-02-02T06:58:35.707580877Z [inf]  [worker] ═══════════ Running Unified Structural Validation ═══════════
+2026-02-02T06:58:35.707587157Z [inf]  [worker] Unified validation mode: configured=log effective=log blocking=OFF (advisory)
+2026-02-02T06:58:35.707590792Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+2026-02-02T06:58:35.707594277Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+2026-02-02T06:58:35.707597883Z [inf]  [unified-validator] Stage: 2
+2026-02-02T06:58:35.707601608Z [inf]  [unified-validator] Scene: interior
+2026-02-02T06:58:35.707605033Z [inf]  [unified-validator] Mode: log (validator config: log)
+2026-02-02T06:58:35.707608609Z [inf]  [unified-validator] Staging Style: NZ Standard Real Estate
+2026-02-02T06:58:35.707612955Z [inf]  [unified-validator] Stage-Aware: ENABLED
+2026-02-02T06:58:35.707616571Z [inf]  [unified-validator] Original: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:35.707618654Z [inf]  [stageAware] Mode: log
+2026-02-02T06:58:35.707620447Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:35.707623651Z [inf]  [unified-validator] Stage1A Path: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:35.707627117Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+2026-02-02T06:58:35.707630532Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:58:35.707634327Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp
+2026-02-02T06:58:35.707637532Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:35.742740036Z [inf]  [stageAware] Mask A: 154474 pixels (14.88%)
+2026-02-02T06:58:35.742744342Z [inf]  [stageAware] Mask B: 160991 pixels (15.50%)
+2026-02-02T06:58:35.778772314Z [inf]  [stageAware] Structural IoU (masked): 0.999 (inter=154283, union=154474)
+2026-02-02T06:58:35.826642760Z [inf]  [stageAware] Edge IoU (structure_only): 0.998
+2026-02-02T06:58:35.866941298Z [inf]  [paintOver] ROI=(465,198,47,143) edgeRatio=1.009 texRatio=1.020 baseEdge=0.3386 candEdge=0.3418 baseTex=2392.63 candTex=2441.16
+2026-02-02T06:58:35.870860447Z [inf]  [paintOver] ROI=(424,218,24,73) edgeRatio=1.004 texRatio=0.990 baseEdge=0.1376 candEdge=0.1381 baseTex=144.64 candTex=143.16
+2026-02-02T06:58:35.870867037Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:58:35.870871954Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:58:35.870875519Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:58:35.870879165Z [inf]  [stageAware] ===============================
+2026-02-02T06:58:35.870883021Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.998
+2026-02-02T06:58:35.870886466Z [inf]  [worker] Unified validation completed in 163ms
+2026-02-02T06:58:35.870890762Z [inf]  [worker] Validation result: PASSED (score: 0.9983724825185001)
+2026-02-02T06:58:35.870894408Z [inf]  [worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════
+2026-02-02T06:58:35.870899395Z [inf]  [SEM][stage2] Starting semantic structural validation (interior)
+2026-02-02T06:58:35.959564403Z [inf]  [SEM][stage2] windows: 5 → 5 (OK)
+2026-02-02T06:58:35.959567167Z [inf]  [SEM][stage2] doors: 0 → 0 (OK)
+2026-02-02T06:58:35.959570062Z [inf]  [SEM][stage2] wall drift: 6.82% (OK)
+2026-02-02T06:58:35.959572856Z [inf]  [SEM][stage2] openings: +0 created, -0 closed (OK)
+2026-02-02T06:58:35.959576111Z [inf]  [SEM][stage2] RESULT: PASSED (log-only, non-blocking)
+2026-02-02T06:58:35.959578875Z [inf]  [worker] Semantic validation completed (log-only, non-blocking)
+2026-02-02T06:58:35.959582691Z [inf]  [worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════
+2026-02-02T06:58:35.959585575Z [inf]  [MASK][stage2] Starting masked edge geometry validation (interior)
+2026-02-02T06:58:36.023664693Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:36.023685014Z [inf]  [MASK][stage2] masked drift: 17.32% (OK)
+2026-02-02T06:58:36.023691033Z [inf]  [MASK][stage2] openings created: +0, closed: -0 (OK)
+2026-02-02T06:58:36.023694148Z [inf]  [MASK][stage2] RESULT: PASSED (log-only)
+2026-02-02T06:58:36.023697603Z [inf]  [worker] Masked edge validation completed (log-only, non-blocking)
+2026-02-02T06:58:36.023700798Z [inf]  [LOCAL_VALIDATE] stage=2 status=pass reasons=[]
+2026-02-02T06:58:36.023703762Z [inf]  [VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=true
+2026-02-02T06:58:36.023706897Z [inf]  
+2026-02-02T06:58:36.023709871Z [inf]  ========================================
+2026-02-02T06:58:36.023712946Z [inf]  [PUBLISH] File: realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:36.023716020Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:36.023719245Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:36.023722029Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:36.023724924Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:36.023727928Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:36.027236671Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:36.027240948Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015516022-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:36.027245014Z [inf]  [PUBLISH] Size: 1647477 bytes
+2026-02-02T06:58:36.027248619Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:37.059541210Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:37.160474360Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1647477, ETag="10af467cc56553fa0fa11c46439c7e74"
+2026-02-02T06:58:37.160478086Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:37.160481361Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015516022-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:37.160484315Z [inf]  ========================================
+2026-02-02T06:58:37.160492568Z [inf]  
+2026-02-02T06:58:37.160495572Z [inf]  [worker] ✅ Stage 2 published: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015516022-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.043998252Z [inf]  [GEMINI][stage2] Primary attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:58:40.044000795Z [inf]  [GEMINI][stage2] Success with primary model gemini-2.5-flash-image
+2026-02-02T06:58:40.044003449Z [inf]  [stage2] Completed using model: gemini-2.5-flash-image
+2026-02-02T06:58:40.044006454Z [inf]  [stage2] ✅ Gemini API responded in 10003 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:40.044009538Z [inf]  [stage2] 📊 Response parts: 1
+2026-02-02T06:58:40.044012283Z [inf]  [stage2] 💾 Saved staged image to: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.044015547Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:58:40.044018201Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:40.044020845Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.044023780Z [inf]  [stageAware] Mode: log
+2026-02-02T06:58:40.044026694Z [inf]  [worker] ═══════════ Validation Summary ═══════════
+2026-02-02T06:58:40.044029198Z [inf]  [worker] Unified Structural: ✓ PASSED (score: 0.9983724825185001)
+2026-02-02T06:58:40.044031942Z [inf]  [worker] Gemini Compliance: ✓ PASSED
+2026-02-02T06:58:40.044034636Z [inf]  [worker] Blocking mode: Local=DISABLED, GeminiConfirmation=ENABLED
+2026-02-02T06:58:40.044037440Z [inf]  [worker] ═══════════════════════════════════════════
+2026-02-02T06:58:40.044039944Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+2026-02-02T06:58:40.044042768Z [inf]  
+2026-02-02T06:58:40.044045352Z [inf]  [WORKER] ═══════════ Publishing final enhanced image ═══════════
+2026-02-02T06:58:40.044047866Z [inf]  
+2026-02-02T06:58:40.044050480Z [inf]  
+2026-02-02T06:58:40.044052813Z [inf]  ========================================
+2026-02-02T06:58:40.044055327Z [inf]  [PUBLISH] File: realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.044057761Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:40.044060315Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:40.044063089Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:40.044066133Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:40.044069008Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:40.044071782Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:40.044074356Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:40.044077050Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.044080365Z [inf]  [PUBLISH] Size: 1647477 bytes
+2026-02-02T06:58:40.044083009Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:40.168689829Z [inf]  [stageAware] Mask A: 241588 pixels (23.27%)
+2026-02-02T06:58:40.168696089Z [inf]  [stageAware] Mask B: 199121 pixels (19.18%)
+2026-02-02T06:58:40.212677371Z [inf]  [stageAware] Structural IoU (masked): 0.979 (inter=236577, union=241583)
+2026-02-02T06:58:40.260347827Z [inf]  [stageAware] Edge IoU (structure_only): 0.979
+2026-02-02T06:58:40.331519935Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:58:40.331524572Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:58:40.331528107Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:58:40.331532023Z [inf]  [stageAware] ===============================
+2026-02-02T06:58:40.331537101Z [inf]  [stage2] ✅ Stage-aware validation passed (risk=false)
+2026-02-02T06:58:40.331541507Z [inf]  [worker] ═══════════ Running Unified Structural Validation ═══════════
+2026-02-02T06:58:40.331545493Z [inf]  [worker] Unified validation mode: configured=log effective=log blocking=OFF (advisory)
+2026-02-02T06:58:40.331548938Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+2026-02-02T06:58:40.331552424Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+2026-02-02T06:58:40.331556770Z [inf]  [unified-validator] Stage: 2
+2026-02-02T06:58:40.331560436Z [inf]  [unified-validator] Scene: interior
+2026-02-02T06:58:40.331563871Z [inf]  [unified-validator] Mode: log (validator config: log)
+2026-02-02T06:58:40.331567266Z [inf]  [unified-validator] Staging Style: NZ Standard Real Estate
+2026-02-02T06:58:40.331570681Z [inf]  [unified-validator] Stage-Aware: ENABLED
+2026-02-02T06:58:40.331574557Z [inf]  [unified-validator] Original: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:40.331578583Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.331582529Z [inf]  [unified-validator] Stage1A Path: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:40.331586665Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+2026-02-02T06:58:40.331590901Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:58:40.331652794Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp
+2026-02-02T06:58:40.331657481Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:40.331661137Z [inf]  [stageAware] Mode: log
+2026-02-02T06:58:40.336612894Z [inf]  [stageAware] Mask A: 241588 pixels (23.27%)
+2026-02-02T06:58:40.336619124Z [inf]  [stageAware] Mask B: 199121 pixels (19.18%)
+2026-02-02T06:58:40.381619314Z [inf]  [stageAware] Structural IoU (masked): 0.979 (inter=236577, union=241583)
+2026-02-02T06:58:40.437812323Z [inf]  [stageAware] Edge IoU (structure_only): 0.979
+2026-02-02T06:58:40.476088398Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:58:40.476093505Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:58:40.476096280Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:58:40.476098954Z [inf]  [stageAware] ===============================
+2026-02-02T06:58:40.476101678Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.979
+2026-02-02T06:58:40.476104462Z [inf]  [worker] Unified validation completed in 169ms
+2026-02-02T06:58:40.476107116Z [inf]  [worker] Validation result: PASSED (score: 0.9793332874742203)
+2026-02-02T06:58:40.476111302Z [inf]  [worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════
+2026-02-02T06:58:40.476114527Z [inf]  [SEM][stage2] Starting semantic structural validation (interior)
+2026-02-02T06:58:40.597565464Z [inf]  [SEM][stage2] windows: 4 → 5 (FAIL)
+2026-02-02T06:58:40.597567697Z [inf]  [worker] Semantic validation completed (log-only, non-blocking)
+2026-02-02T06:58:40.597571372Z [inf]  [SEM][stage2] doors: 1 → 0 (FAIL)
+2026-02-02T06:58:40.597574818Z [inf]  [worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════
+2026-02-02T06:58:40.597579034Z [inf]  [MASK][stage2] Starting masked edge geometry validation (interior)
+2026-02-02T06:58:40.597609419Z [inf]  [SEM][stage2] wall drift: 27.47% (FAIL)
+2026-02-02T06:58:40.597617151Z [inf]  [SEM][stage2] openings: +0 created, -0 closed (OK)
+2026-02-02T06:58:40.597620837Z [inf]  [SEM][stage2] RESULT: FAILED (log-only, non-blocking)
+2026-02-02T06:58:40.670016991Z [inf]  [MASK][stage2] masked drift: 39.09% (FAIL)
+2026-02-02T06:58:40.670021648Z [inf]  [MASK][stage2] openings created: +0, closed: -1 (FAIL)
+2026-02-02T06:58:40.670024733Z [inf]  [MASK][stage2] RESULT: FAILED (log-only)
+2026-02-02T06:58:40.670028739Z [inf]  [worker] Masked edge validation completed (log-only, non-blocking)
+2026-02-02T06:58:40.670031152Z [inf]  [LOCAL_VALIDATE] stage=2 status=needs_confirm reasons=["semantic_validator_failed: windows 4→5, doors 1→0, wall_drift 27.47%, openings +0/-0","masked_edge_failed: drift 39.09%, openings +0/-1"]
+2026-02-02T06:58:40.670033566Z [inf]  [GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=["semantic_validator_failed: windows 4→5, doors 1→0, wall_drift 27.47%, openings +0/-0","masked_edge_failed: drift 39.09%, openings +0/-1"]
+2026-02-02T06:58:41.226975620Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:41.364044574Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1647477, ETag="10af467cc56553fa0fa11c46439c7e74"
+2026-02-02T06:58:41.364048620Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:41.364053157Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp
+2026-02-02T06:58:41.364056572Z [inf]  ========================================
+2026-02-02T06:58:41.364060468Z [inf]  
+2026-02-02T06:58:41.364063953Z [inf]  [WORKER] Final published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:41.364067248Z [inf]  
+2026-02-02T06:58:41.364070493Z [inf]  
+2026-02-02T06:58:41.364074358Z [inf]  [FINAL_VALIDATION_CHECK] finalStageLabel=2 shouldRunFinalValidation=true hasPubFinalUrl=true hasOriginalUrl=true
+2026-02-02T06:58:41.364077944Z [inf]  [worker] ═══════════ Running final structural validation for stage 2 ═══════════
+2026-02-02T06:58:41.364081739Z [inf]  [structureValidator] Validating structure (mode=log, sensitivity=22°)
+2026-02-02T06:58:41.364085345Z [inf]  [structureValidator] Original: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:41.364091554Z [inf]  [structureValidator] Enhanced: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:42.497049333Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:42.497049403Z [inf]  [gemini-semantic] completed in 1817ms (hardFail=false conf=1 cat=furniture_change)
+2026-02-02T06:58:42.497055292Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:42.497055873Z [inf]  [GEMINI_CONFIRM] stage=2 status=pass confirmedFail=false reasons=[]
+2026-02-02T06:58:42.497059488Z [inf]  [VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=true
+2026-02-02T06:58:42.497059599Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:42.497062984Z [inf]  
+2026-02-02T06:58:42.497063304Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:42.497066599Z [inf]  ========================================
+2026-02-02T06:58:42.497066879Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:42.497070104Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:42.497070315Z [inf]  [PUBLISH] File: realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:42.497073289Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015522485-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:42.497073429Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:42.497075923Z [inf]  [PUBLISH] Size: 1731965 bytes
+2026-02-02T06:58:42.497079408Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:43.083079029Z [inf]  [structureValidator] Validation complete in 1749ms
+2026-02-02T06:58:43.083081743Z [inf]  [structureValidator] ✓ Structural validation passed
+2026-02-02T06:58:43.083084407Z [inf]  [structureValidator] Deviation: 3.176° (vertical: 1.353°, horizontal: 1.823°)
+2026-02-02T06:58:43.083087602Z [inf]  [structureValidator] Suspicious: false
+2026-02-02T06:58:43.083089965Z [inf]  [worker] ═══════════ Final structural validation completed for stage 2 ═══════════
+2026-02-02T06:58:43.083090877Z [inf]  [structureValidator] === STRUCTURAL VALIDATION RESULT ===
+2026-02-02T06:58:43.083094833Z [inf]  [keys] normalized baseKey from 1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp to 1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2.webp (reason: mismatch with filename)
+2026-02-02T06:58:43.083095784Z [inf]  [structureValidator] Mode: log
+2026-02-02T06:58:43.083098729Z [inf]  [structureValidator] Deviation Score: 3.176°
+2026-02-02T06:58:43.083101593Z [inf]  [structureValidator] Vertical Shift: 1.353°
+2026-02-02T06:58:43.083104567Z [inf]  [structureValidator] Horizontal Shift: 1.823°
+2026-02-02T06:58:43.083108173Z [inf]  [structureValidator] Suspicious: false
+2026-02-02T06:58:43.083111067Z [inf]  [structureValidator] Message: Structural validation passed: 3.18° deviation
+2026-02-02T06:58:43.083113951Z [inf]  [structureValidator] Original lines: 171 total (18 vertical, 116 horizontal)
+2026-02-02T06:58:43.083119600Z [inf]  [structureValidator] Enhanced lines: 124 total (25 vertical, 67 horizontal)
+2026-02-02T06:58:43.092204277Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:43.092204287Z [inf]  [worker] Redis image history recorded {
+2026-02-02T06:58:43.092210065Z [inf]    finalStage: '2'
+2026-02-02T06:58:43.092210296Z [inf]    userId: 'user_9f57146b-295f-4d90-9841-c5cf4bf9e932',
+2026-02-02T06:58:43.092214332Z [inf]    baseKey: '1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:43.092214752Z [inf]  }
+2026-02-02T06:58:43.092217957Z [inf]    imageId: 'img_6342873a-3447-4ce5-94b8-b1d52a2cf9d2'
+2026-02-02T06:58:43.092221022Z [inf]  }
+2026-02-02T06:58:43.092224387Z [inf]  [worker] Marking job complete {
+2026-02-02T06:58:43.092228914Z [inf]    jobId: 'job_a4b9480d-d1e3-4df2-8a46-2d0003fac604',
+2026-02-02T06:58:43.092232189Z [inf]    finalStageLabel: '2',
+2026-02-02T06:58:43.092235203Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015520005-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:43.092238238Z [inf]    originalUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015481598-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m.jpg',
+2026-02-02T06:58:43.092240982Z [inf]    stageUrls: {
+2026-02-02T06:58:43.092245599Z [inf]      '2': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015516022-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:43.092248543Z [inf]      '1A': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015504538-realenhance-job_a4b9480d-d1e3-4df2-8a46-2d0003fac604-1770015480994-6k2oqalr20m-canonical-1A.webp',
+2026-02-02T06:58:43.092251217Z [inf]      '1B': null
+2026-02-02T06:58:43.092254302Z [inf]    },
+2026-02-02T06:58:43.092256976Z [inf]    stage2Blocked: false,
+2026-02-02T06:58:43.092259520Z [inf]    fallbackStage: undefined,
+2026-02-02T06:58:43.092262404Z [inf]    parentJobId: undefined
+2026-02-02T06:58:43.092265839Z [inf]  }
+2026-02-02T06:58:43.092268142Z [inf]  [worker] Completion status write queued {
+2026-02-02T06:58:43.092270696Z [inf]    jobId: 'job_a4b9480d-d1e3-4df2-8a46-2d0003fac604',
+2026-02-02T06:58:43.092273120Z [inf]    status: 'complete',
+2026-02-02T06:58:43.128019009Z [inf]  [USAGE] Recorded event: 1A for job job_a4b9480d-d1e3-4df2-8a46-2d0003fac604
+2026-02-02T06:58:43.356654282Z [inf]  [WORKER] originalUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:43.356660552Z [inf]  
+2026-02-02T06:58:43.356664978Z [inf]  [BUNDLES] Consumed 1 from bundle bundle_1769755622178_g4iaxvv, remaining in bundle: 42
+2026-02-02T06:58:43.356665139Z [inf]  [WORKER] resultUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:43.356668083Z [inf]  [BILLING] Finalized reservation for job_a4b9480d-d1e3-4df2-8a46-2d0003fac604: stage12=true, stage2=true
+2026-02-02T06:58:43.356668564Z [inf]  
+2026-02-02T06:58:43.356670807Z [inf]  [JOB_FINAL][job=job_a4b9480d-d1e3-4df2-8a46-2d0003fac604] status=complete hardFail=false warnings=0 normalized=false
+2026-02-02T06:58:43.356671608Z [inf]  [WORKER] stageUrls.2: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:43.356673551Z [inf]  
+2026-02-02T06:58:43.356674953Z [inf]  
+2026-02-02T06:58:43.356676506Z [inf]  [WORKER] ═══════════ JOB RETURN VALUE ═══════════
+2026-02-02T06:58:43.356679019Z [inf]  ═══════════════════════════════════════════════
+2026-02-02T06:58:43.356682004Z [inf]  
+2026-02-02T06:58:43.356684698Z [inf]  
+2026-02-02T06:58:43.356685749Z [inf]  
+2026-02-02T06:58:43.356688464Z [inf]  [WORKER] imageId: img_6342873a-3447-4ce5-94b8-b1d52a2cf9d2
+2026-02-02T06:58:43.356690817Z [inf]  
+2026-02-02T06:58:43.365633921Z [inf]  [worker] completed job job_a4b9480d-d1e3-4df2-8a46-2d0003fac604 -> https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015520005-realenhance-job_a4b9480d-d1
+2026-02-02T06:58:43.369147442Z [inf]  ========== PROCESSING JOB job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b ==========
+2026-02-02T06:58:43.372645329Z [inf]  [JOB_META_REPAIRED] jobId=job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b missingFields=userId,imageId,requestedStages
+2026-02-02T06:58:43.391022855Z [inf]  [WORKER] Remote original detected, downloading: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/1770015481669-Rental 04.jpg
+2026-02-02T06:58:43.391025810Z [inf]  
+2026-02-02T06:58:43.391028684Z [inf]  [enhanced-images] Recorded: RE-A8YC6R for job job_a4b9480d-d1e3-4df2-8a46-2d0003fac604
+2026-02-02T06:58:43.632114172Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:43.767042666Z [inf]  [worker] ✅ Stage 2 published: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015522485-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:43.767057087Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1731965, ETag="de7d36e148f386f40ccd8a19ed0a6bd9"
+2026-02-02T06:58:43.767061254Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:43.767065159Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015522485-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:43.767069316Z [inf]  ========================================
+2026-02-02T06:58:43.767076346Z [inf]  
+2026-02-02T06:58:43.950944529Z [inf]  [PUBLISH] File: realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh.jpg
+2026-02-02T06:58:43.950948905Z [inf]  [WORKER] Remote original downloaded to: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh.jpg
+2026-02-02T06:58:43.950951199Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:43.950951960Z [inf]  
+2026-02-02T06:58:43.950954944Z [inf]  [worker] Validator config: structureMode=log, localBlocking=DISABLED, geminiConfirmation=ENABLED, geminiMode=block
+2026-02-02T06:58:43.950955215Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:43.950957869Z [inf]  
+2026-02-02T06:58:43.950958880Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:43.950960763Z [inf]  [WORKER] ═══════════ Publishing original image ═══════════
+2026-02-02T06:58:43.950962065Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:43.950963708Z [inf]  
+2026-02-02T06:58:43.950965560Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:43.950966882Z [inf]  ========================================
+2026-02-02T06:58:43.950968715Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:43.950971740Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:43.950974534Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015523935-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh.jpg
+2026-02-02T06:58:43.950977819Z [inf]  [PUBLISH] Size: 100602 bytes
+2026-02-02T06:58:43.950980623Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:44.546097319Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:44.643889407Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=100602, ETag="1c0fc7f3c744e6ddb68b9bc1b3f4f31c"
+2026-02-02T06:58:44.643894345Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:44.643898501Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015523935-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh.jpg
+2026-02-02T06:58:44.643902527Z [inf]  ========================================
+2026-02-02T06:58:44.643907124Z [inf]  
+2026-02-02T06:58:44.643910819Z [inf]  [WORKER] Original published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:44.643913994Z [inf]  
+2026-02-02T06:58:44.643916929Z [inf]  
+2026-02-02T06:58:44.656930479Z [inf]  [SCENE] primary=exterior conf=0.950 sky=0.035 grass=0.000 deck=0.527
+2026-02-02T06:58:44.656935096Z [inf]  [SKY_MODE_DECISION] mode=safe allowStrongSky=false reason=low_sky_coverage coveredSuspect=false features={skyTop10:0.000,skyTop40:0.001,blueOverall:0.000} thresholds={skyTop40Min:0.16,blueOverallMin:0.1} meetsThresholds=false
+2026-02-02T06:58:44.656937940Z [inf]  [SKY_MODE] mode=safe allowStrongSky=false coveredSuspect=false
+2026-02-02T06:58:44.656940614Z [inf]  [SKY_MODE] features: skyTop10=0.000 skyTop40=0.001 blueOverall=0.000
+2026-02-02T06:58:44.656943028Z [inf]  [SKY_MODE] thresholds: skyTop40Min=0.16 blueOverallMin=0.1
+2026-02-02T06:58:44.656945552Z [inf]  [SCENE_SKY_DECISION] imageId=img_4098dc7f-2a2a-4d4a-9078-73fcf9704bf7 scene=interior skyMode=safe confidence=0.950 coveredExteriorSuspect=false skyReplacementAllowed=false reason=features_below_threshold envThresholds={skyTop40Min:0.16,blueOverallMin:0.1} features={skyTop10:0.000,skyTop40:0.001,blueOverall:0.000} clientPrediction=interior/0.297/confident_interior manualOverride=false requiresConfirm=true
+2026-02-02T06:58:44.684469377Z [inf]  [WORKER] Scene resolved: primary=exterior(0.95) → resolved=interior, room=living_room
+2026-02-02T06:58:44.972676979Z [inf]  [WORKER] Structural mask computed: 1325x883
+2026-02-02T06:58:44.972680355Z [inf]  [STAGE1A] Final: sceneLabel=interior skyMode=safe safeReplaceSky=false
+2026-02-02T06:58:44.972683189Z [inf]  [stage1A] Interior profile applied: nz_standard (brightness=1.22, sat=1.20)
+2026-02-02T06:58:45.451302299Z [inf]  [stage1A] Sharp enhancement complete: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical.webp → /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp.webp
+2026-02-02T06:58:45.634114688Z [inf]  [stage1A] Quality Scan: {
+2026-02-02T06:58:45.634117902Z [inf]    meanBrightness: 155.44693775508023,
+2026-02-02T06:58:45.634120987Z [inf]    noiseStdDev: 53.782706273127985,
+2026-02-02T06:58:45.634123861Z [inf]    dynamicRange: 168,
+2026-02-02T06:58:45.634126746Z [inf]    laplacianEstimate: 0.31824086552146735,
+2026-02-02T06:58:45.634129430Z [inf]    forceGemini: true
+2026-02-02T06:58:45.634132154Z [inf]  }
+2026-02-02T06:58:45.634135389Z [err]  [stage1A] ⚠️ Low quality detected — forcing Gemini as primary
+2026-02-02T06:58:45.634138413Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:45.634140997Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp.webp
+2026-02-02T06:58:45.634143581Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:45.634147547Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:45.634150171Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:45.634152865Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:45.634155709Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:45.634158343Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:45.634161117Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:45.634163751Z [inf]  [MODEL][1A] job=job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b file=realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp.webp stage=1A room=bedroom-1 models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:46.566876842Z [inf]  [worker] ═══════════ Validation Summary ═══════════
+2026-02-02T06:58:46.566880698Z [inf]  [worker] Unified Structural: ✓ PASSED (score: 0.9793332874742203)
+2026-02-02T06:58:46.566882681Z [inf]  [PUBLISH] Size: 1731965 bytes
+2026-02-02T06:58:46.566884414Z [inf]  [worker] Gemini Compliance: ✓ PASSED
+2026-02-02T06:58:46.566887298Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:46.566887318Z [inf]  [worker] Blocking mode: Local=DISABLED, GeminiConfirmation=ENABLED
+2026-02-02T06:58:46.566890803Z [inf]  [worker] ═══════════════════════════════════════════
+2026-02-02T06:58:46.566893297Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+2026-02-02T06:58:46.566896612Z [inf]  
+2026-02-02T06:58:46.566899206Z [inf]  [WORKER] ═══════════ Publishing final enhanced image ═══════════
+2026-02-02T06:58:46.566902501Z [inf]  
+2026-02-02T06:58:46.566905315Z [inf]  
+2026-02-02T06:58:46.566908410Z [inf]  ========================================
+2026-02-02T06:58:46.566911104Z [inf]  [PUBLISH] File: realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:46.566913708Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:46.566916191Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:46.566920097Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:46.566922701Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:46.566925986Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:46.566929010Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:46.566931925Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:46.566934268Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:48.040481382Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:48.081044547Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1731965, ETag="de7d36e148f386f40ccd8a19ed0a6bd9"
+2026-02-02T06:58:48.081050676Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:48.081054682Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp
+2026-02-02T06:58:48.081057827Z [inf]  ========================================
+2026-02-02T06:58:48.081060921Z [inf]  
+2026-02-02T06:58:48.081063846Z [inf]  [WORKER] Final published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:48.081066289Z [inf]  
+2026-02-02T06:58:48.081068903Z [inf]  
+2026-02-02T06:58:48.081071217Z [inf]  [FINAL_VALIDATION_CHECK] finalStageLabel=2 shouldRunFinalValidation=true hasPubFinalUrl=true hasOriginalUrl=true
+2026-02-02T06:58:48.081075243Z [inf]  [worker] ═══════════ Running final structural validation for stage 2 ═══════════
+2026-02-02T06:58:48.081078978Z [inf]  [structureValidator] Validating structure (mode=log, sensitivity=22°)
+2026-02-02T06:58:48.081081833Z [inf]  [structureValidator] Original: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:48.081084647Z [inf]  [structureValidator] Enhanced: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:49.904034275Z [inf]  [structureValidator] Validation complete in 1819ms
+2026-02-02T06:58:49.904044481Z [inf]  [structureValidator] Deviation: 33.522° (vertical: 31.325°, horizontal: 2.196°)
+2026-02-02T06:58:49.904051992Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:58:49.904057190Z [inf]  [structureValidator] === STRUCTURAL VALIDATION RESULT ===
+2026-02-02T06:58:49.904064180Z [inf]  [structureValidator] Mode: log
+2026-02-02T06:58:49.904067735Z [inf]  [structureValidator] Deviation Score: 33.522°
+2026-02-02T06:58:49.904071842Z [inf]  [structureValidator] Vertical Shift: 31.325°
+2026-02-02T06:58:49.904075607Z [inf]  [structureValidator] Horizontal Shift: 2.196°
+2026-02-02T06:58:49.904079543Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:58:49.904083910Z [inf]  [structureValidator] Message: Structural deviation detected: 33.52° (threshold: 22.0°)
+2026-02-02T06:58:49.904087515Z [inf]  [structureValidator] Original lines: 198 total (19 vertical, 99 horizontal)
+2026-02-02T06:58:49.904091431Z [inf]  [structureValidator] Enhanced lines: 133 total (29 vertical, 36 horizontal)
+2026-02-02T06:58:49.904095187Z [err]  [structureValidator] ⚠️ Structural deviation detected (mode=log)
+2026-02-02T06:58:49.904098972Z [inf]  [worker] ═══════════ Final structural validation completed for stage 2 ═══════════
+2026-02-02T06:58:49.904102638Z [inf]  [keys] normalized baseKey from 1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp to 1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2.webp (reason: mismatch with filename)
+2026-02-02T06:58:49.907926193Z [inf]  [worker] Redis image history recorded {
+2026-02-02T06:58:49.907930309Z [inf]    userId: 'user_9f57146b-295f-4d90-9841-c5cf4bf9e932',
+2026-02-02T06:58:49.907933344Z [inf]    baseKey: '1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:49.907935918Z [inf]    imageId: 'img_90a422c5-6d28-4712-8c32-88172956ba8c'
+2026-02-02T06:58:49.907939583Z [inf]  }
+2026-02-02T06:58:49.907942387Z [inf]  [worker] Marking job complete {
+2026-02-02T06:58:49.907944971Z [inf]    jobId: 'job_a5a98906-c47b-4e47-a702-483e9f35d3b6',
+2026-02-02T06:58:49.907947906Z [inf]    finalStageLabel: '2',
+2026-02-02T06:58:49.907950620Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:49.907954035Z [inf]    originalUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015481847-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q.jpg',
+2026-02-02T06:58:49.907957720Z [inf]    stageUrls: {
+2026-02-02T06:58:49.907961165Z [inf]      '2': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015522485-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:49.907964821Z [inf]      '1A': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015508663-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A.webp',
+2026-02-02T06:58:49.907967976Z [inf]      '1B': null
+2026-02-02T06:58:49.907971321Z [inf]    },
+2026-02-02T06:58:49.907974596Z [inf]    stage2Blocked: false,
+2026-02-02T06:58:49.907977800Z [inf]    fallbackStage: undefined,
+2026-02-02T06:58:49.908086604Z [inf]    parentJobId: undefined
+2026-02-02T06:58:49.908090209Z [inf]  }
+2026-02-02T06:58:49.908093123Z [inf]  [worker] Completion status write queued {
+2026-02-02T06:58:49.908096689Z [inf]    jobId: 'job_a5a98906-c47b-4e47-a702-483e9f35d3b6',
+2026-02-02T06:58:49.908099263Z [inf]    status: 'complete',
+2026-02-02T06:58:49.908102137Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015526565-realenhance-job_a5a98906-c47b-4e47-a702-483e9f35d3b6-1770015481633-jki6lyura4q-canonical-1A-2-retry1.webp',
+2026-02-02T06:58:49.908104530Z [inf]    finalStage: '2'
+2026-02-02T06:58:49.908106974Z [inf]  }
+2026-02-02T06:58:49.926677871Z [inf]  [USAGE] Recorded event: 1A for job job_a5a98906-c47b-4e47-a702-483e9f35d3b6
+2026-02-02T06:58:49.964344120Z [inf]  [BUNDLES] Consumed 1 from bundle bundle_1769755622178_g4iaxvv, remaining in bundle: 41
+2026-02-02T06:58:49.982992492Z [inf]  [BILLING] Finalized reservation for job_a5a98906-c47b-4e47-a702-483e9f35d3b6: stage12=true, stage2=true
+2026-02-02T06:58:49.992613314Z [inf]  [JOB_FINAL][job=job_a5a98906-c47b-4e47-a702-483e9f35d3b6] status=complete hardFail=false warnings=0 normalized=false
+2026-02-02T06:58:49.992618722Z [inf]  
+2026-02-02T06:58:49.992623339Z [inf]  [WORKER] ═══════════ JOB RETURN VALUE ═══════════
+2026-02-02T06:58:49.992626103Z [inf]  
+2026-02-02T06:58:49.992628687Z [inf]  [WORKER] imageId: img_90a422c5-6d28-4712-8c32-88172956ba8c
+2026-02-02T06:58:49.992631611Z [inf]  
+2026-02-02T06:58:49.992634085Z [inf]  [WORKER] originalUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:49.992636649Z [inf]  
+2026-02-02T06:58:49.992639173Z [inf]  [WORKER] resultUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:49.992641847Z [inf]  
+2026-02-02T06:58:49.992644551Z [inf]  [WORKER] stageUrls.2: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:49.992647115Z [inf]  
+2026-02-02T06:58:49.992649729Z [inf]  ═══════════════════════════════════════════════
+2026-02-02T06:58:49.992652122Z [inf]  
+2026-02-02T06:58:49.992654476Z [inf]  
+2026-02-02T06:58:49.992657320Z [inf]  [worker] completed job job_a5a98906-c47b-4e47-a702-483e9f35d3b6 -> https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015526565-realenhance-job_a5a98906-c4
+2026-02-02T06:58:49.992659704Z [inf]  ========== PROCESSING JOB job_61e5a109-96f3-423a-93c5-f9571aac1dc9 ==========
+2026-02-02T06:58:49.996508086Z [inf]  [JOB_META_REPAIRED] jobId=job_61e5a109-96f3-423a-93c5-f9571aac1dc9 missingFields=userId,imageId,requestedStages
+2026-02-02T06:58:49.996896138Z [inf]  [enhanced-images] Recorded: RE-3Y6K2H for job job_a5a98906-c47b-4e47-a702-483e9f35d3b6
+2026-02-02T06:58:50.000939854Z [inf]  [WORKER] Remote original detected, downloading: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/1770015482760-Rental 05.jpg
+2026-02-02T06:58:50.000942998Z [inf]  
+2026-02-02T06:58:50.666493846Z [inf]  [WORKER] Remote original downloaded to: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb.jpg
+2026-02-02T06:58:50.666498483Z [inf]  
+2026-02-02T06:58:50.666501648Z [inf]  [worker] Validator config: structureMode=log, localBlocking=DISABLED, geminiConfirmation=ENABLED, geminiMode=block
+2026-02-02T06:58:50.666504843Z [inf]  
+2026-02-02T06:58:50.666507837Z [inf]  [WORKER] ═══════════ Publishing original image ═══════════
+2026-02-02T06:58:50.666511002Z [inf]  
+2026-02-02T06:58:50.666514247Z [inf]  ========================================
+2026-02-02T06:58:50.666526475Z [inf]  [PUBLISH] File: realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb.jpg
+2026-02-02T06:58:50.666529249Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:58:50.666532624Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:58:50.666535899Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:58:50.666538814Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:58:50.666541518Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:58:50.666544182Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:58:50.666546906Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:58:50.666549389Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015530657-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb.jpg
+2026-02-02T06:58:50.666552154Z [inf]  [PUBLISH] Size: 136031 bytes
+2026-02-02T06:58:50.666555108Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:58:51.342207978Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:58:51.411567408Z [inf]  [SCENE] primary=exterior conf=0.950 sky=0.016 grass=0.000 deck=0.575
+2026-02-02T06:58:51.411573697Z [inf]  [SKY_MODE_DECISION] mode=safe allowStrongSky=false reason=low_sky_coverage coveredSuspect=false features={skyTop10:0.052,skyTop40:0.033,blueOverall:0.000} thresholds={skyTop40Min:0.16,blueOverallMin:0.1} meetsThresholds=false
+2026-02-02T06:58:51.411578024Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=136031, ETag="7bb025d3c55ee789e51e1f9c45065f5e"
+2026-02-02T06:58:51.411578434Z [inf]  [SKY_MODE] mode=safe allowStrongSky=false coveredSuspect=false
+2026-02-02T06:58:51.411582791Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:58:51.411583191Z [inf]  [SKY_MODE] features: skyTop10=0.052 skyTop40=0.033 blueOverall=0.000
+2026-02-02T06:58:51.411586396Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015530657-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb.jpg
+2026-02-02T06:58:51.411587388Z [inf]  [SKY_MODE] thresholds: skyTop40Min=0.16 blueOverallMin=0.1
+2026-02-02T06:58:51.411590272Z [inf]  ========================================
+2026-02-02T06:58:51.411591434Z [inf]  [SCENE_SKY_DECISION] imageId=img_10433d0a-ffb5-48d4-a396-78e725e70d00 scene=interior skyMode=safe confidence=0.950 coveredExteriorSuspect=false skyReplacementAllowed=false reason=features_below_threshold envThresholds={skyTop40Min:0.16,blueOverallMin:0.1} features={skyTop10:0.052,skyTop40:0.033,blueOverall:0.000} clientPrediction=interior/0.248/confident_interior manualOverride=false requiresConfirm=true
+2026-02-02T06:58:51.411593998Z [inf]  
+2026-02-02T06:58:51.411597172Z [inf]  [WORKER] Original published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:58:51.411600497Z [inf]  
+2026-02-02T06:58:51.411604934Z [inf]  
+2026-02-02T06:58:51.444270663Z [inf]  [WORKER] Scene resolved: primary=exterior(0.95) → resolved=interior, room=living_room
+2026-02-02T06:58:51.649852345Z [inf]  [WORKER] Structural mask computed: 1325x883
+2026-02-02T06:58:51.649857743Z [inf]  [STAGE1A] Final: sceneLabel=interior skyMode=safe safeReplaceSky=false
+2026-02-02T06:58:51.649862631Z [inf]  [stage1A] Interior profile applied: nz_standard (brightness=1.22, sat=1.20)
+2026-02-02T06:58:52.332875722Z [inf]  [stage1A] Sharp enhancement complete: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical.webp → /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp.webp
+2026-02-02T06:58:52.497217345Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:52.497223364Z [inf]  [MODEL][1A] job=job_61e5a109-96f3-423a-93c5-f9571aac1dc9 file=realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp.webp stage=1A room=bedroom-2 models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:58:52.497228161Z [inf]  [stage1A] Quality Scan: {
+2026-02-02T06:58:52.497231096Z [inf]    meanBrightness: 176.23273745165494,
+2026-02-02T06:58:52.497233780Z [inf]    noiseStdDev: 68.36255473552299,
+2026-02-02T06:58:52.497236303Z [inf]    dynamicRange: 209,
+2026-02-02T06:58:52.497238857Z [inf]    laplacianEstimate: 0.32553597493106184,
+2026-02-02T06:58:52.497241631Z [inf]    forceGemini: true
+2026-02-02T06:58:52.497244085Z [inf]  }
+2026-02-02T06:58:52.497246859Z [err]  [stage1A] ⚠️ Low quality detected — forcing Gemini as primary
+2026-02-02T06:58:52.497249603Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:52.497252327Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp.webp
+2026-02-02T06:58:52.497254871Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:52.497257535Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:52.497260229Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:52.497263534Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:52.497266148Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:52.497268912Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:55.433478582Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:58:55.433481437Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:58:55.433484942Z [inf]  [Gemini] ✅ API responded in 9803 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:58:55.433487776Z [inf]  [Gemini] 📊 Response parts: 1
+2026-02-02T06:58:55.433490741Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:58:55.469166424Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:58:55.469174486Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:58:55.469179193Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:58:55.469183059Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:58:55.469208497Z [err]  [stage1A] 🚨 Content diff FAIL — rerouting to Gemini
+2026-02-02T06:58:55.469210911Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:58:55.469213765Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp.webp
+2026-02-02T06:58:55.469457551Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:58:55.469460245Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:58:55.469463309Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:58:55.469466785Z [inf]  [MODEL][1A] job=job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b file=realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp.webp stage=1A room=bedroom-1 models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:59:01.598108039Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:59:01.598112495Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:59:01.598115730Z [inf]  [Gemini] ✅ API responded in 9130 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:59:01.598119205Z [inf]  [Gemini] 📊 Response parts: 1
+2026-02-02T06:59:01.601897112Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:59:01.637305605Z [err]  [stage1A] 🚨 Content diff FAIL — rerouting to Gemini
+2026-02-02T06:59:01.637308830Z [inf]  [Gemini] 🎛️ Sampling: temp=0.55, topP=0.85, topK=40 
+2026-02-02T06:59:01.637312445Z [inf]  🤖 Starting Gemini AI Enhance (stage: 1A)...
+2026-02-02T06:59:01.637315630Z [inf]  [stage1A] Model: gemini-2.5-flash-image
+2026-02-02T06:59:01.637316411Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp.webp
+2026-02-02T06:59:01.637319296Z [inf]  [MODEL][1A] job=job_61e5a109-96f3-423a-93c5-f9571aac1dc9 file=realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp.webp stage=1A room=bedroom-2 models=gemini-2.5-flash-image reason=interior enhance
+2026-02-02T06:59:01.637319536Z [inf]  [Gemini] 🔵 Scene type: interior, replaceSky: false, declutter: false
+2026-02-02T06:59:01.637322651Z [inf]  [Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)
+2026-02-02T06:59:01.637325565Z [inf]  [Gemini] ✓ Gemini client initialized
+2026-02-02T06:59:01.637328069Z [inf]  [Gemini] 📝 Prompt length: 1634 chars
+2026-02-02T06:59:01.637330983Z [inf]  [Gemini] 🚀 Calling Gemini 3 Pro Image model...
+2026-02-02T06:59:03.551533851Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:59:03.551541102Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:59:03.551545839Z [inf]  [Gemini] ✅ API responded in 8067 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:59:03.551550656Z [inf]  [Gemini] 📊 Response parts: 1
+2026-02-02T06:59:03.551555103Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:59:03.773139700Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:03.773147712Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:03.773149845Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2026-02-02T06:59:03.773153030Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:03.773154202Z [inf]  [stage1A] Professional enhancement complete: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical.webp → /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:03.773157327Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:03.773159410Z [inf]  [stage1a] Gemini validation skipped by design (local-only sanity checks)
+2026-02-02T06:59:03.773161793Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:03.773164447Z [inf]  
+2026-02-02T06:59:03.773166530Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:03.773168994Z [inf]  ========================================
+2026-02-02T06:59:03.773170987Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:03.773172790Z [inf]  [PUBLISH] File: realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:03.773175153Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015543747-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:03.773178979Z [inf]  [PUBLISH] Size: 1615630 bytes
+2026-02-02T06:59:03.773183115Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:04.773736478Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:04.871303118Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1615630, ETag="e12fd2b79b50c00ae8d95b3c99f6e6ae"
+2026-02-02T06:59:04.871307344Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:04.871310208Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015543747-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:04.871313183Z [inf]  ========================================
+2026-02-02T06:59:04.871315927Z [inf]  
+2026-02-02T06:59:04.875090860Z [inf]  [WORKER] Checking Stage 1B: payload.options.declutter=false
+2026-02-02T06:59:04.875095627Z [inf]  [WORKER] Stage 1B declutterMode from payload: null
+2026-02-02T06:59:04.875099813Z [inf]  [WORKER] Stage 1B virtualStage: true
+2026-02-02T06:59:04.875102447Z [inf]  [WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping
+2026-02-02T06:59:04.875105231Z [inf]  [WORKER] Stage 2 ENABLED; USE_GEMINI_STAGE2=1
+2026-02-02T06:59:04.875107765Z [inf]  [WORKER] Stage 2 source: baseStage=1A, inputPath=/tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:04.875110429Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:59:04.875113063Z [inf]  [stage2] 🔵 Starting virtual staging...
+2026-02-02T06:59:04.875115617Z [inf]  [stage2] Input: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:04.875119593Z [inf]  [stage2] Validation baseline: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:04.875122437Z [inf]  [stage2] Source stage: Stage1A (enhanced)
+2026-02-02T06:59:04.875125191Z [inf]  [stage2] Room type: bedroom-1
+2026-02-02T06:59:04.875128276Z [inf]  [stage2] Scene type: interior
+2026-02-02T06:59:04.875131070Z [inf]  [stage2] Profile: default
+2026-02-02T06:59:04.875133914Z [inf]  [stage2] Stage-aware validation: ENABLED
+2026-02-02T06:59:04.875136528Z [inf]  [stage2] starting with roomType=bedroom-1, base=/tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:04.875437650Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:59:04.875441205Z [inf]  [stage2] [PROMPT_ASSEMBLED] stagingStyle=NZ Standard Real Estate len=2442
+2026-02-02T06:59:04.875444139Z [inf]  You are a professional New Zealand real estate photo retoucher and virtual stager.
+2026-02-02T06:59:04.875446864Z [inf]  
+2026-02-02T06:59:04.875450699Z [inf]  Rules:
+2026-02-02T06:59:04.875453213Z [inf]  - Maintain exact architectural structure
+2026-02-02T06:59:04.875455837Z [inf]  - Do NOT add or remove doors or windows
+2026-02-02T06:59:04.875458411Z [inf]  - Do NOT change wall positions, ceiling height, or floor layout
+2026-02-02T06:59:04.875461135Z [inf]  - Do NOT introduce unrealistic furniture
+2026-02-02T06:59:04.875463428Z [inf]  - Do NOT block natural light sources
+2026-02-02T06:59:04.875465682Z [inf]  
+2026-02-02T06:59:04.875468987Z [inf]  Style:
+2026-02-02T06:59:04.875471751Z [inf]  - Clean, neutral, lived-in but uncluttered look
+2026-02-02T06:59:04.875474134Z [inf]  - Soft natural lighting
+2026-02-02T06:59:04.875476828Z [inf]  - Subtle warmth (not over-stylised)
+2026-02-02T06:59:04.875480003Z [inf]  - Realistic, modest furniture only where context-appropriate
+2026-02-02T06:59:04.875482287Z [inf]  - No dramatic shadows, no editorial lighting
+2026-02-02T06:59:04.875484770Z [inf]  
+2026-02-02T06:59:04.875488105Z [inf]  Purpose:
+2026-02-02T06:59:04.875490389Z [inf]  - This image must remain believable as a real NZ residential property listing photo.
+2026-02-02T06:59:04.875492702Z [inf]  - Enhancements must appear subtle, professional, and agency-safe.
+2026-02-02T06:59:04.875494966Z [inf]  
+2026-02-02T06:59:04.875497309Z [inf]  Stage this bedroom-1 interior for high-end real estate marketing.
+2026-02-02T06:59:04.875499903Z [inf]  
+2026-02-02T06:59:04.875503599Z [inf]  INPUT CONTEXT: Stage 1A enhanced only (room may be empty). You may stage freely.
+2026-02-02T06:59:04.875785441Z [inf]  
+2026-02-02T06:59:04.875788206Z [inf]  Furniture Priority (add ONLY if space allows; never cram):
+2026-02-02T06:59:04.875790719Z [inf]  • Primary: bed + headboard (bedrooms), sofa (living), dining table + chairs (dining), desk + c
+2026-02-02T06:59:04.875793223Z [inf]  ...[truncated]
+2026-02-02T06:59:04.875795617Z [inf]  [stage2][PROMPT_ASSEMBLED] {
+2026-02-02T06:59:04.875798010Z [inf]    stagingStyle: 'NZ Standard Real Estate',
+2026-02-02T06:59:04.875800594Z [inf]    len: 2442,
+2026-02-02T06:59:04.875802988Z [inf]    preview: 'You are a professional New Zealand real estate photo retoucher and virtual stager.\n' +
+2026-02-02T06:59:04.875805401Z [inf]      '\n' +
+2026-02-02T06:59:04.875805642Z [inf]  [MODEL][2] job=job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b file=realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp stage=2 room=bedroom-1 models=gemini-2.5-flash-image (fallback=gemini-2.5-flash-image) reason=bedroom-1 → NZ Standard Real Estate
+2026-02-02T06:59:04.875807825Z [inf]      'Rules:\n' +
+2026-02-02T06:59:04.875810138Z [inf]      '- Maintain exact architectural structure\n' +
+2026-02-02T06:59:04.875811030Z [inf]      '- Do NOT add or remove doors or windows\n' +
+2026-02-02T06:59:04.875814385Z [inf]      '- Subt'
+2026-02-02T06:59:04.875817399Z [inf]      '- Do NOT change wall positions, ceiling height, or floor layout\n' +
+2026-02-02T06:59:04.875820965Z [inf]  }
+2026-02-02T06:59:04.875821285Z [inf]      '- Do NOT introduce unrealistic furniture\n' +
+2026-02-02T06:59:04.875824250Z [inf]      '- Do NOT block natural light sources\n' +
+2026-02-02T06:59:04.875826683Z [inf]  [stage2] invoking Gemini with roomType=bedroom-1
+2026-02-02T06:59:04.875829267Z [inf]      '\n' +
+2026-02-02T06:59:04.875831080Z [inf]  [stage2] 🤖 Calling Gemini API for virtual staging... (attempt 1)
+2026-02-02T06:59:04.875833003Z [inf]      'Style:\n' +
+2026-02-02T06:59:04.875835286Z [inf]  [stage2] Primary model: gemini-2.5-flash-image, fallback: gemini-2.5-flash-image
+2026-02-02T06:59:04.875836107Z [inf]      '- Clean, neutral, lived-in but uncluttered look\n' +
+2026-02-02T06:59:04.875839553Z [inf]      '- Soft natural lighting\n' +
+2026-02-02T06:59:09.962128946Z [inf]  [GEMINI][enhance-1A] Attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:59:09.962133533Z [inf]  [GEMINI][enhance-1A] Success with gemini-2.5-flash-image
+2026-02-02T06:59:09.962136778Z [inf]  [Gemini] ✅ API responded in 8340 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:59:09.962140944Z [inf]  [Gemini] 📊 Response parts: 1
+2026-02-02T06:59:09.970302457Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-sharp-gemini-1A.webp
+2026-02-02T06:59:10.164394635Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2026-02-02T06:59:10.164399493Z [inf]  [stage1A] Professional enhancement complete: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical.webp → /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:10.164403248Z [inf]  [stage1a] Gemini validation skipped by design (local-only sanity checks)
+2026-02-02T06:59:10.164407234Z [inf]  
+2026-02-02T06:59:10.164410719Z [inf]  ========================================
+2026-02-02T06:59:10.164414295Z [inf]  [PUBLISH] File: realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:10.164417930Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:10.164426083Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:10.164428797Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:10.164431731Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:10.164434826Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:10.164438401Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:10.164441986Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:10.164445692Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015550162-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:10.164449317Z [inf]  [PUBLISH] Size: 1573209 bytes
+2026-02-02T06:59:10.164454064Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:11.189189089Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:11.313567196Z [inf]  [stage2] Room type: bedroom-2
+2026-02-02T06:59:11.313573566Z [inf]  [stage2] Scene type: interior
+2026-02-02T06:59:11.313575208Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1573209, ETag="ed552b0d4207defbec45648fd645e99e"
+2026-02-02T06:59:11.313579184Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:11.313579245Z [inf]  [stage2] Profile: default
+2026-02-02T06:59:11.313582309Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015550162-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:11.313585183Z [inf]  ========================================
+2026-02-02T06:59:11.313588548Z [inf]  
+2026-02-02T06:59:11.313591653Z [inf]  [WORKER] Checking Stage 1B: payload.options.declutter=false
+2026-02-02T06:59:11.313594267Z [inf]  [WORKER] Stage 1B declutterMode from payload: null
+2026-02-02T06:59:11.313596781Z [inf]  [WORKER] Stage 1B virtualStage: true
+2026-02-02T06:59:11.313599645Z [inf]  [WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping
+2026-02-02T06:59:11.313602429Z [inf]  [WORKER] Stage 2 ENABLED; USE_GEMINI_STAGE2=1
+2026-02-02T06:59:11.313606035Z [inf]  [WORKER] Stage 2 source: baseStage=1A, inputPath=/tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:11.313608528Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:59:11.313611283Z [inf]  [stage2] 🔵 Starting virtual staging...
+2026-02-02T06:59:11.313615088Z [inf]  [stage2] Input: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:11.313617812Z [inf]  [stage2] Validation baseline: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:11.313620727Z [inf]  [stage2] Source stage: Stage1A (enhanced)
+2026-02-02T06:59:11.313830712Z [inf]  [stage2] Stage-aware validation: ENABLED
+2026-02-02T06:59:11.313837021Z [inf]  [stage2] starting with roomType=bedroom-2, base=/tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:11.313840757Z [inf]  [stage2] incoming stagingStyle = NZ Standard Real Estate
+2026-02-02T06:59:11.313843571Z [inf]  [stage2] [PROMPT_ASSEMBLED] stagingStyle=NZ Standard Real Estate len=2442
+2026-02-02T06:59:11.313846706Z [inf]  You are a professional New Zealand real estate photo retoucher and virtual stager.
+2026-02-02T06:59:11.313850071Z [inf]  
+2026-02-02T06:59:11.313852935Z [inf]  Rules:
+2026-02-02T06:59:11.313855819Z [inf]  - Maintain exact architectural structure
+2026-02-02T06:59:11.313858563Z [inf]  - Do NOT add or remove doors or windows
+2026-02-02T06:59:11.313861558Z [inf]  - Do NOT change wall positions, ceiling height, or floor layout
+2026-02-02T06:59:11.313864783Z [inf]  - Do NOT introduce unrealistic furniture
+2026-02-02T06:59:11.313867427Z [inf]  - Do NOT block natural light sources
+2026-02-02T06:59:11.313870361Z [inf]  
+2026-02-02T06:59:11.313873155Z [inf]  Style:
+2026-02-02T06:59:11.313875930Z [inf]  - Clean, neutral, lived-in but uncluttered look
+2026-02-02T06:59:11.313879365Z [inf]  - Soft natural lighting
+2026-02-02T06:59:11.313883261Z [inf]  - Subtle warmth (not over-stylised)
+2026-02-02T06:59:11.313887347Z [inf]  - Realistic, modest furniture only where context-appropriate
+2026-02-02T06:59:11.313890792Z [inf]  - No dramatic shadows, no editorial lighting
+2026-02-02T06:59:11.313894778Z [inf]  
+2026-02-02T06:59:11.313898503Z [inf]  Purpose:
+2026-02-02T06:59:11.313901949Z [inf]  - This image must remain believable as a real NZ residential property listing photo.
+2026-02-02T06:59:11.313905914Z [inf]  - Enhancements must appear subtle, professional, and agency-safe.
+2026-02-02T06:59:11.313972835Z [inf]  
+2026-02-02T06:59:11.314126535Z [inf]  Stage this bedroom-2 interior for high-end real estate marketing.
+2026-02-02T06:59:11.314129520Z [inf]  
+2026-02-02T06:59:11.314133316Z [inf]  INPUT CONTEXT: Stage 1A enhanced only (room may be empty). You may stage freely.
+2026-02-02T06:59:11.314136070Z [inf]  
+2026-02-02T06:59:11.314138684Z [inf]  Furniture Priority (add ONLY if space allows; never cram):
+2026-02-02T06:59:11.314138914Z [inf]  [stage2][PROMPT_ASSEMBLED] {
+2026-02-02T06:59:11.314141227Z [inf]  • Primary: bed + headboard (bedrooms), sofa (living), dining table + chairs (dining), desk + c
+2026-02-02T06:59:11.314144312Z [inf]    stagingStyle: 'NZ Standard Real Estate',
+2026-02-02T06:59:11.314144913Z [inf]  ...[truncated]
+2026-02-02T06:59:11.314147236Z [inf]    len: 2442,
+2026-02-02T06:59:11.314149820Z [inf]    preview: 'You are a professional New Zealand real estate photo retoucher and virtual stager.\n' +
+2026-02-02T06:59:11.314152154Z [inf]      '\n' +
+2026-02-02T06:59:11.314154818Z [inf]      'Rules:\n' +
+2026-02-02T06:59:11.314157161Z [inf]      '- Maintain exact architectural structure\n' +
+2026-02-02T06:59:11.314159435Z [inf]      '- Do NOT add or remove doors or windows\n' +
+2026-02-02T06:59:11.314161668Z [inf]      '- Do NOT change wall positions, ceiling height, or floor layout\n' +
+2026-02-02T06:59:11.314164092Z [inf]      '- Do NOT introduce unrealistic furniture\n' +
+2026-02-02T06:59:11.314166886Z [inf]      '- Do NOT block natural light sources\n' +
+2026-02-02T06:59:11.314169280Z [inf]      '\n' +
+2026-02-02T06:59:11.314171723Z [inf]      'Style:\n' +
+2026-02-02T06:59:11.314174077Z [inf]      '- Clean, neutral, lived-in but uncluttered look\n' +
+2026-02-02T06:59:11.314176350Z [inf]      '- Soft natural lighting\n' +
+2026-02-02T06:59:11.314178664Z [inf]      '- Subt'
+2026-02-02T06:59:11.314180927Z [inf]  }
+2026-02-02T06:59:11.314184312Z [inf]  [stage2] invoking Gemini with roomType=bedroom-2
+2026-02-02T06:59:11.314187477Z [inf]  [stage2] 🤖 Calling Gemini API for virtual staging... (attempt 1)
+2026-02-02T06:59:11.314190541Z [inf]  [stage2] Primary model: gemini-2.5-flash-image, fallback: gemini-2.5-flash-image
+2026-02-02T06:59:11.314193646Z [inf]  [MODEL][2] job=job_61e5a109-96f3-423a-93c5-f9571aac1dc9 file=realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp stage=2 room=bedroom-2 models=gemini-2.5-flash-image (fallback=gemini-2.5-flash-image) reason=bedroom-2 → NZ Standard Real Estate
+2026-02-02T06:59:18.713545278Z [inf]  [GEMINI][stage2] Primary attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:59:18.713548243Z [inf]  [GEMINI][stage2] Success with primary model gemini-2.5-flash-image
+2026-02-02T06:59:18.713551167Z [inf]  [stage2] Completed using model: gemini-2.5-flash-image
+2026-02-02T06:59:18.713555133Z [inf]  [stage2] ✅ Gemini API responded in 13830 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:59:18.713558167Z [inf]  [stage2] 📊 Response parts: 1
+2026-02-02T06:59:18.713561012Z [inf]  [stage2] 💾 Saved staged image to: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:18.713563776Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:59:18.713566410Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:18.713568984Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:18.713571878Z [inf]  [stageAware] Mode: log
+2026-02-02T06:59:18.863512860Z [inf]  [stageAware] Mask A: 84392 pixels (8.13%)
+2026-02-02T06:59:18.863517257Z [inf]  [stageAware] Mask B: 102701 pixels (9.89%)
+2026-02-02T06:59:18.921061703Z [inf]  [stageAware] Structural IoU (masked): 0.988 (inter=83362, union=84375)
+2026-02-02T06:59:18.958008293Z [inf]  [stageAware] Edge IoU (structure_only): 0.988
+2026-02-02T06:59:18.995281443Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:59:18.995286381Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:59:18.995290216Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:59:18.995293641Z [inf]  [stageAware] ===============================
+2026-02-02T06:59:18.995296586Z [inf]  [stage2] ✅ Stage-aware validation passed (risk=false)
+2026-02-02T06:59:18.995299019Z [inf]  [worker] ═══════════ Running Unified Structural Validation ═══════════
+2026-02-02T06:59:18.995301704Z [inf]  [worker] Unified validation mode: configured=log effective=log blocking=OFF (advisory)
+2026-02-02T06:59:18.995304277Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+2026-02-02T06:59:18.995307272Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+2026-02-02T06:59:18.995310016Z [inf]  [unified-validator] Stage: 2
+2026-02-02T06:59:18.995312520Z [inf]  [unified-validator] Scene: interior
+2026-02-02T06:59:18.995315204Z [inf]  [unified-validator] Mode: log (validator config: log)
+2026-02-02T06:59:18.995317858Z [inf]  [unified-validator] Staging Style: NZ Standard Real Estate
+2026-02-02T06:59:18.995320351Z [inf]  [unified-validator] Stage-Aware: ENABLED
+2026-02-02T06:59:18.995322705Z [inf]  [unified-validator] Original: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:18.995325119Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:18.995327923Z [inf]  [unified-validator] Stage1A Path: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:18.995330597Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+2026-02-02T06:59:18.995333641Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:59:18.995347432Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp
+2026-02-02T06:59:18.995352580Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:18.995356526Z [inf]  [stageAware] Mode: log
+2026-02-02T06:59:19.032519190Z [inf]  [stageAware] Mask A: 84392 pixels (8.13%)
+2026-02-02T06:59:19.032522374Z [inf]  [stageAware] Mask B: 102701 pixels (9.89%)
+2026-02-02T06:59:19.061926601Z [inf]  [stageAware] Structural IoU (masked): 0.988 (inter=83362, union=84375)
+2026-02-02T06:59:19.108420562Z [inf]  [stageAware] Edge IoU (structure_only): 0.988
+2026-02-02T06:59:19.145514293Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:59:19.145520131Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:59:19.145523637Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:59:19.145526361Z [inf]  [stageAware] ===============================
+2026-02-02T06:59:19.145529185Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.988
+2026-02-02T06:59:19.145532881Z [inf]  [worker] Unified validation completed in 143ms
+2026-02-02T06:59:19.145535695Z [inf]  [worker] Validation result: PASSED (score: 0.9879172956656175)
+2026-02-02T06:59:19.145538158Z [inf]  [worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════
+2026-02-02T06:59:19.145541794Z [inf]  [SEM][stage2] Starting semantic structural validation (interior)
+2026-02-02T06:59:19.280895284Z [inf]  [worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════
+2026-02-02T06:59:19.280902475Z [inf]  [MASK][stage2] Starting masked edge geometry validation (interior)
+2026-02-02T06:59:19.280906151Z [inf]  [MASK][stage2] masked drift: 13.11% (OK)
+2026-02-02T06:59:19.280909035Z [inf]  [MASK][stage2] openings created: +0, closed: -0 (OK)
+2026-02-02T06:59:19.280911879Z [inf]  [MASK][stage2] RESULT: PASSED (log-only)
+2026-02-02T06:59:19.280914934Z [inf]  [worker] Masked edge validation completed (log-only, non-blocking)
+2026-02-02T06:59:19.280918089Z [inf]  [LOCAL_VALIDATE] stage=2 status=needs_confirm reasons=["semantic_validator_failed: windows 5→5, doors 0→0, wall_drift 22.26%, openings +0/-0"]
+2026-02-02T06:59:19.280920753Z [inf]  [GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=["semantic_validator_failed: windows 5→5, doors 0→0, wall_drift 22.26%, openings +0/-0"]
+2026-02-02T06:59:19.280936296Z [inf]  [SEM][stage2] windows: 5 → 5 (OK)
+2026-02-02T06:59:19.280939060Z [inf]  [SEM][stage2] doors: 0 → 0 (OK)
+2026-02-02T06:59:19.280942555Z [inf]  [SEM][stage2] wall drift: 22.26% (FAIL)
+2026-02-02T06:59:19.280945370Z [inf]  [SEM][stage2] openings: +0 created, -0 closed (OK)
+2026-02-02T06:59:19.280947923Z [inf]  [SEM][stage2] RESULT: FAILED (log-only, non-blocking)
+2026-02-02T06:59:19.280950728Z [inf]  [worker] Semantic validation completed (log-only, non-blocking)
+2026-02-02T06:59:20.758953284Z [inf]  [gemini-semantic] completed in 1499ms (hardFail=false conf=1 cat=furniture_change)
+2026-02-02T06:59:20.758956108Z [inf]  [GEMINI_CONFIRM] stage=2 status=pass confirmedFail=false reasons=[]
+2026-02-02T06:59:20.758959724Z [inf]  [VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=true
+2026-02-02T06:59:20.758963259Z [inf]  
+2026-02-02T06:59:20.758965993Z [inf]  ========================================
+2026-02-02T06:59:20.758968347Z [inf]  [PUBLISH] File: realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:20.758971011Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:20.758973464Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:20.758975878Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:20.758979393Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:20.758982107Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:20.759209268Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:20.763249519Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:20.763253555Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015560758-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:20.763257300Z [inf]  [PUBLISH] Size: 1688929 bytes
+2026-02-02T06:59:20.763261046Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:21.629475189Z [inf]  [GEMINI][stage2] Primary attempt with gemini-2.5-flash-image parts=1 hasImage=true
+2026-02-02T06:59:21.629479115Z [inf]  [GEMINI][stage2] Success with primary model gemini-2.5-flash-image
+2026-02-02T06:59:21.629482430Z [inf]  [stage2] Completed using model: gemini-2.5-flash-image
+2026-02-02T06:59:21.629485244Z [inf]  [stage2] ✅ Gemini API responded in 10286 ms (model=gemini-2.5-flash-image)
+2026-02-02T06:59:21.629488519Z [inf]  [stage2] 📊 Response parts: 1
+2026-02-02T06:59:21.629491233Z [inf]  [stage2] 💾 Saved staged image to: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.629494257Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:59:21.629496781Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:21.629500927Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.629503972Z [inf]  [stageAware] Mode: log
+2026-02-02T06:59:21.736036751Z [inf]  [stageAware] Mask A: 93982 pixels (9.05%)
+2026-02-02T06:59:21.736040367Z [inf]  [stageAware] Mask B: 113033 pixels (10.89%)
+2026-02-02T06:59:21.772536952Z [inf]  [stageAware] Structural IoU (masked): 0.994 (inter=93423, union=93982)
+2026-02-02T06:59:21.791695359Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:21.828563331Z [inf]  [stageAware] Edge IoU (structure_only): 0.993
+2026-02-02T06:59:21.847898654Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:59:21.847909581Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:59:21.847914027Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:59:21.847916661Z [inf]  [stageAware] ===============================
+2026-02-02T06:59:21.847919125Z [inf]  [stage2] ✅ Stage-aware validation passed (risk=false)
+2026-02-02T06:59:21.852042450Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:21.852049140Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.852057663Z [inf]  [worker] ═══════════ Running Unified Structural Validation ═══════════
+2026-02-02T06:59:21.852062200Z [inf]  [worker] Unified validation mode: configured=log effective=log blocking=OFF (advisory)
+2026-02-02T06:59:21.852065685Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+2026-02-02T06:59:21.852069581Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+2026-02-02T06:59:21.852073467Z [inf]  [unified-validator] Stage: 2
+2026-02-02T06:59:21.852077242Z [inf]  [unified-validator] Scene: interior
+2026-02-02T06:59:21.852080628Z [inf]  [unified-validator] Mode: log (validator config: log)
+2026-02-02T06:59:21.852084033Z [inf]  [unified-validator] Staging Style: NZ Standard Real Estate
+2026-02-02T06:59:21.852087338Z [inf]  [unified-validator] Stage-Aware: ENABLED
+2026-02-02T06:59:21.852092305Z [inf]  [unified-validator] Original: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:21.852095880Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.852099476Z [inf]  [unified-validator] Stage1A Path: /tmp/realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp
+2026-02-02T06:59:21.852103171Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+2026-02-02T06:59:21.852106266Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+2026-02-02T06:59:21.852232846Z [inf]  [stageAware] Mode: log
+2026-02-02T06:59:21.889993307Z [inf]  [stageAware] Mask A: 93982 pixels (9.05%)
+2026-02-02T06:59:21.889997613Z [inf]  [stageAware] Mask B: 113033 pixels (10.89%)
+2026-02-02T06:59:21.899869571Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1688929, ETag="8bab97209eeae54910fa077d93defccf"
+2026-02-02T06:59:21.899873938Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:21.899877163Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015560758-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.899879987Z [inf]  ========================================
+2026-02-02T06:59:21.899883082Z [inf]  
+2026-02-02T06:59:21.899885996Z [inf]  [worker] ✅ Stage 2 published: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015560758-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:21.940312946Z [inf]  [stageAware] Structural IoU (masked): 0.994 (inter=93423, union=93982)
+2026-02-02T06:59:22.011468830Z [inf]  [stageAware] Edge IoU (structure_only): 0.993
+2026-02-02T06:59:22.011473387Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+2026-02-02T06:59:22.011476191Z [inf]  [stageAware] Risk: NO
+2026-02-02T06:59:22.011478785Z [inf]  [stageAware] Passed: YES
+2026-02-02T06:59:22.011481279Z [inf]  [stageAware] ===============================
+2026-02-02T06:59:22.011483793Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.994
+2026-02-02T06:59:22.011486447Z [inf]  [worker] Unified validation completed in 162ms
+2026-02-02T06:59:22.011489131Z [inf]  [worker] Validation result: PASSED (score: 0.993506582121392)
+2026-02-02T06:59:22.011491665Z [inf]  [worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════
+2026-02-02T06:59:22.011497594Z [inf]  [SEM][stage2] Starting semantic structural validation (interior)
+2026-02-02T06:59:22.148186817Z [inf]  [SEM][stage2] windows: 6 → 6 (OK)
+2026-02-02T06:59:22.148191615Z [inf]  [SEM][stage2] doors: 0 → 0 (OK)
+2026-02-02T06:59:22.148194289Z [inf]  [SEM][stage2] wall drift: 13.53% (FAIL)
+2026-02-02T06:59:22.148196882Z [inf]  [SEM][stage2] openings: +0 created, -0 closed (OK)
+2026-02-02T06:59:22.148199396Z [inf]  [SEM][stage2] RESULT: FAILED (log-only, non-blocking)
+2026-02-02T06:59:22.148202761Z [inf]  [worker] Semantic validation completed (log-only, non-blocking)
+2026-02-02T06:59:22.148205385Z [inf]  [worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════
+2026-02-02T06:59:22.148207899Z [inf]  [MASK][stage2] Starting masked edge geometry validation (interior)
+2026-02-02T06:59:22.148210483Z [inf]  [MASK][stage2] masked drift: 23.48% (FAIL)
+2026-02-02T06:59:22.148213297Z [inf]  [MASK][stage2] openings created: +1, closed: -0 (FAIL)
+2026-02-02T06:59:22.148215891Z [inf]  [MASK][stage2] RESULT: FAILED (log-only)
+2026-02-02T06:59:22.148218435Z [inf]  [worker] Masked edge validation completed (log-only, non-blocking)
+2026-02-02T06:59:22.148221279Z [inf]  [LOCAL_VALIDATE] stage=2 status=needs_confirm reasons=["semantic_validator_failed: windows 6→6, doors 0→0, wall_drift 13.53%, openings +0/-0","masked_edge_failed: drift 23.48%, openings +1/-0"]
+2026-02-02T06:59:22.148223933Z [inf]  [GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=["semantic_validator_failed: windows 6→6, doors 0→0, wall_drift 13.53%, openings +0/-0","masked_edge_failed: drift 23.48%, openings +1/-0"]
+2026-02-02T06:59:23.885099730Z [inf]  [gemini-semantic] completed in 1750ms (hardFail=false conf=0.95 cat=furniture_change)
+2026-02-02T06:59:23.885104057Z [inf]  [GEMINI_CONFIRM] stage=2 status=pass confirmedFail=false reasons=[]
+2026-02-02T06:59:23.885108493Z [inf]  [VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=true
+2026-02-02T06:59:23.885112640Z [inf]  
+2026-02-02T06:59:23.885116696Z [inf]  ========================================
+2026-02-02T06:59:23.885120351Z [inf]  [PUBLISH] File: realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:23.885123917Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:23.885127522Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:23.885131167Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:23.885134583Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:23.885138168Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:23.885141974Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:23.885145349Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:23.885148774Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015563879-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:23.885151768Z [inf]  [PUBLISH] Size: 1644725 bytes
+2026-02-02T06:59:23.885154753Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:24.740195896Z [inf]  [worker] ═══════════ Validation Summary ═══════════
+2026-02-02T06:59:24.740202987Z [inf]  [worker] Unified Structural: ✓ PASSED (score: 0.9879172956656175)
+2026-02-02T06:59:24.740206963Z [inf]  [worker] Gemini Compliance: ✓ PASSED
+2026-02-02T06:59:24.740212080Z [inf]  [worker] Blocking mode: Local=DISABLED, GeminiConfirmation=ENABLED
+2026-02-02T06:59:24.740215766Z [inf]  [worker] ═══════════════════════════════════════════
+2026-02-02T06:59:24.740220823Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+2026-02-02T06:59:24.740224429Z [inf]  
+2026-02-02T06:59:24.740227804Z [inf]  [WORKER] ═══════════ Publishing final enhanced image ═══════════
+2026-02-02T06:59:24.740231279Z [inf]  
+2026-02-02T06:59:24.740235505Z [inf]  
+2026-02-02T06:59:24.740239001Z [inf]  ========================================
+2026-02-02T06:59:24.740242526Z [inf]  [PUBLISH] File: realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:24.740247544Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:24.740251079Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:24.740255816Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:24.740259211Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:24.740262726Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:24.740266342Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:24.740269597Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:24.740273222Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:24.740276627Z [inf]  [PUBLISH] Size: 1688929 bytes
+2026-02-02T06:59:24.740279912Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:24.887031100Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:25.026034895Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1644725, ETag="45425165557d7005cd4671f3c933815b"
+2026-02-02T06:59:25.026039532Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:25.026044139Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015563879-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:25.026047955Z [inf]  ========================================
+2026-02-02T06:59:25.026052722Z [inf]  
+2026-02-02T06:59:25.026056928Z [inf]  [worker] ✅ Stage 2 published: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015563879-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:25.782051852Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:25.890873705Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1688929, ETag="8bab97209eeae54910fa077d93defccf"
+2026-02-02T06:59:25.890881196Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:25.890886073Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp
+2026-02-02T06:59:25.890889999Z [inf]  ========================================
+2026-02-02T06:59:25.890893505Z [inf]  
+2026-02-02T06:59:25.890896760Z [inf]  [WORKER] Final published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:25.890899203Z [inf]  
+2026-02-02T06:59:25.890902388Z [inf]  
+2026-02-02T06:59:25.890905172Z [inf]  [FINAL_VALIDATION_CHECK] finalStageLabel=2 shouldRunFinalValidation=true hasPubFinalUrl=true hasOriginalUrl=true
+2026-02-02T06:59:25.890908026Z [inf]  [worker] ═══════════ Running final structural validation for stage 2 ═══════════
+2026-02-02T06:59:25.890910370Z [inf]  [structureValidator] Validating structure (mode=log, sensitivity=22°)
+2026-02-02T06:59:25.890912924Z [inf]  [structureValidator] Original: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:25.890915357Z [inf]  [structureValidator] Enhanced: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:27.413061680Z [inf]  [PUBLISH] >>> ATTEMPTING S3 UPLOAD <<<
+2026-02-02T06:59:27.413069361Z [inf]  [PUBLISH] Bucket: realenhance-bucket
+2026-02-02T06:59:27.413073728Z [inf]  [PUBLISH] Region (raw): Asia Pacific (Sydney) ap-southeast-2
+2026-02-02T06:59:27.413078175Z [inf]  [PUBLISH] Region (sanitized): ap-southeast-2
+2026-02-02T06:59:27.413083182Z [inf]  [PUBLISH] Using explicit AWS credentials (key: AKIA3Y3F...)
+2026-02-02T06:59:27.413084083Z [inf]  [PUBLISH] Size: 1644725 bytes
+2026-02-02T06:59:27.413091074Z [inf]  [PUBLISH] >>> UPLOADING NOW <<<
+2026-02-02T06:59:27.413091915Z [inf]  [PUBLISH] Attempting upload with ACL: public-read
+2026-02-02T06:59:27.413096502Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:27.413130603Z [inf]  [worker] ═══════════ Validation Summary ═══════════
+2026-02-02T06:59:27.413133417Z [inf]  [worker] Unified Structural: ✓ PASSED (score: 0.993506582121392)
+2026-02-02T06:59:27.413136752Z [inf]  [worker] Gemini Compliance: ✓ PASSED
+2026-02-02T06:59:27.413139667Z [inf]  [worker] Blocking mode: Local=DISABLED, GeminiConfirmation=ENABLED
+2026-02-02T06:59:27.413143503Z [inf]  [worker] ═══════════════════════════════════════════
+2026-02-02T06:59:27.413146467Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+2026-02-02T06:59:27.413149421Z [inf]  
+2026-02-02T06:59:27.413152887Z [inf]  [WORKER] ═══════════ Publishing final enhanced image ═══════════
+2026-02-02T06:59:27.413155390Z [inf]  
+2026-02-02T06:59:27.413158054Z [inf]  
+2026-02-02T06:59:27.413160678Z [inf]  ========================================
+2026-02-02T06:59:27.413163452Z [inf]  [PUBLISH] File: realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:27.413166167Z [inf]  [PUBLISH] S3_BUCKET: realenhance-bucket
+2026-02-02T06:59:27.540383413Z [inf]  [structureValidator] Validation complete in 1656ms
+2026-02-02T06:59:27.540390754Z [inf]  [structureValidator] Deviation: 54.799° (vertical: 53.169°, horizontal: 1.629°)
+2026-02-02T06:59:27.540396182Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:59:27.540400148Z [inf]  [structureValidator] === STRUCTURAL VALIDATION RESULT ===
+2026-02-02T06:59:27.540403723Z [inf]  [structureValidator] Mode: log
+2026-02-02T06:59:27.540407579Z [inf]  [structureValidator] Deviation Score: 54.799°
+2026-02-02T06:59:27.540410924Z [inf]  [structureValidator] Vertical Shift: 53.169°
+2026-02-02T06:59:27.540414429Z [inf]  [structureValidator] Horizontal Shift: 1.629°
+2026-02-02T06:59:27.540418075Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:59:27.540422031Z [inf]  [structureValidator] Message: Structural deviation detected: 54.80° (threshold: 22.0°)
+2026-02-02T06:59:27.540425476Z [inf]  [structureValidator] Original lines: 35 total (12 vertical, 5 horizontal)
+2026-02-02T06:59:27.540433638Z [inf]  [structureValidator] Enhanced lines: 58 total (19 vertical, 13 horizontal)
+2026-02-02T06:59:27.540437424Z [err]  [structureValidator] ⚠️ Structural deviation detected (mode=log)
+2026-02-02T06:59:27.540440709Z [inf]  [worker] ═══════════ Final structural validation completed for stage 2 ═══════════
+2026-02-02T06:59:27.540444134Z [inf]  [keys] normalized baseKey from 1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp to 1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2.webp (reason: mismatch with filename)
+2026-02-02T06:59:27.551534520Z [inf]  [worker] Redis image history recorded {
+2026-02-02T06:59:27.551537995Z [inf]    userId: 'user_9f57146b-295f-4d90-9841-c5cf4bf9e932',
+2026-02-02T06:59:27.551540669Z [inf]    baseKey: '1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:27.551543403Z [inf]    imageId: 'img_4098dc7f-2a2a-4d4a-9078-73fcf9704bf7'
+2026-02-02T06:59:27.551546097Z [inf]  }
+2026-02-02T06:59:27.552112066Z [inf]      '1B': null
+2026-02-02T06:59:27.552116302Z [inf]  [worker] Marking job complete {
+2026-02-02T06:59:27.552118285Z [inf]    },
+2026-02-02T06:59:27.552119056Z [inf]  }
+2026-02-02T06:59:27.552122251Z [inf]    fallbackStage: undefined,
+2026-02-02T06:59:27.552122912Z [inf]    stage2Blocked: false,
+2026-02-02T06:59:27.552124965Z [inf]    jobId: 'job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b',
+2026-02-02T06:59:27.552129262Z [inf]    parentJobId: undefined
+2026-02-02T06:59:27.552129682Z [inf]    finalStageLabel: '2',
+2026-02-02T06:59:27.552133478Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:27.552133979Z [inf]  }
+2026-02-02T06:59:27.552137734Z [inf]  [worker] Completion status write queued {
+2026-02-02T06:59:27.552139257Z [inf]    originalUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015523935-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh.jpg',
+2026-02-02T06:59:27.552141190Z [inf]    jobId: 'job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b',
+2026-02-02T06:59:27.552142381Z [inf]    status: 'complete',
+2026-02-02T06:59:27.552143683Z [inf]    stageUrls: {
+2026-02-02T06:59:27.552148310Z [inf]      '2': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015560758-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:27.552151715Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015564738-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:27.552151856Z [inf]      '1A': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015543747-realenhance-job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b-1770015523382-pz6p1n0aoh-canonical-1A.webp',
+2026-02-02T06:59:27.552156893Z [inf]    finalStage: '2'
+2026-02-02T06:59:27.622489662Z [inf]  [USAGE] Recorded event: 1A for job job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b
+2026-02-02T06:59:27.847127169Z [inf]  [BUNDLES] Consumed 1 from bundle bundle_1769755622178_g4iaxvv, remaining in bundle: 40
+2026-02-02T06:59:27.847132998Z [inf]  [BILLING] Finalized reservation for job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b: stage12=true, stage2=true
+2026-02-02T06:59:27.856537505Z [inf]  [JOB_FINAL][job=job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b] status=complete hardFail=false warnings=0 normalized=false
+2026-02-02T06:59:27.856544375Z [inf]  
+2026-02-02T06:59:27.856549823Z [inf]  [WORKER] ═══════════ JOB RETURN VALUE ═══════════
+2026-02-02T06:59:27.856554490Z [inf]  
+2026-02-02T06:59:27.856559087Z [inf]  [WORKER] imageId: img_4098dc7f-2a2a-4d4a-9078-73fcf9704bf7
+2026-02-02T06:59:27.856563454Z [inf]  
+2026-02-02T06:59:27.856567840Z [inf]  [WORKER] originalUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:27.856572657Z [inf]  
+2026-02-02T06:59:27.856578236Z [inf]  [WORKER] resultUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:27.856582512Z [inf]  
+2026-02-02T06:59:27.856587940Z [inf]  [WORKER] stageUrls.2: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:27.856592587Z [inf]  
+2026-02-02T06:59:27.856596894Z [inf]  ═══════════════════════════════════════════════
+2026-02-02T06:59:27.856601400Z [inf]  
+2026-02-02T06:59:27.856607089Z [inf]  
+2026-02-02T06:59:27.863594680Z [inf]  [worker] completed job job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b -> https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015564738-realenhance-job_332cfd6d-fe
+2026-02-02T06:59:27.867225016Z [inf]  [enhanced-images] Recorded: RE-NU4KZ3 for job job_332cfd6d-feb0-4c7b-b32e-5c6dbbafa65b
+2026-02-02T06:59:28.431127160Z [inf]  [PUBLISH] ✅ Upload succeeded with ACL
+2026-02-02T06:59:28.566817346Z [inf]  [PUBLISH] ✅ VERIFIED: Object exists, size=1644725, ETag="45425165557d7005cd4671f3c933815b"
+2026-02-02T06:59:28.566822063Z [inf]  [PUBLISH] ✅ SUCCESS!
+2026-02-02T06:59:28.566825098Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp
+2026-02-02T06:59:28.566827922Z [inf]  ========================================
+2026-02-02T06:59:28.566830846Z [inf]  
+2026-02-02T06:59:28.566833660Z [inf]  [WORKER] Final published: kind=s3 url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:28.566836414Z [inf]  
+2026-02-02T06:59:28.566839459Z [inf]  
+2026-02-02T06:59:28.566841883Z [inf]  [FINAL_VALIDATION_CHECK] finalStageLabel=2 shouldRunFinalValidation=true hasPubFinalUrl=true hasOriginalUrl=true
+2026-02-02T06:59:28.566844467Z [inf]  [worker] ═══════════ Running final structural validation for stage 2 ═══════════
+2026-02-02T06:59:28.566847091Z [inf]  [structureValidator] Validating structure (mode=log, sensitivity=22°)
+2026-02-02T06:59:28.566850576Z [inf]  [structureValidator] Original: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:28.566853730Z [inf]  [structureValidator] Enhanced: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:30.058513834Z [inf]  [structureValidator] Validation complete in 1521ms
+2026-02-02T06:59:30.058534144Z [inf]  [structureValidator] Deviation: 22.401° (vertical: 19.94°, horizontal: 2.46°)
+2026-02-02T06:59:30.058537449Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:59:30.058540123Z [inf]  [structureValidator] === STRUCTURAL VALIDATION RESULT ===
+2026-02-02T06:59:30.058542997Z [inf]  [structureValidator] Mode: log
+2026-02-02T06:59:30.058545732Z [inf]  [structureValidator] Deviation Score: 22.401°
+2026-02-02T06:59:30.058548426Z [inf]  [structureValidator] Vertical Shift: 19.94°
+2026-02-02T06:59:30.058550999Z [inf]  [structureValidator] Horizontal Shift: 2.46°
+2026-02-02T06:59:30.058553543Z [inf]  [structureValidator] Suspicious: true
+2026-02-02T06:59:30.058555937Z [inf]  [structureValidator] Message: Structural deviation detected: 22.40° (threshold: 22.0°)
+2026-02-02T06:59:30.058558501Z [inf]  [structureValidator] Original lines: 56 total (32 vertical, 12 horizontal)
+2026-02-02T06:59:30.058561185Z [inf]  [structureValidator] Enhanced lines: 68 total (25 vertical, 21 horizontal)
+2026-02-02T06:59:30.058563698Z [err]  [structureValidator] ⚠️ Structural deviation detected (mode=log)
+2026-02-02T06:59:30.058567164Z [inf]  [worker] ═══════════ Final structural validation completed for stage 2 ═══════════
+2026-02-02T06:59:30.058569547Z [inf]  [keys] normalized baseKey from 1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp to 1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2.webp (reason: mismatch with filename)
+2026-02-02T06:59:30.070956528Z [inf]  [worker] Redis image history recorded {
+2026-02-02T06:59:30.070956798Z [inf]    jobId: 'job_61e5a109-96f3-423a-93c5-f9571aac1dc9',
+2026-02-02T06:59:30.070965481Z [inf]    status: 'complete',
+2026-02-02T06:59:30.070965591Z [inf]    userId: 'user_9f57146b-295f-4d90-9841-c5cf4bf9e932',
+2026-02-02T06:59:30.070972802Z [inf]    baseKey: '1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:30.070974004Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:30.070980544Z [inf]    imageId: 'img_10433d0a-ffb5-48d4-a396-78e725e70d00'
+2026-02-02T06:59:30.070984520Z [inf]  }
+2026-02-02T06:59:30.070986833Z [inf]    finalStage: '2'
+2026-02-02T06:59:30.070990038Z [inf]  [worker] Marking job complete {
+2026-02-02T06:59:30.070996958Z [inf]    jobId: 'job_61e5a109-96f3-423a-93c5-f9571aac1dc9',
+2026-02-02T06:59:30.070997609Z [inf]  }
+2026-02-02T06:59:30.071001966Z [inf]    finalStageLabel: '2',
+2026-02-02T06:59:30.071008365Z [inf]    resultUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015567411-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:30.071011470Z [inf]    originalUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015530657-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb.jpg',
+2026-02-02T06:59:30.071014855Z [inf]    stageUrls: {
+2026-02-02T06:59:30.071018140Z [inf]      '2': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015563879-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A-2-retry1.webp',
+2026-02-02T06:59:30.071021044Z [inf]      '1A': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015550162-realenhance-job_61e5a109-96f3-423a-93c5-f9571aac1dc9-1770015529999-9a6ng8b91bb-canonical-1A.webp',
+2026-02-02T06:59:30.071024119Z [inf]      '1B': null
+2026-02-02T06:59:30.071027234Z [inf]    },
+2026-02-02T06:59:30.071030589Z [inf]    stage2Blocked: false,
+2026-02-02T06:59:30.071033783Z [inf]    fallbackStage: undefined,
+2026-02-02T06:59:30.071037219Z [inf]    parentJobId: undefined
+2026-02-02T06:59:30.071040824Z [inf]  }
+2026-02-02T06:59:30.071044119Z [inf]  [worker] Completion status write queued {
+2026-02-02T06:59:30.107686512Z [inf]  [USAGE] Recorded event: 1A for job job_61e5a109-96f3-423a-93c5-f9571aac1dc9
+2026-02-02T06:59:30.143332672Z [inf]  [BUNDLES] Consumed 1 from bundle bundle_1769755622178_g4iaxvv, remaining in bundle: 39
+2026-02-02T06:59:30.160735937Z [inf]  [BILLING] Finalized reservation for job_61e5a109-96f3-423a-93c5-f9571aac1dc9: stage12=true, stage2=true
+2026-02-02T06:59:30.160743017Z [inf]  [JOB_FINAL][job=job_61e5a109-96f3-423a-93c5-f9571aac1dc9] status=complete hardFail=false warnings=0 normalized=false
+2026-02-02T06:59:30.160747504Z [inf]  
+2026-02-02T06:59:30.160751210Z [inf]  [WORKER] ═══════════ JOB RETURN VALUE ═══════════
+2026-02-02T06:59:30.160755696Z [inf]  
+2026-02-02T06:59:30.160759342Z [inf]  [WORKER] imageId: img_10433d0a-ffb5-48d4-a396-78e725e70d00
+2026-02-02T06:59:30.160762647Z [inf]  
+2026-02-02T06:59:30.160766833Z [inf]  [WORKER] originalUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:30.160770579Z [inf]  
+2026-02-02T06:59:30.160774404Z [inf]  [WORKER] resultUrl: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:30.160777910Z [inf]  
+2026-02-02T06:59:30.160781365Z [inf]  [WORKER] stageUrls.2: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1...
+2026-02-02T06:59:30.160784570Z [inf]  
+2026-02-02T06:59:30.160787925Z [inf]  ═══════════════════════════════════════════════
+2026-02-02T06:59:30.160791881Z [inf]  
+2026-02-02T06:59:30.160794885Z [inf]  
+2026-02-02T06:59:30.164459432Z [inf]  [worker] completed job job_61e5a109-96f3-423a-93c5-f9571aac1dc9 -> https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1770015567411-realenhance-job_61e5a109-96
+2026-02-02T06:59:30.173420714Z [inf]  [enhanced-images] Recorded: RE-RQNDRY for job job_61e5a109-96f3-423a-93c5-f9571aac1dc9
