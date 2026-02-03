@@ -157,6 +157,8 @@ export function statusRouter() {
         }
 
         const queueStatus = normalizeStateToQueueStatus(state);
+        const queueCompleted = queueStatus === "completed";
+        const queueFailed = queueStatus === "failed";
         const localStatusRaw: string | null = local.status || (rv && rv.status) || null;
         const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
         const allowLocalImageUrl = localCompleted || queueCompleted || queueFailed;
@@ -170,11 +172,6 @@ export function statusRouter() {
 
         const stateFromLocal = normalizePipelineState(localStatusRaw);
         const stateFromQueue = normalizeQueueState(state);
-        const queueCompleted = queueStatus === "completed";
-        const queueFailed = queueStatus === "failed";
-        
-        // ✅ Check for explicit completion flags in local record
-        const localCompleted = local.completed === true || local.success === true;
         
         let pipelineStatus: NormalizedState;
         if (queueFailed) pipelineStatus = "failed";
