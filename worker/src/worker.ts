@@ -335,6 +335,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const timings: Record<string, number> = {};
   const t0 = Date.now();
+  
+  // FIX 6: Track lifecycle timestamps for observability
+  const timestamps = {
+    queued: t0,
+    stage1AStart: null as number | null,
+    stage1AEnd: null as number | null,
+    stage1BStart: null as number | null,
+    stage1BEnd: null as number | null,
+    stage2Start: null as number | null,
+    stage2End: null as number | null,
+    completed: null as number | null
+  };
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}`);
