@@ -282,6 +282,10 @@ export function statusRouter() {
         const updatedAtRaw = local.updatedAt || local.updated_at || null;
         const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
         const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued";
+        if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage) {
+          pipelineStatus = "failed";
+          warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+        }
         const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
         if (isStuck) {
           pipelineStatus = "failed";
@@ -518,6 +522,21 @@ export function statusRouter() {
       if (hardFail && hasOutputs) stateOut = "completed";
       // ✅ Override with completion flag if present
       if (localCompleted) stateOut = "completed";
+      const requestedStages =
+        local?.metadata?.requestedStages ||
+        local?.requestedStages ||
+        (payload as any)?.requestedStages ||
+        (payload as any)?.metadata?.requestedStages ||
+        null;
+      const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
+        ? requestedStages.stage2
+        : (requestedStages?.stage2 === "true");
+
+      if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage) {
+        stateOut = "failed";
+        warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+      }
+
       const isProcessingLike = stateOut === "processing" || stateOut === "queued";
       const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
       if (isStuck) {
