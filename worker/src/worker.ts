@@ -722,7 +722,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e) {
     nLog('[worker] failed to publish 1A', e);
   }
-  updateJob(payload.jobId, { status: "processing", currentStage: "1A", stage: "1A", progress: 35, stageUrls: { "1A": pub1AUrl ?? null } });
+  // ✅ FIX 3: Add updatedAt timestamp for stuck detection
+  const now = new Date().toISOString();
+  updateJob(payload.jobId, { 
+    status: "processing", 
+    currentStage: "1A", 
+    stage: "1A", 
+    progress: 35, 
+    stageUrls: { "1A": pub1AUrl ?? null },
+    updatedAt: now,
+    updated_at: now
+  });
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
     return;
@@ -912,6 +922,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     timings.stage1BMs = Date.now() - t1B;
+    // ✅ FIX 3: Add updatedAt timestamp for stuck detection
+    const now1B = new Date().toISOString();
+    updateJob(payload.jobId, { 
+      status: "processing",
+      currentStage: "1B",
+      progress: 60,
+      stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
+      updatedAt: now1B,
+      updated_at: now1B
+    });
     if (await isCancelled(payload.jobId)) {
       updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
       return;
@@ -1182,7 +1202,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2CandidatePath = path2;
 
   timings.stage2Ms = Date.now() - t2;
-  updateJob(payload.jobId, { status: "processing", currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45) });
+  // ✅ FIX 3: Add updatedAt timestamp for stuck detection
+  const now2 = new Date().toISOString();
+  updateJob(payload.jobId, { 
+    status: "processing", 
+    currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), 
+    stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), 
+    progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45),
+    stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
+    updatedAt: now2,
+    updated_at: now2
+  });
 
   if (await isCancelled(payload.jobId)) {
     updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });

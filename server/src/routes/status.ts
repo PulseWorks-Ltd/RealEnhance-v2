@@ -170,15 +170,82 @@ export function statusRouter() {
           (allowLocalImageUrl ? local.imageUrl : null) ||
           null;
 
+        const stageUrlsRaw: Record<string, string> | null =
+          (rv && rv.stageUrls) || local.stageUrls || null;
+
+        // Normalize stageUrls into a predictable shape so clients can rely on keys
+        const stageUrls: Record<string, string | null> = {
+          stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+          stage1B: stageUrlsRaw?.['stage1B'] ?? stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+          stage2: stageUrlsRaw?.['stage2'] ?? stageUrlsRaw?.['2'] ?? null,
+          // Legacy keys retained for backward compatibility
+          '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
+          '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
+          '2': stageUrlsRaw?.['2'] ?? null,
+        };
+
+        const requestedStages =
+          local?.metadata?.requestedStages ||
+          local?.requestedStages ||
+          (payload as any)?.requestedStages ||
+          (payload as any)?.metadata?.requestedStages ||
+          null;
+
+        const finalStageRaw: string | null =
+          local.finalStage || local.resultStage || (rv && (rv.finalStage || rv.resultStage)) || null;
+
+        const stage2Present = !!(stageUrls.stage2 || stageUrls['2']);
+        const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
+          ? requestedStages.stage2
+          : (requestedStages?.stage2 === "true");
+        const sceneLabel = String(local?.meta?.scene?.label || (payload as any)?.options?.sceneType || "").toLowerCase();
+        const stagingAllowed = local?.meta?.allowStaging !== false;
+        const stage2Expected = requestedStage2 === true && sceneLabel !== "exterior" && stagingAllowed;
+        
+        // ✅ FIX 1: Stage-based completion detection
+        const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
+        const stage1APresent = !!(stageUrls.stage1A || stageUrls['1A']);
+        const declutterRequested = requestedStages?.stage1b || (payload as any)?.options?.declutter;
+        
+        // Determine if all requested stages are present (defensive completion detection)
+        const allRequestedStagesPresent = (() => {
+          if (requestedStage2 && stage2Expected) {
+            return stage2Present; // Need Stage 2
+          }
+          if (declutterRequested) {
+            return stage1BPresent; // Need Stage 1B
+          }
+          return stage1APresent; // Just need Stage 1A
+        })();
+
         const stateFromLocal = normalizePipelineState(localStatusRaw);
         const stateFromQueue = normalizeQueueState(state);
         
         let pipelineStatus: NormalizedState;
-        if (queueFailed) pipelineStatus = "failed";
-        else if (queueCompleted) pipelineStatus = "completed";
-        else if (localCompleted) pipelineStatus = "completed";  // ✅ Check completion flag
-        else if (stateFromLocal !== "unknown") pipelineStatus = stateFromLocal;
-        else pipelineStatus = stateFromQueue;
+        // ✅ FIX 2: Prioritize stage presence over BullMQ state to avoid race conditions
+        if (queueFailed) {
+          pipelineStatus = "failed";
+        } else if (allRequestedStagesPresent && !queueFailed) {
+          // Trust stage outputs - if all requested stages are present, consider it complete
+          // This fixes the race condition where outputs exist but completion flags haven't propagated
+          pipelineStatus = "completed";
+          if (!localCompleted && (stateFromQueue === "processing" || stateFromQueue === "queued")) {
+            console.log('[status/batch] ✅ Override: Marking complete based on stage presence', {
+              id,
+              requestedStage2,
+              stage2Expected,
+              allStagesPresent: allRequestedStagesPresent,
+              bullMQState: state,
+              localCompleted
+            });
+          }
+        } else if (queueCompleted || localCompleted) {
+          pipelineStatus = "completed";
+        } else if (stateFromLocal !== "unknown") {
+          pipelineStatus = stateFromLocal;
+        } else {
+          pipelineStatus = stateFromQueue;
+        }
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -186,12 +253,9 @@ export function statusRouter() {
         const maskUrl: string | null =
           (rv && rv.maskUrl) || local.maskUrl || null;
 
-        const stageUrlsRaw: Record<string, string> | null =
-          (rv && rv.stageUrls) || local.stageUrls || null;
-
-        // Log status details for debugging stuck jobs
-        const stageKeys = stageUrlsRaw && Object.values(stageUrlsRaw).some(Boolean)
-          ? Object.keys(stageUrlsRaw).filter(k => stageUrlsRaw[k])
+        // Log status details for debugging stuck jobs (using stageUrls declared above)
+        const stageKeys = stageUrls && Object.values(stageUrls).some(Boolean)
+          ? Object.keys(stageUrls).filter(k => stageUrls[k])
           : [];
         if (stageKeys.length) {
           console.log('[status/batch] Job with stages:', {
@@ -220,32 +284,6 @@ export function statusRouter() {
             localStatus: local.status
           });
         }
-
-        // Normalize stageUrls into a predictable shape so clients can rely on keys
-        const stageUrls: Record<string, string | null> = {
-          stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
-          stage1B: stageUrlsRaw?.['stage1B'] ?? stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
-          stage2: stageUrlsRaw?.['stage2'] ?? stageUrlsRaw?.['2'] ?? null,
-          // Legacy keys retained for backward compatibility
-          '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
-          '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
-          '2': stageUrlsRaw?.['2'] ?? null,
-        };
-
-        const requestedStages =
-          local?.metadata?.requestedStages ||
-          local?.requestedStages ||
-          (payload as any)?.requestedStages ||
-          (payload as any)?.metadata?.requestedStages ||
-          null;
-
-        const finalStageRaw: string | null =
-          local.finalStage || local.resultStage || (rv && (rv.finalStage || rv.resultStage)) || null;
-
-        const stage2Present = !!(stageUrls.stage2 || stageUrls['2']);
-        const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
-          ? requestedStages.stage2
-          : (requestedStages?.stage2 === "true");
 
         const imageId: string | null =
           payload?.imageId || local.imageId || null;
@@ -276,15 +314,17 @@ export function statusRouter() {
         if (requestedStage2 === false && (stage2Present || String(finalStageRaw || "").toLowerCase() === "2")) {
           warningSet.add("Stage 2 output present but not requested.");
         }
-        const stage1bPresent = !!(stageUrls.stage1B || stageUrls['1B']);
-        const stage1aPresent = !!(stageUrls.stage1A || stageUrls['1A']);
-        const hasOutputs = !!(stage2Present || stage1bPresent || stage1aPresent || resultUrl);
+        // Stage presence already calculated above in Fix 1
+        const hasOutputs = !!(stage2Present || stage1BPresent || stage1APresent || resultUrl);
         const updatedAtRaw = local.updatedAt || local.updated_at || null;
         const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
         const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued";
-        if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage) {
+        if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage && stage2Expected) {
           pipelineStatus = "failed";
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+        }
+        if (requestedStage2 === true && !stage2Expected && !stage2Present) {
+          warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");
         }
         const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
         if (isStuck) {
@@ -294,9 +334,9 @@ export function statusRouter() {
         if (pipelineStatus === "failed" && hasOutputs) {
           if ((blockedStage === "2" || requestedStage2 === true) && !stage2Present) {
             warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
-          } else if (stage1bPresent) {
-            warningSet.add("We couldn’t complete the full enhancement for this image. The best available version is shown.");
-          } else if (stage1aPresent) {
+          } else if (stage1BPresent) {
+            warningSet.add("We couldn't complete the full enhancement for this image. The best available version is shown.");
+          } else if (stage1APresent) {
             warningSet.add("Enhanced copy of the original is available.");
           } else {
             warningSet.add("The best available result is shown.");
@@ -512,16 +552,12 @@ export function statusRouter() {
       if (validationNote) warningSet.add(validationNote);
       const hardFail = !!validationRaw?.hardFail || !!unified?.hardFail || !!local?.hardFail;
       const stage2Present = !!(stageUrls.stage2 || stageUrls['2']);
-      const stage1bPresent = !!(stageUrls.stage1B || stageUrls['1B']);
-      const stage1aPresent = !!(stageUrls.stage1A || stageUrls['1A']);
-      const hasOutputs = !!(stage2Present || stage1bPresent || stage1aPresent || resultUrl);
+      const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
+      const stage1APresent = !!(stageUrls.stage1A || stageUrls['1A']);
+      const hasOutputs = !!(stage2Present || stage1BPresent || stage1APresent || resultUrl);
       const updatedAtRaw = local.updatedAt || local.updated_at || null;
       const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
-      let stateOut = normalizeQueueState(state);
-      if (hardFail && !hasOutputs) stateOut = "failed";
-      if (hardFail && hasOutputs) stateOut = "completed";
-      // ✅ Override with completion flag if present
-      if (localCompleted) stateOut = "completed";
+      
       const requestedStages =
         local?.metadata?.requestedStages ||
         local?.requestedStages ||
@@ -531,10 +567,51 @@ export function statusRouter() {
       const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
         ? requestedStages.stage2
         : (requestedStages?.stage2 === "true");
+      const declutterRequested = requestedStages?.stage1b || (payload as any)?.options?.declutter;
+      const sceneLabel = String(local?.meta?.scene?.label || (payload as any)?.options?.sceneType || "").toLowerCase();
+      const stagingAllowed = local?.meta?.allowStaging !== false;
+      const stage2Expected = requestedStage2 === true && sceneLabel !== "exterior" && stagingAllowed;
+      
+      // ✅ FIX 1: Stage-based completion detection (single-job endpoint)
+      const allRequestedStagesPresent = (() => {
+        if (requestedStage2 && stage2Expected) {
+          return stage2Present;
+        }
+        if (declutterRequested) {
+          return stage1BPresent;
+        }
+        return stage1APresent;
+      })();
+      
+      let stateOut = normalizeQueueState(state);
+      // ✅ FIX 2: Prioritize stage presence over queue state
+      const queueFailed = queueStatus === "failed";
+      if (queueFailed) {
+        stateOut = "failed";
+      } else if (allRequestedStagesPresent && !queueFailed) {
+        stateOut = "completed";
+        if (!localCompleted && (normalizeQueueState(state) === "processing" || normalizeQueueState(state) === "queued")) {
+          console.log('[status/:jobId] ✅ Override: Marking complete based on stage presence', {
+            jobId,
+            requestedStage2,
+            stage2Expected,
+            allStagesPresent: allRequestedStagesPresent
+          });
+        }
+      } else if (localCompleted || normalizeQueueState(state) === "completed") {
+        stateOut = "completed";
+      } else if (hardFail && !hasOutputs) {
+        stateOut = "failed";
+      } else if (hardFail && hasOutputs) {
+        stateOut = "completed";
+      }
 
-      if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage) {
+      if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
         stateOut = "failed";
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+      }
+      if (requestedStage2 === true && !stage2Expected && !stage2Present) {
+        warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");
       }
 
       const isProcessingLike = stateOut === "processing" || stateOut === "queued";
@@ -546,9 +623,9 @@ export function statusRouter() {
       if (stateOut === "failed" && hasOutputs) {
         if (blockedStage === "2" && !stage2Present) {
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
-        } else if (stage1bPresent) {
-          warningSet.add("We couldn’t complete the full enhancement for this image. The best available version is shown.");
-        } else if (stage1aPresent) {
+        } else if (stage1BPresent) {
+          warningSet.add("We couldn't complete the full enhancement for this image. The best available version is shown.");
+        } else if (stage1APresent) {
           warningSet.add("Enhanced copy of the original is available.");
         } else {
           warningSet.add("The best available result is shown.");
