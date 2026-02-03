@@ -231,6 +231,7 @@ interface PersistedBatchJob {
 }
 
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
+const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
 
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
@@ -390,6 +391,7 @@ export default function BatchProcessor() {
   
   // ZIP download loading state
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+  const lastActivityByIndexRef = useRef<Record<number, { ts: number; key: string }>>({});
   
   // Batch refine loading state
   const [isBatchRefining, setIsBatchRefining] = useState(false);
@@ -1872,6 +1874,19 @@ export default function BatchProcessor() {
           const chosenPreview = completedFinal ? displayUrl : (stagePreview || null);
 
           if (typeof idx === "number") {
+            const now = Date.now();
+            const activityKey = `${status}|${progress ?? "na"}|${stage1aUrl ? "1" : "0"}|${stage1bUrl ? "1" : "0"}|${stage2Url ? "1" : "0"}|${resultUrlSafe ? "1" : "0"}`;
+            const lastActivity = lastActivityByIndexRef.current[idx];
+            if (!lastActivity || lastActivity.key !== activityKey) {
+              lastActivityByIndexRef.current[idx] = { ts: now, key: activityKey };
+            }
+            const lastTs = lastActivityByIndexRef.current[idx]?.ts ?? now;
+            const ageMs = now - lastTs;
+            const hasOnlyStage1A = !!stage1aUrl && !stage1bUrl && !stage2Url && !resultUrlSafe;
+            const uiOverrideFailed = (status === "processing" || status === "queued") && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
+            if (uiOverrideFailed && !warningList.includes("Enhanced copy of the original is available.")) {
+              warningList.push("Enhanced copy of the original is available.");
+            }
             const isTerminalNormalized = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled";
             if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
               nonTerminalIndices.push(idx);
@@ -1896,6 +1911,7 @@ export default function BatchProcessor() {
                 warnings: warningList,
                 uiStatus,
                 hardFail,
+                uiOverrideFailed,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
@@ -1913,7 +1929,7 @@ export default function BatchProcessor() {
                 previewUrl: chosenPreview || existing.previewUrl || null,
                 error: (status === "failed" || (it.errorCode && isTerminalFlag))
                   ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
-                  : existing.error,
+                  : (uiOverrideFailed ? (existing.error || "Enhanced copy of the original is available.") : existing.error),
                 errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
                 blockedStage: blockedStage || existing.blockedStage,
                 fallbackStage: fallbackStage || existing.fallbackStage,
@@ -3484,6 +3500,11 @@ export default function BatchProcessor() {
     }
   }, [currentImageIndex, activeTab]);
 
+  const hasInFlightResults = results.some(r => {
+    const st = String(r?.status || r?.result?.status || "").toLowerCase();
+    return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active");
+  });
+
   return (
   <div className="w-full">
       <AlertDialog open={isStagingConfirmOpen} onOpenChange={setIsStagingConfirmOpen}>
@@ -3756,6 +3777,11 @@ export default function BatchProcessor() {
                       >
                         Reset to NZ Standard
                       </button>
+                      {allowStaging && !declutter && (
+                        <p className="text-xs text-amber-200/90 mt-2">
+                          For best results, ensure that images requiring staging are either already empty rooms or select full furniture removal before staging.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -4432,6 +4458,7 @@ export default function BatchProcessor() {
                         const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
+                        const uiOverrideFailed = !!result?.uiOverrideFailed;
 
                         // Stage URL resolution (supports new stage1A/1B keys)
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
@@ -4451,7 +4478,7 @@ export default function BatchProcessor() {
                           // Partial outputs arrived but final URL missing: treat as warning while still processing
                           derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
                         }
-                        const isError = (status === "failed") || derivedUiStatus === "error";
+                        const isError = (status === "failed") || derivedUiStatus === "error" || uiOverrideFailed;
                         const isDone = isSuccessStatus && !!finalResultUrl && !isError;
                         const isUiComplete = isDone || (!!stage2Url && allowStaging && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
@@ -4682,7 +4709,7 @@ export default function BatchProcessor() {
                 </div>
 
                 {/* Final Actions */}
-                {runState === "done" && (
+                {runState === "done" && !hasInFlightResults && (
                     <div className="mt-8 flex justify-center gap-4">
                          <button 
                             onClick={downloadZip}
