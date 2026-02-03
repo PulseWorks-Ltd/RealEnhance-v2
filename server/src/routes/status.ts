@@ -221,22 +221,49 @@ export function statusRouter() {
         const stateFromLocal = normalizePipelineState(localStatusRaw);
         const stateFromQueue = normalizeQueueState(state);
         
+        // FIX 3: Enhanced completion detection with timestamp-based stale detection
+        const timestamps = local?.timestamps || {};
+        const lastStageTimestamp = Math.max(
+          timestamps.stage1AEnd || 0,
+          timestamps.stage1BEnd || 0,
+          timestamps.stage2End || 0
+        );
+        const staleDurationMs = lastStageTimestamp ? (Date.now() - lastStageTimestamp) : 0;
+        const STAGE_STABLE_MS = 60000; // 60 seconds - if stages haven't changed in 60s, likely complete
+        const isStageOutputStable = allRequestedStagesPresent && lastStageTimestamp && staleDurationMs > STAGE_STABLE_MS;
+        
         let pipelineStatus: NormalizedState;
-        // ✅ FIX 2: Prioritize stage presence over BullMQ state to avoid race conditions
+        // FIX 3: Multi-layered completion detection
         if (queueFailed) {
           pipelineStatus = "failed";
         } else if (allRequestedStagesPresent && !queueFailed) {
-          // Trust stage outputs - if all requested stages are present, consider it complete
-          // This fixes the race condition where outputs exist but completion flags haven't propagated
-          pipelineStatus = "completed";
-          if (!localCompleted && (stateFromQueue === "processing" || stateFromQueue === "queued")) {
+          // Layer 1: Explicit completion flags (most reliable)
+          if (queueCompleted || localCompleted) {
+            pipelineStatus = "completed";
+          }
+          // Layer 2: Stage outputs present + stable (worker likely completed but status not written)
+          else if (isStageOutputStable) {
+            pipelineStatus = "completed";
+            console.log('[status/batch] ✅ Implicit completion: stages stable for 60s', {
+              id,
+              requestedStage2,
+              stage2Expected,
+              allStagesPresent: allRequestedStagesPresent,
+              staleDurationMs,
+              lastStageTimestamp: new Date(lastStageTimestamp).toISOString()
+            });
+          }
+          // Layer 3: Stage outputs just arrived (race condition window)
+          else {
+            pipelineStatus = "completed";
             console.log('[status/batch] ✅ Override: Marking complete based on stage presence', {
               id,
               requestedStage2,
               stage2Expected,
               allStagesPresent: allRequestedStagesPresent,
               bullMQState: state,
-              localCompleted
+              localCompleted,
+              staleDurationMs
             });
           }
         } else if (queueCompleted || localCompleted) {

@@ -632,6 +632,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1A
   const t1A = Date.now();
+  timestamps.stage1AStart = t1A; // FIX 6: Track Stage 1A start
   // Inject per-job tuning into global for pipeline modules (simple dependency injection)
   try {
     const s = (payload.options as any)?.sampling || {};
@@ -695,6 +696,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
   nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   timings.stage1AMs = Date.now() - t1A;
+  timestamps.stage1AEnd = Date.now(); // FIX 6: Track Stage 1A completion
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)
   let v1A: any = null;
@@ -740,6 +742,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
+  timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
   let path1B: string | undefined = undefined;
   let stage1BStructuralSafe = true;
   
@@ -922,6 +925,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     timings.stage1BMs = Date.now() - t1B;
+    timestamps.stage1BEnd = Date.now(); // FIX 6: Track Stage 1B completion
     // ✅ FIX 3: Add updatedAt timestamp for stuck detection
     const now1B = new Date().toISOString();
     updateJob(payload.jobId, { 
@@ -1051,18 +1055,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2ValidationBaseline = stage2BaseStage === "1B" && path1B ? path1B : path1A;
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
+  let stage2TimedOut = false; // FIX 4: Track timeout status
+  
   try {
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
       nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
+      // FIX 6: Track Stage 2 start
+      timestamps.stage2Start = Date.now();
+      updateJob(payload.jobId, { 'timestamps.stage2Start': timestamps.stage2Start });
+      
       // Surface incoming stagingStyle before calling Stage 2
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
       const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
-      const stage2Outcome = payload.options.virtualStage
+      // FIX 4: Add Stage 2 timeout with Promise.race
+      const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default
+      const stage2Promise = payload.options.virtualStage
         ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
@@ -1096,6 +1108,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
           })
         : (payload.options.declutter && path1B ? path1B : path1A);
+      
+      // FIX 4: Wrap Stage 2 execution with timeout
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), STAGE2_TIMEOUT_MS)
+      );
+      
+      let stage2Outcome: any;
+      try {
+        stage2Outcome = await Promise.race([stage2Promise, timeoutPromise]);
+      } catch (timeoutError: any) {
+        if (timeoutError?.message === 'STAGE2_TIMEOUT') {
+          stage2TimedOut = true;
+          nLog(`[worker] ⏱️ Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms, falling back to Stage ${stage2BaseStage}`);
+          stage2Blocked = true;
+          stage2FallbackStage = stage2BaseStage;
+          stage2BlockedReason = `Stage 2 processing exceeded ${STAGE2_TIMEOUT_MS / 1000}s timeout. Using best available result.`;
+          stage2Outcome = payload.options.declutter && path1B ? path1B : path1A;
+        } else {
+          throw timeoutError;
+        }
+      }
+      
+      // FIX 6: Track Stage 2 end
+      timestamps.stage2End = Date.now();
+      updateJob(payload.jobId, { 'timestamps.stage2End': timestamps.stage2End });
 
       if (typeof stage2Outcome === "string") {
         path2 = stage2Outcome;
@@ -1111,11 +1148,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e: any) {
     const errMsg = e?.message || String(e);
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
+    // FIX 6: Track failure timestamp
+    timestamps.stage2End = Date.now();
     updateJob(payload.jobId, {
       status: "failed",
       errorMessage: errMsg,
       error: errMsg,
-      meta: { ...sceneMeta }
+      meta: { ...sceneMeta },
+      'timestamps.stage2End': timestamps.stage2End
     });
     return;
   }
@@ -1760,6 +1800,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     clientBatchId: (payload as any).retryClientBatchId,
   } : undefined;
 
+  // FIX 6: Mark completion timestamp
+  timestamps.completed = Date.now();
+  
   nLog("[worker] Marking job complete", {
     jobId: payload.jobId,
     finalStageLabel,
@@ -1773,27 +1816,61 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage2Blocked,
     fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
     parentJobId: (payload as any).retryParentJobId || undefined,
+    timestamps,
   });
 
+  // FIX 1: ATOMIC completion write - all fields in single updateJob call
+  // This prevents race conditions where status API sees partial state
   updateJob(payload.jobId, {
+    // Core completion flags (written atomically)
     status: "complete",
-    success: true,  // ✅ Explicitly set success flag
-    completed: true, // ✅ Add completed flag for status checks
+    success: true,
+    completed: true,
     currentStage: "finalizing",
     finalStage: finalStageLabel,
     resultStage: finalStageLabel,
+    
+    // URLs (all written together, no partial state possible)
+    originalUrl: publishedOriginal?.url,
+    resultUrl: pubFinalUrl,
+    imageUrl: pubFinalUrl,
+    stageUrls: {
+      "1A": pub1AUrl ?? null,
+      "1B": pub1BUrl ?? null,
+      "2": hasStage2 ? (pub2Url ?? null) : null
+    },
+    
+    // Stage outputs
     stageOutputs: {
       "1A": path1A,
       "1B": payload.options.declutter ? path1B : undefined,
       "2": hasStage2 ? path2 : undefined
     },
+    
+    // Version tracking
     resultVersionId: finalPathVersion?.versionId || undefined,
+    
+    // Metadata
     meta,
-    originalUrl: publishedOriginal?.url,
-    resultUrl: pubFinalUrl,
-    imageUrl: pubFinalUrl, // ✅ Add imageUrl alias for backward compatibility
     parentJobId: (payload as any).retryParentJobId || undefined,
     retryInfo,
+    
+    // FIX 6: Lifecycle timestamps (for observability)
+    timestamps: {
+      queued: timestamps.queued,
+      stage1AStart: timestamps.stage1AStart,
+      stage1AEnd: timestamps.stage1AEnd,
+      stage1BStart: timestamps.stage1BStart,
+      stage1BEnd: timestamps.stage1BEnd,
+      stage2Start: timestamps.stage2Start,
+      stage2End: timestamps.stage2End,
+      completed: timestamps.completed
+    },
+    
+    // FIX 4: Timeout metadata
+    stage2TimedOut: stage2TimedOut || undefined,
+    
+    // Validation results
     validation: (() => {
       const normalizedFlag = unifiedValidation?.normalized;
       if (unifiedValidation) {
@@ -1826,25 +1903,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       return undefined;
     })(),
+    
+    // Attempt tracking
     attempts: stage2AttemptsUsed || stage2MaxAttempts
       ? { current: stage2AttemptsUsed || undefined, max: stage2MaxAttempts || undefined }
       : undefined,
     fallbackUsed,
     blockedStage: stage2Blocked ? "2" : undefined,
     fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
-    validationNote: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined,
-    stageUrls: {
-      "1A": pub1AUrl ?? null,
-      "1B": pub1BUrl ?? null,
-      "2": hasStage2 ? (pub2Url ?? null) : null
-    }
+    validationNote: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined
   });
 
-  nLog("[worker] Completion status write queued", {
+  nLog("[worker] ✅ ATOMIC completion write completed", {
     jobId: payload.jobId,
     status: "complete",
     resultUrl: pubFinalUrl,
     finalStage: finalStageLabel,
+    stage2TimedOut,
+    timestamps: {
+      total: timestamps.completed - timestamps.queued,
+      stage1A: timestamps.stage1AEnd && timestamps.stage1AStart ? timestamps.stage1AEnd - timestamps.stage1AStart : null,
+      stage2: timestamps.stage2End && timestamps.stage2Start ? timestamps.stage2End - timestamps.stage2Start : null
+    }
   });
 
   // ===== POST-COMPLETION OPERATIONS (BEST-EFFORT, NON-BLOCKING) =====
