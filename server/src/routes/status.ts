@@ -13,6 +13,8 @@ type UiStatus = "ok" | "warning" | "error";
 type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
 type NormalizedState = "queued" | "processing" | "completed" | "failed" | "unknown";
 
+const STUCK_TERMINAL_MS = 10 * 60 * 1000; // 10 minutes
+
 type StatusItem = {
   id: string;
   state: NormalizedState;               // canonical pipeline status
@@ -156,12 +158,14 @@ export function statusRouter() {
 
         const queueStatus = normalizeStateToQueueStatus(state);
         const localStatusRaw: string | null = local.status || (rv && rv.status) || null;
+        const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
+        const allowLocalImageUrl = localCompleted || queueCompleted || queueFailed;
 
         // Resolve URLs from BullMQ returnvalue first, then Redis job record
         const resultUrl: string | null =
           (rv && rv.resultUrl) ||
           local.resultUrl ||
-          local.imageUrl ||
+          (allowLocalImageUrl ? local.imageUrl : null) ||
           null;
 
         const stateFromLocal = normalizePipelineState(localStatusRaw);
@@ -176,7 +180,6 @@ export function statusRouter() {
         if (queueFailed) pipelineStatus = "failed";
         else if (queueCompleted) pipelineStatus = "completed";
         else if (localCompleted) pipelineStatus = "completed";  // ✅ Check completion flag
-        else if (resultUrl) pipelineStatus = "completed";
         else if (stateFromLocal !== "unknown") pipelineStatus = stateFromLocal;
         else pipelineStatus = stateFromQueue;
 
@@ -276,12 +279,33 @@ export function statusRouter() {
         if (requestedStage2 === false && (stage2Present || String(finalStageRaw || "").toLowerCase() === "2")) {
           warningSet.add("Stage 2 output present but not requested.");
         }
+        const stage1bPresent = !!(stageUrls.stage1B || stageUrls['1B']);
+        const stage1aPresent = !!(stageUrls.stage1A || stageUrls['1A']);
+        const hasOutputs = !!(stage2Present || stage1bPresent || stage1aPresent || resultUrl);
+        const updatedAtRaw = local.updatedAt || local.updated_at || null;
+        const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
+        const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued";
+        const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
+        if (isStuck) {
+          pipelineStatus = "failed";
+          warningSet.add("Processing took longer than expected. The best available result is shown.");
+        }
+        if (pipelineStatus === "failed" && hasOutputs) {
+          if ((blockedStage === "2" || requestedStage2 === true) && !stage2Present) {
+            warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+          } else if (stage1bPresent) {
+            warningSet.add("We couldn’t complete the full enhancement for this image. The best available version is shown.");
+          } else if (stage1aPresent) {
+            warningSet.add("Enhanced copy of the original is available.");
+          } else {
+            warningSet.add("The best available result is shown.");
+          }
+        }
         const warnings = Array.from(warningSet);
 
         const hardFailRaw = validationRaw?.hardFail === true;
         const hardFail = hardFailRaw;
 
-        const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
         let uiStatus: UiStatus = "ok";
 
         if (blockedStage && hasOutputs) uiStatus = "warning";
@@ -445,10 +469,12 @@ export function statusRouter() {
       const queueStatus = normalizeStateToQueueStatus(state);
       const stateNormalized = normalizeQueueState(state);
       const local = await getJob(jobId) || ({} as any);
+      const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
+      const allowLocalImageUrl = localCompleted || stateNormalized === "completed" || stateNormalized === "failed";
       const resultUrl: string | null =
         (rv && rv.resultUrl) ||
         local.resultUrl ||
-        local.imageUrl ||
+        (allowLocalImageUrl ? local.imageUrl : null) ||
         null;
       const originalUrl: string | null =
         (rv && rv.originalUrl) || local.originalUrl || null;
@@ -483,24 +509,42 @@ export function statusRouter() {
 
       const warningSet = new Set<string>(Array.isArray(unified?.warnings) ? unified.warnings : (Array.isArray(validationRaw?.warnings) ? validationRaw.warnings : []));
       if (validationNote) warningSet.add(validationNote);
-      const warnings: string[] = Array.from(warningSet);
       const hardFail = !!validationRaw?.hardFail || !!unified?.hardFail || !!local?.hardFail;
-      const hasOutputs = !!(stageUrls.stage2 || stageUrls.stage1B || stageUrls.stage1A || resultUrl);
+      const stage2Present = !!(stageUrls.stage2 || stageUrls['2']);
+      const stage1bPresent = !!(stageUrls.stage1B || stageUrls['1B']);
+      const stage1aPresent = !!(stageUrls.stage1A || stageUrls['1A']);
+      const hasOutputs = !!(stage2Present || stage1bPresent || stage1aPresent || resultUrl);
+      const updatedAtRaw = local.updatedAt || local.updated_at || null;
+      const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
+      let stateOut = normalizeQueueState(state);
+      if (hardFail && !hasOutputs) stateOut = "failed";
+      if (hardFail && hasOutputs) stateOut = "completed";
+      // ✅ Override with completion flag if present
+      if (localCompleted) stateOut = "completed";
+      const isProcessingLike = stateOut === "processing" || stateOut === "queued";
+      const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
+      if (isStuck) {
+        stateOut = "failed";
+        warningSet.add("Processing took longer than expected. The best available result is shown.");
+      }
+      if (stateOut === "failed" && hasOutputs) {
+        if (blockedStage === "2" && !stage2Present) {
+          warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+        } else if (stage1bPresent) {
+          warningSet.add("We couldn’t complete the full enhancement for this image. The best available version is shown.");
+        } else if (stage1aPresent) {
+          warningSet.add("Enhanced copy of the original is available.");
+        } else {
+          warningSet.add("The best available result is shown.");
+        }
+      }
+      const warnings: string[] = Array.from(warningSet);
 
       let uiStatus: UiStatus = "ok";
       if (blockedStage && hasOutputs) uiStatus = "warning";
       else if (hardFail && !hasOutputs) uiStatus = "error";
       else if (hardFail && hasOutputs) uiStatus = "warning";
       else if (warnings.length) uiStatus = "warning";
-
-      // ✅ Check for explicit completion flags in local record
-      const localCompleted = local.completed === true || local.success === true;
-
-      let stateOut = normalizeQueueState(state);
-      if (hardFail && !hasOutputs) stateOut = "failed";
-      if (hardFail && hasOutputs) stateOut = "completed";
-      // ✅ Override with completion flag if present
-      if (localCompleted) stateOut = "completed";
 
       const success =
         stateOut === "completed" && typeof resultUrl === "string";

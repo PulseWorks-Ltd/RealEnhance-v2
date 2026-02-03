@@ -4638,6 +4638,11 @@ export default function BatchProcessor() {
                                   <StatusBadge status="queued" />
                                 )}
                               </div>
+                              {warningCount > 0 && (
+                                <p className="mt-1 text-xs text-amber-700">
+                                  {warnings[0]}
+                                </p>
+                              )}
 
                               <div className="mt-2 space-y-1.5">
                                 <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedStage === '2' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
