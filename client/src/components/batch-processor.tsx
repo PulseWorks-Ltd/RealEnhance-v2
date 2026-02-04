@@ -196,6 +196,125 @@ function withVersion(url?: string | null, version?: string | number): string | n
   return `${url}${sep}v=${version}`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIX 2: Filter backend warnings and errors for user-friendly display
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Technical warnings that should NOT be shown to users (backend diagnostics only)
+const TECHNICAL_WARNINGS = [
+  'dimension_normalized',
+  'dimension_normalised', // UK spelling
+  'strictRetry',
+  'fallbackUsed',
+  'stage1BStructuralSafe',
+  'stage2Skipped',
+  'validationRisk',
+  'stage2ValidationRisk',
+  'localBlockingEnabled',
+  'geminiConfirmationEnabled',
+  'retryAttempt',
+  'preprocessed',
+  'canonical',
+  'metadata_updated',
+];
+
+// User-friendly translations for technical messages
+const USER_FRIENDLY_MESSAGES: Record<string, string> = {
+  'stage2Blocked': 'Virtual staging was not applied due to room layout or quality concerns',
+  'complianceBlocked': 'Image could not be processed due to content policy',
+  'timeout': 'Processing took longer than expected - using best available result',
+  'Stage 2 blocked': 'Virtual staging was not applied due to room layout concerns',
+  'validation failed': 'Image quality validation prevented staging - best available result returned',
+  'structural validation failed': 'Room structure validation prevented staging',
+};
+
+/**
+ * Filter warnings to remove backend diagnostic messages and translate technical
+ * messages to user-friendly versions.
+ */
+function filterWarningsForDisplay(warnings: string[]): string[] {
+  if (!Array.isArray(warnings)) return [];
+  
+  return warnings
+    .filter(w => {
+      if (!w || typeof w !== 'string') return false;
+      // Filter out technical backend warnings
+      const warningLower = w.toLowerCase();
+      return !TECHNICAL_WARNINGS.some(tech => warningLower.includes(tech.toLowerCase()));
+    })
+    .map(w => {
+      // Translate technical messages to user-friendly versions
+      const warningLower = w.toLowerCase();
+      for (const [key, friendlyMsg] of Object.entries(USER_FRIENDLY_MESSAGES)) {
+        if (warningLower.includes(key.toLowerCase())) {
+          return friendlyMsg;
+        }
+      }
+      return w;
+    })
+    .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
+}
+
+/**
+ * FIX 3: Only show error messages for terminal failure states, not transient errors
+ */
+function shouldShowError(result: any): boolean {
+  if (!result) return false;
+  
+  const status = String(result?.status || '').toLowerCase();
+  const errorMessage = result?.error || result?.errorMessage || result?.message;
+  
+  // No error message to show
+  if (!errorMessage) return false;
+  
+  // Don't show errors if job completed successfully
+  if (status === 'completed' || status === 'complete') {
+    return false;
+  }
+  
+  // Don't show errors if job is still actively processing
+  if (status === 'processing' && (result?.progress || 0) > 0) {
+    return false;
+  }
+  
+  // Don't show errors for queued jobs
+  if (status === 'queued' || status === 'waiting') {
+    return false;
+  }
+  
+  // Only show errors for terminal failure states
+  return status === 'failed' || status === 'cancelled' || status === 'timeout';
+}
+
+/**
+ * Get user-friendly error message for display
+ */
+function getDisplayError(result: any): string | null {
+  if (!shouldShowError(result)) return null;
+  
+  const rawError = result?.error || result?.errorMessage || result?.message || 'Processing failed';
+  
+  // Translate technical errors to user-friendly messages
+  const errorLower = String(rawError).toLowerCase();
+  for (const [key, friendlyMsg] of Object.entries(USER_FRIENDLY_MESSAGES)) {
+    if (errorLower.includes(key.toLowerCase())) {
+      return friendlyMsg;
+    }
+  }
+  
+  // Check if it's a technical error message (contains technical jargon)
+  const technicalTerms = ['redis', 'bullmq', 'worker', 'gemini api', 'timeout', 'updatejob', 'metadata'];
+  const isTechnical = technicalTerms.some(term => errorLower.includes(term));
+  
+  if (isTechnical) {
+    return 'Image processing encountered an issue. Please retry or contact support.';
+  }
+  
+  return rawError;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // Batch job persistence interfaces and functions
 interface PersistedFileMetadata {
   name: string;
@@ -1794,8 +1913,10 @@ export default function BatchProcessor() {
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
           const fallbackStage = (validation as any)?.fallbackStage || it?.fallbackStage || it?.meta?.fallbackStage || null;
           const validationNote = (validation as any)?.note || it?.validationNote || it?.meta?.validationNote || null;
-          const warnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
-          if (validationNote) warnings.push(validationNote);
+          const rawWarnings = Array.isArray(validation?.warnings) ? (validation.warnings as string[]) : [];
+          if (validationNote) rawWarnings.push(validationNote);
+          // FIX 2: Filter technical backend warnings for user display
+          const warnings = filterWarningsForDisplay(rawWarnings);
           let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
           const stage2UrlRaw = stageUrls?.['2'] || stageUrls?.stage2 || null;
           const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1b'] || null;
@@ -1927,8 +2048,9 @@ export default function BatchProcessor() {
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
+                // FIX 3: Only show errors for terminal failure states
                 error: (status === "failed" || (it.errorCode && isTerminalFlag))
-                  ? (it.error || it.message || it.errorMessage || existing.error || "Processing failed")
+                  ? getDisplayError({ status, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
                   : (uiOverrideFailed ? (existing.error || "Enhanced copy of the original is available.") : existing.error),
                 errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
                 blockedStage: blockedStage || existing.blockedStage,
@@ -1971,18 +2093,6 @@ export default function BatchProcessor() {
                 filename,
               });
             }
-
-            if ((status === "failed" || normalizedStatus === "failed" || normalizedStatus === "cancelled" || (it.errorCode && isTerminalFlag)) && !processedSetRef.current.has(idx)) {
-              processedSetRef.current.add(idx);
-              queueRef.current.push({
-                index: idx,
-                result: null,
-                error: it.error || it.message || it.errorMessage || "Processing failed",
-                jobId: key,
-                imageId,
-                filename,
-              });
-            }
           } else {
             const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
             const missingKey = String(resolvedJobKey || polledId || parentJobId || imageId || 'unknown');
@@ -2006,7 +2116,7 @@ export default function BatchProcessor() {
                 }
               });
             }
-            if (!isTerminalFlag && !isTerminalNormalized) {
+            if (!isTerminalFlag && !TERMINAL_STATUSES.has(status)) {
               hasUnmappedNonTerminal = true;
             }
           }
@@ -4494,7 +4604,9 @@ export default function BatchProcessor() {
                           : isProcessing
                           ? "Processing..."
                           : aiSteps[i] || "Waiting in queue...";
-                        const warnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
+                        // FIX 2: Filter technical backend warnings for user display
+                        const rawWarnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
+                        const warnings = filterWarningsForDisplay(rawWarnings);
                         const warningCount = warnings.length;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
