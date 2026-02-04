@@ -37,6 +37,7 @@ import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import adminResetRouter from "./routes/adminReset.js";
 import trialRouter from "./routes/trial.js";
+import batchSubmitRouter from "./routes/batch-submit.js";
 import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
@@ -188,6 +189,8 @@ async function main() {
   app.use("/api/admin", adminAnalysisRouter);
   // Promo trial onboarding
   app.use("/api/trial", trialRouter());
+  // Batch submission with individual job queueing
+  app.use("/api/batch", batchSubmitRouter);
   // One-time admin data reset (heavily guarded)
   app.use(adminResetRouter);
 

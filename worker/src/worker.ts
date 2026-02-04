@@ -59,6 +59,7 @@ import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
+import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CRITICAL: Global error handlers to prevent silent crashes (bus errors)
@@ -123,6 +124,9 @@ process.on('SIGINT', () => {
 
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
+  // Start memory tracking for this job
+  startMemoryTracking(payload.jobId);
+  
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   if ((payload as any).retryType === "manual_retry") {
     nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
@@ -330,6 +334,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const pub2Url = pub2.url;
 
       stage2Success = true;
+      
+      // Track memory after Stage 2
+      updatePeakMemory(payload.jobId);
+      if (isMemoryCritical()) {
+        nLog(`[MEMORY] WARNING: Memory usage critical after Stage 2 - forcing garbage collection`);
+        forceGC();
+      }
 
       timings.totalMs = Date.now() - t0;
 
@@ -744,6 +755,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     roomType: payload.options.roomType,
   });
   nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
+  
+  // Track memory after Stage 1A
+  updatePeakMemory(payload.jobId);
+  if (isMemoryCritical()) {
+    nLog(`[MEMORY] WARNING: Memory usage critical after Stage 1A - forcing garbage collection`);
+    forceGC();
+  }
   timings.stage1AMs = Date.now() - t1A;
   timestamps.stage1AEnd = Date.now(); // FIX 6: Track Stage 1A completion
   
@@ -975,6 +993,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     timings.stage1BMs = Date.now() - t1B;
     timestamps.stage1BEnd = Date.now(); // FIX 6: Track Stage 1B completion
+    
+    // Track memory after Stage 1B
+    updatePeakMemory(payload.jobId);
+    if (isMemoryCritical()) {
+      nLog(`[MEMORY] WARNING: Memory usage critical after Stage 1B - forcing garbage collection`);
+      forceGC();
+    }
+    
     // ✅ FIX 3: Add updatedAt timestamp for stuck detection
     const now1B = new Date().toISOString();
     updateJob(payload.jobId, { 
@@ -1534,6 +1560,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stage2CandidatePath === path1B && pub1BUrl) {
       pub2Url = pub1BUrl;
       stage2Success = true;
+      
+      // Track memory after Stage 2 (reused path)
+      updatePeakMemory(payload.jobId);
+      if (isMemoryCritical()) {
+        nLog(`[MEMORY] WARNING: Memory usage critical after Stage 2 (reused) - forcing garbage collection`);
+        forceGC();
+      }
+      
       updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
       vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url} (reused 1B)`);
     } else {
@@ -1547,6 +1581,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const pub2 = await publishImage(stage2CandidatePath);
         pub2Url = pub2.url;
         stage2Success = true;
+        
+        // Track memory after Stage 2 (new path)
+        updatePeakMemory(payload.jobId);
+        if (isMemoryCritical()) {
+          nLog(`[MEMORY] WARNING: Memory usage critical after Stage 2 (new) - forcing garbage collection`);
+          forceGC();
+        }
+        
         if (v2) {
           try {
             setVersionPublicUrl(payload.imageId, v2.versionId, pub2.url);
@@ -2121,6 +2163,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[WORKER] resultUrl: ${returnValue.resultUrl ? (String(returnValue.resultUrl).substring(0, 80) + '...') : 'NULL'}\n`);
   nLog(`[WORKER] stageUrls.2: ${returnValue.stageUrls["2"] ? (String(returnValue.stageUrls["2"]).substring(0, 80) + '...') : 'NULL'}\n`);
   nLog('═══════════════════════════════════════════════\n\n');
+  
+  // End memory tracking and log memory usage for this job
+  const memoryReport = endMemoryTracking(payload.jobId);
+  nLog(`[MEMORY] Job ${payload.jobId} completed - ${memoryReport}`);
   
   return returnValue;
 }
