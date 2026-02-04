@@ -249,22 +249,13 @@ export async function runStage1A(
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
   if (USE_STABILITY_STAGE1A) {
-    let forceGemini = false;
-
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
       const quality = await runLowQualityDetector(sharpOutputPath);
-
-      if (quality.meanBrightness < GEMINI_TRIGGER_THRESHOLDS.MIN_BRIGHTNESS)
-        forceGemini = true;
-
-      if (quality.noiseStdDev > GEMINI_TRIGGER_THRESHOLDS.MAX_NOISE_STDDEV)
-        forceGemini = true;
-
-      if (quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE)
-        forceGemini = true;
-
-      if (quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE)
-        forceGemini = true;
+      const forceGemini =
+        quality.meanBrightness < GEMINI_TRIGGER_THRESHOLDS.MIN_BRIGHTNESS ||
+        quality.noiseStdDev > GEMINI_TRIGGER_THRESHOLDS.MAX_NOISE_STDDEV ||
+        quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE ||
+        quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE;
 
       console.log("[stage1A] Quality Scan:", {
         ...quality,
@@ -276,23 +267,18 @@ export async function runStage1A(
 
     let primary1AImage: string;
 
-    if (forceGemini) {
-      console.warn("[stage1A] ⚠️ Low quality detected — forcing Gemini as primary");
+    console.log("[stage1A] ✅ Using Stability primary (Gemini fallback on error)");
+    try {
+      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
+      const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
+      await sharp(stabilityJpeg)
+        .webp({ quality: 95 })
+        .toFile(stabilityWebp);
+      primary1AImage = stabilityWebp;
+    } catch (err) {
+      console.error("[stage1A] ❌ Stability API failed:", err);
+      console.warn("[stage1A] 🔁 Falling back to Gemini...");
       primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
-    } else {
-      console.log("[stage1A] ✅ Quality acceptable — using Stability primary");
-      try {
-        const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
-        const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
-        await sharp(stabilityJpeg)
-          .webp({ quality: 95 })
-          .toFile(stabilityWebp);
-        primary1AImage = stabilityWebp;
-      } catch (err) {
-        console.error("[stage1A] ❌ Stability API failed:", err);
-        console.warn("[stage1A] 🔁 Falling back to Gemini...");
-        primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
-      }
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
