@@ -16,6 +16,10 @@ import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
 // Optional quality gate: when enabled, low-quality images skip Stability and go straight to Gemini
 const USE_STABILITY_STAGE1A_QUALITY_GATE = process.env.USE_STABILITY_STAGE1A_QUALITY_GATE === "1";
+// Optional hard override to force Gemini
+const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
+// Optional strict diff gate: reroute to Gemini on content diff failure
+const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -248,7 +252,7 @@ export async function runStage1A(
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
-  if (USE_STABILITY_STAGE1A) {
+  if (USE_STABILITY_STAGE1A && !FORCE_GEMINI_STAGE1A) {
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
       const quality = await runLowQualityDetector(sharpOutputPath);
       const forceGemini =
@@ -261,6 +265,12 @@ export async function runStage1A(
         ...quality,
         forceGemini
       });
+
+      if (forceGemini) {
+        console.warn("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
+        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
+        return geminiOutputPath;
+      }
     } else {
       console.log("[stage1A] Quality gate disabled — attempting Stability first");
     }
@@ -287,8 +297,8 @@ export async function runStage1A(
       primary1AImage
     );
 
-    if (!diffResult.passed) {
-      console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini");
+    if (!diffResult.passed && STAGE1A_STRICT_DIFF) {
+      console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
         const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
@@ -317,6 +327,8 @@ export async function runStage1A(
         console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
         return finalOutputPath;
       }
+    } else if (!diffResult.passed) {
+      console.warn("[stage1A] ⚠️ Content diff failed but strict mode disabled — keeping Stability output");
     }
 
     console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");

@@ -74,6 +74,15 @@ export async function detectWindowsLocal(imagePath: string): Promise<WindowDetec
   const H = info.height;
   const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 
+  return detectWindowsFromGrayBuffer(src, W, H);
+}
+
+export function detectWindowsFromGrayBuffer(
+  src: Uint8Array,
+  W: number,
+  H: number
+): WindowDetectionLocal {
+
   // Compute global threshold from percentile (bright windows)
   const hist = computeHistogram(src);
   const pct = Number(process.env.WINDOW_BRIGHT_THRESH_PCTL || 0.7);

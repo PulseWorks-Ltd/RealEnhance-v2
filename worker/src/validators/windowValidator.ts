@@ -1,10 +1,18 @@
-import { detectWindowsLocal, iouMasks, centroidFromMask } from "./local-windows";
+import { detectWindowsLocal, detectWindowsFromGrayBuffer, iouMasks, centroidFromMask } from "./local-windows";
 import sharp from "sharp";
 import { StructuralValidationResult } from "./types";
 
-export async function validateWindows(basePath: string, candidatePath: string): Promise<StructuralValidationResult> {
-  const base = await detectWindowsLocal(basePath);
-  const cand = await detectWindowsLocal(candidatePath);
+export async function validateWindows(
+  basePath: string,
+  candidatePath: string,
+  buffers?: { baseGray: Uint8Array; candGray: Uint8Array; width: number; height: number }
+): Promise<StructuralValidationResult> {
+  const base = buffers
+    ? detectWindowsFromGrayBuffer(buffers.baseGray, buffers.width, buffers.height)
+    : await detectWindowsLocal(basePath);
+  const cand = buffers
+    ? detectWindowsFromGrayBuffer(buffers.candGray, buffers.width, buffers.height)
+    : await detectWindowsLocal(candidatePath);
   if (base.width !== cand.width || base.height !== cand.height) {
     // Resize candidate to base size for fair comparison
     const tmp = await sharp(candidatePath).resize(base.width, base.height, { fit: "fill" }).toBuffer();
@@ -47,12 +55,19 @@ export async function validateWindows(basePath: string, candidatePath: string): 
       return { ok: false, reason: "window_position_change" };
     }
     // Occlusion estimate: brightness drop inside base window region
-    const [a, b] = await Promise.all([
-      sharp(basePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-      sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-    ]);
-    const aBuf = new Uint8Array(a.data.buffer, a.data.byteOffset, a.data.byteLength);
-    const bBuf = new Uint8Array(b.data.buffer, b.data.byteOffset, b.data.byteLength);
+    let aBuf: Uint8Array;
+    let bBuf: Uint8Array;
+    if (buffers) {
+      aBuf = buffers.baseGray;
+      bBuf = buffers.candGray;
+    } else {
+      const [a, b] = await Promise.all([
+        sharp(basePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+        sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
+      ]);
+      aBuf = new Uint8Array(a.data.buffer, a.data.byteOffset, a.data.byteLength);
+      bBuf = new Uint8Array(b.data.buffer, b.data.byteOffset, b.data.byteLength);
+    }
     let oSum = 0, eSum = 0, cnt = 0;
     for (let i = 0; i < w.mask.length; i++) if (w.mask[i]) { oSum += aBuf[i]; eSum += bBuf[i]; cnt++; }
     const drop = (cnt && oSum > 0) ? Math.max(0, (oSum - eSum) / oSum) : 0;

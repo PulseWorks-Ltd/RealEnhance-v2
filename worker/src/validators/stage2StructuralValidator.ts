@@ -118,6 +118,7 @@ export async function validateStage2Structural(
   canonicalBasePath: string,
   stage2Path: string,
   masks: { structuralMask: StructuralMask },
+  buffers?: { baseGray: Uint8Array; candGray: Uint8Array; width: number; height: number }
 ): Promise<Stage2ValidationResult> {
   const config = loadStageAwareConfig();
   const debug: Stage2ValidationResult["debug"] = {};
@@ -211,18 +212,25 @@ export async function validateStage2Structural(
       structuralIoUSkipReason = "dimension_mismatch";
     } else {
       // Compute edge maps for both images
-      const { data: baseGray } = await sharp(baselinePath)
-        .greyscale()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+      let baseGrayArr: Uint8Array;
+      let candGrayArr: Uint8Array;
+      if (buffers && buffers.width === baseW && buffers.height === baseH) {
+        baseGrayArr = buffers.baseGray;
+        candGrayArr = buffers.candGray;
+      } else {
+        const { data: baseGray } = await sharp(baselinePath)
+          .greyscale()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
 
-      const { data: candGray } = await sharp(candidatePath)
-        .greyscale()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+        const { data: candGray } = await sharp(candidatePath)
+          .greyscale()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
 
-      const baseGrayArr = new Uint8Array(baseGray.buffer, baseGray.byteOffset, baseGray.byteLength);
-      const candGrayArr = new Uint8Array(candGray.buffer, candGray.byteOffset, candGray.byteLength);
+        baseGrayArr = new Uint8Array(baseGray.buffer, baseGray.byteOffset, baseGray.byteLength);
+        candGrayArr = new Uint8Array(candGray.buffer, candGray.byteOffset, candGray.byteLength);
+      }
 
       // Sobel edge threshold
       const edgeThreshold = Number(process.env.STAGE2_STRUCT_EDGE_THRESHOLD || 50);

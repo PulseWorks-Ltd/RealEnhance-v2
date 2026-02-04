@@ -32,6 +32,18 @@ function iou(a: Uint8Array, b: Uint8Array): number {
   return uni > 0 ? inter / uni : 1;
 }
 
+export function runGlobalEdgeMetricsFromBuffers(
+  baseBlur: Uint8Array,
+  candBlur: Uint8Array,
+  width: number,
+  height: number,
+  threshold: number
+): { edgeIoU: number } {
+  const aEdge = sobelBinary(baseBlur, width, height, threshold);
+  const bEdge = sobelBinary(candBlur, width, height, threshold);
+  return { edgeIoU: iou(aEdge, bEdge) };
+}
+
 export async function runGlobalEdgeMetrics(basePath: string, candidatePath: string): Promise<{ edgeIoU: number }> {
   // Clamp blur to avoid sharp sigma=0 errors
   let sigma = Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8);
@@ -50,7 +62,5 @@ export async function runGlobalEdgeMetrics(basePath: string, candidatePath: stri
   const width = a.info.width; const height = a.info.height;
   const aBuf = new Uint8Array(aData.buffer, aData.byteOffset, aData.byteLength);
   const bBuf = new Uint8Array(bData as any);
-  const aEdge = sobelBinary(aBuf, width, height, thr);
-  const bEdge = sobelBinary(bBuf, width, height, thr);
-  return { edgeIoU: iou(aEdge, bEdge) };
+  return runGlobalEdgeMetricsFromBuffers(aBuf, bBuf, width, height, thr);
 }

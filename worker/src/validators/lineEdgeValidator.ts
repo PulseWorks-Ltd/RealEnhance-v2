@@ -78,6 +78,42 @@ async function extractEdgeMap(imagePath: string): Promise<{ edgeData: Buffer; wi
   }
 }
 
+function extractEdgeMapFromGrayBuffer(
+  data: Uint8Array,
+  width: number,
+  height: number
+): { edgeData: Buffer; width: number; height: number; edgeCount: number } {
+  const edgeData = Buffer.alloc(width * height);
+  let edgeCount = 0;
+  const EDGE_THRESHOLD = 30;
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = y * width + x;
+
+      const gx =
+        -1 * data[(y - 1) * width + (x - 1)] + 1 * data[(y - 1) * width + (x + 1)] +
+        -2 * data[y * width + (x - 1)] + 2 * data[y * width + (x + 1)] +
+        -1 * data[(y + 1) * width + (x - 1)] + 1 * data[(y + 1) * width + (x + 1)];
+
+      const gy =
+        -1 * data[(y - 1) * width + (x - 1)] - 2 * data[(y - 1) * width + x] - 1 * data[(y - 1) * width + (x + 1)] +
+        1 * data[(y + 1) * width + (x - 1)] + 2 * data[(y + 1) * width + x] + 1 * data[(y + 1) * width + (x + 1)];
+
+      const magnitude = Math.sqrt(gx * gx + gy * gy);
+
+      if (magnitude > EDGE_THRESHOLD) {
+        edgeData[idx] = 255;
+        edgeCount++;
+      } else {
+        edgeData[idx] = 0;
+      }
+    }
+  }
+
+  return { edgeData, width, height, edgeCount };
+}
+
 /**
  * Detect vertical and horizontal lines by analyzing edge gradients
  */
@@ -161,15 +197,20 @@ export async function validateLineStructure(options: {
   originalPath: string;
   enhancedPath: string;
   sensitivity?: number;
+  buffers?: { baseSmall: Uint8Array; candSmall: Uint8Array; width: number; height: number };
 }): Promise<LineEdgeValidationResult> {
-  const { originalPath, enhancedPath, sensitivity = 0.75 } = options;
+  const { originalPath, enhancedPath, sensitivity = 0.75, buffers } = options;
 
   const startTime = Date.now();
 
   try {
     // Extract edge maps from both images
-    const originalEdges = await extractEdgeMap(originalPath);
-    const enhancedEdges = await extractEdgeMap(enhancedPath);
+    const originalEdges = buffers
+      ? extractEdgeMapFromGrayBuffer(buffers.baseSmall, buffers.width, buffers.height)
+      : await extractEdgeMap(originalPath);
+    const enhancedEdges = buffers
+      ? extractEdgeMapFromGrayBuffer(buffers.candSmall, buffers.width, buffers.height)
+      : await extractEdgeMap(enhancedPath);
 
     // Detect structural lines
     const originalLines = detectStructuralLines(

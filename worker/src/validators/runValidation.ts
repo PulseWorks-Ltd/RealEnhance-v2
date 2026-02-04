@@ -14,7 +14,7 @@
 
 import { validateWindows } from "./windowValidator";
 import { validateWallStructure } from "./wallValidator";
-import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
+import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalStructuralValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
@@ -24,6 +24,7 @@ import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
+import { buildValidationBuffers, type ValidationBuffers } from "./validationBuffers";
 
 /**
  * Result from a single validator
@@ -263,6 +264,17 @@ export async function runUnifiedValidation(
   const results: Record<string, ValidatorResult> = {};
   const reasons: string[] = [];
 
+  let buffers: ValidationBuffers | null = null;
+  try {
+    buffers = await buildValidationBuffers(originalPath, enhancedPath, {
+      blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
+      smallSize: 512,
+    });
+  } catch (err) {
+    console.warn("[unified-validator] Failed to build shared buffers, falling back to per-validator Sharp calls", err);
+    buffers = null;
+  }
+
   // ===== SOFT GEOMETRY DETECTION =====
   // We'll collect metadata as we run validators, then determine soft/strict mode
   let windowCount = 0;
@@ -273,7 +285,11 @@ export async function runUnifiedValidation(
   // Critical for real estate: windows must not be blocked or altered
   if (stage === "1B" || stage === "2") {
     try {
-      const windowResult = await validateWindows(originalPath, enhancedPath);
+      const windowResult = await validateWindows(
+        originalPath,
+        enhancedPath,
+        buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
+      );
 
       // Capture window count for soft geometry detection
       if ((windowResult as any).windowCount !== undefined) {
@@ -334,7 +350,15 @@ export async function runUnifiedValidation(
   // ===== 3. GLOBAL EDGE IoU =====
   // Overall geometry consistency check
   try {
-    const edgeResult = await runGlobalEdgeMetrics(originalPath, enhancedPath);
+    const edgeResult = buffers
+      ? runGlobalEdgeMetricsFromBuffers(
+          buffers.baseBlur,
+          buffers.candBlur,
+          buffers.width,
+          buffers.height,
+          Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35)
+        )
+      : await runGlobalEdgeMetrics(originalPath, enhancedPath);
     const edgeIoU = edgeResult.edgeIoU;
 
     // Thresholds by stage
@@ -367,9 +391,12 @@ export async function runUnifiedValidation(
   if (stage === "2") {
     try {
       const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath);
-      const structResult = await validateStage2Structural(originalPath, enhancedPath, {
-        structuralMask: mask,
-      });
+      const structResult = await validateStage2Structural(
+        originalPath,
+        enhancedPath,
+        { structuralMask: mask },
+        buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
+      );
 
       const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
 
@@ -484,6 +511,14 @@ export async function runUnifiedValidation(
       originalPath,
       enhancedPath,
       sensitivity: 0.70, // 70% similarity threshold
+      buffers: buffers
+        ? {
+            baseSmall: buffers.baseSmall,
+            candSmall: buffers.candSmall,
+            width: buffers.smallWidth,
+            height: buffers.smallHeight,
+          }
+        : undefined,
     });
 
     // Capture line counts for soft geometry detection
