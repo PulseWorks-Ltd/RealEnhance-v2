@@ -60,6 +60,43 @@ import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRITICAL: Global error handlers to prevent silent crashes (bus errors)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+process.on('uncaughtException', (error, origin) => {
+  console.error('[FATAL] Uncaught Exception:', {
+    error: error.message,
+    stack: error.stack,
+    origin
+  });
+  // Log but don't exit immediately - let worker finish current job
+  setTimeout(() => {
+    console.error('[FATAL] Exiting after uncaught exception');
+    process.exit(1);
+  }, 5000);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Promise Rejection:', {
+    reason,
+    promise
+  });
+  // Don't exit - just log for debugging
+});
+
+process.on('SIGTERM', () => {
+  console.log('[WORKER] SIGTERM received, graceful shutdown...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('[WORKER] SIGINT received, graceful shutdown...');
+  process.exit(0);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
  * OPTIMIZED GEMINI API CALL STRATEGY
  * ==================================
@@ -1162,14 +1199,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
     // FIX 6: Track failure timestamp
     timestamps.stage2End = Date.now();
-    updateJob(payload.jobId, {
-      status: "failed",
-      errorMessage: errMsg,
-      error: errMsg,
-      meta: { ...sceneMeta },
-      'timestamps.stage2End': timestamps.stage2End
-    });
-    return;
+    try {
+      await updateJob(payload.jobId, {
+        status: "failed",
+        errorMessage: errMsg,
+        error: errMsg,
+        meta: { ...sceneMeta },
+        'timestamps.stage2End': timestamps.stage2End
+      });
+    } catch (updateErr) {
+      nLog(`[worker] Failed to update job status in Redis: ${updateErr}`);
+    }
+    // CRITICAL: Throw error so BullMQ marks job as failed
+    throw new Error(`Stage 2 processing failed: ${errMsg}`);
   }
 
   // Fallback: if full removal (stage-ready) exhausted retries with validation risk, try light declutter then rerun Stage 2
@@ -2367,6 +2409,10 @@ const worker = new Worker(
     nLog("[worker] failed to initialize", e);
   }
 })();
+
+worker.on("error", (err) => {
+  nLog(`[worker] ERROR event:`, err);
+});
 
 worker.on("completed", (job, result: any) => {
   const url =

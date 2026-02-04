@@ -11,7 +11,24 @@ import {
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });
-redisClient.connect().catch(() => {});
+
+// CRITICAL: Handle Redis connection errors properly
+redisClient.on('error', (err) => {
+  console.error('[Redis] Connection error:', err);
+});
+
+redisClient.on('reconnecting', () => {
+  console.log('[Redis] Reconnecting...');
+});
+
+redisClient.on('ready', () => {
+  console.log('[Redis] Connection ready');
+});
+
+redisClient.connect().catch((err) => {
+  console.error('[Redis] Failed to connect:', err);
+  // Don't exit - allow retry
+});
 
 // Update job record in Redis
 export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
@@ -21,7 +38,11 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
   try {
     const val = await redisClient.get(key);
     if (val) rec = JSON.parse(val);
-  } catch {}
+  } catch (readErr) {
+    console.error(`[updateJob] Failed to read job ${jobId}:`, readErr);
+    // Continue with empty record
+  }
+  
   // If caller is updating stageUrls, merge with existing stageUrls instead of overwriting
   if (patch && typeof patch === 'object' && patch.stageUrls) {
     try {
@@ -33,7 +54,9 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
           ...patch.stageUrls,
         },
       };
-    } catch {}
+    } catch (mergeErr) {
+      console.error(`[updateJob] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
+    }
   }
 
   rec = {
@@ -41,7 +64,14 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     ...patch,
     updatedAt: new Date().toISOString(),
   };
-  await redisClient.set(key, JSON.stringify(rec));
+  
+  // CRITICAL: Don't silently fail - throw if Redis write fails
+  try {
+    await redisClient.set(key, JSON.stringify(rec));
+  } catch (writeErr) {
+    console.error(`[updateJob] Failed to write job ${jobId} to Redis:`, writeErr);
+    throw new Error(`Redis write failed for job ${jobId}: ${writeErr}`);
+  }
 }
 
 // Get job record from Redis
