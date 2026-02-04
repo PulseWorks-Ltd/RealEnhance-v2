@@ -14,6 +14,8 @@ import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
+// Optional quality gate: when enabled, low-quality images skip Stability and go straight to Gemini
+const USE_STABILITY_STAGE1A_QUALITY_GATE = process.env.USE_STABILITY_STAGE1A_QUALITY_GATE === "1";
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -247,26 +249,30 @@ export async function runStage1A(
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
   if (USE_STABILITY_STAGE1A) {
-    const quality = await runLowQualityDetector(sharpOutputPath);
-
     let forceGemini = false;
 
-    if (quality.meanBrightness < GEMINI_TRIGGER_THRESHOLDS.MIN_BRIGHTNESS)
-      forceGemini = true;
+    if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
+      const quality = await runLowQualityDetector(sharpOutputPath);
 
-    if (quality.noiseStdDev > GEMINI_TRIGGER_THRESHOLDS.MAX_NOISE_STDDEV)
-      forceGemini = true;
+      if (quality.meanBrightness < GEMINI_TRIGGER_THRESHOLDS.MIN_BRIGHTNESS)
+        forceGemini = true;
 
-    if (quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE)
-      forceGemini = true;
+      if (quality.noiseStdDev > GEMINI_TRIGGER_THRESHOLDS.MAX_NOISE_STDDEV)
+        forceGemini = true;
 
-    if (quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE)
-      forceGemini = true;
+      if (quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE)
+        forceGemini = true;
 
-    console.log("[stage1A] Quality Scan:", {
-      ...quality,
-      forceGemini
-    });
+      if (quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE)
+        forceGemini = true;
+
+      console.log("[stage1A] Quality Scan:", {
+        ...quality,
+        forceGemini
+      });
+    } else {
+      console.log("[stage1A] Quality gate disabled — attempting Stability first");
+    }
 
     let primary1AImage: string;
 

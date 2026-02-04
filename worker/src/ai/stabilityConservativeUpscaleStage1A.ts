@@ -3,14 +3,17 @@ import fetch from "node-fetch";
 import FormData from "form-data";
 import sharp from "sharp";
 
-const STABILITY_UPSCALE_URL =
+const DEFAULT_STABILITY_STAGE1A_ENDPOINT =
   "https://api.stability.ai/v2beta/stable-image/upscale/conservative";
 
 const STABILITY_API_KEY = process.env.STABILITY_API_KEY;
+const STABILITY_STAGE1A_MODEL = process.env.STABILITY_STAGE1A_MODEL || "";
+const STABILITY_STAGE1A_ENDPOINT = process.env.STABILITY_STAGE1A_ENDPOINT
+  || (STABILITY_STAGE1A_MODEL
+    ? `https://api.stability.ai/v2beta/stable-image/generate/${STABILITY_STAGE1A_MODEL}`
+    : DEFAULT_STABILITY_STAGE1A_ENDPOINT);
 
-if (!STABILITY_API_KEY) {
-  throw new Error("STABILITY_API_KEY is not set");
-}
+const STABILITY_STAGE1A_STRENGTH = process.env.STABILITY_STAGE1A_STRENGTH;
 
 /**
  * Minimal prompt for Conservative Upscaler - focuses on quality enhancement only
@@ -29,6 +32,9 @@ export async function enhanceWithStabilityConservativeStage1A(
   inputWebpPath: string,
   sceneType?: "interior" | "exterior" | string
 ): Promise<string> {
+  if (!STABILITY_API_KEY) {
+    throw new Error("STABILITY_API_KEY is not set");
+  }
   // 1. Convert input webp → JPEG for Stability
   const jpegInputPath = inputWebpPath.replace(".webp", "-stability-input.jpg");
 
@@ -41,9 +47,12 @@ export async function enhanceWithStabilityConservativeStage1A(
   form.append("image", fs.createReadStream(jpegInputPath));
   form.append("prompt", STABILITY_STAGE1A_PROMPT);
   form.append("output_format", "jpeg");
+  if (STABILITY_STAGE1A_STRENGTH) {
+    form.append("strength", STABILITY_STAGE1A_STRENGTH);
+  }
 
   // 3. Send request
-  const res = await fetch(STABILITY_UPSCALE_URL, {
+  const res = await fetch(STABILITY_STAGE1A_ENDPOINT, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${STABILITY_API_KEY}`,
