@@ -850,7 +850,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Remove clutter/mess, keep furniture" : "Remove ALL furniture (empty room ready for staging)"}`);
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
 
-    const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
+      const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
       const output = await runStage1B(path1A, {
         replaceSky: false,
         sceneType: sceneLabel,
@@ -909,10 +909,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BLocalReasons = advisoryReasons;
         stage1BLocalIssues = localIssues;
 
-        if (verdict?.hardFail) {
+        if (verdict?.hardFail && (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED)) {
           const reason = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B blocked by structural validation";
-          nLog(`[stage1B] HARD FAIL detected (gemini or enforce mode). Reason: ${reason}`);
-          if (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED) {
+          const attemptsLeft = maxAttempts - stage1BAttempts;
+          nLog(`[stage1B] HARD FAIL detected (gemini or enforce mode). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
+          if (attemptsLeft > 0) {
+            // Retry Stage 1B using last good (Stage1A) baseline
+            continue;
+          } else {
             updateJob(payload.jobId, {
               status: "failed",
               errorMessage: reason,
@@ -1344,7 +1348,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Preserve the staged candidate path before validation decides whether it can ship
-  const stage2CandidatePath = path2;
+  let stage2CandidatePath = path2;
 
   timings.stage2Ms = Date.now() - t2;
   // ✅ FIX 3: Add updatedAt timestamp for stuck detection
@@ -1367,22 +1371,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish Stage 2 after validation (deferred); keep placeholder for URL
   let pub2Url: string | undefined = undefined;
 
-  // ===== UNIFIED STRUCTURAL VALIDATION =====
-  // Run unified validation pipeline for Stage 2
+  // ===== UNIFIED STRUCTURAL VALIDATION (WITH RETRIES) =====
+  // Run unified validation pipeline for Stage 2; on hardFail+blocking, retry Stage 2 generation using last known good baseline
   let unifiedValidation: UnifiedValidationResult | undefined = undefined;
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
-  if (path2 && payload.options.virtualStage) {
+  let validationAttempt = 0;
+  const validationMaxAttempts = Math.max(1, stage2MaxAttempts || 1);
+
+  while (path2 && payload.options.virtualStage) {
     try {
+      validationAttempt += 1;
       const validationStartTime = Date.now();
 
-      // Determine which stage to validate
       const validationStage: "1A" | "1B" | "2" = payload.options.virtualStage ? "2" :
                      (payload.options.declutter ? "1B" : "1A");
-
-      // Get the base path (prefer Stage 1B when available for Stage 2)
       const validationBasePath = validationStage === "2" ? stage2ValidationBaseline : path1A;
 
-      nLog(`[worker] ═══════════ Running Unified Structural Validation ═══════════`);
+      nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${validationAttempt}/${validationMaxAttempts}) ═══════════`);
 
       effectiveValidationMode = "log";
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=OFF (advisory)`);
@@ -1405,9 +1410,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Unified validation completed in ${validationElapsed}ms`);
       nLog(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
 
-      // VALIDATOR FOCUS: Compact unified validation output
       if (VALIDATOR_FOCUS && unifiedValidation) {
-        vLog(""); // Blank line for readability
+        vLog("");
         logUnifiedValidationCompact(
           payload.jobId,
           unifiedValidation,
@@ -1416,7 +1420,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         );
       }
 
-      // Store validation results in job metadata
       updateJob(payload.jobId, {
         meta: {
           ...(sceneLabel ? { ...sceneMeta } : {}),
@@ -1443,6 +1446,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           : (unifiedValidation.warnings && unifiedValidation.warnings.length)
             ? unifiedValidation.warnings
             : [];
+        // reset reasons per attempt
+        if (validationAttempt === 1) {
+          stage2LocalReasons = [];
+        }
         if (anyFailed || localNotes.length) {
           if (GEMINI_CONFIRMATION_ENABLED) {
             stage2NeedsConfirm = true;
@@ -1450,32 +1457,85 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2LocalReasons.push(...localNotes);
         }
 
-        if (unifiedValidation.hardFail) {
-          const reason = (localNotes && localNotes.length) ? localNotes.join("; ") : "Stage 2 blocked by structural validation";
-          nLog(`[worker] Stage 2 HARD FAIL detected (gemini or enforce mode). Reason: ${reason}`);
-          if (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED) {
-            stage2Blocked = true;
-            stage2BlockedReason = reason;
-            updateJob(payload.jobId, {
-              status: "failed",
-              errorMessage: reason,
-              error: reason,
-              meta: {
-                ...sceneMeta,
-                unifiedValidation,
-                stage2LocalReasons,
-              },
-            });
-            return;
+        const blockingFail = unifiedValidation.hardFail && (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED);
+        if (blockingFail && validationAttempt < validationMaxAttempts) {
+          nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
+          // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
+          const stage2OutcomeRetry = await runStage2(stage2InputPath, stage2BaseStage, {
+            roomType: (
+              !payload.options.roomType ||
+              ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+            )
+              ? String(detectedRoom || "living_room")
+              : payload.options.roomType,
+            sceneType: sceneLabel as any,
+            profile,
+            angleHint,
+            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+            stagingStyle: stagingStyleNorm,
+            sourceStage: stage2SourceStage,
+            jobId: payload.jobId,
+            validationConfig: { localMode: localValidatorMode },
+            stage1APath: stage2ValidationBaseline,
+            onStrictRetry: ({ reasons }) => {
+              try {
+                const msg = reasons && reasons.length
+                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                  : "Validation failed. Retrying with stricter settings...";
+                updateJob(payload.jobId, {
+                  message: msg,
+                  meta: {
+                    ...(sceneLabel ? { ...sceneMeta } : {}),
+                    strictRetry: true,
+                    strictRetryReasons: reasons || []
+                  }
+                });
+              } catch {}
+            }
+          });
+
+          if (typeof stage2OutcomeRetry === "string") {
+            path2 = stage2OutcomeRetry;
+            stage2CandidatePath = path2;
+            stage2AttemptsUsed = Math.max(stage2AttemptsUsed, validationAttempt + 1);
+          } else {
+            path2 = stage2OutcomeRetry.outputPath;
+            stage2CandidatePath = path2;
+            stage2AttemptsUsed = stage2OutcomeRetry.attempts;
+            stage2MaxAttempts = stage2OutcomeRetry.maxAttempts;
+            stage2ValidationRisk = stage2OutcomeRetry.validationRisk;
+            stage2LocalReasons = stage2OutcomeRetry.localReasons || [];
+            stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED && stage2ValidationRisk;
           }
+
+          continue; // retry validation with new Stage2 output
+        }
+
+        if (blockingFail && validationAttempt >= validationMaxAttempts) {
+          const reason = stage2LocalReasons.length ? stage2LocalReasons.join("; ") : "Stage 2 blocked by structural validation";
+          stage2Blocked = true;
+          stage2BlockedReason = reason;
+          nLog(`[worker] Stage 2 HARD FAIL after retries exhausted. Reason: ${reason}`);
+          updateJob(payload.jobId, {
+            status: "failed",
+            errorMessage: reason,
+            error: reason,
+            meta: {
+              ...sceneMeta,
+              unifiedValidation,
+              stage2LocalReasons,
+            },
+          });
+          return;
         }
       }
 
+      // Exit validation loop if no blocking hard fail
+      break;
     } catch (validationError: any) {
-      // Validation errors should never crash the job
       nLog(`[worker] Unified validation error (non-fatal):`, validationError);
       nLog(`[worker] Stack:`, validationError?.stack);
-      // Continue processing - fail-open behavior
+      break; // fail-open
     }
   }
 

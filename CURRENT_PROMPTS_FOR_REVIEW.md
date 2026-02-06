@@ -371,7 +371,7 @@ REMOVE (transient items ONLY):
 • Random accessories on decks/paths that are not permanently fixed
 
 KEEP EXACTLY (PERMANENT):
-• All buildings, windows, doors, rooflines, fences, gates, retaining walls
+• All buildings, windows, doors, rooflines, fences, gates, retaining walls, heat pump / air conditioning units, taps,
 • All permanent landscaping (trees, shrubs, hedges, garden beds)
 • All driveways, paths, decks, patios — preserve shape, size, materials, and patterns
 
