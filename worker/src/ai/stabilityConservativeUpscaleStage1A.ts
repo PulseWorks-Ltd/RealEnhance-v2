@@ -62,9 +62,13 @@ export async function enhanceWithStabilityConservativeStage1A(
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    console.error("[Stability Stage1A Conservative] HTTP Error:", err);
-    throw new Error("Stability Conservative Upscaler failed");
+    const errText = await res.text();
+    console.error("[Stability Stage1A Conservative] HTTP Error:", errText);
+    const error = new Error(`Stability Conservative Upscaler failed (${res.status} ${res.statusText})`);
+    (error as any).status = res.status;
+    (error as any).body = errText;
+    (error as any).endpoint = STABILITY_STAGE1A_ENDPOINT;
+    throw error;
   }
 
   // 4. Save output JPEG

@@ -37,14 +37,27 @@ function resolveModes(): Resolution {
 
   const legacyUsed: string[] = [];
 
+  const markLegacyUsed = (...names: string[]) => {
+    legacyUsed.push(...names);
+  };
+
   // Local mode resolution
   const localPrimary = process.env.LOCAL_VALIDATOR_MODE;
   let localMode = normalizeMode(localPrimary, "log");
   if (!localPrimary) {
-    const legacyLocal = legacyInputs.STRUCTURE_VALIDATOR_MODE || legacyInputs.VALIDATOR_MODE || legacyInputs.STAGE1B_VALIDATION_MODE;
+    const legacyLocal =
+      legacyInputs.STRUCTURE_VALIDATOR_MODE ||
+      legacyInputs.VALIDATOR_MODE ||
+      legacyInputs.STAGE1B_VALIDATION_MODE ||
+      legacyInputs.STAGE1B_LOCAL_VALIDATE_MODE;
     if (legacyLocal) {
       localMode = normalizeMode(legacyLocal, "log");
-      legacyUsed.push("STRUCTURE_VALIDATOR_MODE", "VALIDATOR_MODE", "STAGE1B_VALIDATION_MODE");
+      const used: string[] = [];
+      if (legacyInputs.STRUCTURE_VALIDATOR_MODE) used.push("STRUCTURE_VALIDATOR_MODE");
+      if (legacyInputs.VALIDATOR_MODE) used.push("VALIDATOR_MODE");
+      if (legacyInputs.STAGE1B_VALIDATION_MODE) used.push("STAGE1B_VALIDATION_MODE");
+      if (legacyInputs.STAGE1B_LOCAL_VALIDATE_MODE) used.push("STAGE1B_LOCAL_VALIDATE_MODE");
+      markLegacyUsed(...used);
     }
   }
 
@@ -55,7 +68,10 @@ function resolveModes(): Resolution {
     const legacyGemini = legacyInputs.VALIDATOR_MODE || legacyInputs.STAGE1B_VALIDATION_MODE;
     if (legacyGemini) {
       geminiMode = normalizeMode(legacyGemini, "block");
-      legacyUsed.push("VALIDATOR_MODE", "STAGE1B_VALIDATION_MODE");
+      const used: string[] = [];
+      if (legacyInputs.VALIDATOR_MODE) used.push("VALIDATOR_MODE");
+      if (legacyInputs.STAGE1B_VALIDATION_MODE) used.push("STAGE1B_VALIDATION_MODE");
+      markLegacyUsed(...used);
     }
   }
 
@@ -80,20 +96,15 @@ export function explainResolvedModes(): Resolution {
 }
 
 export function logValidationModes(): void {
-  const { localMode, geminiMode, legacyInputs } = resolveModes();
+  const { localMode, geminiMode, legacyInputs, legacyUsed } = resolveModes();
   if (logged) return;
-  Object.entries(legacyInputs).forEach(([key, val]) => {
-    if (val && (key === "VALIDATOR_MODE" || key === "STRUCTURE_VALIDATOR_MODE" || key === "STAGE1B_VALIDATION_MODE" || key === "REALISM_VALIDATOR_MODE")) {
-      warnDeprecated(key, key === "VALIDATOR_MODE" ? "LOCAL_VALIDATOR_MODE / GEMINI_VALIDATOR_MODE" : "LOCAL_VALIDATOR_MODE");
-    }
+  legacyUsed.forEach((key) => {
+    const replacement = key === "VALIDATOR_MODE" ? "LOCAL_VALIDATOR_MODE / GEMINI_VALIDATOR_MODE" : "LOCAL_VALIDATOR_MODE";
+    warnDeprecated(key, replacement);
   });
   nLog(`[validator-config] Resolved modes: local=${localMode} gemini=${geminiMode}`);
-  const legacyUsed = Object.entries(legacyInputs)
-    .filter(([, val]) => !!val)
-    .map(([k]) => k)
-    .join(", ");
-  if (legacyUsed) {
-    nLog(`[validator-config] Legacy env vars in play: ${legacyUsed}`);
+  if (legacyUsed.length) {
+    nLog(`[validator-config] Legacy env vars in play: ${legacyUsed.join(", ")}`);
   }
   nLog(`[validator-config] Legacy env snapshot: ${JSON.stringify(legacyInputs)}`);
   logged = true;

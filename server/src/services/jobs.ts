@@ -43,6 +43,8 @@ import type {
 } from "../shared/types.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { createClient } from 'redis';
+import { saveJobMetadata } from "@realenhance/shared/imageStore";
+import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/types/jobMetadata";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });
@@ -130,6 +132,28 @@ export async function enqueueEnhanceJob(params: {
   const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());
   const now = new Date().toISOString();
 
+  const requestedStages: RequestedStages = {
+    stage1a: true,
+    stage1b: params.options.declutter ? (params.options.declutterMode === "light" ? "light" : "full") : undefined,
+    stage2: params.options.virtualStage,
+    stage2Mode: params.options.virtualStage
+      ? (params.options.stagingPreference === "refresh"
+        ? "refresh"
+        : params.options.stagingPreference === "full"
+          ? "empty"
+          : "auto")
+      : undefined,
+  };
+
+  const jobMeta: JobOwnershipMetadata = {
+    userId: params.userId,
+    imageId: params.imageId,
+    jobId,
+    createdAt: now,
+    requestedStages,
+    ...(params.remoteOriginalKey ? { s3: { key: params.remoteOriginalKey } } : {}),
+  };
+
   const payload: AnyJobPayload = {
     jobId,
     userId: params.userId,
@@ -152,9 +176,11 @@ export async function enqueueEnhanceJob(params: {
     stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;
 
-
-
-  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  await Promise.all([
+    queue().add(JOB_QUEUE_NAME, payload, { jobId }),
+    saveJobMetadata(jobMeta),
+    updateJob(jobId, { status: "queued", metadata: jobMeta }),
+  ]);
   return { jobId };
 }
 

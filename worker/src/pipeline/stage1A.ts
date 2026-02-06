@@ -22,6 +22,26 @@ const USE_STABILITY_STAGE1A_QUALITY_GATE = process.env.USE_STABILITY_STAGE1A_QUA
 const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 // Optional strict diff gate: reroute to Gemini on content diff failure
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
+// Automatically disable Stability primary after a payment/credit error
+const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
+
+let stabilityPrimaryLockedReason: string | null = null;
+
+function shouldUseStabilityStage1A(): boolean {
+  return USE_STABILITY_STAGE1A && !FORCE_GEMINI_STAGE1A && !stabilityPrimaryLockedReason;
+}
+
+function lockStabilityPrimary(reason: string) {
+  if (stabilityPrimaryLockedReason) return;
+  stabilityPrimaryLockedReason = reason;
+  console.warn(`[stage1A] Stability primary disabled: ${reason}`);
+}
+
+function isPaymentRequiredError(err: any): boolean {
+  const msg = (err?.message || "").toLowerCase();
+  const body = (err?.body || "").toLowerCase();
+  return err?.status === 402 || msg.includes("payment_required") || body.includes("payment_required") || msg.includes("lack sufficient credits") || body.includes("lack sufficient credits");
+}
 
 /**
  * Stage 1A: Professional real estate photo enhancement
@@ -293,7 +313,7 @@ export async function runStage1A(
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
-  if (USE_STABILITY_STAGE1A && !FORCE_GEMINI_STAGE1A) {
+  if (shouldUseStabilityStage1A()) {
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
       const quality = await runLowQualityDetector(sharpOutputPath);
       const forceGemini =
@@ -328,6 +348,9 @@ export async function runStage1A(
       primary1AImage = stabilityWebp;
     } catch (err) {
       console.error("[stage1A] ❌ Stability API failed:", err);
+      if (isPaymentRequiredError(err) && DISABLE_STABILITY_ON_PAYMENT_REQUIRED) {
+        lockStabilityPrimary("Stability credits exhausted (payment_required)");
+      }
       console.warn("[stage1A] 🔁 Falling back to Gemini...");
       primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
     }
@@ -395,7 +418,12 @@ export async function runStage1A(
 
   // --- LEGACY FALLBACK (if Stability disabled) ---
   try {
-    console.log("[stage1A] 🟡 Using Gemini (Stability disabled)...");
+    const reason = stabilityPrimaryLockedReason
+      ? `${stabilityPrimaryLockedReason}`
+      : FORCE_GEMINI_STAGE1A
+        ? "forced via env"
+        : "feature flag off";
+    console.log(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
     const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
 
