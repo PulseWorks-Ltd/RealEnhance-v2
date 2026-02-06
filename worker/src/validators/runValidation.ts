@@ -83,7 +83,6 @@ export interface UnifiedValidationParams {
   mode?: "log" | "enforce";
   jobId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
-  baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
   /**
    * Stage1A output path for Stage2 validation baseline.
    * CRITICAL: Stage2 should validate against Stage1A output, NOT original.
@@ -175,7 +174,6 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] === Starting Unified Structural Validation ===`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
-          baseArtifacts,
   nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
@@ -243,6 +241,8 @@ export async function runUnifiedValidation(
           nLog(`[unified-validator]   ${i + 1}. ${t.id}: ${t.message}`);
         });
       }
+
+      const hardFail = mode === "enforce" && stageAwareResult.risk;
 
       if (!hardFail) {
         stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));

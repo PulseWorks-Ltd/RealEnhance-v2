@@ -34,12 +34,16 @@ type NormalizeResult = {
   sizeMismatch: boolean; // true if original dimensions differed (even if auto-fixed)
 };
 
-async function normalizeDimensions(basePath: string, outputPath: string): Promise<NormalizeResult> {
+async function normalizeDimensions(
+  basePath: string,
+  outputPath: string,
+  baseArtifacts?: BaseArtifacts
+): Promise<NormalizeResult> {
   try {
-    const [baseMeta, outMeta] = await Promise.all([
-      sharp(basePath).metadata(),
-      sharp(outputPath).metadata(),
-    ]);
+    const baseMeta = baseArtifacts?.path === basePath
+      ? { width: baseArtifacts.width, height: baseArtifacts.height }
+      : await sharp(basePath).metadata();
+    const outMeta = await sharp(outputPath).metadata();
     if (!baseMeta.width || !baseMeta.height || !outMeta.width || !outMeta.height) {
       return { fixedOutputPath: outputPath, sizeMismatch: true };
     }

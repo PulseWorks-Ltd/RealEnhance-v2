@@ -108,7 +108,6 @@ export async function runStage1B(
       const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
       const jobId = (global as any).__jobId || "default";
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-      const baseArtifacts = (global as any).__baseArtifacts;
       const maskPath = await loadOrComputeStructuralMask(jobId, base, baseArtifacts);
       const masks = { structuralMask: maskPath };
       const verdict2 = await validateStage1BStructural(base, declutteredPath, masks, baseArtifacts);
