@@ -244,8 +244,6 @@ export async function runUnifiedValidation(
         });
       }
 
-      }, baseArtifacts);
-
       if (!hardFail) {
         stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));
       }
