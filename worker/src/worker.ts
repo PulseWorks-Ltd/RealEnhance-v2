@@ -869,6 +869,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         roomType: payload.options.roomType,
         mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
+        geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
         jobId: payload.jobId,
         stage1APath: path1A,
         baseArtifacts,
@@ -911,10 +912,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BLocalReasons = advisoryReasons;
         stage1BLocalIssues = localIssues;
 
-        if (verdict?.hardFail && (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED)) {
+        const verdictBlockFromLocal = verdict?.hardFail && verdict?.blockSource === "local" && VALIDATION_BLOCKING_ENABLED;
+        const verdictBlockFromGemini = verdict?.hardFail && verdict?.blockSource === "gemini" && geminiBlockingEnabled;
+        if (verdictBlockFromLocal || verdictBlockFromGemini) {
           const reason = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B blocked by structural validation";
           const attemptsLeft = maxAttempts - stage1BAttempts;
-          nLog(`[stage1B] HARD FAIL detected (gemini or enforce mode). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
+          nLog(`[stage1B] HARD FAIL detected (source=${verdict?.blockSource}). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
           if (attemptsLeft > 0) {
             // Retry Stage 1B using last good (Stage1A) baseline
             continue;
@@ -1391,8 +1394,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${validationAttempt}/${validationMaxAttempts}) ═══════════`);
 
-      effectiveValidationMode = "log";
-      nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=OFF (advisory)`);
+      effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
+      nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
 
       const baseArtifacts = (global as any).__baseArtifacts;
       unifiedValidation = await runUnifiedValidation({
@@ -1401,7 +1404,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage: validationStage,
         sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         roomType: payload.options.roomType,
-        mode: "log",
+        mode: effectiveValidationMode,
+        geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         stage1APath: validationBasePath,
@@ -1459,7 +1463,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2LocalReasons.push(...localNotes);
         }
 
-        const blockingFail = unifiedValidation.hardFail && (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED);
+        const blockingFail = unifiedValidation.hardFail && (
+          (unifiedValidation.blockSource === "gemini" && geminiBlockingEnabled) ||
+          (unifiedValidation.blockSource === "local" && VALIDATION_BLOCKING_ENABLED)
+        );
         if (blockingFail && validationAttempt < validationMaxAttempts) {
           nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
           // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)

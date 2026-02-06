@@ -42,7 +42,8 @@ export type ValidatorResult = {
  */
 export type UnifiedValidationResult = {
   passed: boolean;
-  hardFail: boolean;         // true only when enforcement mode blocks the image
+  hardFail: boolean;         // true only when enforcement or Gemini block the image
+  blockSource?: "local" | "gemini" | null; // where the hard fail originated
   score: number;             // aggregate structural score 0–1
   reasons: string[];         // human-readable hard-fail reasons
   warnings: string[];        // non-fatal warnings
@@ -90,6 +91,13 @@ export interface UnifiedValidationParams {
    */
   stage1APath?: string;
   baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
+  /**
+   * Gemini invocation policy:
+   * - "always" (default): run Gemini semantic validator every time
+   * - "on_local_fail": run Gemini only when any local validator fails
+   * - "never": skip Gemini semantic validator entirely
+   */
+  geminiPolicy?: "always" | "on_local_fail" | "never";
 }
 
 /**
@@ -156,6 +164,7 @@ export async function runUnifiedValidation(
     stagingStyle,
     stage1APath,
     baseArtifacts,
+    geminiPolicy = "always",
   } = params;
 
   const validatorMode = getLocalValidatorMode();
@@ -253,6 +262,7 @@ export async function runUnifiedValidation(
       return {
         passed: hardFail ? false : true,
         hardFail,
+        blockSource: hardFail ? "local" : null,
         score: stageAwareResult.score,
         reasons: hardFail ? reasons : [],
         warnings,
@@ -469,52 +479,6 @@ export async function runUnifiedValidation(
     }
   }
 
-  // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK =====
-  // Harden only on architectural/walkway violations; ignore style/furniture changes
-  try {
-    nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} base=${originalPath} cand=${enhancedPath}`);
-    const geminiResult = await runGeminiSemanticValidator({
-      basePath: originalPath,
-      candidatePath: enhancedPath,
-      stage,
-      sceneType,
-    });
-
-    const semantic = summarizeGeminiSemantic(geminiResult);
-    const geminiHardFail = semantic.hardFail && geminiMode === "block";
-
-    results.geminiSemantic = {
-      name: "geminiSemantic",
-      passed: geminiHardFail ? false : semantic.passed,
-      score: geminiResult.confidence || 0,
-      message: semantic.message,
-      details: {
-        category: geminiResult.category,
-        reasons: geminiResult.reasons,
-        confidence: geminiResult.confidence,
-        mode: geminiMode,
-        rawText: geminiResult.rawText,
-      },
-    };
-
-    if (geminiHardFail || semantic.hardFail) {
-      reasons.push(...semantic.reasons);
-    } else {
-      warnings.push(...semantic.warnings);
-    }
-
-    nLog(`[unified-validator] [Gemini] verdict cat=${geminiResult.category} hardFail=${semantic.hardFail} geminiMode=${geminiMode} conf=${geminiResult.confidence}`);
-  } catch (err) {
-    console.warn("[unified-validator] Gemini semantic check failed open", err);
-    results.geminiSemantic = {
-      name: "geminiSemantic",
-      passed: true,
-      score: 0.5,
-      message: "Gemini semantic error (fail-open)",
-      details: { error: String(err), mode: geminiMode },
-    };
-  }
-
   // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
   // Detects line shifts using Hough transform
   try {
@@ -573,6 +537,64 @@ export async function runUnifiedValidation(
       message: "Line/edge validator error (fail-open)",
       details: { error: String(err) },
     };
+  }
+
+  // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK (policy-driven) =====
+  // Harden only on architectural/walkway violations; ignore style/furniture changes
+  const localFailed = Object.entries(results)
+    .filter(([key]) => key !== "geminiSemantic")
+    .some(([, r]) => r && r.passed === false);
+
+  const shouldRunGemini =
+    geminiPolicy === "always" ||
+    (geminiPolicy === "on_local_fail" && localFailed);
+
+  if (!shouldRunGemini) {
+    nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, localFailed=${localFailed})`);
+  } else {
+    try {
+      nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} base=${originalPath} cand=${enhancedPath}`);
+      const geminiResult = await runGeminiSemanticValidator({
+        basePath: originalPath,
+        candidatePath: enhancedPath,
+        stage,
+        sceneType,
+      });
+
+      const semantic = summarizeGeminiSemantic(geminiResult);
+      const geminiHardFail = semantic.hardFail && geminiMode === "block";
+
+      results.geminiSemantic = {
+        name: "geminiSemantic",
+        passed: geminiHardFail ? false : semantic.passed,
+        score: geminiResult.confidence || 0,
+        message: semantic.message,
+        details: {
+          category: geminiResult.category,
+          reasons: geminiResult.reasons,
+          confidence: geminiResult.confidence,
+          mode: geminiMode,
+          rawText: geminiResult.rawText,
+        },
+      };
+
+      if (geminiHardFail || semantic.hardFail) {
+        reasons.push(...semantic.reasons);
+      } else {
+        warnings.push(...semantic.warnings);
+      }
+
+      nLog(`[unified-validator] [Gemini] verdict cat=${geminiResult.category} hardFail=${semantic.hardFail} geminiMode=${geminiMode} conf=${geminiResult.confidence}`);
+    } catch (err) {
+      console.warn("[unified-validator] Gemini semantic check failed open", err);
+      results.geminiSemantic = {
+        name: "geminiSemantic",
+        passed: true,
+        score: 0.5,
+        message: "Gemini semantic error (fail-open)",
+        details: { error: String(err), mode: geminiMode },
+      };
+    }
   }
 
   // ===== SOFT GEOMETRY PROFILE DETECTION =====
@@ -668,9 +690,12 @@ export async function runUnifiedValidation(
     });
   }
 
+  const blockSource: "local" | "gemini" | null = geminiHardFail
+    ? "gemini"
+    : ((mode === "enforce" && !allPassed) ? "local" : null);
+
   // Handle blocking logic
-  if ((mode === "enforce" && !allPassed) || geminiHardFail) {
-    const blockSource = geminiHardFail ? "gemini" : mode;
+  if (blockSource) {
     console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (source=${blockSource})`);
   } else if (!allPassed) {
     nLog(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
@@ -678,12 +703,13 @@ export async function runUnifiedValidation(
 
   nLog(`[unified-validator] ===============================`);
 
-  const hardFail = (mode === "enforce" && !allPassed) || geminiHardFail;
+  const hardFail = blockSource !== null;
   const uniqueWarnings = Array.from(new Set(warnings));
 
   const finalResult: UnifiedValidationResult = {
     passed: hardFail ? false : true,
     hardFail,
+    blockSource,
     score: Math.round(aggregateScore * 1000) / 1000,
     reasons: hardFail ? reasons : [],
     warnings: uniqueWarnings,
