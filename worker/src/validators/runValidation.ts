@@ -171,6 +171,8 @@ export async function runUnifiedValidation(
   const stageAwareConfig = loadStageAwareConfig();
   const warnings: string[] = [];
   const geminiMode = getGeminiValidatorMode();
+  const results: Record<string, ValidatorResult> = {};
+  const reasons: string[] = [];
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -225,19 +227,18 @@ export async function runUnifiedValidation(
         });
       }
 
-      const results: Record<string, ValidatorResult> = {
-        stageAware: {
-          name: "stageAware",
-          passed: mode === "enforce" ? !stageAwareResult.risk : true,
-          score: stageAwareResult.score,
-          message: stageAwareResult.risk
-            ? `Risk detected: ${stageAwareResult.triggers.length} triggers`
-            : "Stage-aware validation passed",
-          details: {
-            triggers: stageAwareResult.triggers,
-            metrics: stageAwareResult.metrics,
-            debug: stageAwareResult.debug,
-          },
+      results.stageAware = {
+        name: "stageAware",
+        // In log mode we still surface risk as a failure (non-blocking) so Gemini-on-local-fail can trigger
+        passed: !stageAwareResult.risk,
+        score: stageAwareResult.score,
+        message: stageAwareResult.risk
+          ? `Risk detected: ${stageAwareResult.triggers.length} triggers`
+          : "Stage-aware validation passed",
+        details: {
+          triggers: stageAwareResult.triggers,
+          metrics: stageAwareResult.metrics,
+          debug: stageAwareResult.debug,
         },
       };
 
@@ -253,31 +254,19 @@ export async function runUnifiedValidation(
         });
       }
 
-      const hardFail = mode === "enforce" && stageAwareResult.risk;
+      const stageAwareHardFail = mode === "enforce" && stageAwareResult.risk;
 
-      if (!hardFail) {
+      if (stageAwareResult.risk) {
         stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));
+        if (stageAwareHardFail) {
+          stageAwareResult.triggers.forEach(t => reasons.push(`${t.id}: ${t.message}`));
+        }
       }
-
-      return {
-        passed: hardFail ? false : true,
-        hardFail,
-        blockSource: hardFail ? "local" : null,
-        score: stageAwareResult.score,
-        reasons: hardFail ? reasons : [],
-        warnings,
-        normalized: stageAwareResult.debug?.dimensionNormalized,
-        raw: results,
-        profile: "STRICT", // Stage-aware always uses strict mode
-      };
     } catch (err) {
       nLog(`[unified-validator] Stage-aware validation error: ${err}`);
       // Fall through to legacy validation on error
     }
   }
-
-  const results: Record<string, ValidatorResult> = {};
-  const reasons: string[] = [];
 
   let buffers: ValidationBuffers | null = null;
   try {
