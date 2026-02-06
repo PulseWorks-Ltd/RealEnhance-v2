@@ -150,6 +150,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   let requestedStages: any | undefined;
 
+  let stagingStyleNorm: string | undefined;
+
   try {
     const [liveJob, savedMeta] = await Promise.all([
       getJob(payload.jobId),
@@ -1174,7 +1176,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Surface incoming stagingStyle before calling Stage 2
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
       console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
-      const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
+      stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
       // FIX 4: Add Stage 2 timeout with Promise.race
       const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default

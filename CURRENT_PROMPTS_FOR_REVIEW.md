@@ -371,14 +371,41 @@ REMOVE (transient items ONLY):
 • Random accessories on decks/paths that are not permanently fixed
 
 KEEP EXACTLY (PERMANENT):
-• All buildings, windows, doors, rooflines, fences, gates, retaining walls, heat pump / air conditioning units, taps,
+• All buildings, windows, doors, rooflines, fences, gates, retaining walls, heat pump / air conditioning units, wall taps/faucets, built-in barbeques, outdoor kitchens, spa pools,
 • All permanent landscaping (trees, shrubs, hedges, garden beds)
 • All driveways, paths, decks, patios — preserve shape, size, materials, and patterns
 
-HARD RULES — NON‑NEGOTIABLE:
-• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.
-• Do NOT change, resize, move, or remove any permanent structure or landscaping.
-• Do NOT alter driveway, deck, or path geometry or surface type.
+────────────────────────────────
+STRUCTURAL INVARIANCE — NON-NEGOTIABLE
+────────────────────────────────
+The following elements are FIXED and must remain visually, geometrically,
+and materially identical to the input image:
+
+• Walls, ceilings, rooflines, floors, stairs
+• Doors, door frames, doorways, walkthroughs
+• Windows, window frames, glazing, sill height
+• All wall and floor openings
+• Built-in cabinetry, wardrobes, shelving, closets
+• Benchtops, countertops, splashbacks, kitchen islands
+• Built-in appliances (ovens, cooktops, range hoods, dishwashers)
+• Sinks, faucets, plumbing fixtures
+• Fixed lighting (pendants, downlights, sconces)
+• Ceiling fans, vents
+• Light switches, power outlets, thermostats
+• Heat pumps / air conditioning units
+• Curtains, blinds, tracks, rods (no change to type, colour, openness)
+• Paint colour and wall finishes
+• Floor coverings (carpet, timber, tile, vinyl)
+
+These elements MUST NOT be:
+added, removed, resized, recoloured, repositioned, covered,
+straightened, widened, narrowed, or visually altered.
+
+The room/property must remain unmistakably the SAME real space.
+
+IMPORTANT:
+Fixtures and built-ins are NEVER clutter.
+If uncertain whether an item is fixed → treat it as FIXED.
 
 Goal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.
 ```
