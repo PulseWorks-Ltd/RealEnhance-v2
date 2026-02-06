@@ -18,7 +18,7 @@ import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalS
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
 import { loadOrComputeStructuralMask } from "./structuralMask";
-import { getLocalValidatorMode } from "./validationModes";
+import { getGeminiValidatorMode, getLocalValidatorMode } from "./validationModes";
 import { vLog, nLog } from "../logger";
 import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
@@ -161,6 +161,7 @@ export async function runUnifiedValidation(
   const validatorMode = getLocalValidatorMode();
   const stageAwareConfig = loadStageAwareConfig();
   const warnings: string[] = [];
+  const geminiMode = getGeminiValidatorMode();
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -175,6 +176,7 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
   nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
+  nLog(`[unified-validator] Modes: local=${validatorMode} gemini=${geminiMode}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
@@ -470,6 +472,7 @@ export async function runUnifiedValidation(
   // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK =====
   // Harden only on architectural/walkway violations; ignore style/furniture changes
   try {
+    nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} base=${originalPath} cand=${enhancedPath}`);
     const geminiResult = await runGeminiSemanticValidator({
       basePath: originalPath,
       candidatePath: enhancedPath,
@@ -478,24 +481,29 @@ export async function runUnifiedValidation(
     });
 
     const semantic = summarizeGeminiSemantic(geminiResult);
+    const geminiHardFail = semantic.hardFail && geminiMode === "block";
 
     results.geminiSemantic = {
       name: "geminiSemantic",
-      passed: semantic.passed,
+      passed: geminiHardFail ? false : semantic.passed,
       score: geminiResult.confidence || 0,
       message: semantic.message,
       details: {
         category: geminiResult.category,
         reasons: geminiResult.reasons,
         confidence: geminiResult.confidence,
+        mode: geminiMode,
+        rawText: geminiResult.rawText,
       },
     };
 
-    if (semantic.hardFail) {
+    if (geminiHardFail || semantic.hardFail) {
       reasons.push(...semantic.reasons);
     } else {
       warnings.push(...semantic.warnings);
     }
+
+    nLog(`[unified-validator] [Gemini] verdict cat=${geminiResult.category} hardFail=${semantic.hardFail} geminiMode=${geminiMode} conf=${geminiResult.confidence}`);
   } catch (err) {
     console.warn("[unified-validator] Gemini semantic check failed open", err);
     results.geminiSemantic = {
@@ -503,7 +511,7 @@ export async function runUnifiedValidation(
       passed: true,
       score: 0.5,
       message: "Gemini semantic error (fail-open)",
-      details: { error: String(err) },
+      details: { error: String(err), mode: geminiMode },
     };
   }
 
@@ -631,6 +639,7 @@ export async function runUnifiedValidation(
   // In log-only mode, we still compute passed for metric collection
   const failedValidators = Object.values(results).filter(r => !r.passed);
   const allPassed = failedValidators.length === 0;
+  const geminiHardFail = results.geminiSemantic && results.geminiSemantic.details && (results.geminiSemantic.details as any).mode === "block" && results.geminiSemantic.passed === false;
 
   // Log detailed results (normal mode)
   nLog(`[unified-validator] === Validation Results ===`);
@@ -660,15 +669,16 @@ export async function runUnifiedValidation(
   }
 
   // Handle blocking logic
-  if (mode === "enforce" && !allPassed) {
-    console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (mode=enforce)`);
+  if ((mode === "enforce" && !allPassed) || geminiHardFail) {
+    const blockSource = geminiHardFail ? "gemini" : mode;
+    console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (source=${blockSource})`);
   } else if (!allPassed) {
     nLog(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
   }
 
   nLog(`[unified-validator] ===============================`);
 
-  const hardFail = mode === "enforce" && !allPassed;
+  const hardFail = (mode === "enforce" && !allPassed) || geminiHardFail;
   const uniqueWarnings = Array.from(new Set(warnings));
 
   const finalResult: UnifiedValidationResult = {

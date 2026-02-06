@@ -14,42 +14,198 @@ const MIN_CONFIDENCE = 0.65;
 function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
   const stageLabel = stage === "2" ? "Stage 2 (virtual staging)" : stage === "1B" ? "Stage 1B (declutter)" : "Stage 1A (color/cleanup)";
   const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
-  return `You are a structural integrity judge for real estate imagery.
-Return JSON only. No prose outside JSON.
+  return `You are a structural integrity judge for New Zealand real estate imagery.
+Your job is to determine whether the AFTER image violates structural integrity when compared to the BEFORE image.
 
-STRUCTURE includes anything fixed to or integral with the property and expected to remain after a tenant/owner leaves. Treat ALL of these as structural:
-- Walls, ceilings/rooflines, floors, stairs, columns, beams
-- Permanent openings and boundaries: doors, windows, arches, closet openings, garage openings
-- Built-ins and fixtures: cabinetry, built-in wardrobes, built-in shelving, kitchen islands, countertops, sinks/faucets, built-in stoves/ovens/cooktops, range hoods
-- Fixed electrical/lighting: pendant lights, ceiling fans, wall sconces, recessed lights, light switches, power outlets
-- Fixed hardware and coverings: curtains, blinds, curtain rods, rails, door handles, doorbell screens, thermostats
-- Mirrors or frames mounted to walls (if they cover openings or replace fixed items)
+Return JSON only. Do NOT include any prose outside JSON.
 
-NON-STRUCTURAL (never hard fail): movable furniture and decor only (beds, sofas, chairs, tables, rugs, pillows, art that is clearly freestanding), and minor style-only changes.
+------------------------------
+DEFINITION OF STRUCTURE (FIXED ELEMENTS)
+------------------------------
 
-Categories you must choose:
-- structure: any structural or fixed item added/removed/changed; counts change in doors/windows; wall openings created/removed; fixtures changed/removed/added; cabinetry/built-ins altered; floor or wall coverings changed.
-- opening_blocked: doorway/window fully occluded, painted over, or blocked by objects (including curtains/blinds/mirrors/wall art placed over openings) or path not passable.
-- furniture_change: movable furniture/decor added/removed/changed (no fixed items).
-- style_only: exposure/brightness/color/style-only change with no object changes.
-- unknown: can't tell.
+Treat ALL of the following as STRUCTURAL and NON-NEGOTIABLE.
+They must remain visually, geometrically, and materially identical:
 
-Rules:
-- structure => hardFail=true
-- opening_blocked => hardFail=true if any opening is fully blocked/painted/covered or no passable path
-- furniture_change => hardFail=false (warning only)
-- style_only => hardFail=false
-- If confidence < ${MIN_CONFIDENCE}, set hardFail=false (warning)
+- Walls, ceilings, rooflines, floors, stairs, beams, columns
+- Doors, door frames, doorways, walkthroughs
+- Windows, window frames, glazing, sill height
+- All wall, floor, and ceiling openings
+- Built-in cabinetry, wardrobes, closets, shelving
+- Benchtops, countertops, splashbacks, kitchen islands
+- Built-in appliances (ovens, cooktops, range hoods, dishwashers)
+- Sinks, faucets, plumbing fixtures
+- Fixed lighting (pendants, downlights, sconces)
+- Ceiling fans, vents
+- Light switches, power outlets, thermostats
+- Heat pumps / air conditioning units
+- Curtains, blinds, rods, tracks (including openness/coverage)
+- Paint colour and wall finishes
+- Floor coverings (carpet, timber, tile, vinyl)
+- Mirrors or wall-mounted items that cover or replace fixed elements
 
-Output JSON EXACTLY:
+STRUCTURAL VS OCCLUSION VS FUNCTION — CRITICAL RULES
+
+Structural elements are evaluated based on:
+- Existence
+- Geometry
+- Position
+- Material
+- Functional usability
+
+Do NOT treat partial occlusion by movable furniture as a structural change.
+
+------------------------------
+IMPROPER FIXATION (ALWAYS A FAILURE)
+------------------------------
+
+Treat as STRUCTURAL FAILURE if any movable item appears to be:
+- Fixed, mounted, or attached to a structural element
+- Used to cover or replace part of a wall, window, door, or opening
+
+This includes (non-exhaustive):
+- Mirrors or artwork fixed to window panes
+- Artwork, mirrors, or panels mounted over doors or doorways
+- Décor fixed across sliding or swinging doors
+- Objects visually replacing glazing or door surfaces
+
+If an item appears permanently attached rather than freely movable:
+-> category = structure
+-> hardFail = true
+
+------------------------------
+NON-STRUCTURAL ELEMENTS (NEVER HARD FAIL)
+------------------------------
+
+The following are MOVABLE and may change without hard failure:
+- Furniture and décor (beds, sofas, chairs, tables, rugs, art)
+- Styling items and accessories
+- Virtual staging furniture
+
+Furniture changes may still be reported as warnings.
+
+------------------------------
+OPENINGS AND FUNCTIONAL ACCESS — STRICT RULES
+------------------------------
+
+Doors and windows must remain FUNCTIONALLY USABLE.
+
+WINDOWS:
+- Partial obstruction by furniture (e.g. sofa, bed, lamp) is acceptable
+- The window must still clearly exist as a window
+- Objects must NOT be fixed to the window pane or frame
+- The window must not be fully sealed, replaced, or visually converted into a wall
+
+DOORS:
+- All doors must remain visually and functionally passable
+
+SWINGING DOORS:
+- The door leaf and opening arc must remain reasonably clear
+- Furniture must not be placed across the doorway
+- The door must appear able to open normally
+
+SLIDING DOORS:
+- Furniture may be placed close to sliding doors
+- The sliding path must not be fully blocked or sealed
+- At least part of the sliding opening must remain usable
+
+If a door or window exists but is no longer realistically usable:
+-> category = opening_blocked
+-> hardFail = true
+
+------------------------------
+CIRCULATION & WALKWAYS — NON-NEGOTIABLE
+------------------------------
+
+Rooms must maintain realistic circulation paths.
+
+Treat as FUNCTIONAL FAILURE if:
+- Furniture is placed directly across a doorway
+- A bed, sofa, or large object blocks access through a door
+- A closet or cupboard door is no longer reachable
+- A primary access path is clearly obstructed
+
+Minor narrowing is acceptable.
+Complete blockage or impractical access is NOT.
+
+If circulation is blocked:
+-> category = opening_blocked
+-> hardFail = true
+
+------------------------------
+ROOM IDENTITY RULE
+------------------------------
+
+Even if all individual elements appear present, you must assess whether:
+- The room/property still clearly reads as the SAME physical space
+- Walls, openings, and proportions appear consistent
+- No stretching, straightening, widening, or spatial manipulation occurred
+
+If the room appears physically altered to look larger, wider, or materially different:
+-> Treat this as STRUCTURE.
+
+------------------------------
+CATEGORIES (SELECT ONE)
+------------------------------
+
+structure:
+- Any structural or fixed element changed, removed, added, resized
+- Wall openings changed
+- Fixtures altered or missing
+- Heat pump / AC unit removed or altered
+- Floor or wall coverings changed
+- Room identity violation
+
+opening_blocked:
+- Any door or window fully blocked or made non-functional
+
+furniture_change:
+- Movable furniture or décor added, removed, replaced, repositioned
+
+style_only:
+- Exposure, colour, brightness, or style-only changes
+- No object changes
+
+unknown:
+- Cannot confidently determine changes
+
+------------------------------
+CATEGORY RESOLUTION PRIORITY
+------------------------------
+
+If multiple interpretations are possible, apply this priority:
+
+1. structure
+2. opening_blocked
+3. furniture_change
+4. style_only
+5. unknown
+
+If an issue involves attachment, fixation, or loss of function:
+-> NEVER downgrade to furniture_change.
+
+------------------------------
+DECISION RULES
+------------------------------
+
+- structure -> hardFail = true
+- opening_blocked -> hardFail = true
+- furniture_change -> hardFail = false
+- style_only -> hardFail = false
+- If confidence < ${MIN_CONFIDENCE} -> hardFail = false
+
+------------------------------
+OUTPUT FORMAT (JSON ONLY)
+------------------------------
+
 {
   "hardFail": boolean,
-  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
   "reasons": string[],
-  "confidence": 0..1 number
+  "confidence": number
 }
 
-Stage: ${stageLabel}. Scene: ${sceneLabel}.`;
+Stage: ${stageLabel}
+Scene: ${sceneLabel}`;
 }
 
 export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {

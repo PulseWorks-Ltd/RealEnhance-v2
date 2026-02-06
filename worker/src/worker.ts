@@ -879,7 +879,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         : (verdict.warnings && verdict.warnings.length)
           ? verdict.warnings
           : [];
-      const localIssues = anyFailed || advisoryReasons.length > 0;
+      const localIssues = anyFailed || advisoryReasons.length > 0 || verdict.hardFail;
       const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? localIssues : false;
       if (localIssues) {
         const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
@@ -908,6 +908,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
         stage1BLocalIssues = localIssues;
+
+        if (verdict?.hardFail) {
+          const reason = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B blocked by structural validation";
+          nLog(`[stage1B] HARD FAIL detected (gemini or enforce mode). Reason: ${reason}`);
+          if (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED) {
+            updateJob(payload.jobId, {
+              status: "failed",
+              errorMessage: reason,
+              error: reason,
+              meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, unifiedValidation: verdict },
+            });
+            return;
+          }
+        }
         if (localIssues && VALIDATION_BLOCKING_ENABLED) {
           const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "stage1B validation blocked";
           nLog(`[stage1B] local block failure: ${msg}`);
@@ -1434,6 +1448,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage2NeedsConfirm = true;
           }
           stage2LocalReasons.push(...localNotes);
+        }
+
+        if (unifiedValidation.hardFail) {
+          const reason = (localNotes && localNotes.length) ? localNotes.join("; ") : "Stage 2 blocked by structural validation";
+          nLog(`[worker] Stage 2 HARD FAIL detected (gemini or enforce mode). Reason: ${reason}`);
+          if (geminiBlockingEnabled || VALIDATION_BLOCKING_ENABLED) {
+            stage2Blocked = true;
+            stage2BlockedReason = reason;
+            updateJob(payload.jobId, {
+              status: "failed",
+              errorMessage: reason,
+              error: reason,
+              meta: {
+                ...sceneMeta,
+                unifiedValidation,
+                stage2LocalReasons,
+              },
+            });
+            return;
+          }
         }
       }
 
