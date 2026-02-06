@@ -83,12 +83,14 @@ export interface UnifiedValidationParams {
   mode?: "log" | "enforce";
   jobId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
+  baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
   /**
    * Stage1A output path for Stage2 validation baseline.
    * CRITICAL: Stage2 should validate against Stage1A output, NOT original.
    * If not provided, falls back to originalPath (legacy behavior).
    */
   stage1APath?: string;
+  baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
 }
 
 /**
@@ -124,7 +126,8 @@ function isSoftGeometryScene(meta: {
  *
  * This is the single entry point for all structural validation.
  * It runs a curated set of structural validators and aggregates their results.
- *
+      baseArtifacts,
+    } = params;
  * Validators included:
  * - Window validation (window/door obstruction, blocking natural light)
  * - Wall validation (wall geometry, openings)
@@ -153,6 +156,7 @@ export async function runUnifiedValidation(
     jobId,
     stagingStyle,
     stage1APath,
+    baseArtifacts,
   } = params;
 
   const validatorMode = getLocalValidatorMode();
@@ -171,7 +175,7 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] === Starting Unified Structural Validation ===`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
-  nLog(`[unified-validator] Mode: ${mode} (validator config: ${validatorMode})`);
+          baseArtifacts,
   nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
@@ -201,6 +205,7 @@ export async function runUnifiedValidation(
         sceneType,
         roomType,
         config: stageAwareConfig,
+        baseArtifacts,
       });
 
       // Convert stage-aware result to UnifiedValidationResult format
@@ -239,7 +244,7 @@ export async function runUnifiedValidation(
         });
       }
 
-      const hardFail = mode === "enforce" && stageAwareResult.risk;
+      }, baseArtifacts);
 
       if (!hardFail) {
         stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));
@@ -269,7 +274,7 @@ export async function runUnifiedValidation(
     buffers = await buildValidationBuffers(originalPath, enhancedPath, {
       blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
       smallSize: 512,
-    });
+    }, baseArtifacts);
   } catch (err) {
     console.warn("[unified-validator] Failed to build shared buffers, falling back to per-validator Sharp calls", err);
     buffers = null;
@@ -390,7 +395,7 @@ export async function runUnifiedValidation(
   // Focused check on architectural elements during staging
   if (stage === "2") {
     try {
-      const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath);
+      const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
       const structResult = await validateStage2Structural(
         originalPath,
         enhancedPath,

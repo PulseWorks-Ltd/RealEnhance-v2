@@ -1,6 +1,8 @@
 import sharp from "sharp";
+import type { BaseArtifacts } from "./baseArtifacts";
 import { StructuralMask } from "./structuralMask";
-import { computeBrightnessDiff } from "./brightnessValidator";
+import { computeBrightnessDiff, computeBrightnessDiffFromBuffers } from "./brightnessValidator";
+import { computeEdgeMapFromGray } from "./edgeUtils";
 import { VALIDATION_THRESHOLDS } from "./config";
 import { StructuralValidationResult } from "./types";
 import { ensureSameSizeAsBase } from "./resizeUtils";
@@ -40,39 +42,31 @@ function maskEdges(edges: Uint8Array, mask: StructuralMask): Uint8Array {
   return out;
 }
 
+function edgeFromGrayBuffer(gray: Uint8Array, width: number, height: number): Uint8Array {
+  return computeEdgeMapFromGray(gray, width, height, 38);
+}
+
 async function cannyEdge(imagePath: string): Promise<Uint8Array> {
   // Simple Sobel-based edge for now
   const meta = await sharp(imagePath).greyscale().raw().toBuffer({ resolveWithObject: true });
   const buf = new Uint8Array(meta.data.buffer, meta.data.byteOffset, meta.data.byteLength);
   const { width, height } = meta.info;
-  const edge = new Uint8Array(buf.length);
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const i = y * width + x;
-      const gx = (
-        buf[i - width - 1] + 2 * buf[i - 1] + buf[i + width - 1] -
-        buf[i - width + 1] - 2 * buf[i + 1] - buf[i + width + 1]
-      );
-      const gy = (
-        buf[i - width - 1] + 2 * buf[i - width] + buf[i - width + 1] -
-        buf[i + width - 1] - 2 * buf[i + width] - buf[i + width + 1]
-      );
-      const g = Math.sqrt(gx * gx + gy * gy);
-      if (g > 38) edge[i] = 1;
-    }
-  }
-  return edge;
+  return edgeFromGrayBuffer(buf, width, height);
 }
 
 export async function validateStage1A(
   canonicalBasePath: string,
   stage1APath: string,
-  structuralMask: StructuralMask
+  structuralMask: StructuralMask,
+  baseArtifacts?: BaseArtifacts
 ): Promise<Stage1AValidationResult> {
-  const baseMeta = await sharp(canonicalBasePath).metadata();
+  const baseW = baseArtifacts?.path === canonicalBasePath
+    ? baseArtifacts.width
+    : (await sharp(canonicalBasePath).metadata()).width!;
+  const baseH = baseArtifacts?.path === canonicalBasePath
+    ? baseArtifacts.height
+    : (await sharp(canonicalBasePath).metadata()).height!;
   const outMeta = await sharp(stage1APath).metadata();
-  const baseW = baseMeta.width!;
-  const baseH = baseMeta.height!;
   const outW = outMeta.width!;
   const outH = outMeta.height!;
 
@@ -94,9 +88,20 @@ export async function validateStage1A(
     }
   }
 
-  const brightnessDiff = await computeBrightnessDiff(canonicalBasePath, stage1APath);
-  const baseEdges = await cannyEdge(canonicalBasePath);
-  const outEdges = await cannyEdge(stage1APath);
+  let brightnessDiff: number;
+  let baseEdges: Uint8Array;
+  let outEdges: Uint8Array;
+  if (baseArtifacts?.path === canonicalBasePath && baseArtifacts.gray) {
+    const cand = await sharp(stage1APath).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const candGray = new Uint8Array(cand.data.buffer, cand.data.byteOffset, cand.data.byteLength);
+    brightnessDiff = computeBrightnessDiffFromBuffers(baseArtifacts.gray, candGray);
+    baseEdges = baseArtifacts.edge || edgeFromGrayBuffer(baseArtifacts.gray, baseArtifacts.width, baseArtifacts.height);
+    outEdges = edgeFromGrayBuffer(candGray, cand.info.width, cand.info.height);
+  } else {
+    brightnessDiff = await computeBrightnessDiff(canonicalBasePath, stage1APath);
+    baseEdges = await cannyEdge(canonicalBasePath);
+    outEdges = await cannyEdge(stage1APath);
+  }
   const baseStruct = maskEdges(baseEdges, structuralMask);
   const outStruct = maskEdges(outEdges, structuralMask);
   const structuralIoU = computeIoU(baseStruct, outStruct);

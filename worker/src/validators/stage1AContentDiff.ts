@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import type { BaseArtifacts } from "./baseArtifacts";
 import { STAGE1A_VALIDATOR_LIMITS } from "./stage1ALimits";
 
 /**
@@ -25,7 +26,14 @@ export interface Stage1AContentDiffResult {
  * - Same RGB colour space
  * - Same raw buffer layout
  */
-async function normalizeForDiff(path: string) {
+async function normalizeForDiff(path: string, baseArtifacts?: BaseArtifacts) {
+  if (baseArtifacts && baseArtifacts.path === path && baseArtifacts.rgb) {
+    return {
+      data: baseArtifacts.rgb,
+      width: baseArtifacts.width,
+      height: baseArtifacts.height,
+    };
+  }
   // ✅ FORCE SAFE COLOURS + CHANNELS
   const img = sharp(path)
     .ensureAlpha()           // Always RGBA
@@ -55,13 +63,14 @@ async function normalizeForDiff(path: string) {
  */
 export async function runStage1AContentDiff(
   originalPath: string,
-  enhancedPath: string
+  enhancedPath: string,
+  baseArtifacts?: BaseArtifacts
 ): Promise<Stage1AContentDiffResult> {
   try {
     // Dynamic import for ESM module
     const pixelmatch = (await import("pixelmatch")).default;
 
-    const orig = await normalizeForDiff(originalPath);
+    const orig = await normalizeForDiff(originalPath, baseArtifacts);
     const enh = await normalizeForDiff(enhancedPath);
 
     if (
@@ -85,7 +94,7 @@ export async function runStage1AContentDiff(
 
     const meanDiff = diffPixels / totalPixels;
 
-    const featureMatchRatio = await estimateFeatureMatchRatio(originalPath, enhancedPath);
+    const featureMatchRatio = await estimateFeatureMatchRatio(originalPath, enhancedPath, baseArtifacts);
 
     console.log(`[Stage1A ContentDiff] meanDiff=${meanDiff.toFixed(4)}, features=${featureMatchRatio.toFixed(4)}`);
 
@@ -121,31 +130,46 @@ export async function runStage1AContentDiff(
  */
 async function estimateFeatureMatchRatio(
   originalPath: string,
-  enhancedPath: string
+  enhancedPath: string,
+  baseArtifacts?: BaseArtifacts
 ): Promise<number> {
   try {
     // Dynamic import for ESM module
     const pixelmatch = (await import("pixelmatch")).default;
 
-    // Extract edges from both images
-    const origEdges = await sharp(originalPath)
-      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-      .greyscale()
-      .convolve({
-        width: 3,
-        height: 3,
-        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1] // Edge detection kernel
-      })
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const targetWidth = baseArtifacts?.smallWidth || 512;
+    const targetHeight = baseArtifacts?.smallHeight || 512;
+
+    // Extract edges from both images (reuse base artifacts when available)
+    const origEdges = baseArtifacts?.smallGray
+      ? await sharp(baseArtifacts.smallGray, {
+          raw: { width: baseArtifacts.smallWidth, height: baseArtifacts.smallHeight, channels: 1 },
+        })
+          .convolve({
+            width: 3,
+            height: 3,
+            kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1],
+          })
+          .raw()
+          .toBuffer({ resolveWithObject: true })
+      : await sharp(originalPath)
+          .resize(targetWidth, targetHeight, { fit: "inside", withoutEnlargement: true })
+          .greyscale()
+          .convolve({
+            width: 3,
+            height: 3,
+            kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1],
+          })
+          .raw()
+          .toBuffer({ resolveWithObject: true });
 
     const enhEdges = await sharp(enhancedPath)
-      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+      .resize(targetWidth, targetHeight, { fit: "inside", withoutEnlargement: true })
       .greyscale()
       .convolve({
         width: 3,
         height: 3,
-        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1]
+        kernel: [-1, -1, -1, -1, 8, -1, -1, -1, -1],
       })
       .raw()
       .toBuffer({ resolveWithObject: true });

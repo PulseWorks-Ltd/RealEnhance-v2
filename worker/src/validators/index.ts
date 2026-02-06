@@ -1,10 +1,12 @@
 import sharp from "sharp";
-import { runGlobalEdgeMetrics } from "./globalStructuralValidator";
-import { computeBrightnessDiff } from "./brightnessValidator";
+import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalStructuralValidator";
+import { computeBrightnessDiff, computeBrightnessDiffFromBuffers } from "./brightnessValidator";
 import { StructuralMask, loadOrComputeStructuralMask } from "./structuralMask";
 import { validateStage1BStructural } from "./stage1BValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { getLocalValidatorMode, type Mode } from "./validationModes";
+import type { BaseArtifacts } from "./baseArtifacts";
+import { ensureBaseBlur } from "./baseArtifacts";
 
 // OpenCV-based structural validator
 import { validateStructureWithOpenCV } from "../ai/validators/structural-opencv";
@@ -81,7 +83,17 @@ async function aspectRatioApproximatelyEqual(basePath: string, outPath: string):
   }
 }
 
-async function computeEdgeIoU(basePath: string, outputPath: string): Promise<number> {
+async function computeEdgeIoU(basePath: string, outputPath: string, baseArtifacts?: BaseArtifacts): Promise<number> {
+  if (baseArtifacts?.path === basePath && baseArtifacts.gray) {
+    let sigma = Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8);
+    if (!isFinite(sigma) || sigma <= 0) sigma = 0.8;
+    sigma = Math.max(0.3, Math.min(sigma, 8));
+    const thr = Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35);
+    const baseBlur = await ensureBaseBlur(baseArtifacts, sigma);
+    const cand = await sharp(outputPath).greyscale().blur(sigma).raw().toBuffer({ resolveWithObject: true });
+    const candBuf = new Uint8Array(cand.data.buffer, cand.data.byteOffset, cand.data.byteLength);
+    return runGlobalEdgeMetricsFromBuffers(baseBlur, candBuf, baseArtifacts.width, baseArtifacts.height, thr).edgeIoU;
+  }
   const m = await runGlobalEdgeMetrics(basePath, outputPath);
   return m.edgeIoU;
 }
@@ -89,8 +101,12 @@ async function computeEdgeIoU(basePath: string, outputPath: string): Promise<num
 /**
  * Compute structural edge IoU with proper handling for skipped/null values
  */
-async function computeStructuralEdgeIoU(basePath: string, outputPath: string): Promise<{ value: number | null; skipReason?: string }> {
-  const mask = await loadOrComputeStructuralMask("default", basePath);
+async function computeStructuralEdgeIoU(
+  basePath: string,
+  outputPath: string,
+  baseArtifacts?: BaseArtifacts
+): Promise<{ value: number | null; skipReason?: string }> {
+  const mask = await loadOrComputeStructuralMask("default", basePath, baseArtifacts);
   const verdict = await validateStage2Structural(basePath, outputPath, { structuralMask: mask });
 
   // CRITICAL: Do NOT default to 0 - return null with reason if IoU couldn't be computed
@@ -109,8 +125,14 @@ async function validateStage1A(basePath: string, outputPath: string, context: an
   }
   let edgeIoU: number; let brightnessDiff: number;
   try {
-    edgeIoU = await computeEdgeIoU(basePath, outputPath);
-    brightnessDiff = await computeBrightnessDiff(basePath, outputPath);
+    edgeIoU = await computeEdgeIoU(basePath, outputPath, context.baseArtifacts);
+    if (context.baseArtifacts?.path === basePath && context.baseArtifacts.gray) {
+      const cand = await sharp(outputPath).greyscale().raw().toBuffer({ resolveWithObject: true });
+      const candGray = new Uint8Array(cand.data.buffer, cand.data.byteOffset, cand.data.byteLength);
+      brightnessDiff = computeBrightnessDiffFromBuffers(context.baseArtifacts.gray, candGray);
+    } else {
+      brightnessDiff = await computeBrightnessDiff(basePath, outputPath);
+    }
   } catch (e) {
     return { ok: false, reason: "validator_error", details: { error: (e as any)?.message } };
   }
@@ -130,8 +152,8 @@ async function validateStage1B(basePath: string, outputPath: string, context: an
   }
   let mask: StructuralMask;
   try {
-    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath);
-    const verdict = await validateStage1BStructural(basePath, outputPath, { structuralMask: mask });
+    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath, context.baseArtifacts);
+    const verdict = await validateStage1BStructural(basePath, outputPath, { structuralMask: mask }, context.baseArtifacts);
     if (!verdict.ok) {
       return { ok: false, reason: verdict.reason || "structural_change", details: { structIoU: verdict.structuralIoU } };
     }
@@ -151,7 +173,7 @@ async function validateStage2(basePath: string, outputPath: string, context: any
   }
   let mask: StructuralMask;
   try {
-    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath);
+    mask = await loadOrComputeStructuralMask(context.jobId || "default", basePath, context.baseArtifacts);
     const verdict = await validateStage2Structural(basePath, outputPath, { structuralMask: mask });
     if (!verdict.ok) {
       return { ok: false, reason: verdict.reason || "structural_change", details: { structIoU: verdict.structuralIoU } };
@@ -166,13 +188,13 @@ export async function validateStageOutput(
   stage: StageName,
   basePath: string,
   outputPath: string,
-  context: { sceneType: "interior" | "exterior"; roomType?: string; jobId?: string }
+  context: { sceneType: "interior" | "exterior"; roomType?: string; jobId?: string; baseArtifacts?: BaseArtifacts }
 ): Promise<ValidationResult> {
   const mode = getLocalValidatorMode();
 
   console.log(`[validator:${stage}] Running structural validation (mode=${mode}, scene=${context.sceneType})`);
 
-  const { fixedOutputPath, sizeMismatch } = await normalizeDimensions(basePath, outputPath);
+  const { fixedOutputPath, sizeMismatch } = await normalizeDimensions(basePath, outputPath, context.baseArtifacts);
 
   let result: ValidationResult;
   if (stage === "stage1A") {

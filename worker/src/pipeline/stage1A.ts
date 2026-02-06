@@ -2,6 +2,8 @@ import sharp from "sharp";
 import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
 import { enhanceWithGemini } from "../ai/gemini";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
+import type { BaseArtifacts } from "../validators/baseArtifacts";
+import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
@@ -156,6 +158,7 @@ export async function runStage1A(
   } = {}
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
+  const baseArtifacts = (global as any).__baseArtifacts;
   const jobIdResolved = jobId || (global as any).__jobId || "default";
   const roomTypeResolved = roomType || (global as any).__jobRoomType;
   const isInterior = sceneType === "interior";
@@ -240,6 +243,34 @@ export async function runStage1A(
   });
   
   // 12. Export Sharp enhancement with maximum quality
+  const baseArtifactsCache: Map<string, BaseArtifacts> = (global as any).__baseArtifactsCache || new Map();
+  const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
+  const artifactsPromise = buildArtifacts ? ((): Promise<BaseArtifacts> => {
+    const base = img.clone();
+    const metaPromise = base.metadata();
+    const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
+    const smallPromise = base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
+    const rgbPromise = base.clone().ensureAlpha().removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
+    return Promise.all([metaPromise, grayPromise, smallPromise, rgbPromise]).then(([meta, gray, small, rgb]) => {
+      if (!meta.width || !meta.height) {
+        throw new Error("Failed to read Stage1A artifact dimensions");
+      }
+      const grayData = new Uint8Array(gray.data.buffer, gray.data.byteOffset, gray.data.byteLength);
+      const edge = computeEdgeMapFromGray(grayData, gray.info.width, gray.info.height, 38);
+      return {
+        path: sharpOutputPath,
+        width: meta.width,
+        height: meta.height,
+        gray: grayData,
+        smallGray: new Uint8Array(small.data.buffer, small.data.byteOffset, small.data.byteLength),
+        smallWidth: small.info.width,
+        smallHeight: small.info.height,
+        edge,
+        rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
+      };
+    });
+  })() : null;
+
   await img
     .webp({ 
       quality: 97,            // Very high quality (maintains 4K detail)
@@ -248,6 +279,16 @@ export async function runStage1A(
       nearLossless: false,    // Lossy for optimal compression
     })
     .toFile(sharpOutputPath);
+
+  if (artifactsPromise) {
+    try {
+      const artifacts = await artifactsPromise;
+      baseArtifactsCache.set(sharpOutputPath, artifacts);
+      (global as any).__baseArtifactsCache = baseArtifactsCache;
+    } catch (e) {
+      console.warn("[stage1A] Failed to build BaseArtifacts cache:", e);
+    }
+  }
   
   console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
@@ -294,7 +335,8 @@ export async function runStage1A(
     // ✅ AUTHORITATIVE CONTENT VALIDATION
     const diffResult = await runStage1AContentDiff(
       sharpOutputPath,
-      primary1AImage
+      primary1AImage,
+      baseArtifacts
     );
 
     if (!diffResult.passed && STAGE1A_STRICT_DIFF) {
@@ -306,7 +348,7 @@ export async function runStage1A(
         // Run structural validator on Gemini output
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
         const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-        const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
+        const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
         const masks = { structuralMask: maskPath };
         let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
         console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);
@@ -336,7 +378,7 @@ export async function runStage1A(
     // Run structural validator on primary output
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
     const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-    const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
+    const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
     const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
     console.log(`[stage1A] Structural validator verdict (primary output):`, verdict);
@@ -362,7 +404,7 @@ export async function runStage1A(
     if (geminiOutputPath !== sharpOutputPath) {
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
       const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-      const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath);
+      const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
       const masks = { structuralMask: maskPath };
       let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
       console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);

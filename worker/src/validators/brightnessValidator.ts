@@ -16,6 +16,21 @@ export function computeBrightnessDiffFromBuffers(
   return Math.abs(mA - mB);
 }
 
+export async function computeBrightnessDiffWithBaseBuffer(
+  baseGray: Uint8Array,
+  baseWidth: number,
+  baseHeight: number,
+  candidatePath: string
+): Promise<number> {
+  const cand = await sharp(candidatePath)
+    .greyscale()
+    .resize(baseWidth, baseHeight, { fit: "fill" })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const candGray = new Uint8Array(cand.data.buffer, cand.data.byteOffset, cand.data.byteLength);
+  return computeBrightnessDiffFromBuffers(baseGray, candGray);
+}
+
 // Returns absolute normalized mean brightness difference (0..1)
 export async function computeBrightnessDiff(basePath: string, candidatePath: string): Promise<number> {
   const [a, b] = await Promise.all([

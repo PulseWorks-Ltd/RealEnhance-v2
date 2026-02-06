@@ -224,8 +224,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   let candidatePath = params.candidatePath;
 
   try {
+    const baseMetaPromise = params.baseArtifacts && params.baseArtifacts.path === baselinePath
+      ? Promise.resolve({ width: params.baseArtifacts.width, height: params.baseArtifacts.height } as sharp.Metadata)
+      : sharp(baselinePath).metadata();
     [baseMeta, candMeta] = await Promise.all([
-      sharp(baselinePath).metadata(),
+      baseMetaPromise,
       sharp(candidatePath).metadata(),
     ]);
   } catch (err) {
@@ -276,7 +279,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
   try {
     [maskBaseline, maskCandidate] = await Promise.all([
-      loadOrComputeStructuralMask(jobId + "-base", baselinePath),
+      loadOrComputeStructuralMask(jobId + "-base", baselinePath, params.baseArtifacts),
       loadOrComputeStructuralMask(jobId + "-cand", candidatePath),
     ]);
   } catch (err) {
@@ -313,13 +316,20 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   } else {
     // Load grayscale images and compute edges
     try {
-      const [baseRaw, candRaw] = await Promise.all([
-        sharp(baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-      ]);
+      const baseGrayPromise = params.baseArtifacts && params.baseArtifacts.path === baselinePath
+        ? Promise.resolve(params.baseArtifacts.gray)
+        : sharp(baselinePath)
+            .greyscale()
+            .raw()
+            .toBuffer({ resolveWithObject: true })
+            .then((raw) => new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength));
+      const candGrayPromise = sharp(candidatePath)
+        .greyscale()
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+        .then((raw) => new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength));
 
-      const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
-      const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
+      const [baseGray, candGray] = await Promise.all([baseGrayPromise, candGrayPromise]);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
         const baseEdge = sobelBinary(baseGray, baseW, baseH, edgeThreshold);
@@ -358,13 +368,20 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ===== 6. COMPUTE EDGE IoU (stage-specific mode) =====
   if (!debug.dimensionMismatch) {
     try {
-      const [baseRaw, candRaw] = await Promise.all([
-        sharp(baselinePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-        sharp(candidatePath).greyscale().raw().toBuffer({ resolveWithObject: true }),
-      ]);
+      const baseGrayPromise = params.baseArtifacts && params.baseArtifacts.path === baselinePath
+        ? Promise.resolve(params.baseArtifacts.gray)
+        : sharp(baselinePath)
+            .greyscale()
+            .raw()
+            .toBuffer({ resolveWithObject: true })
+            .then((raw) => new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength));
+      const candGrayPromise = sharp(candidatePath)
+        .greyscale()
+        .raw()
+        .toBuffer({ resolveWithObject: true })
+        .then((raw) => new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength));
 
-      const baseGray = new Uint8Array(baseRaw.data.buffer, baseRaw.data.byteOffset, baseRaw.data.byteLength);
-      const candGray = new Uint8Array(candRaw.data.buffer, candRaw.data.byteOffset, candRaw.data.byteLength);
+      const [baseGray, candGray] = await Promise.all([baseGrayPromise, candGrayPromise]);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
       const baseEdge = sobelBinary(baseGray, baseW, baseH, edgeThreshold);

@@ -674,11 +674,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // CANONICAL PREPROCESS (new) for structural baseline
   let canonicalPath = origPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-canonical.webp");
   try {
-    await preprocessToCanonical(origPath, canonicalPath, sceneLabel);
+    const baseArtifacts = await preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
+      buildArtifacts: true,
+      smallSize: 512,
+    });
+    if (baseArtifacts) {
+      (global as any).__baseArtifacts = baseArtifacts;
+      const baseArtifactsCache: Map<string, any> = (global as any).__baseArtifactsCache || new Map();
+      baseArtifactsCache.set(canonicalPath, baseArtifacts);
+      (global as any).__baseArtifactsCache = baseArtifactsCache;
+    }
     (global as any).__canonicalPath = canonicalPath;
     // Precompute structural mask (architecture only) from canonical
     try {
-      const mask = await computeStructuralEdgeMask(canonicalPath);
+      const mask = await computeStructuralEdgeMask(canonicalPath, baseArtifacts);
       (global as any).__structuralMask = mask;
       nLog(`[WORKER] Structural mask computed: ${mask.width}x${mask.height}`);
     } catch (e) {
@@ -849,6 +858,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         declutterMode: mode,
         jobId: payload.jobId,
       });
+      const baseArtifacts = (global as any).__baseArtifacts;
 
       const verdict = await runUnifiedValidation({
         originalPath: path1A,
@@ -859,6 +869,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
         jobId: payload.jobId,
         stage1APath: path1A,
+        baseArtifacts,
       });
 
       const rawResults = verdict?.raw ? Object.values(verdict.raw) : [];
@@ -1362,6 +1373,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       effectiveValidationMode = "log";
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=OFF (advisory)`);
 
+      const baseArtifacts = (global as any).__baseArtifacts;
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
@@ -1372,6 +1384,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         stage1APath: validationBasePath,
+        baseArtifacts,
       });
 
       const validationElapsed = Date.now() - validationStartTime;

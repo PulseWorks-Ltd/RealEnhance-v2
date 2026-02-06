@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import type { BaseArtifacts } from "./baseArtifacts";
+import { ensureBaseBlur } from "./baseArtifacts";
 
 export interface ValidationBuffers {
   width: number;
@@ -22,59 +24,66 @@ export interface BuildValidationBuffersOptions {
 export async function buildValidationBuffers(
   basePath: string,
   candPath: string,
-  options: BuildValidationBuffersOptions = {}
+  options: BuildValidationBuffersOptions = {},
+  baseArtifacts?: BaseArtifacts
 ): Promise<ValidationBuffers> {
   const blurSigma = Number.isFinite(options.blurSigma) ? Number(options.blurSigma) : 0.8;
   const smallSize = Number.isFinite(options.smallSize) ? Number(options.smallSize) : 512;
 
-  const baseMeta = await sharp(basePath).metadata();
-  if (!baseMeta.width || !baseMeta.height) {
-    throw new Error("Failed to read base image dimensions");
+  let resolvedWidth = baseArtifacts?.width;
+  let resolvedHeight = baseArtifacts?.height;
+  if (!resolvedWidth || !resolvedHeight) {
+    const baseMeta = await sharp(basePath).metadata();
+    if (!baseMeta.width || !baseMeta.height) {
+      throw new Error("Failed to read base image dimensions");
+    }
+    resolvedWidth = baseMeta.width;
+    resolvedHeight = baseMeta.height;
   }
-  const width = baseMeta.width;
-  const height = baseMeta.height;
 
-  const baseSharp = sharp(basePath).greyscale();
   const candSharp = sharp(candPath).greyscale();
 
   // Ensure candidate is normalized to base dimensions once
-  const candNormalized = candSharp.clone().resize(width, height, { fit: "fill" });
 
-  const baseGrayPromise = baseSharp.clone().raw().toBuffer({ resolveWithObject: true });
+  const candNormalized = candSharp.clone().resize(resolvedWidth, resolvedHeight, { fit: "fill" });
+
   const candGrayPromise = candNormalized.clone().raw().toBuffer({ resolveWithObject: true });
-
-  const baseBlurPromise = baseSharp.clone().blur(blurSigma).raw().toBuffer({ resolveWithObject: true });
   const candBlurPromise = candNormalized.clone().blur(blurSigma).raw().toBuffer({ resolveWithObject: true });
-
-  const baseSmallPromise = baseSharp
-    .clone()
-    .resize(smallSize, smallSize, { fit: "inside" })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
   const candSmallPromise = candNormalized
     .clone()
     .resize(smallSize, smallSize, { fit: "inside" })
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const [baseGray, candGray, baseBlur, candBlur, baseSmall, candSmall] = await Promise.all([
-    baseGrayPromise,
+  const [candGray, candBlur, candSmall] = await Promise.all([
     candGrayPromise,
-    baseBlurPromise,
     candBlurPromise,
-    baseSmallPromise,
     candSmallPromise,
   ]);
 
-  baseSharp.destroy();
   candSharp.destroy();
 
-  const resized = (candGray.info.width !== width || candGray.info.height !== height);
+  const baseGray = baseArtifacts?.gray
+    ? { data: baseArtifacts.gray, info: { width: resolvedWidth, height: resolvedHeight } }
+    : await sharp(basePath).greyscale().raw().toBuffer({ resolveWithObject: true });
+
+  const baseBlur = baseArtifacts
+    ? { data: await ensureBaseBlur(baseArtifacts, blurSigma), info: { width: resolvedWidth, height: resolvedHeight } }
+    : await sharp(basePath).greyscale().blur(blurSigma).raw().toBuffer({ resolveWithObject: true });
+
+  const baseSmall = baseArtifacts?.smallGray
+    ? { data: baseArtifacts.smallGray, info: { width: baseArtifacts.smallWidth, height: baseArtifacts.smallHeight } }
+    : await sharp(basePath)
+        .greyscale()
+        .resize(smallSize, smallSize, { fit: "inside" })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+  const resized = (candGray.info.width !== resolvedWidth || candGray.info.height !== resolvedHeight);
 
   return {
-    width,
-    height,
+    width: resolvedWidth,
+    height: resolvedHeight,
     resized,
     baseGray: new Uint8Array(baseGray.data.buffer, baseGray.data.byteOffset, baseGray.data.byteLength),
     candGray: new Uint8Array(candGray.data.buffer, candGray.data.byteOffset, candGray.data.byteLength),

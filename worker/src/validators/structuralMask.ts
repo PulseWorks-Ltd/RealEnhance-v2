@@ -1,7 +1,15 @@
 import fs from "fs/promises";
 import path from "path";
+import sharp from "sharp";
+import type { BaseArtifacts } from "./baseArtifacts";
+import { ensureBaseBlur } from "./baseArtifacts";
+
 // Loads mask from cache if present, else computes and saves for future reuse
-export async function loadOrComputeStructuralMask(jobId: string, canonicalBasePath: string): Promise<StructuralMask> {
+export async function loadOrComputeStructuralMask(
+  jobId: string,
+  canonicalBasePath: string,
+  baseArtifacts?: BaseArtifacts
+): Promise<StructuralMask> {
   const maskCacheDir = path.join(path.dirname(canonicalBasePath), "_maskcache");
   const maskCachePath = path.join(maskCacheDir, `${jobId}.mask.json`);
   try {
@@ -13,11 +21,10 @@ export async function loadOrComputeStructuralMask(jobId: string, canonicalBasePa
     }
   } catch {}
   // Compute and cache
-  const mask = await computeStructuralEdgeMask(canonicalBasePath);
+  const mask = await computeStructuralEdgeMask(canonicalBasePath, baseArtifacts);
   await fs.writeFile(maskCachePath, JSON.stringify({ width: mask.width, height: mask.height, data: Array.from(mask.data) }), "utf8");
   return mask;
 }
-import sharp from "sharp";
 
 export interface StructuralMask {
   width: number;
@@ -124,11 +131,20 @@ function buildStructuralMask(edge: Uint8Array, width: number, height: number): S
   return { width, height, data: dilated };
 }
 
-export async function computeStructuralEdgeMask(imagePath: string): Promise<StructuralMask> {
+export async function computeStructuralEdgeMask(
+  imagePath: string,
+  baseArtifacts?: BaseArtifacts
+): Promise<StructuralMask> {
   let preBlur = Number(process.env.STAGE2_STRUCT_PREBLUR || 0.6);
   if (!isFinite(preBlur) || preBlur <= 0) preBlur = 0.6;
   preBlur = Math.max(0.3, Math.min(preBlur, 8));
   const edgeThr = Number(process.env.STAGE2_STRUCT_EDGE_THRESHOLD || 38);
+  if (baseArtifacts && baseArtifacts.path === imagePath) {
+    const blur = await ensureBaseBlur(baseArtifacts, preBlur);
+    const { width, height } = baseArtifacts;
+    const maps = sobelEdge(blur, width, height, edgeThr);
+    return buildStructuralMask(maps.edge, width, height);
+  }
   const raw = await sharp(imagePath).greyscale().blur(preBlur).raw().toBuffer({ resolveWithObject: true });
   const buf = new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength);
   const { width, height } = raw.info;

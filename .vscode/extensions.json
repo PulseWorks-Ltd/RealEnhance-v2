@@ -1,5 +1,6 @@
 {
     "recommendations": [
-        "andrepimenta.claude-code-chat"
+        "andrepimenta.claude-code-chat",
+        "github.copilot-chat"
     ]
 }

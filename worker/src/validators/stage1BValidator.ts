@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import type { BaseArtifacts } from "./baseArtifacts";
 import { StructuralMask } from "./structuralMask";
 import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
 import {
@@ -67,12 +68,15 @@ export async function validateStage1BStructural(
   canonicalBasePath: string,
   stage1BPath: string,
   masks: { structuralMask: StructuralMask },
+  baseArtifacts?: BaseArtifacts
 ): Promise<Stage1BValidationResult> {
   // Segment both images
   const baseSeg = await segmentImageClasses(canonicalBasePath);
   const candSeg = await segmentImageClasses(stage1BPath);
   // Hard fail if dimensions change
-  const baseMeta = await sharp(canonicalBasePath).metadata();
+  const baseMeta = baseArtifacts?.path === canonicalBasePath
+    ? { width: baseArtifacts.width, height: baseArtifacts.height }
+    : await sharp(canonicalBasePath).metadata();
   const outMeta = await sharp(stage1BPath).metadata();
   const compliance: string[] = [];
   if (baseMeta.width !== outMeta.width || baseMeta.height !== outMeta.height) {

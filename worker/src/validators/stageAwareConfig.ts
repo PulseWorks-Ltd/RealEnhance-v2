@@ -232,6 +232,8 @@ export interface ValidateParams {
   retryAttempt?: number;
   /** Override config (for testing) */
   config?: StageAwareConfig;
+  /** Optional precomputed artifacts for baseline image */
+  baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
 }
 
 /**
