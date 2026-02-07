@@ -4631,8 +4631,18 @@ export default function BatchProcessor() {
                           return !!stage1AUrl;
                         })();
 
-                        const resolvedFinalUrl = finalResultUrl || (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : null);
-                        const resolvedFinalStage: StageKey | null = finalResultUrl ? (resultStage as StageKey | null) : (targetUrlPresent ? targetStage : null);
+                        const stageRank: Record<StageKey, number> = { "1A": 1, "1B": 2, "2": 3 };
+                        const finalStageMeetsTarget = (() => {
+                          if (!resultStage || !finalResultUrl) return false;
+                          return stageRank[resultStage] >= stageRank[targetStage];
+                        })();
+
+                        const resolvedFinalUrl = (finalResultUrl && finalStageMeetsTarget)
+                          ? finalResultUrl
+                          : (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : null);
+                        const resolvedFinalStage: StageKey | null = (finalResultUrl && finalStageMeetsTarget)
+                          ? (resultStage as StageKey | null)
+                          : (targetUrlPresent ? targetStage : null);
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && targetUrlPresent) || isDone;
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
