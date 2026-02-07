@@ -689,6 +689,7 @@ export default function BatchProcessor() {
   const statusUnknownLoggedRef = useRef<Set<string>>(new Set());
   const idxMissingLoggedRef = useRef<Set<string>>(new Set());
   const statusHasUrlLoggedRef = useRef<Set<string>>(new Set());
+  const statusTargetNotReachedLoggedRef = useRef<Set<string>>(new Set());
   const retryChildMappingLoggedRef = useRef<Set<string>>(new Set());
 
   // Industry mapping - locked to Real Estate only
@@ -1905,6 +1906,10 @@ export default function BatchProcessor() {
           } : null;
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = typeof requestedStages?.stage2 === "boolean" ? requestedStages.stage2 : null;
+          const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true" || typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : null;
+          const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
+          const stagingAllowed = it?.meta?.allowStaging !== false && allowStaging;
+          const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const extraResult = it?.result || {};
           const resultUrl = it?.publishedUrl || it?.resultUrl || it?.publishUrl || it?.outputUrl || it?.finalUrl || extraResult?.resultUrl || extraResult?.imageUrl || extraResult?.url || null;
@@ -1928,11 +1933,24 @@ export default function BatchProcessor() {
           const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
           const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
+          // Determine target stage per image (same logic as UI)
+          const targetStage: StageKey = (() => {
+            if (stage2Expected) return "2";
+            if (declutterRequested) return "1B";
+            return "1A";
+          })();
+
+          const targetUrlPresent = (() => {
+            if (targetStage === "2") return !!stage2Url;
+            if (targetStage === "1B") return !!stage1bUrl;
+            return !!stage1aUrl;
+          })();
+
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
           else if (hardFail) uiStatus = 'error';
 
-          // Completion requires explicit completed status
+          // Completion requires explicit completed status AND target stage reached
           let completionSource: string = "none";
           let displayUrl: string | null = resultUrlSafe || null;
           if (!displayUrl) {
@@ -1963,7 +1981,16 @@ export default function BatchProcessor() {
             console.log('[BATCH][completion_fallback]', { jobId: key, source: completionSource, status, hasResult: !!resultUrlSafe });
           }
 
-          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl;
+          // FIX: Only mark as completed when target stage is reached
+          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl && targetUrlPresent;
+          
+          // Log when backend says completed but target not reached (still processing)
+          if ((status === "completed" || status === "complete" || status === "done") && displayUrl && !targetUrlPresent) {
+            if (!statusTargetNotReachedLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
+              statusTargetNotReachedLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
+              console.log('[BATCH][target_not_reached]', { jobId: key, status, targetStage, hasStage2: !!stage2Url, hasStage1B: !!stage1bUrl, hasStage1A: !!stage1aUrl, targetPresent: targetUrlPresent });
+            }
+          }
 
           // Missing final URL while marked complete is a warning bug surface
           const warningList = (() => {
@@ -2162,23 +2189,34 @@ export default function BatchProcessor() {
           const waited = Date.now() - doneSeenAt;
           if (waited >= STALE_DONE_GRACE_MS) {
             if (nonTerminalIndices.length) {
-              setResults(prev => {
-                const copy = prev ? [...prev] : [];
-                for (const idx of nonTerminalIndices) {
-                  const existing = copy[idx] || {};
-                  copy[idx] = {
-                    ...existing,
-                    status: 'failed',
-                    error: existing.error || 'stuck_queued',
-                    errorCode: 'stuck_queued',
-                  } as any;
-                  processedSetRef.current.add(idx);
+              // FIX: Don't mark as stuck_queued if items have partial outputs (still progressing through pipeline)
+              const trulyStuckIndices: number[] = [];
+              for (const idx of nonTerminalIndices) {
+                const existing = results[idx] || {};
+                const hasPartialOutputs = !!(existing.stageUrls?.['1A'] || existing.stageUrls?.stage1A || existing.stageUrls?.['1B'] || existing.stageUrls?.stage1B || existing.stageUrls?.['2'] || existing.stageUrls?.stage2);
+                if (!hasPartialOutputs) {
+                  trulyStuckIndices.push(idx);
                 }
-                return copy;
-              });
-              setProgressText(`Marked ${nonTerminalIndices.length} item(s) as stuck. You can retry them.`);
-              if (IS_DEV) {
-                console.warn('[BATCH][poll] marking stuck queued items as failed', { nonTerminalIndices });
+              }
+              if (trulyStuckIndices.length > 0) {
+                setResults(prev => {
+                  const copy = prev ? [...prev] : [];
+                  for (const idx of trulyStuckIndices) {
+                    const existing = copy[idx] || {};
+                    copy[idx] = {
+                      ...existing,
+                      status: 'failed',
+                      error: existing.error || 'stuck_queued',
+                      errorCode: 'stuck_queued',
+                    } as any;
+                    processedSetRef.current.add(idx);
+                  }
+                  return copy;
+                });
+                setProgressText(`Marked ${trulyStuckIndices.length} item(s) as stuck. You can retry them.`);
+                if (IS_DEV) {
+                  console.warn('[BATCH][poll] marking stuck queued items as failed', { trulyStuckIndices, skippedDueToPartialOutputs: nonTerminalIndices.filter(i => !trulyStuckIndices.includes(i)) });
+                }
               }
             }
           } else {
