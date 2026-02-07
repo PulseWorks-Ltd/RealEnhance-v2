@@ -365,7 +365,7 @@ function determineRetryPipelinePath(
   needsIntermediate: boolean;
   description: string;
 } {
-  const had1B = originalRequestedStages?.stage1b === true;
+  const had1B = !!originalRequestedStages?.stage1b;
   
   // Determine current effective stage
   const fromStage = currentStage || "1A";
@@ -1778,7 +1778,7 @@ export default function BatchProcessor() {
             const singleSceneLabel = String(data?.meta?.scene?.label || data?.result?.meta?.scene?.label || "").toLowerCase();
             const singleStagingAllowed = data?.meta?.allowStaging !== false && allowStaging;
             const singleReqStage2 = singleReqStages?.stage2 === true || singleReqStages?.stage2 === "true";
-            const singleDeclutter = singleReqStages?.stage1b === true || singleReqStages?.stage1b === "true";
+            const singleDeclutter = !!singleReqStages?.stage1b;
             const singleStage2Expected = singleReqStage2 && singleSceneLabel !== "exterior" && singleStagingAllowed;
             const singleTarget: StageKey = singleStage2Expected ? "2" : singleDeclutter ? "1B" : "1A";
             const singleS2 = singleStageMap?.['2'] || singleStageMap?.stage2 || null;
@@ -1820,7 +1820,7 @@ export default function BatchProcessor() {
             const diScene = String(di?.meta?.scene?.label || "").toLowerCase();
             const diStagingOk = di?.meta?.allowStaging !== false && allowStaging;
             const diReqS2 = diReqStages?.stage2 === true || diReqStages?.stage2 === "true";
-            const diDeclutter = diReqStages?.stage1b === true || diReqStages?.stage1b === "true";
+            const diDeclutter = !!diReqStages?.stage1b;
             const diS2Expected = diReqS2 && diScene !== "exterior" && diStagingOk;
             const diTarget: StageKey = diS2Expected ? "2" : diDeclutter ? "1B" : "1A";
             const diS2 = diStageMap?.['2'] || diStageMap?.stage2 || null;
@@ -2039,7 +2039,7 @@ export default function BatchProcessor() {
           } : null;
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = typeof requestedStages?.stage2 === "boolean" ? requestedStages.stage2 : null;
-          const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true" || typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : null;
+          const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
           const stagingAllowed = it?.meta?.allowStaging !== false && allowStaging;
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
@@ -2330,7 +2330,7 @@ export default function BatchProcessor() {
           const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
           const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-          const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true";
+          const declutterRequested = !!requestedStages?.stage1b;
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           
           const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
@@ -4948,7 +4948,7 @@ export default function BatchProcessor() {
                             const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
                             const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                            const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true";
+                            const declutterRequested = !!requestedStages?.stage1b;
                             const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                             
                             const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
@@ -5038,7 +5038,7 @@ export default function BatchProcessor() {
                         const sceneLabel = String(result?.meta?.scene?.label || result?.result?.meta?.scene?.label || "").toLowerCase();
                         const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
                         const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                        const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true" || (result as any)?.options?.declutter;
+                        const declutterRequested = !!requestedStages?.stage1b || (result as any)?.options?.declutter;
                         const stagingAllowed = result?.meta?.allowStaging !== false && result?.result?.meta?.allowStaging !== false && allowStaging;
                         const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
