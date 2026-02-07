@@ -96,6 +96,8 @@ interface RegionEditorProps {
   originalImageUrl?: string; // URL to original image for pixel-level restoration
   initialGoal?: string;
   initialIndustry?: string;
+  initialSceneType?: "auto" | "interior" | "exterior";
+  initialRoomType?: string;
 }
 
 export function RegionEditor({
@@ -108,6 +110,8 @@ export function RegionEditor({
   originalImageUrl,
   initialGoal,
   initialIndustry,
+  initialSceneType,
+  initialRoomType,
 }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
@@ -133,12 +137,22 @@ export function RegionEditor({
         : (originalImageUrl || initialImageUrl || "");
     console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedFromInitial, derivedBase });
   }, [mode, initialImageUrl, originalImageUrl]);
+
+  // Reset state when a new image/meta is provided (opening editor for another item)
+  useEffect(() => {
+    setInstructions(initialGoal || "");
+    setIndustry(initialIndustry || "Real Estate");
+    setSceneType(initialSceneType || "auto");
+    setRoomType(initialRoomType || "auto");
+    setPreviewUrl(initialImageUrl || null);
+    setMaskData(null);
+  }, [initialGoal, initialIndustry, initialSceneType, initialRoomType, initialImageUrl]);
   const [maskData, setMaskData] = useState<Blob | null>(null);
   const [instructions, setInstructions] = useState(initialGoal || "");
   const [industry, setIndustry] = useState(initialIndustry || "Real Estate");
   const [sceneType, setSceneType] = useState<
     "auto" | "interior" | "exterior"
-  >("auto");
+  >(initialSceneType || "auto");
   const [smartReinstate, setSmartReinstate] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
@@ -147,7 +161,7 @@ export function RegionEditor({
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
   // Staging style is now batch-level only; removed from region editor
-  const [roomType, setRoomType] = useState<string>("auto");
+  const [roomType, setRoomType] = useState<string>(initialRoomType || "auto");
   const [imageLoading, setImageLoading] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);

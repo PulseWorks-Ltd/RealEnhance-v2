@@ -2809,7 +2809,7 @@ export default function BatchProcessor() {
     handleCloseRetryDialog();
     
     try {
-      await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, undefined, referenceImage);
+      await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, undefined, referenceImage, retryStage as StageKey | undefined);
     } catch (error) {
       // Error is already handled in handleRetryImage
     }
@@ -2844,7 +2844,7 @@ export default function BatchProcessor() {
     // The RegionEditor will consume resolved URLs in the modal section below
   };
 
-  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
+  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey) => {
     // ✅ Prevent double retry on same image
     if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
 
@@ -2920,6 +2920,24 @@ export default function BatchProcessor() {
     // ✅ Mark retry active and loading
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
+
+    // ✅ Immediately clear old errors and show in-progress state for this image
+    setResults(prev => prev.map((r, i) => {
+      if (i !== imageIndex) return r;
+      const nextStage = retryStage || null;
+      return {
+        ...r,
+        status: "processing",
+        uiStatus: "ok",
+        error: null,
+        resultStage: null,
+        finalStage: null,
+        currentStage: nextStage ? nextStage.toLowerCase() : "processing",
+      };
+    }));
+    if (retryStage) {
+      setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: retryStage }));
+    }
     
     try {
       // Determine explicit scene type - prefer provided, then metadata, then auto
@@ -2982,6 +3000,7 @@ export default function BatchProcessor() {
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
+      if (retryStage) fd.append("retryStage", retryStage);
 
       try {
         const response = await fetch(api("/api/batch/retry-single"), withDevice({
@@ -3071,6 +3090,14 @@ export default function BatchProcessor() {
             return next;
           });
 
+          setResults(prev => prev.map((r, i) => i === imageIndex ? {
+            ...r,
+            status: "failed",
+            uiStatus: "error",
+            error: "Retry timed out",
+            currentStage: null,
+          } : r));
+
           retryTimeoutRef.current = null;
 
           toast({
@@ -3139,6 +3166,10 @@ export default function BatchProcessor() {
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
                     stageUrls: stageUrls || r?.stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
+                    status: "completed",
+                    uiStatus: "ok",
+                    resultStage: (job.resultStage || job.finalStage || retryStage || r?.resultStage || null) as StageKey | null,
+                    finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
                     result: {
                       ...(normalizedResult || {}),
                       image: job.imageUrl,
@@ -3152,6 +3183,9 @@ export default function BatchProcessor() {
                     filename: r?.filename
                   } : r
                 ));
+                if (retryStage) {
+                  setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: retryStage }));
+                }
                 setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: job.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
@@ -3185,6 +3219,13 @@ export default function BatchProcessor() {
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry failed. Unable to enhance image.");
 
+                setResults(prev => prev.map((r, idx) => idx === imageIndex ? {
+                  ...r,
+                  status: "failed",
+                  uiStatus: "error",
+                  error: job.error || "The retry job failed to process.",
+                  currentStage: null,
+                } : r));
                 clearRetryFlags(imageIndex);
 
                 const errMsg = job.error || "The retry job failed to process.";
@@ -5018,17 +5059,28 @@ export default function BatchProcessor() {
             // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
             originalImageUrl={(() => {
               const item = results[editingImageIndex];
+              const explicitOriginal = item?.result?.originalImageUrl || item?.originalImageUrl || item?.result?.originalUrl || item?.originalUrl;
               const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
               const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
               const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
               const display = withVersion(getDisplayUrl(item), item?.version || item?.updatedAt) || undefined;
               const previewFallback = previewUrls[editingImageIndex];
-              const resolved = stage1b || stage1a || display || previewFallback || undefined;
-              console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A||display||preview):', { stage1b, stage1a, display, previewFallback, resolved });
+              const resolved = explicitOriginal || stage1b || stage1a || display || previewFallback || undefined;
+              console.log('[BatchProcessor] Resolved originalImageUrl (explicitOriginal||1B||1A||display||preview):', { explicitOriginal, stage1b, stage1a, display, previewFallback, resolved });
               return resolved;
             })()}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
+            initialSceneType={(() => {
+              const meta = results[editingImageIndex]?.meta || results[editingImageIndex]?.result?.meta || {};
+              const sceneLabel = (meta?.scene?.label || meta?.sceneLabel || meta?.scene_type || meta?.sceneType || "").toString().toLowerCase();
+              if (sceneLabel === "interior" || sceneLabel === "exterior") return sceneLabel as "interior" | "exterior";
+              return "auto";
+            })()}
+            initialRoomType={(() => {
+              const meta = results[editingImageIndex]?.meta || results[editingImageIndex]?.result?.meta || {};
+              return meta?.roomType || meta?.room || meta?.room_type || undefined;
+            })()}
             onStart={() => {
               setIsEditingInProgress(true);
             }}
