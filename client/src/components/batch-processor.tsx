@@ -4566,6 +4566,12 @@ export default function BatchProcessor() {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
+                        const sceneLabel = String(result?.meta?.scene?.label || result?.result?.meta?.scene?.label || "").toLowerCase();
+                        const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
+                        const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+                        const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true" || (result as any)?.options?.declutter;
+                        const stagingAllowed = result?.meta?.allowStaging !== false && result?.result?.meta?.allowStaging !== false && allowStaging;
+                        const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
@@ -4589,26 +4595,42 @@ export default function BatchProcessor() {
                           derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
                         }
                         const isError = (status === "failed") || derivedUiStatus === "error" || uiOverrideFailed;
-                        const isDone = isSuccessStatus && !!finalResultUrl && !isError;
-                        const isUiComplete = isDone || (!!stage2Url && allowStaging && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
+                        const resolvedFinalUrl = finalResultUrl || (!stage2Expected ? (stage1BUrl || stage1AUrl || null) : null);
+                        const resolvedFinalStage: StageKey | null = finalResultUrl ? (resultStage as StageKey | null) : (!stage2Expected ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : null) : (resultStage as StageKey | null));
+                        const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
+                        const isUiComplete = isDone
+                          || (!stage2Expected && !isError && (
+                            (declutterRequested && !!stage1BUrl) || (!declutterRequested && !!stage1AUrl)
+                          ))
+                          || (!!stage2Url && stage2Expected && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
+                        const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = allowStaging
                           ? "Staging is being improved"
                           : declutter
                           ? "Further decluttering required"
                           : "Enhancing";
+                        const currentStage = String((result?.currentStage || result?.result?.currentStage || "") as string).toLowerCase();
+                        const baseProcessingMessage = (() => {
+                          if (currentStage.includes("2")) return "Staging image...";
+                          if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
+                          if (currentStage.includes("1a")) return "Enhancing image...";
+                          if (stage2Expected && requestedStage2) return "Staging image...";
+                          if (declutterRequested) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
+                          return "Enhancing image...";
+                        })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
                           : isUiComplete
                           ? "Enhancement Complete"
-                          : isRetrying || isStrictRetry
+                          : (isRetrying || isStrictRetry || attempts > 1)
                           ? improvingMessage
                           : isUploading
                           ? "Uploading..."
                           : isProcessing
-                          ? improvingMessage
+                          ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
@@ -4631,7 +4653,7 @@ export default function BatchProcessor() {
                           if (disallowStage2 && requested === "2") return defaultStage;
                           return requested || defaultStage;
                         })();
-                        const defaultUrl = isDone ? (finalResultUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
+                        const defaultUrl = isDone ? (resolvedFinalUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
                           if (!selectedStage) return defaultUrl;
                           if (selectedStage === "2") return stage2Url || defaultUrl;
@@ -4647,11 +4669,11 @@ export default function BatchProcessor() {
                             : selectedStage === "1B"
                               ? "Stage 1B"
                               : "Stage 1A";
-                          const finalStageLabel = resultStage === "2"
+                          const finalStageLabel = resolvedFinalStage === "2"
                             ? "Stage 2"
-                            : resultStage === "1B"
+                            : resolvedFinalStage === "1B"
                               ? "Stage 1B"
-                              : resultStage === "1A"
+                              : resolvedFinalStage === "1A"
                                 ? "Stage 1A"
                                 : stageLabel;
                           return isUiComplete ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;

@@ -201,6 +201,14 @@ export function statusRouter() {
         const sceneLabel = String(local?.meta?.scene?.label || (payload as any)?.options?.sceneType || "").toLowerCase();
         const stagingAllowed = local?.meta?.allowStaging !== false;
         const stage2Expected = requestedStage2 === true && sceneLabel !== "exterior" && stagingAllowed;
+        const bestAvailableStage: { stage: string | null; url: string | null } = (() => {
+          // For scenarios where Stage 2 is not expected (exterior or staging disabled), use best available
+          if (!stage2Expected) {
+            if (stageUrls.stage1B || stageUrls['1B']) return { stage: '1B', url: stageUrls.stage1B || stageUrls['1B'] || null };
+            if (stageUrls.stage1A || stageUrls['1A']) return { stage: '1A', url: stageUrls.stage1A || stageUrls['1A'] || null };
+          }
+          return { stage: null, url: null };
+        })();
         
         // ✅ FIX 1: Stage-based completion detection
         const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
@@ -335,7 +343,7 @@ export function statusRouter() {
           ? validationRaw!.warnings as string[]
           : []);
         if (validationNote) warningSet.add(validationNote);
-        if (pipelineStatus === "completed" && !resultUrl) {
+        if (pipelineStatus === "completed" && !resultUrl && !bestAvailableStage.url) {
           warningSet.add("Image Enhancement didn’t finalise. Please retry image.");
         }
         if (requestedStage2 === false && (stage2Present || String(finalStageRaw || "").toLowerCase() === "2")) {
@@ -350,9 +358,7 @@ export function statusRouter() {
           pipelineStatus = "failed";
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
         }
-        if (requestedStage2 === true && !stage2Expected && !stage2Present) {
-          warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");
-        }
+        const isInformationalExteriorNote = requestedStage2 === true && !stage2Expected && !stage2Present;
         const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
         if (isStuck) {
           pipelineStatus = "failed";
@@ -369,7 +375,13 @@ export function statusRouter() {
             warningSet.add("The best available result is shown.");
           }
         }
-        const warnings = Array.from(warningSet);
+        // Only surface exterior staging note when the job has reached a terminal state
+        const warnings = Array.from(warningSet).filter(msg => {
+          if (isInformationalExteriorNote) {
+            return pipelineStatus === "completed" || pipelineStatus === "failed";
+          }
+          return true;
+        });
 
         const hardFailRaw = validationRaw?.hardFail === true;
         const hardFail = hardFailRaw;
@@ -380,14 +392,22 @@ export function statusRouter() {
         else if (hardFail && !hasOutputs) uiStatus = "error";
         else if (hardFail && hasOutputs) uiStatus = "warning";
         else if (warnings.length) uiStatus = "warning";
+        // Do not elevate to warning solely for exterior staging unavailability while processing
+        if (isInformationalExteriorNote && isProcessingLike) {
+          uiStatus = hardFail ? uiStatus : "ok";
+        }
+
+        // If Stage 2 is not expected (exterior or staging disabled), allow best-available (1B/1A) to define resultUrl/finalStage
+        const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
+        const resolvedFinalStage = finalStageRaw || (!stage2Expected ? (bestAvailableStage.stage || null) : null);
 
         const success =
-          pipelineStatus === "completed" && typeof resultUrl === "string";
+          pipelineStatus === "completed" && typeof resolvedResultUrl === "string";
 
         if (pipelineStatus === "completed") completed++;
 
         const currentStage: string | null = local.currentStage || null;
-        const finalStage: string | null = finalStageRaw;
+        const finalStage: string | null = resolvedFinalStage;
         const attempts = local.attempts || (rv && rv.attempts) || null;
         const fallbackUsed = local.fallbackUsed || (rv && rv.fallbackUsed) || null;
         const retryReason = local.retryReason || (rv && rv.retryReason) || null;
@@ -402,18 +422,18 @@ export function statusRouter() {
           queueStatus,
           success,
           imageId,
-          imageUrl: resultUrl,
+          imageUrl: resolvedResultUrl,
           originalUrl,
           maskUrl,
-          publishedUrl: resultUrl,
+          publishedUrl: resolvedResultUrl,
           warnings,
           hardFail,
           validation: validationRaw,
           attempts,
           currentStage: currentStage || undefined,
-          finalStage: finalStage || undefined,
-          resultStage: finalStage ?? null,
-          resultUrl: resultUrl ?? null,
+          finalStage: resolvedFinalStage || undefined,
+          resultStage: resolvedFinalStage ?? null,
+          resultUrl: resolvedResultUrl ?? null,
           fallbackUsed: fallbackUsed || null,
           retryReason: retryReason || null,
           blockedStage: blockedStage || null,
