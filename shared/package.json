@@ -96,7 +96,7 @@
     "./analysis/types.js": {
       "types": "./dist/analysis/types.d.ts",
       "default": "./dist/analysis/types.js"
-    }
+    },
       "./types/jobMetadata": {
         "types": "./dist/types/jobMetadata.d.ts",
         "default": "./dist/types/jobMetadata.js"

@@ -10,7 +10,7 @@ You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT.
 You are NOT an editor, stylist, or generator.
 
 TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
+Treat the input image as a READ-ONLY GEOMETRIC MAP of this ${roomType || "room"}.
 Apply GLOBAL lighting, color, and tonal adjustments ONLY.
 
 Your goal is to improve photographic quality (exposure, dynamic range, white balance)
@@ -66,7 +66,36 @@ PRIMARY OBJECTIVE
 ────────────────────────────────
 
 Optimize global exposure and color balance for a natural,
-high-dynamic-range interior photograph suitable for
+high-dynamic-range interior photograph suitable for real estate marketing.
+
+────────────────────────────────
+ALLOWED ADJUSTMENTS (GLOBAL ONLY)
+────────────────────────────────
+
+• Global exposure correction
+• Neutral daylight white balance
+• Global contrast and tone balancing
+• Shadow lift (global) while preserving depth
+• Highlight recovery
+• Subtle global clarity (edge-preserving)
+
+NO local edits. NO masking. NO object-aware edits.
+
+────────────────────────────────
+FINAL CONSTRAINT
+────────────────────────────────
+
+Do NOT interpret “Enhancement” as “Improvement of the property”.
+It is an improvement of the PHOTO ONLY.
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+
+Return ONLY the enhanced image.`.trim();
+}
+
+function buildStage1AExteriorPromptNZStyle(): string {
   return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ REAL ESTATE)
 
 You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
@@ -195,66 +224,143 @@ OUTPUT
 ────────────────────────────────
 
 Return ONLY the enhanced image.`.trim();
-- Highlight recovery
-- Light shadow lift without flattening depth
-- Adaptive noise reduction only where needed
-
-These adjustments must affect the ENTIRE IMAGE uniformly.
-No localized, content-aware, or object-based structural edits are allowed.
-
-────────────────────────────────
-STRICT PROHIBITIONS (HARD RULES)
-────────────────────────────────
-You MUST NOT:
-
-- Add or remove any buildings, structures, or architectural elements.
-- Add or remove vehicles, driveways, paths, decks, or patios.
-- Add props such as furniture, planters, decorations, or styling items.
-- Remove clutter or objects (even temporary items like bins or toys).
-- Move, resize, or reposition anything.
-- Modify building colors, materials, roofing, or siding.
-- Change landscape layout, tree positions, or garden beds.
-- Add or remove trees, shrubs, or plants.
-- Change the layout, perspective, or camera angle.
-- Apply content-aware fill or inpainting.
-- Introduce stylistic looks, filters, HDR glow, or cinematic grading.
-
-The image must remain structurally and materially identical.
-
-────────────────────────────────
-STYLE TARGET
-────────────────────────────────
-Target the look of:
-- High-end professional New Zealand real estate photography
-- Bright, vibrant blue skies with soft white clouds (Trade Me standard)
-- Healthy, well-maintained green lawns and gardens
-- Clean, bright building surfaces
-- Natural daylight exterior exposure
-- Subtle depth, not flat, not exaggerated
-
-This must look like a true photograph of the same property, not an edited or stylized version.
-
-────────────────────────────────
-OUTPUT REQUIREMENT
-────────────────────────────────
-Return ONLY the enhanced image.
-The contents and layout of the image must be visually identical.
-Only sky, color, clarity, exposure, and surface quality may change.
-
-Do not explain.
-Do not annotate.
-Do not add content.
-Enhance only.`.trim();
 }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
   // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return `\nDeclutter this exterior property image for professional New Zealand real estate marketing.\n\nREMOVE (transient items ONLY):\n• Hoses, bins, toys, tools, tarps, ladders, bags, packaging, garden equipment\n• Loose debris: bark, stones, leaves, scattered items, dirt piles\n• Random accessories on decks/paths that are not permanently fixed\n\nKEEP EXACTLY (PERMANENT):\n• All buildings, windows, doors, rooflines, fences, gates, retaining walls\n• All permanent landscaping (trees, shrubs, hedges, garden beds)\n• All driveways, paths, decks, patios — preserve shape, size, materials, and patterns\n\nHARD RULES — NON‑NEGOTIABLE:\n• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.\n• Do NOT change, resize, move, or remove any permanent structure or landscaping.\n• Do NOT alter driveway, deck, or path geometry or surface type.\n\nGoal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.`.trim();
+      return `STAGE 1B — EXTERIOR DECLUTTER (GARDEN, DRIVEWAY, DECKS)
+
+TASK:
+Remove transient garden clutter, maintenance items, and refuse to produce a clean, tidy exterior image for professional New Zealand real estate marketing.
+Preserve 100% of the building structure, hardscaping, permanent landscaping, intentional ground cover, and all large movable assets.
+Model: Gemini 3 Pro Image
+
+────────────────────────────────
+EXTERIOR GEOMETRIC LOCK (PRESERVE EXACTLY)
+────────────────────────────────
+
+YOU MUST PRESERVE (Pixels & Geometry):
+
+1. Building Structure: Rooflines, gutters, downpipes, chimneys, soffits, cladding (brick/weatherboard), deck railings, antennas, satellite dishes, heat pumps.
+2. Hardscaping: Driveways, paths, patios, retaining walls, fences, gates, letterboxes — preserve exact shape, size, material, and pattern.
+3. Landscaping: Trees, hedges, lawn borders, flower beds, garden beds.
+4. Ground Cover: DO NOT REMOVE intentional ground cover — gravel, pebble stones, bark mulch, wood chips. Treat these as FIXED texture.
+5. Large Movable Assets: Cars, boats, trailers, outdoor furniture (tables, chairs, BBQs). KEEP ALL unless explicitly marked as rubbish.
+
+────────────────────────────────
+TARGETS FOR REMOVAL (KILL LIST — TRANSIENT ITEMS ONLY)
+────────────────────────────────
+
+REMOVE ONLY the following movable items:
+
+1. Maintenance Equipment: Hoses (and reels), buckets, brooms, mops, ladders, tools, wheelbarrows, lawnmowers.
+2. Refuse: Wheelie bins, recycling crates, rubbish bags, cardboard, loose packaging.
+3. Loose Clutter: Toys, bikes, sports equipment, tarps, loose firewood piles (if not stacked neatly).
+4. Organic Debris: Stray leaves or small debris on decks, patios, and driveways ONLY. DO NOT remove leaves, mulch, or soil from garden beds, flower beds, or intentional landscaping.
+
+────────────────────────────────
+INPAINTING & RESTORATION RULES
+────────────────────────────────
+
+When removing an object:
+
+1. Fill the Void: Seamlessly extend background textures (weatherboards, brick, decking, paving, grass, gravel) to cover the removed object.
+2. Shadows: REMOVE all cast shadows and reflections of removed objects (floor, deck, walls, windows, mirrors), ensuring surrounding lighting remains natural.
+3. Texture Fidelity: Do not blur. Regenerated surfaces must match the sharpness, pattern, and color of the surrounding area exactly.
+4. Edge Continuity: Ensure driveways, patios, and decking lines remain unbroken. Maintain precise landscaping and garden bed edges.
+
+────────────────────────────────
+HARD RULES
+────────────────────────────────
+
+- Do NOT rotate, crop, zoom, or change perspective.
+- Do NOT remove or alter any permanent structure, hardscape, landscaping, or intentional ground cover.
+- If unsure whether an item is permanent or fixed → KEEP IT.
+- Large movable assets (cars, boats, trailers, outdoor furniture, BBQs) are PRESERVED unless explicitly marked as rubbish.
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+
+Return ONLY the fully processed exterior image with transient clutter removed. Preserve all structural, hardscape, landscaping, ground cover, and large asset integrity exactly.`.trim();
     }
 
-      return `You are a professional real-estate photo editor.\n\nTASK:\nCompletely remove ALL furniture, ALL décor, and ALL clutter to create a fully EMPTY, clean, stage-ready ${roomType || "room"}.\n\nYOU MUST REMOVE:\n• All sofas, couches, armchairs, stools, and lounge chairs\n• All coffee tables, side tables, and display tables\n• All dining tables and ALL dining chairs\n• All beds, mattresses, and bedside tables\n• All wardrobes, dressers, cabinets, shelving, and storage units (non-built-in)\n• All TV units, entertainment units, and media furniture\n• All rugs, mats, and movable floor coverings\n• All personal belongings and household items\n• All wall art, framed pictures, mirrors, and decorative wall objects\n• All pot plants, indoor plants, flowers, vases, and artificial greenery\n• All background furniture, even if partially visible\n• All furniture touching walls, windows, cabinetry, splashbacks, or kitchen islands\n• All bar stools and kitchen seating\n• All loose items on floors, benches, shelves, and surfaces\n\nDO NOT REMOVE OR ALTER (FIXED / STRUCTURAL):\n• Walls, ceilings, floors, trims, skirting, cornices\n• Windows, doors, closet openings, arches, and frames\n• Curtains, blinds, rods, tracks, and window coverings\n• Built-in cabinetry, wardrobes, shelving, benchtops, kitchen islands\n• Built-in stoves/ovens/cooktops, range hoods, dishwashers (built-in)\n• Sinks, faucets, plumbing fixtures, towel rails\n• Fixed light fittings, pendant lights, ceiling fans, recessed lights\n• Switches, outlets, thermostats, doorbell screens\n• Wall coverings, paint color, flooring materials or finishes\n• Outdoor landscaping visible through windows\n\nABSOLUTE RULES:\n• Do NOT repaint walls, change floor coverings, or alter any fixed feature.\n• Do NOT cover or block windows/doors with any object or paint.\n\nFAIL CONSTRAINT:\nIf ANY furniture, dining pieces, loose cabinets, stools, wall art, plants, or personal items remain after editing, the task is considered FAILED.\n\nGOAL:\nProduce a completely empty, realistic architectural shell that is perfectly clean and ready for virtual staging, while preserving the original room structure exactly.`.trim();
+      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+
+TASK:
+Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
+
+Model: Gemini 3 Pro Image
+
+────────────────────────────────
+ARCHITECTURAL SHELL — PRESERVE & PROTECT
+────────────────────────────────
+
+You must KEEP all fixed elements:
+
+Surfaces: Walls, ceilings, continuous floor surfaces (including wall-to-wall carpets), skirting boards, trims, cornices, door frames, arches, closet openings.
+
+Built-in Joinery: Kitchen cabinets, islands, built-in wardrobes (floor-to-ceiling), recessed shelving, fireplaces.
+
+Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switches, outlets, thermostats, vents, radiators, towel rails.
+
+Window Treatments: Curtains, blinds, and rods must remain.
+
+Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
+
+CRITICAL SAFETY RULES:
+
+If unsure whether an item is built-in → treat it as fixed.
+
+Do NOT alter wall finishes, flooring materials, or structural features.
+
+Do NOT move or cover windows, doors, or architectural elements.
+
+Preserve outdoor items and landscaping visible through windows, including furniture or structures.
+
+────────────────────────────────
+TARGETS FOR REMOVAL (ERASE ALL MOVABLE ITEMS)
+────────────────────────────────
+
+1. Seating: Sofas, couches, armchairs, stools, lounge chairs, dining chairs, bar stools, ottomans.
+2. Surfaces: Dining tables, coffee tables, desks, side tables, freestanding TV/media units.
+3. Storage (Freestanding): Wardrobes, dressers, bookcases, display cabinets, storage benches.
+4. Decor & Soft Furnishings: Area rugs (reveal the floor underneath), cushions, throws, wall art, framed pictures, vases, indoor plants, flowers, lamps.
+5. Clutter: Personal items, household items, cables, remotes, magazines, toys, styling items, rubbish.
+
+────────────────────────────────
+RECONSTRUCTION & INPAINTING RULES
+────────────────────────────────
+
+When removing objects:
+
+Floor Continuity: Regenerate floor textures (wood grain, parquet, tile, carpet pile) to match the visible area perfectly.
+
+Wall & Skirting Reconstruction: Extend skirting boards, baseboards, and cornices seamlessly behind removed furniture.
+
+Shadows & Reflections: Remove cast shadows and reflections from removed objects in windows, mirrors, or glossy surfaces.
+
+Lighting Artifacts: Remove localized light effects from removed objects (lamp glow, hotspots) while preserving global room lighting.
+
+Texture Fidelity: All regenerated surfaces must match the original sharpness, pattern, and color — no blurring or smudging.
+
+────────────────────────────────
+FAIL CONDITIONS
+────────────────────────────────
+
+Any furniture, rugs, decor, plants, or personal items remain → FAIL
+
+Ghosting, floating shadows, or reflections remain → FAIL
+
+Skirting boards, cornices, floors, or walls are broken behind removed objects → FAIL
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+
+Return only the fully empty room image, preserving all fixed architectural elements exactly.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
