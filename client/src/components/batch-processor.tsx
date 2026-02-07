@@ -4618,14 +4618,23 @@ export default function BatchProcessor() {
                           derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
                         }
                         const isError = (status === "failed") || derivedUiStatus === "error" || uiOverrideFailed;
-                        const resolvedFinalUrl = finalResultUrl || (!stage2Expected ? (stage1BUrl || stage1AUrl || null) : null);
-                        const resolvedFinalStage: StageKey | null = finalResultUrl ? (resultStage as StageKey | null) : (!stage2Expected ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : null) : (resultStage as StageKey | null));
+                        // Determine target stage per image to avoid premature "Complete"
+                        const targetStage: StageKey = (() => {
+                          if (stage2Expected) return "2";
+                          if (declutterRequested) return "1B";
+                          return "1A";
+                        })();
+
+                        const targetUrlPresent = (() => {
+                          if (targetStage === "2") return !!stage2Url;
+                          if (targetStage === "1B") return !!stage1BUrl;
+                          return !!stage1AUrl;
+                        })();
+
+                        const resolvedFinalUrl = finalResultUrl || (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : null);
+                        const resolvedFinalStage: StageKey | null = finalResultUrl ? (resultStage as StageKey | null) : (targetUrlPresent ? targetStage : null);
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = isDone
-                          || (!stage2Expected && !isError && (
-                            (declutterRequested && !!stage1BUrl) || (!declutterRequested && !!stage1AUrl)
-                          ))
-                          || (!!stage2Url && stage2Expected && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
+                        const isUiComplete = (!isError && targetUrlPresent) || isDone;
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
