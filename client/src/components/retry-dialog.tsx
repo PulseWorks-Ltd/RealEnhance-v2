@@ -11,24 +11,47 @@ import { Input } from "@/components/ui/input";
 interface RetryDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (customInstructions: string, sceneType: "auto" | "interior" | "exterior", allowStaging: boolean, furnitureReplacementMode: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => void;
+  onSubmit: (
+    customInstructions: string,
+    sceneType: "auto" | "interior" | "exterior",
+    allowStaging: boolean,
+    furnitureReplacementMode: boolean,
+    roomType?: string,
+    referenceImage?: File,
+    retryStage?: "1B" | "2"
+  ) => void;
   isLoading?: boolean;
   imageIndex: number;
   originalImageUrl?: string;
   enhancedImageUrl?: string;
-  detectedRoomType?: string;
+  defaultSceneType?: "auto" | "interior" | "exterior";
+  defaultRoomType?: string;
+  defaultStage?: "1B" | "2";
+  allowStage2?: boolean;
+  hasStage1B?: boolean;
 }
 
-export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl }: RetryDialogProps) {
+export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto", defaultStage = "1B", allowStage2 = true, hasStage1B = false }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
-  const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">("auto");
-  const safeDetectedRoomType = typeof detectedRoomType === 'undefined' ? "auto" : detectedRoomType;
-  const [roomType, setRoomType] = useState<string>(safeDetectedRoomType);
+  const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">(defaultSceneType);
+  const [roomType, setRoomType] = useState<string>(defaultRoomType);
+  const [retryStage, setRetryStage] = useState<"1B" | "2">(defaultStage);
   const [roomTypeError, setRoomTypeError] = useState<string>("");
-  const [windowCount, setWindowCount] = useState<string>("");
   const [sliderPosition, setSliderPosition] = useState(50);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSceneType(defaultSceneType);
+      setRoomType(defaultRoomType || "auto");
+      setRetryStage(defaultStage || (allowStage2 ? "2" : "1B"));
+      setRoomTypeError("");
+      setCustomInstructions("");
+      setReferenceImage(null);
+      setReferencePreview(null);
+    }
+  }, [isOpen, defaultSceneType, defaultRoomType, defaultStage, allowStage2]);
 
 
   const handleReferenceImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,23 +78,24 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   };
 
   const handleSubmit = () => {
-    if (!roomType || roomType === "auto") {
-      setRoomTypeError("Room type is required for retry.");
-      return;
+    if (sceneType === "interior") {
+      if (!roomType || roomType === "auto") {
+        setRoomTypeError("Room type is required for interior scenes.");
+        return;
+      }
     }
     setRoomTypeError("");
-    // Close dialog immediately 
     handleClose();
-    const windowCountNum = windowCount.trim() !== "" ? parseInt(windowCount, 10) : undefined;
-    // Use batch preset for allowStaging/furnitureReplacementMode (not user-editable here)
-    onSubmit(customInstructions, sceneType, undefined, undefined, roomType, windowCountNum, referenceImage || undefined);
+    const allowStaging = retryStage === "2";
+    const effectiveRoom = sceneType === "interior" ? roomType : undefined;
+    onSubmit(customInstructions, sceneType, allowStaging, false, effectiveRoom, referenceImage || undefined, retryStage);
   };
 
   const handleClose = () => {
     setCustomInstructions("");
-    setSceneType("auto");
-    setRoomType("auto");
-    setWindowCount("");
+    setSceneType(defaultSceneType);
+    setRoomType(defaultRoomType || "auto");
+    setRetryStage(defaultStage || (allowStage2 ? "2" : "1B"));
     setReferenceImage(null);
     setReferencePreview(null);
     onClose();
@@ -85,7 +109,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Customize your retry with specific instructions and scene type for better results. Staging style is set at batch upload and cannot be changed here.
+            Adjust scene, room, and target stage for this retry. Defaults come from the original submission.
           </p>
 
           {/* Before/After Preview Slider */}
@@ -133,79 +157,79 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
             </div>
           )}
 
-          {/* Room Type Dropdown (Required, no empty value) */}
-          <div>
-            <Label htmlFor="room-type" className="text-sm font-medium">
-              Room Type <span className="text-red-500">*</span>
-            </Label>
-            <Select value={roomType} onValueChange={setRoomType}>
-              <SelectTrigger data-testid="select-retry-room-type">
-                <SelectValue placeholder="Select room type" />
-              </SelectTrigger>
-              <SelectContent
-                side="bottom"
-                align="start"
-                sideOffset={8}
-                avoidCollisions={false}
-                className="max-h-[260px] overflow-y-auto z-[999]"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="scene-type" className="text-sm font-medium">
+                Scene Type
+              </Label>
+              <Select value={sceneType} onValueChange={(v) => setSceneType(v as any)}>
+                <SelectTrigger data-testid="select-retry-scene-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto Detect</SelectItem>
+                  <SelectItem value="interior">Interior</SelectItem>
+                  <SelectItem value="exterior">Exterior</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {sceneType === "interior" && (
+              <div>
+                <Label htmlFor="room-type" className="text-sm font-medium">
+                  Room Type <span className="text-red-500">*</span>
+                </Label>
+                <Select value={roomType} onValueChange={setRoomType}>
+                  <SelectTrigger data-testid="select-retry-room-type">
+                    <SelectValue placeholder="Select room type" />
+                  </SelectTrigger>
+                  <SelectContent
+                    side="bottom"
+                    align="start"
+                    sideOffset={8}
+                    avoidCollisions={false}
+                    className="max-h-[260px] overflow-y-auto z-[999]"
+                  >
+                    <SelectItem value="auto">Auto Detect</SelectItem>
+                    <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
+                    <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
+                    <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
+                    <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
+                    <SelectItem value="kitchen">Kitchen</SelectItem>
+                    <SelectItem value="living-room">Living Room</SelectItem>
+                    <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
+                    <SelectItem value="dining-room">Dining Room</SelectItem>
+                    <SelectItem value="study">Study</SelectItem>
+                    <SelectItem value="office">Office</SelectItem>
+                    <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
+                    <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
+                    <SelectItem value="garage">Garage</SelectItem>
+                    <SelectItem value="laundry">Laundry</SelectItem>
+                    <SelectItem value="outdoor">Outdoor</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+                {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="retry-stage" className="text-sm font-medium">
+                Stage to Retry
+              </Label>
+              <Select value={retryStage} onValueChange={(v) => setRetryStage(v as "1B" | "2")}
+                disabled={!allowStage2 && !hasStage1B}
               >
-                <SelectItem value="auto">Auto Detect{safeDetectedRoomType ? ` (${safeDetectedRoomType})` : ""}</SelectItem>
-                <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
-                <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
-                <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
-                <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
-                <SelectItem value="kitchen">Kitchen</SelectItem>
-                <SelectItem value="living-room">Living Room</SelectItem>
-                <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
-                <SelectItem value="dining-room">Dining Room</SelectItem>
-                <SelectItem value="study">Study</SelectItem>
-                <SelectItem value="office">Office</SelectItem>
-                <SelectItem value="bathroom-1">Bathroom 1</SelectItem>
-                <SelectItem value="bathroom-2">Bathroom 2</SelectItem>
-                <SelectItem value="garage">Garage</SelectItem>
-                <SelectItem value="laundry">Laundry</SelectItem>
-                <SelectItem value="outdoor">Outdoor</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
-            <p className="text-xs text-muted-foreground mt-1">Auto-detected: <span className="font-semibold">{safeDetectedRoomType || "Unknown"}</span>. You can override if needed.</p>
-          </div>
-
-          <div>
-            <Label htmlFor="scene-type" className="text-sm font-medium">
-              Scene Type
-            </Label>
-            <Select value={sceneType} onValueChange={(v) => setSceneType(v as any)}>
-              <SelectTrigger data-testid="select-retry-scene-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto Detect</SelectItem>
-                <SelectItem value="interior">Interior (furniture staging, lighting)</SelectItem>
-                <SelectItem value="exterior">Exterior (sky, grass, deck staging)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Only one Room Type select should be rendered (required above) */}
-
-          <div>
-            <Label htmlFor="window-count" className="text-sm font-medium">
-              Window Openings in Original Image
-            </Label>
-            <Input
-              id="window-count"
-              type="number"
-              min="0"
-              value={windowCount}
-              onChange={(e) => setWindowCount(e.target.value)}
-              placeholder="e.g., 0, 1, 2..."
-              data-testid="input-retry-window-count"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Count the areas where no wall exists. Multiple panes side-by-side = 1 opening.
-            </p>
+                <SelectTrigger data-testid="select-retry-stage">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1B">Stage 1B (Declutter/Enhance)</SelectItem>
+                  {allowStage2 && <SelectItem value="2">Stage 2 (Staging)</SelectItem>}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Defaults to the next intended stage.</p>
+            </div>
           </div>
 
 

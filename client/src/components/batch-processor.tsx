@@ -2792,7 +2792,15 @@ export default function BatchProcessor() {
     setRetryDialog({ isOpen: false, imageIndex: null });
   };
 
-  const handleRetrySubmit = async (customInstructions: string, sceneType: "auto" | "interior" | "exterior", allowStaging: boolean, furnitureReplacementMode: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
+  const handleRetrySubmit = async (
+    customInstructions: string,
+    sceneType: "auto" | "interior" | "exterior",
+    allowStaging: boolean,
+    furnitureReplacementMode: boolean,
+    roomType?: string,
+    referenceImage?: File,
+    retryStage?: "1B" | "2"
+  ) => {
     if (retryDialog.imageIndex === null) return;
     
     const imageIndex = retryDialog.imageIndex;
@@ -2801,7 +2809,7 @@ export default function BatchProcessor() {
     handleCloseRetryDialog();
     
     try {
-      await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, windowCount, referenceImage);
+      await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, undefined, referenceImage);
     } catch (error) {
       // Error is already handled in handleRetryImage
     }
@@ -5082,10 +5090,41 @@ export default function BatchProcessor() {
         imageIndex={retryDialog.imageIndex || 0}
         originalImageUrl={retryDialog.imageIndex !== null ? (results[retryDialog.imageIndex]?.result?.originalImageUrl || results[retryDialog.imageIndex]?.originalImageUrl || previewUrls[retryDialog.imageIndex]) : undefined}
         enhancedImageUrl={retryDialog.imageIndex !== null ? withVersion(getDisplayUrl(results[retryDialog.imageIndex]), results[retryDialog.imageIndex]?.version || results[retryDialog.imageIndex]?.updatedAt) || undefined : undefined}
-        detectedRoomType={retryDialog.imageIndex !== null ? (() => {
+        defaultSceneType={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          const sceneLabel = String(res?.meta?.scene?.label || res?.result?.meta?.scene?.label || imageSceneTypesById[getImageIdForIndex(retryDialog.imageIndex) || ""] || "auto").toLowerCase();
+          return (sceneLabel === "interior" || sceneLabel === "exterior") ? (sceneLabel as any) : "auto";
+        })() : "auto"}
+        defaultRoomType={retryDialog.imageIndex !== null ? (() => {
           const imgId = getImageIdForIndex(retryDialog.imageIndex);
-          return imgId ? imageRoomTypesById[imgId] : undefined;
-        })() : undefined}
+          return imgId ? (imageRoomTypesById[imgId] || "auto") : "auto";
+        })() : "auto"}
+        defaultStage={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          const requestedStages = res?.requestedStages || res?.result?.requestedStages || {};
+          const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+          const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
+          const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+          const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+          const sceneLabel = String(res?.meta?.scene?.label || res?.result?.meta?.scene?.label || "").toLowerCase();
+          const stagingAllowed = res?.meta?.allowStaging !== false && res?.result?.meta?.allowStaging !== false && allowStaging;
+          const allowStage2 = stagingAllowed && sceneLabel !== "exterior";
+          if (allowStage2 && requestedStage2 && !stage2Url) return "2" as const;
+          if (allowStage2 && stage2Url) return "2" as const;
+          if (stage1BUrl) return "1B" as const;
+          return allowStage2 ? "2" as const : "1B" as const;
+        })() : "1B"}
+        allowStage2={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          const sceneLabel = String(res?.meta?.scene?.label || res?.result?.meta?.scene?.label || "").toLowerCase();
+          const stagingAllowed = res?.meta?.allowStaging !== false && res?.result?.meta?.allowStaging !== false && allowStaging;
+          return stagingAllowed && sceneLabel !== "exterior";
+        })() : false}
+        hasStage1B={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
+          return !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
+        })() : false}
       />
 
       {/* Editing in Progress Alert */}
