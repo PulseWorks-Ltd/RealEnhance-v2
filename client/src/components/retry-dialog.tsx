@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,9 +29,11 @@ interface RetryDialogProps {
   defaultStage?: "1B" | "2";
   allowStage2?: boolean;
   hasStage1B?: boolean;
+  currentStage?: "1A" | "1B" | "2" | null;
+  originalRequestedStages?: { stage1b?: boolean; stage2?: boolean };
 }
 
-export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto", defaultStage = "1B", allowStage2 = true, hasStage1B = false }: RetryDialogProps) {
+export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto", defaultStage = "1B", allowStage2 = true, hasStage1B = false, currentStage = null, originalRequestedStages }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">(defaultSceneType);
   const [roomType, setRoomType] = useState<string>(defaultRoomType);
@@ -40,6 +42,36 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   const [sliderPosition, setSliderPosition] = useState(50);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
+
+  // Calculate pipeline path description
+  const pipelineDescription = useMemo(() => {
+    const fromStage = currentStage || "1A";
+    const targetStage = retryStage;
+    const had1B = originalRequestedStages?.stage1b === true;
+    
+    // If going from 1A to 2 and original had 1B, must go through 1B
+    if (fromStage === "1A" && targetStage === "2" && had1B) {
+      return "Stage 1A → Stage 1B → Stage 2";
+    }
+    
+    // If going from 1A to 2 without original 1B, direct path
+    if (fromStage === "1A" && targetStage === "2" && !had1B) {
+      return "Stage 1A → Stage 2";
+    }
+    
+    // If going from 1A to 1B, direct path
+    if (fromStage === "1A" && targetStage === "1B") {
+      return "Stage 1A → Stage 1B";
+    }
+    
+    // If going from 1B to 2, direct path
+    if (fromStage === "1B" && targetStage === "2") {
+      return "Stage 1B → Stage 2";
+    }
+    
+    // Default: same stage retry or simple transition
+    return `Stage ${fromStage} → Stage ${targetStage}`;
+  }, [currentStage, retryStage, originalRequestedStages]);
 
   useEffect(() => {
     if (isOpen) {
@@ -229,6 +261,24 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">Defaults to the next intended stage.</p>
+            </div>
+          </div>
+
+          {/* Pipeline Path Display */}
+          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-blue-900">Pipeline Path</p>
+                <p className="text-sm text-blue-700 mt-1">
+                  This will retry: <span className="font-semibold">{pipelineDescription}</span>
+                </p>
+                {pipelineDescription.includes("\u21921B\u2192") && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Stage 1B will be processed first as required by the original request, then automatically continue to Stage 2.
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

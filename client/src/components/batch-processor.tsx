@@ -352,6 +352,68 @@ interface PersistedBatchJob {
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * Determine the retry pipeline path based on current stage, target stage, and original request
+ * Returns the full pipeline path needed to reach the target from current stage
+ */
+function determineRetryPipelinePath(
+  currentStage: StageKey | null,
+  targetStage: StageKey,
+  originalRequestedStages: { stage1b?: boolean; stage2?: boolean }
+): {
+  pipelinePath: StageKey[];
+  needsIntermediate: boolean;
+  description: string;
+} {
+  const had1B = originalRequestedStages?.stage1b === true;
+  
+  // Determine current effective stage
+  const fromStage = currentStage || "1A";
+  
+  // If going from 1A to 2 and original had 1B, must go through 1B
+  if (fromStage === "1A" && targetStage === "2" && had1B) {
+    return {
+      pipelinePath: ["1A", "1B", "2"],
+      needsIntermediate: true,
+      description: "Stage 1A → Stage 1B → Stage 2"
+    };
+  }
+  
+  // If going from 1A to 2 without original 1B, direct path
+  if (fromStage === "1A" && targetStage === "2" && !had1B) {
+    return {
+      pipelinePath: ["1A", "2"],
+      needsIntermediate: false,
+      description: "Stage 1A → Stage 2"
+    };
+  }
+  
+  // If going from 1A to 1B, direct path (stop at 1B even if original had stage 2)
+  if (fromStage === "1A" && targetStage === "1B") {
+    return {
+      pipelinePath: ["1A", "1B"],
+      needsIntermediate: false,
+      description: "Stage 1A → Stage 1B"
+    };
+  }
+  
+  // If going from 1B to 2, direct path
+  if (fromStage === "1B" && targetStage === "2") {
+    return {
+      pipelinePath: ["1B", "2"],
+      needsIntermediate: false,
+      description: "Stage 1B → Stage 2"
+    };
+  }
+  
+  // Default: single stage retry (same stage or simple transition)
+  return {
+    pipelinePath: [fromStage, targetStage],
+    needsIntermediate: false,
+    description: `Stage ${fromStage} → Stage ${targetStage}`
+  };
+}
+
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
 
@@ -543,6 +605,14 @@ export default function BatchProcessor() {
   // Retry timeout safety (60 seconds max)
   const RETRY_TIMEOUT_MS = 60_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track multi-stage retry pipelines (image index -> pipeline state)
+  const [multiStageRetries, setMultiStageRetries] = useState<Record<number, {
+    targetStage: StageKey;
+    pipelinePath: StageKey[];
+    currentPathIndex: number;
+    originalRequestedStages: any;
+  }>>({});
 
   // Retry dialog state
   const [retryDialog, setRetryDialog] = useState<{ isOpen: boolean; imageIndex: number | null }>({
@@ -2847,7 +2917,37 @@ export default function BatchProcessor() {
     handleCloseRetryDialog();
     
     try {
-      await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, undefined, referenceImage, retryStage as StageKey | undefined);
+      // Determine pipeline path for this retry
+      const res = results[imageIndex];
+      const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
+      const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+      const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+      const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+      const currentStage: StageKey = stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : "1A";
+      const targetStage = retryStage || "1B";
+      const originalRequestedStages = res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || {};
+      
+      const pipelineInfo = determineRetryPipelinePath(currentStage, targetStage as StageKey, originalRequestedStages);
+      
+      // Set up multi-stage retry tracking if needed
+      if (pipelineInfo.needsIntermediate) {
+        setMultiStageRetries(prev => ({
+          ...prev,
+          [imageIndex]: {
+            targetStage: targetStage as StageKey,
+            pipelinePath: pipelineInfo.pipelinePath,
+            currentPathIndex: 0, // Starting at first stage
+            originalRequestedStages
+          }
+        }));
+        
+        // Start with first stage (1B when going 1A→1B→2)
+        const firstStage = pipelineInfo.pipelinePath[1]; // [1A, 1B, 2] → start with 1B
+        await handleRetryImage(imageIndex, customInstructions, sceneType, firstStage === "2", furnitureReplacementMode, roomType, undefined, referenceImage, firstStage);
+      } else {
+        // Direct single-stage retry
+        await handleRetryImage(imageIndex, customInstructions, sceneType, allowStaging, furnitureReplacementMode, roomType, undefined, referenceImage, retryStage as StageKey | undefined);
+      }
     } catch (error) {
       // Error is already handled in handleRetryImage
     }
@@ -2959,7 +3059,7 @@ export default function BatchProcessor() {
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
 
-    // ✅ Immediately clear old errors and show in-progress state for this image
+    // ✅ CRITICAL: Immediately clear ALL error states and UI badges for this image
     setResults(prev => prev.map((r, i) => {
       if (i !== imageIndex) return r;
       const nextStage = retryStage || null;
@@ -2967,10 +3067,16 @@ export default function BatchProcessor() {
         ...r,
         status: "processing",
         uiStatus: "ok",
-        error: null,
+        error: null, // Clear error object
+        errorMessage: undefined, // Clear error message
+        errorCode: undefined, // Clear error code
+        failureReason: undefined, // Clear failure reason
+        validationError: undefined, // Clear validation errors
+        warnings: [], // Clear warnings array
         resultStage: null,
         finalStage: null,
         currentStage: nextStage ? nextStage.toLowerCase() : "processing",
+        statusLastModified: Date.now(), // Update timestamp for immediate UI refresh
       };
     }));
     if (retryStage) {
@@ -3136,6 +3242,16 @@ export default function BatchProcessor() {
             currentStage: null,
           } : r));
 
+          // Clear multi-stage retry tracking on timeout
+          setMultiStageRetries(prev => {
+            if (prev[imageIndex]) {
+              const next = { ...prev };
+              delete next[imageIndex];
+              return next;
+            }
+            return prev;
+          });
+
           retryTimeoutRef.current = null;
 
           toast({
@@ -3239,6 +3355,76 @@ export default function BatchProcessor() {
                 // Mark retry as finished (spinner clears on image load, but clear now for buttons/state)
                 clearRetryFlags(imageIndex);
 
+                // 🔄 Check if this is part of a multi-stage retry pipeline
+                const pipelineState = multiStageRetries[imageIndex];
+                if (pipelineState) {
+                  const currentPathIndex = pipelineState.currentPathIndex;
+                  const nextPathIndex = currentPathIndex + 1;
+                  
+                  // Check if there's another stage to process
+                  if (nextPathIndex < pipelineState.pipelinePath.length) {
+                    const nextStage = pipelineState.pipelinePath[nextPathIndex];
+                    console.log(`[MULTI_STAGE_RETRY] Stage ${pipelineState.pipelinePath[currentPathIndex]} complete. Continuing to ${nextStage}...`, { imageIndex });
+                    
+                    // Update pipeline tracking
+                    setMultiStageRetries(prev => ({
+                      ...prev,
+                      [imageIndex]: {
+                        ...pipelineState,
+                        currentPathIndex: nextPathIndex
+                      }
+                    }));
+                    
+                    // Show toast that intermediate stage completed and continuing
+                    toast({
+                      title: `Stage ${pipelineState.pipelinePath[currentPathIndex]} Complete`,
+                      description: `Automatically continuing to Stage ${nextStage}...`,
+                      duration: 3000
+                    });
+                    
+                    // Automatically trigger next stage retry
+                    // Important: Get the result for this image to extract metadata
+                    const resultForNextStage = results[imageIndex];
+                    const sceneLabel = String(resultForNextStage?.meta?.scene?.label || resultForNextStage?.result?.meta?.scene?.label || "").toLowerCase();
+                    const roomTypeForRetry = (() => {
+                      const imgId = getImageIdForIndex(imageIndex);
+                      return imgId ? (imageRoomTypesById[imgId] || "auto") : "auto";
+                    })();
+                    
+                    // Trigger next stage (don't await - let it run)
+                    setTimeout(() => {
+                      handleRetryImage(
+                        imageIndex,
+                        "", // no custom instructions for auto-continuation
+                        (sceneLabel === "interior" || sceneLabel === "exterior") ? (sceneLabel as any) : "auto",
+                        nextStage === "2", // allowStaging true for stage 2
+                        false, // furnitureReplacement
+                        roomTypeForRetry === "auto" ? undefined : roomTypeForRetry,
+                        undefined, // windowCount
+                        undefined, // referenceImage
+                        nextStage
+                      );
+                    }, 500); // Small delay to let UI update
+                    
+                    return; // Don't clear multi-stage tracking yet
+                  } else {
+                    // Pipeline complete!
+                    console.log(`[MULTI_STAGE_RETRY] Multi-stage retry complete for image ${imageIndex}. Target ${pipelineState.targetStage} reached.`);
+                    toast({
+                      title: "Multi-Stage Retry Complete",
+                      description: `All stages completed successfully. Target stage ${pipelineState.targetStage} reached.`,
+                      duration: 5000
+                    });
+                    
+                    // Clear pipeline tracking
+                    setMultiStageRetries(prev => {
+                      const next = { ...prev };
+                      delete next[imageIndex];
+                      return next;
+                    });
+                  }
+                }
+
                 // ✅ DO NOT set global progress state
                 // ❌ setRunState("done");
                 // ❌ setAbortController(null);
@@ -3265,6 +3451,16 @@ export default function BatchProcessor() {
                   currentStage: null,
                 } : r));
                 clearRetryFlags(imageIndex);
+
+                // Clear multi-stage retry tracking on failure
+                setMultiStageRetries(prev => {
+                  if (prev[imageIndex]) {
+                    const next = { ...prev };
+                    delete next[imageIndex];
+                    return next;
+                  }
+                  return prev;
+                });
 
                 const errMsg = job.error || "The retry job failed to process.";
                 if (job.error === "image_not_found") {
@@ -5234,6 +5430,21 @@ export default function BatchProcessor() {
           const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
           return !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
         })() : false}
+        currentStage={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
+          const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+          const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+          const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+          if (stage2Url) return "2" as const;
+          if (stage1BUrl) return "1B" as const;
+          if (stage1AUrl) return "1A" as const;
+          return "1A" as const;
+        })() : null}
+        originalRequestedStages={retryDialog.imageIndex !== null ? (() => {
+          const res = results[retryDialog.imageIndex];
+          return res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || {};
+        })() : undefined}
       />
 
       {/* Editing in Progress Alert */}
