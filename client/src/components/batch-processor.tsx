@@ -2238,33 +2238,91 @@ export default function BatchProcessor() {
         const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
         const serverSignaledDone = !!data.done;
 
-        if ((allTerminal || serverSignaledDone) && !finalRefreshRequested) {
+        // ✅ FIX #1: Target-aware completion check
+        // Don't stop polling just because backend says "done" - verify all images reached their targets
+        const allImagesReachedTargetOrFailed = results.every((r, idx) => {
+          if (!r) return false;
+          const status = String(r?.status || "").toLowerCase();
+          const failed = status === "failed";
+          if (failed) return true; // Failed images are terminal
+          
+          // Calculate target stage for this image
+          const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
+          const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
+          const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
+          const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+          const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true";
+          const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+          
+          const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+          
+          // Check if target URL is present
+          const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
+          const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+          const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+          const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+          
+          const targetUrlPresent = (
+            (targetStage === "2" && !!stage2Url) ||
+            (targetStage === "1B" && !!stage1BUrl) ||
+            (targetStage === "1A" && !!stage1AUrl)
+          );
+          
+          const completedWithTarget = (status === "completed" || status === "complete") && targetUrlPresent;
+          return completedWithTarget;
+        });
+
+        // Use target-aware completion instead of blindly trusting serverSignaledDone
+        const shouldConsiderStopping = allTerminal || (serverSignaledDone && allImagesReachedTargetOrFailed);
+
+        if (shouldConsiderStopping && !finalRefreshRequested) {
           finalRefreshRequested = true;
           delay = BACKOFF_START_MS;
           if (IS_DEV) {
-            console.debug('[BATCH][poll] requesting final refresh before stopping');
+            console.debug('[BATCH][poll] requesting final refresh before stopping', { allTerminal, allImagesReachedTarget: allImagesReachedTargetOrFailed, serverDone: serverSignaledDone });
           }
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
 
-        // Stale-state self-heal: server says done but we still see queued/processing
-          if (serverSignaledDone && !allTerminal) {
+        // ✅ FIX #4: Stale-state self-heal with extended grace for multi-stage items
+        // Only apply stuck_queued logic if server says done AND items haven't reached their targets
+        if (serverSignaledDone && !shouldConsiderStopping) {
           if (doneSeenAt === null) {
             doneSeenAt = Date.now();
             if (IS_DEV) {
-              console.warn('[BATCH][poll] server done but non-terminal items present; extending polling', { nonTerminalIndices, hasUnmappedNonTerminal });
+              console.warn('[BATCH][poll] server done but images haven\'t reached targets; extending polling', { nonTerminalIndices, hasUnmappedNonTerminal, allImagesReachedTarget: allImagesReachedTargetOrFailed });
             }
           }
           const waited = Date.now() - doneSeenAt;
-          if (waited >= STALE_DONE_GRACE_MS) {
+          
+          // Extended grace period for multi-stage items: 45 seconds instead of 15
+          const MULTI_STAGE_GRACE_MS = 45_000;
+          const graceMs = MULTI_STAGE_GRACE_MS;
+          
+          if (waited >= graceMs) {
             if (nonTerminalIndices.length) {
-              // FIX: Don't mark as stuck_queued if items have partial outputs (still progressing through pipeline)
+              // Don't mark as stuck_queued if items:
+              // 1. Have partial outputs (still progressing through pipeline)
+              // 2. Haven't reached their target stage yet (legitimately processing)
               const trulyStuckIndices: number[] = [];
               for (const idx of nonTerminalIndices) {
                 const existing = results[idx] || {};
                 const hasPartialOutputs = !!(existing.stageUrls?.['1A'] || existing.stageUrls?.stage1A || existing.stageUrls?.['1B'] || existing.stageUrls?.stage1B || existing.stageUrls?.['2'] || existing.stageUrls?.stage2);
-                if (!hasPartialOutputs) {
+                
+                // Check if item is legitimately in multi-stage pipeline
+                const requestedStages = existing?.requestedStages || existing?.result?.requestedStages || {};
+                const sceneLabel = String(existing?.meta?.scene?.label || existing?.result?.meta?.scene?.label || "").toLowerCase();
+                const stagingAllowed = existing?.meta?.allowStaging !== false && existing?.result?.meta?.allowStaging !== false && allowStaging;
+                const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+                const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+                const isMultiStageItem = stage2Expected || requestedStages?.stage1b;
+                
+                // Only mark as stuck if: no outputs AND not a multi-stage item, OR has been waiting too long
+                const waitedTooLong = waited >= (5 * 60 * 1000); // 5 minutes absolute max
+                const shouldMarkStuck = (!hasPartialOutputs && !isMultiStageItem) || waitedTooLong;
+                
+                if (shouldMarkStuck) {
                   trulyStuckIndices.push(idx);
                 }
               }
@@ -2290,15 +2348,17 @@ export default function BatchProcessor() {
               }
             }
           } else {
-            delay = BACKOFF_START_MS; // poll again quickly during grace window
+            // Still within grace period - continue polling
+            delay = BACKOFF_START_MS;
             await new Promise(r => setTimeout(r, delay));
             continue;
           }
         }
 
-        if (allTerminal || serverSignaledDone) {
+        // ✅ FIX #1: Only stop polling when all images reached targets OR truly stuck
+        if (shouldConsiderStopping) {
           if (IS_DEV) {
-            console.debug('[BATCH][poll] stopping — all items terminal', { nonTerminalIndices, hasUnmappedNonTerminal });
+            console.debug('[BATCH][poll] stopping — all items reached targets or failed', { allTerminal, allImagesReachedTarget: allImagesReachedTargetOrFailed, nonTerminalIndices, hasUnmappedNonTerminal });
           }
           setRunState("done");
           setAbortController(null);
@@ -4797,10 +4857,42 @@ export default function BatchProcessor() {
                     <div className="flex justify-between items-end mb-4">
                     <div>
                         {(() => {
-                          const completedCount = results.filter(r => (r?.result?.image || r?.result?.imageUrl) || r?.error).length;
+                          // ✅ FIX #2: Target-aware completion count
+                          const completedCount = results.filter((r, idx) => {
+                            if (!r) return false;
+                            const status = String(r?.status || "").toLowerCase();
+                            const failed = status === "failed";
+                            const hasError = !!r?.error;
+                            
+                            // Calculate target stage for this image
+                            const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
+                            const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
+                            const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
+                            const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+                            const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true";
+                            const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+                            
+                            const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+                            
+                            // Check if target URL is present
+                            const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
+                            const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+                            const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+                            const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+                            
+                            const targetUrlPresent = (
+                              (targetStage === "2" && !!stage2Url) ||
+                              (targetStage === "1B" && !!stage1BUrl) ||
+                              (targetStage === "1A" && !!stage1AUrl)
+                            );
+                            
+                            // Count as complete if: reached target OR failed with fallback available
+                            const failedWithFallback = (failed || hasError) && (stage1AUrl || stage1BUrl || stage2Url);
+                            return targetUrlPresent || failedWithFallback;
+                          }).length;
                           const total = files.length || 0;
                           const remaining = Math.max(total - completedCount, 0);
-                          const isComplete = runState === 'done' || remaining === 0;
+                          const isComplete = runState === 'done' && remaining === 0;
                           const title = isComplete ? "Enhancement Complete" : "Processing Batch";
                           const subtitle = isComplete
                             ? "Please review and download your images."
@@ -4920,8 +5012,26 @@ export default function BatchProcessor() {
                           : (targetUrlPresent ? targetStage : null);
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && targetUrlPresent) || isDone;
+                        
+                        // ✅ FIX #3: Detect intermediate stage processing
+                        // If backend says "completed" but we only have Stage 1A and targeting Stage 2, show as processing
+                        const isIntermediateProcessing = isSuccessStatus && !targetUrlPresent && hasPreviewOutputs && !isError;
+                        const intermediateStageMessage = (() => {
+                          if (!isIntermediateProcessing) return null;
+                          // Determine which stage we're waiting for
+                          if (targetStage === "2") {
+                            // Has Stage 1A, waiting for Stage 2
+                            if (stage1AUrl && !stage1BUrl) return declutterRequested ? "Decluttering..." : "Preparing for staging...";
+                            if (stage1BUrl && !stage2Url) return "Staging image...";
+                          }
+                          if (targetStage === "1B" && stage1AUrl && !stage1BUrl) {
+                            return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
+                          }
+                          return "Processing next stage...";
+                        })();
+                        
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
-                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = allowStaging
@@ -4940,6 +5050,8 @@ export default function BatchProcessor() {
                         })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : isIntermediateProcessing && intermediateStageMessage
+                          ? intermediateStageMessage  // ✅ Show intermediate stage message
                           : isUiComplete
                           ? "Enhancement Complete"
                           : (isRetrying || isStrictRetry || attempts > 1)
