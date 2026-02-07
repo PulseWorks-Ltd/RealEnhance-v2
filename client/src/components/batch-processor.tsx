@@ -2807,17 +2807,33 @@ export default function BatchProcessor() {
     }
   };
 
+  // Resolve the best available enhanced output for a given result and optional user-selected stage
+  const resolveBestStageOutput = (result: any, selectedStage?: StageKey | null, originalFallback?: string | null): { stage: StageKey | null; url: string | null } => {
+    const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
+    const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
+    const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || null;
+    const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+    const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+    const originalUrl = result?.originalImageUrl || result?.result?.originalImageUrl || result?.originalUrl || result?.result?.originalUrl || originalFallback || null;
+
+    if (selectedStage === "2" && stage2Url) return { stage: "2", url: stage2Url };
+    if (selectedStage === "1B" && stage1BUrl) return { stage: "1B", url: stage1BUrl };
+    if (selectedStage === "1A" && stage1AUrl) return { stage: "1A", url: stage1AUrl };
+
+    if (finalResultUrl) return { stage: null, url: finalResultUrl };
+    if (stage2Url) return { stage: "2", url: stage2Url };
+    if (stage1BUrl) return { stage: "1B", url: stage1BUrl };
+    if (stage1AUrl) return { stage: "1A", url: stage1AUrl };
+    if (originalUrl) return { stage: null, url: originalUrl };
+
+    return { stage: null, url: null };
+  };
+
   // Handle edit image - just open the modal (don't add to editing set yet)
   const handleEditImage = (imageIndex: number) => {
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
-    // Always use the latest enhanced image for modal preview
-    // Use result.imageUrl if available, fallback to processedImagesByIndex, then results.imageUrl
-    const latestEnhancedUrl = results[imageIndex]?.result?.imageUrl || processedImagesByIndex[imageIndex] || results[imageIndex]?.imageUrl;
-    // Wire RegionEditor modal props below
-    // The modal should call onComplete with the new imageUrl, which updates results
-    // The handleRegionEdit logic is now handled inside RegionEditor via mutation
-    // Pass latestEnhancedUrl and originalImageUrl to RegionEditor
+    // The RegionEditor will consume resolved URLs in the modal section below
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File) => {
@@ -2918,13 +2934,12 @@ export default function BatchProcessor() {
         return undefined;
       })();
 
+      const bestForRetry = resolveBestStageOutput(resultForRetry, selectedStageKey, originalFromStoreUrl || null);
       const retrySource = (() => {
-        if (selectedStageKey === "2" && stage2Url) return { stage: "stage2" as const, url: stage2Url };
-        if (selectedStageKey === "1B" && stage1BUrl) return { stage: "stage1b" as const, url: stage1BUrl };
-        if (selectedStageKey === "1A" && stage1AUrl) return { stage: "stage1a" as const, url: stage1AUrl };
-        if (stage2Url) return { stage: "stage2" as const, url: stage2Url };
-        if (stage1BUrl) return { stage: "stage1b" as const, url: stage1BUrl };
-        if (stage1AUrl) return { stage: "stage1a" as const, url: stage1AUrl };
+        if (bestForRetry.stage === "2") return { stage: "stage2" as const, url: bestForRetry.url };
+        if (bestForRetry.stage === "1B") return { stage: "stage1b" as const, url: bestForRetry.url };
+        if (bestForRetry.stage === "1A") return { stage: "stage1a" as const, url: bestForRetry.url };
+        if (bestForRetry.url) return { stage: "original" as const, url: bestForRetry.url };
         return { stage: "original" as const, url: originalFromStoreUrl || null };
       })();
       const parentJobId = resultForRetry?.jobId || jobIds[imageIndex] || null;
@@ -4661,7 +4676,9 @@ export default function BatchProcessor() {
                           if (selectedStage === "1A") return stage1AUrl || defaultUrl;
                           return defaultUrl;
                         })();
-                        const enhancedUrl = withVersion(displayedUrl, result?.version || result?.updatedAt);
+                        const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null);
+                        const bestDisplayUrl = bestAvailable.url || displayedUrl || previewUrls[i] || null;
+                        const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const previewUrl = enhancedUrl || previewUrls[i];
                         const stageBadgeLabel = (() => {
                           const stageLabel = selectedStage === "2" && stage2Url
@@ -4811,35 +4828,35 @@ export default function BatchProcessor() {
 
                             {/* Action / Cancel Column */}
                             <div className="shrink-0 flex gap-2">
-                                {isUiComplete && (
-                                    <>
-                                        <button 
-                                            onClick={() => setPreviewImage({
-                                                url: enhancedUrl!,
-                                                filename: file.name,
-                                                originalUrl: previewUrls[i],
-                                                index: i
-                                            })}
-                                            className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                                        >
-                                            Preview
-                                        </button>
-                                         <button 
-                                            onClick={() => handleEditImage(i)}
-                                            className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
-                                        >
-                                            Edit
-                                        </button>
-                                          <button
-                                            onClick={() => handleOpenRetryDialog(i)}
-                                            disabled={retryingImages.has(i)}
-                                            className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                                            data-testid={`button-retry-${i}`}
-                                          >
-                                            {retryingImages.has(i) ? "Retrying..." : "Retry"}
-                                          </button>
-                                    </>
-                                )}
+                              {bestDisplayUrl && (
+                                <>
+                                  <button 
+                                    onClick={() => setPreviewImage({
+                                      url: enhancedUrl!,
+                                      filename: file.name,
+                                      originalUrl: previewUrls[i],
+                                      index: i
+                                    })}
+                                    className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                  >
+                                    Preview
+                                  </button>
+                                   <button 
+                                    onClick={() => handleEditImage(i)}
+                                    className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                  >
+                                    Edit
+                                  </button>
+                                    <button
+                                    onClick={() => handleOpenRetryDialog(i)}
+                                    disabled={retryingImages.has(i)}
+                                    className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                    data-testid={`button-retry-${i}`}
+                                    >
+                                    {retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                    </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         );
@@ -4963,16 +4980,12 @@ export default function BatchProcessor() {
           <RegionEditor
             initialImageUrl={(() => {
               const item = results[editingImageIndex];
-              // Prefer Stage 2 (current/enhanced) as the initial preview. If missing, fall back to Stage1 (quality) and lastly to display URL
-              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
-              const stage2 = stageUrls?.['2'] || stageUrls?.[2] || undefined;
-              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
-              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const quality = stage1b || stage1a || undefined;
-              const display = withVersion(getDisplayUrl(results[editingImageIndex]), item?.version || item?.updatedAt) || undefined;
-              const previewFallback = previewUrls[editingImageIndex];
-              const initial = stage2 || quality || display || previewFallback;
-              console.log('[BatchProcessor] Resolved initialImageUrl (stage2||quality||display||preview):', { stage2, stage1b, stage1a, display, previewFallback, initial });
+              const selectedStage = displayStageByIndex[editingImageIndex] as StageKey | undefined;
+              const best = resolveBestStageOutput(item, selectedStage, previewUrls[editingImageIndex] || null);
+              const versioned = withVersion(best.url, item?.version || item?.updatedAt) || best.url;
+              const fallback = withVersion(getDisplayUrl(item), item?.version || item?.updatedAt) || previewUrls[editingImageIndex];
+              const initial = versioned || fallback || undefined;
+              console.log('[BatchProcessor] Resolved initialImageUrl (bestAvailable||fallback):', { best, versioned, fallback, selectedStage });
               return initial;
             })()}
             // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
@@ -4981,7 +4994,7 @@ export default function BatchProcessor() {
               const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
               const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
               const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const display = withVersion(getDisplayUrl(results[editingImageIndex]), item?.version || item?.updatedAt) || undefined;
+              const display = withVersion(getDisplayUrl(item), item?.version || item?.updatedAt) || undefined;
               const previewFallback = previewUrls[editingImageIndex];
               const resolved = stage1b || stage1a || display || previewFallback || undefined;
               console.log('[BatchProcessor] Resolved originalImageUrl (1B||1A||display||preview):', { stage1b, stage1a, display, previewFallback, resolved });
