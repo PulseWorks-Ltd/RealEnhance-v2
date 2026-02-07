@@ -535,27 +535,71 @@ export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior"
 }
 
 function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
-  // Check if an explicit staging style is provided
-  const hasExplicitStyle = !!opts?.stagingStyle && opts.stagingStyle !== "none";
-  const sourceStage = opts?.sourceStage || "1A";
-  const sourceContext = sourceStage === "1B-light"
-    ? "INPUT CONTEXT: Stage 1B LIGHT declutter (main furniture remains). Refresh and lightly complement existing pieces; do NOT remove or replace major furniture."
-    : sourceStage === "1B-stage-ready"
-      ? "INPUT CONTEXT: Stage 1B FULL removal (room is empty). You may stage freely."
-      : "INPUT CONTEXT: Stage 1A enhanced only (room may be empty). You may stage freely.";
+  const room = roomType || "room";
+  void opts; // opts accepted for compatibility with caller; not used in hardened prompt
 
-  // Base introduction - neutral, no style specification when explicit style is provided
-  let prompt = `\nStage this ${roomType || "room"} interior for high-end real estate marketing.\n\n${sourceContext}`;
+  return `ROLE: Professional Interior Virtual Stager for New Zealand Real Estate
 
-  // Only include NZ style block when NO explicit stagingStyle is provided
-  if (!hasExplicitStyle) {
-    prompt += `\n\nStaging style:\n• NZ contemporary / coastal / Scandi minimalist.\n• Light wood (oak/beech) furniture with soft white or warm grey upholstery.\n• Clean, natural fabrics (linen, cotton) with minimal patterns.\n• Simple rugs, light-toned or natural fiber.\n• Art that is subtle, minimal, coastal, neutral, or abstract.\n• 1–2 small accents only (no clutter, heavy décor, or bold colours).`;
-  }
+TASK: Populate the EMPTY room (post Stage 1B Full Removal) with high-end furniture, preserving all architecture exactly. Only add furniture and minimal decor as defined below.
 
-  // Furniture, placement, lighting, and strict structural rules
-  prompt += `\n\nFurniture Priority (add ONLY if space allows; never cram):\n• Primary: bed + headboard (bedrooms), sofa (living), dining table + chairs (dining), desk + chair (office), island stools only if island exists.\n• Secondary: one bedside table (bedrooms), one side table (living), credenza/console (dining/living) only if clear space remains.\n• Tertiary: lamp, small accent chair, or minimal decor ONLY if ample empty space remains.\n\nPlacement Rules:\n• Place beds/headboards against a full wall; never across doors or windows.\n• TVs should be on a full wall and never block doors/windows.\n• Dining tables must not block door access or walk paths.\n• Maintain clear circulation paths from doors to windows and around the room.\n• Never cover windows/doors with furniture, mirrors, or art.\n\nLighting:\n• Bright, airy, natural daylight with lifted midtones and softened shadows.\n• Match the lighting direction and warmth of the base interior.\n• Slightly warm real-estate aesthetic (+3–5% warmth).\n\nSTRICT STRUCTURAL RULES:\n• Use the image EXACTLY as provided; do NOT rotate, crop, straighten, reframe,\n  zoom, or modify the camera angle or perspective.\n• Do NOT change ANY architecture: windows, doors, walls, ceilings, trims, floors,\n  cabinetry, or built-in features.\n• Do NOT cover or partially block windows, doors, cupboards, or closets.\n• Do NOT modify or repaint walls, ceilings, floors, or surfaces.\n• Do NOT add built-ins, change fixtures, or alter fixed lighting/fans.\n• Do NOT alter the view outside the windows.\n\nOnly ADD virtual furniture that fits the style above. Do not change the room itself.`;
+MODEL PARAMETERS:
+- Model: Gemini 3 Pro Image
+- Temperature: 0.55
+- TopP: 0.85
 
-  return prompt.trim();
+────────────────────────────────
+HARD CONSTRAINTS — ARCHITECTURAL SHELL (DO NOT TOUCH)
+────────────────────────────────
+PRESERVE PIXELS, GEOMETRY, AND MATERIALS OF:
+1. Room Structure: Walls, Ceilings, Floors (carpet/timber/tile), Doors, Frames, Architraves, Windows, Sills, Glazing, Stairs, Banisters, Railings.
+2. Fixtures & Devices: Heat Pumps, Vents, Ceiling Fans, Downlights, Pendants, Sconces, Smoke Alarms, Thermostats, Power Outlets, Light Switches, Curtain Rails/Blinds.
+3. Views & Context: Background visible through windows (no hallucinated oceans/mountains/sky), existing room lighting direction and warmth.
+4. Built-ins: Cabinets, Kitchen Islands, Built-in Wardrobes/Shelves, Benchtops, Countertops, Sinks/Faucets, Appliances.
+
+────────────────────────────────
+ROOM IDENTIFICATION & ZONING
+────────────────────────────────
+1. Identify room function (Bedroom, Living, Dining, Study) from geometry and fixtures.
+2. Define ZONES:
+   - ACTIVE ZONE: Where furniture is centered.
+   - CIRCULATION ZONE: Doorways, windows, walkways. Keep at least 1m clearance.
+3. RULES:
+   - Do NOT place furniture in Circulation Zone.
+   - Do NOT block sliding doors or floor-to-ceiling windows.
+   - Place only furniture appropriate to identified room type.
+   - NEVER mix room functions (e.g., bed in living room).
+
+────────────────────────────────
+FURNITURE PRIORITY
+────────────────────────────────
+- Primary: Essential large items (Bed, Sofa, Dining Table, Desk/Chair).
+- Secondary: Side tables, Console/Credenza (if clear space exists).
+- Tertiary: Small accents (Lamp, Accent Chair, Rug, minimal decor) only if ample empty space remains.
+- Scaling: Furniture must be proportional to room size.
+
+────────────────────────────────
+STYLING PROFILE
+────────────────────────────────
+- NZ Contemporary / Scandi Minimalist
+- Palette: Neutral, airy; Warm Whites, Oatmeal, Soft Grey, Charcoal, Light Oak.
+- Materials: Matte finishes, linen, cotton, wool, blonde timber.
+- Decor: Sparse (max 2-3 items: e.g., vase, plant, book). No clutter.
+- Prohibited: Coastal keyword, ornate furniture, bright colors, velvet, heavy drapes.
+
+────────────────────────────────
+PHYSICS & INPAINTING
+────────────────────────────────
+- Contact Shadows: All furniture legs must cast realistic ambient occlusion shadows.
+- Reflections: Polished timber/tile floors must show subtle vertical reflections of furniture.
+- Rug Physics: Rugs must lie fully on the floor, edges aligned, do not merge with walls/baseboards.
+- Occlusion Reconstruction: Any previously hidden wall/floor/baseboard revealed by furniture placement must be seamlessly reconstructed.
+- Lighting: Furniture must follow existing room lighting direction, intensity, and warmth.
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+- Return ONLY the staged image.
+- Do not add text, captions, or extra annotations.`.trim();
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {
