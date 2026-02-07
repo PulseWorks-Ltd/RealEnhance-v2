@@ -4593,21 +4593,23 @@ export default function BatchProcessor() {
                         const isUiComplete = isDone || (!!stage2Url && allowStaging && !finalResultUrl && !isError && (status === "queued" || status === "processing"));
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying)) || (status === "queued" && hasPreviewOutputs);
+                        const isStrictRetry = strictRetryingIndices.has(i);
+                        const improvingMessage = allowStaging
+                          ? "Staging is being improved"
+                          : declutter
+                          ? "Further decluttering required"
+                          : "Enhancing";
                         const displayStatus = isError
-                          ? "Failed"
+                          ? "Enhancement Failed"
                           : isUiComplete
-                          ? (derivedUiStatus === "warning" ? "Warning" : "Complete")
-                          : isRetrying
-                          ? "Retrying..."
+                          ? "Enhancement Complete"
+                          : isRetrying || isStrictRetry
+                          ? improvingMessage
                           : isUploading
                           ? "Uploading..."
                           : isProcessing
-                          ? "Processing..."
+                          ? improvingMessage
                           : aiSteps[i] || "Waiting in queue...";
-                        // FIX 2: Filter technical backend warnings for user display
-                        const rawWarnings = Array.isArray(result?.warnings) ? result.warnings : Array.isArray(result?.result?.warnings) ? result.result.warnings : [];
-                        const warnings = filterWarningsForDisplay(rawWarnings);
-                        const warningCount = warnings.length;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
                         const fallbackStage = (result?.validation as any)?.fallbackStage || (result?.result?.validation as any)?.fallbackStage || result?.fallbackStage || result?.result?.fallbackStage || result?.meta?.fallbackStage || null;
@@ -4739,20 +4741,17 @@ export default function BatchProcessor() {
                                 ) : isUiComplete ? (
                                    <div className="flex items-center gap-2">
                                      <StatusBadge status="completed" />
-                                     {!hardFail && warningCount > 0 && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                         <AlertCircle className="w-3 h-3" />
-                                         {warningCount} warning{warningCount === 1 ? "" : "s"}
-                                       </span>
-                                     )}
                                    </div>
                                 ) : (
                                   <StatusBadge status="queued" />
                                 )}
                               </div>
-                              {warningCount > 0 && (
-                                <p className="mt-1 text-xs text-amber-700">
-                                  {warnings[0]}
+                              <p className="mt-1 text-xs text-slate-600">
+                                {displayStatus}
+                              </p>
+                              {isError && (stage1BUrl || stage1AUrl) && (
+                                <p className="mt-1 text-xs text-rose-600">
+                                  {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
                                 </p>
                               )}
 
