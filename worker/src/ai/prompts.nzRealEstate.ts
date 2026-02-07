@@ -261,43 +261,161 @@ Enhance only.`.trim();
   // This mode is for tidying up a space without removing the furniture itself
   export function buildLightDeclutterPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      // Same as full mode for exteriors - only removes transient items
-      return buildStage1BPromptNZStyle(roomType, sceneType);
+      return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (EXTERIOR)
+
+TASK:
+Remove transient garden clutter and refuse to tidy the exterior presentation.
+Preserve 100% of the building structure, permanent landscaping, and hardscaping.
+Model: Gemini 3 Pro Image
+Default Sampling: temp=0.50, topP=0.86, topK=45
+
+────────────────────────────────
+EXTERIOR GEOMETRIC LOCK (PRESERVE EXACTLY)
+────────────────────────────────
+
+YOU MUST PRESERVE (Pixels & Geometry):
+1. Building Structure: Rooflines, gutters, downpipes, chimneys, soffits, cladding (brick/weatherboard), deck railings, antennas, satellite dishes.
+2. Hardscaping: Driveways, paths, patios, retaining walls, fences, gates, letterboxes.
+3. Landscaping: Trees, hedges, lawn borders, flower beds.
+4. Ground Cover: DO NOT REMOVE intentional ground cover (gravel, pebble stones, bark mulch, wood chips). Treat these as FIXED texture.
+5. Large Assets: Cars, boats, trailers, and outdoor furniture (tables/chairs/BBQs) must be KEPT unless they are clearly broken/rubbish.
+
+────────────────────────────────
+TARGETS FOR REMOVAL (THE "KILL" LIST)
+────────────────────────────────
+
+REMOVE ONLY the following movable items:
+1. Maintenance Items: Garden hoses (and reels), buckets, brooms, mops, ladders, tools, wheelbarrows, lawnmowers.
+2. Refuse: Wheelie bins, recycling crates, rubbish bags, cardboard, loose packaging.
+3. Loose Clutter: Toys, bikes, sports equipment, tarps, loose firewood piles (if not stacked neatly).
+4. Organic Debris: Stray leaves on decks/patios (do not remove leaves from garden beds).
+
+────────────────────────────────
+INPAINTING & RESTORATION RULES
+────────────────────────────────
+When removing an item (e.g., a bin against a wall):
+1. Fill the Void: Seamlessly extend the background texture (weatherboards, brick pattern, or grass) to cover the gap.
+2. Shadows: You MUST remove the cast shadow of the object.
+3. Consistency: Do not blur the area. The replacement siding/grass must match the sharpness of the surrounding area.
+
+STRICT PROHIBITION:
+- DO NOT clean the roof or driveway (no pressure washing).
+- DO NOT repair paint or cracks.
+- DO NOT remove permanent fixtures (heat pumps, wall-mounted clotheslines, swimming pool equipment).
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+Return ONLY the processed image.`.trim();
     }
 
-    return `You are a professional real-estate photo editor.\n\nTASK:\nTidy and clean this ${roomType || "room"} while KEEPING ALL MAIN FURNITURE exactly as it is.\nThis protection applies ONLY to the furniture itself — NOT to the loose items placed on top of it.\nAll loose surface items are eligible for removal.\n\nThis is a "declutter only" pass. The room must look neat, minimal, and real-estate ready, but still furnished.\n\nYOU MUST REMOVE ALL OF THE FOLLOWING IF VISIBLE:\n• All framed photos and personal picture frames\n• All small decorative clutter on shelves and surfaces\n• All personal ornaments and keepsakes\n• All pot plants, indoor plants, and flowers on furniture and benchtops\n• All loose papers, mail, magazines, and books left out\n• All bags, shoes, jackets, and clothing items\n• All toys and children's items\n• All cables, cords, chargers, and electronics clutter\n• All bathroom sink, vanity, bath, and shower clutter\n• All kitchen bench clutter, dish racks, bottles, and small containers\n• All window sill clutter\n• All sideboard and cabinet-top décor\n\nYOU MUST KEEP ALL MAIN FURNITURE:\n• All sofas and couches\n• All armchairs and lounge chairs\n• All dining tables and dining chairs\n• All beds and bedside tables\n• All wardrobes, cabinets, dressers, and TV units\n• All coffee tables and side tables\n• All large floor rugs UNDER furniture\n\nDO NOT MODIFY:\n• Walls, windows, doors, ceilings, or floors\n• Curtains, blinds, and fixed light fittings\n• Built-in cabinetry and fixed joinery\n• Outdoor greenery visible through windows\n\n────────────────────────────────
-AMBIGUOUS CLUTTER RESOLUTION RULE
-────────────────────────────────
-If any HORIZONTAL SURFACE (kitchen benchtop, coffee table, dining table, desk, sideboard, shelf, or window sill)
-appears visually noisy due to dense, overlapping, or ambiguous clutter
-and you cannot clearly identify all individual items:
+     return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (INTERIOR)
 
-You MUST remove the entire movable clutter group as a single unit,
-as long as it is NOT a fixed or structural element.
+  TASK:
+  Remove small, loose, and personal clutter ONLY to depersonalize the space.
+  Preserve 100% of the room’s architecture, geometry, and major furniture.
 
-This rule applies to:
-- Countertop clutter piles
-- Desk clutter
-- Floor clutter
-- Shelves with mixed loose items
-- Entryway dumps
-- Ambiguous overlapping object groups
+  Model: Gemini 3 Pro Image (fallback Gemini 2.5)
+  Default Sampling: temp=0.45, topP=0.80, topK=40
 
-You MUST NOT apply this rule to:
-- Walls, floors, ceilings
-- Windows or doors
-- Curtains, blinds, rods
-- Cabinets, benchtops, islands
-- Built-in shelving
-- Fixed wardrobes
-- Appliances that are built-in
-- Plumbing fixtures
-- Electrical fixtures
+  ────────────────────────────────
+  THE “DO NOT TOUCH” VAULT (ABSOLUTE)
+  ────────────────────────────────
 
-If there is any uncertainty whether something is fixed:
-→ You MUST treat it as fixed and DO NOT remove it.
+  YOU MUST PRESERVE EXACTLY (pixels, geometry, textures):
 
-ABSOLUTE NEGATIVE RULE — DO NOT ADD NEW ITEMS:\nDO NOT add any new objects, decor, kitchen items, props, bowls, bottles, plants, or styling elements. Only remove existing loose clutter. Never introduce new items.\n\nFAIL CONSTRAINT:\nIf ANY framed photos, personal décor, plants, shelf clutter,\nOR dense clutter remains on kitchen benches, dining tables, coffee tables, desks, sideboards, or window sills,\nthe task is considered FAILED.\n\nGOAL:\nThe room should look like the homeowner has carefully packed away all personal belongings and mess while leaving the original furniture layout intact.`.trim();
+  1. Architecture:
+    Walls, ceilings, floors, stairs, windows, doors, fireplaces, openings.
+
+  2. Fixed Joinery:
+    Kitchen cabinetry, islands, benchtops, built-in shelving, wardrobes.
+
+  3. Major Furniture:
+    Sofas, armchairs, dining tables, dining chairs, beds, bedside tables,
+    dressers, TV units, coffee tables, side tables, desks.
+
+  4. Soft Furnishings:
+    Curtains, blinds, rods, tracks, and ALL floor rugs
+    (under furniture OR standalone).
+
+  5. Fixtures:
+    Lighting, switches, outlets, plumbing fixtures, built-in appliances,
+    heat pumps / AC units.
+
+  CRITICAL SAFETY RULES:
+  - If an object rests on the floor and is larger than a microwave → KEEP IT.
+  - If you are unsure whether something is clutter or furniture → KEEP IT.
+  - NEVER remove containers (tables, benches, shelves). Only remove items ON them.
+  - NEVER remove anything visible OUTSIDE the windows.
+
+  ────────────────────────────────
+  TARGETS FOR REMOVAL (LIGHT DECLUTTER ONLY)
+  ────────────────────────────────
+
+  REMOVE ONLY small, loose items such as:
+
+  1. Personal Items:
+    Framed photos, personal ornaments, keepsakes, clothing, shoes, bags.
+
+  2. Loose Paper:
+    Mail, magazines, newspapers, notebooks, loose books on tables or floors.
+
+  3. Daily Mess:
+    Cups, plates, bottles, food items, remote controls, cables, chargers.
+
+  4. Surface Clutter:
+    - Small decor (bowls, vases, figurines) on surfaces
+    - Potted plants sitting ON furniture or benchtops
+      (Keep large floor plants)
+    - Kitchen bench clutter (dish racks, bottles, small appliances)
+    - Bathroom vanity clutter (toiletries, soaps, bottles)
+
+  EXCEPTION:
+  - Do NOT remove books neatly arranged inside built-in bookshelves.
+
+  ────────────────────────────────
+  AMBIGUOUS CLUTTER HANDLING (SAFE MODE)
+  ────────────────────────────────
+
+  If a surface (desk, counter, shelf) contains a dense mix of loose items:
+
+  - Remove ONLY the loose items on top.
+  - PRESERVE the surface plane and its material.
+  - Do NOT remove the table, shelf, or bench.
+  - Do NOT hallucinate new objects to fill space.
+  - Leave the surface clear and realistic.
+
+  If removing more items would make the room feel staged or redesigned:
+  → STOP early. This is LIGHT declutter, not styling.
+
+  ────────────────────────────────
+  SURFACE RESTORATION (REQUIRED)
+  ────────────────────────────────
+
+  When an item is removed:
+  1. Regenerate the underlying surface realistically
+    (wood grain, stone veining, carpet texture).
+  2. Remove cast shadows and reflections caused by the removed item.
+  3. Do NOT blur, smear, or flatten textures.
+
+  ────────────────────────────────
+  ABSOLUTE PROHIBITIONS
+  ────────────────────────────────
+
+  - NO staging or redesign
+  - NO adding new objects or decor
+  - NO geometry changes
+  - NO texture smoothing
+  - NO repainting or recoloring
+
+  The room must look packed-up and real-estate ready,
+  NOT styled, redesigned, or artificial.
+
+  ────────────────────────────────
+  OUTPUT
+  ────────────────────────────────
+
+  Return ONLY the processed image.`.trim();
   }
 
 export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior", opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
