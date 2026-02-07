@@ -44,7 +44,7 @@ import type {
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { createClient } from 'redis';
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
-import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared";
+import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/types/jobMetadata";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });

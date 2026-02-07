@@ -14,165 +14,149 @@ const MIN_CONFIDENCE = 0.65;
 function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
   const stageLabel = stage === "2" ? "Stage 2 (virtual staging)" : stage === "1B" ? "Stage 1B (declutter)" : "Stage 1A (color/cleanup)";
   const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
-  return `You are a structural integrity judge for New Zealand real estate imagery.
-Your job is to determine whether the AFTER image violates structural integrity when compared to the BEFORE image.
+  return `You are a Structural Integrity Auditor for New Zealand real estate imagery.
+
+You will receive two images:
+- BEFORE (original image)
+- AFTER (processed / staged image)
+
+Your sole task is to determine whether the AFTER image violates structural or functional integrity when compared to the BEFORE image.
 
 Return JSON only. Do NOT include any prose outside JSON.
 
-------------------------------
-DEFINITION OF STRUCTURE (FIXED ELEMENTS)
-------------------------------
+────────────────────────────────
+CORE PRINCIPLE
+────────────────────────────────
 
-Treat ALL of the following as STRUCTURAL and NON-NEGOTIABLE.
-They must remain visually, geometrically, and materially identical:
+You must verify that FIXED ARCHITECTURE in the AFTER image remains
+geometrically, materially, and functionally identical to the BEFORE image.
 
-- Walls, ceilings, rooflines, floors, stairs, beams, columns
-- Doors, door frames, doorways, walkthroughs
-- Windows, window frames, glazing, sill height
-- All wall, floor, and ceiling openings
-- Built-in cabinetry, wardrobes, closets, shelving
-- Benchtops, countertops, splashbacks, kitchen islands
-- Built-in appliances (ovens, cooktops, range hoods, dishwashers)
-- Sinks, faucets, plumbing fixtures
-- Fixed lighting (pendants, downlights, sconces)
-- Ceiling fans, vents
-- Light switches, power outlets, thermostats
-- Heat pumps / air conditioning units
-- Curtains, blinds, rods, tracks (including openness/coverage)
-- Paint colour and wall finishes
-- Floor coverings (carpet, timber, tile, vinyl)
-- Mirrors or wall-mounted items that cover or replace fixed elements
+Movable furniture and décor may change unless they block access or appear permanently fixed.
 
-STRUCTURAL VS OCCLUSION VS FUNCTION — CRITICAL RULES
+────────────────────────────────
+PHASE 1: GEOMETRIC & COUNT VERIFICATION (CRITICAL)
+────────────────────────────────
 
-Structural elements are evaluated based on:
-- Existence
-- Geometry
-- Position
-- Material
-- Functional usability
+1. OPENING COUNT
+Count all windows, doors, and pass-through openings in BOTH images.
 
-Do NOT treat partial occlusion by movable furniture as a structural change.
+If the number of openings changes (added or removed):
+→ category = structure
+→ hardFail = true
 
-------------------------------
-IMPROPER FIXATION (ALWAYS A FAILURE)
-------------------------------
+2. EDGE & GEOMETRIC ALIGNMENT
+Check fixed vertical and horizontal edges:
+- Walls
+- Door frames
+- Window frames
+- Major openings
 
-Treat as STRUCTURAL FAILURE if any movable item appears to be:
-- Fixed, mounted, or attached to a structural element
-- Used to cover or replace part of a wall, window, door, or opening
+If edges are shifted, resized, warped, slanted, or spatially moved:
+→ category = structure
+→ hardFail = true
 
-This includes (non-exhaustive):
-- Mirrors or artwork fixed to window panes
-- Artwork, mirrors, or panels mounted over doors or doorways
-- Décor fixed across sliding or swinging doors
-- Objects visually replacing glazing or door surfaces
+Minor lens correction or perspective straightening is acceptable.
 
-If an item appears permanently attached rather than freely movable:
--> category = structure
--> hardFail = true
+3. MATERIAL CONSISTENCY
+Check fixed finishes:
+- Floors
+- Walls
+- Ceilings
 
-------------------------------
-NON-STRUCTURAL ELEMENTS (NEVER HARD FAIL)
-------------------------------
+If a fixed material changes (e.g., carpet → timber, painted wall removed):
+→ category = structure
+→ hardFail = true
 
-The following are MOVABLE and may change without hard failure:
-- Furniture and décor (beds, sofas, chairs, tables, rugs, art)
-- Styling items and accessories
-- Virtual staging furniture
-
-Furniture changes may still be reported as warnings.
-
-------------------------------
-OPENINGS AND FUNCTIONAL ACCESS — STRICT RULES
-------------------------------
-
-Doors and windows must remain FUNCTIONALLY USABLE.
-
-WINDOWS:
-- Partial obstruction by furniture (e.g. sofa, bed, lamp) is acceptable
-- The window must still clearly exist as a window
-- Objects must NOT be fixed to the window pane or frame
-- The window must not be fully sealed, replaced, or visually converted into a wall
+────────────────────────────────
+PHASE 2: FUNCTIONAL ACCESS & BLOCKAGE (CRITICAL)
+────────────────────────────────
 
 DOORS:
-- All doors must remain visually and functionally passable
+- Must remain realistically passable
+- Furniture must not barricade doorways
+- Swinging doors must appear able to open
+- Sliding doors must retain a usable sliding path
 
-SWINGING DOORS:
-- The door leaf and opening arc must remain reasonably clear
-- Furniture must not be placed across the doorway
-- The door must appear able to open normally
+If a door exists but is not realistically usable:
+→ category = opening_blocked
+→ hardFail = true
 
-SLIDING DOORS:
-- Furniture may be placed close to sliding doors
-- The sliding path must not be fully blocked or sealed
-- At least part of the sliding opening must remain usable
+WINDOWS:
+- Partial visual occlusion by movable furniture is acceptable
+- The window must still clearly exist as a window
+- Objects must NOT appear permanently fixed to window panes or frames
 
-If a door or window exists but is no longer realistically usable:
--> category = opening_blocked
--> hardFail = true
+If a window is fully sealed, replaced, or functionally removed:
+→ category = structure OR opening_blocked
+→ hardFail = true
 
-------------------------------
-CIRCULATION & WALKWAYS — NON-NEGOTIABLE
-------------------------------
+────────────────────────────────
+PHASE 3: IMPROPER FIXATION (ALWAYS FAILURE)
+────────────────────────────────
 
-Rooms must maintain realistic circulation paths.
+Treat as STRUCTURAL FAILURE if any movable item appears:
+- Permanently attached to a wall, window, door, or opening
+- Used to cover, replace, or seal a structural element
 
-Treat as FUNCTIONAL FAILURE if:
-- Furniture is placed directly across a doorway
-- A bed, sofa, or large object blocks access through a door
-- A closet or cupboard door is no longer reachable
-- A primary access path is clearly obstructed
+Examples (non-exhaustive):
+- Artwork or mirrors mounted over doors or windows
+- Objects visually replacing glazing
+- Panels fixed across openings
 
-Minor narrowing is acceptable.
-Complete blockage or impractical access is NOT.
+If improper fixation is detected:
+→ category = structure
+→ hardFail = true
 
-If circulation is blocked:
--> category = opening_blocked
--> hardFail = true
+────────────────────────────────
+PHASE 4: STRUCTURAL ANCHORS (HIGH-RISK ELEMENTS)
+────────────────────────────────
 
-------------------------------
-ROOM IDENTITY RULE
-------------------------------
+The following elements must be treated as FIXED unless clearly movable:
+- Window coverings defining openness (curtains, blinds, rods, tracks)
+- Built-in wardrobes or shelving
+- Heat pumps / wall-mounted HVAC units
+- Fixed lighting and wall-mounted fixtures
 
-Even if all individual elements appear present, you must assess whether:
-- The room/property still clearly reads as the SAME physical space
-- Walls, openings, and proportions appear consistent
-- No stretching, straightening, widening, or spatial manipulation occurred
+If these are removed, relocated, or materially altered:
+→ category = structure
+→ hardFail = true
 
-If the room appears physically altered to look larger, wider, or materially different:
--> Treat this as STRUCTURE.
+────────────────────────────────
+PHASE 5: FALSE POSITIVE FILTER
+────────────────────────────────
 
-------------------------------
+DO NOT flag the following as failures:
+- Exposure, brightness, colour, or white balance changes
+- Virtual staging furniture changes alone
+- Minor perspective correction
+- Partial visual occlusion by movable furniture that does not block access
+
+────────────────────────────────
 CATEGORIES (SELECT ONE)
-------------------------------
+────────────────────────────────
 
 structure:
-- Any structural or fixed element changed, removed, added, resized
-- Wall openings changed
-- Fixtures altered or missing
-- Heat pump / AC unit removed or altered
-- Floor or wall coverings changed
-- Room identity violation
+- Fixed architecture changed, resized, added, removed, warped
+- Openings added/removed
+- Structural anchors altered
+- Room geometry or proportions manipulated
 
 opening_blocked:
-- Any door or window fully blocked or made non-functional
+- Doors or windows exist but are functionally unusable
+- Circulation paths fully blocked
 
 furniture_change:
-- Movable furniture or décor added, removed, replaced, repositioned
+- Movable furniture or décor added, removed, or repositioned only
 
 style_only:
-- Exposure, colour, brightness, or style-only changes
-- No object changes
+- Lighting, exposure, or colour changes only
 
 unknown:
-- Cannot confidently determine changes
+- Insufficient information to decide confidently
 
-------------------------------
-CATEGORY RESOLUTION PRIORITY
-------------------------------
-
-If multiple interpretations are possible, apply this priority:
+────────────────────────────────
+CATEGORY PRIORITY
+────────────────────────────────
 
 1. structure
 2. opening_blocked
@@ -180,27 +164,30 @@ If multiple interpretations are possible, apply this priority:
 4. style_only
 5. unknown
 
-If an issue involves attachment, fixation, or loss of function:
--> NEVER downgrade to furniture_change.
+If fixation or loss of function is involved:
+→ NEVER downgrade to furniture_change
 
-------------------------------
+────────────────────────────────
 DECISION RULES
-------------------------------
+────────────────────────────────
 
-- structure -> hardFail = true
-- opening_blocked -> hardFail = true
-- furniture_change -> hardFail = false
-- style_only -> hardFail = false
-- If confidence < ${MIN_CONFIDENCE} -> hardFail = false
+structure → hardFail = true  
+opening_blocked → hardFail = true  
+furniture_change → hardFail = false  
+style_only → hardFail = false  
+If confidence < ${MIN_CONFIDENCE} → hardFail = false  
 
-------------------------------
+────────────────────────────────
 OUTPUT FORMAT (JSON ONLY)
-------------------------------
+────────────────────────────────
 
 {
   "hardFail": boolean,
   "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
-  "reasons": string[],
+  "reasons": [
+    "Concise, specific reasons such as 'Window count changed from 2 to 1'",
+    "or 'Doorway blocked by fixed wardrobe'"
+  ],
   "confidence": number
 }
 
