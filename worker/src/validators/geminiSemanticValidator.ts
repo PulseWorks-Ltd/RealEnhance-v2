@@ -12,7 +12,108 @@ export type GeminiSemanticVerdict = {
 const MIN_CONFIDENCE = 0.65;
 
 function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
-  const stageLabel = stage === "2" ? "Stage 2 (virtual staging)" : stage === "1B" ? "Stage 1B (declutter)" : "Stage 1A (color/cleanup)";
+  if (stage === "1B") {
+    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter/Removal).
+
+TASK:
+Compare the BEFORE (original) and AFTER (decluttered) images. Identify any violations of structural or functional integrity.
+
+RETURN JSON ONLY. DO NOT include prose outside JSON.
+
+─────────────────────────────
+CRITICAL CHECKLIST
+─────────────────────────────
+
+1. FIXED ARCHITECTURE
+- Confirm all walls, ceilings, floors, windows, doors, built-in cabinetry, heat pumps, vents, and fixed lights exist and are geometrically correct.
+- Missing, warped, shifted, resized, or distorted elements → category: structure, hardFail: true
+
+2. MATERIAL & SURFACE INTEGRITY
+- Confirm floors, walls, and ceilings retain original materials and textures (e.g., carpet remains carpet, painted wall unchanged).
+- Detect inpainting artifacts, blurry patches, smudges, or 'ghost shadows' of removed items.
+- Significant artifacts → category: structure, hardFail: true
+
+3. FUNCTIONAL ACCESS
+- Verify that all doors, sliding doors, and windows remain passable and unobstructed.
+- Blocked, sealed, or removed openings → category: opening_blocked, hardFail: true
+
+4. DECLUTTER VALIDATION
+- Ensure only movable items (clutter, furniture) were removed.
+- Removal or modification of fixed items (radiators, shelving, cabinetry) → category: structure, hardFail: true
+
+─────────────────────────────
+CATEGORIES
+─────────────────────────────
+- structure: Fixed element removed/warped OR bad inpainting/artifacts/ghost shadows (FAIL)
+- opening_blocked: Door/window sealed or blocked (FAIL)
+- furniture_change: Clean removal of movable items (PASS)
+- style_only: Lighting or color changes only (PASS)
+- unknown: Low confidence (<0.65) (PASS)
+
+─────────────────────────────
+OUTPUT JSON
+─────────────────────────────
+{
+  "hardFail": boolean,
+  "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
+  "reasons": ["Specific violation, e.g. 'Ghost shadow remaining on rug', 'Heat pump removed'"],
+  "confidence": number
+}`;
+  }
+
+  if (stage === "2") {
+    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 2: Furniture Refresh / Virtual Staging).
+
+TASK:
+Compare the BEFORE (empty or decluttered) and AFTER (staged) images. Identify any violations of structural integrity, functional access, or physics errors caused by staging.
+
+RETURN JSON ONLY. DO NOT include prose outside JSON.
+
+─────────────────────────────
+CRITICAL CHECKLIST
+─────────────────────────────
+
+1. STRUCTURAL PRESERVATION
+- Verify all walls, ceilings, floors, windows, doors, built-in cabinetry, heat pumps, vents, and fixed lights remain unaltered.
+- External views through windows must remain visually consistent (no hallucinations like ocean/beach replacing fences) → structure, hardFail: true
+- Inpainting behind new furniture must preserve baseboards, wall edges, and floor patterns.
+- Broken or missing baseboards, distorted walls/floor patterns → category: structure, hardFail: true
+
+2. FUNCTIONAL ACCESS & CIRCULATION
+- Walking paths to all doors and sliding windows must be visually passable.
+- Furniture blocking doorways, sliding door tracks, or main circulation paths → category: opening_blocked, hardFail: true
+
+3. PHYSICS & AESTHETICS
+- Furniture must appear grounded with realistic contact shadows.
+- Reflections must match polished/timber floors if present.
+- Rugs must lie flat, edges not merging into walls/baseboards.
+- Floating furniture, scale errors, or visual clipping → category: furniture_change, hardFail: false
+
+4. MATERIAL & TEXTURE CHECK
+- Floors, walls, ceilings retain original material/finish.
+- Improper inpainting under/around furniture that damages fixed surfaces → category: structure, hardFail: true
+
+─────────────────────────────
+CATEGORIES
+─────────────────────────────
+- structure: Fixed architecture/view altered, or geometry damaged by bad inpainting (HARD FAIL)
+- opening_blocked: Circulation path or doorway obstructed (HARD FAIL)
+- furniture_change: Floating/clipping furniture, physics or aesthetic anomalies (PASS)
+- style_only: Lighting/exposure/color changes only (PASS)
+- unknown: Low confidence (<0.65) (PASS)
+
+─────────────────────────────
+OUTPUT JSON
+─────────────────────────────
+{
+  "hardFail": boolean,
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": ["Specific violation, e.g. 'Baseboard missing behind new sofa', 'View outside window replaced by ocean'"],
+  "confidence": number
+}`;
+  }
+
+  const stageLabel = stage === "1A" ? "Stage 1A (color/cleanup)" : stage;
   const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
   return `You are a Structural Integrity Auditor for New Zealand real estate imagery.
 
