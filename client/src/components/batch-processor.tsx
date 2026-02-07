@@ -1297,6 +1297,15 @@ export default function BatchProcessor() {
         
         setResults(prev => {
           const copy = prev ? [...prev] : [];
+          const requestedStages = next.requestedStages || next.result?.requestedStages || (copy[next.index] as any)?.requestedStages || (copy[next.index] as any)?.result?.requestedStages || null;
+          const mergedMeta = {
+            ...((copy[next.index] as any)?.meta || {}),
+            ...(next.result?.meta || {}),
+            ...(next.meta || {}),
+          } as any;
+          if (typeof allowStaging === 'boolean' && mergedMeta.allowStaging === undefined) {
+            mergedMeta.allowStaging = allowStaging;
+          }
           copy[next.index] = {
             index: next.index,
             filename: next.filename,
@@ -1306,7 +1315,9 @@ export default function BatchProcessor() {
             stageUrls: next.stageUrls || next.result?.stageUrls || null,
             imageId: next.imageId || next.result?.imageId,
             jobId: next.jobId,
-            error: next.error || norm?.error
+            error: next.error || norm?.error,
+            requestedStages,
+            meta: mergedMeta,
           };
           return copy;
         });
@@ -1685,14 +1696,16 @@ export default function BatchProcessor() {
             const item = data.items[i];
             const url = item?.imageUrl || item?.resultUrl || item?.image || null;
             const originalUrl = item?.originalImageUrl || item?.originalUrl || item?.original || null;
+            const requestedStages = item?.requestedStages || item?.meta?.requestedStages || item?.result?.requestedStages || null;
             if (item && item.status === 'completed' && !processedSetRef.current.has(i)) {
               processedSetRef.current.add(i);
               queueRef.current.push({
                 index: i,
-                result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta },
+                result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta, requestedStages },
                 jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
                 imageId: item?.imageId,
                 stageUrls: item?.stageUrls || null,
+                requestedStages,
                 filename: item.filename || `image-${i + 1}`
               });
             } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
@@ -1702,6 +1715,7 @@ export default function BatchProcessor() {
                 error: item.error || "Processing failed",
                 jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
                 imageId: item?.imageId,
+                requestedStages,
                 filename: item.filename || `image-${i + 1}`
               });
             }
@@ -1744,9 +1758,11 @@ export default function BatchProcessor() {
             if (data.status === 'completed') {
               const url = data.imageUrl || data.resultUrl || data.image || null;
               const originalUrl = data.originalImageUrl || data.originalUrl || data.original || null;
+              const requestedStages = data.requestedStages || data.meta?.requestedStages || data.result?.requestedStages || null;
               queueRef.current.push({
                 index: 0,
-                result: { imageUrl: url, originalImageUrl: originalUrl, mode: 'enhanced' },
+                result: { imageUrl: url, originalImageUrl: originalUrl, mode: 'enhanced', requestedStages, meta: data.meta },
+                requestedStages,
                 filename: files[0]?.name || 'image-1'
               });
             } else {
@@ -1755,12 +1771,33 @@ export default function BatchProcessor() {
             schedule();
           }
           if (data.status === 'completed') {
-            setRunState('done');
-            setAbortController(null);
-            clearBatchJobState(currentUserId);
-            await refreshUser();
-            setProgressText('Batch complete! 1 images enhanced successfully.');
-            return;
+            const stageMap = data?.stageUrls || data?.result?.stageUrls || {};
+            const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
+            const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
+            const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+            const requestedStages = data?.requestedStages || data?.meta?.requestedStages || data?.result?.requestedStages || {};
+            const sceneLabel = String(data?.meta?.scene?.label || data?.result?.meta?.scene?.label || "").toLowerCase();
+            const stagingAllowed = data?.meta?.allowStaging !== false && data?.result?.meta?.allowStaging !== false && allowStaging;
+            const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+            const declutterRequested = requestedStages?.stage1b === true || requestedStages?.stage1b === "true";
+            const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+            const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+            const fallbackUrl = data.imageUrl || data.resultUrl || data.image || null;
+            const targetUrlPresent = (
+              (targetStage === "2" && !!stage2Url) ||
+              (targetStage === "1B" && !!stage1BUrl) ||
+              (targetStage === "1A" && (!!stage1AUrl || !!fallbackUrl))
+            );
+
+            if (targetUrlPresent) {
+              setRunState('done');
+              setAbortController(null);
+              clearBatchJobState(currentUserId);
+              await refreshUser();
+              setProgressText('Batch complete! 1 images enhanced successfully.');
+              return;
+            }
+            // If target not reached, keep polling and avoid premature completion badge
           }
           if (['failed','error'].includes(data.status)) {
             setRunState('idle');
@@ -2113,6 +2150,15 @@ export default function BatchProcessor() {
             setResults(prev => {
               const copy = prev ? [...prev] : [];
               const existing = copy[idx] || {};
+              const mergedMeta = {
+                ...(existing.meta || {}),
+                ...(it?.meta || {}),
+                ...(it?.result?.meta || {}),
+              } as any;
+              if (typeof allowStaging === 'boolean' && mergedMeta.allowStaging === undefined) {
+                mergedMeta.allowStaging = allowStaging;
+              }
+              const mergedRequestedStages = requestedStages || existing.requestedStages || existing.result?.requestedStages || null;
               copy[idx] = {
                 ...existing,
                 status,
@@ -2130,18 +2176,22 @@ export default function BatchProcessor() {
                 uiStatus,
                 hardFail,
                 uiOverrideFailed,
+                requestedStages: mergedRequestedStages,
+                meta: mergedMeta,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
                   imageUrl: completedFinal ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
                   resultUrl: displayUrl ?? null,
                   stageUrls: stageUrls ?? null,
+                  requestedStages: mergedRequestedStages,
                   status,
                   resultStage: resultStage ?? null,
                   progress,
                   warnings: warningList,
                   uiStatus,
                   hardFail,
+                  meta: mergedMeta,
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
@@ -2183,10 +2233,13 @@ export default function BatchProcessor() {
                   imageId,
                   status,
                   resultStage,
+                  requestedStages,
+                  meta: it?.meta || {},
                 },
                 jobId: key,
                 imageId,
                 stageUrls: stageUrls || null,
+                requestedStages,
                 filename,
               });
             }
