@@ -560,22 +560,21 @@ PRESERVE PIXELS, GEOMETRY, AND MATERIALS OF:
 ROOM IDENTIFICATION & ZONING
 ────────────────────────────────
 1. Identify room function (Bedroom, Living, Dining, Study) from geometry and fixtures.
-2. Define ZONES:
-   - ACTIVE ZONE: Where furniture is centered.
-   - CIRCULATION ZONE: Doorways, windows, walkways. Keep at least 1m clearance.
+2. Define ZONES with a simple algorithm:
+  - ACTIVE ZONE: Central cluster for the primary function (sofa + coffee table, bed + side tables, dining table).
+  - CIRCULATION ZONE: All paths ≥1m to doors, sliders, and windows.
+  - Do NOT place furniture in Circulation; keep those paths clear.
 3. RULES:
-   - Do NOT place furniture in Circulation Zone.
-   - Do NOT block sliding doors or floor-to-ceiling windows.
-   - Place only furniture appropriate to identified room type.
-   - NEVER mix room functions (e.g., bed in living room).
+  - Do NOT block doors, sliders, or floor-to-ceiling glazing.
+  - Place only furniture appropriate to the identified room type; never mix room functions.
 
 ────────────────────────────────
 FURNITURE PRIORITY
 ────────────────────────────────
-- Primary: Essential large items (Bed, Sofa, Dining Table, Desk/Chair).
-- Secondary: Side tables, Console/Credenza (if clear space exists).
-- Tertiary: Small accents (Lamp, Accent Chair, Rug, minimal decor) only if ample empty space remains.
-- Scaling: Furniture must be proportional to room size.
+- Primary: Essential large items (Bed, Sofa, Dining Table, Desk/Chair) placed in the ACTIVE ZONE only.
+- Secondary: At most ONE (side table or console/credenza) if clear space exists.
+- Tertiary: Normally NONE. Add a single lamp OR a single accent chair OR a rug only if the room is obviously large and circulation stays ≥1m.
+- Scaling: Keep proportions tight; if uncertain, omit the item.
 
 ────────────────────────────────
 STYLING PROFILE
@@ -585,6 +584,9 @@ STYLING PROFILE
 - Materials: Matte finishes, linen, cotton, wool, blonde timber.
 - Decor: Sparse (max 2-3 items: e.g., vase, plant, book). No clutter.
 - Prohibited: Coastal keyword, ornate furniture, bright colors, velvet, heavy drapes.
+ - Seating constraints: Max 1 accent chair; never in circulation. No stools unless an island with visible overhang; max 2 stools, aligned under the overhang.
+ - Rugs: Only if centered under the primary grouping; omit otherwise.
+ - Keep existing empty zones empty; do not fill blank areas just to add items.
 
 ────────────────────────────────
 PHYSICS & INPAINTING
@@ -594,6 +596,7 @@ PHYSICS & INPAINTING
 - Rug Physics: Rugs must lie fully on the floor, edges aligned, do not merge with walls/baseboards.
 - Occlusion Reconstruction: Any previously hidden wall/floor/baseboard revealed by furniture placement must be seamlessly reconstructed.
 - Lighting: Furniture must follow existing room lighting direction, intensity, and warmth.
+- Placement sanity: If placement looks cramped, floating, or mis-scaled, REMOVE the offending item instead of forcing it.
 
 ────────────────────────────────
 OUTPUT
