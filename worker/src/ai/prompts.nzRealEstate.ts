@@ -584,7 +584,7 @@ STYLING PROFILE
 - Materials: Matte finishes, linen, cotton, wool, blonde timber.
 - Decor: Sparse (max 2-3 items: e.g., vase, plant, book). No clutter.
 - Prohibited: Coastal keyword, ornate furniture, bright colors, velvet, heavy drapes.
- - Seating constraints: Max 1 accent chair; never in circulation. No stools unless an island with visible overhang; max 2 stools, aligned under the overhang.
+ - Seating constraints: Max 1 accent chair; never in circulation. Do NOT add stools/high chairs to islands/benchtops unless stools already exist in the BEFORE image; if present, replace like-for-like (same positions/count), aligned under the visible overhang.
  - Rugs: Only if centered under the primary grouping; omit otherwise.
  - Keep existing empty zones empty; do not fill blank areas just to add items.
 
