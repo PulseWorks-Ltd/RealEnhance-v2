@@ -1994,18 +1994,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     if (compliance && compliance.ok === false) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      // Record the violation for the final status update but keep the job in-flight
-      compliance = {
-        ...compliance,
-        complianceFailed: true,
-        complianceFailureReason: lastViolationMsg,
-      } as any;
-      nLog(`[worker] Compliance failed for job ${payload.jobId} after retries: ${lastViolationMsg} (image still published)`);
-      // Do NOT return; continue so image is published and final status is set once done
+      // CRITICAL FIX: Block job when Gemini detects major structural violations after all retries
+      const complianceError = new Error(`Gemini semantic validation failed after ${maxRetries + 1} attempts: ${lastViolationMsg}`);
+      (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
+      (complianceError as any).violations = compliance.reasons || [];
+      (complianceError as any).retries = maxRetries + 1;
+      nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg}`);
+      nLog(`[worker] Job blocked - structural integrity cannot be guaranteed after ${maxRetries + 1} validation attempts`);
+      throw complianceError;
     }
-  } catch (e) {
-    // proceed if Gemini not configured or any error
-    // nLog("[worker] compliance check skipped:", (e as any)?.message || e);
+  } catch (e: any) {
+    // Re-throw compliance validation failures - these must block the job
+    if (e?.code === "COMPLIANCE_VALIDATION_FAILED") {
+      throw e;
+    }
+    // Only catch and ignore configuration/network errors (Gemini not configured, API errors, etc.)
+    // Proceed if Gemini not configured or any non-validation error
+    nLog("[worker] compliance check skipped or error:", e?.message || e);
   }
   timings.validateMs = Date.now() - tVal;
 
