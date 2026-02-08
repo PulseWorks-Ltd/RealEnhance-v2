@@ -230,61 +230,30 @@ Return ONLY the enhanced image.`.trim();
   // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return `STAGE 1B — EXTERIOR DECLUTTER (GARDEN, DRIVEWAY, DECKS)
+      return `You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
 
-TASK:
-Remove transient garden clutter, maintenance items, and refuse to produce a clean, tidy exterior image for professional New Zealand real estate marketing.
-Preserve 100% of the building structure, hardscaping, permanent landscaping, intentional ground cover, and all large movable assets.
-Model: Gemini 3 Pro Image
+GOAL:
+Empty the outdoor space while preserving all fixed structures.
 
-────────────────────────────────
-EXTERIOR GEOMETRIC LOCK (PRESERVE EXACTLY)
-────────────────────────────────
+REMOVE:
+- All outdoor furniture
+- BBQs
+- Umbrellas
+- Heaters
+- All movable pots and decor
 
-YOU MUST PRESERVE (Pixels & Geometry):
+KEEP:
+- Decks, pergolas, railings
+- Fixed seating
+- Landscaping and lawns
+- Fences
+- Exterior lighting
+- Background views
 
-1. Building Structure: Rooflines, gutters, downpipes, chimneys, soffits, cladding (brick/weatherboard), deck railings, antennas, satellite dishes, heat pumps.
-2. Hardscaping: Driveways, paths, patios, retaining walls, fences, gates, letterboxes — preserve exact shape, size, material, and pattern.
-3. Landscaping: Trees, hedges, lawn borders, flower beds, garden beds.
-4. Ground Cover: DO NOT REMOVE intentional ground cover — gravel, pebble stones, bark mulch, wood chips. Treat these as FIXED texture.
-5. Large Movable Assets: Cars, boats, trailers, outdoor furniture (tables, chairs, BBQs). KEEP ALL unless explicitly marked as rubbish.
+PARTIALLY VISIBLE ITEMS:
+If any part is visible, remove the entire object.
 
-────────────────────────────────
-TARGETS FOR REMOVAL (KILL LIST — TRANSIENT ITEMS ONLY)
-────────────────────────────────
-
-REMOVE ONLY the following movable items:
-
-1. Maintenance Equipment: Hoses (and reels), buckets, brooms, mops, ladders, tools, wheelbarrows, lawnmowers.
-2. Refuse: Wheelie bins, recycling crates, rubbish bags, cardboard, loose packaging.
-3. Loose Clutter: Toys, bikes, sports equipment, tarps, loose firewood piles (if not stacked neatly).
-4. Organic Debris: Stray leaves or small debris on decks, patios, and driveways ONLY. DO NOT remove leaves, mulch, or soil from garden beds, flower beds, or intentional landscaping.
-
-────────────────────────────────
-INPAINTING & RESTORATION RULES
-────────────────────────────────
-
-When removing an object:
-
-1. Fill the Void: Seamlessly extend background textures (weatherboards, brick, decking, paving, grass, gravel) to cover the removed object.
-2. Shadows: REMOVE all cast shadows and reflections of removed objects (floor, deck, walls, windows, mirrors), ensuring surrounding lighting remains natural.
-3. Texture Fidelity: Do not blur. Regenerated surfaces must match the sharpness, pattern, and color of the surrounding area exactly.
-4. Edge Continuity: Ensure driveways, patios, and decking lines remain unbroken. Maintain precise landscaping and garden bed edges.
-
-────────────────────────────────
-HARD RULES
-────────────────────────────────
-
-- Do NOT rotate, crop, zoom, or change perspective.
-- Do NOT remove or alter any permanent structure, hardscape, landscaping, or intentional ground cover.
-- If unsure whether an item is permanent or fixed → KEEP IT.
-- Large movable assets (cars, boats, trailers, outdoor furniture, BBQs) are PRESERVED unless explicitly marked as rubbish.
-
-────────────────────────────────
-OUTPUT
-────────────────────────────────
-
-Return ONLY the fully processed exterior image with transient clutter removed. Preserve all structural, hardscape, landscaping, ground cover, and large asset integrity exactly.`.trim();
+Preserve surface textures and shadows.`.trim();
     }
 
       return `You are performing Stage 1B: FULL FURNITURE REMOVAL for New Zealand real estate imagery.
@@ -343,52 +312,33 @@ Return ONLY the fully processed exterior image with transient clutter removed. P
   // This mode is for tidying up a space without removing the furniture itself
   export function buildLightDeclutterPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (EXTERIOR)
+      return `You are performing Stage 1B: LIGHT DECLUTTER for EXTERNAL real estate imagery.
 
-TASK:
-Remove transient garden clutter and refuse to tidy the exterior presentation.
-Preserve 100% of the building structure, permanent landscaping, and hardscaping.
-Model: Gemini 3 Pro Image
-Default Sampling: temp=0.50, topP=0.86, topK=45
+GOAL:
+Clean the exterior space while preserving the property and landscaping.
 
-────────────────────────────────
-EXTERIOR GEOMETRIC LOCK (PRESERVE EXACTLY)
-────────────────────────────────
+REMOVE:
+- Outdoor furniture
+- BBQs
+- Bins
+- Toys
+- Bikes, scooters
+- Garden tools
+- Loose hoses
+- Small movable pots
 
-YOU MUST PRESERVE (Pixels & Geometry):
-1. Building Structure: Rooflines, gutters, downpipes, chimneys, soffits, cladding (brick/weatherboard), deck railings, antennas, satellite dishes.
-2. Hardscaping: Driveways, paths, patios, retaining walls, fences, gates, letterboxes.
-3. Landscaping: Trees, hedges, lawn borders, flower beds.
-4. Ground Cover: DO NOT REMOVE intentional ground cover (gravel, pebble stones, bark mulch, wood chips). Treat these as FIXED texture.
-5. Large Assets: Cars, boats, trailers, and outdoor furniture (tables/chairs/BBQs) must be KEPT unless they are clearly broken/rubbish.
+KEEP:
+- Decks, pergolas, railings
+- Fixed benches
+- Landscaping, lawns, trees
+- Fences
+- Exterior lighting
+- Neighbouring buildings and views
 
-────────────────────────────────
-TARGETS FOR REMOVAL (THE "KILL" LIST)
-────────────────────────────────
+PARTIALLY VISIBLE ITEMS:
+Any visible portion of a removable object must be fully removed.
 
-REMOVE ONLY the following movable items:
-1. Maintenance Items: Garden hoses (and reels), buckets, brooms, mops, ladders, tools, wheelbarrows, lawnmowers.
-2. Refuse: Wheelie bins, recycling crates, rubbish bags, cardboard, loose packaging.
-3. Loose Clutter: Toys, bikes, sports equipment, tarps, loose firewood piles (if not stacked neatly).
-4. Organic Debris: Stray leaves on decks/patios (do not remove leaves from garden beds).
-
-────────────────────────────────
-INPAINTING & RESTORATION RULES
-────────────────────────────────
-When removing an item (e.g., a bin against a wall):
-1. Fill the Void: Seamlessly extend the background texture (weatherboards, brick pattern, or grass) to cover the gap.
-2. Shadows: You MUST remove the cast shadow of the object.
-3. Consistency: Do not blur the area. The replacement siding/grass must match the sharpness of the surrounding area.
-
-STRICT PROHIBITION:
-- DO NOT clean the roof or driveway (no pressure washing).
-- DO NOT repair paint or cracks.
-- DO NOT remove permanent fixtures (heat pumps, wall-mounted clotheslines, swimming pool equipment).
-
-────────────────────────────────
-OUTPUT
-────────────────────────────────
-Return ONLY the processed image.`.trim();
+Maintain realistic ground textures and shadows.`.trim();
     }
 
      return `You are performing Stage 1B: LIGHT DECLUTTER for New Zealand real estate imagery.
