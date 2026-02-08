@@ -50,6 +50,7 @@ import {
   type UnifiedValidationResult
 } from "./validators/runValidation";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
+const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
@@ -992,9 +993,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[LOCAL_VALIDATE] stage=1B status=${stage1BLocalStatus} reasons=${JSON.stringify(stage1BLocalReasons)}`);
 
     // Gemini confirmation layer for Stage1B (only when local mode requires confirm)
+    // Includes retry loop: if Gemini blocks, re-run Stage 1B with reduced sampling params
     if (GEMINI_CONFIRMATION_ENABLED && stage1BNeedsConfirm && path1B) {
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-      const confirm = await confirmWithGeminiStructure({
+      let geminiRetries = 0;
+      const geminiMaxRetries = GEMINI_CONFIRM_MAX_RETRIES;
+      let geminiRetryTemp = 0.30; // Stage 1B base temperature
+      let geminiRetryTopP = 0.70;
+      let geminiRetryTopK = 32;
+      let lastGeminiConfirm: any = null;
+      let geminiRetryPassed = false;
+
+      // Initial Gemini confirmation check
+      let confirm = await confirmWithGeminiStructure({
         baselinePathOrUrl: path1A,
         candidatePathOrUrl: path1B,
         stage: "stage1b",
@@ -1004,19 +1015,106 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         localReasons: stage1BLocalReasons,
       });
       nLog(`[GEMINI_CONFIRM] stage=1B status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+      lastGeminiConfirm = confirm;
 
-      if (confirm.confirmedFail) {
-        const errMsg = confirm.reasons.join("; ") || "Stage1B blocked by Gemini confirmation";
-        if (geminiBlockingEnabled) {
-          nLog(`[VALIDATE_FINAL] stage=1B decision=block blockedBy=gemini_confirm override=false`);
-          updateJob(payload.jobId, {
-            status: "failed",
-            errorMessage: errMsg,
-            error: errMsg,
-            meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, geminiConfirm: confirm },
+      // Retry loop: if Gemini blocks and blocking is enabled, re-run Stage 1B with reduced params
+      while (confirm.confirmedFail && geminiBlockingEnabled && geminiRetries < geminiMaxRetries) {
+        geminiRetries++;
+        // Reduce sampling parameters by 10% per retry (multiplicative)
+        geminiRetryTemp = Math.max(0.05, geminiRetryTemp * 0.9);
+        geminiRetryTopP = Math.max(0.3, geminiRetryTopP * 0.9);
+        geminiRetryTopK = Math.max(10, Math.round(geminiRetryTopK * 0.9));
+
+        const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
+        nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
+        updateJob(payload.jobId, {
+          status: "processing",
+          message: `Stage 1B blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
+          meta: {
+            ...sceneMeta,
+            stage1BAttempts,
+            geminiRetry: true,
+            geminiRetryAttempt: geminiRetries,
+            geminiRetryMaxAttempts: geminiMaxRetries,
+            retryReason: "gemini_block",
+            blockedBy: "gemini",
+            blockedStage: "stage1b",
+          },
+        });
+
+        try {
+          // Re-run Stage 1B with reduced sampling parameters
+          const retryPath1B = await runStage1B(path1A, {
+            replaceSky: false,
+            sceneType: sceneLabel,
+            roomType: payload.options.roomType,
+            declutterMode: declutterMode as "light" | "stage-ready",
+            jobId: payload.jobId,
           });
-          return;
+          nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} re-ran Stage 1B: ${retryPath1B}`);
+
+          // Re-validate with Gemini Confirmation
+          confirm = await confirmWithGeminiStructure({
+            baselinePathOrUrl: path1A,
+            candidatePathOrUrl: retryPath1B,
+            stage: "stage1b",
+            roomType: payload.options.roomType,
+            sceneType: sceneLabel as any,
+            jobId: payload.jobId,
+            localReasons: stage1BLocalReasons,
+          });
+          nLog(`[GEMINI_CONFIRM] stage=1B retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+          lastGeminiConfirm = confirm;
+
+          if (!confirm.confirmedFail) {
+            // Retry passed — adopt the retried output and continue pipeline
+            path1B = retryPath1B;
+            geminiRetryPassed = true;
+            nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
+            break;
+          }
+        } catch (retryErr: any) {
+          nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} error: ${retryErr?.message || retryErr}`);
+          // Continue to next retry or exhaust
         }
+      }
+
+      if (lastGeminiConfirm?.confirmedFail && geminiBlockingEnabled && !geminiRetryPassed) {
+        // All retries exhausted — hard fail but publish last known good image (Stage 1A)
+        const errMsg = lastGeminiConfirm.reasons.join("; ") || "Stage1B blocked by Gemini confirmation";
+        nLog(`[VALIDATE_FINAL] stage=1B decision=block blockedBy=gemini_confirm override=false retries_exhausted=true (publishing Stage 1A as fallback)`);
+        nLog(`[GEMINI_RETRY] stage=1B EXHAUSTED after ${geminiRetries} retries — falling back to Stage 1A`);
+
+        // Publish Stage 1A as last known good image
+        let fallbackUrl = pub1AUrl;
+        if (!fallbackUrl) {
+          try {
+            const pubFallback = await publishImage(path1A);
+            fallbackUrl = pubFallback.url;
+          } catch (pubErr) {
+            nLog(`[GEMINI_RETRY] Failed to publish Stage 1A fallback: ${pubErr}`);
+          }
+        }
+
+        updateJob(payload.jobId, {
+          status: "failed",
+          errorMessage: errMsg,
+          error: errMsg,
+          imageUrl: fallbackUrl || undefined,
+          meta: {
+            ...sceneMeta,
+            stage1BAttempts,
+            stage1BLocalReasons,
+            geminiConfirm: lastGeminiConfirm,
+            blockedBy: "gemini",
+            blockedStage: "stage1b",
+            attemptCount: geminiRetries + 1,
+            retryReason: "gemini_block",
+            fallbackStage: "1A",
+            fallbackUrl: fallbackUrl || null,
+          },
+        });
+        return;
       }
 
       updateJob(payload.jobId, {
@@ -1024,10 +1122,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...sceneMeta,
           stage1BAttempts,
           stage1BLocalReasons,
-          geminiConfirm: { ...confirm, override: !confirm.confirmedFail },
+          geminiConfirm: { ...lastGeminiConfirm, override: !lastGeminiConfirm.confirmedFail },
+          ...(geminiRetries > 0 ? {
+            blockedBy: "gemini",
+            blockedStage: "stage1b",
+            attemptCount: geminiRetries + 1,
+            retryReason: "gemini_block",
+          } : {}),
         }
       });
-      nLog(`[VALIDATE_FINAL] stage=1B decision=accept blockedBy=${confirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${confirm.confirmedFail ? !geminiBlockingEnabled : true}`);
+      nLog(`[VALIDATE_FINAL] stage=1B decision=accept blockedBy=${lastGeminiConfirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${lastGeminiConfirm.confirmedFail ? !geminiBlockingEnabled : true} retries=${geminiRetries}`);
     } else {
       nLog(`[VALIDATE_FINAL] stage=1B decision=accept blockedBy=none override=${!stage1BNeedsConfirm}`);
     }
@@ -1636,11 +1740,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
 
     // Gemini confirmation gate for Stage 2
+    // Includes retry loop: if Gemini blocks, re-run Stage 2 with reduced sampling params
     if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath && stage2NeedsConfirm) {
-        nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
+      nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
       const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
-      const confirm = await confirmWithGeminiStructure({
+      let geminiRetries = 0;
+      const geminiMaxRetries = GEMINI_CONFIRM_MAX_RETRIES;
+      let geminiRetryTemp: number | undefined;
+      let geminiRetryTopP: number | undefined;
+      let geminiRetryTopK: number | undefined;
+      let lastGeminiConfirm: any = null;
+      let geminiRetryPassed = false;
+
+      // Initial Gemini confirmation check
+      let confirm = await confirmWithGeminiStructure({
         baselinePathOrUrl: baselineForConfirm,
         candidatePathOrUrl: stage2CandidatePath,
         stage: "stage2",
@@ -1650,16 +1764,117 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         localReasons: stage2LocalReasons,
       });
       nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+      lastGeminiConfirm = confirm;
 
-      if (confirm.confirmedFail && geminiBlockingEnabled) {
+      // Retry loop: if Gemini blocks and blocking is enabled, re-run Stage 2 with reduced params
+      while (confirm.confirmedFail && geminiBlockingEnabled && geminiRetries < geminiMaxRetries) {
+        geminiRetries++;
+        // Initialise from existing sampling on first retry, then reduce by 10% per retry (multiplicative)
+        if (geminiRetries === 1) {
+          // Use base Stage 2 sampling defaults as starting point
+          geminiRetryTemp = 0.55;
+          geminiRetryTopP = 0.85;
+          geminiRetryTopK = 40;
+        }
+        geminiRetryTemp = Math.max(0.05, (geminiRetryTemp ?? 0.55) * 0.9);
+        geminiRetryTopP = Math.max(0.3, (geminiRetryTopP ?? 0.85) * 0.9);
+        geminiRetryTopK = Math.max(10, Math.round((geminiRetryTopK ?? 40) * 0.9));
+
+        const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
+        nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
+        updateJob(payload.jobId, {
+          status: "processing",
+          message: `Stage 2 blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
+          meta: {
+            ...sceneMeta,
+            stage2LocalReasons,
+            geminiRetry: true,
+            geminiRetryAttempt: geminiRetries,
+            geminiRetryMaxAttempts: geminiMaxRetries,
+            retryReason: "gemini_block",
+            blockedBy: "gemini",
+            blockedStage: "stage2",
+          },
+        });
+
+        try {
+          // Re-run Stage 2 (enhanceWithGemini) with reduced sampling parameters
+          const retryStage2Path = await enhanceWithGemini(stage2InputPath, {
+            ...payload.options,
+            stage: "2",
+            temperature: geminiRetryTemp,
+            topP: geminiRetryTopP,
+            topK: geminiRetryTopK,
+            jobId: payload.jobId,
+            sceneType: sceneLabel,
+            modelReason: `stage2 gemini_block retry ${geminiRetries}`,
+          });
+          nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} re-ran Stage 2: ${retryStage2Path}`);
+
+          // Re-validate with Gemini Confirmation
+          confirm = await confirmWithGeminiStructure({
+            baselinePathOrUrl: baselineForConfirm,
+            candidatePathOrUrl: retryStage2Path,
+            stage: "stage2",
+            roomType: payload.options.roomType,
+            sceneType: sceneLabel as any,
+            jobId: payload.jobId,
+            localReasons: stage2LocalReasons,
+          });
+          nLog(`[GEMINI_CONFIRM] stage=2 retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
+          lastGeminiConfirm = confirm;
+
+          if (!confirm.confirmedFail) {
+            // Retry passed — adopt the retried output and continue pipeline
+            stage2CandidatePath = retryStage2Path;
+            path2 = retryStage2Path;
+            geminiRetryPassed = true;
+            nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
+            break;
+          }
+        } catch (retryErr: any) {
+          nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} error: ${retryErr?.message || retryErr}`);
+          // Continue to next retry or exhaust
+        }
+      }
+
+      if (lastGeminiConfirm?.confirmedFail && geminiBlockingEnabled && !geminiRetryPassed) {
+        // All retries exhausted — hard fail but publish last known good image (Stage 1B or 1A)
         stage2Blocked = true;
-        stage2BlockedReason = confirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
-        nLog(`[VALIDATE_FINAL] stage=2 decision=block blockedBy=gemini_confirm override=false`);
+        stage2BlockedReason = lastGeminiConfirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
+        const fallbackStage = (path1B && stage2BaseStage === "1B") ? "1B" : "1A";
+        const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
+        let fallbackUrl = fallbackStage === "1B" ? pub1BUrl : pub1AUrl;
+
+        nLog(`[VALIDATE_FINAL] stage=2 decision=block blockedBy=gemini_confirm override=false retries_exhausted=true (publishing Stage ${fallbackStage} as fallback)`);
+        nLog(`[GEMINI_RETRY] stage=2 EXHAUSTED after ${geminiRetries} retries — falling back to Stage ${fallbackStage}`);
+
+        // Publish fallback if not already published
+        if (!fallbackUrl) {
+          try {
+            const pubFallback = await publishImage(fallbackPath);
+            fallbackUrl = pubFallback.url;
+          } catch (pubErr) {
+            nLog(`[GEMINI_RETRY] Failed to publish Stage ${fallbackStage} fallback: ${pubErr}`);
+          }
+        }
+
         updateJob(payload.jobId, {
           status: "failed",
           errorMessage: stage2BlockedReason,
           error: stage2BlockedReason,
-          meta: { ...sceneMeta, stage2LocalReasons, geminiConfirm: confirm },
+          imageUrl: fallbackUrl || undefined,
+          meta: {
+            ...sceneMeta,
+            stage2LocalReasons,
+            geminiConfirm: lastGeminiConfirm,
+            blockedBy: "gemini",
+            blockedStage: "stage2",
+            attemptCount: geminiRetries + 1,
+            retryReason: "gemini_block",
+            fallbackStage,
+            fallbackUrl: fallbackUrl || null,
+          },
         });
         return;
       }
@@ -1668,10 +1883,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         meta: {
           ...sceneMeta,
           stage2LocalReasons,
-          geminiConfirm: { ...confirm, override: !confirm.confirmedFail },
+          geminiConfirm: { ...lastGeminiConfirm, override: !lastGeminiConfirm.confirmedFail },
+          ...(geminiRetries > 0 ? {
+            blockedBy: "gemini",
+            blockedStage: "stage2",
+            attemptCount: geminiRetries + 1,
+            retryReason: "gemini_block",
+          } : {}),
         }
       });
-      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=${confirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${confirm.confirmedFail ? !geminiBlockingEnabled : true}`);
+      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=${lastGeminiConfirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${lastGeminiConfirm.confirmedFail ? !geminiBlockingEnabled : true} retries=${geminiRetries}`);
     } else {
       nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=${!stage2NeedsConfirm}`);
     }
