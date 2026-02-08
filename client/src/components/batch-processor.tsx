@@ -2038,7 +2038,7 @@ export default function BatchProcessor() {
             stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
           } : null;
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
-          const requestedStage2 = typeof requestedStages?.stage2 === "boolean" ? requestedStages.stage2 : null;
+          const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
           const stagingAllowed = it?.meta?.allowStaging !== false && allowStaging;
@@ -2330,7 +2330,7 @@ export default function BatchProcessor() {
           const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
           const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-          const declutterRequested = !!requestedStages?.stage1b;
+          const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           
           const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
@@ -2348,6 +2348,22 @@ export default function BatchProcessor() {
           );
           
           const completedWithTarget = (status === "completed" || status === "complete") && targetUrlPresent;
+          
+          // Debug log for items that haven't reached target
+          if (!completedWithTarget && !failed) {
+            console.log('[BATCH][poll][target-not-reached]', {
+              idx,
+              status,
+              targetStage,
+              targetUrlPresent,
+              hasStage2: !!stage2Url,
+              hasStage1B: !!stage1BUrl,
+              hasStage1A: !!stage1AUrl,
+              requestedStages,
+              sceneLabel
+            });
+          }
+          
           return completedWithTarget;
         });
 
@@ -3953,6 +3969,27 @@ export default function BatchProcessor() {
     return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active");
   });
 
+  // Debug: Log button visibility state
+  React.useEffect(() => {
+    if (results.length > 0) {
+      const inFlightDetails = results.map((r, i) => ({
+        index: i,
+        status: r?.status,
+        uiOverrideFailed: r?.uiOverrideFailed,
+        isInFlight: !r?.uiOverrideFailed && ["processing", "queued", "active"].includes(String(r?.status || "").toLowerCase())
+      })).filter(d => d.isInFlight);
+      
+      console.log('[BATCH][buttons-visibility]', { 
+        runState, 
+        hasInFlightResults, 
+        buttonsVisible: runState === "done" && !hasInFlightResults,
+        totalResults: results.length,
+        inFlightCount: inFlightDetails.length,
+        inFlightDetails: inFlightDetails.length > 0 ? inFlightDetails : 'none'
+      });
+    }
+  }, [runState, hasInFlightResults, results]);
+
   return (
   <div className="w-full">
       <AlertDialog open={isStagingConfirmOpen} onOpenChange={setIsStagingConfirmOpen}>
@@ -4849,7 +4886,7 @@ export default function BatchProcessor() {
                             const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
                             const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                            const declutterRequested = !!requestedStages?.stage1b;
+                            const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
                             const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                             
                             const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
@@ -4939,7 +4976,7 @@ export default function BatchProcessor() {
                         const sceneLabel = String(result?.meta?.scene?.label || result?.result?.meta?.scene?.label || "").toLowerCase();
                         const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
                         const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                        const declutterRequested = !!requestedStages?.stage1b || (result as any)?.options?.declutter;
+                        const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false) || !!(result as any)?.options?.declutter;
                         const stagingAllowed = result?.meta?.allowStaging !== false && result?.result?.meta?.allowStaging !== false && allowStaging;
                         const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
