@@ -287,80 +287,56 @@ OUTPUT
 Return ONLY the fully processed exterior image with transient clutter removed. Preserve all structural, hardscape, landscaping, ground cover, and large asset integrity exactly.`.trim();
     }
 
-      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+      return `You are performing Stage 1B: FULL FURNITURE REMOVAL for New Zealand real estate imagery.
 
-TASK:
-Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
+    GOAL:
+    Produce a COMPLETELY EMPTY ROOM ready for virtual staging.
+    All movable items must be removed.
 
-Model: Gemini 3 Pro Image
+    ─────────────────────────────
+    ABSOLUTE PROTECTED ELEMENTS (ZERO TOUCH)
+    ─────────────────────────────
+    Do NOT remove or modify:
+    - Walls, ceilings, floors, baseboards
+    - Windows, doors, frames, tracks
+    - Built-in cabinetry, wardrobes, shelving
+    - Kitchen units, islands, splashbacks, rangehoods
+    - Bathroom fixtures and vanities
+    - Fixed lighting (pendants, downlights, track lights, sconces)
+    - Electrical outlets and switches
+    - Heat pumps, vents, HVAC systems
+    - Smoke detectors, alarms
+    - Exterior views through windows
 
-────────────────────────────────
-ARCHITECTURAL SHELL — PRESERVE & PROTECT
-────────────────────────────────
+    ─────────────────────────────
+    REMOVE ALL MOVABLE ITEMS
+    ─────────────────────────────
+    Remove ALL furniture and decor, including:
+    - Beds, sofas, chairs, tables
+    - Dining sets
+    - Coffee tables
+    - Ottomans, stools
+    - TV units
+    - Rugs
+    - Lamps (floor and table)
+    - Plants
+    - Curtains if loose or decorative
 
-You must KEEP all fixed elements:
+    PARTIALLY VISIBLE ITEMS:
+    If ANY portion of a movable object is visible (even <10%),
+    REMOVE THE ENTIRE OBJECT.
+    Leaving remnants is NOT allowed.
 
-Surfaces: Walls, ceilings, continuous floor surfaces (including wall-to-wall carpets), skirting boards, trims, cornices, door frames, arches, closet openings.
+    ─────────────────────────────
+    QUALITY REQUIREMENTS
+    ─────────────────────────────
+    - Clean, realistic inpainting
+    - No texture damage to floors or walls
+    - No blur, smudge, or ghost artifacts
+    - Preserve baseboards and floor continuity
 
-Built-in Joinery: Kitchen cabinets, islands, built-in wardrobes (floor-to-ceiling), recessed shelving, fireplaces.
-
-Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switches, outlets, thermostats, vents, radiators, towel rails.
-
-Window Treatments: Curtains, blinds, and rods must remain.
-
-Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
-
-CRITICAL SAFETY RULES:
-
-If unsure whether an item is built-in → treat it as fixed.
-
-Do NOT alter wall finishes, flooring materials, or structural features.
-
-Do NOT move or cover windows, doors, or architectural elements.
-
-Preserve outdoor items and landscaping visible through windows, including furniture or structures.
-
-────────────────────────────────
-TARGETS FOR REMOVAL (ERASE ALL MOVABLE ITEMS)
-────────────────────────────────
-
-1. Seating: Sofas, couches, armchairs, stools, lounge chairs, dining chairs, bar stools, ottomans.
-2. Surfaces: Dining tables, coffee tables, desks, side tables, freestanding TV/media units.
-3. Storage (Freestanding): Wardrobes, dressers, bookcases, display cabinets, storage benches.
-4. Decor & Soft Furnishings: Area rugs (reveal the floor underneath), cushions, throws, wall art, framed pictures, vases, indoor plants, flowers, lamps.
-5. Clutter: Personal items, household items, cables, remotes, magazines, toys, styling items, rubbish.
-
-────────────────────────────────
-RECONSTRUCTION & INPAINTING RULES
-────────────────────────────────
-
-When removing objects:
-
-Floor Continuity: Regenerate floor textures (wood grain, parquet, tile, carpet pile) to match the visible area perfectly.
-
-Wall & Skirting Reconstruction: Extend skirting boards, baseboards, and cornices seamlessly behind removed furniture.
-
-Shadows & Reflections: Remove cast shadows and reflections from removed objects in windows, mirrors, or glossy surfaces.
-
-Lighting Artifacts: Remove localized light effects from removed objects (lamp glow, hotspots) while preserving global room lighting.
-
-Texture Fidelity: All regenerated surfaces must match the original sharpness, pattern, and color — no blurring or smudging.
-
-────────────────────────────────
-FAIL CONDITIONS
-────────────────────────────────
-
-Any furniture, rugs, decor, plants, or personal items remain → FAIL
-
-Ghosting, floating shadows, or reflections remain → FAIL
-
-Skirting boards, cornices, floors, or walls are broken behind removed objects → FAIL
-
-────────────────────────────────
-OUTPUT
-────────────────────────────────
-
-Return only the fully empty room image, preserving all fixed architectural elements exactly.`.trim();
+    DO NOT add any objects.
+    DO NOT restyle.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
@@ -415,113 +391,65 @@ OUTPUT
 Return ONLY the processed image.`.trim();
     }
 
-     return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (INTERIOR)
+     return `You are performing Stage 1B: LIGHT DECLUTTER for New Zealand real estate imagery.
 
-  TASK:
-  Remove small, loose, and personal clutter ONLY to depersonalize the space.
-  Preserve 100% of the room’s architecture, geometry, and major furniture.
+GOAL:
+Clean and simplify the space while preserving core furniture and all fixed elements.
+This is NOT a styling task. Do not add or replace items.
 
-  Model: Gemini 3 Pro Image (fallback Gemini 2.5)
-  Default Sampling: temp=0.45, topP=0.80, topK=40
+─────────────────────────────
+ABSOLUTE PROTECTED ELEMENTS (ZERO TOUCH)
+─────────────────────────────
+Do NOT remove, modify, recolor, resize, or replace:
+- Walls, ceilings, floors, baseboards
+- Windows, doors, frames, tracks
+- Built-in cabinetry, wardrobes, shelving
+- Kitchen units, islands, splashbacks, rangehoods
+- Bathroom fixtures and vanities
+- Fixed lighting (pendants, downlights, track lights, sconces)
+- Electrical outlets and switches
+- Heat pumps, vents, HVAC systems
+- Smoke detectors, alarms
+- Exterior views through windows
 
-  ────────────────────────────────
-  THE “DO NOT TOUCH” VAULT (ABSOLUTE)
-  ────────────────────────────────
+─────────────────────────────
+REMOVE ALL CLUTTER
+─────────────────────────────
+Remove ALL small and loose items, including:
+- Dishes, cutlery, food items
+- Small decor, books, plants
+- Loose cables
+- Shoes, bags, coats
+- Laundry, towels
+- Pet items, bins
+- Small stools, ottomans
 
-  YOU MUST PRESERVE EXACTLY (pixels, geometry, textures):
+PARTIALLY VISIBLE ITEMS:
+If ANY part of a removable item is visible, remove the ENTIRE item.
+Leaving fragments or partial objects is a FAILURE.
 
-  1. Architecture:
-    Walls, ceilings, floors, stairs, windows, doors, fireplaces, openings.
+─────────────────────────────
+FURNITURE PRESERVATION
+─────────────────────────────
+Keep core furniture:
+- Beds
+- Sofas
+- Armchairs
+- Dining tables
+- Dining chairs (unless excessive)
+- Coffee tables
+- TV units
+- Rugs
 
-  2. Fixed Joinery:
-    Kitchen cabinetry, islands, benchtops, built-in shelving, wardrobes.
+─────────────────────────────
+QUALITY REQUIREMENTS
+─────────────────────────────
+- Clean inpainting with no blur, ghost shadows, or texture damage
+- Preserve floor, wall, and ceiling materials exactly
+- Maintain realistic lighting and shadows
 
-  3. Major Furniture:
-    Sofas, armchairs, dining tables, dining chairs, beds, bedside tables,
-    dressers, TV units, coffee tables, side tables, desks.
-
-  4. Soft Furnishings:
-    Curtains, blinds, rods, tracks, and ALL floor rugs
-    (under furniture OR standalone).
-
-  5. Fixtures:
-    Lighting, switches, outlets, plumbing fixtures, built-in appliances,
-    heat pumps / AC units.
-
-  CRITICAL SAFETY RULES:
-  - If an object rests on the floor and is larger than a microwave → KEEP IT.
-  - If you are unsure whether something is clutter or furniture → KEEP IT.
-  - NEVER remove containers (tables, benches, shelves). Only remove items ON them.
-  - NEVER remove anything visible OUTSIDE the windows.
-
-  ────────────────────────────────
-  TARGETS FOR REMOVAL (LIGHT DECLUTTER ONLY)
-  ────────────────────────────────
-
-  REMOVE ONLY small, loose items such as:
-
-  1. Personal Items:
-    Framed photos, personal ornaments, keepsakes, clothing, shoes, bags.
-
-  2. Loose Paper:
-    Mail, magazines, newspapers, notebooks, loose books on tables or floors.
-
-  3. Daily Mess:
-    Cups, plates, bottles, food items, remote controls, cables, chargers.
-
-  4. Surface Clutter:
-    - Small decor (bowls, vases, figurines) on surfaces
-    - Potted plants sitting ON furniture or benchtops
-      (Keep large floor plants)
-    - Kitchen bench clutter (dish racks, bottles, small appliances)
-    - Bathroom vanity clutter (toiletries, soaps, bottles)
-
-  EXCEPTION:
-  - Do NOT remove books neatly arranged inside built-in bookshelves.
-
-  ────────────────────────────────
-  AMBIGUOUS CLUTTER HANDLING (SAFE MODE)
-  ────────────────────────────────
-
-  If a surface (desk, counter, shelf) contains a dense mix of loose items:
-
-  - Remove ONLY the loose items on top.
-  - PRESERVE the surface plane and its material.
-  - Do NOT remove the table, shelf, or bench.
-  - Do NOT hallucinate new objects to fill space.
-  - Leave the surface clear and realistic.
-
-  If removing more items would make the room feel staged or redesigned:
-  → STOP early. This is LIGHT declutter, not styling.
-
-  ────────────────────────────────
-  SURFACE RESTORATION (REQUIRED)
-  ────────────────────────────────
-
-  When an item is removed:
-  1. Regenerate the underlying surface realistically
-    (wood grain, stone veining, carpet texture).
-  2. Remove cast shadows and reflections caused by the removed item.
-  3. Do NOT blur, smear, or flatten textures.
-
-  ────────────────────────────────
-  ABSOLUTE PROHIBITIONS
-  ────────────────────────────────
-
-  - NO staging or redesign
-  - NO adding new objects or decor
-  - NO geometry changes
-  - NO texture smoothing
-  - NO repainting or recoloring
-
-  The room must look packed-up and real-estate ready,
-  NOT styled, redesigned, or artificial.
-
-  ────────────────────────────────
-  OUTPUT
-  ────────────────────────────────
-
-  Return ONLY the processed image.`.trim();
+DO NOT add new objects.
+DO NOT restyle the room.`.trim();
   }
 
 export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior", opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
