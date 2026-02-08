@@ -460,9 +460,11 @@ Never add furniture to secondary zones; maintain clear circulation.
 ────────────────────────────────
 FURNITURE LIMITS (HARD CAPS)
 ────────────────────────────────
-- Primary items: max 2
-- Secondary items: max 1
-- Tertiary items: 0 by default
+- Primary items: max 3 (e.g. bed + 2 nightstands, or sofa + coffee table + 1 tv unit)
+- Secondary items: max 2 (e.g. side tables, lamps)
+- Tertiary items: max 1 (e.g. armchair, bench)
+- Decorative items: max 2 (e.g. plants, vases, books)
+- Max 1 rug, sized appropriately for the furniture layout 
 If unsure, OMIT the item.
 
 ────────────────────────────────
