@@ -17,6 +17,7 @@ import { validateWallStructure } from "./wallValidator";
 import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalStructuralValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
+import { runPerceptualDiff } from "./perceptualDiff";
 import { loadOrComputeStructuralMask } from "./structuralMask";
 import { getGeminiValidatorMode, getLocalValidatorMode } from "./validationModes";
 import { vLog, nLog } from "../logger";
@@ -195,9 +196,42 @@ export async function runUnifiedValidation(
     nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
   }
 
+  // ===== PERCEPTUAL DIFF (SSIM) GATE — FIRST STEP =====
+  let perceptualFailed = false;
+  let forceGemini = false;
+
+  if (stage === "1B" || stage === "2") {
+    try {
+      const perceptual = await runPerceptualDiff({
+        originalPath,
+        enhancedPath,
+        stage,
+      });
+
+      results.perceptualDiff = {
+        name: "perceptualDiff",
+        passed: perceptual.passed,
+        score: perceptual.score,
+        message: `SSIM ${perceptual.score.toFixed(3)} (threshold ${perceptual.threshold.toFixed(2)})`,
+        details: perceptual,
+      };
+
+      nLog(`[perceptual-diff] stage=${stage} ssim=${perceptual.score.toFixed(3)} threshold=${perceptual.threshold.toFixed(2)} passed=${perceptual.passed}`);
+
+      if (!perceptual.passed) {
+        perceptualFailed = true;
+        forceGemini = true;
+        reasons.push(`Perceptual diff failed: SSIM ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
+        nLog(`[perceptual-diff] FAIL → escalating to Gemini and skipping local structural validators`);
+      }
+    } catch (err) {
+      console.warn("[perceptual-diff] Error computing SSIM (fail-open):", err);
+    }
+  }
+
   // ===== STAGE-AWARE VALIDATION PATH =====
   // When enabled, use the new stage-aware validator for Stage 2
-  if (stageAwareConfig.enabled && stage === "2") {
+  if (!perceptualFailed && stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
     // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
@@ -269,263 +303,268 @@ export async function runUnifiedValidation(
   }
 
   let buffers: ValidationBuffers | null = null;
-  try {
-    buffers = await buildValidationBuffers(originalPath, enhancedPath, {
-      blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
-      smallSize: 512,
-    }, baseArtifacts);
-  } catch (err) {
-    console.warn("[unified-validator] Failed to build shared buffers, falling back to per-validator Sharp calls", err);
-    buffers = null;
-  }
-
-  // ===== SOFT GEOMETRY DETECTION =====
-  // We'll collect metadata as we run validators, then determine soft/strict mode
   let windowCount = 0;
   let originalLineCount = 0;
   let enhancedLineCount = 0;
 
-  // ===== 1. WINDOW VALIDATION =====
-  // Critical for real estate: windows must not be blocked or altered
-  if (stage === "1B" || stage === "2") {
+  if (!perceptualFailed) {
     try {
-      const windowResult = await validateWindows(
-        originalPath,
-        enhancedPath,
-        buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
-      );
+      buffers = await buildValidationBuffers(originalPath, enhancedPath, {
+        blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
+        smallSize: 512,
+      }, baseArtifacts);
+    } catch (err) {
+      console.warn("[unified-validator] Failed to build shared buffers, falling back to per-validator Sharp calls", err);
+      buffers = null;
+    }
 
-      // Capture window count for soft geometry detection
-      if ((windowResult as any).windowCount !== undefined) {
-        windowCount = (windowResult as any).windowCount;
-      } else if ((windowResult as any).baseWindowCount !== undefined) {
-        windowCount = (windowResult as any).baseWindowCount;
+    // ===== SOFT GEOMETRY DETECTION =====
+    // We'll collect metadata as we run validators, then determine soft/strict mode
+
+    // ===== 1. WINDOW VALIDATION =====
+    // Critical for real estate: windows must not be blocked or altered
+    if (stage === "1B" || stage === "2") {
+      try {
+        const windowResult = await validateWindows(
+          originalPath,
+          enhancedPath,
+          buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
+        );
+
+        // Capture window count for soft geometry detection
+        if ((windowResult as any).windowCount !== undefined) {
+          windowCount = (windowResult as any).windowCount;
+        } else if ((windowResult as any).baseWindowCount !== undefined) {
+          windowCount = (windowResult as any).baseWindowCount;
+        }
+
+        const passed = windowResult.ok;
+        results.windows = {
+          name: "windows",
+          passed,
+          score: passed ? 1.0 : 0.0,
+          message: windowResult.reason || (passed ? "Windows preserved" : "Window issues detected"),
+          details: { ...windowResult, windowCount },
+        };
+        if (!passed) {
+          reasons.push(`Window validation failed: ${windowResult.reason}`);
+        }
+      } catch (err) {
+        console.warn("[unified-validator] Window validation error:", err);
+        results.windows = {
+          name: "windows",
+          passed: true, // Fail-open
+          score: 0.5,
+          message: "Window validator error (fail-open)",
+          details: { error: String(err) },
+        };
       }
+    }
 
-      const passed = windowResult.ok;
-      results.windows = {
-        name: "windows",
+    // ===== 2. WALL VALIDATION =====
+    // Validates wall structure and openings
+    try {
+      const wallResult = await validateWallStructure(originalPath, enhancedPath);
+      const passed = wallResult.ok;
+      results.walls = {
+        name: "walls",
         passed,
         score: passed ? 1.0 : 0.0,
-        message: windowResult.reason || (passed ? "Windows preserved" : "Window issues detected"),
-        details: { ...windowResult, windowCount },
+        message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
+        details: wallResult,
       };
       if (!passed) {
-        reasons.push(`Window validation failed: ${windowResult.reason}`);
+        reasons.push(`Wall validation failed: ${wallResult.reason}`);
       }
     } catch (err) {
-      console.warn("[unified-validator] Window validation error:", err);
-      results.windows = {
-        name: "windows",
+      console.warn("[unified-validator] Wall validation error:", err);
+      results.walls = {
+        name: "walls",
         passed: true, // Fail-open
         score: 0.5,
-        message: "Window validator error (fail-open)",
+        message: "Wall validator error (fail-open)",
         details: { error: String(err) },
       };
     }
-  }
 
-  // ===== 2. WALL VALIDATION =====
-  // Validates wall structure and openings
-  try {
-    const wallResult = await validateWallStructure(originalPath, enhancedPath);
-    const passed = wallResult.ok;
-    results.walls = {
-      name: "walls",
-      passed,
-      score: passed ? 1.0 : 0.0,
-      message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
-      details: wallResult,
-    };
-    if (!passed) {
-      reasons.push(`Wall validation failed: ${wallResult.reason}`);
-    }
-  } catch (err) {
-    console.warn("[unified-validator] Wall validation error:", err);
-    results.walls = {
-      name: "walls",
-      passed: true, // Fail-open
-      score: 0.5,
-      message: "Wall validator error (fail-open)",
-      details: { error: String(err) },
-    };
-  }
-
-  // ===== 3. GLOBAL EDGE IoU =====
-  // Overall geometry consistency check
-  try {
-    const edgeResult = buffers
-      ? runGlobalEdgeMetricsFromBuffers(
-          buffers.baseBlur,
-          buffers.candBlur,
-          buffers.width,
-          buffers.height,
-          Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35)
-        )
-      : await runGlobalEdgeMetrics(originalPath, enhancedPath);
-    const edgeIoU = edgeResult.edgeIoU;
-
-    // Thresholds by stage
-    const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
-    const passed = edgeIoU >= minEdgeIoU;
-
-    results.globalEdge = {
-      name: "globalEdge",
-      passed,
-      score: edgeIoU,
-      message: `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`,
-      details: { edgeIoU, minEdgeIoU },
-    };
-    if (!passed) {
-      reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
-    }
-  } catch (err) {
-    console.warn("[unified-validator] Global edge validation error:", err);
-    results.globalEdge = {
-      name: "globalEdge",
-      passed: true, // Fail-open
-      score: 0.5,
-      message: "Global edge validator error (fail-open)",
-      details: { error: String(err) },
-    };
-  }
-
-  // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
-  // Focused check on architectural elements during staging
-  if (stage === "2") {
+    // ===== 3. GLOBAL EDGE IoU =====
+    // Overall geometry consistency check
     try {
-      const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
-      const structResult = await validateStage2Structural(
+      const edgeResult = buffers
+        ? runGlobalEdgeMetricsFromBuffers(
+            buffers.baseBlur,
+            buffers.candBlur,
+            buffers.width,
+            buffers.height,
+            Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35)
+          )
+        : await runGlobalEdgeMetrics(originalPath, enhancedPath);
+      const edgeIoU = edgeResult.edgeIoU;
+
+      // Thresholds by stage
+      const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
+      const passed = edgeIoU >= minEdgeIoU;
+
+      results.globalEdge = {
+        name: "globalEdge",
+        passed,
+        score: edgeIoU,
+        message: `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`,
+        details: { edgeIoU, minEdgeIoU },
+      };
+      if (!passed) {
+        reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
+      }
+    } catch (err) {
+      console.warn("[unified-validator] Global edge validation error:", err);
+      results.globalEdge = {
+        name: "globalEdge",
+        passed: true, // Fail-open
+        score: 0.5,
+        message: "Global edge validator error (fail-open)",
+        details: { error: String(err) },
+      };
+    }
+
+    // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
+    // Focused check on architectural elements during staging
+    if (stage === "2") {
+      try {
+        const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
+        const structResult = await validateStage2Structural(
+          originalPath,
+          enhancedPath,
+          { structuralMask: mask },
+          buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
+        );
+
+        const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
+
+        // CRITICAL FIX: Do NOT default undefined IoU to 0 - handle explicitly
+        let passed: boolean;
+        let score: number;
+        let message: string;
+
+        if (structResult.structuralIoU !== undefined && structResult.structuralIoU !== null) {
+          // IoU was computed successfully
+          const structIoU = structResult.structuralIoU;
+          passed = structResult.ok && structIoU >= minStructIoU;
+          score = structIoU;
+          message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
+
+          if (!passed) {
+            reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
+            if (structResult.reason) {
+              reasons.push(`Reason: ${structResult.reason}`);
+            }
+          }
+        } else {
+          // IoU was skipped - do NOT treat as failure
+          const skipReason = structResult.structuralIoUSkipReason || "unknown";
+          passed = structResult.ok; // Pass based on semantic checks only
+          score = 0.5; // Neutral score (not 0!)
+          message = `Structural IoU skipped: ${skipReason}`;
+
+          nLog(`[unified-validator] Structural IoU computation skipped: ${skipReason}`);
+          if (structResult.debug) {
+            nLog(`[unified-validator]   - dims: base=${structResult.debug.baseWidth}x${structResult.debug.baseHeight}, cand=${structResult.debug.candWidth}x${structResult.debug.candHeight}`);
+            nLog(`[unified-validator]   - maskPixels: ${structResult.debug.maskPixels}`);
+            if (structResult.debug.intersectionPixels !== undefined) {
+              nLog(`[unified-validator]   - intersection: ${structResult.debug.intersectionPixels}, union: ${structResult.debug.unionPixels}`);
+            }
+          }
+        }
+
+        results.structuralMask = {
+          name: "structuralMask",
+          passed,
+          score,
+          message,
+          details: {
+            structIoU: structResult.structuralIoU,
+            structIoUSkipReason: structResult.structuralIoUSkipReason,
+            minStructIoU,
+            reason: structResult.reason,
+            debug: structResult.debug,
+          },
+        };
+
+        if (structResult.debug?.dimensionNormalized) {
+          warnings.push("dimension_normalized");
+        }
+      } catch (err) {
+        console.warn("[unified-validator] Structural mask validation error:", err);
+        results.structuralMask = {
+          name: "structuralMask",
+          passed: true, // Fail-open
+          score: 0.5,
+          message: "Structural mask validator error (fail-open)",
+          details: { error: String(err) },
+        };
+      }
+    }
+
+    // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
+    // Detects line shifts using Hough transform
+    try {
+      const lineResult = await validateLineStructure({
         originalPath,
         enhancedPath,
-        { structuralMask: mask },
-        buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
-      );
+        sensitivity: 0.70, // 70% similarity threshold
+        buffers: buffers
+          ? {
+              baseSmall: buffers.baseSmall,
+              candSmall: buffers.candSmall,
+              width: buffers.smallWidth,
+              height: buffers.smallHeight,
+            }
+          : undefined,
+      });
 
-      const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
-
-      // CRITICAL FIX: Do NOT default undefined IoU to 0 - handle explicitly
-      let passed: boolean;
-      let score: number;
-      let message: string;
-
-      if (structResult.structuralIoU !== undefined && structResult.structuralIoU !== null) {
-        // IoU was computed successfully
-        const structIoU = structResult.structuralIoU;
-        passed = structResult.ok && structIoU >= minStructIoU;
-        score = structIoU;
-        message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
-
-        if (!passed) {
-          reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
-          if (structResult.reason) {
-            reasons.push(`Reason: ${structResult.reason}`);
-          }
-        }
-      } else {
-        // IoU was skipped - do NOT treat as failure
-        const skipReason = structResult.structuralIoUSkipReason || "unknown";
-        passed = structResult.ok; // Pass based on semantic checks only
-        score = 0.5; // Neutral score (not 0!)
-        message = `Structural IoU skipped: ${skipReason}`;
-
-        nLog(`[unified-validator] Structural IoU computation skipped: ${skipReason}`);
-        if (structResult.debug) {
-          nLog(`[unified-validator]   - dims: base=${structResult.debug.baseWidth}x${structResult.debug.baseHeight}, cand=${structResult.debug.candWidth}x${structResult.debug.candHeight}`);
-          nLog(`[unified-validator]   - maskPixels: ${structResult.debug.maskPixels}`);
-          if (structResult.debug.intersectionPixels !== undefined) {
-            nLog(`[unified-validator]   - intersection: ${structResult.debug.intersectionPixels}, union: ${structResult.debug.unionPixels}`);
-          }
-        }
+      // Capture line counts for soft geometry detection
+      if (lineResult.details?.originalEdgeCount) {
+        originalLineCount = lineResult.details.originalEdgeCount;
+      }
+      if (lineResult.details?.enhancedEdgeCount) {
+        enhancedLineCount = lineResult.details.enhancedEdgeCount;
       }
 
-      results.structuralMask = {
-        name: "structuralMask",
-        passed,
-        score,
-        message,
+      results.lineEdge = {
+        name: "lineEdge",
+        passed: lineResult.passed,
+        score: lineResult.score,
+        message: lineResult.message,
         details: {
-          structIoU: structResult.structuralIoU,
-          structIoUSkipReason: structResult.structuralIoUSkipReason,
-          minStructIoU,
-          reason: structResult.reason,
-          debug: structResult.debug,
+          edgeLoss: lineResult.edgeLoss,
+          edgeShift: lineResult.edgeShift,
+          verticalDeviation: lineResult.verticalDeviation,
+          horizontalDeviation: lineResult.horizontalDeviation,
+          ...lineResult.details,
         },
       };
-
-      if (structResult.debug?.dimensionNormalized) {
-        warnings.push("dimension_normalized");
+      if (!lineResult.passed) {
+        const openingsIntact = (results.windows?.passed !== false) && (results.walls?.passed !== false) && (results.structuralMask?.passed !== false);
+        if (openingsIntact) {
+          // Downgrade to warning when openings/boundaries still pass
+          warnings.push(`Line/edge deviation (openings intact): ${lineResult.score.toFixed(3)}`);
+          results.lineEdge.message = `Line deviation warning (openings intact)`;
+          results.lineEdge.passed = true;
+        } else {
+          reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+        }
       }
     } catch (err) {
-      console.warn("[unified-validator] Structural mask validation error:", err);
-      results.structuralMask = {
-        name: "structuralMask",
+      console.warn("[unified-validator] Line/edge validation error:", err);
+      results.lineEdge = {
+        name: "lineEdge",
         passed: true, // Fail-open
         score: 0.5,
-        message: "Structural mask validator error (fail-open)",
+        message: "Line/edge validator error (fail-open)",
         details: { error: String(err) },
       };
     }
-  }
-
-  // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
-  // Detects line shifts using Hough transform
-  try {
-    const lineResult = await validateLineStructure({
-      originalPath,
-      enhancedPath,
-      sensitivity: 0.70, // 70% similarity threshold
-      buffers: buffers
-        ? {
-            baseSmall: buffers.baseSmall,
-            candSmall: buffers.candSmall,
-            width: buffers.smallWidth,
-            height: buffers.smallHeight,
-          }
-        : undefined,
-    });
-
-    // Capture line counts for soft geometry detection
-    if (lineResult.details?.originalEdgeCount) {
-      originalLineCount = lineResult.details.originalEdgeCount;
-    }
-    if (lineResult.details?.enhancedEdgeCount) {
-      enhancedLineCount = lineResult.details.enhancedEdgeCount;
-    }
-
-    results.lineEdge = {
-      name: "lineEdge",
-      passed: lineResult.passed,
-      score: lineResult.score,
-      message: lineResult.message,
-      details: {
-        edgeLoss: lineResult.edgeLoss,
-        edgeShift: lineResult.edgeShift,
-        verticalDeviation: lineResult.verticalDeviation,
-        horizontalDeviation: lineResult.horizontalDeviation,
-        ...lineResult.details,
-      },
-    };
-    if (!lineResult.passed) {
-      const openingsIntact = (results.windows?.passed !== false) && (results.walls?.passed !== false) && (results.structuralMask?.passed !== false);
-      if (openingsIntact) {
-        // Downgrade to warning when openings/boundaries still pass
-        warnings.push(`Line/edge deviation (openings intact): ${lineResult.score.toFixed(3)}`);
-        results.lineEdge.message = `Line deviation warning (openings intact)`;
-        results.lineEdge.passed = true;
-      } else {
-        reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
-      }
-    }
-  } catch (err) {
-    console.warn("[unified-validator] Line/edge validation error:", err);
-    results.lineEdge = {
-      name: "lineEdge",
-      passed: true, // Fail-open
-      score: 0.5,
-      message: "Line/edge validator error (fail-open)",
-      details: { error: String(err) },
-    };
+  } else {
+    nLog(`[unified-validator] Perceptual diff failed; skipping local structural validators and deferring to Gemini`);
   }
 
   // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK (policy-driven) =====
@@ -535,6 +574,7 @@ export async function runUnifiedValidation(
     .some(([, r]) => r && r.passed === false);
 
   const shouldRunGemini =
+    forceGemini ||
     geminiPolicy === "always" ||
     (geminiPolicy === "on_local_fail" && localFailed);
 
@@ -648,7 +688,7 @@ export async function runUnifiedValidation(
 
   // Determine overall pass/fail
   // In log-only mode, we still compute passed for metric collection
-  const failedValidators = Object.values(results).filter(r => !r.passed);
+  const failedValidators = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff");
   const allPassed = failedValidators.length === 0;
   const geminiHardFail = results.geminiSemantic && results.geminiSemantic.details && (results.geminiSemantic.details as any).mode === "block" && results.geminiSemantic.passed === false;
 
