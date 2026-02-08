@@ -5321,7 +5321,7 @@ export default function BatchProcessor() {
 
                             {/* Action / Cancel Column */}
                             <div className="shrink-0 flex gap-2">
-                              {bestDisplayUrl && (
+                              {bestDisplayUrl && (isUiComplete || isError) && (
                                 <>
                                   <button 
                                     onClick={() => setPreviewImage({
