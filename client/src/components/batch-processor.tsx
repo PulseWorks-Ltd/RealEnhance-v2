@@ -5427,6 +5427,23 @@ export default function BatchProcessor() {
                   results[editingImageIndex]?.originalImageUrl ||
                   results[editingImageIndex]?.originalUrl;
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
+                const existingStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
+                const finalStageUrls: Record<string, string> = {
+                  ...existingStageUrls,
+                  '1': result.imageUrl,
+                  '1A': result.imageUrl,
+                  '1a': result.imageUrl,
+                  '1B': result.imageUrl,
+                  '1b': result.imageUrl,
+                  '2': result.imageUrl,
+                  'stage1A': result.imageUrl,
+                  'stage1B': result.imageUrl,
+                  'stage2': result.imageUrl,
+                };
+                const mergedMeta = {
+                  ...(results[editingImageIndex]?.meta || {}),
+                  ...(results[editingImageIndex]?.result?.meta || {}),
+                };
                 setResults(prev => prev.map((r, i) =>
                   i === editingImageIndex ? {
                     ...r,
@@ -5436,17 +5453,32 @@ export default function BatchProcessor() {
                     mode: result.mode,
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    stageUrls: finalStageUrls,
+                    status: "completed",
+                    uiStatus: "ok",
+                    uiOverrideFailed: false,
+                    error: null,
+                    errorCode: undefined,
+                    warnings: [],
+                    resultStage: "2",
+                    finalStage: "2",
+                    completionSource: "region-edit",
                     result: {
                       ...(normalizeBatchItem(result) || {}),
                       image: result.imageUrl,
                       imageUrl: result.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
-                      qualityEnhancedUrl: preservedQualityEnhancedUrl
+                      qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                      stageUrls: finalStageUrls,
+                      status: "completed",
+                      resultStage: "2",
+                      finalStage: "2",
+                      meta: mergedMeta,
                     },
-                    error: null,
                     filename: r?.filename
                   } : r
                 ));
+                setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: "2" }));
                 setProcessedImagesByIndex(prev => ({ ...prev, [String(editingImageIndex)]: result.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
