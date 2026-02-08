@@ -921,15 +921,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (attemptsLeft > 0) {
             // Retry Stage 1B using last good (Stage1A) baseline
             continue;
-          } else {
-            updateJob(payload.jobId, {
-              status: "failed",
-              errorMessage: reason,
-              error: reason,
-              meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, unifiedValidation: verdict },
-            });
-            return;
           }
+          // All retries exhausted — try light declutter fallback before giving up
+          if (!useLightFallback && declutterMode === "stage-ready") {
+            useLightFallback = true;
+            stage1BAttempts = 0;
+            nLog(`[stage1B] Switching to light declutter fallback after ${maxAttempts} hard-fail attempt(s) (source=${verdict?.blockSource}) in stage-ready mode`);
+            continue;
+          }
+          // Light fallback already tried or not stage-ready — fail permanently
+          updateJob(payload.jobId, {
+            status: "failed",
+            errorMessage: reason,
+            error: reason,
+            meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, unifiedValidation: verdict },
+          });
+          return;
         }
         if (localIssues && VALIDATION_BLOCKING_ENABLED) {
           const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "stage1B validation blocked";
