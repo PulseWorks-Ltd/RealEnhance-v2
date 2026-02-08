@@ -47,6 +47,12 @@ CRITICAL CHECKLIST
 - Confirm all ZERO-TOUCH elements are present, aligned, and unchanged.
 - Warping, removal, distortion, recoloring, or hallucination → structure, hardFail: true
 
+5. SOFT FIXED ELEMENTS (STRICT)
+- Curtains, curtain rails, blinds must match BEFORE image
+- Pendant lights and ceiling fixtures must match BEFORE image
+- Carpet and floor color/material must match BEFORE image
+If any change is detected → category: structure, hardFail: true
+
 2. DECLUTTER COMPLETENESS
 - ALL movable items must be removed:
   chairs, tables, sofas, beds, stools, loose shelving, decor, clutter, appliances.
@@ -129,6 +135,11 @@ CRITICAL CHECKLIST
 - No geometry distortion or hallucinated architecture.
 - No background view replacement.
 → structure, hardFail: true
+
+- Curtains, blinds, and curtain rails must be unchanged.
+- Pendant lights and ceiling fixtures must be unchanged.
+- Floor and carpet color/material must be unchanged.
+→ Any violation: category = structure, hardFail: true
 
 2. FUNCTIONAL CIRCULATION
 - Clear walk paths to doors, sliding doors, and key access points.

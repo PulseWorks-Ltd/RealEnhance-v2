@@ -250,6 +250,60 @@ KEEP:
 - Exterior lighting
 - Background views
 
+🔒 IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+────────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+• Curtains and drapes
+• Curtain rails, rods, and tracks
+• Blinds and shutters
+• Curtain openness state (open/closed/half)
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+• Exterior wall lights and mounted light fixtures
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+If any of these elements change → THIS IS A FAILURE.
+
 PARTIALLY VISIBLE ITEMS:
 If any part is visible, remove the entire object.
 
@@ -276,6 +330,59 @@ Preserve surface textures and shadows.`.trim();
     - Heat pumps, vents, HVAC systems
     - Smoke detectors, alarms
     - Exterior views through windows
+
+    🔒 IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+    ────────────────────────────────
+    IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+    ────────────────────────────────
+
+    The following elements are FIXED and must remain visually, geometrically,
+    materially, and color-accurate to the input image.
+
+    You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+    or cover these elements — even partially.
+
+    FIXED ARCHITECTURE:
+    • Walls, ceilings, trims, cornices, skirting boards, baseboards
+    • Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+    • Floor COLOR and MATERIAL must remain identical
+    • Floor plank direction and tile pattern must remain identical
+    • Doors, frames, architraves, sliders, tracks
+    • Windows, frames, glazing, sills
+
+    WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+    • Curtains and drapes
+    • Curtain rails, rods, and tracks
+    • Blinds and shutters
+    • Curtain openness state (open/closed/half)
+
+    LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+    • Pendant lights
+    • Ceiling light fittings
+    • Downlights and recessed lights
+    • Ceiling fans
+    • Smoke alarms and ceiling sensors
+
+    WALL & BUILDING FIXTURES:
+    • Heat pumps / HVAC units
+    • Vents and grilles
+    • Switches and power outlets
+    • Thermostats and control panels
+    • Wall-mounted detectors and alarm panels
+
+    BUILT-INS:
+    • Built-in cabinetry
+    • Built-in wardrobes
+    • Built-in shelving
+    • Kitchen cabinetry and islands
+    • Benchtops and splashbacks
+    • Plumbing fixtures (sinks, taps)
+
+    EXTERIOR VIEW THROUGH WINDOWS:
+    • Do NOT change the outside scene
+    • Do NOT upgrade weather, sky, landscape, or buildings
+
+    If any of these elements change → THIS IS A FAILURE.
 
     ─────────────────────────────
     REMOVE ALL MOVABLE ITEMS
@@ -335,6 +442,61 @@ KEEP:
 - Exterior lighting
 - Neighbouring buildings and views
 
+─────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+─────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+─────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+• Curtains and drapes
+• Curtain rails, rods, and tracks
+• Blinds and shutters
+• Curtain openness state (open/closed/half)
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+• Exterior wall lights and mounted light fixtures
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+If any of these elements change → THIS IS A FAILURE.
+
 PARTIALLY VISIBLE ITEMS:
 Any visible portion of a removable object must be fully removed.
 
@@ -361,6 +523,60 @@ Do NOT remove, modify, recolor, resize, or replace:
 - Heat pumps, vents, HVAC systems
 - Smoke detectors, alarms
 - Exterior views through windows
+
+─────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+─────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+─────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+• Curtains and drapes
+• Curtain rails, rods, and tracks
+• Blinds and shutters
+• Curtain openness state (open/closed/half)
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+If any of these elements change → THIS IS A FAILURE.
 
 ─────────────────────────────
 REMOVE ALL CLUTTER
@@ -444,6 +660,60 @@ Preserve EXACTLY:
 - Exterior views
 
 ────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+────────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+• Curtains and drapes
+• Curtain rails, rods, and tracks
+• Blinds and shutters
+• Curtain openness state (open/closed/half)
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+If any of these elements change → THIS IS A FAILURE.
+
+────────────────────────────────
 ROOM TYPE LOCK (NON-NEGOTIABLE)
 ────────────────────────────────
 The roomType is PROVIDED by the system: ${room}.
@@ -522,5 +792,83 @@ Return ONLY the refreshed image.`.trim();
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {
-  return `\nStage this outdoor area with clean, contemporary New Zealand-style outdoor\nfurniture consistent with Trade Me real estate photography.\n\nStaging style:\n• A single outdoor furniture set (lounge or dining).\n• Neutral tones: charcoal, white, light wood, or grey.\n• Add 1–2 potted plants maximum.\n• Keep layout simple, clean, modern, and spacious.\n\nPlacement rules:\n• Only place furniture on valid hard surfaces (decking, patios, concrete slabs).\n• Do NOT place furniture on grass, gardens, or driveways.\n• Ensure scale, lighting, and shadows perfectly match the scene.\n• Do NOT overcrowd the area; NZ staging is minimalistic.\n\nABSOLUTE STRUCTURAL RULES:\n• No rotation/crop/zoom or perspective changes.\n• Do NOT modify architecture, building shape, fences, windows, doors, decking,\n  landscaping, or permanent structures.\n• Do NOT add new structures.\n• Only add outdoor furniture and small potted plants.\n\nGoal:\nCreate a clean, modern, inviting outdoor scene that matches professional NZ\nreal estate staging.`.trim();
+  return `Stage this outdoor area with clean, contemporary New Zealand-style outdoor
+furniture consistent with Trade Me real estate photography.
+
+Staging style:
+• A single outdoor furniture set (lounge or dining).
+• Neutral tones: charcoal, white, light wood, or grey.
+• Add 1–2 potted plants maximum.
+• Keep layout simple, clean, modern, and spacious.
+
+Placement rules:
+• Only place furniture on valid hard surfaces (decking, patios, concrete slabs).
+• Do NOT place furniture on grass, gardens, or driveways.
+• Ensure scale, lighting, and shadows perfectly match the scene.
+• Do NOT overcrowd the area; NZ staging is minimalistic.
+
+ABSOLUTE STRUCTURAL RULES:
+• No rotation/crop/zoom or perspective changes.
+• Do NOT modify architecture, building shape, fences, windows, doors, decking,
+  landscaping, or permanent structures.
+• Do NOT add new structures.
+• Only add outdoor furniture and small potted plants.
+
+IMMUTABLE ELEMENTS — HARD LOCK BLOCK
+────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+────────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
+• Curtains and drapes
+• Curtain rails, rods, and tracks
+• Blinds and shutters
+• Curtain openness state (open/closed/half)
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+• Exterior wall lights and mounted light fixtures
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+If any of these elements change → THIS IS A FAILURE.
+
+Goal:
+Create a clean, modern, inviting outdoor scene that matches professional NZ
+real estate staging.`.trim();
 }
