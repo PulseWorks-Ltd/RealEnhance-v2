@@ -1883,6 +1883,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     pubFinalUrl = pub1BUrl;
     publishedFinal = { url: pub1BUrl, kind: 's3' };
     nLog(`[WORKER] Final URL (reused from 1B): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+  } else if (finalBasePath === stage2CandidatePath && pub2Url) {
+    // Fix B: Reuse already-published Stage 2 URL instead of double-uploading
+    // This ensures stageUrls["2"] and resultUrl are the same URL
+    nLog(`\n[WORKER] ═══════════ Final image same as Stage 2 - reusing URL ═══════════\n`);
+    pubFinalUrl = pub2Url;
+    publishedFinal = { url: pub2Url, kind: 's3' };
+    nLog(`[WORKER] Final URL (reused from Stage 2): ${(pubFinalUrl||'').substring(0, 80)}...\n\n`);
+    vLog(`[VAL][job=${payload.jobId}] finalUrl=${pubFinalUrl} (reused stage2)`);
   } else {
     try {
       nLog(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
@@ -1979,6 +1987,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         baseKey,
         imageId: payload.imageId,
       });
+
+      // Fix C: Also record intermediate stage URLs that differ from pubFinalUrl
+      // This ensures any stageUrl the client might send to /region-edit will be found
+      const extraUrls: Array<{ url: string; stage: "1A" | "1B" | "2" }> = [];
+      if (pub1AUrl && pub1AUrl !== pubFinalUrl) extraUrls.push({ url: pub1AUrl, stage: "1A" });
+      if (pub1BUrl && pub1BUrl !== pubFinalUrl && pub1BUrl !== pub1AUrl) extraUrls.push({ url: pub1BUrl, stage: "1B" });
+      if (pub2Url && pub2Url !== pubFinalUrl && pub2Url !== pub1BUrl) extraUrls.push({ url: pub2Url, stage: "2" });
+
+      for (const extra of extraUrls) {
+        try {
+          const extraBaseKey = extra.url.split("?")[0].split("/").pop() || "";
+          const extraPathKey = (() => {
+            try { return new URL(extra.url).pathname.replace(/^\/+/, ""); } catch { return extraBaseKey; }
+          })();
+          await recordEnhancedImageRedis({
+            userId: payload.userId,
+            imageId: payload.imageId,
+            publicUrl: extra.url,
+            baseKey: extraBaseKey,
+            versionId: computeFallbackVersionKey(extraPathKey) || "",
+            stage: extra.stage,
+          });
+          nLog(`[worker] Redis image history recorded for stage ${extra.stage}`, { url: extra.url.substring(0, 80) });
+        } catch (stageErr) {
+          nLog(`[worker] Failed to record stage ${extra.stage} in Redis (non-critical):`, (stageErr as any)?.message || stageErr);
+        }
+      }
     } else {
       nLog("[worker] No pubFinalUrl, skipping Redis history record");
     }

@@ -123,10 +123,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // ===== IMAGE LOOKUP =====
     console.log("[region-edit] Looking up image for user:", sessUser.id);
-    const found = await findByPublicUrl(sessUser.id, imageUrl);
+    let found = await findByPublicUrl(sessUser.id, imageUrl);
     
+    // Fix A: If primary URL not found, try baseImageUrl (client sends both)
+    // This handles the case where stageUrls["2"] differs from resultUrl
+    // (double S3 upload gives different keys) or Redis data loss
+    if (!found && clientBaseImageUrl && clientBaseImageUrl !== imageUrl) {
+      console.warn("[region-edit] Primary URL not found, trying baseImageUrl fallback:", clientBaseImageUrl.substring(0, 80) + "...");
+      found = await findByPublicUrl(sessUser.id, clientBaseImageUrl);
+      if (found) {
+        console.log("[region-edit] Found image via baseImageUrl fallback");
+      }
+    }
+
     if (!found) {
       console.error("[region-edit] Image not found for URL:", imageUrl);
+      console.error("[region-edit] Also tried baseImageUrl:", clientBaseImageUrl || "N/A");
       return res.status(404).json({ success: false, error: "image_not_found" });
     }
 
