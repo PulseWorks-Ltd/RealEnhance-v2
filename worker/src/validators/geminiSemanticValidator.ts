@@ -1,6 +1,8 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 
+const MIN_CONFIDENCE = 0.75;
+
 export type GeminiSemanticVerdict = {
   hardFail: boolean;
   category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
@@ -9,18 +11,17 @@ export type GeminiSemanticVerdict = {
   rawText?: string;
 };
 
-const MIN_CONFIDENCE = 0.75;
-
-function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined, sourceStage?: "1A" | "1B-light" | "1B-stage-ready") {
+function buildPrompt(
+  stage: "1A" | "1B" | "2",
+  scene?: string,
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready"
+) {
   if (stage === "1B") {
-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery
-(Stage 1B: Declutter / Furniture Removal).
+    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter / Removal).
 
-TASK:
-Compare the BEFORE (original) and AFTER (decluttered) images.
-Determine whether decluttering was COMPLETE, STRUCTURALLY SAFE, and CLEANLY INPAINTED.
+Compare BEFORE and AFTER images.
 
-RETURN JSON ONLY. DO NOT include prose outside JSON.
+Return JSON only. No prose outside JSON.
 
 ─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
@@ -47,6 +48,27 @@ CRITICAL CHECKLIST
 - Confirm all ZERO-TOUCH elements are present, aligned, and unchanged.
 - Warping, removal, distortion, recoloring, or hallucination → structure, hardFail: true
 
+🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+The following elements are FUNCTIONAL STRUCTURAL ANCHORS. If present, they MUST remain visually and geometrically identical. NEVER clutter/staging targets, NEVER replaceable.
+- Kitchen islands, fixed counter runs, benchtops, breakfast bars
+- Upper/lower cabinets, pantry cabinets, splashbacks
+- Built-in ovens, cooktops, range hoods, integrated dishwashers
+- Sink/faucet zones, appliance cavities/surrounds
+- Toilets, vanities, fixed mirrors, shower enclosures/glass, bathtubs
+- Built-in vanity cabinetry, wall-mounted towel rails, extractor fans
+- Heat pumps/split units, radiators/heaters, air vents/grilles, ceiling cassettes
+- Pendant lights, downlights, ceiling/track lights, wall sconces, ceiling fans with lights
+- Windows and frames, sliding door tracks, bi-fold doors, skylights, internal glass walls
+If removal/declutter would require changing ANY of the above:
+→ DO NOT modify the element; reduce removal actions instead
+
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK
+The following must remain unchanged in type, position, and color:
+- Curtains, drapes, curtain rails, rods, blinds, blind tracks, all window coverings
+- Floor material AND FLOOR COLOR; carpet color/texture; timber tone/stain; tile color
+Any change is a STRUCTURAL violation.
+
 5. SOFT FIXED ELEMENTS (STRICT)
 - Curtains, curtain rails, blinds must match BEFORE image
 - Pendant lights and ceiling fixtures must match BEFORE image
@@ -54,8 +76,7 @@ CRITICAL CHECKLIST
 If any change is detected → category: structure, hardFail: true
 
 2. DECLUTTER COMPLETENESS
-- ALL movable items must be removed:
-  chairs, tables, sofas, beds, stools, loose shelving, decor, clutter, appliances.
+- ALL movable items must be removed: chairs, tables, sofas, beds, stools, loose shelving, decor, clutter, appliances.
 - Partial removal (some furniture left behind) → category: furniture_change, hardFail: true
 
 3. MATERIAL & INPAINTING QUALITY
@@ -63,9 +84,19 @@ If any change is detected → category: structure, hardFail: true
 - No blur, smudge, ghost shadows, or texture mismatch.
 - Damaged surfaces → category: structure, hardFail: true
 
-4. FUNCTIONAL ACCESS
+4. FUNCTIONAL OPENINGS
 - Doors and windows remain fully passable and unobstructed.
 - Any blockage or sealing → opening_blocked, hardFail: true
+
+ADDITIONAL HARD FAIL TRIGGERS
+- Pendant or fixed lighting fixture changed
+- Curtain system or rails changed
+- Blind system changed
+- Carpet color changed
+- Timber floor tone changed
+- Kitchen island removed or altered
+- Counter runs removed or altered
+- Built-in cabinetry altered
 
 ─────────────────────────────
 CATEGORIES
@@ -81,34 +112,26 @@ OUTPUT JSON
 ─────────────────────────────
 {
   "hardFail": boolean,
-  "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
-  "reasons": ["Clear, specific reason"],
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": [string],
   "confidence": number
 }`;
   }
 
   if (stage === "2") {
-    // Determine staging mode from sourceStage
-    const isFullStaging = sourceStage === "1B-stage-ready"; // Room was emptied → validate full staging
-    const isRefreshStaging = sourceStage === "1A" || sourceStage === "1B-light" || !sourceStage; // Furniture present → validate refresh
-    
+    const isFullStaging = sourceStage === "1B-stage-ready";
     const stagingModeInstruction = isFullStaging
       ? "The BEFORE image is an EMPTY/DECLUTTERED room. The AFTER image should contain NEW furniture appropriate for staging."
       : "The BEFORE image contains EXISTING furniture. The AFTER image should show ALL furniture REPLACED with modern equivalents.";
-    
     const stagingIntentRule = isFullStaging
       ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
       : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
 
-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery
-(Stage 2: Virtual Staging / Furniture Refresh).
+    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 2: Staging / Refresh).
 
-TASK:
-Compare the BEFORE and AFTER images.
-${stagingModeInstruction}
-Identify any violations of structural integrity, zoning logic, circulation, or physics.
+Compare BEFORE and AFTER images.
 
-RETURN JSON ONLY. DO NOT include prose outside JSON.
+Return JSON only.
 
 ─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
@@ -131,15 +154,40 @@ ANY violation → category: structure, hardFail: true
 CRITICAL CHECKLIST
 ─────────────────────────────
 
-1. STRUCTURAL & VIEW PRESERVATION
-- No geometry distortion or hallucinated architecture.
-- No background view replacement.
-→ structure, hardFail: true
+STRUCTURAL FUNCTION ANCHOR CHECK (CRITICAL)
+If any of the following appear in BEFORE image, they MUST remain unchanged:
+• Kitchen islands and counters
+• Built-in cabinets and wardrobes
+• Bathroom fixtures
+• Heat pumps and vents
+• Pendant lights and fixed lighting
+• Curtain rails, blinds, rods, tracks
+• Fireplaces
+• Staircases
+• Built-in shelving
 
-- Curtains, blinds, and curtain rails must be unchanged.
-- Pendant lights and ceiling fixtures must be unchanged.
-- Floor and carpet color/material must be unchanged.
-→ Any violation: category = structure, hardFail: true
+Removed, replaced, relocated, or altered → structure hardFail true
+
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK
+• Floor material AND color must match
+• Carpet color must match
+• No floor recoloring allowed
+• Curtains/drapes/rails/blinds/tracks must remain unchanged
+Any change → structure hardFail true
+
+LIGHTING FIXTURE STYLE LOCK
+Existing fixed lighting fixtures must remain identical in style, shape, size, position, mounting type.
+Do NOT modernize, replace, redesign, restyle, or simplify:
+• Pendant lights
+• Ceiling fixtures
+• Downlight layouts
+• Track systems
+• Wall sconces
+Lighting fixtures are structural anchors, not decor.
+
+EXTERNAL VIEW CONSISTENCY
+Window views must remain consistent.
+Hallucinated scenery → structure hardFail true
 
 2. FUNCTIONAL CIRCULATION
 - Clear walk paths to doors, sliding doors, and key access points.
@@ -152,11 +200,22 @@ CRITICAL CHECKLIST
 - Floating/clipping furniture → furniture_change, hardFail: false
 
 4. STAGING INTENT VALIDATION (MODE: ${isFullStaging ? 'FULL STAGING' : 'REFRESH STAGING'})
+${stagingModeInstruction}
 ${stagingIntentRule}
 
 5. MATERIAL PRESERVATION
 - Floors, walls, ceilings retain original material and finish.
 - Inpainting damage → structure, hardFail: true
+
+ADDITIONAL HARD FAIL TRIGGERS
+- Pendant or fixed lighting fixture changed
+- Curtain system or rails changed
+- Blind system changed
+- Carpet color changed
+- Timber floor tone changed
+- Kitchen island removed or altered
+- Counter runs removed or altered
+- Built-in cabinetry altered
 
 ─────────────────────────────
 CATEGORIES
@@ -172,14 +231,15 @@ OUTPUT JSON
 ─────────────────────────────
 {
   "hardFail": boolean,
-  "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
-  "reasons": ["Specific violation"],
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": [string],
   "confidence": number
 }`;
   }
 
   const stageLabel = stage === "1A" ? "Stage 1A (color/cleanup)" : stage;
   const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
+
   return `You are a Structural Integrity Auditor for New Zealand real estate imagery.
 
 You will receive two images:
@@ -369,9 +429,11 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
     confidence: 0,
     rawText: text,
   };
+
   if (!text) return fallback;
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   const target = jsonMatch ? jsonMatch[0] : text;
+
   try {
     const parsed = JSON.parse(target);
     return {
@@ -420,12 +482,12 @@ export async function runGeminiSemanticValidator(opts: {
         maxOutputTokens: 512,
       },
     } as any);
+
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
-    // Confidence gating & category-based rules
     const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
     const category = parsed.category as GeminiSemanticVerdict["category"];
 

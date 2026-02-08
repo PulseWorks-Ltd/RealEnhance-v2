@@ -302,6 +302,164 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
+─────────────────────────────
+🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+─────────────────────────────
+ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+─────────────────────────────
+
+The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+If present in the input image, they MUST remain visually and geometrically identical.
+
+These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+Kitchen Anchors:
+• Kitchen islands
+• Fixed counter runs
+• Benchtops and breakfast bars
+• Upper and lower cabinets
+• Pantry cabinets
+• Splashbacks
+• Built-in ovens and cooktops
+• Range hoods
+• Integrated dishwashers
+• Sink and faucet zones
+• Appliance cavities and surrounds
+
+Bathroom Anchors:
+• Toilets
+• Vanities
+• Fixed mirrors
+• Shower enclosures and glass
+• Bathtubs
+• Built-in vanity cabinetry
+• Wall-mounted towel rails
+• Extractor fans
+
+Mechanical & Climate:
+• Heat pumps / split units
+• Radiators and heaters
+• Air vents and grilles
+• Ceiling cassettes
+
+Lighting Fixtures (STYLE + GEOMETRY LOCK):
+• Pendant lights
+• Downlights
+• Ceiling lights
+• Track lights
+• Wall sconces
+• Ceiling fans with lights
+• Under-cabinet lighting
+
+Openings & Boundaries:
+• Windows and frames
+• Sliding door tracks
+• Bi-fold doors
+• Skylights
+• Internal glass walls
+
+If staging or declutter would require changing ANY of the above:
+→ DO NOT modify the element
+→ Reduce furniture or clutter actions instead
+
+─────────────────────────────
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+─────────────────────────────
+FIXED COVERINGS & FLOOR COLOR LOCK
+─────────────────────────────
+
+The following must remain unchanged in type, position, and color:
+
+• Curtains and drapes
+• Curtain rails and rods
+• Blinds and blind tracks
+• Window coverings of any type
+
+• Floor material AND FLOOR COLOR
+• Carpet color and texture
+• Timber tone and stain color
+• Tile color
+
+Any change in curtain system or floor color is a STRUCTURAL violation.
+
+🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+────────────────────────────────
+ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+────────────────────────────────
+
+The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+If present in the input image, they MUST remain visually and geometrically identical.
+
+These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+Kitchen Anchors:
+• Kitchen islands
+• Fixed counter runs
+• Benchtops and breakfast bars
+• Upper and lower cabinets
+• Pantry cabinets
+• Splashbacks
+• Built-in ovens and cooktops
+• Range hoods
+• Integrated dishwashers
+• Sink and faucet zones
+• Appliance cavities and surrounds
+
+Bathroom Anchors:
+• Toilets
+• Vanities
+• Fixed mirrors
+• Shower enclosures and glass
+• Bathtubs
+• Built-in vanity cabinetry
+• Wall-mounted towel rails
+• Extractor fans
+
+Mechanical & Climate:
+• Heat pumps / split units
+• Radiators and heaters
+• Air vents and grilles
+• Ceiling cassettes
+
+Lighting Fixtures (STYLE + GEOMETRY LOCK):
+• Pendant lights
+• Downlights
+• Ceiling lights
+• Track lights
+• Wall sconces
+• Ceiling fans with lights
+• Under-cabinet lighting
+
+Openings & Boundaries:
+• Windows and frames
+• Sliding door tracks
+• Bi-fold doors
+• Skylights
+• Internal glass walls
+
+If staging or declutter would require changing ANY of the above:
+→ DO NOT modify the element
+→ Reduce furniture or clutter actions instead
+
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+────────────────────────────────
+FIXED COVERINGS & FLOOR COLOR LOCK
+────────────────────────────────
+
+The following must remain unchanged in type, position, and color:
+
+• Curtains and drapes
+• Curtain rails and rods
+• Blinds and blind tracks
+• Window coverings of any type
+
+• Floor material AND FLOOR COLOR
+• Carpet color and texture
+• Timber tone and stain color
+• Tile color
+
+Any change in curtain system or floor color is a STRUCTURAL violation.
+
 If any of these elements change → THIS IS A FAILURE.
 
 PARTIALLY VISIBLE ITEMS:
@@ -382,6 +540,84 @@ Preserve surface textures and shadows.`.trim();
     • Do NOT change the outside scene
     • Do NOT upgrade weather, sky, landscape, or buildings
 
+    🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+    ────────────────────────────────
+    ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+    ────────────────────────────────
+
+    The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+    If present in the input image, they MUST remain visually and geometrically identical.
+
+    These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+    Kitchen Anchors:
+    • Kitchen islands
+    • Fixed counter runs
+    • Benchtops and breakfast bars
+    • Upper and lower cabinets
+    • Pantry cabinets
+    • Splashbacks
+    • Built-in ovens and cooktops
+    • Range hoods
+    • Integrated dishwashers
+    • Sink and faucet zones
+    • Appliance cavities and surrounds
+
+    Bathroom Anchors:
+    • Toilets
+    • Vanities
+    • Fixed mirrors
+    • Shower enclosures and glass
+    • Bathtubs
+    • Built-in vanity cabinetry
+    • Wall-mounted towel rails
+    • Extractor fans
+
+    Mechanical & Climate:
+    • Heat pumps / split units
+    • Radiators and heaters
+    • Air vents and grilles
+    • Ceiling cassettes
+
+    Lighting Fixtures (STYLE + GEOMETRY LOCK):
+    • Pendant lights
+    • Downlights
+    • Ceiling lights
+    • Track lights
+    • Wall sconces
+    • Ceiling fans with lights
+    • Under-cabinet lighting
+
+    Openings & Boundaries:
+    • Windows and frames
+    • Sliding door tracks
+    • Bi-fold doors
+    • Skylights
+    • Internal glass walls
+
+    If staging or declutter would require changing ANY of the above:
+    → DO NOT modify the element
+    → Reduce furniture or clutter actions instead
+
+    🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+    ────────────────────────────────
+    FIXED COVERINGS & FLOOR COLOR LOCK
+    ────────────────────────────────
+
+    The following must remain unchanged in type, position, and color:
+
+    • Curtains and drapes
+    • Curtain rails and rods
+    • Blinds and blind tracks
+    • Window coverings of any type
+
+    • Floor material AND FLOOR COLOR
+    • Carpet color and texture
+    • Timber tone and stain color
+    • Tile color
+
+    Any change in curtain system or floor color is a STRUCTURAL violation.
+
     If any of these elements change → THIS IS A FAILURE.
 
     ─────────────────────────────
@@ -402,6 +638,20 @@ Preserve surface textures and shadows.`.trim();
     If ANY portion of a movable object is visible (even <10%),
     REMOVE THE ENTIRE OBJECT.
     Leaving remnants is NOT allowed.
+
+    ─────────────────────────────
+    PARTIAL OBJECT VISIBILITY RULE
+    ─────────────────────────────
+
+    If a movable furniture or clutter item is partially visible
+    (cropped, edge-cut, or partly out of frame):
+
+    Treat it as a FULL movable object.
+
+    You MUST remove the entire object — not just the visible portion —
+    and reconstruct the background cleanly.
+
+    No partial furniture remnants may remain.
 
     ─────────────────────────────
     QUALITY REQUIREMENTS
@@ -495,10 +745,124 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
+────────────────────────────────
+🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+────────────────────────────────
+ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+────────────────────────────────
+
+The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+If present in the input image, they MUST remain visually and geometrically identical.
+
+These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+Kitchen Anchors:
+• Kitchen islands
+• Fixed counter runs
+• Benchtops and breakfast bars
+• Upper and lower cabinets
+• Pantry cabinets
+• Splashbacks
+• Built-in ovens and cooktops
+• Range hoods
+• Integrated dishwashers
+• Sink and faucet zones
+• Appliance cavities and surrounds
+
+Bathroom Anchors:
+• Toilets
+• Vanities
+• Fixed mirrors
+• Shower enclosures and glass
+• Bathtubs
+• Built-in vanity cabinetry
+• Wall-mounted towel rails
+• Extractor fans
+
+Mechanical & Climate:
+• Heat pumps / split units
+• Radiators and heaters
+• Air vents and grilles
+• Ceiling cassettes
+
+Lighting Fixtures (STYLE + GEOMETRY LOCK):
+• Pendant lights
+• Downlights
+• Ceiling lights
+• Track lights
+• Wall sconces
+• Ceiling fans with lights
+• Under-cabinet lighting
+
+Openings & Boundaries:
+• Windows and frames
+• Sliding door tracks
+• Bi-fold doors
+• Skylights
+• Internal glass walls
+
+If staging or declutter would require changing ANY of the above:
+→ DO NOT modify the element
+→ Reduce furniture or clutter actions instead
+
+────────────────────────────────
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+────────────────────────────────
+FIXED COVERINGS & FLOOR COLOR LOCK
+────────────────────────────────
+
+The following must remain unchanged in type, position, and color:
+
+• Curtains and drapes
+• Curtain rails and rods
+• Blinds and blind tracks
+• Window coverings of any type
+
+• Floor material AND FLOOR COLOR
+• Carpet color and texture
+• Timber tone and stain color
+• Tile color
+
+Any change in curtain system or floor color is a STRUCTURAL violation.
+
+────────────────────────────────
+LIGHTING FIXTURE STYLE LOCK
+────────────────────────────────
+
+Existing fixed lighting fixtures must remain identical in:
+• Style
+• Shape
+• Size
+• Position
+• Mounting type
+
+Do NOT modernize, replace, redesign, restyle, or simplify:
+• Pendant lights
+• Ceiling fixtures
+• Downlight layouts
+• Track systems
+• Wall sconces
+
+Lighting fixtures are structural anchors, not decor.
+
 If any of these elements change → THIS IS A FAILURE.
 
 PARTIALLY VISIBLE ITEMS:
 Any visible portion of a removable object must be fully removed.
+
+────────────────────────────────
+PARTIAL OBJECT VISIBILITY RULE
+────────────────────────────────
+
+If a movable furniture or clutter item is partially visible
+(cropped, edge-cut, or partly out of frame):
+
+Treat it as a FULL movable object.
+
+You MUST remove the entire object — not just the visible portion —
+and reconstruct the background cleanly.
+
+No partial furniture remnants may remain.
 
 Maintain realistic ground textures and shadows.`.trim();
     }
@@ -576,6 +940,84 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
+  🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+  ────────────────────────────────
+  ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+  ────────────────────────────────
+
+  The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+  If present in the input image, they MUST remain visually and geometrically identical.
+
+  These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+  Kitchen Anchors:
+  • Kitchen islands
+  • Fixed counter runs
+  • Benchtops and breakfast bars
+  • Upper and lower cabinets
+  • Pantry cabinets
+  • Splashbacks
+  • Built-in ovens and cooktops
+  • Range hoods
+  • Integrated dishwashers
+  • Sink and faucet zones
+  • Appliance cavities and surrounds
+
+  Bathroom Anchors:
+  • Toilets
+  • Vanities
+  • Fixed mirrors
+  • Shower enclosures and glass
+  • Bathtubs
+  • Built-in vanity cabinetry
+  • Wall-mounted towel rails
+  • Extractor fans
+
+  Mechanical & Climate:
+  • Heat pumps / split units
+  • Radiators and heaters
+  • Air vents and grilles
+  • Ceiling cassettes
+
+  Lighting Fixtures (STYLE + GEOMETRY LOCK):
+  • Pendant lights
+  • Downlights
+  • Ceiling lights
+  • Track lights
+  • Wall sconces
+  • Ceiling fans with lights
+  • Under-cabinet lighting
+
+  Openings & Boundaries:
+  • Windows and frames
+  • Sliding door tracks
+  • Bi-fold doors
+  • Skylights
+  • Internal glass walls
+
+  If staging or declutter would require changing ANY of the above:
+  → DO NOT modify the element
+  → Reduce furniture or clutter actions instead
+
+  🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+  ────────────────────────────────
+  FIXED COVERINGS & FLOOR COLOR LOCK
+  ────────────────────────────────
+
+  The following must remain unchanged in type, position, and color:
+
+  • Curtains and drapes
+  • Curtain rails and rods
+  • Blinds and blind tracks
+  • Window coverings of any type
+
+  • Floor material AND FLOOR COLOR
+  • Carpet color and texture
+  • Timber tone and stain color
+  • Tile color
+
+  Any change in curtain system or floor color is a STRUCTURAL violation.
+
 If any of these elements change → THIS IS A FAILURE.
 
 ─────────────────────────────
@@ -593,6 +1035,38 @@ Remove ALL small and loose items, including:
 PARTIALLY VISIBLE ITEMS:
 If ANY part of a removable item is visible, remove the ENTIRE item.
 Leaving fragments or partial objects is a FAILURE.
+
+────────────────────────────────
+PARTIAL OBJECT VISIBILITY RULE
+────────────────────────────────
+
+If a movable furniture or clutter item is partially visible
+(cropped, edge-cut, or partly out of frame):
+
+Treat it as a FULL movable object.
+
+You MUST remove the entire object — not just the visible portion —
+and reconstruct the background cleanly.
+
+No partial furniture remnants may remain.
+
+────────────────────────────────
+DECLUTTER DECISION BIAS
+────────────────────────────────
+
+When uncertain whether an item is loose clutter or decor:
+
+If it is:
+• Small
+• Movable
+• On a horizontal surface
+• Not fixed or wired
+• Not built-in
+
+→ REMOVE it.
+
+Bias toward removal of loose items.
+Bias toward preservation of fixed elements.
 
 ─────────────────────────────
 FURNITURE PRESERVATION
@@ -649,6 +1123,26 @@ MODEL:
 Temperature: 0.10
 TopP: 0.70
 TopK: 24
+
+────────────────────────────────
+ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
+────────────────────────────────
+
+User-selected room type controls furniture STYLE only — not structure.
+
+Room type must NEVER cause removal or redesign of built-in functional elements.
+
+If room type conflicts with visible built-ins:
+
+Examples:
+• Kitchen island present but room type = dining
+• Full counter run present but room type = living
+
+Then you MUST:
+• Keep all built-in elements unchanged
+• Stage conservatively around them
+• Reduce staging density if needed
+• NEVER delete or replace built-ins to satisfy room type
 
 ────────────────────────────────
 ARCHITECTURAL SHELL — DO NOT TOUCH
@@ -710,6 +1204,104 @@ BUILT-INS:
 EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
+
+🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
+────────────────────────────────
+ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
+────────────────────────────────
+
+The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
+If present in the input image, they MUST remain visually and geometrically identical.
+
+These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
+
+Kitchen Anchors:
+• Kitchen islands
+• Fixed counter runs
+• Benchtops and breakfast bars
+• Upper and lower cabinets
+• Pantry cabinets
+• Splashbacks
+• Built-in ovens and cooktops
+• Range hoods
+• Integrated dishwashers
+• Sink and faucet zones
+• Appliance cavities and surrounds
+
+Bathroom Anchors:
+• Toilets
+• Vanities
+• Fixed mirrors
+• Shower enclosures and glass
+• Bathtubs
+• Built-in vanity cabinetry
+• Wall-mounted towel rails
+• Extractor fans
+
+Mechanical & Climate:
+• Heat pumps / split units
+• Radiators and heaters
+• Air vents and grilles
+• Ceiling cassettes
+
+Lighting Fixtures (STYLE + GEOMETRY LOCK):
+• Pendant lights
+• Downlights
+• Ceiling lights
+• Track lights
+• Wall sconces
+• Ceiling fans with lights
+• Under-cabinet lighting
+
+Openings & Boundaries:
+• Windows and frames
+• Sliding door tracks
+• Bi-fold doors
+• Skylights
+• Internal glass walls
+
+If staging or declutter would require changing ANY of the above:
+→ DO NOT modify the element
+→ Reduce furniture or clutter actions instead
+
+🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
+────────────────────────────────
+FIXED COVERINGS & FLOOR COLOR LOCK
+────────────────────────────────
+
+The following must remain unchanged in type, position, and color:
+
+• Curtains and drapes
+• Curtain rails and rods
+• Blinds and blind tracks
+• Window coverings of any type
+
+• Floor material AND FLOOR COLOR
+• Carpet color and texture
+• Timber tone and stain color
+• Tile color
+
+Any change in curtain system or floor color is a STRUCTURAL violation.
+
+────────────────────────────────
+LIGHTING FIXTURE STYLE LOCK
+────────────────────────────────
+
+Existing fixed lighting fixtures must remain identical in:
+• Style
+• Shape
+• Size
+• Position
+• Mounting type
+
+Do NOT modernize, replace, redesign, restyle, or simplify:
+• Pendant lights
+• Ceiling fixtures
+• Downlight layouts
+• Track systems
+• Wall sconces
+
+Lighting fixtures are structural anchors, not decor.
 
 If any of these elements change → THIS IS A FAILURE.
 
