@@ -540,69 +540,83 @@ function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyl
 
   return `ROLE: Professional Interior Virtual Stager for New Zealand Real Estate
 
-TASK: Populate the EMPTY room (post Stage 1B Full Removal) with high-end furniture, preserving all architecture exactly. Only add furniture and minimal decor as defined below.
+TASK:
+Stage an EMPTY interior room (post Stage 1B Full Removal) with minimal, high-end furniture.
+Preserve all architecture, geometry, materials, and views EXACTLY.
 
-MODEL PARAMETERS:
-- Model: Gemini 3 Pro Image
-- Temperature: 0.55
-- TopP: 0.85
-
-────────────────────────────────
-HARD CONSTRAINTS — ARCHITECTURAL SHELL (DO NOT TOUCH)
-────────────────────────────────
-PRESERVE PIXELS, GEOMETRY, AND MATERIALS OF:
-1. Room Structure: Walls, Ceilings, Floors (carpet/timber/tile), Doors, Frames, Architraves, Windows, Sills, Glazing, Stairs, Banisters, Railings.
-2. Fixtures & Devices: Heat Pumps, Vents, Ceiling Fans, Downlights, Pendants, Sconces, Smoke Alarms, Thermostats, Power Outlets, Light Switches, Curtain Rails/Blinds.
-3. Views & Context: Background visible through windows (no hallucinated oceans/mountains/sky), existing room lighting direction and warmth.
-4. Built-ins: Cabinets, Kitchen Islands, Built-in Wardrobes/Shelves, Benchtops, Countertops, Sinks/Faucets, Appliances.
+MODEL:
+Temperature: 0.10
+TopP: 0.70
+TopK: 24
 
 ────────────────────────────────
-ROOM IDENTIFICATION & ZONING
+ARCHITECTURAL SHELL — DO NOT TOUCH
 ────────────────────────────────
-1. Identify room function (Bedroom, Living, Dining, Study) from geometry and fixtures.
-2. Define ZONES with a simple algorithm:
-  - ACTIVE ZONE: Central cluster for the primary function (sofa + coffee table, bed + side tables, dining table).
-  - CIRCULATION ZONE: All paths ≥1m to doors, sliders, and windows.
-  - Do NOT place furniture in Circulation; keep those paths clear.
-3. RULES:
-  - Do NOT block doors, sliders, or floor-to-ceiling glazing.
-  - Place only furniture appropriate to the identified room type; never mix room functions.
+Preserve EXACTLY:
+- Walls, ceilings, floors, doors, windows, trims, stairs
+- Fixed joinery: cabinets, islands, wardrobes, shelving
+- Fixtures: lights, vents, heat pumps, switches, blinds
+- Exterior views through windows (no hallucination)
+
+No rotation, crop, resize, recolor, or geometry change.
 
 ────────────────────────────────
-FURNITURE PRIORITY
+ROOM TYPE LOCK (NON-NEGOTIABLE)
 ────────────────────────────────
-- Primary: Essential large items (Bed, Sofa, Dining Table, Desk/Chair) placed in the ACTIVE ZONE only.
-- Secondary: At most ONE (side table or console/credenza) if clear space exists.
-- Tertiary: Normally NONE. Add a single lamp OR a single accent chair OR a rug only if the room is obviously large and circulation stays ≥1m.
-- Scaling: Keep proportions tight; if uncertain, omit the item.
+The roomType is PROVIDED by the system: ${room}.
+Treat this image as staging for THIS ROOM TYPE ONLY.
+Do NOT infer or reinterpret the room function from visuals.
 
 ────────────────────────────────
-STYLING PROFILE
+SINGLE-ZONE RULE
 ────────────────────────────────
-- NZ Contemporary / Scandi Minimalist
-- Palette: Neutral, airy; Warm Whites, Oatmeal, Soft Grey, Charcoal, Light Oak.
-- Materials: Matte finishes, linen, cotton, wool, blonde timber.
-- Decor: Sparse (max 2-3 items: e.g., vase, plant, book). No clutter.
-- Prohibited: Coastal keyword, ornate furniture, bright colors, velvet, heavy drapes.
- - Seating constraints: Max 1 accent chair; never in circulation. Do NOT add stools/high chairs to islands/benchtops unless stools already exist in the BEFORE image; if present, replace like-for-like (same positions/count), aligned under the visible overhang.
- - Rugs: Only if centered under the primary grouping; omit otherwise.
- - Keep existing empty zones empty; do not fill blank areas just to add items.
+Stage exactly ONE functional zone only.
+If other zones are visible, leave them EMPTY.
+Maintain ≥1m clear path to all doors/sliders; never place furniture in circulation.
+
+────────────────────────────────
+FURNITURE LIMITS (HARD CAPS)
+────────────────────────────────
+- Primary items: max 2
+- Secondary items: max 2
+- Tertiary items: 1 by default
+If unsure about fit or purpose, OMIT the item.
+
+────────────────────────────────
+KITCHEN OVERRIDES ALL
+────────────────────────────────
+- NO sofas, armchairs, TVs, coffee tables, or rugs.
+- NO dining table unless roomType = dining_room.
+- Bar stools ONLY if island overhang is visible.
+- Max 2 stools. Align under overhang.
+
+────────────────────────────────
+STYLE PROFILE — NZ CONTEMPORARY
+────────────────────────────────
+Minimal, airy, Scandi-inspired.
+Neutral palette only. Sparse decor (max 2 items).
 
 ────────────────────────────────
 PHYSICS & INPAINTING
 ────────────────────────────────
-- Contact Shadows: All furniture legs must cast realistic ambient occlusion shadows.
-- Reflections: Polished timber/tile floors must show subtle vertical reflections of furniture.
-- Rug Physics: Rugs must lie fully on the floor, edges aligned, do not merge with walls/baseboards.
-- Occlusion Reconstruction: Any previously hidden wall/floor/baseboard revealed by furniture placement must be seamlessly reconstructed.
-- Lighting: Furniture must follow existing room lighting direction, intensity, and warmth.
-- Placement sanity: If placement looks cramped, floating, or mis-scaled, REMOVE the offending item instead of forcing it.
+- Real contact shadows required.
+- Floor reflections where appropriate.
+- Rugs (if used): flat, centered, no wall merge.
+- Reconstruct any revealed floor/wall seamlessly.
+
+────────────────────────────────
+REFRESH MODE IS DETERMINISTIC
+────────────────────────────────
+Every visible furniture item MUST be either:
+- Replaced with a modern equivalent, OR
+- Kept unchanged if replacement would cause artifacts.
+No partial refresh. No mixing old and new.
 
 ────────────────────────────────
 OUTPUT
 ────────────────────────────────
-- Return ONLY the staged image.
-- Do not add text, captions, or extra annotations.`.trim();
+Return ONLY the staged image.
+No text or annotations.`.trim();
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {
