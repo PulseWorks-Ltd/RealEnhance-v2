@@ -4930,10 +4930,21 @@ export default function BatchProcessor() {
                             </span>
                         )}
                         {runState === 'done' && (
+                            <>
                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
                                 <CheckCircle className="w-3 h-3 mr-2" />
                                 Complete
                             </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="ml-3"
+                              onClick={handleRestart}
+                              title="Clear results and start a new batch"
+                            >
+                              Start New Batch
+                            </Button>
+                            </>
                         )}
                         {runState === 'running' && (
                           <Button
@@ -4943,6 +4954,18 @@ export default function BatchProcessor() {
                             onClick={cancelBatchProcessing}
                           >
                             Cancel enhancement
+                          </Button>
+                        )}
+                        {/* Failsafe: Always show reset when there are results, even if stuck in weird state */}
+                        {results.length > 0 && runState !== 'running' && runState !== 'done' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="ml-3"
+                            onClick={handleRestart}
+                            title="Reset and clear all results"
+                          >
+                            Reset
                           </Button>
                         )}
                     </div>
@@ -5310,6 +5333,36 @@ export default function BatchProcessor() {
                             className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
                         >
                             Start New Batch
+                        </button>
+                    </div>
+                )}
+                
+                {/* Fallback: Show restart button if marked done but buttons are hidden (stuck state recovery) */}
+                {runState === "done" && hasInFlightResults && (
+                    <div className="mt-8 flex flex-col items-center gap-4">
+                        <div className="text-center text-sm text-slate-600">
+                            <p>Some images may still be processing. You can wait or start fresh.</p>
+                        </div>
+                        <button 
+                            onClick={handleRestart}
+                            className="bg-slate-600 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition-colors font-medium"
+                        >
+                            Clear & Start New Batch
+                        </button>
+                    </div>
+                )}
+                
+                {/* Failsafe: Always provide way to clear results if stuck in any other state */}
+                {results.length > 0 && runState === "idle" && (
+                    <div className="mt-8 flex flex-col items-center gap-4">
+                        <div className="text-center text-sm text-amber-600">
+                            <p>⚠️ Unexpected state detected. Clear results to continue.</p>
+                        </div>
+                        <button 
+                            onClick={handleRestart}
+                            className="bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 transition-colors font-medium"
+                        >
+                            Clear Results
                         </button>
                     </div>
                 )}
