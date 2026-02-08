@@ -82,6 +82,13 @@ export function retrySingleRouter() {
       const allowStaging = toBool(body.allowStaging, true);
       const stagingStyle = String(body.stagingStyle || '').trim();
       const declutter = toBool(body.declutter, false);
+      const declutterModeRaw = String(body.declutterMode || '').trim();
+      let declutterMode: "light" | "stage-ready" | null = null;
+      let declutterModeSource: "form" | "parent_meta" | "none" = "none";
+      if (declutterModeRaw === "light" || declutterModeRaw === "stage-ready") {
+        declutterMode = declutterModeRaw;
+        declutterModeSource = "form";
+      }
       const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       const sourceStageRaw = String(body.sourceStage || "").toLowerCase();
@@ -107,6 +114,8 @@ export function retrySingleRouter() {
       let retrySourceUrl: string | undefined = undefined;
       let retrySourceKey: string | undefined = undefined;
       let rec: any = undefined;
+      let parentJob: any = undefined;
+      let parentMeta: any = undefined;
 
       if (useStageSource) {
         const bucket = process.env.S3_BUCKET;
@@ -124,7 +133,7 @@ export function retrySingleRouter() {
         }
 
         if (parentJobId) {
-          const [parentJob, parentMeta] = await Promise.all([
+          [parentJob, parentMeta] = await Promise.all([
             getJob(parentJobId),
             getJobMetadata(parentJobId),
           ]);
@@ -220,6 +229,30 @@ export function retrySingleRouter() {
         }
       }
 
+      // If the client did not supply declutterMode, try to hydrate from the parent job metadata
+      if (!declutterMode && parentJobId && !parentMeta) {
+        try {
+          parentMeta = await getJobMetadata(parentJobId);
+        } catch (e) {
+          console.warn("[retrySingle] Failed to load parent metadata for declutterMode hydration", e);
+        }
+      }
+      if (!declutterMode && parentMeta?.requestedStages?.stage1b) {
+        const stage1bReq = parentMeta.requestedStages.stage1b;
+        if (stage1bReq === "light") {
+          declutterMode = "light";
+          declutterModeSource = "parent_meta";
+        } else if (stage1bReq === "full" || stage1bReq === true) {
+          declutterMode = "stage-ready";
+          declutterModeSource = "parent_meta";
+        }
+      }
+
+      const effectiveDeclutter = declutter || !!declutterMode;
+      if (declutterModeSource !== "none") {
+        console.log(`[RETRY_SINGLE] declutterMode resolved: ${declutterMode} (source=${declutterModeSource})`);
+      }
+
       // Create image record for the new retry job (regardless of source path)
       rec = createImageRecord({
         userId: sessUser.id,
@@ -233,7 +266,8 @@ export function retrySingleRouter() {
       console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'upload'} sourceUrl=${retrySourceUrl || 'upload'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
       const options: any = {
-        declutter,
+        declutter: effectiveDeclutter,
+        declutterMode: declutterMode ?? undefined,
         virtualStage: !!allowStaging,
         roomType,
         sceneType,
