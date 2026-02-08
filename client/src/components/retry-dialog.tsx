@@ -1,12 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Info } from "lucide-react";
 
 
 interface RetryDialogProps {
@@ -15,11 +13,8 @@ interface RetryDialogProps {
   onSubmit: (
     customInstructions: string,
     sceneType: "auto" | "interior" | "exterior",
-    allowStaging: boolean,
-    furnitureReplacementMode: boolean,
     roomType?: string,
-    referenceImage?: File,
-    retryStage?: "1B" | "2"
+    referenceImage?: File
   ) => void;
   isLoading?: boolean;
   imageIndex: number;
@@ -27,64 +22,27 @@ interface RetryDialogProps {
   enhancedImageUrl?: string;
   defaultSceneType?: "auto" | "interior" | "exterior";
   defaultRoomType?: string;
-  defaultStage?: "1B" | "2";
-  allowStage2?: boolean;
-  hasStage1B?: boolean;
-  currentStage?: "1A" | "1B" | "2" | null;
-  originalRequestedStages?: { stage1b?: boolean; stage2?: boolean };
 }
 
-export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto", defaultStage = "1B", allowStage2 = true, hasStage1B = false, currentStage = null, originalRequestedStages }: RetryDialogProps) {
+export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto" }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">(defaultSceneType);
   const [roomType, setRoomType] = useState<string>(defaultRoomType);
-  const [retryStage, setRetryStage] = useState<"1B" | "2">(defaultStage);
   const [roomTypeError, setRoomTypeError] = useState<string>("");
   const [sliderPosition, setSliderPosition] = useState(50);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
 
-  // Calculate pipeline path description
-  const pipelineDescription = useMemo(() => {
-    const fromStage = currentStage || "1A";
-    const targetStage = retryStage;
-    const had1B = originalRequestedStages?.stage1b === true;
-    
-    // If going from 1A to 2 and original had 1B, must go through 1B
-    if (fromStage === "1A" && targetStage === "2" && had1B) {
-      return "Stage 1A → Stage 1B → Stage 2";
-    }
-    
-    // If going from 1A to 2 without original 1B, direct path
-    if (fromStage === "1A" && targetStage === "2" && !had1B) {
-      return "Stage 1A → Stage 2";
-    }
-    
-    // If going from 1A to 1B, direct path
-    if (fromStage === "1A" && targetStage === "1B") {
-      return "Stage 1A → Stage 1B";
-    }
-    
-    // If going from 1B to 2, direct path
-    if (fromStage === "1B" && targetStage === "2") {
-      return "Stage 1B → Stage 2";
-    }
-    
-    // Default: same stage retry or simple transition
-    return `Stage ${fromStage} → Stage ${targetStage}`;
-  }, [currentStage, retryStage, originalRequestedStages]);
-
   useEffect(() => {
     if (isOpen) {
       setSceneType(defaultSceneType);
       setRoomType(defaultRoomType || "auto");
-      setRetryStage(defaultStage || (allowStage2 ? "2" : "1B"));
       setRoomTypeError("");
       setCustomInstructions("");
       setReferenceImage(null);
       setReferencePreview(null);
     }
-  }, [isOpen, defaultSceneType, defaultRoomType, defaultStage, allowStage2]);
+  }, [isOpen, defaultSceneType, defaultRoomType]);
 
 
   const handleReferenceImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,16 +77,14 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
     }
     setRoomTypeError("");
     handleClose();
-    const allowStaging = retryStage === "2";
     const effectiveRoom = sceneType === "interior" ? roomType : undefined;
-    onSubmit(customInstructions, sceneType, allowStaging, false, effectiveRoom, referenceImage || undefined, retryStage);
+    onSubmit(customInstructions, sceneType, effectiveRoom, referenceImage || undefined);
   };
 
   const handleClose = () => {
     setCustomInstructions("");
     setSceneType(defaultSceneType);
     setRoomType(defaultRoomType || "auto");
-    setRetryStage(defaultStage || (allowStage2 ? "2" : "1B"));
     setReferenceImage(null);
     setReferencePreview(null);
     onClose();
@@ -142,7 +98,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Adjust scene, room, and target stage for this retry. Defaults come from the original submission.
+            Adjust scene type and room type, then click Enhance to retry.
           </p>
 
           {/* Before/After Preview Slider */}
@@ -245,44 +201,44 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                 {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
               </div>
             )}
-
-            <div>
-              <Label htmlFor="retry-stage" className="text-sm font-medium">
-                Stage to Retry
-              </Label>
-              <Select value={retryStage} onValueChange={(v) => setRetryStage(v as "1B" | "2")}
-                disabled={!allowStage2 && !hasStage1B}
-              >
-                <SelectTrigger data-testid="select-retry-stage">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1B">Stage 1B (Declutter/Enhance)</SelectItem>
-                  {allowStage2 && <SelectItem value="2">Stage 2 (Staging)</SelectItem>}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">Defaults to the next intended stage.</p>
-            </div>
           </div>
 
-          {/* Pipeline Path Display */}
-          <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-            <div className="flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-blue-900">Pipeline Path</p>
-                <p className="text-sm text-blue-700 mt-1">
-                  This will retry: <span className="font-semibold">{pipelineDescription}</span>
-                </p>
-                {pipelineDescription.includes("\u21921B\u2192") && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Stage 1B will be processed first as required by the original request, then automatically continue to Stage 2.
-                  </p>
-                )}
+          {/* Optional: Custom Instructions */}
+          <div>
+            <Label htmlFor="custom-instructions" className="text-sm font-medium">
+              Additional Instructions <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            <Textarea
+              id="custom-instructions"
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="Any specific instructions for this retry..."
+              className="mt-1"
+              rows={2}
+              data-testid="input-retry-instructions"
+            />
+          </div>
+
+          {/* Reference Image Upload */}
+          <div>
+            <Label className="text-sm font-medium">
+              Reference Image <span className="text-muted-foreground">(optional)</span>
+            </Label>
+            {referencePreview ? (
+              <div className="mt-1 flex items-center gap-3">
+                <img src={referencePreview} alt="Reference" className="w-16 h-16 object-cover rounded border" />
+                <Button variant="outline" size="sm" onClick={handleRemoveReference}>Remove</Button>
               </div>
-            </div>
+            ) : (
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handleReferenceImageSelect}
+                className="mt-1"
+                data-testid="input-retry-reference"
+              />
+            )}
           </div>
-
 
           <div className="flex justify-end space-x-2">
             <Button 
