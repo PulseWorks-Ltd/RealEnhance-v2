@@ -538,11 +538,11 @@ function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyl
   const room = roomType || "room";
   void opts; // opts accepted for compatibility with caller; not used in hardened prompt
 
-  return `ROLE: Professional Interior Virtual Stager for New Zealand Real Estate
+  return `ROLE: Interior Furniture Refresh Specialist — NZ Real Estate
 
 TASK:
-Stage an EMPTY interior room (post Stage 1B Full Removal) with minimal, high-end furniture.
-Preserve all architecture, geometry, materials, and views EXACTLY.
+Refresh ALL existing furniture with modern equivalents.
+Preserve layout, architecture, and flow EXACTLY.
 
 MODEL:
 Temperature: 0.10
@@ -553,12 +553,10 @@ TopK: 24
 ARCHITECTURAL SHELL — DO NOT TOUCH
 ────────────────────────────────
 Preserve EXACTLY:
-- Walls, ceilings, floors, doors, windows, trims, stairs
-- Fixed joinery: cabinets, islands, wardrobes, shelving
-- Fixtures: lights, vents, heat pumps, switches, blinds
-- Exterior views through windows (no hallucination)
-
-No rotation, crop, resize, recolor, or geometry change.
+- Walls, floors, ceilings, doors, windows
+- Fixed joinery and built-ins
+- Fixtures, lighting, vents
+- Exterior views
 
 ────────────────────────────────
 ROOM TYPE LOCK (NON-NEGOTIABLE)
@@ -571,16 +569,16 @@ Do NOT infer or reinterpret the room function from visuals.
 SINGLE-ZONE RULE
 ────────────────────────────────
 Stage exactly ONE functional zone only.
-If other zones are visible, leave them EMPTY.
-Maintain ≥1m clear path to all doors/sliders; never place furniture in circulation.
+If other zones are visible in-frame, leave them EMPTY.
+Never add furniture to secondary zones; maintain clear circulation.
 
 ────────────────────────────────
 FURNITURE LIMITS (HARD CAPS)
 ────────────────────────────────
 - Primary items: max 2
-- Secondary items: max 2
-- Tertiary items: 1 by default
-If unsure about fit or purpose, OMIT the item.
+- Secondary items: max 1
+- Tertiary items: 0 by default
+If unsure, OMIT the item.
 
 ────────────────────────────────
 KITCHEN OVERRIDES ALL
@@ -591,32 +589,43 @@ KITCHEN OVERRIDES ALL
 - Max 2 stools. Align under overhang.
 
 ────────────────────────────────
-STYLE PROFILE — NZ CONTEMPORARY
+REFRESH MODE — STRICT LOGIC
 ────────────────────────────────
-Minimal, airy, Scandi-inspired.
-Neutral palette only. Sparse decor (max 2 items).
+1. Identify ALL visible furniture items.
+2. Replace EACH item with a modern equivalent.
+3. Preserve: type, position, orientation, functional role.
+4. Do NOT add new furniture; empty areas remain empty.
+5. If replacement risks artifacts, keep the original item unchanged.
+
+CONSISTENCY RULE:
+- No mixing old and new. Replace fully or not at all.
 
 ────────────────────────────────
-PHYSICS & INPAINTING
+STYLE PROFILE
 ────────────────────────────────
-- Real contact shadows required.
-- Floor reflections where appropriate.
-- Rugs (if used): flat, centered, no wall merge.
-- Reconstruct any revealed floor/wall seamlessly.
+NZ Contemporary / Scandi Minimalist.
+Neutral palette, natural textures. Decor: max 1–2 items total.
 
 ────────────────────────────────
-REFRESH MODE IS DETERMINISTIC
+RENDERING & PHYSICS
 ────────────────────────────────
-Every visible furniture item MUST be either:
-- Replaced with a modern equivalent, OR
-- Kept unchanged if replacement would cause artifacts.
-No partial refresh. No mixing old and new.
+- Correct contact shadows.
+- Accurate reflections on floors.
+- Seamless reconstruction behind replaced items.
+- No blur, no ghosting, no artifacts.
+
+────────────────────────────────
+FAIL CONDITIONS
+────────────────────────────────
+- Any architectural alteration
+- Furniture blocking walkways
+- Floating or mis-scaled furniture
+- Partial refresh or inconsistent style
 
 ────────────────────────────────
 OUTPUT
 ────────────────────────────────
-Return ONLY the staged image.
-No text or annotations.`.trim();
+Return ONLY the refreshed image.`.trim();
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {
