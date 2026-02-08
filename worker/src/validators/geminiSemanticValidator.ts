@@ -38,8 +38,13 @@ CRITICAL CHECKLIST
 - Blocked, sealed, or removed openings → category: opening_blocked, hardFail: true
 
 4. DECLUTTER VALIDATION
-- Ensure only movable items (clutter, furniture) were removed.
-- Removal or modification of fixed items (radiators, shelving, cabinetry) → category: structure, hardFail: true
+- Ensure only movable items (clutter, cutlery, crockery, dishes, small countertop items, chairs, tables, loose furniture) were removed.
+- Removal or modification of fixed items (radiators, shelving, cabinetry, built-ins, plumbing, fixed lighting) → category: structure, hardFail: true
+
+PASS EXAMPLES:
+- "Dining table and chairs removed"
+- "Clutter, crockery, and cutlery removed from countertops"
+→ category: furniture_change, hardFail: false
 
 ─────────────────────────────
 CATEGORIES
