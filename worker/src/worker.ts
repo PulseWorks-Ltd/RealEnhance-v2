@@ -1762,6 +1762,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sceneType: sceneLabel as any,
         jobId: payload.jobId,
         localReasons: stage2LocalReasons,
+        sourceStage: stage2SourceStage,
       });
       nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
       lastGeminiConfirm = confirm;
@@ -1820,6 +1821,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sceneType: sceneLabel as any,
             jobId: payload.jobId,
             localReasons: stage2LocalReasons,
+            sourceStage: stage2SourceStage,
           });
           nLog(`[GEMINI_CONFIRM] stage=2 retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
           lastGeminiConfirm = confirm;

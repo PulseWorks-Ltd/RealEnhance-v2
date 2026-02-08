@@ -414,13 +414,20 @@ export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior"
 
 function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
   const room = roomType || "room";
-  void opts; // opts accepted for compatibility with caller; not used in hardened prompt
+  const sourceStage = opts?.sourceStage || "1A";
+  
+  // Determine staging mode based on source stage
+  const isFullStaging = sourceStage === "1B-stage-ready"; // Room was fully decluttered → stage empty room
+  const isRefreshStaging = sourceStage === "1A" || sourceStage === "1B-light"; // Furniture present → refresh existing
+  
+  const taskInstruction = isFullStaging
+    ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
+    : "Refresh ALL existing furniture with modern equivalents.\nPreserve layout, architecture, and flow EXACTLY.";
 
-  return `ROLE: Interior Furniture Refresh Specialist — NZ Real Estate
+  return `ROLE: Interior ${isFullStaging ? 'Virtual Staging' : 'Furniture Refresh'} Specialist — NZ Real Estate
 
 TASK:
-Refresh ALL existing furniture with modern equivalents.
-Preserve layout, architecture, and flow EXACTLY.
+${taskInstruction}
 
 MODEL:
 Temperature: 0.10
@@ -467,16 +474,22 @@ KITCHEN OVERRIDES ALL
 - Max 2 stools. Align under overhang.
 
 ────────────────────────────────
-REFRESH MODE — STRICT LOGIC
+${isFullStaging ? 'FULL STAGING MODE' : 'REFRESH MODE'} — STRICT LOGIC
 ────────────────────────────────
-1. Identify ALL visible furniture items.
+${isFullStaging 
+  ? `1. The room is EMPTY (decluttered in Stage 1B).
+2. Add appropriate furniture for room type: ${room}.
+3. Follow FURNITURE LIMITS and SINGLE-ZONE RULE.
+4. Ensure all furniture grounds properly with shadows.
+5. Match NZ Contemporary / Scandi Minimalist style.`
+  : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
 3. Preserve: type, position, orientation, functional role.
 4. Do NOT add new furniture; empty areas remain empty.
 5. If replacement risks artifacts, keep the original item unchanged.
 
 CONSISTENCY RULE:
-- No mixing old and new. Replace fully or not at all.
+- No mixing old and new. Replace fully or not at all.`}
 
 ────────────────────────────────
 STYLE PROFILE

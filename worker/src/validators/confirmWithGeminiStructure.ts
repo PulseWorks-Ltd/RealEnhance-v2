@@ -12,6 +12,7 @@ export async function confirmWithGeminiStructure(params: {
   jobId?: string;
   localReasons: string[];
   localMetrics?: any;
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
 }): Promise<{ confirmedFail: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "error" }> {
   const failOpen = (process.env.GEMINI_CONFIRM_FAIL_OPEN ?? "1") === "1";
   const geminiMode = getGeminiValidatorMode();
@@ -24,6 +25,7 @@ export async function confirmWithGeminiStructure(params: {
       candidatePath: params.candidatePathOrUrl,
       stage: params.stage === "stage1b" ? "1B" : "2",
       sceneType: params.sceneType || "interior",
+      sourceStage: params.sourceStage,
     });
 
     const pass = !verdict.hardFail;

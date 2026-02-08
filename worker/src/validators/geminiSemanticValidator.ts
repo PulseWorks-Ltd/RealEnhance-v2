@@ -11,7 +11,7 @@ export type GeminiSemanticVerdict = {
 
 const MIN_CONFIDENCE = 0.75;
 
-function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined) {
+function buildPrompt(stage: "1A" | "1B" | "2", scene: string | undefined, sourceStage?: "1A" | "1B-light" | "1B-stage-ready") {
   if (stage === "1B") {
     return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery
 (Stage 1B: Declutter / Furniture Removal).
@@ -82,11 +82,24 @@ OUTPUT JSON
   }
 
   if (stage === "2") {
+    // Determine staging mode from sourceStage
+    const isFullStaging = sourceStage === "1B-stage-ready"; // Room was emptied → validate full staging
+    const isRefreshStaging = sourceStage === "1A" || sourceStage === "1B-light" || !sourceStage; // Furniture present → validate refresh
+    
+    const stagingModeInstruction = isFullStaging
+      ? "The BEFORE image is an EMPTY/DECLUTTERED room. The AFTER image should contain NEW furniture appropriate for staging."
+      : "The BEFORE image contains EXISTING furniture. The AFTER image should show ALL furniture REPLACED with modern equivalents.";
+    
+    const stagingIntentRule = isFullStaging
+      ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
+      : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
+
     return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery
 (Stage 2: Virtual Staging / Furniture Refresh).
 
 TASK:
-Compare the BEFORE (empty or decluttered) and AFTER (staged) images.
+Compare the BEFORE and AFTER images.
+${stagingModeInstruction}
 Identify any violations of structural integrity, zoning logic, circulation, or physics.
 
 RETURN JSON ONLY. DO NOT include prose outside JSON.
@@ -127,10 +140,8 @@ CRITICAL CHECKLIST
 - Rugs lie flat, not merged into baseboards.
 - Floating/clipping furniture → furniture_change, hardFail: false
 
-4. STAGING INTENT VALIDATION
-- FULL STAGING: Empty rooms must contain appropriate furniture ONLY for the identified room type.
-- REFRESH STAGING: ALL existing furniture must be replaced with new furniture.
-  Reusing original furniture → furniture_change, hardFail: true
+4. STAGING INTENT VALIDATION (MODE: ${isFullStaging ? 'FULL STAGING' : 'REFRESH STAGING'})
+${stagingIntentRule}
 
 5. MATERIAL PRESERVATION
 - Floors, walls, ceilings retain original material and finish.
@@ -369,11 +380,12 @@ export async function runGeminiSemanticValidator(opts: {
   candidatePath: string;
   stage: "1A" | "1B" | "2";
   sceneType?: string;
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
 }): Promise<GeminiSemanticVerdict> {
   const ai = getGeminiClient();
   const before = toBase64(opts.basePath).data;
   const after = toBase64(opts.candidatePath).data;
-  const prompt = buildPrompt(opts.stage, opts.sceneType);
+  const prompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage);
 
   const contents = [
     { role: "user", parts: [{ text: prompt }] },
