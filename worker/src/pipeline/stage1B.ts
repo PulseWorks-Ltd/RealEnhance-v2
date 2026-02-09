@@ -24,10 +24,14 @@ export async function runStage1B(
     roomType?: string;
     declutterMode?: "light" | "stage-ready";
     jobId?: string;
+    attempt?: number;
   } = {}
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, attempt = 0 } = options;
   const jobId = jobIdOpt || (global as any).__jobId;
+  const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
+  const suffix = attemptIndex > 0 ? `-1B-retry${attemptIndex}` : "-1B";
+  const outputPath = siblingOutPath(stage1APath, suffix, ".webp");
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
   if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
@@ -68,6 +72,18 @@ export async function runStage1B(
     
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
+    if (attemptIndex > 0) {
+      const fs = await import("fs/promises");
+      try {
+        await fs.access(outputPath);
+        throw new Error(`[stage1B] Retry output already exists: ${outputPath}`);
+      } catch (err: any) {
+        if (err?.code !== "ENOENT") {
+          throw err;
+        }
+      }
+    }
+
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       replaceSky,
       declutter: true,
@@ -76,6 +92,7 @@ export async function runStage1B(
       jobId,
       roomType,
       modelReason: declutterMode ? `declutter:${declutterMode}` : "declutter",
+      outputPath,
       // Low-temp for deterministic, aggressive removal
       temperature: 0.30,
       topP: 0.70,
@@ -115,17 +132,16 @@ export async function runStage1B(
       if (!verdict2.ok) {
         console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
       }
-      const outputPath = siblingOutPath(stage1APath, "-1B", ".webp");
-      const fs = await import("fs/promises");
-      console.log(`[stage1B] 💾 Renaming Gemini output to Stage1B: ${declutteredPath} → ${outputPath}`);
-      await fs.rename(declutteredPath, outputPath);
+      if (declutteredPath !== outputPath) {
+        console.warn(`[stage1B] Gemini output path mismatch: expected=${outputPath} actual=${declutteredPath}`);
+      }
       console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
       return outputPath;
     }
     
     // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
     console.log(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
-    const out = siblingOutPath(stage1APath, "-1B", ".webp");
+    const out = outputPath;
     await sharp(stage1APath)
       .rotate()
       .median(3)
@@ -139,7 +155,7 @@ export async function runStage1B(
   } catch (error) {
     console.error(`[stage1B] Error during declutter:`, error);
     // Fallback to Sharp on error
-    const out = siblingOutPath(stage1APath, "-1B", ".webp");
+    const out = outputPath;
     await sharp(stage1APath)
       .rotate()
       .median(3)

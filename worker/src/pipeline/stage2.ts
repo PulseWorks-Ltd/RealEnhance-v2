@@ -10,6 +10,7 @@ import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import path from "path";
+import fs from "fs/promises";
 import type { StagingRegion } from "../ai/region-detector";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
@@ -120,6 +121,11 @@ export async function runStage2(
     ? Math.max(1, geminiMaxRetries + 1)
     : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
   let currentTightenLevel: TightenLevel = 0;
+
+  const buildStage2OutputPath = (attemptIndex: number) => {
+    const suffix = attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`;
+    return siblingOutPath(basePath, suffix, ".webp");
+  };
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     needsRetry = false;
@@ -272,13 +278,26 @@ export async function runStage2(
         if (dbg) console.log("[stage2] no image in response → using previous output");
         break;
       }
-      const candidatePath = siblingOutPath(out, `-2-retry${attempt + 1}`, ".webp");
+      const candidatePath = buildStage2OutputPath(attempt);
+      if (attempt > 0) {
+        try {
+          await fs.access(candidatePath);
+          throw new Error(`[stage2] Retry output already exists: ${candidatePath}`);
+        } catch (err: any) {
+          if (err?.code !== "ENOENT") {
+            throw err;
+          }
+        }
+        console.log(`[RETRY_OUTPUT] stage=2 attempt=${attempt} path=${candidatePath}`);
+      }
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       out = candidatePath;
       console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
       // Run validators after Stage 2
       let validatorFailed = false;
+
+      console.log(`[VALIDATOR_INPUT] stage=2 attempt=${attempt} using=${out}`);
 
       if (stageAwareConfig.enabled) {
         // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====

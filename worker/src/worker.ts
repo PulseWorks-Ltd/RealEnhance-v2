@@ -37,7 +37,7 @@ import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_M
 import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
-import { toBase64 } from "./utils/images";
+import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
@@ -855,14 +855,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
 
       const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
+      const attemptIndex = Math.max(0, attempt - 1);
       const output = await runStage1B(path1A, {
         replaceSky: false,
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
         declutterMode: mode,
         jobId: payload.jobId,
+        attempt: attemptIndex,
       });
+      if (attemptIndex > 0) {
+        nLog(`[RETRY_OUTPUT] stage=1B attempt=${attemptIndex} path=${output}`);
+      }
       const baseArtifacts = (global as any).__baseArtifacts;
+
+      nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attemptIndex} using=${output}`);
 
       const verdict = await runUnifiedValidation({
         originalPath: path1A,
@@ -1055,8 +1062,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             roomType: payload.options.roomType,
             declutterMode: declutterMode as "light" | "stage-ready",
             jobId: payload.jobId,
+            attempt: geminiRetries,
           });
+          nLog(`[RETRY_OUTPUT] stage=1B attempt=${geminiRetries} path=${retryPath1B}`);
           nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} re-ran Stage 1B: ${retryPath1B}`);
+
+          nLog(`[VALIDATOR_INPUT] stage=1B attempt=${geminiRetries} using=${retryPath1B}`);
 
           // Re-validate with Gemini Confirmation
           confirm = await confirmWithGeminiStructure({
@@ -1409,6 +1420,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         roomType: payload.options.roomType,
         declutterMode: "light",
         jobId: payload.jobId,
+        attempt: 0,
       });
 
       stage2InputPath = lightPath1B;
@@ -1813,6 +1825,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         try {
           // Re-run Stage 2 (enhanceWithGemini) with reduced sampling parameters
+          const retryOutputPath = siblingOutPath(stage2InputPath, `-2-retry${geminiRetries}`, ".webp");
           const retryStage2Path = await enhanceWithGemini(stage2InputPath, {
             ...payload.options,
             stage: "2",
@@ -1822,7 +1835,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             sceneType: sceneLabel,
             modelReason: `stage2 gemini_block retry ${geminiRetries}`,
+            outputPath: retryOutputPath,
           });
+          nLog(`[RETRY_OUTPUT] stage=2 attempt=${geminiRetries} path=${retryStage2Path}`);
           nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} re-ran Stage 2: ${retryStage2Path}`);
 
           // Re-run full validation pipeline on the retried Stage 2 output
@@ -1833,6 +1848,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const validationModeRetry = effectiveValidationMode || (VALIDATION_BLOCKING_ENABLED ? "enforce" : "log");
             const baseArtifactsRetry = (global as any).__baseArtifacts;
 
+            nLog(`[VALIDATOR_INPUT] stage=2 attempt=${geminiRetries} using=${retryStage2Path}`);
             const unifiedRetry = await runUnifiedValidation({
               originalPath: stage2ValidationBaseline,
               enhancedPath: retryStage2Path,

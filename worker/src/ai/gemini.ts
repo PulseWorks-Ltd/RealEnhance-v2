@@ -176,9 +176,10 @@ export async function enhanceWithGemini(
     floorClean?: boolean;
     hardscapeClean?: boolean;
     declutterIntensity?: "light" | "standard" | "heavy";
+    outputPath?: string;
   } = {}
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason, outputPath } = options;
   const jobId = jobIdOpt || (global as any).__jobId;
   const roomType = roomTypeOpt || (global as any).__jobRoomType;
   const filename = path.basename(inputPath || "");
@@ -425,7 +426,17 @@ export async function enhanceWithGemini(
     }
 
     const suffix = declutter ? "-gemini-1B" : "-gemini-1A";
-    const out = siblingOutPath(inputPath, suffix, ".webp");
+    const out = outputPath || siblingOutPath(inputPath, suffix, ".webp");
+    if (outputPath) {
+      try {
+        await fs.access(out);
+        throw new Error(`[Gemini] Output path already exists: ${out}`);
+      } catch (err: any) {
+        if (err?.code !== "ENOENT") {
+          throw err;
+        }
+      }
+    }
     writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
     console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
