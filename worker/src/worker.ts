@@ -307,6 +307,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Surface job metadata globally for downstream logging
   (global as any).__jobId = payload.jobId;
   (global as any).__jobRoomType = (payload.options as any)?.roomType;
+
+  // ═══════════ PER-IMAGE STAGE LINEAGE CONTEXT (CROSS-IMAGE ISOLATION) ═══════════
+  // Prevents shared mutable state corruption across concurrent image processing
+  const stageLineage = {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage1A: { input: null as string | null, output: null as string | null, committed: false },
+    stage1B: { input: null as string | null, output: null as string | null, committed: false },
+    stage2: { input: null as string | null, output: null as string | null, committed: false },
+    curtainRailLikely: "unknown" as boolean | "unknown",
+    baseArtifacts: null as any,
+    fallbackUsed: null as string | null,
+  };
+
+  const logStageInput = (stage: string, sourceStage: string | null, path: string) => {
+    nLog("[STAGE_INPUT_SELECTED]", { jobId: payload.jobId, stage, sourceStage, path: path.substring(path.length - 40) });
+  };
+
+  const logStageOutput = (stage: string, path: string) => {
+    nLog("[STAGE_OUTPUT_COMMITTED]", { jobId: payload.jobId, stage, path: path.substring(path.length - 40) });
+  };
+
+  const commitStageOutput = (stage: "1A" | "1B" | "2", outputPath: string) => {
+    stageLineage[stage].output = outputPath;
+    stageLineage[stage].committed = true;
+    logStageOutput(stage, outputPath);
+  };
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
   const strictBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v;
@@ -886,6 +913,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const baseArtifactsCache: Map<string, any> = (global as any).__baseArtifactsCache || new Map();
       baseArtifactsCache.set(canonicalPath, baseArtifacts);
       (global as any).__baseArtifactsCache = baseArtifactsCache;
+      // Isolate base artifacts per image
+      stageLineage.baseArtifacts = baseArtifacts;
     }
     (global as any).__canonicalPath = canonicalPath;
     // Precompute structural mask (architecture only) from canonical
@@ -914,6 +943,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
     (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+  stageLineage.stage1A.input = origPath;
+  logStageInput("1A", null, origPath);
   } catch {}
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
@@ -973,14 +1004,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const curtainRail = detectCurtainRail(features);
     (global as any).__curtainRailLikely = curtainRail.railLikely;
     (global as any).__curtainRailConfidence = curtainRail.confidence;
+    stageLineage.curtainRailLikely = curtainRail.railLikely;
     nLog(`[CURTAIN_RAIL_DETECT] railLikely=${curtainRail.railLikely} conf=${curtainRail.confidence.toFixed(2)}`);
   } catch (err) {
     (global as any).__curtainRailLikely = "unknown";
     (global as any).__curtainRailConfidence = 0;
+    stageLineage.curtainRailLikely = "unknown";
     nLog(`[CURTAIN_RAIL_DETECT] railLikely=unknown conf=0.00 reason=error`);
   }
   nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   
+  commitStageOutput("1A", path1A);
   // Track memory after Stage 1A
   updatePeakMemory(payload.jobId);
   if (isMemoryCritical()) {
@@ -1041,6 +1075,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
   let path1B: string | undefined = undefined;
   let stage1BStructuralSafe = true;
+
+  // ═══ STAGE 1B INPUT LINEAGE GUARD ═══
+  if (!stageLineage.stage1A.committed) {
+    nLog("[STAGE1B_FAIL_NO_FALLBACK_TO_1A]", {
+      jobId: payload.jobId,
+      reason: "stage1A_not_committed",
+      stage1AOutput: stageLineage.stage1A.output,
+    });
+    throw new Error("Stage 1A output not committed before Stage 1B start");
+  }
+  stageLineage.stage1B.input = stageLineage.stage1A.output;
+  logStageInput("1B", "1A", stageLineage.stage1A.output!);
   
   // ✅ STRICT PAYLOAD MODE ONLY — NO INFERENCE OR DEFAULTS
   const declutterMode = (payload.options as any).declutterMode;
@@ -1087,7 +1133,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (attemptIndex > 0) {
         nLog(`[RETRY_OUTPUT] stage=1B attempt=${attemptIndex} path=${output}`);
       }
-      const baseArtifacts = (global as any).__baseArtifacts;
+      const baseArtifacts = stageLineage.baseArtifacts;
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attemptIndex} using=${output}`);
 
@@ -1293,6 +1339,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     }
 
+    // Commit Stage 1B output after successful completion
+    if (path1B) {
+      commitStageOutput("1B", path1B);
+    }
+
     const stage1BLocalStatus = stage1BStructuralSafe
       ? "pass"
       : (VALIDATION_BLOCKING_ENABLED ? "fail" : "needs_confirm");
@@ -1411,6 +1462,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
             // Retry passed — adopt the retried output and continue pipeline
             path1B = retryPath1B;
+            commitStageOutput("1B", retryPath1B);
             geminiRetryPassed = true;
             nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
             break;
@@ -1654,6 +1706,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2PromptMode = stage2SourceStage === "1B-stage-ready" ? "full" : "refresh";
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
+
+  // ═══ STAGE 2 INPUT LINEAGE GUARD ═══
+  if (payload.options.virtualStage) {
+    const expectedInput = stage2BaseStage === "1B" ? stageLineage.stage1B.output : stageLineage.stage1A.output;
+    if (!expectedInput) {
+      nLog("[STAGE2_INPUT_GUARD_FAIL]", {
+        jobId: payload.jobId,
+        stage2BaseStage,
+        stage1ACommitted: stageLineage.stage1A.committed,
+        stage1BCommitted: stageLineage.stage1B.committed,
+        expectedInput,
+      });
+      throw new Error(`Stage ${stage2BaseStage} output not available for Stage 2 input`);
+    }
+    if (stage2InputPath !== expectedInput) {
+      nLog("[STAGE2_INPUT_MISMATCH_CORRECTED]", {
+        jobId: payload.jobId,
+        stage2BaseStage,
+        attempted: stage2InputPath,
+        expected: expectedInput,
+      });
+      stage2InputPath = expectedInput;
+    }
+    stageLineage.stage2.input = stage2InputPath;
+    logStageInput("2", stage2BaseStage, stage2InputPath);
+  }
   let path2: string = stage2InputPath;
   let stage2TimedOut = false; // FIX 4: Track timeout status
   
@@ -1748,8 +1826,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (typeof stage2Outcome === "string") {
         path2 = stage2Outcome;
+        commitStageOutput("2", stage2Outcome);
       } else {
         path2 = stage2Outcome.outputPath;
+        commitStageOutput("2", stage2Outcome.outputPath);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -1862,8 +1942,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (typeof stage2Outcome === "string") {
         path2 = stage2Outcome;
+        commitStageOutput("2", stage2Outcome);
       } else {
         path2 = stage2Outcome.outputPath;
+        commitStageOutput("2", stage2Outcome.outputPath);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -1969,7 +2051,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
 
-      const baseArtifacts = (global as any).__baseArtifacts;
+      const baseArtifacts = stageLineage.baseArtifacts;
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
@@ -2095,10 +2177,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (typeof stage2OutcomeRetry === "string") {
             path2 = stage2OutcomeRetry;
             stage2CandidatePath = path2;
+            commitStageOutput("2", stage2OutcomeRetry);
             stage2AttemptsUsed = Math.max(stage2AttemptsUsed, validationAttempt + 1);
           } else {
             path2 = stage2OutcomeRetry.outputPath;
             stage2CandidatePath = path2;
+            commitStageOutput("2", stage2OutcomeRetry.outputPath);
             stage2AttemptsUsed = stage2OutcomeRetry.attempts;
             stage2MaxAttempts = stage2OutcomeRetry.maxAttempts;
             stage2ValidationRisk = stage2OutcomeRetry.validationRisk;
@@ -2338,9 +2422,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           try {
             stage2CandidatePath = retryStage2Path;
             path2 = retryStage2Path;
+            commitStageOutput("2", retryStage2Path);
 
             const validationModeRetry = effectiveValidationMode || (VALIDATION_BLOCKING_ENABLED ? "enforce" : "log");
-            const baseArtifactsRetry = (global as any).__baseArtifacts;
+            const baseArtifactsRetry = stageLineage.baseArtifacts;
 
             nLog(`[VALIDATOR_INPUT] stage=2 attempt=${geminiRetries} using=${retryStage2Path}`);
             const unifiedRetry = await runUnifiedValidation({
@@ -2478,6 +2563,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             // Retry passed — adopt the retried output and continue pipeline
             stage2CandidatePath = retryStage2Path;
             path2 = retryStage2Path;
+            commitStageOutput("2", retryStage2Path);
             geminiRetryPassed = true;
             nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
             break;
