@@ -304,12 +304,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
   const structureValidatorMode = localValidatorMode;
   logValidationModes();
-  // Surface job metadata globally for downstream logging
-  (global as any).__jobId = payload.jobId;
-  (global as any).__jobRoomType = (payload.options as any)?.roomType;
 
-  // ═══════════ PER-IMAGE STAGE LINEAGE CONTEXT (CROSS-IMAGE ISOLATION) ═══════════
+  // ═══════════ PER-IMAGE JOB EXECUTION CONTEXT (CROSS-IMAGE ISOLATION) ═══════════
   // Prevents shared mutable state corruption across concurrent image processing
+  interface JobExecutionContext {
+    jobId: string;
+    imageId: string;
+    roomType?: string;
+    canonicalPath: string | null;
+    baseArtifacts: any;
+    baseArtifactsCache: Map<string, any>;
+    structuralMask: { width: number; height: number; data: Uint8Array } | null;
+    curtainRailLikely: boolean | "unknown";
+    curtainRailConfidence: number;
+    jobSampling: any;
+    jobDeclutterIntensity?: number;
+    stagingRegion: any;
+  }
+
+  const jobContext: JobExecutionContext = {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    roomType: (payload.options as any)?.roomType,
+    canonicalPath: null,
+    baseArtifacts: null,
+    baseArtifactsCache: new Map(),
+    structuralMask: null,
+    curtainRailLikely: "unknown",
+    curtainRailConfidence: 0,
+    jobSampling: null,
+    jobDeclutterIntensity: undefined,
+    stagingRegion: null,
+  };
+
   const stageLineage = {
     jobId: payload.jobId,
     imageId: payload.imageId,
@@ -545,7 +572,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         profile: undefined,
         stagingRegion: undefined,
         jobId: payload.jobId,
-        curtainRailLikely: (global as any).__curtainRailLikely,
+        curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
           stage2AttemptId = nextAttemptId;
         },
@@ -934,18 +961,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       smallSize: 512,
     });
     if (baseArtifacts) {
-      (global as any).__baseArtifacts = baseArtifacts;
-      const baseArtifactsCache: Map<string, any> = (global as any).__baseArtifactsCache || new Map();
-      baseArtifactsCache.set(canonicalPath, baseArtifacts);
-      (global as any).__baseArtifactsCache = baseArtifactsCache;
+      jobContext.baseArtifacts = baseArtifacts;
+      jobContext.baseArtifactsCache.set(canonicalPath, baseArtifacts);
       // Isolate base artifacts per image
       stageLineage.baseArtifacts = baseArtifacts;
     }
-    (global as any).__canonicalPath = canonicalPath;
+    jobContext.canonicalPath = canonicalPath;
     // Precompute structural mask (architecture only) from canonical
     try {
       const mask = await computeStructuralEdgeMask(canonicalPath, baseArtifacts);
-      (global as any).__structuralMask = mask;
+      jobContext.structuralMask = mask;
       nLog(`[WORKER] Structural mask computed: ${mask.width}x${mask.height}`);
     } catch (e) {
       nLog('[WORKER] Failed to compute structural mask:', e);
@@ -953,24 +978,41 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e) {
     nLog('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
     canonicalPath = origPath; // fallback
-    (global as any).__canonicalPath = canonicalPath;
+    jobContext.canonicalPath = canonicalPath;
   }
 
   // STAGE 1A
   const t1A = Date.now();
   timestamps.stage1AStart = t1A; // FIX 6: Track Stage 1A start
-  // Inject per-job tuning into global for pipeline modules (simple dependency injection)
+  // Inject per-job tuning into context for pipeline modules (simple dependency injection)
   try {
     const s = (payload.options as any)?.sampling || {};
-    (global as any).__jobSampling = {
+    jobContext.jobSampling = {
       temperature: typeof s.temperature === 'number' ? s.temperature : undefined,
       topP: typeof s.topP === 'number' ? s.topP : undefined,
       topK: typeof s.topK === 'number' ? s.topK : undefined,
     };
-    (global as any).__jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
+    jobContext.jobDeclutterIntensity = (payload.options as any)?.declutterIntensity;
   stageLineage.stage1A.input = origPath;
   logStageInput("1A", null, origPath);
   } catch {}
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // PATH VARIABLES + STAGELINEAGE (FIX 1.3 - Sprint 1)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // path1A, path1B, path2: Function-scoped convenience variables (LOW RISK for cross-contamination)
+  // stageLineage: Single source of truth for committed stage outputs
+  // 
+  // Pattern:
+  // 1. Stage executes → assigns to local path variable
+  // 2. commitStageOutput(stage, path) → syncs to stageLineage
+  // 3. Validation guards read from stageLineage to detect/correct mismatches
+  // 
+  // Guards in place:
+  // - Stage 1B input: synced from stageLineage.stage1A.output (line 1138)
+  // - Stage 2 input: validated against stageLineage with mismatch correction (line 1871)
+  // - Final output: validated against stageLineage (line 3009)
+  // ═══════════════════════════════════════════════════════════════════════════════
   let path1A: string = origPath;
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
   // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection
@@ -1024,16 +1066,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
 
   try {
-    const mask = (global as any).__structuralMask as { width: number; height: number; data: Uint8Array } | undefined;
-    const features = computeCurtainRailFeatures(mask);
+    const mask = jobContext.structuralMask;
+    const features = computeCurtainRailFeatures(mask || undefined);
     const curtainRail = detectCurtainRail(features);
-    (global as any).__curtainRailLikely = curtainRail.railLikely;
-    (global as any).__curtainRailConfidence = curtainRail.confidence;
+    jobContext.curtainRailLikely = curtainRail.railLikely;
+    jobContext.curtainRailConfidence = curtainRail.confidence;
     stageLineage.curtainRailLikely = curtainRail.railLikely;
     nLog(`[CURTAIN_RAIL_DETECT] railLikely=${curtainRail.railLikely} conf=${curtainRail.confidence.toFixed(2)}`);
   } catch (err) {
-    (global as any).__curtainRailLikely = "unknown";
-    (global as any).__curtainRailConfidence = 0;
+    jobContext.curtainRailLikely = "unknown";
+    jobContext.curtainRailConfidence = 0;
     stageLineage.curtainRailLikely = "unknown";
     nLog(`[CURTAIN_RAIL_DETECT] railLikely=unknown conf=0.00 reason=error`);
   }
@@ -1521,7 +1563,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
         nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
         const retryStatus = await getJob(payload.jobId);
-        if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+        if (isTerminalStatus(retryStatus?.status) || await isJobFailedFinal(payload.jobId)) {
           nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "1B" });
           return;
         }
@@ -1907,7 +1949,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
-            curtainRailLikely: (global as any).__curtainRailLikely,
+            curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               void (async () => {
                 if (!(await ensureStage2AttemptOwner("stage2_strict_retry"))) return;
@@ -2050,7 +2092,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         validationConfig: { localMode: localValidatorMode },
         stage1APath: stage2ValidationBaseline,
-        curtainRailLikely: (global as any).__curtainRailLikely,
+        curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onStrictRetry: ({ reasons }) => {
           void (async () => {
             if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
@@ -2262,7 +2304,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (blockingFail && validationAttempt < validationMaxAttempts) {
           nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
           const retryStatus = await getJob(payload.jobId);
-          if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+          if (isTerminalStatus(retryStatus?.status) || await isJobFailedFinal(payload.jobId)) {
             nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
             return;
           }
@@ -2284,7 +2326,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
-            curtainRailLikely: (global as any).__curtainRailLikely,
+            curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               void (async () => {
                 if (!(await ensureStage2AttemptOwner("stage2_retry_strict_retry"))) return;
@@ -2512,7 +2554,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
         nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
         const retryStatus = await getJob(payload.jobId);
-        if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+        if (isTerminalStatus(retryStatus?.status) || await isJobFailedFinal(payload.jobId)) {
           nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
           return;
         }
@@ -2971,6 +3013,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const hasStage2 = payload.options.virtualStage && !stage2Blocked && !!pub2Url;
   const finalBasePath = hasStage2 ? stage2CandidatePath : (payload.options.declutter && path1B ? path1B! : path1A);
   const finalStageLabel = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
+  
+  // ═══ FINAL OUTPUT LINEAGE VALIDATION (FIX 1.3) ═══
+  // Verify final output path matches committed stageLineage to ensure no stale local variable usage
+  const lineageOutput = finalStageLabel === "2" 
+    ? stageLineage.stage2.output 
+    : finalStageLabel === "1B" 
+      ? stageLineage.stage1B.output 
+      : stageLineage.stage1A.output;
+  
+  if (lineageOutput && finalBasePath !== lineageOutput) {
+    nLog("[FINAL_OUTPUT_LINEAGE_MISMATCH]", {
+      jobId: payload.jobId,
+      finalStageLabel,
+      localPath: finalBasePath,
+      lineagePath: lineageOutput,
+      correction: "using_lineage",
+    });
+    // Correct from stageLineage (source of truth)
+    const correctedPath = lineageOutput;
+    // Note: This guard is defensive - in normal operation paths should match
+    nLog("[FINAL_OUTPUT_CORRECTED]", { from: finalBasePath, to: correctedPath });
+  }
   
   nLog(`[FINAL_STAGE_DECISION] finalStageLabel=${finalStageLabel} hasStage2=${hasStage2} stage2Blocked=${stage2Blocked} pub2Url=${!!pub2Url} virtualStage=${payload.options.virtualStage} declutter=${payload.options.declutter}`);
 

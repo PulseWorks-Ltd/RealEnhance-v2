@@ -390,7 +390,7 @@ Do not add blinds.
             // Use retry manager to decide if we should retry (only when local mode is block)
             if (allowRetries) {
               const currentJob = await getJob(jobId);
-              if (isTerminalStatus(currentJob?.status) || isJobFailedFinal(jobId)) {
+              if (isTerminalStatus(currentJob?.status) || await isJobFailedFinal(jobId)) {
                 console.warn("[RETRY_BLOCKED_TERMINAL]", { jobId, stage: "stage2" });
                 attemptsUsed = attempt + 1;
                 break;

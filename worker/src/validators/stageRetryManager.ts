@@ -18,7 +18,7 @@ import {
   loadStageAwareConfig,
 } from "./stageAwareConfig";
 import { getTightenLevelFromAttempt, TightenLevel } from "../ai/promptTightening";
-import { getJob } from "../utils/persist";
+import { getJob, updateJob } from "../utils/persist";
 import { isTerminalStatus } from "../utils/statusUtils";
 
 /**
@@ -38,35 +38,46 @@ export interface RetryDecision {
 }
 
 /**
- * In-memory cache for retry states (keyed by jobId)
- * In production, this should be persisted to Redis or DB
+ * Get or create retry state for a job from persisted job metadata
+ * NOTE: Now reads from job record to prevent cross-job contamination
  */
-const retryStateCache = new Map<string, StageRetryState>();
-
-/**
- * Get or create retry state for a job
- */
-export function getRetryState(jobId: string): StageRetryState {
-  let state = retryStateCache.get(jobId);
-  if (!state) {
-    state = createInitialRetryState();
-    retryStateCache.set(jobId, state);
+export async function getRetryState(jobId: string): Promise<StageRetryState> {
+  const job = await getJob(jobId);
+  const retryStateJson = (job as any)?.retryState;
+  
+  if (retryStateJson) {
+    try {
+      return deserializeRetryState(typeof retryStateJson === 'string' ? retryStateJson : JSON.stringify(retryStateJson));
+    } catch (e) {
+      console.warn(`[stageRetry] Failed to deserialize retry state for ${jobId}, creating new`);
+    }
   }
-  return state;
+  
+  return createInitialRetryState();
 }
 
 /**
- * Save retry state for a job
+ * Save retry state for a job to persisted job metadata
+ * NOTE: Now writes to job record to prevent cross-job contamination
  */
-export function saveRetryState(jobId: string, state: StageRetryState): void {
-  retryStateCache.set(jobId, state);
+export async function saveRetryState(jobId: string, state: StageRetryState): Promise<void> {
+  try {
+    await updateJob(jobId, { retryState: serializeRetryState(state) });
+  } catch (e) {
+    console.error(`[stageRetry] Failed to save retry state for ${jobId}:`, e);
+  }
 }
 
 /**
  * Clear retry state for a job (e.g., on job completion)
+ * NOTE: Now clears from job record
  */
-export function clearRetryState(jobId: string): void {
-  retryStateCache.delete(jobId);
+export async function clearRetryState(jobId: string): Promise<void> {
+  try {
+    await updateJob(jobId, { retryState: null });
+  } catch (e) {
+    console.error(`[stageRetry] Failed to clear retry state for ${jobId}:`, e);
+  }
 }
 
 /**
@@ -109,7 +120,7 @@ export async function shouldRetryStage(
   validationResult: ValidationSummary
 ): Promise<RetryDecision> {
   const currentJob = await getJob(jobId);
-  let state = getRetryState(jobId);
+  let state = await getRetryState(jobId);
   const currentAttempts = getStageAttempts(state, stage);
   const currentStatus = currentJob?.status as string | undefined;
   if (isTerminalStatus(currentStatus)) {
@@ -170,7 +181,7 @@ export async function shouldRetryStage(
   state = incrementStageAttempts(state, stage);
   state.lastFailedStage = stage;
   state.failureReasons = validationResult.triggers;
-  saveRetryState(jobId, state);
+  await saveRetryState(jobId, state);
 
   const newAttemptCount = getStageAttempts(state, stage);
   const tightenLevel = getTightenLevelFromAttempt(newAttemptCount);
@@ -188,16 +199,16 @@ export async function shouldRetryStage(
 /**
  * Mark a stage as finally failed (after all retries exhausted)
  */
-export function markStageFailed(
+export async function markStageFailed(
   jobId: string,
   stage: StageId,
   triggers: ValidationTrigger[]
-): void {
-  const state = getRetryState(jobId);
+): Promise<void> {
+  const state = await getRetryState(jobId);
   state.failedFinal = true;
   state.lastFailedStage = stage;
   state.failureReasons = triggers;
-  saveRetryState(jobId, state);
+  await saveRetryState(jobId, state);
 
   console.error(`[stageRetry] FAILED_FINAL: Stage ${stage} failed after all retry attempts`);
   console.error(`[stageRetry] Failure reasons:`);
@@ -209,23 +220,23 @@ export function markStageFailed(
 /**
  * Check if a job has reached final failure state
  */
-export function isJobFailedFinal(jobId: string): boolean {
-  const state = getRetryState(jobId);
+export async function isJobFailedFinal(jobId: string): Promise<boolean> {
+  const state = await getRetryState(jobId);
   return state.failedFinal;
 }
 
 /**
  * Get retry summary for a job (for logging/UI)
  */
-export function getRetrySummary(jobId: string): {
+export async function getRetrySummary(jobId: string): Promise<{
   stage1AAttempts: number;
   stage1BAttempts: number;
   stage2Attempts: number;
   failedFinal: boolean;
   lastFailedStage: StageId | null;
   failureCount: number;
-} {
-  const state = getRetryState(jobId);
+}> {
+  const state = await getRetryState(jobId);
   return {
     stage1AAttempts: state.stage1AAttempts,
     stage1BAttempts: state.stage1BAttempts,
@@ -239,8 +250,8 @@ export function getRetrySummary(jobId: string): {
 /**
  * Log retry state for debugging
  */
-export function logRetryState(jobId: string): void {
-  const state = getRetryState(jobId);
+export async function logRetryState(jobId: string): Promise<void> {
+  const state = await getRetryState(jobId);
   console.log(`[stageRetry] Job ${jobId} retry state:`);
   console.log(`[stageRetry]   Stage1A attempts: ${state.stage1AAttempts}`);
   console.log(`[stageRetry]   Stage1B attempts: ${state.stage1BAttempts}`);
@@ -259,8 +270,8 @@ export function logRetryState(jobId: string): void {
  * Extend job metadata with retry information
  * This should be called when updating job metadata in Redis/DB
  */
-export function getRetryMetadataForJob(jobId: string): Record<string, any> {
-  const state = getRetryState(jobId);
+export async function getRetryMetadataForJob(jobId: string): Promise<Record<string, any>> {
+  const state = await getRetryState(jobId);
   return {
     retryState: {
       stage1AAttempts: state.stage1AAttempts,
@@ -281,22 +292,12 @@ export function getRetryMetadataForJob(jobId: string): Record<string, any> {
 
 /**
  * Restore retry state from job metadata (on job resume)
+ * NOTE: Now unnecessary as state is read directly from job record
  */
-export function restoreRetryStateFromMetadata(
+export async function restoreRetryStateFromMetadata(
   jobId: string,
   metadata: Record<string, any>
-): void {
-  if (metadata?.retryState) {
-    const rs = metadata.retryState;
-    const state: StageRetryState = {
-      stage1AAttempts: rs.stage1AAttempts || 0,
-      stage1BAttempts: rs.stage1BAttempts || 0,
-      stage2Attempts: rs.stage2Attempts || 0,
-      lastFailedStage: rs.lastFailedStage || null,
-      failedFinal: rs.failedFinal || false,
-      failureReasons: rs.failureReasons || [],
-    };
-    saveRetryState(jobId, state);
-    console.log(`[stageRetry] Restored retry state for job ${jobId}`);
-  }
+): Promise<void> {
+  // No-op: State is now persisted in job record automatically
+  console.log(`[stageRetry] Retry state for job ${jobId} is persisted in job record`);
 }
