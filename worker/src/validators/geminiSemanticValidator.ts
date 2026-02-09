@@ -1,6 +1,9 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
+import { shouldInjectEvidence } from "./validationEvidence";
+
+const logger = console;
 
 const MIN_CONFIDENCE = 0.75;
 
@@ -29,6 +32,13 @@ function buildAdjudicatorPrompt(
   riskLevel?: RiskLevel
 ): string {
   if (!evidence) return basePrompt;
+  if (!shouldInjectEvidence(evidence)) {
+    logger.info("[VALIDATION_EVIDENCE] skipped_below_threshold", {
+      stage: evidence.stage,
+      jobId: evidence.jobId,
+    });
+    return basePrompt;
+  }
 
   const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
   const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
@@ -38,7 +48,9 @@ function buildAdjudicatorPrompt(
     evidence.anchorChecks.hvacChanged ? "HVAC_CHANGED" : null,
     evidence.anchorChecks.cabinetryChanged ? "CABINETRY_CHANGED" : null,
     evidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
-  ].filter(Boolean);
+  ].filter(Boolean).slice(0, 3);
+
+  const limitedLocalFlags = evidence.localFlags.slice(0, 3);
 
   const localSignals = {
     wallDriftPct: Number(evidence.drift.wallPercent.toFixed(1)),
@@ -53,12 +65,14 @@ function buildAdjudicatorPrompt(
 
   const signalBlock = `
 ────────────────────────────────
-AUTOMATED SIGNAL BLOCK (DO NOT IGNORE)
+AUTOMATED STRUCTURE OBSERVATIONS (heuristic — may be noisy)
+Use as secondary signals only.
+Visual comparison between images is primary authority.
 ────────────────────────────────
 These are computer-vision measurements from the validation pipeline.
 They are factual measurements, not opinions.
 
-SSIM: ${evidence.ssim.toFixed(4)} (threshold: ${evidence.ssimThreshold}, ${evidence.ssimPassed ? "PASSED" : "FAILED"})
+SSIM: ${evidence.ssim.toFixed(4)} (threshold: ${evidence.ssimThreshold}, ${evidence.ssimPassed ? "OK" : "LOW"})
 Risk Level: ${riskLevel || "UNKNOWN"}
 Geometry Profile: ${evidence.geometryProfile}
 
@@ -73,7 +87,7 @@ Drift Metrics:
 
 Anchor Region Flags: ${anchorFlags.length > 0 ? anchorFlags.join(", ") : "NONE"}
 
-Local Validator Flags: ${evidence.localFlags.length > 0 ? evidence.localFlags.join("; ") : "NONE"}
+Local Validator Flags: ${limitedLocalFlags.length > 0 ? limitedLocalFlags.join("; ") : "NONE"}
 
 LOCAL VALIDATOR SIGNALS (JSON):
 ${JSON.stringify(localSignals, null, 2)}
@@ -100,6 +114,11 @@ ${hasAnchorViolation ? `⚠️ ANCHOR REGION FLAGS ACTIVE: ${anchorFlags.join(",
 Do NOT downgrade to style_only or furniture_change when anchor/opening flags are active
 unless you have HIGH CONFIDENCE (>0.90) that the flag is a false positive.
 ` : "";
+
+  logger.info("[VALIDATION_EVIDENCE] injected", {
+    stage: evidence.stage,
+    jobId: evidence.jobId,
+  });
 
   return basePrompt + signalBlock + overrideBlock;
 }

@@ -231,3 +231,26 @@ export function createEmptyEvidence(jobId: string, stage: "1B" | "2"): Validatio
     unifiedPassed: true,
   };
 }
+
+export function shouldInjectEvidence(e: ValidationEvidence): boolean {
+  if (!e) return false;
+
+  if (e.anchorChecks && Object.values(e.anchorChecks).some((v) => v === true)) {
+    return true;
+  }
+
+  const winDelta =
+    (e.openings?.windowsAfter ?? 0) -
+    (e.openings?.windowsBefore ?? 0);
+
+  if (Math.abs(winDelta) >= 1) return true;
+
+  if ((e.drift?.wallPercent ?? 0) > 40) return true;
+  if ((e.drift?.maskedEdgePercent ?? 0) > 55) return true;
+
+  if ((e.drift?.angleDegrees ?? 0) > 30) return true;
+
+  if ((e.ssim ?? 1) < 0.35) return true;
+
+  return false;
+}
