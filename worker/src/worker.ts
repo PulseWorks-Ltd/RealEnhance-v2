@@ -49,6 +49,7 @@ import {
   logUnifiedValidationCompact,
   type UnifiedValidationResult
 } from "./validators/runValidation";
+import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
@@ -900,6 +901,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stage1BNeedsConfirm = false;
     let stage1BLocalReasons: string[] = [];
     let stage1BLocalIssues = false;
+    let stage1BLastVerdict: UnifiedValidationResult | undefined;
 
     while (true) {
       stage1BAttempts += 1;
@@ -912,6 +914,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
         stage1BLocalIssues = localIssues;
+        stage1BLastVerdict = verdict;
 
         const verdictBlockFromLocal = verdict?.hardFail && verdict?.blockSource === "local" && VALIDATION_BLOCKING_ENABLED;
         const verdictBlockFromGemini = verdict?.hardFail && verdict?.blockSource === "gemini" && geminiBlockingEnabled;
@@ -1013,6 +1016,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sceneType: sceneLabel as any,
         jobId: payload.jobId,
         localReasons: stage1BLocalReasons,
+        evidence: stage1BLastVerdict?.evidence,
+        riskLevel: stage1BLastVerdict?.riskLevel,
       });
       nLog(`[GEMINI_CONFIRM] stage=1B status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
       lastGeminiConfirm = confirm;
@@ -1062,6 +1067,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sceneType: sceneLabel as any,
             jobId: payload.jobId,
             localReasons: stage1BLocalReasons,
+            evidence: stage1BLastVerdict?.evidence,
+            riskLevel: stage1BLastVerdict?.riskLevel,
           });
           nLog(`[GEMINI_CONFIRM] stage=1B retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
           lastGeminiConfirm = confirm;
@@ -1551,6 +1558,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             modeEffective: effectiveValidationMode,
             localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
             geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
+            riskLevel: unifiedValidation.riskLevel,
+            riskTriggers: unifiedValidation.riskTriggers,
+            modelUsed: unifiedValidation.modelUsed,
+            anchorFlags: unifiedValidation.evidence?.anchorChecks,
           },
         },
       });
@@ -1763,6 +1774,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         localReasons: stage2LocalReasons,
         sourceStage: stage2SourceStage,
+        evidence: unifiedValidation?.evidence,
+        riskLevel: unifiedValidation?.riskLevel,
       });
       nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
       lastGeminiConfirm = confirm;
@@ -1933,6 +1946,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             localReasons: stage2LocalReasons,
             sourceStage: stage2SourceStage,
+            evidence: unifiedValidation?.evidence,
+            riskLevel: unifiedValidation?.riskLevel,
           });
           nLog(`[GEMINI_CONFIRM] stage=2 retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
           lastGeminiConfirm = confirm;

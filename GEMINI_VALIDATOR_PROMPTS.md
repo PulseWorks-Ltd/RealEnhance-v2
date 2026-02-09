@@ -1,107 +1,38 @@
-import { getGeminiClient } from "../ai/gemini";
-import { toBase64 } from "../utils/images";
-import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
+# Gemini Validator Prompts - Exact Text
 
-const MIN_CONFIDENCE = 0.75;
+This document contains the **exact prompts** sent to Gemini 2.0 Flash for validation at each stage.
 
-/**
- * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
- */
-function getModelForRisk(riskLevel?: RiskLevel): string {
-  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
-  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash";
+## API Configuration
 
-  if (!riskLevel || riskLevel === "LOW") return fastModel;
-  return strongModel; // MEDIUM and HIGH → strong model
+**Model:** `gemini-2.0-flash`
+
+**Generation Config:**
+- `temperature`: 0.2
+- `topP`: 0.5
+- `maxOutputTokens`: 512
+
+**Request Structure:**
+```javascript
+{
+  role: "user",
+  parts: [
+    { text: "<prompt_text_below>" },
+    { inlineData: { mimeType: "image/webp", data: "<base64_before_image>" } },
+    { inlineData: { mimeType: "image/webp", data: "<base64_after_image>" } }
+  ]
 }
+```
 
-/**
- * Build evidence-injected adjudicator prompt
- *
- * Architecture:
- * - SYSTEM BLOCK: Role definition + decision rules
- * - SIGNAL BLOCK: Auto-inserted ValidationEvidence (no human edits)
- * - RULE OVERRIDE BLOCK: Anchor overrides (any anchor flag → must say "structure")
- */
-function buildAdjudicatorPrompt(
-  basePrompt: string,
-  evidence?: ValidationEvidence,
-  riskLevel?: RiskLevel
-): string {
-  if (!evidence) return basePrompt;
+---
 
-  const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
-  const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
+## Stage 1B Prompt (Declutter/Removal Validation)
 
-  const anchorFlags = [
-    evidence.anchorChecks.islandChanged ? "ISLAND_CHANGED" : null,
-    evidence.anchorChecks.hvacChanged ? "HVAC_CHANGED" : null,
-    evidence.anchorChecks.cabinetryChanged ? "CABINETRY_CHANGED" : null,
-    evidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
-  ].filter(Boolean);
+**Used when:** Validating Stage 1B output (declutter mode)
 
-  const signalBlock = `
-────────────────────────────────
-AUTOMATED SIGNAL BLOCK (DO NOT IGNORE)
-────────────────────────────────
-These are computer-vision measurements from the validation pipeline.
-They are factual measurements, not opinions.
+**Prompt Text:**
 
-SSIM: ${evidence.ssim.toFixed(4)} (threshold: ${evidence.ssimThreshold}, ${evidence.ssimPassed ? "PASSED" : "FAILED"})
-Risk Level: ${riskLevel || "UNKNOWN"}
-Geometry Profile: ${evidence.geometryProfile}
-
-Openings Delta:
-- Windows: ${evidence.openings.windowsBefore} → ${evidence.openings.windowsAfter} (delta: ${windowsDelta >= 0 ? "+" : ""}${windowsDelta})
-- Doors: ${evidence.openings.doorsBefore} → ${evidence.openings.doorsAfter} (delta: ${doorsDelta >= 0 ? "+" : ""}${doorsDelta})
-
-Drift Metrics:
-- Wall drift: ${(evidence.drift.wallPercent).toFixed(1)}%
-- Masked edge drift: ${(evidence.drift.maskedEdgePercent).toFixed(1)}%
-- Angle deviation: ${evidence.drift.angleDegrees.toFixed(1)}°
-
-Anchor Region Flags: ${anchorFlags.length > 0 ? anchorFlags.join(", ") : "NONE"}
-
-Local Validator Flags: ${evidence.localFlags.length > 0 ? evidence.localFlags.join("; ") : "NONE"}
-`;
-
-  const hasAnchorViolation = anchorFlags.length > 0;
-  const hasOpeningDelta = windowsDelta !== 0 || doorsDelta !== 0;
-
-  const overrideBlock = (hasAnchorViolation || hasOpeningDelta) ? `
-────────────────────────────────
-MANDATORY OVERRIDE RULES
-────────────────────────────────
-${hasOpeningDelta ? `⚠️ OPENING COUNT CHANGED — Computer vision detected window/door count delta.
-   You MUST verify this. If you agree openings changed: category=structure, hardFail=true.
-   If you disagree (e.g., furniture occluding view), explain in reasons.` : ""}
-${hasAnchorViolation ? `⚠️ ANCHOR REGION FLAGS ACTIVE: ${anchorFlags.join(", ")}
-   Structural function anchors were detected as changed by computer vision.
-   You MUST verify these. If you agree anchors changed: category=structure, hardFail=true.
-   If you disagree (false positive), explain why in reasons.` : ""}
-
-Do NOT downgrade to style_only or furniture_change when anchor/opening flags are active
-unless you have HIGH CONFIDENCE (>0.90) that the flag is a false positive.
-` : "";
-
-  return basePrompt + signalBlock + overrideBlock;
-}
-
-export type GeminiSemanticVerdict = {
-  hardFail: boolean;
-  category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
-  reasons: string[];
-  confidence: number;
-  rawText?: string;
-};
-
-function buildPrompt(
-  stage: "1A" | "1B" | "2",
-  scene?: string,
-  sourceStage?: "1A" | "1B-light" | "1B-stage-ready"
-) {
-  if (stage === "1B") {
-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter / Removal).
+```
+You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter / Removal).
 
 Compare BEFORE and AFTER images.
 
@@ -199,19 +130,23 @@ OUTPUT JSON
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number
-}`;
-  }
+}
+```
 
-  if (stage === "2") {
-    const isFullStaging = sourceStage === "1B-stage-ready";
-    const stagingModeInstruction = isFullStaging
-      ? "The BEFORE image is an EMPTY/DECLUTTERED room. The AFTER image should contain NEW furniture appropriate for staging."
-      : "The BEFORE image contains EXISTING furniture. The AFTER image should show ALL furniture REPLACED with modern equivalents.";
-    const stagingIntentRule = isFullStaging
-      ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
-      : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
+---
 
-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 2: Staging / Refresh).
+## Stage 2 Prompt (Staging/Refresh Validation)
+
+**Used when:** Validating Stage 2 output (furniture staging/refresh)
+
+**Dynamic Variables:**
+- `sourceStage`: Can be `"1A"` | `"1B-light"` | `"1B-stage-ready"`
+- `isFullStaging`: `true` when `sourceStage === "1B-stage-ready"`
+
+**Prompt Text:**
+
+```
+You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 2: Staging / Refresh).
 
 Compare BEFORE and AFTER images.
 
@@ -283,9 +218,21 @@ Hallucinated scenery → structure hardFail true
 - Rugs lie flat, not merged into baseboards.
 - Floating/clipping furniture → furniture_change, hardFail: false
 
-4. STAGING INTENT VALIDATION (MODE: ${isFullStaging ? 'FULL STAGING' : 'REFRESH STAGING'})
-${stagingModeInstruction}
-${stagingIntentRule}
+4. STAGING INTENT VALIDATION (MODE: [FULL STAGING or REFRESH STAGING])
+[DYNAMIC: If sourceStage === "1B-stage-ready"]
+The BEFORE image is an EMPTY/DECLUTTERED room. The AFTER image should contain NEW furniture appropriate for staging.
+
+[DYNAMIC: Otherwise]
+The BEFORE image contains EXISTING furniture. The AFTER image should show ALL furniture REPLACED with modern equivalents.
+
+[DYNAMIC: If sourceStage === "1B-stage-ready"]
+- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.
+  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE.
+
+[DYNAMIC: Otherwise]
+- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.
+  Reusing original furniture without replacement → furniture_change, hardFail: true
+  Partially replaced furniture → furniture_change, hardFail: true
 
 5. MATERIAL PRESERVATION
 - Floors, walls, ceilings retain original material and finish.
@@ -318,13 +265,21 @@ OUTPUT JSON
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number
-}`;
-  }
+}
+```
 
-  const stageLabel = stage === "1A" ? "Stage 1A (color/cleanup)" : stage;
-  const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
+---
 
-  return `You are a Structural Integrity Auditor for New Zealand real estate imagery.
+## Stage 1A Prompt (Color/Cleanup Validation) - Fallback
+
+**Used when:** Validating Stage 1A output (rarely used in current workflow)
+
+**Note:** This is a generic fallback prompt with less specific guidance than 1B/2.
+
+**Prompt Text:**
+
+```
+You are a Structural Integrity Auditor for New Zealand real estate imagery.
 
 You will receive two images:
 - BEFORE (original image)
@@ -485,7 +440,7 @@ structure → hardFail = true
 opening_blocked → hardFail = true  
 furniture_change → hardFail = false  
 style_only → hardFail = false  
-If confidence < ${MIN_CONFIDENCE} → hardFail = false  
+If confidence < 0.75 → hardFail = false  
 
 ────────────────────────────────
 OUTPUT FORMAT (JSON ONLY)
@@ -501,114 +456,37 @@ OUTPUT FORMAT (JSON ONLY)
   "confidence": number
 }
 
-Stage: ${stageLabel}
-Scene: ${sceneLabel}`;
-}
+Stage: Stage 1A (color/cleanup)
+Scene: [INTERIOR or EXTERIOR]
+```
 
-export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
-  const fallback: GeminiSemanticVerdict = {
-    hardFail: false,
-    category: "unknown",
-    reasons: [],
-    confidence: 0,
-    rawText: text,
-  };
+---
 
-  if (!text) return fallback;
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  const target = jsonMatch ? jsonMatch[0] : text;
+## Gemini Confirmation Validation
 
-  try {
-    const parsed = JSON.parse(target);
-    return {
-      hardFail: Boolean(parsed.hardFail),
-      category: parsed.category || "unknown",
-      reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map(String) : [],
-      confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
-      rawText: text,
-    };
-  } catch (err) {
-    return fallback;
-  }
-}
+**Important:** The "Gemini Confirmation" validation phase **uses the exact same prompts** as above.
 
-export async function runGeminiSemanticValidator(opts: {
-  basePath: string;
-  candidatePath: string;
-  stage: "1A" | "1B" | "2";
-  sceneType?: string;
-  sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
-  evidence?: ValidationEvidence;
-  riskLevel?: RiskLevel;
-}): Promise<GeminiSemanticVerdict> {
-  const ai = getGeminiClient();
-  const before = toBase64(opts.basePath).data;
-  const after = toBase64(opts.candidatePath).data;
+When local validators flag issues:
+1. The system triggers `confirmWithGeminiStructure()`
+2. This function calls `runGeminiSemanticValidator()` with **identical prompts**
+3. There is NO separate "confirmation" prompt - it's a re-run of the same validation
 
-  // Build base prompt, then inject evidence signals
-  const basePrompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage);
-  const prompt = buildAdjudicatorPrompt(basePrompt, opts.evidence, opts.riskLevel);
+**Trigger Conditions:**
+- `GEMINI_CONFIRMATION_ENABLED = true` (when `LOCAL_VALIDATOR_MODE=log`)
+- Local validators detect issues (perceptual diff fail, semantic/masked edge warnings)
+- Acts as second opinion layer before blocking
 
-  // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
-  const model = getModelForRisk(opts.riskLevel);
+**Retry Logic:**
+- Max retries: `GEMINI_CONFIRM_MAX_RETRIES` (default: 2)
+- On retry, image is regenerated and validated again with same prompt
+- Retries execute full validation pipeline (perceptual diff → local validators → Gemini)
 
-  const contents = [
-    { role: "user", parts: [{ text: prompt }] },
-    {
-      role: "user",
-      parts: [
-        { inlineData: { mimeType: "image/webp", data: before } },
-        { inlineData: { mimeType: "image/webp", data: after } },
-      ],
-    },
-  ];
+---
 
-  try {
-    const start = Date.now();
-    const response = await (ai as any).models.generateContent({
-      model,
-      contents,
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.5,
-        maxOutputTokens: 512,
-      },
-    } as any);
+## Source Code Reference
 
-    const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
-    const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
-    const parsed = parseGeminiSemanticText(text);
-    parsed.rawText = text;
+All prompts defined in: [`worker/src/validators/geminiSemanticValidator.ts`](worker/src/validators/geminiSemanticValidator.ts)
 
-    const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
-    const category = parsed.category as GeminiSemanticVerdict["category"];
+Function: `buildPrompt(stage: "1A" | "1B" | "2", scene?: string, sourceStage?: "1A" | "1B-light" | "1B-stage-ready")`
 
-    let hardFail = parsed.hardFail;
-    if (category === "structure") hardFail = true;
-    else if (category === "opening_blocked") hardFail = parsed.hardFail;
-    else if (category === "furniture_change" || category === "style_only") hardFail = false;
-
-    if (lowConfidence) hardFail = false;
-
-    const verdict: GeminiSemanticVerdict = {
-      hardFail,
-      category,
-      reasons: parsed.reasons || [],
-      confidence: parsed.confidence ?? 0,
-      rawText: text,
-    };
-
-    const ms = Date.now() - start;
-    console.log(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
-    return verdict;
-  } catch (err: any) {
-    console.warn("[gemini-semantic] error (fail-open):", err?.message || err);
-    return {
-      hardFail: false,
-      category: "unknown",
-      confidence: 0,
-      reasons: ["gemini_error"],
-      rawText: err?.message,
-    };
-  }
-}
+Lines: 13-417 (Stage 1B: 15-135, Stage 2: 137-246, Stage 1A: 248-417)

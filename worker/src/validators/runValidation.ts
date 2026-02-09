@@ -26,6 +26,8 @@ import { validateStructureStageAware } from "./structural/stageAwareValidator";
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
 import { buildValidationBuffers, type ValidationBuffers } from "./validationBuffers";
+import { runAnchorRegionValidators } from "./anchorRegionValidators";
+import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 
 /**
  * Result from a single validator
@@ -51,6 +53,10 @@ export type UnifiedValidationResult = {
   normalized?: boolean;      // whether dimensions were normalized
   raw: Record<string, ValidatorResult>;  // per-validator raw results
   profile?: "SOFT" | "STRICT";  // Geometry profile used
+  evidence?: ValidationEvidence;  // Full evidence packet for downstream consumers
+  riskLevel?: RiskLevel;     // Deterministic risk classification
+  riskTriggers?: string[];   // Risk trigger reasons
+  modelUsed?: string;        // Which Gemini model was used
 };
 
 export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
@@ -200,6 +206,12 @@ export async function runUnifiedValidation(
   let perceptualFailed = false;
   let forceGemini = false;
 
+  // Initialize evidence packet
+  const evidence = createEmptyEvidence(
+    jobId || "unknown",
+    (stage === "1B" || stage === "2") ? stage : "1B"
+  );
+
   if (stage === "1B" || stage === "2") {
     try {
       const perceptual = await runPerceptualDiff({
@@ -218,11 +230,17 @@ export async function runUnifiedValidation(
 
       nLog(`[perceptual-diff] stage=${stage} ssim=${perceptual.score.toFixed(3)} threshold=${perceptual.threshold.toFixed(2)} passed=${perceptual.passed}`);
 
+      // Populate evidence
+      evidence.ssim = perceptual.score;
+      evidence.ssimThreshold = perceptual.threshold;
+      evidence.ssimPassed = perceptual.passed;
+
       if (!perceptual.passed) {
         perceptualFailed = true;
         forceGemini = true;
         reasons.push(`Perceptual diff failed: SSIM ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
-        nLog(`[perceptual-diff] FAIL → escalating to Gemini and skipping local structural validators`);
+        evidence.localFlags.push(`ssim_failed: ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
+        nLog(`[perceptual-diff] FAIL → escalating to Gemini (local validators still run for evidence collection)`);
       }
     } catch (err) {
       console.warn("[perceptual-diff] Error computing SSIM (fail-open):", err);
@@ -231,7 +249,8 @@ export async function runUnifiedValidation(
 
   // ===== STAGE-AWARE VALIDATION PATH =====
   // When enabled, use the new stage-aware validator for Stage 2
-  if (!perceptualFailed && stageAwareConfig.enabled && stage === "2") {
+  // NOTE: Always runs now — even when SSIM fails, we collect evidence for the adjudicator
+  if (stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
     // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
@@ -307,7 +326,9 @@ export async function runUnifiedValidation(
   let originalLineCount = 0;
   let enhancedLineCount = 0;
 
-  if (!perceptualFailed) {
+  // HARDENED: Always run local validators for evidence collection,
+  // even when SSIM fails. Evidence is fed to the model adjudicator.
+  {
     try {
       buffers = await buildValidationBuffers(originalPath, enhancedPath, {
         blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
@@ -563,8 +584,208 @@ export async function runUnifiedValidation(
         details: { error: String(err) },
       };
     }
-  } else {
-    nLog(`[unified-validator] Perceptual diff failed; skipping local structural validators and deferring to Gemini`);
+  }
+
+  // ===== ANCHOR REGION VALIDATORS =====
+  // Binary flag detectors for high-value structural anchors
+  // ALWAYS run — these are critical evidence signals
+  if (stage === "1B" || stage === "2") {
+    try {
+      nLog(`[unified-validator] Running anchor region validators...`);
+      const anchorResult = await runAnchorRegionValidators({
+        originalImagePath: originalPath,
+        enhancedImagePath: enhancedPath,
+        jobId,
+      });
+
+      // Populate evidence anchor flags
+      evidence.anchorChecks = {
+        islandChanged: anchorResult.islandChanged,
+        hvacChanged: anchorResult.hvacChanged,
+        cabinetryChanged: anchorResult.cabinetryChanged,
+        lightingChanged: anchorResult.lightingChanged,
+      };
+
+      // Add anchor flags to localFlags for logging
+      if (anchorResult.islandChanged) evidence.localFlags.push("anchor:island_changed");
+      if (anchorResult.hvacChanged) evidence.localFlags.push("anchor:hvac_changed");
+      if (anchorResult.cabinetryChanged) evidence.localFlags.push("anchor:cabinetry_changed");
+      if (anchorResult.lightingChanged) evidence.localFlags.push("anchor:lighting_changed");
+
+      results.anchors = {
+        name: "anchors",
+        passed: !anchorResult.islandChanged && !anchorResult.hvacChanged &&
+                !anchorResult.cabinetryChanged && !anchorResult.lightingChanged,
+        score: (anchorResult.islandChanged || anchorResult.hvacChanged ||
+                anchorResult.cabinetryChanged || anchorResult.lightingChanged) ? 0.0 : 1.0,
+        message: evidence.localFlags.filter(f => f.startsWith("anchor:")).join(", ") || "All anchors intact",
+        details: anchorResult,
+      };
+
+      nLog(`[unified-validator] Anchors: island=${anchorResult.islandChanged} hvac=${anchorResult.hvacChanged} cabinetry=${anchorResult.cabinetryChanged} lighting=${anchorResult.lightingChanged}`);
+    } catch (err) {
+      console.warn("[unified-validator] Anchor validation error (fail-open):", err);
+      results.anchors = {
+        name: "anchors",
+        passed: true,
+        score: 0.5,
+        message: "Anchor validator error (fail-open)",
+        details: { error: String(err) },
+      };
+    }
+  }
+
+  // ===== BUILD EVIDENCE PACKET =====
+  // Populate evidence from all validator results
+  {
+    // Opening counts from semantic structure or local validators
+    if (results.windows?.details) {
+      const wd = results.windows.details;
+      if (typeof wd.baseWindowCount === "number") {
+        evidence.openings.windowsBefore = wd.baseWindowCount;
+        evidence.openings.windowsAfter = wd.windowCount ?? wd.baseWindowCount;
+      }
+    }
+
+    // Drift metrics from wall validator
+    if (results.walls?.details) {
+      const wallDetails = results.walls.details;
+      if (typeof wallDetails.driftRatio === "number") {
+        evidence.drift.wallPercent = wallDetails.driftRatio * 100;
+      } else if (typeof wallDetails.openingDriftPct === "number") {
+        evidence.drift.wallPercent = wallDetails.openingDriftPct;
+      }
+    }
+
+    // Edge drift from global edge
+    if (results.globalEdge?.details) {
+      const edgeDetails = results.globalEdge.details;
+      if (typeof edgeDetails.edgeIoU === "number") {
+        // Convert IoU to drift percentage (lower IoU = higher drift)
+        evidence.drift.maskedEdgePercent = (1 - edgeDetails.edgeIoU) * 100;
+      }
+    }
+
+    // Line angle deviation
+    if (results.lineEdge?.details) {
+      const lineDetails = results.lineEdge.details;
+      if (typeof lineDetails.verticalDeviation === "number") {
+        evidence.drift.angleDegrees = Math.max(
+          lineDetails.verticalDeviation || 0,
+          lineDetails.horizontalDeviation || 0
+        );
+      }
+    }
+
+    // Collect all failure reasons as local flags
+    for (const [key, result] of Object.entries(results)) {
+      if (key !== "geminiSemantic" && !result.passed && result.message && !evidence.localFlags.includes(result.message)) {
+        evidence.localFlags.push(`${key}: ${result.message}`);
+      }
+    }
+  }
+
+  // ===== SOFT GEOMETRY PROFILE DETECTION =====
+  // Determine if this scene should use relaxed thresholds (bedroom-type scenes)
+  const softScene = isSoftGeometryScene({
+    roomType,
+    originalLineCount,
+    enhancedLineCount,
+    windowCount,
+  });
+
+  nLog(`[unified-validator] Geometry Profile: ${softScene ? "SOFT" : "STRICT"}`);
+  if (softScene) {
+    nLog(`[unified-validator] Soft geometry detected - applying relaxed thresholds for bedroom-type scene`);
+    nLog(`[unified-validator]   - roomType: ${roomType}`);
+    nLog(`[unified-validator]   - windowCount: ${windowCount}`);
+    nLog(`[unified-validator]   - originalLineCount: ${originalLineCount}`);
+    nLog(`[unified-validator]   - enhancedLineCount: ${enhancedLineCount}`);
+  }
+
+  // ===== APPLY SOFT GEOMETRY OVERRIDES =====
+  if (softScene) {
+    if (results.windows && !results.windows.passed) {
+      const reason = results.windows.details?.reason;
+      if (reason === "window_size_change") {
+        nLog(`[unified-validator] Soft geometry override: downgrading window_size_change to warning`);
+        results.windows.passed = true;
+        results.windows.score = 0.8;
+        results.windows.message = "Window size variation (acceptable for bedroom)";
+        const idx = reasons.findIndex(r => r.includes("Window validation failed"));
+        if (idx !== -1) reasons.splice(idx, 1);
+      }
+    }
+  }
+
+  // ===== PRE-GEMINI AGGREGATE (for evidence packet) =====
+  const preGeminiWeights: Record<string, number> = {
+    windows: 0.25,
+    walls: 0.20,
+    globalEdge: 0.20,
+    structuralMask: 0.20,
+    lineEdge: 0.10,
+    anchors: 0.05,
+  };
+
+  let preGeminiTotalScore = 0;
+  let preGeminiTotalWeight = 0;
+  for (const [key, result] of Object.entries(results)) {
+    if (key === "geminiSemantic") continue;
+    const weight = preGeminiWeights[key] || 0.1;
+    const score = result.score !== undefined ? result.score : (result.passed ? 1.0 : 0.0);
+    preGeminiTotalScore += score * weight;
+    preGeminiTotalWeight += weight;
+  }
+  const preGeminiScore = preGeminiTotalWeight > 0 ? preGeminiTotalScore / preGeminiTotalWeight : 1.0;
+
+  // Finalize evidence
+  evidence.geometryProfile = softScene ? "SOFT" : "STRONG";
+  evidence.unifiedScore = preGeminiScore;
+  evidence.unifiedPassed = !Object.values(results).some(r => r.name !== "perceptualDiff" && !r.passed);
+
+  // Populate opening counts from semantic or window validators
+  if (results.windows?.details) {
+    const wd = results.windows.details;
+    if (typeof wd.baseWindowCount === "number") {
+      evidence.openings.windowsBefore = wd.baseWindowCount;
+      evidence.openings.windowsAfter = wd.windowCount ?? wd.baseWindowCount;
+    }
+  }
+
+  // Drift from wall validator
+  if (results.walls?.details) {
+    const wallDetails = results.walls.details;
+    if (typeof wallDetails.driftRatio === "number") {
+      evidence.drift.wallPercent = wallDetails.driftRatio * 100;
+    } else if (typeof wallDetails.openingDriftPct === "number") {
+      evidence.drift.wallPercent = wallDetails.openingDriftPct;
+    }
+  }
+
+  // Edge drift
+  if (results.globalEdge?.details) {
+    const edgeDetails = results.globalEdge.details;
+    if (typeof edgeDetails.edgeIoU === "number") {
+      evidence.drift.maskedEdgePercent = (1 - edgeDetails.edgeIoU) * 100;
+    }
+  }
+
+  // Angle deviation
+  if (results.lineEdge?.details) {
+    const lineDetails = results.lineEdge.details;
+    evidence.drift.angleDegrees = Math.max(
+      lineDetails.verticalDeviation || 0,
+      lineDetails.horizontalDeviation || 0
+    );
+  }
+
+  // ===== DETERMINISTIC RISK CLASSIFICATION =====
+  const riskClassification = classifyRisk(evidence);
+  const riskLevel = riskClassification.level;
+  nLog(`[unified-validator] Risk Classification: ${riskLevel}`);
+  if (riskClassification.triggers.length > 0) {
+    riskClassification.triggers.forEach(t => nLog(`[unified-validator]   → ${t}`));
   }
 
   // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK (policy-driven) =====
@@ -582,12 +803,14 @@ export async function runUnifiedValidation(
     nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, localFailed=${localFailed})`);
   } else {
     try {
-      nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} base=${originalPath} cand=${enhancedPath}`);
+      nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
       const geminiResult = await runGeminiSemanticValidator({
         basePath: originalPath,
         candidatePath: enhancedPath,
         stage,
         sceneType,
+        evidence,
+        riskLevel,
       });
 
       const semantic = summarizeGeminiSemantic(geminiResult);
@@ -626,59 +849,21 @@ export async function runUnifiedValidation(
     }
   }
 
-  // ===== SOFT GEOMETRY PROFILE DETECTION =====
-  // Determine if this scene should use relaxed thresholds (bedroom-type scenes)
-  const softScene = isSoftGeometryScene({
-    roomType,
-    originalLineCount,
-    enhancedLineCount,
-    windowCount,
-  });
-
-  nLog(`[unified-validator] Geometry Profile: ${softScene ? "SOFT" : "STRICT"}`);
-  if (softScene) {
-    nLog(`[unified-validator] Soft geometry detected - applying relaxed thresholds for bedroom-type scene`);
-    nLog(`[unified-validator]   - roomType: ${roomType}`);
-    nLog(`[unified-validator]   - windowCount: ${windowCount}`);
-    nLog(`[unified-validator]   - originalLineCount: ${originalLineCount}`);
-    nLog(`[unified-validator]   - enhancedLineCount: ${enhancedLineCount}`);
-  }
-
-  // ===== APPLY SOFT GEOMETRY OVERRIDES =====
-  // For soft geometry scenes (bedrooms, studies), downgrade certain failures to warnings
-  if (softScene) {
-    // Window size changes in bedrooms are often acceptable (curtains, furniture partially blocking)
-    if (results.windows && !results.windows.passed) {
-      const reason = results.windows.details?.reason;
-      if (reason === "window_size_change") {
-        nLog(`[unified-validator] Soft geometry override: downgrading window_size_change to warning`);
-        results.windows.passed = true;
-        results.windows.score = 0.8; // Slight penalty but not a failure
-        results.windows.message = "Window size variation (acceptable for bedroom)";
-        // Remove from failure reasons
-        const idx = reasons.findIndex(r => r.includes("Window validation failed"));
-        if (idx !== -1) reasons.splice(idx, 1);
-      }
-    }
-  }
-
-  // ===== AGGREGATE RESULTS =====
-
-  // Compute weighted aggregate score
-  // Weights prioritize critical structural elements
-  const weights = {
-    windows: 0.25,        // Critical: must not block windows/doors
-    walls: 0.20,          // Important: wall structure must be preserved
-    globalEdge: 0.20,     // Important: overall geometry consistency
-    structuralMask: 0.20, // Important: architectural elements (Stage 2)
-    lineEdge: 0.15,       // Useful: line deviation detection
+  // ===== FINAL AGGREGATE RESULTS (including Gemini) =====
+  const weights: Record<string, number> = {
+    windows: 0.25,
+    walls: 0.20,
+    globalEdge: 0.20,
+    structuralMask: 0.20,
+    lineEdge: 0.10,
+    anchors: 0.05,
   };
 
   let totalScore = 0;
   let totalWeight = 0;
 
   for (const [key, result] of Object.entries(results)) {
-    const weight = weights[key as keyof typeof weights] || 0.1;
+    const weight = weights[key] || 0.1;
     const score = result.score !== undefined ? result.score : (result.passed ? 1.0 : 0.0);
     totalScore += score * weight;
     totalWeight += weight;
@@ -686,13 +871,15 @@ export async function runUnifiedValidation(
 
   const aggregateScore = totalWeight > 0 ? totalScore / totalWeight : 1.0;
 
-  // Determine overall pass/fail
-  // In log-only mode, we still compute passed for metric collection
   const failedValidators = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff");
   const allPassed = failedValidators.length === 0;
   const geminiHardFail = results.geminiSemantic && results.geminiSemantic.details && (results.geminiSemantic.details as any).mode === "block" && results.geminiSemantic.passed === false;
 
-  // Log detailed results (normal mode)
+  // Update evidence with final aggregate
+  evidence.unifiedScore = aggregateScore;
+  evidence.unifiedPassed = allPassed;
+
+  // Log detailed results
   nLog(`[unified-validator] === Validation Results ===`);
   for (const [key, result] of Object.entries(results)) {
     const icon = result.passed ? "✓" : "✗";
@@ -745,6 +932,12 @@ export async function runUnifiedValidation(
     normalized: uniqueWarnings.includes("dimension_normalized"),
     raw: results,
     profile: softScene ? "SOFT" : "STRICT",
+    evidence,
+    riskLevel,
+    riskTriggers: riskClassification.triggers,
+    modelUsed: riskLevel === "LOW"
+      ? (process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash")
+      : (process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash"),
   };
 
   return finalResult;
@@ -768,9 +961,11 @@ export function logUnifiedValidationCompact(
   sceneType: string
 ) {
   const profile = result.profile || "STRICT";
+  const risk = result.riskLevel || "N/A";
+  const model = result.modelUsed || "N/A";
   vLog(
     `[VAL][job=${jobId}] UnifiedStructural: ${result.passed ? "PASSED" : "FAILED"} ` +
-    `(score=${result.score.toFixed(3)}, profile=${profile})`
+    `(score=${result.score.toFixed(3)}, profile=${profile}, risk=${risk}, model=${model})`
   );
 
   vLog(`[VAL][job=${jobId}]   stage=${stage} scene=${sceneType}`);
@@ -817,6 +1012,23 @@ export function logUnifiedValidationCompact(
     const lineScore = lineEdge.score !== undefined ? lineEdge.score.toFixed(3) : "N/A";
     const lineMsg = lineEdge.message || "N/A";
     vLog(`[VAL][job=${jobId}]   lineEdgeScore=${lineScore} – ${lineMsg}`);
+  }
+
+  // Anchors
+  const anchors = result.raw.anchors;
+  if (anchors) {
+    const anchorFlags = anchors.details
+      ? Object.entries(anchors.details)
+          .filter(([k, v]) => k !== "details" && v === true)
+          .map(([k]) => k)
+      : [];
+    vLog(`[VAL][job=${jobId}]   anchors=${anchors.passed ? "intact" : anchorFlags.join(",") || "changed"}`);
+  }
+
+  // Risk
+  if (result.riskLevel) {
+    const triggers = result.riskTriggers?.length ? result.riskTriggers.join("; ") : "none";
+    vLog(`[VAL][job=${jobId}]   risk=${result.riskLevel} triggers=${triggers}`);
   }
 
   // Failures
