@@ -174,9 +174,9 @@ When evaluating the AFTER image, apply rules in this strict order:
 3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
    material, color, and finish. Changes → structure, hardFail: true.
 
-4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails/tracks and blinds are
-  structural anchors; if added/removed/repositioned → structure, hardFail: true.
-  Curtain fabric may change only when rails/tracks already exist.
+4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails, rods, tracks, and blind
+  SYSTEMS are structural. Fabric/color changes on existing rails → style_only (PASS).
+  Adding/removing rails, tracks, or blind systems → structure, hardFail: true.
   Floor color/material must match.
 
 5. STAGING / FURNITURE — Furniture placement, style, and completeness.
@@ -228,12 +228,10 @@ The following MUST NOT be altered in any way:
 - Walls, ceilings, floors, baseboards
 - Windows, doors, sliding doors, frames
 - Built-in cabinetry, wardrobes, shelving
-- Kitchen units, vanities, splashbacks, rangehoods
-- Fixed lighting (pendants, downlights, track lights, ceiling roses, sconces)
-- Electrical outlets, switches
-- Heat pumps, radiators, vents, HRV/DVS systems
-- Smoke detectors, sprinklers, alarms
-- Plumbing fixtures (toilets, baths, showers, sinks, tapware)
+- Kitchen islands, counters, vanities, splashbacks
+- Fixed lighting (pendants, downlights, sconces)
+- Heat pumps, radiators, vents
+- Plumbing fixtures
 - Exterior views through windows
 
 ANY modification → category: structure, hardFail: true
@@ -245,21 +243,6 @@ CRITICAL CHECKLIST
 1. STRUCTURAL PRESERVATION
 - Confirm all ZERO-TOUCH elements are present, aligned, and unchanged.
 - Warping, removal, distortion, recoloring, or hallucination → structure, hardFail: true
-
-🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
-ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
-The following elements are FUNCTIONAL STRUCTURAL ANCHORS. If present, they MUST remain visually and geometrically identical. NEVER clutter/staging targets, NEVER replaceable.
-- Kitchen islands, fixed counter runs, benchtops, breakfast bars
-- Upper/lower cabinets, pantry cabinets, splashbacks
-- Built-in ovens, cooktops, range hoods, integrated dishwashers
-- Sink/faucet zones, appliance cavities/surrounds
-- Toilets, vanities, fixed mirrors, shower enclosures/glass, bathtubs
-- Built-in vanity cabinetry, wall-mounted towel rails, extractor fans
-- Heat pumps/split units, radiators/heaters, air vents/grilles, ceiling cassettes
-- Pendant lights, downlights, ceiling/track lights, wall sconces, ceiling fans with lights
-- Windows and frames, sliding door tracks, bi-fold doors, skylights, internal glass walls
-If removal/declutter would require changing ANY of the above:
-→ DO NOT modify the element; reduce removal actions instead
 
 🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
 
@@ -284,11 +267,6 @@ FLOOR COLOR/MATERIAL LOCK
 
 Any violation → structure, hardFail: true.
 
-5. SOFT FIXED ELEMENTS (STRICT)
-- Pendant lights and ceiling fixtures must match BEFORE image
-- Carpet and floor color/material must match BEFORE image
-If any change is detected → category: structure, hardFail: true
-
 2. DECLUTTER COMPLETENESS
 - ALL movable items must be removed: chairs, tables, sofas, beds, stools, loose shelving, decor, clutter, appliances.
 - Partial removal (some furniture left behind) → category: furniture_change, hardFail: true
@@ -302,15 +280,18 @@ If any change is detected → category: structure, hardFail: true
 - Doors and windows remain fully passable and unobstructed.
 - Any blockage or sealing → opening_blocked, hardFail: true
 
-ADDITIONAL HARD FAIL TRIGGERS
-- Pendant or fixed lighting fixture changed
-- Curtain system or rails changed
-- Blind system changed
-- Carpet color changed
-- Timber floor tone changed
-- Kitchen island removed or altered
-- Counter runs removed or altered
-- Built-in cabinetry altered
+─────────────────────────────
+NUMERIC DRIFT ADVISORY
+─────────────────────────────
+SSIM failure alone is NOT structural.
+Edge IoU failure alone is NOT structural.
+Angle deviation alone is NOT structural.
+
+These signals are advisory unless accompanied by:
+• opening count change
+• anchor removal/addition
+• built-in joinery change
+• window/door relocation
 
 ─────────────────────────────
 CATEGORIES
@@ -417,13 +398,11 @@ The following MUST NOT be altered, replaced, restyled, recolored, resized, or re
 - Walls, ceilings, floors, baseboards
 - Windows, doors, frames, sliding tracks
 - Built-in cabinetry, wardrobes, shelving
-- Kitchen units, islands, vanities, splashbacks, rangehoods
-- Fixed lighting (pendants, downlights, track lighting, sconces)
-- Electrical switches and outlets
-- Heat pumps, vents, radiators, HVAC units
-- Smoke detectors, sprinklers, alarms
+- Kitchen islands, counters, vanities, splashbacks
+- Fixed lighting (pendants, downlights, sconces)
+- Heat pumps, vents, radiators
 - Plumbing fixtures
-- Exterior views through windows (must remain consistent)
+- Exterior views through windows
 
 ANY violation → category: structure, hardFail: true
 
@@ -470,16 +449,6 @@ FLOOR COLOR/MATERIAL LOCK
 
 Any violation → structure hardFail true
 
-LIGHTING FIXTURE STYLE LOCK
-Existing fixed lighting fixtures must remain identical in style, shape, size, position, mounting type.
-Do NOT modernize, replace, redesign, restyle, or simplify:
-• Pendant lights
-• Ceiling fixtures
-• Downlight layouts
-• Track systems
-• Wall sconces
-Lighting fixtures are structural anchors, not decor.
-
 EXTERNAL VIEW CONSISTENCY
 Window views must remain consistent.
 Hallucinated scenery → structure hardFail true
@@ -517,15 +486,18 @@ Even if staging would benefit from:
 - Floors, walls, ceilings retain original material and finish.
 - Inpainting damage → structure, hardFail: true
 
-ADDITIONAL HARD FAIL TRIGGERS
-- Pendant or fixed lighting fixture changed
-- Curtain system or rails changed
-- Blind system changed
-- Carpet color changed
-- Timber floor tone changed
-- Kitchen island removed or altered
-- Counter runs removed or altered
-- Built-in cabinetry altered
+─────────────────────────────
+NUMERIC DRIFT ADVISORY
+─────────────────────────────
+SSIM failure alone is NOT structural.
+Edge IoU failure alone is NOT structural.
+Angle deviation alone is NOT structural.
+
+These signals are advisory unless accompanied by:
+• opening count change
+• anchor removal/addition
+• built-in joinery change
+• window/door relocation
 
 ─────────────────────────────
 CATEGORIES

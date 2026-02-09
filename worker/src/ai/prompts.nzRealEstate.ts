@@ -244,64 +244,16 @@ REMOVE:
 
 KEEP:
 - Decks, pergolas, railings
+- All fixed structures, fences, landscaping
+- Exterior lighting fixtures
+- Walls, windows, doors, rooflines
 
-🔒 IMMUTABLE ELEMENTS — HARD LOCK BLOCK
-
-You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
-or cover these elements — even partially.
-
-FIXED ARCHITECTURE:
-• Walls, ceilings, trims, cornices, skirting boards, baseboards
-• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
-• Floor COLOR and MATERIAL must remain identical
-• Floor plank direction and tile pattern must remain identical
-• Doors, frames, architraves, sliders, tracks
-• Windows, frames, glazing, sills
-
-WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
-• Curtains and drapes
-• Curtain rails, rods, and tracks
-• Blinds and shutters
-• Curtain openness state (open/closed/half)
-
-LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
-• Pendant lights
-• Ceiling light fittings
-• Downlights and recessed lights
-• Ceiling fans
-• Smoke alarms and ceiling sensors
-• Exterior wall lights and mounted light fixtures
-
-WALL & BUILDING FIXTURES:
-• Heat pumps / HVAC units
-• Vents and grilles
-• Switches and power outlets
-• Thermostats and control panels
-• Wall-mounted detectors and alarm panels
-
-BUILT-INS:
-• Built-in cabinetry
-• Built-in wardrobes
-• Built-in shelving
-• Kitchen cabinetry and islands
-• Benchtops and splashbacks
-• Plumbing fixtures (sinks, taps)
-
-EXTERIOR VIEW THROUGH WINDOWS:
-• Do NOT change the outside scene
-• Do NOT upgrade weather, sky, landscape, or buildings
-
-UTILITY FIXTURE PRESERVATION RULE
-
-Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
-They must NEVER be removed.
-
-Attached loose items such as:
-• hoses
-• extension cords
-• loose cables
-
-may be removed, but the mounted fixture must remain.
+DO NOT TOUCH:
+- Any permanent structures or architecture
+- Decking, paths, driveways
+- Fixed lighting, plumbing fixtures
+- Windows, doors, frames
+- Landscaping and exterior views
 
 Preserve surface textures and shadows.`.trim();
     }
@@ -324,18 +276,6 @@ Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switc
 Window Treatments: Curtains, blinds, and rods must remain.
 
 Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
-
-UTILITY FIXTURE PRESERVATION RULE
-
-Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
-They must NEVER be removed.
-
-Attached loose items such as:
-• hoses
-• extension cords
-• loose cables
-
-may be removed, but the mounted fixture must remain.
 
 CRITICAL SAFETY RULES:
 
@@ -385,92 +325,12 @@ KEEP:
 - Exterior lighting
 - Neighbouring buildings and views
 
-─────────────────────────────
-IMMUTABLE ELEMENTS — HARD LOCK BLOCK
-─────────────────────────────
-IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
-─────────────────────────────
-
-The following elements are FIXED and must remain visually, geometrically,
-materially, and color-accurate to the input image.
-
-You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
-or cover these elements — even partially.
-
-FIXED ARCHITECTURE:
-• Walls, ceilings, trims, cornices, skirting boards, baseboards
-• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
-• Floor COLOR and MATERIAL must remain identical
-• Floor plank direction and tile pattern must remain identical
-• Doors, frames, architraves, sliders, tracks
-• Windows, frames, glazing, sills
-
-WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
-• Curtains and drapes
-• Curtain rails, rods, and tracks
-• Blinds and shutters
-• Curtain openness state (open/closed/half)
-
-LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
-• Pendant lights
-• Ceiling light fittings
-• Downlights and recessed lights
-• Ceiling fans
-• Smoke alarms and ceiling sensors
-• Exterior wall lights and mounted light fixtures
-
-WALL & BUILDING FIXTURES:
-• Heat pumps / HVAC units
-• Vents and grilles
-• Switches and power outlets
-• Thermostats and control panels
-• Wall-mounted detectors and alarm panels
-
-BUILT-INS:
-• Built-in cabinetry
-• Built-in wardrobes
-• Built-in shelving
-• Kitchen cabinetry and islands
-• Benchtops and splashbacks
-• Plumbing fixtures (sinks, taps)
-
-EXTERIOR VIEW THROUGH WINDOWS:
-• Do NOT change the outside scene
-• Do NOT upgrade weather, sky, landscape, or buildings
-
-UTILITY FIXTURE PRESERVATION RULE
-
-Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
-They must NEVER be removed.
-
-Attached loose items such as:
-• hoses
-• extension cords
-• loose cables
-
-may be removed, but the mounted fixture must remain.
-
-────────────────────────────────
-LIGHTING FIXTURE STYLE LOCK
-────────────────────────────────
-
-Existing fixed lighting fixtures must remain identical in:
-• Style
-• Shape
-• Size
-• Position
-• Mounting type
-
-Do NOT modernize, replace, redesign, restyle, or simplify:
-• Pendant lights
-• Ceiling fixtures
-• Downlight layouts
-• Track systems
-• Wall sconces
-
-Lighting fixtures are structural anchors, not decor.
-
-If any of these elements change → THIS IS A FAILURE.
+DO NOT TOUCH:
+- Any permanent structures or architecture
+- Decking, paths, driveways
+- Fixed lighting, plumbing fixtures
+- Windows, doors, frames
+- Landscaping and exterior views
 
 Maintain realistic ground textures and shadows.`.trim();
     }
@@ -483,18 +343,6 @@ Preserve all architecture and major furniture.
 
 DO NOT TOUCH:
 Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixtures, appliances.
-
-UTILITY FIXTURE PRESERVATION RULE
-
-Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
-They must NEVER be removed.
-
-Attached loose items such as:
-• hoses
-• extension cords
-• loose cables
-
-may be removed, but the mounted fixture must remain.
 
 REMOVE ONLY:
 Loose personal items, paper, surface clutter, small decor, bench clutter.
@@ -643,130 +491,6 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
-🔒 ADD — STRUCTURAL FUNCTION ANCHOR LOCK
-────────────────────────────────
-ADDITIONAL STRUCTURAL FUNCTION ANCHORS — HARD LOCK
-────────────────────────────────
-
-The following elements are FUNCTIONAL STRUCTURAL ANCHORS.
-If present in the input image, they MUST remain visually and geometrically identical.
-
-These are NEVER clutter, NEVER staging targets, and NEVER replaceable.
-
-Kitchen Anchors:
-• Kitchen islands
-• Fixed counter runs
-• Benchtops and breakfast bars
-• Upper and lower cabinets
-• Pantry cabinets
-• Splashbacks
-• Built-in ovens and cooktops
-• Range hoods
-• Integrated dishwashers
-• Sink and faucet zones
-• Appliance cavities and surrounds
-
-Bathroom Anchors:
-• Toilets
-• Vanities
-• Fixed mirrors
-• Shower enclosures and glass
-• Bathtubs
-• Built-in vanity cabinetry
-• Wall-mounted towel rails
-• Extractor fans
-
-Mechanical & Climate:
-• Heat pumps / split units
-• Radiators and heaters
-• Air vents and grilles
-• Ceiling cassettes
-
-Lighting Fixtures (STYLE + GEOMETRY LOCK):
-• Pendant lights
-• Downlights
-• Ceiling lights
-• Track lights
-• Wall sconces
-• Ceiling fans with lights
-• Under-cabinet lighting
-
-Openings & Boundaries:
-• Windows and frames
-• Sliding door tracks
-• Bi-fold doors
-• Skylights
-• Internal glass walls
-
-If staging or declutter would require changing ANY of the above:
-→ DO NOT modify the element
-→ Reduce furniture or clutter actions instead
-
-🪟 ADD — CURTAIN + FLOOR COLOR LOCK (All Stages + Validators)
-────────────────────────────────
-FIXED COVERINGS & FLOOR COLOR LOCK
-────────────────────────────────
-
-The following must remain unchanged in type, position, and color:
-
-• Curtains and drapes
-• Curtain rails and rods
-• Blinds and blind tracks
-• Window coverings of any type
-
-• Floor material AND FLOOR COLOR
-• Carpet color and texture
-• Timber tone and stain color
-• Tile color
-
-Any change in curtain system or floor color is a STRUCTURAL violation.
-
-────────────────────────────────
-LIGHTING FIXTURE STYLE LOCK
-────────────────────────────────
-
-Existing fixed lighting fixtures must remain identical in:
-• Style
-• Shape
-• Size
-• Position
-• Mounting type
-
-Do NOT modernize, replace, redesign, restyle, or simplify:
-• Pendant lights
-• Ceiling fixtures
-• Downlight layouts
-• Track systems
-• Wall sconces
-
-Lighting fixtures are structural anchors, not decor.
-
-If any of these elements change → THIS IS A FAILURE.
-
-────────────────────────────────
-ROOM TYPE LOCK (NON-NEGOTIABLE)
-────────────────────────────────
-The roomType is PROVIDED by the system: ${room}.
-Treat this image as staging for THIS ROOM TYPE ONLY.
-Do NOT infer or reinterpret the room function from visuals.
-
-────────────────────────────────
-SINGLE-ZONE RULE
-────────────────────────────────
-Stage exactly ONE functional zone only.
-If other zones are visible in-frame, leave them EMPTY.
-Never add furniture to secondary zones; maintain clear circulation.
-
-────────────────────────────────
-FURNITURE LIMITS (HARD CAPS)
-────────────────────────────────
-- Primary items: max 3 (e.g. bed + 2 nightstands, or sofa + coffee table + 1 tv unit)
-- Secondary items: max 2 (e.g. side tables, lamps)
-- Tertiary items: max 1 (e.g. armchair, bench)
-- Decorative items: max 2 (e.g. plants, vases, books)
-- Max 1 rug, sized appropriately for the furniture layout 
-If unsure, OMIT the item.
-
 ────────────────────────────────
 KITCHEN OVERRIDES ALL
 ────────────────────────────────
@@ -781,9 +505,9 @@ ${isFullStaging ? 'FULL STAGING MODE' : 'REFRESH MODE'} — STRICT LOGIC
 ${isFullStaging 
   ? `1. The room is EMPTY (decluttered in Stage 1B).
 2. Add appropriate furniture for room type: ${room}.
-3. Follow FURNITURE LIMITS and SINGLE-ZONE RULE.
-4. Ensure all furniture grounds properly with shadows.
-5. Match NZ Contemporary / Scandi Minimalist style.`
+3. Ensure all furniture grounds properly with shadows.
+4. Match NZ Contemporary / Scandi Minimalist style.
+5. Fill the room to look inviting and lived-in — not sparse or empty.`
   : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
 3. Preserve: type, position, orientation, functional role.
@@ -844,7 +568,12 @@ Reduce furniture — never block access.
 STYLE PROFILE
 ────────────────────────────────
 NZ Contemporary / Scandi Minimalist.
-Neutral palette, natural textures. Decor: max 1–2 items total.
+Neutral palette, natural textures.
+Light wood (oak/beech) furniture with soft white or warm grey upholstery.
+Clean, natural fabrics (linen, cotton) with minimal patterns.
+Simple rugs, light-toned or natural fiber.
+Art that is subtle, minimal, coastal, neutral, or abstract.
+1–2 small accents (plants, vases, books) to add warmth.
 
 ────────────────────────────────
 RENDERING & PHYSICS

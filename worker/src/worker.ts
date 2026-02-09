@@ -1522,6 +1522,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
       : "1A");
   const stage2ValidationBaseline = stage2BaseStage === "1B" && path1B ? path1B : path1A;
+  const stage2PromptMode = stage2SourceStage === "1B-stage-ready" ? "full" : "refresh";
+  nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   let path2: string = stage2InputPath;
   let stage2TimedOut = false; // FIX 4: Track timeout status
