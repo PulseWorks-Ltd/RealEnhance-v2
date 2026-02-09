@@ -112,6 +112,16 @@ export function shouldRetryStage(
   let state = getRetryState(jobId);
   const currentAttempts = getStageAttempts(state, stage);
 
+  if (state.failedFinal) {
+    return {
+      shouldRetry: false,
+      tightenLevel: 3,
+      attemptNumber: currentAttempts,
+      isFinalAttempt: true,
+      reason: `FAILED_FINAL already set for ${stage}`,
+    };
+  }
+
   // If already at max attempts, no more retries
   if (currentAttempts >= maxAttempts) {
     return {

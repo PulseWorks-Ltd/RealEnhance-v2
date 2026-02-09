@@ -14,7 +14,9 @@ import fs from "fs/promises";
 import type { StagingRegion } from "../ai/region-detector";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
-import { shouldRetryStage, markStageFailed, logRetryState } from "../validators/stageRetryManager";
+import { shouldRetryStage, markStageFailed, logRetryState, isJobFailedFinal } from "../validators/stageRetryManager";
+import { getJob } from "../utils/persist";
+import { isTerminalStatus } from "../utils/statusUtils";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
 
@@ -361,6 +363,12 @@ Do not add blinds.
 
             // Use retry manager to decide if we should retry (only when local mode is block)
             if (allowRetries) {
+              const currentJob = await getJob(jobId);
+              if (isTerminalStatus(currentJob?.status) || isJobFailedFinal(jobId)) {
+                console.warn("[RETRY_BLOCKED_TERMINAL]", { jobId, stage: "stage2" });
+                attemptsUsed = attempt + 1;
+                break;
+              }
               const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
 
               if (retryDecision.shouldRetry) {

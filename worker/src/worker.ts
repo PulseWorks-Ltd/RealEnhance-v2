@@ -42,6 +42,7 @@ import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
+import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
 import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
 import {
@@ -51,6 +52,7 @@ import {
   type UnifiedValidationResult
 } from "./validators/runValidation";
 import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
+import { isJobFailedFinal } from "./validators/stageRetryManager";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
@@ -117,7 +119,7 @@ async function completePartialJob(params: {
 
   nLog(`[FALLBACK_TRIGGERED] stage=${triggerStage} reason=${reason}`);
 
-  updateJob(jobId, {
+  await safeWriteJobStatus(jobId, {
     status: "complete",
     success: true,
     completed: true,
@@ -143,18 +145,9 @@ async function completePartialJob(params: {
       fallbackReason: reason,
       userMessage,
     },
-  });
+  }, `partial_complete:${reason}`);
 
   nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
-}
-
-/**
- * FINAL STATUS GUARD
- * Checks if a job is in a terminal state (complete, failed, error) to prevent
- * late-finishing retries from overwriting the terminal status.
- */
-function isTerminalStatus(status: string | undefined): boolean {
-  return status === "complete" || status === "failed" || status === "error";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -347,7 +340,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
     } catch (e) {
       nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
-      updateJob(payload.jobId, { status: "failed", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` },
+        "download_original_failed"
+      );
       return;
     }
   } else {
@@ -358,13 +355,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const rec = readImageRecord(payload.imageId);
     if (!rec) {
       nLog(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
-      updateJob(payload.jobId, { status: "failed", errorMessage: "image not found - no remote URL and local record missing" });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "image not found - no remote URL and local record missing" },
+        "image_record_missing"
+      );
       return;
     }
     origPath = getOriginalPath(rec);
     if (!fs.existsSync(origPath)) {
       nLog(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
-      updateJob(payload.jobId, { status: "failed", errorMessage: "original file not accessible in this container" });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "original file not accessible in this container" },
+        "original_file_missing"
+      );
       return;
     }
   }
@@ -443,7 +448,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       timings.totalMs = Date.now() - t0;
 
-      updateJob(payload.jobId, {
+      await safeWriteJobStatus(payload.jobId, {
         status: "complete",
         resultUrl: pub2Url,
         stageUrls: {
@@ -456,7 +461,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           timings,
           scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }
         }
-      });
+      }, "stage2_only_complete");
 
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
@@ -511,7 +516,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const publishedOriginal = await publishImage(origPath);
   nLog(`[WORKER] Original published: kind=${publishedOriginal?.kind} url=${(publishedOriginal?.url||'').substring(0, 80)}...\n\n`);
   // surface early so UI can show before/after immediately
-  updateJob(payload.jobId, { status: "processing", currentStage: "upload-original", stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url });
+  await safeWriteJobStatus(
+    payload.jobId,
+    { status: "processing", currentStage: "upload-original", stage: "upload-original", progress: 10, originalUrl: publishedOriginal?.url },
+    "upload_original"
+  );
 
   // Auto detection: primary scene (interior/exterior) + room type
   let detectedRoom: string | undefined;
@@ -766,7 +775,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const sceneMeta = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
+    await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
   }
 
@@ -914,17 +923,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   // ✅ FIX 3: Add updatedAt timestamp for stuck detection
   const now = new Date().toISOString();
-  updateJob(payload.jobId, { 
-    status: "processing", 
-    currentStage: "1A", 
-    stage: "1A", 
-    progress: 35, 
-    stageUrls: { "1A": pub1AUrl ?? null },
-    updatedAt: now,
-    updated_at: now
-  });
+  await safeWriteJobStatus(
+    payload.jobId,
+    {
+      status: "processing",
+      currentStage: "1A",
+      stage: "1A",
+      progress: 35,
+      stageUrls: { "1A": pub1AUrl ?? null },
+      updatedAt: now,
+      updated_at: now,
+    },
+    "stage1a_progress"
+  );
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
+    await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
   }
 
@@ -949,12 +962,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const errMsg = `Invalid declutterMode: "${declutterMode}". Must be "light" or "stage-ready"`;
       console.error(`❌ ${errMsg}`);
       console.error(`Payload options:`, JSON.stringify(payload.options, null, 2));
-      updateJob(payload.jobId, {
-        status: "failed",
-        errorMessage: errMsg,
-        error: errMsg,
-        meta: { ...sceneMeta }
-      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        {
+          status: "failed",
+          errorMessage: errMsg,
+          error: errMsg,
+          meta: { ...sceneMeta },
+        },
+        "invalid_declutter_mode"
+      );
       throw new Error(errMsg);
     }
 
@@ -1230,20 +1247,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
         nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
-        updateJob(payload.jobId, {
-          status: "processing",
-          message: `Stage 1B blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
-          meta: {
-            ...sceneMeta,
-            stage1BAttempts,
-            geminiRetry: true,
-            geminiRetryAttempt: geminiRetries,
-            geminiRetryMaxAttempts: geminiMaxRetries,
-            retryReason: "gemini_block",
-            blockedBy: "gemini",
-            blockedStage: "stage1b",
+        const retryStatus = await getJob(payload.jobId);
+        if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+          nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "1B" });
+          return;
+        }
+        await safeWriteJobStatus(
+          payload.jobId,
+          {
+            status: "processing",
+            message: `Stage 1B blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
+            meta: {
+              ...sceneMeta,
+              stage1BAttempts,
+              geminiRetry: true,
+              geminiRetryAttempt: geminiRetries,
+              geminiRetryMaxAttempts: geminiMaxRetries,
+              retryReason: "gemini_block",
+              blockedBy: "gemini",
+              blockedStage: "stage1b",
+            },
           },
-        });
+          "stage1b_gemini_retry"
+        );
 
         try {
           // Re-run Stage 1B with reduced sampling parameters
@@ -1386,16 +1412,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     
     // ✅ FIX 3: Add updatedAt timestamp for stuck detection
     const now1B = new Date().toISOString();
-    updateJob(payload.jobId, { 
-      status: "processing",
-      currentStage: "1B",
-      progress: 60,
-      stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
-      updatedAt: now1B,
-      updated_at: now1B
-    });
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "processing",
+        currentStage: "1B",
+        progress: 60,
+        stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
+        updatedAt: now1B,
+        updated_at: now1B,
+      },
+      "stage1b_progress"
+    );
     if (await isCancelled(payload.jobId)) {
-      updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
+      await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
       return;
     }
   }
@@ -1417,7 +1447,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
-      updateJob(payload.jobId, { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl },
+        "stage1b_publish"
+      );
     } catch (e) {
       nLog('[worker] failed to publish 1B', e);
     }
@@ -1467,7 +1501,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
+    await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
   }
 
@@ -1727,7 +1761,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (fallbackErr: any) {
       const errMsg = fallbackErr?.message || String(fallbackErr);
       nLog(`[worker] Fallback light declutter failed: ${errMsg}`);
-      updateJob(payload.jobId, { status: "failed", errorMessage: errMsg, error: errMsg, meta: { ...sceneMeta }, fallbackUsed: "light_declutter_backstop" });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: errMsg, error: errMsg, meta: { ...sceneMeta }, fallbackUsed: "light_declutter_backstop" },
+        "stage2_fallback_failed"
+      );
       return;
     }
   }
@@ -1738,18 +1776,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   timings.stage2Ms = Date.now() - t2;
   // ✅ FIX 3: Add updatedAt timestamp for stuck detection
   const now2 = new Date().toISOString();
-  updateJob(payload.jobId, { 
-    status: "processing", 
-    currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), 
-    stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"), 
-    progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45),
-    stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
-    updatedAt: now2,
-    updated_at: now2
-  });
+  await safeWriteJobStatus(
+    payload.jobId,
+    {
+      status: "processing",
+      currentStage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"),
+      stage: payload.options.virtualStage ? "2" : (payload.options.declutter ? "1B" : "1A"),
+      progress: payload.options.virtualStage ? 75 : (payload.options.declutter ? 55 : 45),
+      stageUrls: { "1A": pub1AUrl ?? null, "1B": pub1BUrl ?? null },
+      updatedAt: now2,
+      updated_at: now2,
+    },
+    "stage2_progress"
+  );
 
   if (await isCancelled(payload.jobId)) {
-    updateJob(payload.jobId, { status: "failed", errorMessage: "cancelled" });
+    await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
   }
 
@@ -1883,6 +1925,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         );
         if (blockingFail && validationAttempt < validationMaxAttempts) {
           nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
+          const retryStatus = await getJob(payload.jobId);
+          if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+            nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
+            return;
+          }
           // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
           const stage2OutcomeRetry = await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
@@ -2113,20 +2160,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
         nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
-        updateJob(payload.jobId, {
-          status: "processing",
-          message: `Stage 2 blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
-          meta: {
-            ...sceneMeta,
-            stage2LocalReasons,
-            geminiRetry: true,
-            geminiRetryAttempt: geminiRetries,
-            geminiRetryMaxAttempts: geminiMaxRetries,
-            retryReason: "gemini_block",
-            blockedBy: "gemini",
-            blockedStage: "stage2",
+        const retryStatus = await getJob(payload.jobId);
+        if (isTerminalStatus(retryStatus?.status) || isJobFailedFinal(payload.jobId)) {
+          nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
+          return;
+        }
+        await safeWriteJobStatus(
+          payload.jobId,
+          {
+            status: "processing",
+            message: `Stage 2 blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
+            meta: {
+              ...sceneMeta,
+              stage2LocalReasons,
+              geminiRetry: true,
+              geminiRetryAttempt: geminiRetries,
+              geminiRetryMaxAttempts: geminiMaxRetries,
+              retryReason: "gemini_block",
+              blockedBy: "gemini",
+              blockedStage: "stage2",
+            },
           },
-        });
+          "stage2_gemini_retry"
+        );
 
         try {
           // Re-run Stage 2 (enhanceWithGemini) with reduced sampling parameters
@@ -2403,7 +2459,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         forceGC();
       }
       
-      updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
+        "stage2_publish_reuse"
+      );
       vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url} (reused 1B)`);
     } else {
       let v2: any = null;
@@ -2431,7 +2491,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             // Ignore
           }
         }
-        updateJob(payload.jobId, { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url });
+        await safeWriteJobStatus(
+          payload.jobId,
+          { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
+          "stage2_publish"
+        );
         // VALIDATOR FOCUS: Log Stage 2 URL
         vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
         nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
@@ -2530,7 +2594,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // Ignore
         }
       }
-      updateJob(payload.jobId, { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } },
+        "stage1b_deferred_publish"
+      );
       // VALIDATOR FOCUS: Log Stage 1B URL
       vLog(`[VAL][job=${payload.jobId}] stage1BUrl=${pub1BUrl}`);
     } catch (e) {
@@ -2797,7 +2865,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
-  updateJob(payload.jobId, {
+  await safeWriteJobStatus(payload.jobId, {
     // Core completion flags (written atomically)
     status: "complete",
     success: true,
@@ -2888,7 +2956,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     blockedStage: stage2Blocked ? "2" : undefined,
     fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
     validationNote: stage2Blocked ? (stage2BlockedReason || "Stage 2 blocked") : undefined
-  });
+  }, "final_complete");
 
   nLog("[worker] ✅ ATOMIC completion write completed", {
     jobId: payload.jobId,
@@ -3108,14 +3176,18 @@ async function handleEditJob(payload: any) {
   }
 
   // 7) Update job – IMPORTANT: don't hard-fail on compliance
-  await updateJob(jobId, {
-    status: "complete",
-    success: true,
-    imageUrl: pub.url,
-    meta: {
-      ...payload,
+  await safeWriteJobStatus(
+    jobId,
+    {
+      status: "complete",
+      success: true,
+      imageUrl: pub.url,
+      meta: {
+        ...payload,
+      },
     },
-  });
+    "edit_complete"
+  );
 }
 
 
@@ -3155,7 +3227,7 @@ const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
-    updateJob((payload as any).jobId, { status: "processing" });
+    await safeWriteJobStatus((payload as any).jobId, { status: "processing" }, "job_start");
     try {
       if (typeof payload === "object" && payload && "type" in payload) {
         if (payload.type === "enhance") {
@@ -3279,21 +3351,25 @@ const worker = new Worker(
           }
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
-          await updateJob(regionPayload.jobId, {
-            status: "complete",
-            success: true,
-            resultUrl: pub.url, // Primary result URL (checked by status endpoint)
-            imageUrl: pub.url, // Fallback field
-            originalUrl: baseImageUrl, // Return the original input URL
-            maskUrl: pubMask.url, // Return the published mask URL
-            imageId: regionPayload.imageId, // Include imageId for tracking
-            mode: regionAny.mode, // Include original mode from payload (add/remove/replace/restore)
-            meta: {
-              type: "region-edit",
-              mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
-              instruction: prompt,
+          await safeWriteJobStatus(
+            regionPayload.jobId,
+            {
+              status: "complete",
+              success: true,
+              resultUrl: pub.url, // Primary result URL (checked by status endpoint)
+              imageUrl: pub.url, // Fallback field
+              originalUrl: baseImageUrl, // Return the original input URL
+              maskUrl: pubMask.url, // Return the published mask URL
+              imageId: regionPayload.imageId, // Include imageId for tracking
+              mode: regionAny.mode, // Include original mode from payload (add/remove/replace/restore)
+              meta: {
+                type: "region-edit",
+                mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
+                instruction: prompt,
+              },
             },
-          });
+            "region_edit_complete"
+          );
           nLog('[worker-region-edit] updateJob called', {
             jobId: regionPayload.jobId,
             imageUrl: pub.url,
@@ -3308,14 +3384,14 @@ const worker = new Worker(
             maskUrl: pubMask.url,
           };
         } else {
-          updateJob((payload as any).jobId, { status: "failed", errorMessage: "unknown job type" });
+          await safeWriteJobStatus((payload as any).jobId, { status: "failed", errorMessage: "unknown job type" }, "unknown_job_type");
         }
       } else {
         throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
       nLog("[worker] job failed", err);
-      updateJob((payload as any).jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" });
+      await safeWriteJobStatus((payload as any).jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
       throw err;
     }
   },
