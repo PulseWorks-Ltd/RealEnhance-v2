@@ -1812,6 +1812,117 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} re-ran Stage 2: ${retryStage2Path}`);
 
+          // Re-run full validation pipeline on the retried Stage 2 output
+          try {
+            stage2CandidatePath = retryStage2Path;
+            path2 = retryStage2Path;
+
+            const validationModeRetry = effectiveValidationMode || (VALIDATION_BLOCKING_ENABLED ? "enforce" : "log");
+            const baseArtifactsRetry = (global as any).__baseArtifacts;
+
+            const unifiedRetry = await runUnifiedValidation({
+              originalPath: stage2ValidationBaseline,
+              enhancedPath: retryStage2Path,
+              stage: "2",
+              sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+              roomType: payload.options.roomType,
+              mode: validationModeRetry,
+              geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
+              jobId: payload.jobId,
+              stagingStyle: payload.options.stagingStyle || "nz_standard",
+              stage1APath: stage2ValidationBaseline,
+              baseArtifacts: baseArtifactsRetry,
+            });
+
+            stage2LocalReasons = [];
+            stage2NeedsConfirm = false;
+            if (unifiedRetry) {
+              const rawResultsRetry = unifiedRetry.raw ? Object.values(unifiedRetry.raw) : [];
+              const anyFailedRetry = rawResultsRetry.some((r) => r && r.passed === false);
+              const localNotesRetry = (unifiedRetry.reasons && unifiedRetry.reasons.length)
+                ? unifiedRetry.reasons
+                : (unifiedRetry.warnings && unifiedRetry.warnings.length)
+                  ? unifiedRetry.warnings
+                  : [];
+
+              if (anyFailedRetry || localNotesRetry.length) {
+                if (GEMINI_CONFIRMATION_ENABLED) {
+                  stage2NeedsConfirm = true;
+                }
+                stage2LocalReasons.push(...localNotesRetry);
+              }
+
+              const validationRiskRetry = (unifiedRetry as any)?.validationRisk;
+              if (typeof validationRiskRetry !== "undefined") {
+                stage2ValidationRisk = validationRiskRetry;
+                stage2NeedsConfirm = stage2NeedsConfirm || (GEMINI_CONFIRMATION_ENABLED && !!stage2ValidationRisk);
+              }
+
+              const retryBlockingFail = unifiedRetry.hardFail && (
+                (unifiedRetry.blockSource === "gemini" && geminiBlockingEnabled) ||
+                (unifiedRetry.blockSource === "local" && VALIDATION_BLOCKING_ENABLED)
+              );
+              if (retryBlockingFail) {
+                stage2NeedsConfirm = true;
+                if (unifiedRetry.reasons?.length) {
+                  stage2LocalReasons.push(...unifiedRetry.reasons);
+                }
+              }
+            }
+
+            // Semantic validator on retried output (log-only)
+            try {
+              const semanticRetry = await runSemanticStructureValidator({
+                originalImagePath: path1A,
+                enhancedImagePath: retryStage2Path,
+                scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+                mode: "log",
+              });
+              if (semanticRetry && !semanticRetry.passed) {
+                if (GEMINI_CONFIRMATION_ENABLED) {
+                  stage2NeedsConfirm = true;
+                }
+                stage2LocalReasons.push(
+                  `semantic_validator_failed: windows ${semanticRetry.windows.before}→${semanticRetry.windows.after}, doors ${semanticRetry.doors.before}→${semanticRetry.doors.after}, wall_drift ${(semanticRetry.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticRetry.openings.created}/-${semanticRetry.openings.closed}`
+                );
+              }
+            } catch (semanticRetryError: any) {
+              nLog(`[worker] Semantic validation error (non-fatal) on retry:`, semanticRetryError);
+            }
+
+            // Masked edge validator on retried output (log-only)
+            try {
+              const maskedRetry = await runMaskedEdgeValidator({
+                originalImagePath: path1A,
+                enhancedImagePath: retryStage2Path,
+                scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+                mode: "log",
+                jobId: payload.jobId,
+              });
+
+              if (maskedRetry) {
+                const maskedDriftPctRetry = maskedRetry.maskedEdgeDrift * 100;
+                const maskedEdgeFailedRetry =
+                  maskedRetry.createdOpenings > 0 ||
+                  maskedRetry.closedOpenings > 0 ||
+                  maskedRetry.maskedEdgeDrift > 0.18;
+
+                if (maskedEdgeFailedRetry) {
+                  if (GEMINI_CONFIRMATION_ENABLED) {
+                    stage2NeedsConfirm = true;
+                  }
+                  stage2LocalReasons.push(
+                    `masked_edge_failed: drift ${maskedDriftPctRetry.toFixed(2)}%, openings +${maskedRetry.createdOpenings}/-${maskedRetry.closedOpenings}`
+                  );
+                }
+              }
+            } catch (maskedRetryError: any) {
+              nLog(`[worker] Masked edge validation error (non-fatal) on retry:`, maskedRetryError);
+            }
+          } catch (validationRetryError: any) {
+            nLog(`[worker] Unified validation retry error (non-fatal):`, validationRetryError);
+          }
+
           // Re-validate with Gemini Confirmation
           confirm = await confirmWithGeminiStructure({
             baselinePathOrUrl: baselineForConfirm,
@@ -1960,38 +2071,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const base1A = toBase64(path1A);
     const baseFinal = toBase64(path2);
     compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
-    let retries = 0;
     let maxRetries = 2;
-    let temperature = 0.5;
     let lastViolationMsg = "";
-    let retryPath2 = path2;
-    while (compliance && compliance.ok === false && retries < maxRetries) {
-      lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      updateJob(payload.jobId, {
-        status: "processing",
-        errorMessage: lastViolationMsg,
-        error: lastViolationMsg,
-        message: `Validation failed. Retrying with stricter settings (attempt ${retries+2}/3)...`,
-        meta: {
-          ...(sceneLabel ? { ...sceneMeta } : {}),
-          compliance,
-          strictRetry: true,
-          strictRetryReasons: Array.isArray((compliance as any)?.reasons) ? (compliance as any).reasons : ["compliance retry"],
-          strictRetryPhase: "compliance"
-        }
-      });
-      nLog(`[worker] ❌ Job ${payload.jobId} failed compliance: ${lastViolationMsg} (retry ${retries+1})`);
-      temperature = Math.max(0.1, temperature - 0.1);
-      // Call Gemini enhancement directly with reduced temperature
-      if (!path1B) {
-        nLog("[worker] path1B is undefined – skipping retry for 1B.");
-      } else {
-        retryPath2 = await enhanceWithGemini(path1B, { ...payload.options, temperature });
-        const baseFinalRetry = toBase64(retryPath2);
-        compliance = await checkCompliance(ai, base1A.data, baseFinalRetry.data);
-      }
-      retries++;
-    }
+      // Single-pass compliance: no retries here; stage retries happen in dedicated loops
     if (compliance && compliance.ok === false) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       // CRITICAL FIX: Block job when Gemini detects major structural violations after all retries
