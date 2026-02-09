@@ -1548,6 +1548,53 @@ CONSISTENCY RULE:
 - No mixing old and new. Replace fully or not at all.`}
 
 ────────────────────────────────
+CRITICAL OPENING CLEARANCE RULE — HARD PLACEMENT CONSTRAINT
+────────────────────────────────
+
+Large openings and access doors have ABSOLUTE placement protection zones.
+
+These include:
+• Sliding doors
+• Exterior doors
+• Main entry doors
+• Bi-fold doors
+• Full-height glass doors
+
+HARD RULES:
+
+• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of these openings
+• Do NOT place any furniture within the door swing or sliding track zone
+• Maintain a clear walk path to the handle side of the door
+• Maintain visible and usable access to the opening
+
+Minimum clearance requirement:
+Keep at least one full human walking path width clear between furniture and door openings.
+
+If layout space is limited:
+→ Reduce furniture count
+→ Use smaller furniture
+→ Remove secondary items
+
+Never block an opening to satisfy staging density.
+Access always has higher priority than furniture completeness.
+
+────────────────────────────────
+FURNITURE PLACEMENT PRIORITY ORDER
+────────────────────────────────
+
+When arranging furniture, follow this strict priority:
+
+1. Preserve door and sliding door access
+2. Preserve walk paths
+3. Preserve window light and openings
+4. Then place primary furniture (sofa / bed / table)
+5. Then place secondary furniture
+6. Then decor items
+
+If a conflict occurs:
+Reduce furniture — never block access.
+
+────────────────────────────────
 STYLE PROFILE
 ────────────────────────────────
 NZ Contemporary / Scandi Minimalist.
@@ -1590,6 +1637,53 @@ Placement rules:
 • Do NOT place furniture on grass, gardens, or driveways.
 • Ensure scale, lighting, and shadows perfectly match the scene.
 • Do NOT overcrowd the area; NZ staging is minimalistic.
+
+────────────────────────────────
+CRITICAL OPENING CLEARANCE RULE — HARD PLACEMENT CONSTRAINT
+────────────────────────────────
+
+Large openings and access doors have ABSOLUTE placement protection zones.
+
+These include:
+• Sliding doors
+• Exterior doors
+• Main entry doors
+• Bi-fold doors
+• Full-height glass doors
+
+HARD RULES:
+
+• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of these openings
+• Do NOT place any furniture within the door swing or sliding track zone
+• Maintain a clear walk path to the handle side of the door
+• Maintain visible and usable access to the opening
+
+Minimum clearance requirement:
+Keep at least one full human walking path width clear between furniture and door openings.
+
+If layout space is limited:
+→ Reduce furniture count
+→ Use smaller furniture
+→ Remove secondary items
+
+Never block an opening to satisfy staging density.
+Access always has higher priority than furniture completeness.
+
+────────────────────────────────
+FURNITURE PLACEMENT PRIORITY ORDER
+────────────────────────────────
+
+When arranging furniture, follow this strict priority:
+
+1. Preserve door and sliding door access
+2. Preserve walk paths
+3. Preserve window light and openings
+4. Then place primary furniture (sofa / bed / table)
+5. Then place secondary furniture
+6. Then decor items
+
+If a conflict occurs:
+Reduce furniture — never block access.
 
 ABSOLUTE STRUCTURAL RULES:
 • No rotation/crop/zoom or perspective changes.
