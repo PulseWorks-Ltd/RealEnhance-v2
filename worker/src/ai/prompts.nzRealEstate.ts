@@ -291,6 +291,18 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
+UTILITY FIXTURE PRESERVATION RULE
+
+Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
+They must NEVER be removed.
+
+Attached loose items such as:
+• hoses
+• extension cords
+• loose cables
+
+may be removed, but the mounted fixture must remain.
+
 Preserve surface textures and shadows.`.trim();
     }
 
@@ -312,6 +324,18 @@ Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switc
 Window Treatments: Curtains, blinds, and rods must remain.
 
 Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
+
+UTILITY FIXTURE PRESERVATION RULE
+
+Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
+They must NEVER be removed.
+
+Attached loose items such as:
+• hoses
+• extension cords
+• loose cables
+
+may be removed, but the mounted fixture must remain.
 
 CRITICAL SAFETY RULES:
 
@@ -414,6 +438,18 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
 
+UTILITY FIXTURE PRESERVATION RULE
+
+Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
+They must NEVER be removed.
+
+Attached loose items such as:
+• hoses
+• extension cords
+• loose cables
+
+may be removed, but the mounted fixture must remain.
+
 ────────────────────────────────
 LIGHTING FIXTURE STYLE LOCK
 ────────────────────────────────
@@ -447,6 +483,18 @@ Preserve all architecture and major furniture.
 
 DO NOT TOUCH:
 Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixtures, appliances.
+
+UTILITY FIXTURE PRESERVATION RULE
+
+Wall-mounted taps, hose bibs, spigots, and exterior outlets are fixed fixtures.
+They must NEVER be removed.
+
+Attached loose items such as:
+• hoses
+• extension cords
+• loose cables
+
+may be removed, but the mounted fixture must remain.
 
 REMOVE ONLY:
 Loose personal items, paper, surface clutter, small decor, bench clutter.
