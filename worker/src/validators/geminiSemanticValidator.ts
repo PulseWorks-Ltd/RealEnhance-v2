@@ -92,6 +92,21 @@ Local Validator Flags: ${limitedLocalFlags.length > 0 ? limitedLocalFlags.join("
 LOCAL VALIDATOR SIGNALS (JSON):
 ${JSON.stringify(localSignals, null, 2)}
 
+────────────────────────────────
+NUMERIC DRIFT SIGNAL RULE
+────────────────────────────────
+SSIM failure alone is NOT structural.
+Edge IoU failure alone is NOT structural.
+Angle deviation alone is NOT structural.
+
+These signals are advisory unless accompanied by:
+• opening count change
+• anchor removal/addition
+• built-in joinery change
+• window/door relocation
+
+────────────────────────────────
+
 Numeric drift alone is NOT structural failure.
 Anchor change IS structural failure.
 `;
@@ -246,11 +261,23 @@ The following elements are FUNCTIONAL STRUCTURAL ANCHORS. If present, they MUST 
 If removal/declutter would require changing ANY of the above:
 → DO NOT modify the element; reduce removal actions instead
 
-🪟 WINDOW COVERING STRUCTURE RULE
-- Curtain rails, rods, and tracks are structural anchors. Must NOT be added, removed, or repositioned.
-- If rails/tracks exist, curtain fabric may change.
-- If rails/tracks do NOT exist, adding curtains/drapes is a STRUCTURAL violation.
-- Blinds must NOT be added, removed, or replaced with a different covering type.
+🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
+
+Window covering STRUCTURE = rails, rods, tracks, blind housings.
+
+HARD FAIL (structure):
+• Blind systems added where none existed
+• Blind systems removed
+• Curtain rails or tracks added where none existed
+• Curtain rails or tracks removed
+
+WARNING ONLY (style_only — NOT hardFail):
+• Curtain fabric changed but rail already existed
+• Curtains added to an EXISTING rail
+• Curtain color or material changed
+
+Curtain fabric is decor.
+Rails/tracks/blind systems are structure.
 
 FLOOR COLOR/MATERIAL LOCK
 - Floor material AND FLOOR COLOR; carpet color/texture; timber tone/stain; tile color must match.
@@ -258,7 +285,6 @@ FLOOR COLOR/MATERIAL LOCK
 Any violation → structure, hardFail: true.
 
 5. SOFT FIXED ELEMENTS (STRICT)
-- Curtains, curtain rails, blinds must match BEFORE image
 - Pendant lights and ceiling fixtures must match BEFORE image
 - Carpet and floor color/material must match BEFORE image
 If any change is detected → category: structure, hardFail: true
@@ -337,9 +363,9 @@ When evaluating the AFTER image, apply rules in this strict order:
 3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
    material, color, and finish. Changes → structure, hardFail: true.
 
-4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails/tracks and blinds are
-  structural anchors; if added/removed/repositioned → structure, hardFail: true.
-  Curtain fabric may change only when rails/tracks already exist.
+4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails, rods, tracks, and blind
+  SYSTEMS are structural. Fabric/color changes on existing rails → style_only (PASS).
+  Adding/removing rails, tracks, or blind systems → structure, hardFail: true.
   Floor color/material must match.
 
 5. STAGING / FURNITURE — Furniture placement, style, and completeness.
@@ -412,18 +438,30 @@ If any of the following appear in BEFORE image, they MUST remain unchanged:
 • Bathroom fixtures
 • Heat pumps and vents
 • Pendant lights and fixed lighting
-• Curtain rails, blinds, rods, tracks
+• Curtain rails, rods, tracks, blind systems (NOT fabric)
 • Fireplaces
 • Staircases
 • Built-in shelving
 
 Removed, replaced, relocated, or altered → structure hardFail true
 
-🪟 WINDOW COVERING STRUCTURE RULE
-• Curtain rails, rods, and tracks are structural anchors. Must NOT be added, removed, or repositioned.
-• If rails/tracks exist, curtain fabric may change.
-• If rails/tracks do NOT exist, adding curtains/drapes is a STRUCTURAL violation.
-• Blinds must NOT be added, removed, or replaced with a different covering type.
+🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
+
+Window covering STRUCTURE = rails, rods, tracks, blind housings.
+
+HARD FAIL (structure):
+• Blind systems added where none existed
+• Blind systems removed
+• Curtain rails or tracks added where none existed
+• Curtain rails or tracks removed
+
+WARNING ONLY (style_only — NOT hardFail):
+• Curtain fabric changed but rail already existed
+• Curtains added to an EXISTING rail
+• Curtain color or material changed
+
+Curtain fabric is decor.
+Rails/tracks/blind systems are structure.
 
 FLOOR COLOR/MATERIAL LOCK
 • Floor material AND color must match

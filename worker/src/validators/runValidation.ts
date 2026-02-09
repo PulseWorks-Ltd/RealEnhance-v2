@@ -80,6 +80,40 @@ export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
 }
 
 /**
+ * Evidence injection gate - only inject evidence when thresholds indicate HIGH structural risk.
+ * 
+ * Purpose: Prevent noisy MEDIUM risk signals from biasing Gemini adjudicator.
+ * Only inject evidence when structural violations are clear and severe.
+ * 
+ * HIGH risk triggers:
+ * - Opening count changed (windows or doors delta >= 1)
+ * - Any anchor flag true (island/HVAC/cabinetry/lighting changed)
+ * - Extreme drift: wall > 35%, masked edge > 55%, angle > 25°
+ */
+export function shouldInjectEvidence(evidence?: ValidationEvidence): boolean {
+  if (!evidence) return false;
+
+  // Opening delta check
+  const openingsDelta = evidence.openings
+    ? Math.abs(evidence.openings.windowsAfter - evidence.openings.windowsBefore) +
+      Math.abs(evidence.openings.doorsAfter - evidence.openings.doorsBefore)
+    : 0;
+  if (openingsDelta !== 0) return true;
+
+  // Anchor checks - any true is HIGH risk
+  if (evidence.anchorChecks && Object.values(evidence.anchorChecks).some((v) => v === true)) {
+    return true;
+  }
+
+  // Extreme drift thresholds (aligned with PATCH 5 MEDIUM thresholds)
+  if ((evidence.drift?.wallPercent ?? 0) > 35) return true;
+  if ((evidence.drift?.maskedEdgePercent ?? 0) > 55) return true;
+  if ((evidence.drift?.angleDegrees ?? 0) > 25) return true;
+
+  return false;
+}
+
+/**
  * Parameters for unified validation
  */
 export interface UnifiedValidationParams {

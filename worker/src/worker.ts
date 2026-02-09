@@ -47,6 +47,7 @@ import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled,
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
+  shouldInjectEvidence,
   type UnifiedValidationResult
 } from "./validators/runValidation";
 import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
@@ -1197,6 +1198,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let lastGeminiConfirm: any = null;
       let geminiRetryPassed = false;
 
+      // Gate evidence injection based on threshold
+      const gatedEvidence = shouldInjectEvidence(stage1BLastVerdict?.evidence)
+        ? stage1BLastVerdict?.evidence
+        : undefined;
+      const injectionStatus = gatedEvidence ? "injected" : "suppressed";
+      nLog(`[VALIDATION_EVIDENCE_GATE] stage=1B injected=${!!gatedEvidence} reason=${injectionStatus}`);
+
       // Initial Gemini confirmation check
       let confirm = await confirmWithGeminiStructure({
         baselinePathOrUrl: path1A,
@@ -1206,7 +1214,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sceneType: sceneLabel as any,
         jobId: payload.jobId,
         localReasons: stage1BLocalReasons,
-        evidence: stage1BLastVerdict?.evidence,
+        evidence: gatedEvidence,
         riskLevel: stage1BLastVerdict?.riskLevel,
       });
       nLog(`[GEMINI_CONFIRM] stage=1B status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
@@ -2064,6 +2072,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let lastGeminiConfirm: any = null;
       let geminiRetryPassed = false;
 
+      // Gate evidence injection based on threshold
+      const gatedEvidence = shouldInjectEvidence(unifiedValidation?.evidence)
+        ? unifiedValidation?.evidence
+        : undefined;
+      const injectionStatus = gatedEvidence ? "injected" : "suppressed";
+      nLog(`[VALIDATION_EVIDENCE_GATE] stage=2 injected=${!!gatedEvidence} reason=${injectionStatus}`);
+
       // Initial Gemini confirmation check
       let confirm = await confirmWithGeminiStructure({
         baselinePathOrUrl: baselineForConfirm,
@@ -2074,7 +2089,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         localReasons: stage2LocalReasons,
         sourceStage: stage2SourceStage,
-        evidence: unifiedValidation?.evidence,
+        evidence: gatedEvidence,
         riskLevel: unifiedValidation?.riskLevel,
       });
       nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);

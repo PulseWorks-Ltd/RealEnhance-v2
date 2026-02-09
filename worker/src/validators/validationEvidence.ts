@@ -74,9 +74,9 @@ export interface RiskClassification {
  * - semantic validator flagged structure
  *
  * MEDIUM RISK triggers:
- * - wall_drift > 25%
- * - masked_edge_drift > 40%
- * - angle_deviation > 20°
+ * - wall_drift > 35%
+ * - masked_edge_drift > 55%
+ * - angle_deviation > 25°
  *
  * LOW RISK:
  * - Everything else
@@ -123,14 +123,14 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   }
 
   // ─── MEDIUM RISK checks ───
-  if (evidence.drift.wallPercent > 25) {
-    triggers.push(`MEDIUM: wall_drift ${evidence.drift.wallPercent.toFixed(1)}% > 25%`);
+  if (evidence.drift.wallPercent > 35) {
+    triggers.push(`MEDIUM: wall_drift ${evidence.drift.wallPercent.toFixed(1)}% > 35%`);
   }
-  if (evidence.drift.maskedEdgePercent > 40) {
-    triggers.push(`MEDIUM: masked_edge_drift ${evidence.drift.maskedEdgePercent.toFixed(1)}% > 40%`);
+  if (evidence.drift.maskedEdgePercent > 55) {
+    triggers.push(`MEDIUM: masked_edge_drift ${evidence.drift.maskedEdgePercent.toFixed(1)}% > 55%`);
   }
-  if (evidence.drift.angleDegrees > 20) {
-    triggers.push(`MEDIUM: angle_deviation ${evidence.drift.angleDegrees.toFixed(1)}° > 20°`);
+  if (evidence.drift.angleDegrees > 25) {
+    triggers.push(`MEDIUM: angle_deviation ${evidence.drift.angleDegrees.toFixed(1)}° > 25°`);
   }
 
   const mediumTriggers = triggers.filter(t => t.startsWith("MEDIUM:"));
