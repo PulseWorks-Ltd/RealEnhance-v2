@@ -441,6 +441,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       fromAttemptId: currentAttemptId,
       toAttemptId: nextAttemptId,
     });
+    nLog("[RETRY_STATUS_WRITE]", {
+      jobId: payload.jobId,
+      stage: "2",
+      reason,
+      attemptId: nextAttemptId,
+    });
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "processing",
+        retryingStage: "2",
+        retryAttempt: 1,
+        message: "Retrying Stage 2 with stricter validation...",
+      },
+      "stage2_retry_scheduled"
+    );
     nLog("[STAGE2_ATTEMPT_SUPERSEDED]", {
       jobId: payload.jobId,
       reason,
@@ -1224,6 +1240,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog(`[stage1B] HARD FAIL detected (source=${verdict?.blockSource}). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
           if (attemptsLeft > 0) {
             // Retry Stage 1B using last good (Stage1A) baseline
+            nLog("[RETRY_STATUS_WRITE]", {
+              jobId: payload.jobId,
+              stage: "1B",
+              reason: verdict?.blockSource,
+              attempt: stage1BAttempts + 1,
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "processing",
+                retryingStage: "1B",
+                retryAttempt: stage1BAttempts + 1,
+                message: `Retrying Stage 1B (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+              },
+              "stage1b_retry_scheduled"
+            );
             continue;
           }
           // All retries exhausted — try light declutter fallback before giving up
@@ -1231,6 +1263,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             useLightFallback = true;
             stage1BAttempts = 0;
             nLog(`[stage1B] Switching to light declutter fallback after ${maxAttempts} hard-fail attempt(s) (source=${verdict?.blockSource}) in stage-ready mode`);
+            nLog("[RETRY_STATUS_WRITE]", {
+              jobId: payload.jobId,
+              stage: "1B",
+              mode: "light_fallback",
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "processing",
+                retryingStage: "1B",
+                retryAttempt: 1,
+                message: "Switching to light declutter mode...",
+              },
+              "stage1b_light_fallback"
+            );
             continue;
           }
           // Light fallback already tried or not stage-ready — fail permanently
@@ -1265,12 +1312,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
           if (!exhausted && !useLightFallback) {
             nLog(`[stage1B] retrying after local block failure (${stage1BAttempts}/${maxAttempts})`);
+            nLog("[RETRY_STATUS_WRITE]", {
+              jobId: payload.jobId,
+              stage: "1B",
+              reason: "local_block",
+              attempt: stage1BAttempts + 1,
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "processing",
+                retryingStage: "1B",
+                retryAttempt: stage1BAttempts + 1,
+                message: `Retrying Stage 1B after local validation block (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+              },
+              "stage1b_localblock_retry"
+            );
             continue;
           }
           if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
             useLightFallback = true;
             stage1BAttempts = 0;
             nLog(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
+            nLog("[RETRY_STATUS_WRITE]", {
+              jobId: payload.jobId,
+              stage: "1B",
+              mode: "light_fallback_localblock",
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "processing",
+                retryingStage: "1B",
+                retryAttempt: 1,
+                message: "Switching to light declutter after local validation blocks...",
+              },
+              "stage1b_localblock_light_fallback"
+            );
             continue;
           }
           // ═══ FINAL STATUS GUARD ═══
@@ -1308,6 +1386,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           useLightFallback = true;
           stage1BAttempts = 0;
           nLog(`[stage1B] Switching to light declutter fallback after failures in stage-ready mode`);
+          nLog("[RETRY_STATUS_WRITE]", {
+            jobId: payload.jobId,
+            stage: "1B",
+            mode: "light_fallback_error",
+          });
+          await safeWriteJobStatus(
+            payload.jobId,
+            {
+              status: "processing",
+              retryingStage: "1B",
+              retryAttempt: 1,
+              message: "Switching to light declutter after errors...",
+            },
+            "stage1b_error_light_fallback"
+          );
           continue;
         }
         if (exhausted) {
@@ -1336,6 +1429,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           return;
         }
+        // Implicit retry - not exhausted, will continue loop
+        nLog("[RETRY_STATUS_WRITE]", {
+          jobId: payload.jobId,
+          stage: "1B",
+          reason: "error",
+          attempt: stage1BAttempts + 1,
+        });
+        await safeWriteJobStatus(
+          payload.jobId,
+          {
+            status: "processing",
+            retryingStage: "1B",
+            retryAttempt: stage1BAttempts + 1,
+            message: `Retrying Stage 1B after error (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+          },
+          "stage1b_error_retry"
+        );
       }
     }
 
