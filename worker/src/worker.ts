@@ -1225,6 +1225,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
       try {
         const { output, verdict, needsConfirm, advisoryReasons, localIssues } = await runStage1BWithValidation(currentMode, stage1BAttempts);
+        if (output === path1A) {
+          nLog("[STAGE1B_OUTPUT_MATCHES_1A]", {
+            jobId: payload.jobId,
+            attempt: stage1BAttempts,
+            mode: currentMode,
+          });
+          throw new Error("Stage 1B output matched Stage 1A");
+        }
         path1B = output;
         stage1BStructuralSafe = !localIssues;
         stage1BNeedsConfirm = needsConfirm;
@@ -1537,6 +1545,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             attempt: geminiRetries,
           });
+          if (retryPath1B === path1A) {
+            nLog("[STAGE1B_RETRY_OUTPUT_MATCHES_1A]", {
+              jobId: payload.jobId,
+              attempt: geminiRetries,
+            });
+            throw new Error("Stage 1B retry output matched Stage 1A");
+          }
           nLog(`[RETRY_OUTPUT] stage=1B attempt=${geminiRetries} path=${retryPath1B}`);
           nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} re-ran Stage 1B: ${retryPath1B}`);
 
