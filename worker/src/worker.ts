@@ -147,6 +147,15 @@ async function completePartialJob(params: {
   nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
 }
 
+/**
+ * FINAL STATUS GUARD
+ * Checks if a job is in a terminal state (complete, failed, error) to prevent
+ * late-finishing retries from overwriting the terminal status.
+ */
+function isTerminalStatus(status: string | undefined): boolean {
+  return status === "complete" || status === "failed" || status === "error";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CRITICAL: Global error handlers to prevent silent crashes (bus errors)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1010,6 +1019,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     while (true) {
       if (Date.now() - t1B > MAX_STAGE_RUNTIME_MS) {
+        // ═══ FINAL STATUS GUARD ═══
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) {
+          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B timeout fallback`, {
+            jobId: payload.jobId,
+            stage: "1B",
+            status: latestJob?.status
+          });
+          return;
+        }
+
         const reason = "stage1b_runtime_exceeded";
         await completePartialJob({
           jobId: payload.jobId,
@@ -1055,6 +1075,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             continue;
           }
           // Light fallback already tried or not stage-ready — fail permanently
+          // ═══ FINAL STATUS GUARD ═══
+          const latestJob = await getJob(payload.jobId);
+          if (isTerminalStatus(latestJob?.status)) {
+            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B hard-fail fallback`, {
+              jobId: payload.jobId,
+              stage: "1B",
+              status: latestJob?.status
+            });
+            return;
+          }
+
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "1B",
@@ -1083,6 +1114,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
             continue;
           }
+          // ═══ FINAL STATUS GUARD ═══
+          const latestJob = await getJob(payload.jobId);
+          if (isTerminalStatus(latestJob?.status)) {
+            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B local-block fallback`, {
+              jobId: payload.jobId,
+              stage: "1B",
+              status: latestJob?.status
+            });
+            return;
+          }
+
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "1B",
@@ -1110,6 +1152,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           continue;
         }
         if (exhausted) {
+          // ═══ FINAL STATUS GUARD ═══
+          const latestJob = await getJob(payload.jobId);
+          if (isTerminalStatus(latestJob?.status)) {
+            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B error-exhausted fallback`, {
+              jobId: payload.jobId,
+              stage: "1B",
+              status: latestJob?.status
+            });
+            return;
+          }
+
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "1B",
@@ -1215,6 +1268,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           lastGeminiConfirm = confirm;
 
           if (!confirm.confirmedFail) {
+            // ═══ FINAL STATUS GUARD ═══
+            const latestJob = await getJob(payload.jobId);
+            if (isTerminalStatus(latestJob?.status)) {
+              nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B Gemini retry publish`, {
+                jobId: payload.jobId,
+                stage: "1B",
+                attempt: geminiRetries,
+                status: latestJob?.status
+              });
+              return;
+            }
+
             // Retry passed — adopt the retried output and continue pipeline
             path1B = retryPath1B;
             geminiRetryPassed = true;
@@ -1228,6 +1293,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (lastGeminiConfirm?.confirmedFail && geminiBlockingEnabled && !geminiRetryPassed) {
+        // ═══ FINAL STATUS GUARD ═══
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) {
+          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B fallback publish`, {
+            jobId: payload.jobId,
+            stage: "1B",
+            attempt: geminiRetries,
+            status: latestJob?.status
+          });
+          return;
+        }
+
         // All retries exhausted — hard fail but publish last known good image (Stage 1A)
         const errMsg = lastGeminiConfirm.reasons.join("; ") || "Stage1B blocked by Gemini confirmation";
         nLog(`[VALIDATE_FINAL] stage=1B decision=block blockedBy=gemini_confirm override=false retries_exhausted=true (publishing Stage 1A as fallback)`);
@@ -1318,6 +1395,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Record Stage 1B publish if it exists and is different from 1A
   // pub1BUrl already declared above; removed duplicate
   if (path1B && path1B !== path1A) {
+    // ═══ FINAL STATUS GUARD ═══
+    const latestJob = await getJob(payload.jobId);
+    if (isTerminalStatus(latestJob?.status)) {
+      nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B main publish`, {
+        jobId: payload.jobId,
+        stage: "1B",
+        status: latestJob?.status
+      });
+      return;
+    }
+
     try {
       const pub1B = await publishImage(path1B);
       pub1BUrl = pub1B.url;
@@ -1526,6 +1614,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     timestamps.stage2End = Date.now();
     const fallbackStage = path1B ? "1B" : "1A";
     const fallbackPath = path1B ? path1B : path1A;
+    // ═══ FINAL STATUS GUARD ═══
+    const latestJob = await getJob(payload.jobId);
+    if (isTerminalStatus(latestJob?.status)) {
+      nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 catch-error fallback`, {
+        jobId: payload.jobId,
+        stage: "2",
+        status: latestJob?.status
+      });
+      return;
+    }
+
     await completePartialJob({
       jobId: payload.jobId,
       triggerStage: "2",
@@ -1659,6 +1758,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
         const fallbackStage = path1B ? "1B" : "1A";
         const fallbackPath = path1B ? path1B : path1A;
+        // ═══ FINAL STATUS GUARD ═══
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) {
+          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 timeout fallback`, {
+            jobId: payload.jobId,
+            stage: "2",
+            status: latestJob?.status
+          });
+          return;
+        }
+
         await completePartialJob({
           jobId: payload.jobId,
           triggerStage: "2",
@@ -1822,6 +1932,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog(`[worker] Stage 2 HARD FAIL after retries exhausted. Reason: ${reason}`);
           const fallbackStage = path1B ? "1B" : "1A";
           const fallbackPath = path1B ? path1B : path1A;
+          // ═══ FINAL STATUS GUARD ═══
+          const latestJob = await getJob(payload.jobId);
+          if (isTerminalStatus(latestJob?.status)) {
+            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 validation-exhausted fallback`, {
+              jobId: payload.jobId,
+              stage: "2",
+              status: latestJob?.status
+            });
+            return;
+          }
+
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "2",
@@ -2136,6 +2257,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           lastGeminiConfirm = confirm;
 
           if (!confirm.confirmedFail) {
+            // ═══ FINAL STATUS GUARD ═══
+            const latestJob = await getJob(payload.jobId);
+            if (isTerminalStatus(latestJob?.status)) {
+              nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 Gemini retry publish`, {
+                jobId: payload.jobId,
+                stage: "2",
+                attempt: geminiRetries,
+                status: latestJob?.status
+              });
+              return;
+            }
+
             // Retry passed — adopt the retried output and continue pipeline
             stage2CandidatePath = retryStage2Path;
             path2 = retryStage2Path;
@@ -2150,6 +2283,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (lastGeminiConfirm?.confirmedFail && geminiBlockingEnabled && !geminiRetryPassed) {
+        // ═══ FINAL STATUS GUARD ═══
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) {
+          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 fallback publish`, {
+            jobId: payload.jobId,
+            stage: "2",
+            attempt: geminiRetries,
+            status: latestJob?.status
+          });
+          return;
+        }
+
         // All retries exhausted — hard fail but publish last known good image (Stage 1B or 1A)
         stage2Blocked = true;
         stage2BlockedReason = lastGeminiConfirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
@@ -2218,6 +2363,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
+    // ═══ FINAL STATUS GUARD ═══
+    const latestJob = await getJob(payload.jobId);
+    if (isTerminalStatus(latestJob?.status)) {
+      nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 main publish`, {
+        jobId: payload.jobId,
+        stage: "2",
+        status: latestJob?.status
+      });
+      return;
+    }
+
     // If Stage 2 equals Stage 1B (no change), reuse the Stage 1B URL to avoid duplicate uploads
     if (stage2CandidatePath === path1B && pub1BUrl) {
       pub2Url = pub1BUrl;
@@ -2329,6 +2485,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!path1B) {
       throw new Error("Stage 1B path is undefined");
     }
+
+    // ═══ FINAL STATUS GUARD ═══
+    const latestJob = await getJob(payload.jobId);
+    if (isTerminalStatus(latestJob?.status)) {
+      nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B deferred publish`, {
+        jobId: payload.jobId,
+        stage: "1B",
+        status: latestJob?.status
+      });
+      return;
+    }
+
     let v1B: any = null;
     try {
       v1B = pushImageVersion({ imageId: payload.imageId, userId: payload.userId, stageLabel: "1B", filePath: path1B, note: "Decluttered / depersonalized" });
@@ -2378,6 +2546,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Publish final for client consumption and attach to version
+
+  // ═══ FINAL STATUS GUARD ═══
+  const latestJobBeforeFinal = await getJob(payload.jobId);
+  if (isTerminalStatus(latestJobBeforeFinal?.status)) {
+    nLog(`[FINAL_STATUS_GUARD] Skipping late final publish`, {
+      jobId: payload.jobId,
+      stage: "final",
+      status: latestJobBeforeFinal?.status
+    });
+    return;
+  }
 
   let publishedFinal: any = null;
   let pubFinalUrl: string | undefined = undefined;
@@ -2587,6 +2766,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     parentJobId: (payload as any).retryParentJobId || undefined,
     timestamps,
   });
+
+  // ═══ FINAL STATUS GUARD ═══
+  const latestJobBeforeCompletion = await getJob(payload.jobId);
+  if (isTerminalStatus(latestJobBeforeCompletion?.status)) {
+    nLog(`[FINAL_STATUS_GUARD] Skipping late job completion update`, {
+      jobId: payload.jobId,
+      stage: "completion",
+      status: latestJobBeforeCompletion?.status
+    });
+    return;
+  }
 
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
