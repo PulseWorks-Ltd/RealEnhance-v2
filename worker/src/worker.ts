@@ -10,6 +10,7 @@ import {
 
 import fs from "fs";
 import sharp from "sharp";
+import { randomUUID } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
@@ -380,6 +381,92 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+  let stage2AttemptId: string | undefined;
+
+  const getStage2Context = async () => {
+    const latestJob = await getJob(payload.jobId);
+    return {
+      status: latestJob?.status as string | undefined,
+      stage2AttemptId: (latestJob as any)?.stage2AttemptId as string | undefined,
+      retryPendingStage2: Boolean((latestJob as any)?.retryPendingStage2),
+    };
+  };
+
+  const ensureStage2AttemptId = async () => {
+    if (stage2AttemptId) return stage2AttemptId;
+    const current = await getStage2Context();
+    if (current.stage2AttemptId) {
+      stage2AttemptId = current.stage2AttemptId;
+      return stage2AttemptId;
+    }
+    stage2AttemptId = randomUUID();
+    await updateJob(payload.jobId, { stage2AttemptId, retryPendingStage2: false });
+    return stage2AttemptId;
+  };
+
+  const scheduleStage2Retry = async (reason: string) => {
+    const currentAttemptId = await ensureStage2AttemptId();
+    const nextAttemptId = randomUUID();
+    await updateJob(payload.jobId, { stage2AttemptId: nextAttemptId, retryPendingStage2: true });
+    nLog("[STAGE2_RETRY_SCHEDULED]", {
+      jobId: payload.jobId,
+      reason,
+      fromAttemptId: currentAttemptId,
+      toAttemptId: nextAttemptId,
+    });
+    nLog("[STAGE2_ATTEMPT_SUPERSEDED]", {
+      jobId: payload.jobId,
+      reason,
+      fromAttemptId: currentAttemptId,
+      toAttemptId: nextAttemptId,
+    });
+    stage2AttemptId = nextAttemptId;
+    return nextAttemptId;
+  };
+
+  const ensureStage2AttemptOwner = async (action: string) => {
+    const currentAttemptId = await ensureStage2AttemptId();
+    const current = await getStage2Context();
+    if (current.stage2AttemptId && current.stage2AttemptId !== currentAttemptId) {
+      nLog("[STAGE2_STALE_ATTEMPT_WRITE_BLOCKED]", {
+        jobId: payload.jobId,
+        action,
+        currentAttemptId,
+        activeAttemptId: current.stage2AttemptId,
+      });
+      return false;
+    }
+    return true;
+  };
+
+  const canCompleteStage2 = async (validationPassed: boolean, action: string) => {
+    const currentAttemptId = await ensureStage2AttemptId();
+    const current = await getStage2Context();
+    if (current.stage2AttemptId && current.stage2AttemptId !== currentAttemptId) {
+      nLog("[STAGE2_STALE_ATTEMPT_WRITE_BLOCKED]", {
+        jobId: payload.jobId,
+        action,
+        currentAttemptId,
+        activeAttemptId: current.stage2AttemptId,
+      });
+      return false;
+    }
+    if (isTerminalStatus(current.status)) return false;
+    if (current.retryPendingStage2) return false;
+    if (!validationPassed) return false;
+    nLog("[STAGE2_COMPLETION_ALLOWED]", {
+      jobId: payload.jobId,
+      action,
+      currentAttemptId,
+    });
+    return true;
+  };
+
+  const clearStage2RetryPending = async (action: string) => {
+    if (!(await ensureStage2AttemptOwner(action))) return false;
+    await updateJob(payload.jobId, { retryPendingStage2: false });
+    return true;
+  };
   if (!stage2Requested && payload.stage2OnlyMode?.enabled) {
     nLog(`[worker] Stage-2-only retry requested but stage2 was not requested; skipping stage2-only mode.`);
   }
@@ -388,6 +475,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
 
     try {
+      await ensureStage2AttemptId();
       const timings: Record<string, number> = {};
       const t0 = Date.now();
       const t2 = Date.now();
@@ -406,8 +494,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingRegion: undefined,
         jobId: payload.jobId,
         curtainRailLikely: (global as any).__curtainRailLikely,
+        onAttemptSuperseded: (nextAttemptId) => {
+          stage2AttemptId = nextAttemptId;
+        },
       });
       const path2 = stage2Result.outputPath;
+      const stage2ValidationPassed = stage2Result.validationRisk !== true;
 
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
@@ -434,6 +526,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       // Publish Stage-2 result
+      if (!(await ensureStage2AttemptOwner("stage2_only_publish"))) return;
       const pub2 = await publishImage(path2);
       const pub2Url = pub2.url;
 
@@ -448,6 +541,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       timings.totalMs = Date.now() - t0;
 
+      await clearStage2RetryPending("stage2_only_complete_clear_pending");
+      if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) return;
       await safeWriteJobStatus(payload.jobId, {
         status: "complete",
         resultUrl: pub2Url,
@@ -1563,11 +1658,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2TimedOut = false; // FIX 4: Track timeout status
   
   try {
+    if (payload.options.virtualStage) {
+      await ensureStage2AttemptId();
+    }
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
       nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
+      if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_start"))) return;
       // FIX 6: Track Stage 2 start
       timestamps.stage2Start = Date.now();
       updateJob(payload.jobId, { 'timestamps.stage2Start': timestamps.stage2Start });
@@ -1598,19 +1697,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: (global as any).__curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
-              try {
-                const msg = reasons && reasons.length
-                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-                  : "Validation failed. Retrying with stricter settings...";
-                updateJob(payload.jobId, {
-                  message: msg,
-                  meta: {
-                    ...(sceneLabel ? { ...sceneMeta } : {}),
-                    strictRetry: true,
-                    strictRetryReasons: reasons || []
-                  }
-                });
-              } catch {}
+              void (async () => {
+                if (!(await ensureStage2AttemptOwner("stage2_strict_retry"))) return;
+                try {
+                  const msg = reasons && reasons.length
+                    ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                    : "Validation failed. Retrying with stricter settings...";
+                  updateJob(payload.jobId, {
+                    message: msg,
+                    meta: {
+                      ...(sceneLabel ? { ...sceneMeta } : {}),
+                      strictRetry: true,
+                      strictRetryReasons: reasons || []
+                    }
+                  });
+                } catch {}
+              })();
+            },
+            onAttemptSuperseded: (nextAttemptId) => {
+              stage2AttemptId = nextAttemptId;
             }
           })
         : (payload.options.declutter && path1B ? path1B : path1A);
@@ -1638,6 +1743,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // FIX 6: Track Stage 2 end
       timestamps.stage2End = Date.now();
+      if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_end"))) return;
       updateJob(payload.jobId, { 'timestamps.stage2End': timestamps.stage2End });
 
       if (typeof stage2Outcome === "string") {
@@ -1669,6 +1775,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
 
+    await clearStage2RetryPending("stage2_error_clear_pending");
+    if (!(await canCompleteStage2(true, "stage2_error_complete"))) return;
     await completePartialJob({
       jobId: payload.jobId,
       triggerStage: "2",
@@ -1730,19 +1838,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1APath: stage2ValidationBaseline,
         curtainRailLikely: (global as any).__curtainRailLikely,
         onStrictRetry: ({ reasons }) => {
-          try {
-            const msg = reasons && reasons.length
-              ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-              : "Validation failed. Retrying with stricter settings...";
-            updateJob(payload.jobId, {
-              message: msg,
-              meta: {
-                ...(sceneLabel ? { ...sceneMeta } : {}),
-                strictRetry: true,
-                strictRetryReasons: reasons || []
-              }
-            });
-          } catch {}
+          void (async () => {
+            if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
+            try {
+              const msg = reasons && reasons.length
+                ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                : "Validation failed. Retrying with stricter settings...";
+              updateJob(payload.jobId, {
+                message: msg,
+                meta: {
+                  ...(sceneLabel ? { ...sceneMeta } : {}),
+                  strictRetry: true,
+                  strictRetryReasons: reasons || []
+                }
+              });
+            } catch {}
+          })();
+        },
+        onAttemptSuperseded: (nextAttemptId) => {
+          stage2AttemptId = nextAttemptId;
         }
       });
 
@@ -1761,6 +1875,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (fallbackErr: any) {
       const errMsg = fallbackErr?.message || String(fallbackErr);
       nLog(`[worker] Fallback light declutter failed: ${errMsg}`);
+      if (!(await ensureStage2AttemptOwner("stage2_fallback_failed"))) return;
       await safeWriteJobStatus(
         payload.jobId,
         { status: "failed", errorMessage: errMsg, error: errMsg, meta: { ...sceneMeta }, fallbackUsed: "light_declutter_backstop" },
@@ -1776,6 +1891,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   timings.stage2Ms = Date.now() - t2;
   // ✅ FIX 3: Add updatedAt timestamp for stuck detection
   const now2 = new Date().toISOString();
+  if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_progress"))) return;
   await safeWriteJobStatus(
     payload.jobId,
     {
@@ -1821,6 +1937,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           return;
         }
 
+        await clearStage2RetryPending("stage2_runtime_exceeded_clear_pending");
+        if (!(await canCompleteStage2(true, "stage2_runtime_exceeded_complete"))) return;
+        await clearStage2RetryPending("stage2_gemini_exhausted_clear_pending");
+        if (!(await canCompleteStage2(true, "stage2_gemini_exhausted_complete"))) return;
         await completePartialJob({
           jobId: payload.jobId,
           triggerStage: "2",
@@ -1930,6 +2050,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
             return;
           }
+          await scheduleStage2Retry("stage2_validation_hard_fail");
           // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
           const stage2OutcomeRetry = await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
@@ -1949,19 +2070,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: (global as any).__curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
-              try {
-                const msg = reasons && reasons.length
-                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-                  : "Validation failed. Retrying with stricter settings...";
-                updateJob(payload.jobId, {
-                  message: msg,
-                  meta: {
-                    ...(sceneLabel ? { ...sceneMeta } : {}),
-                    strictRetry: true,
-                    strictRetryReasons: reasons || []
-                  }
-                });
-              } catch {}
+              void (async () => {
+                if (!(await ensureStage2AttemptOwner("stage2_retry_strict_retry"))) return;
+                try {
+                  const msg = reasons && reasons.length
+                    ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                    : "Validation failed. Retrying with stricter settings...";
+                  updateJob(payload.jobId, {
+                    message: msg,
+                    meta: {
+                      ...(sceneLabel ? { ...sceneMeta } : {}),
+                      strictRetry: true,
+                      strictRetryReasons: reasons || []
+                    }
+                  });
+                } catch {}
+              })();
+            },
+            onAttemptSuperseded: (nextAttemptId) => {
+              stage2AttemptId = nextAttemptId;
             }
           });
 
@@ -2000,6 +2127,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return;
           }
 
+          await clearStage2RetryPending("stage2_retries_exhausted_clear_pending");
+          if (!(await canCompleteStage2(true, "stage2_retries_exhausted_complete"))) return;
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "2",
@@ -2025,6 +2154,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Stack:`, validationError?.stack);
       break; // fail-open
     }
+  }
+
+  if (payload.options.virtualStage) {
+    await clearStage2RetryPending("stage2_validation_complete");
   }
 
   // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====
@@ -2436,6 +2569,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
+    if (!(await ensureStage2AttemptOwner("stage2_publish_gate"))) return;
     // ═══ FINAL STATUS GUARD ═══
     const latestJob = await getJob(payload.jobId);
     if (isTerminalStatus(latestJob?.status)) {
@@ -2459,6 +2593,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         forceGC();
       }
       
+      if (!(await ensureStage2AttemptOwner("stage2_publish_reuse_status"))) return;
       await safeWriteJobStatus(
         payload.jobId,
         { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
@@ -2473,6 +2608,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[worker] Note: Could not record Stage 2 version in images.json (expected in multi-service deployment)\n`);
       }
       try {
+        if (!(await ensureStage2AttemptOwner("stage2_publish_upload"))) return;
         const pub2 = await publishImage(stage2CandidatePath);
         pub2Url = pub2.url;
         stage2Success = true;
@@ -2491,6 +2627,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             // Ignore
           }
         }
+        if (!(await ensureStage2AttemptOwner("stage2_publish_status"))) return;
         await safeWriteJobStatus(
           payload.jobId,
           { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
@@ -2862,6 +2999,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     });
     return;
   }
+
+  const stage2ValidationPassed = !payload.options.virtualStage
+    || unifiedValidation?.passed === true
+    || (!unifiedValidation && !stage2ValidationRisk);
+
+  if (hasStage2 && !(await canCompleteStage2(stage2ValidationPassed, "stage2_final_complete"))) return;
 
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state

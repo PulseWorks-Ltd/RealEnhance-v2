@@ -11,11 +11,12 @@ import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
+import { randomUUID } from "crypto";
 import type { StagingRegion } from "../ai/region-detector";
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState, isJobFailedFinal } from "../validators/stageRetryManager";
-import { getJob } from "../utils/persist";
+import { getJob, updateJob } from "../utils/persist";
 import { isTerminalStatus } from "../utils/statusUtils";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
@@ -46,6 +47,8 @@ export async function runStage2(
     curtainRailLikely?: boolean;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
+    // Optional callback when a retry attempt supersedes the current attempt
+    onAttemptSuperseded?: (nextAttemptId: string) => void;
     /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
     stage1APath?: string;
     /** Job ID for validation tracking */
@@ -70,6 +73,29 @@ export async function runStage2(
   let attemptsUsed = 0;
   let validationRisk = false;
   let retryCount = 0;
+
+  const scheduleStage2Retry = async (reason: string) => {
+    const currentJob = await getJob(jobId);
+    const currentAttemptId = (currentJob as any)?.stage2AttemptId as string | undefined;
+    const nextAttemptId = randomUUID();
+    await updateJob(jobId, { stage2AttemptId: nextAttemptId, retryPendingStage2: true });
+    console.log("[STAGE2_RETRY_SCHEDULED]", {
+      jobId,
+      reason,
+      fromAttemptId: currentAttemptId,
+      toAttemptId: nextAttemptId,
+    });
+    console.log("[STAGE2_ATTEMPT_SUPERSEDED]", {
+      jobId,
+      reason,
+      fromAttemptId: currentAttemptId,
+      toAttemptId: nextAttemptId,
+    });
+    if (opts.onAttemptSuperseded) {
+      opts.onAttemptSuperseded(nextAttemptId);
+    }
+    return nextAttemptId;
+  };
 
   // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
   // If stage1APath not provided, fallback to basePath with warning
@@ -369,9 +395,10 @@ Do not add blinds.
                 attemptsUsed = attempt + 1;
                 break;
               }
-              const retryDecision = shouldRetryStage(jobId, "stage2", validationResult);
+              const retryDecision = await shouldRetryStage(jobId, "stage2", validationResult);
 
               if (retryDecision.shouldRetry) {
+                await scheduleStage2Retry("stage2_validation_risk");
                 currentTightenLevel = retryDecision.tightenLevel;
                 needsRetry = true;
                 retryCount++;
@@ -433,6 +460,7 @@ Do not add blinds.
         }
 
         if (validatorFailed && allowRetries && attempt === 0) {
+          await scheduleStage2Retry("stage2_legacy_validation_risk");
           needsRetry = true;
           retryCount++;
           console.log(`[stage2] Validator requested retry (single retry)`);

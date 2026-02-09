@@ -18,6 +18,8 @@ import {
   loadStageAwareConfig,
 } from "./stageAwareConfig";
 import { getTightenLevelFromAttempt, TightenLevel } from "../ai/promptTightening";
+import { getJob } from "../utils/persist";
+import { isTerminalStatus } from "../utils/statusUtils";
 
 /**
  * Result of checking whether a retry should occur
@@ -101,16 +103,36 @@ export function deserializeRetryState(json: string): StageRetryState {
  * @param validationResult - The validation summary from stage-aware validator
  * @returns RetryDecision with retry instructions
  */
-export function shouldRetryStage(
+export async function shouldRetryStage(
   jobId: string,
   stage: StageId,
   validationResult: ValidationSummary
-): RetryDecision {
-  const config = loadStageAwareConfig();
-  const maxAttempts = config.maxRetryAttempts;
-
+): Promise<RetryDecision> {
+  const currentJob = await getJob(jobId);
   let state = getRetryState(jobId);
   const currentAttempts = getStageAttempts(state, stage);
+  const currentStatus = currentJob?.status as string | undefined;
+  if (isTerminalStatus(currentStatus)) {
+    return {
+      shouldRetry: false,
+      tightenLevel: 3,
+      attemptNumber: currentAttempts,
+      isFinalAttempt: true,
+      reason: `Terminal status (${currentStatus}) blocks retry for ${stage}`,
+    };
+  }
+
+  if (stage === "stage2" && (currentJob as any)?.retryPendingStage2) {
+    return {
+      shouldRetry: false,
+      tightenLevel: 3,
+      attemptNumber: currentAttempts,
+      isFinalAttempt: false,
+      reason: `retryPendingStage2 already true for ${stage}`,
+    };
+  }
+  const config = loadStageAwareConfig();
+  const maxAttempts = config.maxRetryAttempts;
 
   if (state.failedFinal) {
     return {
