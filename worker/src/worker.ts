@@ -330,8 +330,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const commitStageOutput = (stage: "1A" | "1B" | "2", outputPath: string) => {
-    stageLineage[stage].output = outputPath;
-    stageLineage[stage].committed = true;
+    const stageEntry = stage === "1A"
+      ? stageLineage.stage1A
+      : stage === "1B"
+        ? stageLineage.stage1B
+        : stageLineage.stage2;
+    if (!stageEntry) {
+      nLog("[STAGE_OUTPUT_COMMIT_SKIPPED]", { jobId: payload.jobId, stage, path: outputPath });
+      return;
+    }
+    stageEntry.output = outputPath;
+    stageEntry.committed = true;
     logStageOutput(stage, outputPath);
   };
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
