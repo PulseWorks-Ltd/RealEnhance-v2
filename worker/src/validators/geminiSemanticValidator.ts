@@ -108,6 +108,67 @@ Compare BEFORE and AFTER images.
 Return JSON only. No prose outside JSON.
 
 ─────────────────────────────
+DECISION PRIORITY HIERARCHY
+─────────────────────────────
+When evaluating the AFTER image, apply rules in this strict order:
+
+1. STRUCTURAL ANCHORS — Kitchen islands, counter runs, built-in cabinetry,
+   plumbing fixtures, HVAC, fixed lighting. If ANY anchor is removed,
+   relocated, resized, reshaped, or replaced → structure, hardFail: true.
+   This takes ABSOLUTE PRIORITY over all other rules.
+
+2. OPENINGS & ACCESS — Doors, windows, pass-throughs must remain functional.
+   Blocked or sealed → opening_blocked, hardFail: true.
+
+3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
+   material, color, and finish. Changes → structure, hardFail: true.
+
+4. CURTAIN & FLOOR LOCK — Window coverings and floor color/material must
+   match the BEFORE image exactly. Changes → structure, hardFail: true.
+
+5. STAGING / FURNITURE — Furniture placement, style, and completeness.
+   Furniture rules may NEVER override rules 1–4 above.
+
+If a lower-priority rule conflicts with a higher-priority rule,
+the higher-priority rule ALWAYS wins.
+
+─────────────────────────────
+ANCHOR RELOCATION RULE
+─────────────────────────────
+If a structural anchor (kitchen island, counter run, built-in wardrobe,
+vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
+image compared to the BEFORE image:
+
+→ This is RELOCATION, not staging.
+→ category: structure, hardFail: true
+
+Anchors are physically fixed to the building. They cannot move.
+Any positional shift — even if the element looks identical — is a failure.
+
+─────────────────────────────
+BUILT-IN vs MOVABLE DISAMBIGUATION
+─────────────────────────────
+Before classifying any element as "movable furniture":
+
+CHECK: Is this element a built-in or structural anchor?
+
+BUILT-IN indicators (treat as STRUCTURAL):
+• Connected to walls, floor, or ceiling with fixed joinery
+• Has plumbing, electrical, or ventilation connections
+• Kitchen islands, counter runs, vanities with plumbing
+• Wardrobes built into alcoves or walls
+• Shelving integrated into wall framing
+
+MOVABLE indicators (treat as FURNITURE):
+• Freestanding with visible floor gap
+• No utility connections
+• Can be lifted and carried out
+• Standalone chairs, tables, sofas, beds, rugs
+
+When in doubt, treat as BUILT-IN and protect it.
+DO NOT classify built-in elements as furniture to justify their removal.
+
+─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
 ─────────────────────────────
 The following MUST NOT be altered in any way:
@@ -218,6 +279,67 @@ Compare BEFORE and AFTER images.
 Return JSON only.
 
 ─────────────────────────────
+DECISION PRIORITY HIERARCHY
+─────────────────────────────
+When evaluating the AFTER image, apply rules in this strict order:
+
+1. STRUCTURAL ANCHORS — Kitchen islands, counter runs, built-in cabinetry,
+   plumbing fixtures, HVAC, fixed lighting. If ANY anchor is removed,
+   relocated, resized, reshaped, or replaced → structure, hardFail: true.
+   This takes ABSOLUTE PRIORITY over all other rules.
+
+2. OPENINGS & ACCESS — Doors, windows, pass-throughs must remain functional.
+   Blocked or sealed → opening_blocked, hardFail: true.
+
+3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
+   material, color, and finish. Changes → structure, hardFail: true.
+
+4. CURTAIN & FLOOR LOCK — Window coverings and floor color/material must
+   match the BEFORE image exactly. Changes → structure, hardFail: true.
+
+5. STAGING / FURNITURE — Furniture placement, style, and completeness.
+   Furniture rules may NEVER override rules 1–4 above.
+
+If a lower-priority rule conflicts with a higher-priority rule,
+the higher-priority rule ALWAYS wins.
+
+─────────────────────────────
+ANCHOR RELOCATION RULE
+─────────────────────────────
+If a structural anchor (kitchen island, counter run, built-in wardrobe,
+vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
+image compared to the BEFORE image:
+
+→ This is RELOCATION, not staging.
+→ category: structure, hardFail: true
+
+Anchors are physically fixed to the building. They cannot move.
+Any positional shift — even if the element looks identical — is a failure.
+
+─────────────────────────────
+BUILT-IN vs MOVABLE DISAMBIGUATION
+─────────────────────────────
+Before classifying any element as "movable furniture":
+
+CHECK: Is this element a built-in or structural anchor?
+
+BUILT-IN indicators (treat as STRUCTURAL):
+• Connected to walls, floor, or ceiling with fixed joinery
+• Has plumbing, electrical, or ventilation connections
+• Kitchen islands, counter runs, vanities with plumbing
+• Wardrobes built into alcoves or walls
+• Shelving integrated into wall framing
+
+MOVABLE indicators (treat as FURNITURE):
+• Freestanding with visible floor gap
+• No utility connections
+• Can be lifted and carried out
+• Standalone chairs, tables, sofas, beds, rugs
+
+When in doubt, treat as BUILT-IN and protect it.
+DO NOT classify built-in elements as furniture to justify their removal.
+
+─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
 ─────────────────────────────
 The following MUST NOT be altered, replaced, restyled, recolored, resized, or removed:
@@ -287,6 +409,21 @@ Hallucinated scenery → structure hardFail true
 ${stagingModeInstruction}
 ${stagingIntentRule}
 
+─────────────────────────────
+STAGING INTENT LIMITATION
+─────────────────────────────
+Staging intent (FULL or REFRESH) governs FURNITURE ONLY.
+Staging intent NEVER overrides structural anchor protection.
+
+Even if staging would benefit from:
+• Removing a kitchen island to place a dining table
+• Removing built-in shelving to create open wall space
+• Relocating a vanity or counter run
+• Replacing fixed lighting with modern alternatives
+
+→ These are ALL structural violations: category: structure, hardFail: true
+→ Staging must work AROUND existing anchors, not replace them.
+
 5. MATERIAL PRESERVATION
 - Floors, walls, ceilings retain original material and finish.
 - Inpainting damage → structure, hardFail: true
@@ -333,6 +470,67 @@ You will receive two images:
 Your sole task is to determine whether the AFTER image violates structural or functional integrity when compared to the BEFORE image.
 
 Return JSON only. Do NOT include any prose outside JSON.
+
+────────────────────────────────
+DECISION PRIORITY HIERARCHY
+────────────────────────────────
+When evaluating the AFTER image, apply rules in this strict order:
+
+1. STRUCTURAL ANCHORS — Kitchen islands, counter runs, built-in cabinetry,
+   plumbing fixtures, HVAC, fixed lighting. If ANY anchor is removed,
+   relocated, resized, reshaped, or replaced → structure, hardFail: true.
+   This takes ABSOLUTE PRIORITY over all other rules.
+
+2. OPENINGS & ACCESS — Doors, windows, pass-throughs must remain functional.
+   Blocked or sealed → opening_blocked, hardFail: true.
+
+3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
+   material, color, and finish. Changes → structure, hardFail: true.
+
+4. CURTAIN & FLOOR LOCK — Window coverings and floor color/material must
+   match the BEFORE image exactly. Changes → structure, hardFail: true.
+
+5. STAGING / FURNITURE — Furniture placement, style, and completeness.
+   Furniture rules may NEVER override rules 1–4 above.
+
+If a lower-priority rule conflicts with a higher-priority rule,
+the higher-priority rule ALWAYS wins.
+
+────────────────────────────────
+ANCHOR RELOCATION RULE
+────────────────────────────────
+If a structural anchor (kitchen island, counter run, built-in wardrobe,
+vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
+image compared to the BEFORE image:
+
+→ This is RELOCATION, not staging.
+→ category: structure, hardFail: true
+
+Anchors are physically fixed to the building. They cannot move.
+Any positional shift — even if the element looks identical — is a failure.
+
+────────────────────────────────
+BUILT-IN vs MOVABLE DISAMBIGUATION
+────────────────────────────────
+Before classifying any element as "movable furniture":
+
+CHECK: Is this element a built-in or structural anchor?
+
+BUILT-IN indicators (treat as STRUCTURAL):
+• Connected to walls, floor, or ceiling with fixed joinery
+• Has plumbing, electrical, or ventilation connections
+• Kitchen islands, counter runs, vanities with plumbing
+• Wardrobes built into alcoves or walls
+• Shelving integrated into wall framing
+
+MOVABLE indicators (treat as FURNITURE):
+• Freestanding with visible floor gap
+• No utility connections
+• Can be lifted and carried out
+• Standalone chairs, tables, sofas, beds, rugs
+
+When in doubt, treat as BUILT-IN and protect it.
+DO NOT classify built-in elements as furniture to justify their removal.
 
 ────────────────────────────────
 CORE PRINCIPLE

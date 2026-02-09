@@ -1145,6 +1145,24 @@ Then you MUST:
 • NEVER delete or replace built-ins to satisfy room type
 
 ────────────────────────────────
+STRUCTURE FIRST LAYOUT CONSTRAINT
+────────────────────────────────
+Before placing ANY furniture, identify all structural anchors in the image:
+• Kitchen islands, counter runs, benchtops
+• Built-in cabinetry and wardrobes
+• Bathroom fixtures and vanities
+• Fixed lighting fixtures
+• HVAC units and vents
+
+These elements define the available staging zone.
+Furniture must be placed ONLY in remaining open floor space.
+
+If the staging zone is small due to structural anchors:
+→ Reduce furniture count (fewer items, not smaller anchors)
+→ NEVER remove or relocate anchors to make room for staging
+→ Prefer fewer, well-placed pieces over a crowded layout
+
+────────────────────────────────
 ARCHITECTURAL SHELL — DO NOT TOUCH
 ────────────────────────────────
 Preserve EXACTLY:
@@ -1405,6 +1423,23 @@ ABSOLUTE STRUCTURAL RULES:
   landscaping, or permanent structures.
 • Do NOT add new structures.
 • Only add outdoor furniture and small potted plants.
+
+────────────────────────────────
+STRUCTURE FIRST LAYOUT CONSTRAINT
+────────────────────────────────
+Before placing ANY outdoor furniture, identify all structural elements:
+• Decking, patios, concrete slabs (valid placement surfaces)
+• Fences, walls, pergolas, posts
+• Fixed outdoor lighting
+• Drainage, guttering, downpipes
+
+These elements define the available staging zone.
+Furniture must be placed ONLY on valid hard surfaces in remaining open space.
+
+If the staging zone is small due to structural elements:
+→ Reduce furniture count (fewer items)
+→ NEVER remove or alter structural elements to make room for staging
+→ Prefer fewer, well-placed pieces over a crowded layout
 
 IMMUTABLE ELEMENTS — HARD LOCK BLOCK
 ────────────────────────────────
