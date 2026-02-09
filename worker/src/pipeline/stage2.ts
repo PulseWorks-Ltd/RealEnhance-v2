@@ -41,6 +41,7 @@ export async function runStage2(
     stagingRegion?: StagingRegion | null;
     stagingStyle?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    curtainRailLikely?: boolean;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
     /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
@@ -192,6 +193,37 @@ export async function runStage2(
       textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
       tempMultiplier = 0.8;
       strictPrompt = true;
+    }
+
+    const railLikely = (typeof opts.curtainRailLikely === "boolean" || opts.curtainRailLikely === "unknown")
+      ? opts.curtainRailLikely
+      : (global as any).__curtainRailLikely;
+    if (railLikely === false) {
+      textPrompt += `
+
+WINDOW COVERING HARD PROHIBITION:
+No curtain rails or tracks are visible in the input image.
+DO NOT add curtains, drapes, rods, or tracks.
+Leave windows bare.
+`;
+    } else if (railLikely === true) {
+      textPrompt += `
+
+WINDOW COVERING LIMITED FLEXIBILITY:
+Curtain rails/tracks are present.
+Curtains may be changed or replaced.
+Rails/tracks must remain unchanged.
+Do not add blinds.
+`;
+    } else if (railLikely === "unknown") {
+      textPrompt += `
+
+WINDOW COVERING LIMITED FLEXIBILITY:
+Curtain rails/tracks may be present.
+Curtains may be changed or replaced.
+Rails/tracks must remain unchanged.
+Do not add blinds.
+`;
     }
     const requestParts: any[] = [];
     // Always include the primary input image first

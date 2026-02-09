@@ -52,8 +52,10 @@ import {
 import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
+const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
+import { detectCurtainRail } from "./validators/curtainRailDetector";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import { vLog, nLog } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
@@ -62,6 +64,88 @@ import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
+
+function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
+  if (!mask || !mask.width || !mask.height || !mask.data) {
+    return { horizontalLinesNearTop: 0, windowTopEdgeDensity: 0 };
+  }
+
+  const { width, height, data } = mask;
+  const topBandHeight = Math.max(1, Math.floor(height * 0.2));
+  const rowEdgeCounts = new Array(topBandHeight).fill(0);
+  let topEdges = 0;
+
+  for (let y = 0; y < topBandHeight; y++) {
+    let rowCount = 0;
+    const rowOffset = y * width;
+    for (let x = 0; x < width; x++) {
+      if (data[rowOffset + x]) {
+        rowCount++;
+        topEdges++;
+      }
+    }
+    rowEdgeCounts[y] = rowCount;
+  }
+
+  const rowThreshold = Math.max(1, Math.floor(width * 0.15));
+  const rowsWithLines = rowEdgeCounts.filter((c) => c >= rowThreshold).length;
+  const horizontalLinesNearTop = rowsWithLines / Math.max(1, topBandHeight);
+  const windowTopEdgeDensity = topEdges / Math.max(1, width * topBandHeight);
+
+  return { horizontalLinesNearTop, windowTopEdgeDensity };
+}
+
+async function completePartialJob(params: {
+  jobId: string;
+  triggerStage: "1B" | "2";
+  finalStage: "1A" | "1B";
+  finalPath: string;
+  pub1AUrl?: string;
+  pub1BUrl?: string;
+  sceneMeta?: Record<string, any>;
+  userMessage: string;
+  reason: string;
+  stageOutputs: { "1A": string; "1B"?: string };
+}) {
+  const { jobId, triggerStage, finalStage, finalPath, pub1AUrl, pub1BUrl, sceneMeta, userMessage, reason, stageOutputs } = params;
+  let resultUrl = finalStage === "1A" ? pub1AUrl : pub1BUrl;
+  if (!resultUrl) {
+    const pub = await publishImage(finalPath);
+    resultUrl = pub.url;
+  }
+
+  nLog(`[FALLBACK_TRIGGERED] stage=${triggerStage} reason=${reason}`);
+
+  updateJob(jobId, {
+    status: "complete",
+    success: true,
+    completed: true,
+    currentStage: "finalizing",
+    finalStage: finalStage,
+    resultStage: finalStage,
+    resultUrl,
+    imageUrl: resultUrl,
+    message: userMessage,
+    stageUrls: {
+      "1A": pub1AUrl ?? null,
+      "1B": pub1BUrl ?? null,
+      "2": null,
+    },
+    stageOutputs: {
+      "1A": stageOutputs["1A"],
+      "1B": stageOutputs["1B"],
+    },
+    meta: {
+      ...(sceneMeta || {}),
+      partial: true,
+      fallbackStage: finalStage,
+      fallbackReason: reason,
+      userMessage,
+    },
+  });
+
+  nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CRITICAL: Global error handlers to prevent silent crashes (bus errors)
@@ -306,6 +390,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         profile: undefined,
         stagingRegion: undefined,
         jobId: payload.jobId,
+        curtainRailLikely: (global as any).__curtainRailLikely,
       });
       const path2 = stage2Result.outputPath;
 
@@ -767,6 +852,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobId: payload.jobId,
     roomType: payload.options.roomType,
   });
+
+  try {
+    const mask = (global as any).__structuralMask as { width: number; height: number; data: Uint8Array } | undefined;
+    const features = computeCurtainRailFeatures(mask);
+    const curtainRail = detectCurtainRail(features);
+    (global as any).__curtainRailLikely = curtainRail.railLikely;
+    (global as any).__curtainRailConfidence = curtainRail.confidence;
+    nLog(`[CURTAIN_RAIL_DETECT] railLikely=${curtainRail.railLikely} conf=${curtainRail.confidence.toFixed(2)}`);
+  } catch (err) {
+    (global as any).__curtainRailLikely = "unknown";
+    (global as any).__curtainRailConfidence = 0;
+    nLog(`[CURTAIN_RAIL_DETECT] railLikely=unknown conf=0.00 reason=error`);
+  }
   nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   
   // Track memory after Stage 1A
@@ -911,6 +1009,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stage1BLastVerdict: UnifiedValidationResult | undefined;
 
     while (true) {
+      if (Date.now() - t1B > MAX_STAGE_RUNTIME_MS) {
+        const reason = "stage1b_runtime_exceeded";
+        await completePartialJob({
+          jobId: payload.jobId,
+          triggerStage: "1B",
+          finalStage: "1A",
+          finalPath: path1A,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta,
+          userMessage: "We enhanced your image but could not safely declutter it.",
+          reason,
+          stageOutputs: { "1A": path1A },
+        });
+        return;
+      }
       stage1BAttempts += 1;
       const currentMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as any;
       nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
@@ -941,11 +1055,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             continue;
           }
           // Light fallback already tried or not stage-ready — fail permanently
-          updateJob(payload.jobId, {
-            status: "failed",
-            errorMessage: reason,
-            error: reason,
-            meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, unifiedValidation: verdict },
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "1B",
+            finalStage: "1A",
+            finalPath: path1A,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, unifiedValidation: verdict },
+            userMessage: "We enhanced your image but could not safely declutter it.",
+            reason: "stage1b_retries_exhausted",
+            stageOutputs: { "1A": path1A },
           });
           return;
         }
@@ -963,12 +1083,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
             continue;
           }
-          const errMsg = `Stage 1B blocked by local validation after ${stage1BAttempts} attempt(s): ${msg}`;
-          updateJob(payload.jobId, {
-            status: "failed",
-            errorMessage: errMsg,
-            error: errMsg,
-            meta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons }
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "1B",
+            finalStage: "1A",
+            finalPath: path1A,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons },
+            userMessage: "We enhanced your image but could not safely declutter it.",
+            reason: "stage1b_local_block_exhausted",
+            stageOutputs: { "1A": path1A },
           });
           return;
         }
@@ -985,14 +1110,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           continue;
         }
         if (exhausted) {
-          const errMsg = `Stage 1B failed after ${stage1BAttempts} attempt(s): ${lastError}`;
-            updateJob(payload.jobId, {
-              status: "failed",
-              errorMessage: errMsg,
-              error: errMsg,
-              meta: { ...sceneMeta, stage1BAttempts }
-            });
-            return;
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "1B",
+            finalStage: "1A",
+            finalPath: path1A,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, stage1BAttempts },
+            userMessage: "We enhanced your image but could not safely declutter it.",
+            reason: "stage1b_error_exhausted",
+            stageOutputs: { "1A": path1A },
+          });
+          return;
         }
       }
     }
@@ -1114,12 +1244,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
         }
 
-        updateJob(payload.jobId, {
-          status: "failed",
-          errorMessage: errMsg,
-          error: errMsg,
-          imageUrl: fallbackUrl || undefined,
-          meta: {
+        await completePartialJob({
+          jobId: payload.jobId,
+          triggerStage: "1B",
+          finalStage: "1A",
+          finalPath: path1A,
+          pub1AUrl: fallbackUrl || pub1AUrl,
+          pub1BUrl,
+          sceneMeta: {
             ...sceneMeta,
             stage1BAttempts,
             stage1BLocalReasons,
@@ -1131,6 +1263,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             fallbackStage: "1A",
             fallbackUrl: fallbackUrl || null,
           },
+          userMessage: "We enhanced your image but could not safely declutter it.",
+          reason: "stage1b_gemini_exhausted",
+          stageOutputs: { "1A": path1A },
         });
         return;
       }
@@ -1329,6 +1464,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
+            curtainRailLikely: (global as any).__curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -1388,19 +1524,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
     // FIX 6: Track failure timestamp
     timestamps.stage2End = Date.now();
-    try {
-      await updateJob(payload.jobId, {
-        status: "failed",
-        errorMessage: errMsg,
-        error: errMsg,
-        meta: { ...sceneMeta },
-        'timestamps.stage2End': timestamps.stage2End
-      });
-    } catch (updateErr) {
-      nLog(`[worker] Failed to update job status in Redis: ${updateErr}`);
-    }
-    // CRITICAL: Throw error so BullMQ marks job as failed
-    throw new Error(`Stage 2 processing failed: ${errMsg}`);
+    const fallbackStage = path1B ? "1B" : "1A";
+    const fallbackPath = path1B ? path1B : path1A;
+    await completePartialJob({
+      jobId: payload.jobId,
+      triggerStage: "2",
+      finalStage: fallbackStage,
+      finalPath: fallbackPath,
+      pub1AUrl,
+      pub1BUrl,
+      sceneMeta: { ...sceneMeta, 'timestamps.stage2End': timestamps.stage2End },
+      userMessage: fallbackStage === "1B"
+        ? "We decluttered your image but could not safely stage it."
+        : "We enhanced your image but could not safely stage it.",
+      reason: "stage2_error",
+      stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+    });
+    return;
   }
 
   // Fallback: if full removal (stage-ready) exhausted retries with validation risk, try light declutter then rerun Stage 2
@@ -1445,6 +1585,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         validationConfig: { localMode: localValidatorMode },
         stage1APath: stage2ValidationBaseline,
+        curtainRailLikely: (global as any).__curtainRailLikely,
         onStrictRetry: ({ reasons }) => {
           try {
             const msg = reasons && reasons.length
@@ -1515,6 +1656,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   while (path2 && payload.options.virtualStage) {
     try {
+      if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
+        const fallbackStage = path1B ? "1B" : "1A";
+        const fallbackPath = path1B ? path1B : path1A;
+        await completePartialJob({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: fallbackStage,
+          finalPath: fallbackPath,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta,
+          userMessage: fallbackStage === "1B"
+            ? "We decluttered your image but could not safely stage it."
+            : "We enhanced your image but could not safely stage it.",
+          reason: "stage2_runtime_exceeded",
+          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+        });
+        return;
+      }
       validationAttempt += 1;
       const validationStartTime = Date.now();
 
@@ -1620,6 +1780,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
+            curtainRailLikely: (global as any).__curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               try {
                 const msg = reasons && reasons.length
@@ -1659,15 +1820,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2Blocked = true;
           stage2BlockedReason = reason;
           nLog(`[worker] Stage 2 HARD FAIL after retries exhausted. Reason: ${reason}`);
-          updateJob(payload.jobId, {
-            status: "failed",
-            errorMessage: reason,
-            error: reason,
-            meta: {
-              ...sceneMeta,
-              unifiedValidation,
-              stage2LocalReasons,
-            },
+          const fallbackStage = path1B ? "1B" : "1A";
+          const fallbackPath = path1B ? path1B : path1A;
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "2",
+            finalStage: fallbackStage,
+            finalPath: fallbackPath,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, unifiedValidation, stage2LocalReasons },
+            userMessage: fallbackStage === "1B"
+              ? "We decluttered your image but could not safely stage it."
+              : "We enhanced your image but could not safely stage it.",
+            reason: "stage2_retries_exhausted",
+            stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
           });
           return;
         }
@@ -2003,12 +2170,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
         }
 
-        updateJob(payload.jobId, {
-          status: "failed",
-          errorMessage: stage2BlockedReason,
-          error: stage2BlockedReason,
-          imageUrl: fallbackUrl || undefined,
-          meta: {
+        await completePartialJob({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: fallbackStage,
+          finalPath: fallbackPath,
+          pub1AUrl: fallbackStage === "1A" ? (fallbackUrl || pub1AUrl) : pub1AUrl,
+          pub1BUrl: fallbackStage === "1B" ? (fallbackUrl || pub1BUrl) : pub1BUrl,
+          sceneMeta: {
             ...sceneMeta,
             stage2LocalReasons,
             geminiConfirm: lastGeminiConfirm,
@@ -2019,6 +2188,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             fallbackStage,
             fallbackUrl: fallbackUrl || null,
           },
+          userMessage: fallbackStage === "1B"
+            ? "We decluttered your image but could not safely stage it."
+            : "We enhanced your image but could not safely stage it.",
+          reason: "stage2_gemini_exhausted",
+          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
         });
         return;
       }

@@ -40,6 +40,17 @@ function buildAdjudicatorPrompt(
     evidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
   ].filter(Boolean);
 
+  const localSignals = {
+    wallDriftPct: Number(evidence.drift.wallPercent.toFixed(1)),
+    maskedDriftPct: Number(evidence.drift.maskedEdgePercent.toFixed(1)),
+    openingDelta: {
+      windows: windowsDelta,
+      doors: doorsDelta,
+    },
+    lineDeviationDeg: Number(evidence.drift.angleDegrees.toFixed(1)),
+    anchorFlags,
+  };
+
   const signalBlock = `
 ────────────────────────────────
 AUTOMATED SIGNAL BLOCK (DO NOT IGNORE)
@@ -63,6 +74,12 @@ Drift Metrics:
 Anchor Region Flags: ${anchorFlags.length > 0 ? anchorFlags.join(", ") : "NONE"}
 
 Local Validator Flags: ${evidence.localFlags.length > 0 ? evidence.localFlags.join("; ") : "NONE"}
+
+LOCAL VALIDATOR SIGNALS (JSON):
+${JSON.stringify(localSignals, null, 2)}
+
+Numeric drift alone is NOT structural failure.
+Anchor change IS structural failure.
 `;
 
   const hasAnchorViolation = anchorFlags.length > 0;
@@ -123,8 +140,10 @@ When evaluating the AFTER image, apply rules in this strict order:
 3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
    material, color, and finish. Changes → structure, hardFail: true.
 
-4. CURTAIN & FLOOR LOCK — Window coverings and floor color/material must
-   match the BEFORE image exactly. Changes → structure, hardFail: true.
+4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails/tracks and blinds are
+  structural anchors; if added/removed/repositioned → structure, hardFail: true.
+  Curtain fabric may change only when rails/tracks already exist.
+  Floor color/material must match.
 
 5. STAGING / FURNITURE — Furniture placement, style, and completeness.
    Furniture rules may NEVER override rules 1–4 above.
@@ -208,11 +227,16 @@ The following elements are FUNCTIONAL STRUCTURAL ANCHORS. If present, they MUST 
 If removal/declutter would require changing ANY of the above:
 → DO NOT modify the element; reduce removal actions instead
 
-🪟 ADD — CURTAIN + FLOOR COLOR LOCK
-The following must remain unchanged in type, position, and color:
-- Curtains, drapes, curtain rails, rods, blinds, blind tracks, all window coverings
-- Floor material AND FLOOR COLOR; carpet color/texture; timber tone/stain; tile color
-Any change is a STRUCTURAL violation.
+🪟 WINDOW COVERING STRUCTURE RULE
+- Curtain rails, rods, and tracks are structural anchors. Must NOT be added, removed, or repositioned.
+- If rails/tracks exist, curtain fabric may change.
+- If rails/tracks do NOT exist, adding curtains/drapes is a STRUCTURAL violation.
+- Blinds must NOT be added, removed, or replaced with a different covering type.
+
+FLOOR COLOR/MATERIAL LOCK
+- Floor material AND FLOOR COLOR; carpet color/texture; timber tone/stain; tile color must match.
+
+Any violation → structure, hardFail: true.
 
 5. SOFT FIXED ELEMENTS (STRICT)
 - Curtains, curtain rails, blinds must match BEFORE image
@@ -294,8 +318,10 @@ When evaluating the AFTER image, apply rules in this strict order:
 3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
    material, color, and finish. Changes → structure, hardFail: true.
 
-4. CURTAIN & FLOOR LOCK — Window coverings and floor color/material must
-   match the BEFORE image exactly. Changes → structure, hardFail: true.
+4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails/tracks and blinds are
+  structural anchors; if added/removed/repositioned → structure, hardFail: true.
+  Curtain fabric may change only when rails/tracks already exist.
+  Floor color/material must match.
 
 5. STAGING / FURNITURE — Furniture placement, style, and completeness.
    Furniture rules may NEVER override rules 1–4 above.
@@ -374,12 +400,18 @@ If any of the following appear in BEFORE image, they MUST remain unchanged:
 
 Removed, replaced, relocated, or altered → structure hardFail true
 
-🪟 ADD — CURTAIN + FLOOR COLOR LOCK
+🪟 WINDOW COVERING STRUCTURE RULE
+• Curtain rails, rods, and tracks are structural anchors. Must NOT be added, removed, or repositioned.
+• If rails/tracks exist, curtain fabric may change.
+• If rails/tracks do NOT exist, adding curtains/drapes is a STRUCTURAL violation.
+• Blinds must NOT be added, removed, or replaced with a different covering type.
+
+FLOOR COLOR/MATERIAL LOCK
 • Floor material AND color must match
 • Carpet color must match
 • No floor recoloring allowed
-• Curtains/drapes/rails/blinds/tracks must remain unchanged
-Any change → structure hardFail true
+
+Any violation → structure hardFail true
 
 LIGHTING FIXTURE STYLE LOCK
 Existing fixed lighting fixtures must remain identical in style, shape, size, position, mounting type.

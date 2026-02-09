@@ -242,6 +242,27 @@ REMOVE:
 - Heaters
 - All movable pots and decor
 
+ADDITIONAL REMOVABLE CLUTTER CLASS — LINEAR LOOSE OBJECTS
+
+The following are ALWAYS considered removable clutter if visible:
+
+• Garden hoses
+• Extension cords
+• Power cables
+• Loose wires
+• Charging cables
+• Loose rope or string
+• Temporary tubing
+• Portable irrigation hoses
+
+These are NEVER structural.
+These are NEVER fixtures.
+These are ALWAYS safe to remove completely.
+
+If partially visible → remove entire object and reconstruct surface.
+
+Do not leave fragments, shadows, or attachment ghosts.
+
 KEEP:
 - Decks, pergolas, railings
 - Fixed seating
@@ -274,6 +295,81 @@ WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
 • Curtain rails, rods, and tracks
 • Blinds and shutters
 • Curtain openness state (open/closed/half)
+
+WINDOW COVERING REALISM RULE
+Window coverings must follow these constraints:
+• If curtain rails or curtain tracks are visible in the input image:
+  – Curtains MAY be changed or replaced
+  – Curtain fabric style/color may change
+  – Rails/tracks must remain unchanged
+• If NO curtain rails or tracks are visible:
+  – DO NOT add curtains or drapes
+• Blinds are structural coverings:
+  – Do NOT add blinds where none exist
+  – Do NOT remove existing blinds
+  – Do NOT change blind type
+Never add new curtain rails, rods, or tracks.
+Never remove curtain rails, rods, or tracks.
+
+WINDOW COVERING REALISM RULE
+Window coverings must follow these constraints:
+• If curtain rails or curtain tracks are visible in the input image:
+  – Curtains MAY be changed or replaced
+  – Curtain fabric style/color may change
+  – Rails/tracks must remain unchanged
+• If NO curtain rails or tracks are visible:
+  – DO NOT add curtains or drapes
+• Blinds are structural coverings:
+  – Do NOT add blinds where none exist
+  – Do NOT remove existing blinds
+  – Do NOT change blind type
+Never add new curtain rails, rods, or tracks.
+Never remove curtain rails, rods, or tracks.
+
+WINDOW COVERING REALISM RULE
+Window coverings must follow these constraints:
+• If curtain rails or curtain tracks are visible in the input image:
+  – Curtains MAY be changed or replaced
+  – Curtain fabric style/color may change
+  – Rails/tracks must remain unchanged
+• If NO curtain rails or tracks are visible:
+  – DO NOT add curtains or drapes
+• Blinds are structural coverings:
+  – Do NOT add blinds where none exist
+  – Do NOT remove existing blinds
+  – Do NOT change blind type
+Never add new curtain rails, rods, or tracks.
+Never remove curtain rails, rods, or tracks.
+
+WINDOW COVERING REALISM RULE
+Window coverings must follow these constraints:
+• If curtain rails or curtain tracks are visible in the input image:
+  – Curtains MAY be changed or replaced
+  – Curtain fabric style/color may change
+  – Rails/tracks must remain unchanged
+• If NO curtain rails or tracks are visible:
+  – DO NOT add curtains or drapes
+• Blinds are structural coverings:
+  – Do NOT add blinds where none exist
+  – Do NOT remove existing blinds
+  – Do NOT change blind type
+Never add new curtain rails, rods, or tracks.
+Never remove curtain rails, rods, or tracks.
+
+WINDOW COVERING REALISM RULE
+Window coverings must follow these constraints:
+• If curtain rails or curtain tracks are visible in the input image:
+  – Curtains MAY be changed or replaced
+  – Curtain fabric style/color may change
+  – Rails/tracks must remain unchanged
+• If NO curtain rails or tracks are visible:
+  – DO NOT add curtains or drapes
+• Blinds are structural coverings:
+  – Do NOT add blinds where none exist
+  – Do NOT remove existing blinds
+  – Do NOT change blind type
+Never add new curtain rails, rods, or tracks.
+Never remove curtain rails, rods, or tracks.
 
 LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
 • Pendant lights
@@ -514,6 +610,21 @@ Preserve surface textures and shadows.`.trim();
     • Blinds and shutters
     • Curtain openness state (open/closed/half)
 
+    WINDOW COVERING REALISM RULE
+    Window coverings must follow these constraints:
+    • If curtain rails or curtain tracks are visible in the input image:
+      – Curtains MAY be changed or replaced
+      – Curtain fabric style/color may change
+      – Rails/tracks must remain unchanged
+    • If NO curtain rails or tracks are visible:
+      – DO NOT add curtains or drapes
+    • Blinds are structural coverings:
+      – Do NOT add blinds where none exist
+      – Do NOT remove existing blinds
+      – Do NOT change blind type
+    Never add new curtain rails, rods, or tracks.
+    Never remove curtain rails, rods, or tracks.
+
     LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
     • Pendant lights
     • Ceiling light fittings
@@ -634,6 +745,27 @@ Preserve surface textures and shadows.`.trim();
     - Plants
     - Curtains if loose or decorative
 
+    ADDITIONAL REMOVABLE CLUTTER CLASS — LINEAR LOOSE OBJECTS
+
+    The following are ALWAYS considered removable clutter if visible:
+
+    • Garden hoses
+    • Extension cords
+    • Power cables
+    • Loose wires
+    • Charging cables
+    • Loose rope or string
+    • Temporary tubing
+    • Portable irrigation hoses
+
+    These are NEVER structural.
+    These are NEVER fixtures.
+    These are ALWAYS safe to remove completely.
+
+    If partially visible → remove entire object and reconstruct surface.
+
+    Do not leave fragments, shadows, or attachment ghosts.
+
     PARTIALLY VISIBLE ITEMS:
     If ANY portion of a movable object is visible (even <10%),
     REMOVE THE ENTIRE OBJECT.
@@ -683,6 +815,27 @@ REMOVE:
 - Garden tools
 - Loose hoses
 - Small movable pots
+
+ADDITIONAL REMOVABLE CLUTTER CLASS — LINEAR LOOSE OBJECTS
+
+The following are ALWAYS considered removable clutter if visible:
+
+• Garden hoses
+• Extension cords
+• Power cables
+• Loose wires
+• Charging cables
+• Loose rope or string
+• Temporary tubing
+• Portable irrigation hoses
+
+These are NEVER structural.
+These are NEVER fixtures.
+These are ALWAYS safe to remove completely.
+
+If partially visible → remove entire object and reconstruct surface.
+
+Do not leave fragments, shadows, or attachment ghosts.
 
 KEEP:
 - Decks, pergolas, railings
@@ -872,6 +1025,27 @@ Maintain realistic ground textures and shadows.`.trim();
 GOAL:
 Clean and simplify the space while preserving core furniture and all fixed elements.
 This is NOT a styling task. Do not add or replace items.
+
+ADDITIONAL REMOVABLE CLUTTER CLASS — LINEAR LOOSE OBJECTS
+
+The following are ALWAYS considered removable clutter if visible:
+
+• Garden hoses
+• Extension cords
+• Power cables
+• Loose wires
+• Charging cables
+• Loose rope or string
+• Temporary tubing
+• Portable irrigation hoses
+
+These are NEVER structural.
+These are NEVER fixtures.
+These are ALWAYS safe to remove completely.
+
+If partially visible → remove entire object and reconstruct surface.
+
+Do not leave fragments, shadows, or attachment ghosts.
 
 ─────────────────────────────
 ABSOLUTE PROTECTED ELEMENTS (ZERO TOUCH)

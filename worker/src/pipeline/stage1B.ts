@@ -61,6 +61,45 @@ export async function runStage1B(
       throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
     }
     
+    if (declutterMode === "stage-ready" && attemptIndex >= 2) {
+      promptOverride += `
+
+RETRY REMOVAL REINFORCEMENT:
+Remove ALL movable furniture completely.
+Do not preserve partial furniture.
+If uncertain whether built-in or movable — treat as movable and remove.
+`;
+    }
+
+    const railLikely = (global as any).__curtainRailLikely as boolean | "unknown";
+    if (railLikely === false) {
+      promptOverride += `
+
+WINDOW COVERING HARD PROHIBITION:
+No curtain rails or tracks are visible in the input image.
+DO NOT add curtains, drapes, rods, or tracks.
+Leave windows bare.
+`;
+    } else if (railLikely === true) {
+      promptOverride += `
+
+WINDOW COVERING LIMITED FLEXIBILITY:
+Curtain rails/tracks are present.
+Curtains may be changed or replaced.
+Rails/tracks must remain unchanged.
+Do not add blinds.
+`;
+    } else if (railLikely === "unknown") {
+      promptOverride += `
+
+WINDOW COVERING LIMITED FLEXIBILITY:
+Curtain rails/tracks may be present.
+Curtains may be changed or replaced.
+Rails/tracks must remain unchanged.
+Do not add blinds.
+`;
+    }
+
     // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
     const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "full (stage-ready)";
     console.log("[stage1B] Declutter mode resolved:", {
@@ -84,6 +123,11 @@ export async function runStage1B(
       }
     }
 
+    const baseTemp = 0.30;
+    const retryTemp = (declutterMode === "stage-ready" && attemptIndex >= 1)
+      ? Math.max(0.05, baseTemp * 0.9)
+      : baseTemp;
+
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       replaceSky,
       declutter: true,
@@ -94,7 +138,7 @@ export async function runStage1B(
       modelReason: declutterMode ? `declutter:${declutterMode}` : "declutter",
       outputPath,
       // Low-temp for deterministic, aggressive removal
-      temperature: 0.30,
+      temperature: retryTemp,
       topP: 0.70,
       topK: 32,
       // NZ explicit 1B prompt (mode-specific)
