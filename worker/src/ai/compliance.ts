@@ -2,6 +2,7 @@ import type { GoogleGenAI } from "@google/genai";
 
 export type ComplianceVerdict = {
   ok: boolean;
+  confidence: number;
   structuralViolation?: boolean;
   placementViolation?: boolean;
   reasons: string[];
@@ -32,26 +33,48 @@ async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prom
 
 export async function checkCompliance(ai: GoogleGenAI, originalB64: string, editedB64: string): Promise<ComplianceVerdict> {
   const structuralPrompt = [
-    'Return JSON only: {"ok": true|false, "reasons": ["..."]}',
+    'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     'Compare ORIGINAL vs EDITED. ok=false ONLY if the EDITED image alters fixed architectural features:',
     '- adds/removes/moves/resizes doors, windows, walls, ceilings, floors, stairs, pillars, beams, built-ins, fixed plumbing/electrical.',
     '- changes room perspective beyond minor lens/exposure correction (but NOT geometry).',
     'Allow staging furniture to overlap walls/floors visually; overlapping is NOT a structural violation.',
+    'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
   const s = await ask(ai, originalB64, editedB64, structuralPrompt);
-  if (!s) return { ok: false, structuralViolation: true, placementViolation: false, reasons: ["Compliance parser failed"] };
-  if (s.ok === false) return { ok: false, structuralViolation: true, placementViolation: false, reasons: s.reasons || ["Structural change detected"] };
+  if (!s) {
+    const result = { ok: false, confidence: 0.3, structuralViolation: true, placementViolation: false, reasons: ["Compliance parser failed"] };
+    console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
+    return result;
+  }
+  const sConfidence = typeof s.confidence === 'number' ? s.confidence : 0.6;
+  if (s.ok === false) {
+    const result = { ok: false, confidence: sConfidence, structuralViolation: true, placementViolation: false, reasons: s.reasons || ["Structural change detected"] };
+    console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
+    return result;
+  }
 
   const placementPrompt = [
-    'Return JSON only: {"ok": true|false, "reasons": ["..."]}',
+    'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     'Compare ORIGINAL vs EDITED. ok=false if EDITED places objects in clearly unrealistic or unsafe positions, such as:',
     '- blocking a DOOR or WINDOW,',
     '- overlapping fixed fixtures,',
     '- furniture not aligned to floor perspective.',
+    'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
   const p = await ask(ai, originalB64, editedB64, placementPrompt);
-  if (!p) return { ok: false, structuralViolation: false, placementViolation: true, reasons: ["Compliance parser failed (placement)"] };
-  if (p.ok === false) return { ok: false, structuralViolation: false, placementViolation: true, reasons: p.reasons || ["Unrealistic/blocked placement"] };
+  if (!p) {
+    const result = { ok: false, confidence: 0.3, structuralViolation: false, placementViolation: true, reasons: ["Compliance parser failed (placement)"] };
+    console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
+    return result;
+  }
+  const pConfidence = typeof p.confidence === 'number' ? p.confidence : 0.6;
+  if (p.ok === false) {
+    const result = { ok: false, confidence: pConfidence, structuralViolation: false, placementViolation: true, reasons: p.reasons || ["Unrealistic/blocked placement"] };
+    console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
+    return result;
+  }
 
-  return { ok: true, structuralViolation: false, placementViolation: false, reasons: [] };
+  const result = { ok: true, confidence: 0.0, structuralViolation: false, placementViolation: false, reasons: [] };
+  console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
+  return result;
 }

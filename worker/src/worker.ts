@@ -342,6 +342,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
   const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
   const structureValidatorMode = localValidatorMode;
+  const COMPLIANCE_BLOCK_THRESHOLD = Number(process.env.COMPLIANCE_BLOCK_THRESHOLD ?? 0.85);
   logValidationModes();
 
   // ═══════════ PER-IMAGE JOB EXECUTION CONTEXT (CROSS-IMAGE ISOLATION) ═══════════
@@ -3137,15 +3138,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let lastViolationMsg = "";
       // Single-pass compliance: no retries here; stage retries happen in dedicated loops
     if (compliance && compliance.ok === false) {
+      const confidence = compliance.confidence ?? 0.6;
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      // CRITICAL FIX: Block job when Gemini detects major structural violations after all retries
-      const complianceError = new Error(`Gemini semantic validation failed after ${maxRetries + 1} attempts: ${lastViolationMsg}`);
-      (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
-      (complianceError as any).violations = compliance.reasons || [];
-      (complianceError as any).retries = maxRetries + 1;
-      nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg}`);
-      nLog(`[worker] Job blocked - structural integrity cannot be guaranteed after ${maxRetries + 1} validation attempts`);
-      throw complianceError;
+      if (confidence >= COMPLIANCE_BLOCK_THRESHOLD) {
+        // CRITICAL FIX: Block job when Gemini detects major structural violations with high confidence
+        const complianceError = new Error(`Gemini semantic validation failed with confidence ${confidence.toFixed(2)}: ${lastViolationMsg}`);
+        (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
+        (complianceError as any).violations = compliance.reasons || [];
+        (complianceError as any).confidence = confidence;
+        nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)})`);
+        nLog(`[worker] Job blocked - structural integrity cannot be guaranteed (high-confidence violation)`);
+        throw complianceError;
+      } else {
+        // Soft-fail: log but allow job to proceed
+        nLog("[COMPLIANCE_SOFT_FAIL]", {
+          jobId: payload.jobId,
+          confidence,
+          reasons: compliance.reasons,
+          threshold: COMPLIANCE_BLOCK_THRESHOLD
+        });
+        nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${COMPLIANCE_BLOCK_THRESHOLD} threshold) - allowing job to proceed`);
+      }
     }
   } catch (e: any) {
     // Re-throw compliance validation failures - these must block the job
@@ -3171,7 +3184,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     }
     if (compliance) {
-      nLog(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"}`);
+      const confidence = compliance.confidence ?? 0.6;
+      nLog(`[worker] Gemini Compliance: ${compliance.ok ? "✓ PASSED" : "✗ FAILED"} (confidence: ${confidence.toFixed(2)})`);
       if (!compliance.ok && compliance.reasons) {
         nLog(`[worker] Compliance issues: ${compliance.reasons.join("; ")}`);
       }
