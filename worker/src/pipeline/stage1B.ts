@@ -5,6 +5,7 @@ import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
+import { logIfNotFocusMode } from "../logger";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -34,7 +35,7 @@ export async function runStage1B(
   }
 ): Promise<string> {
   const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, attempt = 0 } = options;
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   let resolvedAttemptIndex = attemptIndex;
@@ -53,7 +54,7 @@ export async function runStage1B(
       }
     }
   }
-  console.log(`[STAGE1B_OUTPUT_PATH] attempt=${attemptIndex} resolved=${outputPath}`);
+  logIfNotFocusMode(`[STAGE1B_OUTPUT_PATH] attempt=${attemptIndex} resolved=${outputPath}`);
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
   if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
@@ -62,10 +63,10 @@ export async function runStage1B(
     throw new Error(errMsg);
   }
 
-  console.log(`[stage1B] 🔵 Starting furniture & clutter removal...`);
-  console.log(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
-  console.log(`[stage1B] Declutter mode: ${declutterMode} (${declutterMode === "light" ? "keep furniture, remove clutter" : "remove ALL furniture"})`);
-  console.log(`[stage1B] Options: sceneType=${sceneType}, roomType=${roomType}`);
+  logIfNotFocusMode(`[stage1B] 🔵 Starting furniture & clutter removal...`);
+  logIfNotFocusMode(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
+  logIfNotFocusMode(`[stage1B] Declutter mode: ${declutterMode} (${declutterMode === "light" ? "keep furniture, remove clutter" : "remove ALL furniture"})`);
+  logIfNotFocusMode(`[stage1B] Options: sceneType=${sceneType}, roomType=${roomType}`);
   
   try {
     // ✅ PROMPT SELECTION SAFETY — Explicit mode-based routing
@@ -74,11 +75,11 @@ export async function runStage1B(
     if (declutterMode === "light") {
       // Declutter-only: aggressive clutter removal, furniture preservation
       promptOverride = buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
-      console.log("[stage1B] 📋 Using LIGHT (declutter-only) prompt");
+      logIfNotFocusMode("[stage1B] 📋 Using LIGHT (declutter-only) prompt");
     } else if (declutterMode === "stage-ready") {
       // Stage-ready: complete furniture removal for virtual staging
       promptOverride = buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
-      console.log("[stage1B] 📋 Using STAGE-READY (full removal) prompt");
+      logIfNotFocusMode("[stage1B] 📋 Using STAGE-READY (full removal) prompt");
     } else {
       throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
     }
@@ -93,7 +94,7 @@ If uncertain whether built-in or movable — treat as movable and remove.
 `;
     }
 
-    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__curtainRailLikely" });
+    logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__curtainRailLikely" });
     const railLikely = options.curtainRailLikely as boolean | "unknown";
     if (railLikely === false) {
       promptOverride += `
@@ -125,14 +126,14 @@ Do not add blinds.
 
     // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
     const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "full (stage-ready)";
-    console.log("[stage1B] Declutter mode resolved:", {
+    logIfNotFocusMode("[stage1B] Declutter mode resolved:", {
       declutter: true,
       declutterMode: declutterMode,
       promptUsed: promptUsed
     });
-    console.log(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
+    logIfNotFocusMode(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
     
-    console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
+    logIfNotFocusMode(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
     if (resolvedAttemptIndex > 0) {
       const fs = await import("fs/promises");
@@ -151,7 +152,7 @@ Do not add blinds.
         }
       }
       if (retryIndex !== resolvedAttemptIndex) {
-        console.log(`[STAGE1B_OUTPUT_PATH] retry-collision resolved=${resolvedAttemptIndex}->${retryIndex}`);
+        logIfNotFocusMode(`[STAGE1B_OUTPUT_PATH] retry-collision resolved=${resolvedAttemptIndex}->${retryIndex}`);
       }
     }
 
@@ -160,8 +161,8 @@ Do not add blinds.
       ? Math.max(0.05, baseTemp * 0.9)
       : baseTemp;
 
-    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobDeclutterIntensity" });
-    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobSampling" });
+    logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobDeclutterIntensity" });
+    logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobSampling" });
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       replaceSky,
       declutter: true,
@@ -184,16 +185,16 @@ Do not add blinds.
       ...(options.jobSampling || {}),
     });
     
-    console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
-    console.log(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
+    logIfNotFocusMode(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
+    logIfNotFocusMode(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
     
     // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
       const { validateStageOutput } = await import("../validators/index.js");
-      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__canonicalPath" });
+      logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__canonicalPath" });
       const canonicalPath: string | undefined = options.canonicalPath || undefined;
       const base = canonicalPath || stage1APath;
-      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__baseArtifacts" });
+      logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__baseArtifacts" });
       const baseArtifacts = options.baseArtifacts ?? undefined;
       const verdict1 = await validateStageOutput("stage1B", base, declutteredPath, {
         sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any,
@@ -201,26 +202,26 @@ Do not add blinds.
         baseArtifacts,
       });
       // Soft mode: log verdict, always proceed
-      console.log(`[stage1B] Validator verdict:`, verdict1);
+      logIfNotFocusMode(`[stage1B] Validator verdict:`, verdict1);
       const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
-      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
+      logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
       const maskPath = await loadOrComputeStructuralMask(jobId, base, baseArtifacts);
       const masks = { structuralMask: maskPath };
       const verdict2 = await validateStage1BStructural(base, declutteredPath, masks, baseArtifacts);
-      console.log(`[stage1B] Structural validator verdict:`, verdict2);
+      logIfNotFocusMode(`[stage1B] Structural validator verdict:`, verdict2);
       if (!verdict2.ok) {
-        console.warn(`[stage1B] HARD FAIL: ${verdict2.reason}`);
+        logIfNotFocusMode(`[stage1B] HARD FAIL: ${verdict2.reason}`);
       }
       if (declutteredPath !== outputPath) {
-        console.warn(`[stage1B] Gemini output path mismatch: expected=${outputPath} actual=${declutteredPath}`);
+        logIfNotFocusMode(`[stage1B] Gemini output path mismatch: expected=${outputPath} actual=${declutteredPath}`);
       }
-      console.log(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
+      logIfNotFocusMode(`[stage1B] ✅ SUCCESS - Furniture removal complete: ${outputPath}`);
       return outputPath;
     }
     
     // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
-    console.log(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
+    logIfNotFocusMode(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
     const out = outputPath;
     await sharp(stage1APath)
       .rotate()
@@ -229,11 +230,11 @@ Do not add blinds.
       .sharpen(0.4)
       .webp({ quality: 90 })
       .toFile(out);
-    console.log(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
+    logIfNotFocusMode(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
     return out;
     
   } catch (error) {
-    console.error(`[stage1B] Error during declutter:`, error);
+    logIfNotFocusMode(`[stage1B] Error during declutter:`, error);
     // Fallback to Sharp on error
     const out = outputPath;
     await sharp(stage1APath)

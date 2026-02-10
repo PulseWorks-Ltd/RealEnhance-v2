@@ -13,6 +13,7 @@ import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighE
 import { validateStage } from "../ai/unified-validator";
 import { runLowQualityDetector } from "../ai/qualityDetector";
 import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
+import { logIfNotFocusMode } from "../logger";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -34,7 +35,7 @@ function shouldUseStabilityStage1A(): boolean {
 function lockStabilityPrimary(reason: string) {
   if (stabilityPrimaryLockedReason) return;
   stabilityPrimaryLockedReason = reason;
-  console.warn(`[stage1A] Stability primary disabled: ${reason}`);
+  logIfNotFocusMode(`[stage1A] Stability primary disabled: ${reason}`);
 }
 
 function isPaymentRequiredError(err: any): boolean {
@@ -182,13 +183,13 @@ export async function runStage1A(
   }
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
   const jobIdResolved = jobId;
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobRoomType" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobRoomType" });
   const roomTypeResolved = roomType;
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -230,7 +231,7 @@ export async function runStage1A(
     // Additional midtone/local contrast shaping
     img = img.gamma(1.0 + (interiorCfg.midtoneLift * 0.12)); // gentle gamma tweak for midtones
     img = img.linear(1 + interiorCfg.localContrast, -(128 * interiorCfg.localContrast));
-    console.log(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)})`);
+    logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)})`);
   } else {
     img = img.modulate({
       brightness: 1.14,  // +14% brightness (adaptive, marketing-grade)
@@ -271,7 +272,7 @@ export async function runStage1A(
   });
   
   // 12. Export Sharp enhancement with maximum quality
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
+  logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
   const baseArtifactsCache: Map<string, BaseArtifacts> = options.baseArtifactsCache || new Map();
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
   const artifactsPromise = buildArtifacts ? ((): Promise<BaseArtifacts> => {
@@ -314,11 +315,11 @@ export async function runStage1A(
       const artifacts = await artifactsPromise;
       baseArtifactsCache.set(sharpOutputPath, artifacts);
     } catch (e) {
-      console.warn("[stage1A] Failed to build BaseArtifacts cache:", e);
+      logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", e);
     }
   }
   
-  console.log(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
+  logIfNotFocusMode(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
   if (shouldUseStabilityStage1A()) {
@@ -330,23 +331,23 @@ export async function runStage1A(
         quality.dynamicRange < GEMINI_TRIGGER_THRESHOLDS.MIN_DYNAMIC_RANGE ||
         quality.laplacianEstimate > GEMINI_TRIGGER_THRESHOLDS.MAX_LAPLACIAN_ESTIMATE;
 
-      console.log("[stage1A] Quality Scan:", {
+      logIfNotFocusMode("[stage1A] Quality Scan:", {
         ...quality,
         forceGemini
       });
 
       if (forceGemini) {
-        console.warn("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
+        logIfNotFocusMode("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
         const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
         return geminiOutputPath;
       }
     } else {
-      console.log("[stage1A] Quality gate disabled — attempting Stability first");
+      logIfNotFocusMode("[stage1A] Quality gate disabled — attempting Stability first");
     }
 
     let primary1AImage: string;
 
-    console.log("[stage1A] ✅ Using Stability primary (Gemini fallback on error)");
+    logIfNotFocusMode("[stage1A] ✅ Using Stability primary (Gemini fallback on error)");
     try {
       const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
       const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
@@ -355,11 +356,11 @@ export async function runStage1A(
         .toFile(stabilityWebp);
       primary1AImage = stabilityWebp;
     } catch (err) {
-      console.error("[stage1A] ❌ Stability API failed:", err);
+      logIfNotFocusMode("[stage1A] ❌ Stability API failed:", err);
       if (isPaymentRequiredError(err) && DISABLE_STABILITY_ON_PAYMENT_REQUIRED) {
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
-      console.warn("[stage1A] 🔁 Falling back to Gemini...");
+      logIfNotFocusMode("[stage1A] 🔁 Falling back to Gemini...");
       primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
     }
 
@@ -371,7 +372,7 @@ export async function runStage1A(
     );
 
     if (!diffResult.passed && STAGE1A_STRICT_DIFF) {
-      console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
+      logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
         const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
@@ -382,29 +383,29 @@ export async function runStage1A(
         const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
         const masks = { structuralMask: maskPath };
         let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
-        console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);
+        logIfNotFocusMode(`[stage1A] Structural validator verdict (gemini output):`, verdict);
 
         if (!verdict.ok) {
-          console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+          logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
         }
 
         const fs = await import("fs/promises");
         await fs.rename(geminiImage, finalOutputPath);
-        console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
         return finalOutputPath;
 
       } catch {
-        console.error("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only");
+        logIfNotFocusMode("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only");
         const fs = await import("fs/promises");
         await fs.rename(sharpOutputPath, finalOutputPath);
-        console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
         return finalOutputPath;
       }
     } else if (!diffResult.passed) {
-      console.warn("[stage1A] ⚠️ Content diff failed but strict mode disabled — keeping Stability output");
+      logIfNotFocusMode("[stage1A] ⚠️ Content diff failed but strict mode disabled — keeping Stability output");
     }
 
-    console.log("[stage1A] ✅ Stage 1A content diff validator PASSED");
+    logIfNotFocusMode("[stage1A] ✅ Stage 1A content diff validator PASSED");
 
     // Run structural validator on primary output
     const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
@@ -412,15 +413,15 @@ export async function runStage1A(
     const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
     const masks = { structuralMask: maskPath };
     let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
-    console.log(`[stage1A] Structural validator verdict (primary output):`, verdict);
+    logIfNotFocusMode(`[stage1A] Structural validator verdict (primary output):`, verdict);
 
     if (!verdict.ok) {
-      console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+      logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
     }
 
     const fs = await import("fs/promises");
     await fs.rename(primary1AImage, finalOutputPath);
-    console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+    logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
     return finalOutputPath;
   }
 
@@ -431,11 +432,11 @@ export async function runStage1A(
       : FORCE_GEMINI_STAGE1A
         ? "forced via env"
         : "feature flag off";
-    console.log(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
+    logIfNotFocusMode(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
     const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
 
-    console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
+    logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
     if (geminiOutputPath !== sharpOutputPath) {
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
@@ -443,26 +444,26 @@ export async function runStage1A(
       const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
       const masks = { structuralMask: maskPath };
       let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
-      console.log(`[stage1A] Structural validator verdict (gemini output):`, verdict);
+      logIfNotFocusMode(`[stage1A] Structural validator verdict (gemini output):`, verdict);
 
       if (!verdict.ok) {
-        console.warn(`[stage1A] HARD FAIL: ${verdict.reason}`);
+        logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
       }
 
       const fs = await import("fs/promises");
       await fs.rename(geminiOutputPath, finalOutputPath);
-      console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+      logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
       return finalOutputPath;
     }
 
   } catch (err) {
-    console.error("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only!", err);
+    logIfNotFocusMode("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only!", err);
   }
 
   // --- FINAL EMERGENCY FALLBACK: Sharp Only ---
-  console.log("[stage1A] ℹ️ Using Sharp enhancement only (all AI failed)");
+  logIfNotFocusMode("[stage1A] ℹ️ Using Sharp enhancement only (all AI failed)");
   const fs = await import("fs/promises");
   await fs.rename(sharpOutputPath, finalOutputPath);
-  console.log(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
+  logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
   return finalOutputPath;
 }

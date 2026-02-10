@@ -61,7 +61,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
-import { vLog, nLog } from "./logger";
+import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
@@ -234,7 +234,11 @@ process.on('SIGINT', () => {
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
   startMemoryTracking(payload.jobId);
-  
+
+  if (isValidationFocusMode()) {
+    console.log("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
+  }
+
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   if ((payload as any).retryType === "manual_retry") {
     nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
@@ -861,7 +865,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const primary = await detectSceneFromImage(buf);
     scenePrimary = primary;
     const fmt = (v: any) => typeof v === "number" && Number.isFinite(v) ? v.toFixed(3) : "n/a";
-    nLog(`[SCENE] primary=${primary?.label ?? "unknown"} conf=${fmt(primary?.confidence)} sky=${fmt((primary as any)?.skyPct)} grass=${fmt((primary as any)?.grassPct)} deck=${fmt((primary as any)?.woodDeckPct)}`);
+    logIfNotFocusMode(`[SCENE] primary=${primary?.label ?? "unknown"} conf=${fmt(primary?.confidence)} sky=${fmt((primary as any)?.skyPct)} grass=${fmt((primary as any)?.grassPct)} deck=${fmt((primary as any)?.woodDeckPct)}`);
 
     // Sky mode determination for exteriors (SKY_SAFE vs SKY_STRONG)
     if (primary?.label === "exterior") {
@@ -1178,7 +1182,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Determine sky mode from scene detection results (already force-safe applied in detection block)
   const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
-  nLog(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
+  logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
@@ -1210,7 +1214,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageLineage.curtainRailLikely = "unknown";
     nLog(`[CURTAIN_RAIL_DETECT] railLikely=unknown conf=0.00 reason=error`);
   }
-  nLog(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
+  logIfNotFocusMode(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   
   commitStageOutput("1A", path1A);
   // Track memory after Stage 1A
@@ -1364,7 +1368,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? localIssues : false;
       if (localIssues) {
         const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
-        nLog(`[stage1B][attempt=${attempt}] validation advisory: ${msg}`);
+        logIfNotFocusMode(`[stage1B][attempt=${attempt}] validation advisory: ${msg}`);
       }
 
       return { output, verdict, needsConfirm, advisoryReasons, localIssues };
@@ -1409,7 +1413,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       stage1BAttempts += 1;
       const currentMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as any;
-      nLog(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
+      logIfNotFocusMode(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
       try {
         const { output, verdict, needsConfirm, advisoryReasons, localIssues } = await runStage1BWithValidation(currentMode, stage1BAttempts);
         if (output === path1A) {
@@ -1432,7 +1436,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (verdictBlockFromLocal || verdictBlockFromGemini) {
           const reason = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B blocked by structural validation";
           const attemptsLeft = maxAttempts - stage1BAttempts;
-          nLog(`[stage1B] HARD FAIL detected (source=${verdict?.blockSource}). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
+          logIfNotFocusMode(`[stage1B] HARD FAIL detected (source=${verdict?.blockSource}). Reason: ${reason}. Attempts left: ${attemptsLeft}`);
           if (attemptsLeft > 0) {
             // Retry Stage 1B using last good (Stage1A) baseline
             nLog("[RETRY_STATUS_WRITE]", {
@@ -1457,7 +1461,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (!useLightFallback && declutterMode === "stage-ready") {
             useLightFallback = true;
             stage1BAttempts = 0;
-            nLog(`[stage1B] Switching to light declutter fallback after ${maxAttempts} hard-fail attempt(s) (source=${verdict?.blockSource}) in stage-ready mode`);
+            logIfNotFocusMode(`[stage1B] Switching to light declutter fallback after ${maxAttempts} hard-fail attempt(s) (source=${verdict?.blockSource}) in stage-ready mode`);
             nLog("[RETRY_STATUS_WRITE]", {
               jobId: payload.jobId,
               stage: "1B",
@@ -1503,10 +1507,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
         if (localIssues && VALIDATION_BLOCKING_ENABLED) {
           const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "stage1B validation blocked";
-          nLog(`[stage1B] local block failure: ${msg}`);
+          logIfNotFocusMode(`[stage1B] local block failure: ${msg}`);
           const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
           if (!exhausted && !useLightFallback) {
-            nLog(`[stage1B] retrying after local block failure (${stage1BAttempts}/${maxAttempts})`);
+            logIfNotFocusMode(`[stage1B] retrying after local block failure (${stage1BAttempts}/${maxAttempts})`);
             nLog("[RETRY_STATUS_WRITE]", {
               jobId: payload.jobId,
               stage: "1B",
@@ -1528,7 +1532,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
             useLightFallback = true;
             stage1BAttempts = 0;
-            nLog(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
+            logIfNotFocusMode(`[stage1B] Switching to light declutter fallback after local block failures in stage-ready mode`);
             nLog("[RETRY_STATUS_WRITE]", {
               jobId: payload.jobId,
               stage: "1B",
@@ -1574,13 +1578,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         break;
       } catch (err: any) {
         lastError = err?.message || String(err);
-        nLog(`[stage1B] attempt ${stage1BAttempts} failed: ${lastError}`);
+        logIfNotFocusMode(`[stage1B] attempt ${stage1BAttempts} failed: ${lastError}`);
         const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
         if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
           // Switch to light declutter fallback for one attempt
           useLightFallback = true;
           stage1BAttempts = 0;
-          nLog(`[stage1B] Switching to light declutter fallback after failures in stage-ready mode`);
+          logIfNotFocusMode(`[stage1B] Switching to light declutter fallback after failures in stage-ready mode`);
           nLog("[RETRY_STATUS_WRITE]", {
             jobId: payload.jobId,
             stage: "1B",

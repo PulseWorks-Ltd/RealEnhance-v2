@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import fs from "fs";
 import path from "path";
+import { logIfNotFocusMode } from "../logger";
 
 // Optional ONNX support (dynamic import; falls back to heuristics if missing)
 type ORT = any;
@@ -180,7 +181,7 @@ export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryRes
       needsConfirm: true,
       reason: "covered_exterior_suspect",
     };
-    console.debug('[SCENE][worker] covered_exterior_suspect → unsure', {
+    logIfNotFocusMode('[SCENE][worker] covered_exterior_suspect → unsure', {
       skyTop10: metrics.skyTop10,
       skyTop40: metrics.skyTop40,
       blueOverall: metrics.blueOverall,

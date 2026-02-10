@@ -14,6 +14,16 @@
 
 import { VALIDATOR_FOCUS } from "./config";
 
+export function isValidationFocusMode(): boolean {
+  return process.env.VALIDATOR_FOCUS_MODE === "on";
+}
+
+export function logIfNotFocusMode(...args: any[]) {
+  if (!isValidationFocusMode()) {
+    console.log(...args);
+  }
+}
+
 /**
  * Validator-focused log
  *

@@ -1,5 +1,6 @@
 import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
+import { logIfNotFocusMode } from "../logger";
 
 /**
  * Per-stage Gemini model configuration with safe fallback
@@ -73,7 +74,7 @@ function logModelResolution(meta: ModelLogMeta) {
   const models = meta.fallbackModel
     ? `${meta.selectedModel || 'n/a'} (fallback=${meta.fallbackModel})`
     : (meta.selectedModel || 'n/a');
-  console.log(
+  logIfNotFocusMode(
     `[MODEL][${stageLabel}] job=${meta.jobId || 'n/a'} file=${meta.filename || 'n/a'} stage=${stageLabel} room=${meta.roomType || 'n/a'} models=${models} reason=${meta.reason || 'n/a'}`
   );
 }
@@ -96,7 +97,7 @@ export async function runWithImageModelFallback(
   // Stage 1A always uses Gemini 2.5 (primary model only, no fallback)
   const model = MODEL_CONFIG.stage1A.primary;
 
-  console.log(`[stage1A] Model: ${model}`);
+  logIfNotFocusMode(`[stage1A] Model: ${model}`);
   logModelResolution({
     stage: meta?.stage || "1A",
     jobId: meta?.jobId,
@@ -157,7 +158,7 @@ export async function runWithPrimaryThenFallback({
   const primaryModel = config.primary;
   const fallbackModel = config.fallback!;
 
-  console.log(`[stage${stageLabel}] Primary model: ${primaryModel}, fallback: ${fallbackModel}`);
+  logIfNotFocusMode(`[stage${stageLabel}] Primary model: ${primaryModel}, fallback: ${fallbackModel}`);
   logModelResolution({
     stage: meta?.stage || stageLabel,
     jobId: meta?.jobId,
