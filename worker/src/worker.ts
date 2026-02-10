@@ -2028,12 +2028,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
-  let stage2InputPath = isExteriorScene ? path1A : (payload.options.declutter && path1B ? path1B : path1A);
+  const declutterRequested = !!payload.options.declutter;
+  if (declutterRequested && !path1B) {
+    nLog("[STAGE2_BLOCKED_NO_1B]", {
+      jobId: payload.jobId,
+      declutterRequested,
+      stage1BCommitted: stageLineage.stage1B.committed,
+      stage1BOutput: stageLineage.stage1B.output,
+    });
+    payload.options.virtualStage = false;
+    stage2Blocked = true;
+    stage2BlockedReason = "stage1b_missing";
+    stage2FallbackStage = "1A";
+  }
+  let stage2InputPath = isExteriorScene ? path1A : (declutterRequested ? path1B! : path1A);
   stage12Success = true;
-  let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (payload.options.declutter && path1B ? "1B" : "1A");
+  let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (declutterRequested ? "1B" : "1A");
   const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
     ? "1A"
-    : (payload.options.declutter && path1B
+    : (declutterRequested && path1B
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
       : "1A");
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
