@@ -3195,6 +3195,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
       const shouldBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
 
+      nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
+        jobId: payload.jobId,
+        complianceOk: compliance.ok,
+        complianceConfidence: compliance.confidence,
+        complianceReasons: compliance.reasons?.length ?? 0,
+        hasAnchorEvidence,
+        anchorFlags: anchorChecks ?? null,
+        maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
+        lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
+        dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
+        riskLevel: unifiedValidation?.riskLevel ?? null,
+        stage2Input: stage2InputResolved ?? null,
+        stage1AUrl: pub1AUrl ?? null,
+        stage1BUrl: pub1BUrl ?? null,
+        finalStage2Url: pub2Url ?? null,
+      });
+
       nLog("[COMPLIANCE_GATE_DECISION]", {
         jobId: payload.jobId,
         ok: compliance.ok,
