@@ -37,8 +37,23 @@ export async function runStage1B(
   console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
-  const suffix = attemptIndex > 0 ? `-1B-retry${attemptIndex}` : "-1B";
-  const outputPath = siblingOutPath(stage1APath, suffix, ".webp");
+  let resolvedAttemptIndex = attemptIndex;
+  let suffix = resolvedAttemptIndex > 0 ? `-1B-retry${resolvedAttemptIndex}` : "-1B";
+  let outputPath = siblingOutPath(stage1APath, suffix, ".webp");
+  if (attemptIndex === 0) {
+    const fs = await import("fs/promises");
+    try {
+      await fs.access(outputPath);
+      resolvedAttemptIndex = 1;
+      suffix = `-1B-retry${resolvedAttemptIndex}`;
+      outputPath = siblingOutPath(stage1APath, suffix, ".webp");
+    } catch (err: any) {
+      if (err?.code !== "ENOENT") {
+        throw err;
+      }
+    }
+  }
+  console.log(`[STAGE1B_OUTPUT_PATH] attempt=${attemptIndex} resolved=${outputPath}`);
 
   // ✅ HARD REQUIREMENT: declutterMode MUST be provided (no defaults)
   if (!declutterMode || (declutterMode !== "light" && declutterMode !== "stage-ready")) {
@@ -119,7 +134,7 @@ Do not add blinds.
     
     console.log(`[stage1B] 🤖 Calling Gemini in ${declutterMode} mode...`);
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
-    if (attemptIndex > 0) {
+    if (resolvedAttemptIndex > 0) {
       const fs = await import("fs/promises");
       try {
         await fs.access(outputPath);
