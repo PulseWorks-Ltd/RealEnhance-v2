@@ -313,7 +313,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
   let stage2LocalReasons: string[] = [];
-  const stage2AttemptOutputs: Array<{ attempt: number; localPath: string; publishedUrl?: string }> = [];
+  const stage2AttemptOutputs: Array<{
+    attempt: number;
+    localPath: string;
+    publishedUrl?: string;
+    blockedBy?: string | null;
+    reasons?: string[] | null;
+  }> = [];
   let stage2SummaryLogged = false;
   let stage2SummaryEligible = false;
   const localValidatorMode = getLocalValidatorMode();
@@ -398,19 +404,66 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   };
 
+  const stage2BlockedByPriority = (blockedBy?: string | null): number => {
+    if (blockedBy === "gemini") return 3;
+    if (blockedBy === "consensus") return 2;
+    if (blockedBy === "local") return 2;
+    if (blockedBy === "timeout") return 1;
+    if (blockedBy === "guard") return 1;
+    if (blockedBy) return 1;
+    return 0;
+  };
+
+  const setStage2AttemptValidation = (
+    localPath: string | undefined | null,
+    blockedBy: string,
+    reasons: string[] | undefined,
+  ) => {
+    if (!localPath) return;
+    const match = stage2AttemptOutputs.find((entry) => entry.localPath === localPath);
+    if (!match) return;
+    const nextPriority = stage2BlockedByPriority(blockedBy);
+    const currentPriority = stage2BlockedByPriority(match.blockedBy ?? null);
+    if (nextPriority < currentPriority) return;
+    match.blockedBy = blockedBy;
+    match.reasons = reasons && reasons.length ? reasons : [];
+  };
+
+  const getUnifiedValidatorReasons = (result: UnifiedValidationResult | undefined): string[] => {
+    if (!result) return [];
+    if (result.reasons && result.reasons.length) return result.reasons;
+    const rawEntries = result.raw ? Object.entries(result.raw) : [];
+    const failedNames = rawEntries
+      .filter(([, verdict]) => verdict && verdict.passed === false)
+      .map(([name]) => name);
+    return failedNames;
+  };
+
   const logStage2RetrySummary = (selectedPath?: string | null) => {
     if (stage2SummaryLogged || !stage2SummaryEligible) return;
     stage2SummaryLogged = true;
     const selectedFinalAttempt = selectedPath
       ? stage2AttemptOutputs.find((entry) => entry.localPath === selectedPath)?.attempt ?? null
       : null;
+    const attemptsSummary = stage2AttemptOutputs.map((entry) => {
+      const label = entry.attempt === 0 ? "base" : `retry${entry.attempt}`;
+      return {
+        attempt: entry.attempt,
+        label,
+        url: entry.publishedUrl ?? null,
+        blockedBy: entry.blockedBy ?? null,
+        reasons: entry.reasons ?? null,
+      };
+    });
+    const urls = attemptsSummary
+      .filter((entry) => entry.url)
+      .map((entry) => ({ label: entry.label, url: entry.url as string }));
     nLog("[STAGE2_RETRY_SUMMARY]", {
       jobId: payload.jobId,
-      attempts: stage2AttemptOutputs.map((entry) => ({
-        attempt: entry.attempt,
-        url: entry.publishedUrl ?? null,
-      })),
-      selectedFinalAttempt: selectedFinalAttempt ?? null,
+      attemptCount: attemptsSummary.length,
+      adoptedAttempt: selectedFinalAttempt ?? null,
+      attempts: attemptsSummary,
+      urls,
     });
   };
 
@@ -2407,6 +2460,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           (unifiedValidation.blockSource === "gemini" && geminiBlockingEnabled) ||
           (unifiedValidation.blockSource === "local" && VALIDATION_BLOCKING_ENABLED)
         );
+        if (blockingFail) {
+          const validatorBlockedBy = unifiedValidation.blockSource === "gemini"
+            ? "gemini"
+            : "local";
+          setStage2AttemptValidation(path2, validatorBlockedBy, getUnifiedValidatorReasons(unifiedValidation));
+        }
         if (blockingFail && validationAttempt < validationMaxAttempts) {
           nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
           const retryStatus = await getJob(payload.jobId);
@@ -2646,6 +2705,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
       nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
       lastGeminiConfirm = confirm;
+      if (confirm.confirmedFail) {
+        setStage2AttemptValidation(stage2CandidatePath, "gemini", confirm.reasons);
+      }
 
       // Retry loop: if Gemini blocks and blocking is enabled, re-run Stage 2 with reduced params
       while (confirm.confirmedFail && geminiBlockingEnabled && geminiRetries < geminiMaxRetries) {
@@ -2834,6 +2896,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           nLog(`[GEMINI_CONFIRM] stage=2 retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
           lastGeminiConfirm = confirm;
+          if (confirm.confirmedFail) {
+            setStage2AttemptValidation(retryStage2Path, "gemini", confirm.reasons);
+          }
 
           if (!confirm.confirmedFail) {
             // ═══ FINAL STATUS GUARD ═══
