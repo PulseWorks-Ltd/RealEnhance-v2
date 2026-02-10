@@ -25,6 +25,7 @@ import {
 import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
 import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
 import { normalizeImagePairForValidator } from "../dimensionUtils";
+import { focusLog } from "../../utils/logFocus";
 
 /**
  * Sobel edge detection with binary threshold
@@ -212,10 +213,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     candidateUrl: params.candidatePath,
   };
 
-  console.log(`[stageAware] === Stage-Aware Validation (${params.stage}) ===`);
-  console.log(`[stageAware] Baseline: ${params.baselinePath}`);
-  console.log(`[stageAware] Candidate: ${params.candidatePath}`);
-  console.log(`[stageAware] Mode: ${mode}`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] === Stage-Aware Validation (${params.stage}) ===`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Baseline: ${params.baselinePath}`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Candidate: ${params.candidatePath}`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Mode: ${mode}`);
 
   // ===== 1. LOAD AND VERIFY DIMENSIONS =====
   let baseMeta: sharp.Metadata;
@@ -232,12 +233,12 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       sharp(candidatePath).metadata(),
     ]);
   } catch (err) {
-    console.error(`[stageAware] Error loading image metadata:`, err);
+    focusLog("STAGEAWARE_VERBOSE", `[stageAware] Error loading image metadata:`, err);
     return buildFailedSummary(params.stage, "metadata_error", mode);
   }
 
   if (!baseMeta.width || !baseMeta.height || !candMeta.width || !candMeta.height) {
-    console.error(`[stageAware] Invalid image dimensions`);
+    focusLog("STAGEAWARE_VERBOSE", `[stageAware] Invalid image dimensions`);
     return buildFailedSummary(params.stage, "invalid_dimensions", mode);
   }
 
@@ -253,12 +254,12 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
     candidatePath = dimNormalized.candidatePath;
     baseMeta = { width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata;
     candMeta = { width: dimNormalized.width, height: dimNormalized.height } as sharp.Metadata;
-    const logFn = dimNormalized.severity === "warn" ? console.warn : console.log;
-    logFn(
+    focusLog(
+      "VALIDATOR_DIM_NORMALIZE",
       `[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${dimNormalized.baseOrig?.width || "?"}x${dimNormalized.baseOrig?.height || "?"} candidate=${dimNormalized.candidateOrig?.width || "?"}x${dimNormalized.candidateOrig?.height || "?"} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=${dimNormalized.severity}`
     );
   } else if ((baseMeta.width !== candMeta.width) || (baseMeta.height !== candMeta.height)) {
-    console.warn(`[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${baseMeta.width}x${baseMeta.height} candidate=${candMeta.width}x${candMeta.height} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=warn`);
+    focusLog("VALIDATOR_DIM_NORMALIZE", `[VALIDATOR][DIM_NORMALIZE] stage=${params.stage} job=${params.jobId || "unknown"} baseline=${baseMeta.width}x${baseMeta.height} candidate=${candMeta.width}x${candMeta.height} normalized=${dimNormalized.width}x${dimNormalized.height} method=${dimNormalized.method} severity=warn`);
   }
 
   const baseW = baseMeta.width!;
@@ -283,7 +284,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       loadOrComputeStructuralMask(jobId + "-cand", candidatePath),
     ]);
   } catch (err) {
-    console.error(`[stageAware] Error computing structural masks:`, err);
+    focusLog("STAGEAWARE_VERBOSE", `[stageAware] Error computing structural masks:`, err);
     return buildFailedSummary(params.stage, "mask_error", mode);
   }
 
@@ -299,8 +300,8 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   debug.maskARatio = maskAPixels / totalPixelsBase;
   debug.maskBRatio = maskBPixels / totalPixelsCand;
 
-  console.log(`[stageAware] Mask A: ${maskAPixels} pixels (${(debug.maskARatio * 100).toFixed(2)}%)`);
-  console.log(`[stageAware] Mask B: ${maskBPixels} pixels (${(debug.maskBRatio * 100).toFixed(2)}%)`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Mask A: ${maskAPixels} pixels (${(debug.maskARatio * 100).toFixed(2)}%)`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Mask B: ${maskBPixels} pixels (${(debug.maskBRatio * 100).toFixed(2)}%)`);
 
   // ===== 5. COMPUTE STRUCTURAL MASK IoU (if valid) =====
   let structuralIoU: number | null = null;
@@ -308,11 +309,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   if (debug.dimensionMismatch) {
     debug.structuralIoUSkipped = true;
     debug.structuralIoUSkipReason = "dimension_mismatch";
-    console.warn(`[stageAware] Skipping structural IoU: dimension mismatch (post-normalization)`);
+    focusLog("STAGEAWARE_VERBOSE", `[stageAware] Skipping structural IoU: dimension mismatch (post-normalization)`);
   } else if (debug.maskARatio < config.iouMinPixelsRatio || debug.maskBRatio < config.iouMinPixelsRatio) {
     debug.structuralIoUSkipped = true;
     debug.structuralIoUSkipReason = "mask_too_small";
-    console.warn(`[stageAware] Skipping structural IoU: mask too small (A=${(debug.maskARatio * 100).toFixed(2)}%, B=${(debug.maskBRatio * 100).toFixed(2)}%)`);
+    focusLog("STAGEAWARE_VERBOSE", `[stageAware] Skipping structural IoU: mask too small (A=${(debug.maskARatio * 100).toFixed(2)}%, B=${(debug.maskBRatio * 100).toFixed(2)}%)`);
   } else {
     // Load grayscale images and compute edges
     try {
@@ -342,7 +343,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       if (iouResult.value !== null) {
         structuralIoU = iouResult.value;
         metrics.structuralIoU = structuralIoU;
-        console.log(`[stageAware] Structural IoU (masked): ${structuralIoU.toFixed(3)} (inter=${iouResult.inter}, union=${iouResult.uni})`);
+        focusLog("STAGEAWARE_VERBOSE", `[stageAware] Structural IoU (masked): ${structuralIoU.toFixed(3)} (inter=${iouResult.inter}, union=${iouResult.uni})`);
 
         if (structuralIoU < thresholds.structuralMaskIouMin) {
           triggers.push({
@@ -356,10 +357,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       } else {
         debug.structuralIoUSkipped = true;
         debug.structuralIoUSkipReason = "union_zero";
-        console.warn(`[stageAware] Structural IoU skipped: union=0`);
+        focusLog("STAGEAWARE_VERBOSE", `[stageAware] Structural IoU skipped: union=0`);
       }
     } catch (err) {
-      console.error(`[stageAware] Error computing structural IoU:`, err);
+      focusLog("STAGEAWARE_VERBOSE", `[stageAware] Error computing structural IoU:`, err);
       debug.structuralIoUSkipped = true;
       debug.structuralIoUSkipReason = "computation_error";
     }
@@ -406,16 +407,16 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
             config.stage2ExcludeLowerPct
           );
           edgeIoU = result.value;
-          console.log(`[stageAware] Edge IoU (exclude_lower ${(config.stage2ExcludeLowerPct * 100).toFixed(0)}%): ${edgeIoU?.toFixed(3) || "null"}`);
+          focusLog("STAGEAWARE_VERBOSE", `[stageAware] Edge IoU (exclude_lower ${(config.stage2ExcludeLowerPct * 100).toFixed(0)}%): ${edgeIoU?.toFixed(3) || "null"}`);
         } else if (edgeMode === "structure_only") {
           const result = computeStructureOnlyIoU(baseEdge, candEdge, maskBaseline);
           edgeIoU = result.value;
-          console.log(`[stageAware] Edge IoU (structure_only): ${edgeIoU?.toFixed(3) || "null"}`);
+          focusLog("STAGEAWARE_VERBOSE", `[stageAware] Edge IoU (structure_only): ${edgeIoU?.toFixed(3) || "null"}`);
         } else {
           // global mode
           const result = computeIoU(baseEdge, candEdge);
           edgeIoU = result.value;
-          console.log(`[stageAware] Edge IoU (global): ${edgeIoU?.toFixed(3) || "null"}`);
+          focusLog("STAGEAWARE_VERBOSE", `[stageAware] Edge IoU (global): ${edgeIoU?.toFixed(3) || "null"}`);
         }
 
         if (edgeIoU !== null) {
@@ -439,7 +440,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
 
         if (edgeIoU !== null) {
           metrics.globalEdgeIoU = edgeIoU;
-          console.log(`[stageAware] Global Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${edgeThresholdValue})`);
+          focusLog("STAGEAWARE_VERBOSE", `[stageAware] Global Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${edgeThresholdValue})`);
 
           if (edgeIoU < edgeThresholdValue) {
             triggers.push({
@@ -453,7 +454,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         }
       }
     } catch (err) {
-      console.error(`[stageAware] Error computing edge IoU:`, err);
+      focusLog("STAGEAWARE_VERBOSE", `[stageAware] Error computing edge IoU:`, err);
     }
   }
 
@@ -473,17 +474,17 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         for (const t of paintOverResult.triggers) {
           triggers.push(t);
           if (t.fatal) {
-            console.error(`[stageAware] FATAL paint-over detected: ${t.message}`);
+            focusLog("STAGEAWARE_VERBOSE", `[stageAware] FATAL paint-over detected: ${t.message}`);
           }
         }
       }
 
       // Log debug artifacts
       if (paintOverResult?.debugArtifacts?.length) {
-        console.log(`[stageAware] Paint-over debug artifacts: ${paintOverResult.debugArtifacts.join(", ")}`);
+        focusLog("STAGEAWARE_VERBOSE", `[stageAware] Paint-over debug artifacts: ${paintOverResult.debugArtifacts.join(", ")}`);
       }
     } catch (err) {
-      console.error(`[stageAware] Error in paint-over detection:`, err);
+      focusLog("STAGEAWARE_VERBOSE", `[stageAware] Error in paint-over detection:`, err);
     }
   }
 
@@ -492,10 +493,10 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   const risk = hasFatalTrigger || triggers.length >= config.gateMinSignals;
   const passed = !risk || mode === "log";
 
-  console.log(`[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
-  triggers.forEach((t, i) => console.log(`[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
-  console.log(`[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""}`);
-  console.log(`[stageAware] Passed: ${passed ? "YES" : "NO"}`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
+  triggers.forEach((t, i) => focusLog("STAGEAWARE_VERBOSE", `[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Risk: ${risk ? "YES" : "NO"}${hasFatalTrigger ? " (FATAL BYPASS)" : ""}`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] Passed: ${passed ? "YES" : "NO"}`);
 
   // ===== 8. COMPUTE AGGREGATE SCORE =====
   let score = 1.0;
@@ -521,7 +522,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
       const artifactDir = process.env.STRUCT_DEBUG_DIR || "/tmp";
       const prefix = `${artifactDir}/struct-${params.jobId || Date.now()}`;
 
-      console.log(`[stageAware] Saving debug artifacts to ${prefix}-*.json`);
+      focusLog("STAGEAWARE_VERBOSE", `[stageAware] Saving debug artifacts to ${prefix}-*.json`);
 
       await fs.writeFile(
         `${prefix}-summary.json`,
@@ -529,11 +530,11 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         "utf-8"
       );
     } catch (err) {
-      console.warn(`[stageAware] Failed to save debug artifacts:`, err);
+      focusLog("STAGEAWARE_VERBOSE", `[stageAware] Failed to save debug artifacts:`, err);
     }
   }
 
-  console.log(`[stageAware] ===============================`);
+  focusLog("STAGEAWARE_VERBOSE", `[stageAware] ===============================`);
 
   return {
     stage: params.stage,

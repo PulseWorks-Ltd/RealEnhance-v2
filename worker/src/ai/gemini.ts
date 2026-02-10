@@ -17,7 +17,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     preserveStructure,
   } = args;
 
-  console.log("[gemini.regionEdit] starting", {
+  focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
     baseSize: baseImageBuffer.length,
@@ -64,7 +64,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   // Debug: log mask buffer stats
   if (maskPngBuffer) {
     const sharpStats = await require('sharp')(maskPngBuffer).stats();
-    console.log('[regionEditWithGemini] Received maskPngBuffer:', {
+    focusLog("GEMINI_MASK_DEBUG", "[regionEditWithGemini] Received maskPngBuffer:", {
       width: sharpStats.width,
       height: sharpStats.height,
       channels: sharpStats.channels,
@@ -105,6 +105,7 @@ import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
+import { focusLog } from "../utils/logFocus";
 
 let singleton: GoogleGenAI | null = null;
 
@@ -180,9 +181,9 @@ export async function enhanceWithGemini(
   }
 ): Promise<string> {
   const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason, outputPath } = options;
-  console.log("GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobId" });
+  focusLog("GEMINI_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
-  console.log("GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobRoomType" });
+  focusLog("GEMINI_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobRoomType" });
   const roomType = roomTypeOpt;
   const filename = path.basename(inputPath || "");
 
@@ -194,22 +195,22 @@ export async function enhanceWithGemini(
   }
 
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";
-  console.log(`🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'})...`);
-  console.log(`[Gemini] 🔵 Input path: ${inputPath}`);
-  console.log(`[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
+  focusLog("GEMINI_START", `🤖 Starting Gemini AI ${operationType} (stage: ${stage || 'unspecified'})...`);
+  focusLog("GEMINI_INPUT", `[Gemini] 🔵 Input path: ${inputPath}`);
+  focusLog("GEMINI_INPUT", `[Gemini] 🔵 Scene type: ${sceneType}, replaceSky: ${replaceSky}, declutter: ${declutter}`);
 
   // Log model selection strategy
   if (stage === "1A") {
-    console.log(`[Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)`);
+    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 1A uses Gemini 2.5 (no fallback)`);
   } else if (stage === "1B") {
-    console.log(`[Gemini] 📋 Model strategy: Stage 1B primary=Gemini 3, fallback=Gemini 2.5`);
+    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 1B primary=Gemini 3, fallback=Gemini 2.5`);
   } else if (stage === "2") {
-    console.log(`[Gemini] 📋 Model strategy: Stage 2 uses Gemini 2.5 (no fallback)`);
+    focusLog("GEMINI_MODEL_STRATEGY", `[Gemini] 📋 Model strategy: Stage 2 uses Gemini 2.5 (no fallback)`);
   }
 
   try {
     const client = getGeminiClient();
-    console.log(`[Gemini] ✓ Gemini client initialized`);
+    focusLog("GEMINI_CLIENT", `[Gemini] ✓ Gemini client initialized`);
 
     // Build prompt and image parts
     // Map config-based declutter intensity to env for prompt builder (kept sync)
@@ -247,7 +248,7 @@ export async function enhanceWithGemini(
           strictMode: strictMode,
           // Add other valid PromptOptions properties here as needed
         });
-    console.log(`[Gemini] 📝 Prompt length: ${prompt.length} chars`);
+    focusLog("GEMINI_PROMPT", `[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
     const { data, mime } = toBase64(inputPath);
     const requestParts: any[] = [
@@ -256,7 +257,7 @@ export async function enhanceWithGemini(
     ];
     const modelLogReason = modelReason
       || (roomType ? `${roomType} → ${stage === "1B" ? "declutter" : (stage === "2" ? "staging" : "enhance")}` : (stage === "1B" ? "declutter" : (stage === "2" ? "staging" : "enhance")));
-    console.log(`[Gemini] 🚀 Calling Gemini 3 Pro Image model...`);
+    focusLog("GEMINI_CALL", `[Gemini] 🚀 Calling Gemini 3 Pro Image model...`);
     const apiStart = Date.now();
     // Decide sampling defaults based on scene + mode, then apply any overrides
     const baseSampling = (() => {
@@ -331,9 +332,9 @@ export async function enhanceWithGemini(
     if (!usingTest) {
       if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
       if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
-      console.log(`[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
     } else {
-      console.log(`[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
     }
 
     // ✅ PER-STAGE MODEL SELECTION WITH SAFE FALLBACK
@@ -417,10 +418,10 @@ export async function enhanceWithGemini(
     }
 
     const apiMs = Date.now() - apiStart;
-    console.log(`[Gemini] ✅ API responded in ${apiMs} ms (model=${modelUsed})`);
+    focusLog("GEMINI_RESPONSE", `[Gemini] ✅ API responded in ${apiMs} ms (model=${modelUsed})`);
 
     const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.log(`[Gemini] 📊 Response parts: ${parts.length}`);
+    focusLog("GEMINI_RESPONSE", `[Gemini] 📊 Response parts: ${parts.length}`);
     const img = parts.find((p: any) => p.inlineData?.data && /image\//.test(p.inlineData?.mimeType || ''));
     if (!img?.inlineData?.data) {
       console.error(`❌ FATAL: Gemini ${modelUsed} returned no image data — cannot continue.`);
@@ -440,7 +441,7 @@ export async function enhanceWithGemini(
       }
     }
     writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
-    console.log(`[Gemini] 💾 Saved enhanced image to: ${out}`);
+    focusLog("GEMINI_SAVE", `[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
   } catch (error) {
     console.error(`❌ FATAL: Gemini ${operationType} failed — cannot continue AI pipeline.`);

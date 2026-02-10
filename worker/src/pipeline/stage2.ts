@@ -20,6 +20,7 @@ import { getJob, updateJob } from "../utils/persist";
 import { isTerminalStatus } from "../utils/statusUtils";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
+import { focusLog } from "../utils/logFocus";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -69,7 +70,7 @@ export async function runStage2(
   let localReasons: string[] = [];
 
   const stageAwareConfig = loadStageAwareConfig();
-  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__jobId" });
+  focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__jobId" });
   const jobId = opts.jobId;
   let attemptsUsed = 0;
   let validationRisk = false;
@@ -102,22 +103,22 @@ export async function runStage2(
   // If stage1APath not provided, fallback to basePath with warning
   const validationBaseline = opts.stage1APath || basePath;
   if (!opts.stage1APath) {
-    console.warn(`[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
+    focusLog("PIPELINE_BASELINE_WARN", `[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
   }
 
-  console.log(`[stage2] 🔵 Starting virtual staging...`);
-  console.log(`[stage2] Input: ${basePath}`);
-  console.log(`[stage2] Validation baseline: ${validationBaseline}`);
-  console.log(`[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
-  console.log(`[stage2] Room type: ${opts.roomType}`);
-  console.log(`[stage2] Scene type: ${opts.sceneType || 'interior'}`);
-  console.log(`[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
-  console.log(`[stage2] Stage-aware validation: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] 🔵 Starting virtual staging...`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Input: ${basePath}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Validation baseline: ${validationBaseline}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Room type: ${opts.roomType}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Scene type: ${opts.sceneType || 'interior'}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
+  focusLog("PIPELINE_VERBOSE", `[stage2] Stage-aware validation: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
 
   // Early exit if Stage 2 not enabled
   if (process.env.USE_GEMINI_STAGE2 !== "1") {
-    console.log(`[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
-    if (dbg) console.log(`[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
+    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
+    if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
     return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
@@ -138,11 +139,11 @@ export async function runStage2(
 
   // Check API key before attempting Gemini calls
   if (!process.env.REALENHANCE_API_KEY) {
-    console.warn(`[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
+    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
     return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
-  if (dbg) console.log(`[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
+  if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
   // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
   const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
@@ -184,9 +185,9 @@ export async function runStage2(
         const guidedPath = siblingOutPath(out, "-staging-guide", ".png");
         await sharp(guided).toFile(guidedPath);
         inputForStage2 = guidedPath;
-        if (dbg) console.log(`[stage2] Built guided input for staging region: ${guidedPath}`);
+        if (dbg) focusLog("TEMP_FILE", `[stage2] Built guided input for staging region: ${guidedPath}`);
       } catch (e) {
-        console.warn("[stage2] Failed to build guided staging input; proceeding with original base image", e);
+        focusLog("TEMP_FILE", "[stage2] Failed to build guided staging input; proceeding with original base image", e);
       }
     }
 
@@ -197,7 +198,7 @@ export async function runStage2(
     const useTest = process.env.USE_TEST_PROMPTS === "1";
     // Log incoming staging style from options (before prompt assembly)
     const stagingStyleRaw: any = (opts as any)?.stagingStyle;
-    console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
+    focusLog("PROMPT", "[stage2] incoming stagingStyle =", stagingStyleRaw);
     const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === "string"
       ? stagingStyleRaw.trim()
       : "none";
@@ -224,7 +225,7 @@ export async function runStage2(
       strictPrompt = true;
     }
 
-    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
+    focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
     const railLikely = opts.curtainRailLikely;
     if (railLikely === false) {
       textPrompt += `
@@ -270,15 +271,15 @@ Do not add blinds.
     if (dbg) {
       const combinedPrompt = styleDirective + "\n\n" + textPrompt;
       const preview = combinedPrompt.slice(0, 1000);
-      console.log(`[stage2] [PROMPT_ASSEMBLED] stagingStyle=${stagingStyleNorm} len=${combinedPrompt.length}\n${preview}${combinedPrompt.length > 1000 ? '\n...[truncated]' : ''}`);
-      console.info("[stage2][PROMPT_ASSEMBLED]", {
+      focusLog("PROMPT", `[stage2] [PROMPT_ASSEMBLED] stagingStyle=${stagingStyleNorm} len=${combinedPrompt.length}\n${preview}${combinedPrompt.length > 1000 ? '\n...[truncated]' : ''}`);
+      focusLog("PROMPT", "[stage2][PROMPT_ASSEMBLED]", {
         stagingStyle: stagingStyleNorm,
         len: combinedPrompt.length,
         preview: combinedPrompt.slice(0, 400),
       });
     }
-    if (dbg) console.log("[stage2] invoking Gemini with roomType=%s", opts.roomType);
-    console.log(`[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
+    if (dbg) focusLog("GEMINI_CALL", "[stage2] invoking Gemini with roomType=%s", opts.roomType);
+    focusLog("GEMINI_CALL", `[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
     try {
       let ai: any = null;
       ai = getGeminiClient();
@@ -297,7 +298,7 @@ Do not add blinds.
             topK: preset.topK,
           });
           generationConfig = { ...(generationConfig || {}), ...tightenedConfig };
-          console.log(`[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
+          focusLog("PIPELINE_VERBOSE", `[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
         } else {
           // Legacy behavior
           if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
@@ -329,13 +330,13 @@ Do not add blinds.
         },
       });
       const apiElapsed = Date.now() - apiStartTime;
-      console.log(`[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);
+      focusLog("PIPELINE_VERBOSE", `[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);
       const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-      console.log(`[stage2] 📊 Response parts: ${responseParts.length}`);
+      focusLog("PIPELINE_VERBOSE", `[stage2] 📊 Response parts: ${responseParts.length}`);
       const img = responseParts.find(p => p.inlineData);
       if (!img?.inlineData?.data) {
         validatorNotes.push({ stage: '2', validator: 'Gemini', error: 'No image data in Gemini response' });
-        if (dbg) console.log("[stage2] no image in response → using previous output");
+        if (dbg) focusLog("PIPELINE_VERBOSE", "[stage2] no image in response → using previous output");
         break;
       }
       const candidatePath = buildStage2OutputPath(attempt);
@@ -352,7 +353,7 @@ Do not add blinds.
       }
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
       out = candidatePath;
-      console.log(`[stage2] 💾 Saved staged image to: ${candidatePath}`);
+      focusLog("TEMP_FILE", `[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
       // Run validators after Stage 2
       let validatorFailed = false;

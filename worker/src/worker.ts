@@ -68,6 +68,7 @@ import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
+import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
   if (!mask || !mask.width || !mask.height || !mask.data) {
@@ -439,11 +440,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (remoteUrl) {
     // Multi-service mode: Download original from S3
     try {
-      nLog(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+      if (!VALIDATION_FOCUS_MODE) {
+        nLog(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+      }
       origPath = await downloadToTemp(remoteUrl, payload.jobId);
-      nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
+      if (!VALIDATION_FOCUS_MODE) {
+        nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
+      }
     } catch (e) {
-      nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
+      if (!VALIDATION_FOCUS_MODE) {
+        nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
+      }
       await safeWriteJobStatus(
         payload.jobId,
         { status: "failed", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` },
@@ -453,8 +460,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   } else {
     // Legacy single-service mode: Read from local filesystem
-    nLog("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
-    nLog("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
+    if (!VALIDATION_FOCUS_MODE) {
+      nLog("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
+      nLog("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
+    }
     
     const rec = readImageRecord(payload.imageId);
     if (!rec) {
@@ -601,7 +610,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Download Stage-1B base image
       const basePath = await downloadToTemp(payload.stage2OnlyMode.base1BUrl, `${payload.jobId}-stage1B`);
-      nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
+      if (!VALIDATION_FOCUS_MODE) {
+        nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
+      }
 
       // Run Stage-2 only (using 1B as base)
       stage2SummaryEligible = true;
