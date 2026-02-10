@@ -38,7 +38,13 @@ export async function checkCompliance(ai: GoogleGenAI, originalB64: string, edit
     '- adds/removes/moves/resizes doors, windows, walls, ceilings, floors, stairs, pillars, beams, built-ins, fixed plumbing/electrical.',
     '- kitchen islands, fixed counters, bench units, built-in cabinetry bases are structural built-ins.',
     '- kitchen islands and fixed counters: removal, resizing, relocation, or conversion is ALWAYS a structural violation.',
+    '- fixed appliances and fixtures are structural built-ins: refrigerators, built-in ovens, cooktops, range hoods, fixed ceiling light fixtures, pendant lights attached to ceiling wiring.',
+    '- removal or relocation of fixed appliances/fixtures is ALWAYS a structural violation.',
+    '- removing or replacing MOVABLE furniture is allowed and must NOT produce ok=false.',
+    '- movable furniture includes desks, tables, chairs, beds, sofas, bedside tables, freestanding wardrobes, freestanding shelving, dressers.',
     '- changes room perspective beyond minor lens/exposure correction (but NOT geometry).',
+    '- minor apparent size or framing differences caused by cropping, lens correction, or small perspective shifts are NOT structural violations.',
+    '- only flag window violations if the physical window opening is moved, resized, replaced, or removed.',
     'Allow staging furniture to overlap walls/floors visually; overlapping is NOT a structural violation.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
@@ -63,6 +69,12 @@ export async function checkCompliance(ai: GoogleGenAI, originalB64: string, edit
     '- furniture not aligned to floor perspective.',
     '- kitchen islands, fixed counters, bench units, built-in cabinetry bases are structural built-ins.',
     '- kitchen islands and fixed counters: removal, resizing, relocation, or conversion is ALWAYS a structural violation.',
+    '- fixed appliances and fixtures are structural built-ins: refrigerators, built-in ovens, cooktops, range hoods, fixed ceiling light fixtures, pendant lights attached to ceiling wiring.',
+    '- removal or relocation of fixed appliances/fixtures is ALWAYS a structural violation.',
+    '- removing or replacing MOVABLE furniture is allowed and must NOT produce ok=false.',
+    '- movable furniture includes desks, tables, chairs, beds, sofas, bedside tables, freestanding wardrobes, freestanding shelving, dressers.',
+    '- minor apparent size or framing differences caused by cropping, lens correction, or small perspective shifts are NOT structural violations.',
+    '- only flag window violations if the physical window opening is moved, resized, replaced, or removed.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
   const p = await ask(ai, originalB64, editedB64, placementPrompt);
