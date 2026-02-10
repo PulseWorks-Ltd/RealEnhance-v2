@@ -908,6 +908,7 @@ export async function runUnifiedValidation(
   const failedValidators = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff");
   const allPassed = failedValidators.length === 0;
   const geminiHardFail = results.geminiSemantic && results.geminiSemantic.details && (results.geminiSemantic.details as any).mode === "block" && results.geminiSemantic.passed === false;
+  const localFailures = failedValidators.length;
 
   // Update evidence with final aggregate
   evidence.unifiedScore = aggregateScore;
@@ -940,9 +941,59 @@ export async function runUnifiedValidation(
     });
   }
 
-  const blockSource: "local" | "gemini" | null = geminiHardFail
+  let blockSource: "local" | "gemini" | null = geminiHardFail
     ? "gemini"
     : ((mode === "enforce" && !allPassed) ? "local" : null);
+
+  // ===== STAGE2 SEMANTIC OVERRIDE GATE =====
+  // Allow Gemini semantic PASS to downgrade local failures when structural evidence is clean.
+  if (blockSource === "local" && stage === "2") {
+    const semanticKnown = typeof results.geminiSemantic?.passed === "boolean";
+    const semanticPass = semanticKnown && results.geminiSemantic?.passed === true;
+
+    const anchorChecks = evidence.anchorChecks;
+    const anchorValues = anchorChecks ? Object.values(anchorChecks) : null;
+    const anchorsChanged = (!anchorValues || anchorValues.some((v) => typeof v !== "boolean"))
+      ? null
+      : anchorValues.some((v) => v === true);
+
+    const windowsBefore = evidence.openings.windowsBefore;
+    const windowsAfter = evidence.openings.windowsAfter;
+    const doorsBefore = evidence.openings.doorsBefore;
+    const doorsAfter = evidence.openings.doorsAfter;
+    const openingsChanged = (typeof windowsBefore !== "number" || typeof windowsAfter !== "number" || typeof doorsBefore !== "number" || typeof doorsAfter !== "number")
+      ? null
+      : (Math.abs(windowsBefore - windowsAfter) !== 0 || Math.abs(doorsBefore - doorsAfter) !== 0);
+
+    const structuralMaskPassed = (typeof results.structuralMask?.passed !== "boolean") ? null : results.structuralMask.passed === true;
+    const wallsPassed = (typeof results.walls?.passed !== "boolean") ? null : results.walls.passed === true;
+
+    let rejectReason: "anchors" | "openings" | "removal" | "semantic_fail" | "missing_signal" | null = null;
+    if (!semanticKnown) {
+      rejectReason = "missing_signal";
+    } else if (!semanticPass) {
+      rejectReason = "semantic_fail";
+    } else if (anchorsChanged === null) {
+      rejectReason = "missing_signal";
+    } else if (anchorsChanged) {
+      rejectReason = "anchors";
+    } else if (openingsChanged === null) {
+      rejectReason = "missing_signal";
+    } else if (openingsChanged) {
+      rejectReason = "openings";
+    } else if (structuralMaskPassed === null || wallsPassed === null) {
+      rejectReason = "missing_signal";
+    } else if (!structuralMaskPassed || !wallsPassed) {
+      rejectReason = "removal";
+    }
+
+    if (rejectReason) {
+      nLog(`[STAGE2_SEMANTIC_OVERRIDE_GATE] rejected reason=${rejectReason}`);
+    } else {
+      blockSource = null;
+      nLog(`[STAGE2_SEMANTIC_OVERRIDE_GATE] activated localFailures=${localFailures} anchorsChanged=false openingsChanged=false semantic=PASS`);
+    }
+  }
 
   // Handle blocking logic
   if (blockSource) {
