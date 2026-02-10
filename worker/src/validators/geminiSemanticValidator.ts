@@ -2,13 +2,12 @@ import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import { createEmptyEvidence, shouldInjectEvidence } from "./validationEvidence";
+import { getEvidenceGatingVariant, isEvidenceGatingEnabledForJob } from "./evidenceGating";
 import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
 
 const logger = console;
 
 const MIN_CONFIDENCE = 0.75;
-const VALIDATOR_EVIDENCE_GATING = (process.env.VALIDATOR_EVIDENCE_GATING ?? "false") === "true" ||
-  (process.env.VALIDATOR_EVIDENCE_GATING ?? "false") === "1";
 
 /**
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
@@ -40,8 +39,8 @@ function collectEvidenceKeys(evidence: ValidationEvidence): string[] {
   return keys;
 }
 
-function gateEvidenceForGemini(stage: "1B" | "2", evidence: ValidationEvidence): ValidationEvidence {
-  if (!VALIDATOR_EVIDENCE_GATING) return evidence;
+function gateEvidenceForGemini(stage: "1B" | "2", evidence: ValidationEvidence, jobId?: string): ValidationEvidence {
+  if (!isEvidenceGatingEnabledForJob(jobId)) return evidence;
 
   const gated = createEmptyEvidence(evidence.jobId, evidence.stage);
 
@@ -108,13 +107,26 @@ function buildAdjudicatorPrompt(
   riskLevel?: RiskLevel
 ): string {
   if (!evidence) return basePrompt;
-  const gatedEvidence = gateEvidenceForGemini(evidence.stage, evidence);
-  if (VALIDATION_FOCUS_MODE && VALIDATOR_EVIDENCE_GATING) {
-    logger.info("[VALIDATION_EVIDENCE_GATED]", {
+  const jobId = evidence.jobId || "unknown";
+  const variant = getEvidenceGatingVariant(jobId);
+  const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);
+  const gatedEvidence = gateEvidenceForGemini(evidence.stage, evidence, jobId);
+  if (VALIDATION_FOCUS_MODE) {
+    logger.info("[EVIDENCE_GATING_VARIANT]", {
+      jobId,
+      variant,
       stage: evidence.stage,
-      original_keys: collectEvidenceKeys(evidence),
-      gated_keys: collectEvidenceKeys(gatedEvidence),
     });
+    if (gatingEnabled) {
+      const keysBefore = collectEvidenceKeys(evidence).length;
+      const keysAfter = collectEvidenceKeys(gatedEvidence).length;
+      logger.info("[EVIDENCE_GATING_ACTIVE]", {
+        jobId,
+        stage: evidence.stage,
+        keys_before: keysBefore,
+        keys_after: keysAfter,
+      });
+    }
   }
 
   if (!shouldInjectEvidence(gatedEvidence)) {
