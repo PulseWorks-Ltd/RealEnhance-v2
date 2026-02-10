@@ -136,13 +136,22 @@ Do not add blinds.
     // Call Gemini with declutter-only prompt (Stage 1A already enhanced)
     if (resolvedAttemptIndex > 0) {
       const fs = await import("fs/promises");
-      try {
-        await fs.access(outputPath);
-        throw new Error(`[stage1B] Retry output already exists: ${outputPath}`);
-      } catch (err: any) {
-        if (err?.code !== "ENOENT") {
+      let retryIndex = resolvedAttemptIndex;
+      while (true) {
+        try {
+          await fs.access(outputPath);
+          retryIndex += 1;
+          outputPath = siblingOutPath(stage1APath, `-1B-retry${retryIndex}`, ".webp");
+          continue;
+        } catch (err: any) {
+          if (err?.code === "ENOENT") {
+            break;
+          }
           throw err;
         }
+      }
+      if (retryIndex !== resolvedAttemptIndex) {
+        console.log(`[STAGE1B_OUTPUT_PATH] retry-collision resolved=${resolvedAttemptIndex}->${retryIndex}`);
       }
     }
 
