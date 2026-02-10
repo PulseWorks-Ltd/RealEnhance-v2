@@ -100,6 +100,19 @@ function computeCurtainRailFeatures(mask?: { width: number; height: number; data
   return { horizontalLinesNearTop, windowTopEdgeDensity };
 }
 
+async function checkStage2AlreadyFinal(jobId: string, attemptedBy: string): Promise<boolean> {
+  try {
+    const current = await getJob(jobId);
+    const status = current?.status as string | undefined;
+    const finalStage = (current as any)?.finalStage as string | undefined;
+    if (status === "complete" && finalStage === "2") {
+      nLog(`[COMPLETION_GUARD] skip write — Stage2 already final jobId=${jobId} attemptedBy=${attemptedBy}`);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 async function completePartialJob(params: {
   jobId: string;
   triggerStage: "1B" | "2";
@@ -120,6 +133,10 @@ async function completePartialJob(params: {
   }
 
   nLog(`[FALLBACK_TRIGGERED] stage=${triggerStage} reason=${reason}`);
+
+  if (await checkStage2AlreadyFinal(jobId, triggerStage)) {
+    return;
+  }
 
   await safeWriteJobStatus(jobId, {
     status: "complete",
@@ -678,6 +695,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       await clearStage2RetryPending("stage2_only_complete_clear_pending");
       if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) return;
+      if (await checkStage2AlreadyFinal(payload.jobId, "stage2_only")) return;
       await safeWriteJobStatus(payload.jobId, {
         status: "complete",
         resultUrl: pub2Url,
@@ -3704,6 +3722,7 @@ async function handleEditJob(payload: any) {
   }
 
   // 7) Update job – IMPORTANT: don't hard-fail on compliance
+  if (await checkStage2AlreadyFinal(jobId, "edit")) return;
   await safeWriteJobStatus(
     jobId,
     {
@@ -3879,6 +3898,7 @@ const worker = new Worker(
           }
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
+          if (await checkStage2AlreadyFinal(regionPayload.jobId, "region-edit")) return;
           await safeWriteJobStatus(
             regionPayload.jobId,
             {
