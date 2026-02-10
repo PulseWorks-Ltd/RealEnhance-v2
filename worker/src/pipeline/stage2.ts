@@ -151,6 +151,8 @@ export async function runStage2(
   const maxAttempts = geminiMaxRetries !== null
     ? Math.max(1, geminiMaxRetries + 1)
     : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
+  const regenEnabled = maxAttempts > 1;
+  console.log(`[STAGE2_REGEN_MODE] job=${opts.jobId || "unknown"} enabled=${regenEnabled} maxAttempts=${maxAttempts}`);
   let currentTightenLevel: TightenLevel = 0;
 
   const buildStage2OutputPath = (attemptIndex: number) => {

@@ -107,6 +107,14 @@ async function checkStage2AlreadyFinal(jobId: string, attemptedBy: string): Prom
     const finalStage = (current as any)?.finalStage as string | undefined;
     if (status === "complete" && finalStage === "2") {
       nLog(`[COMPLETION_GUARD] skip write — Stage2 already final jobId=${jobId} attemptedBy=${attemptedBy}`);
+      const incomingType = attemptedBy === "edit"
+        ? "edit"
+        : attemptedBy === "region-edit"
+          ? "region"
+          : attemptedBy === "stage2_only"
+            ? "stage1B"
+            : "partial";
+      console.log(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
       return true;
     }
   } catch {}
@@ -468,6 +476,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       adoptedAttempt: selectedFinalAttempt ?? null,
       attempts: attemptsSummary,
       urls,
+      regenEnabled: stage2MaxAttempts > 1,
+      regenMaxAttempts: stage2MaxAttempts,
+      completionGuardActive: true,
     });
   };
 
