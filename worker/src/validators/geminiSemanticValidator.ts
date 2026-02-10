@@ -1,11 +1,14 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
-import { shouldInjectEvidence } from "./validationEvidence";
+import { createEmptyEvidence, shouldInjectEvidence } from "./validationEvidence";
+import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
 
 const logger = console;
 
 const MIN_CONFIDENCE = 0.75;
+const VALIDATOR_EVIDENCE_GATING = (process.env.VALIDATOR_EVIDENCE_GATING ?? "false") === "true" ||
+  (process.env.VALIDATOR_EVIDENCE_GATING ?? "false") === "1";
 
 /**
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
@@ -16,6 +19,79 @@ function getModelForRisk(riskLevel?: RiskLevel): string {
 
   if (!riskLevel || riskLevel === "LOW") return fastModel;
   return strongModel; // MEDIUM and HIGH → strong model
+}
+
+function collectEvidenceKeys(evidence: ValidationEvidence): string[] {
+  const keys: string[] = [];
+  const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
+  const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
+  const hasAnchors = Object.values(evidence.anchorChecks || {}).some(Boolean);
+  const hasDrift = (evidence.drift?.wallPercent ?? 0) > 0 ||
+    (evidence.drift?.maskedEdgePercent ?? 0) > 0 ||
+    (evidence.drift?.angleDegrees ?? 0) > 0;
+  const ssimSignal = evidence.ssimPassed === false || evidence.ssim < evidence.ssimThreshold;
+
+  if (ssimSignal) keys.push("ssim");
+  if (windowsDelta !== 0 || doorsDelta !== 0) keys.push("openings");
+  if (hasAnchors) keys.push("anchors");
+  if (hasDrift) keys.push("drift");
+  if (evidence.localFlags && evidence.localFlags.length > 0) keys.push("localFlags");
+
+  return keys;
+}
+
+function gateEvidenceForGemini(stage: "1B" | "2", evidence: ValidationEvidence): ValidationEvidence {
+  if (!VALIDATOR_EVIDENCE_GATING) return evidence;
+
+  const gated = createEmptyEvidence(evidence.jobId, evidence.stage);
+
+  const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
+  const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
+  const openingsChanged = windowsDelta !== 0 || doorsDelta !== 0;
+  const hasAnchors = Object.values(evidence.anchorChecks || {}).some(Boolean);
+
+  const allowFlags: string[] = [];
+  if (hasAnchors) {
+    gated.anchorChecks = { ...evidence.anchorChecks };
+    allowFlags.push(...evidence.localFlags.filter((flag) => flag.startsWith("anchor:")));
+  }
+
+  if (openingsChanged) {
+    gated.openings = { ...evidence.openings };
+  }
+
+  const wallRemovalDetected = evidence.localFlags.some((flag) =>
+    flag.toLowerCase().includes("wall") && flag.toLowerCase().includes("remove")
+  );
+  const structuralMaskFailed = evidence.localFlags.some((flag) =>
+    flag.toLowerCase().includes("structuralmask") || flag.toLowerCase().includes("structural mask")
+  );
+
+  if (wallRemovalDetected) {
+    allowFlags.push(...evidence.localFlags.filter((flag) =>
+      flag.toLowerCase().includes("wall") && flag.toLowerCase().includes("remove")
+    ));
+  }
+
+  if (structuralMaskFailed) {
+    allowFlags.push(...evidence.localFlags.filter((flag) =>
+      flag.toLowerCase().includes("structuralmask") || flag.toLowerCase().includes("structural mask")
+    ));
+  }
+
+  if (stage === "1B") {
+    const allowDrift = (evidence.drift?.wallPercent ?? 0) > 35 ||
+      (evidence.drift?.maskedEdgePercent ?? 0) > 55 ||
+      (evidence.drift?.angleDegrees ?? 0) > 25;
+    if (allowDrift) {
+      gated.drift = { ...evidence.drift };
+    }
+  }
+
+  gated.localFlags = Array.from(new Set(allowFlags));
+  gated.geometryProfile = evidence.geometryProfile;
+
+  return gated;
 }
 
 /**
@@ -32,34 +108,43 @@ function buildAdjudicatorPrompt(
   riskLevel?: RiskLevel
 ): string {
   if (!evidence) return basePrompt;
-  if (!shouldInjectEvidence(evidence)) {
-    logger.info("[VALIDATION_EVIDENCE] skipped_below_threshold", {
+  const gatedEvidence = gateEvidenceForGemini(evidence.stage, evidence);
+  if (VALIDATION_FOCUS_MODE && VALIDATOR_EVIDENCE_GATING) {
+    logger.info("[VALIDATION_EVIDENCE_GATED]", {
       stage: evidence.stage,
-      jobId: evidence.jobId,
+      original_keys: collectEvidenceKeys(evidence),
+      gated_keys: collectEvidenceKeys(gatedEvidence),
+    });
+  }
+
+  if (!shouldInjectEvidence(gatedEvidence)) {
+    logger.info("[VALIDATION_EVIDENCE] skipped_below_threshold", {
+      stage: gatedEvidence.stage,
+      jobId: gatedEvidence.jobId,
     });
     return basePrompt;
   }
 
-  const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
-  const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
+  const windowsDelta = gatedEvidence.openings.windowsAfter - gatedEvidence.openings.windowsBefore;
+  const doorsDelta = gatedEvidence.openings.doorsAfter - gatedEvidence.openings.doorsBefore;
 
   const anchorFlags = [
-    evidence.anchorChecks.islandChanged ? "ISLAND_CHANGED" : null,
-    evidence.anchorChecks.hvacChanged ? "HVAC_CHANGED" : null,
-    evidence.anchorChecks.cabinetryChanged ? "CABINETRY_CHANGED" : null,
-    evidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
+    gatedEvidence.anchorChecks.islandChanged ? "ISLAND_CHANGED" : null,
+    gatedEvidence.anchorChecks.hvacChanged ? "HVAC_CHANGED" : null,
+    gatedEvidence.anchorChecks.cabinetryChanged ? "CABINETRY_CHANGED" : null,
+    gatedEvidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
   ].filter(Boolean).slice(0, 3);
 
-  const limitedLocalFlags = evidence.localFlags.slice(0, 3);
+  const limitedLocalFlags = gatedEvidence.localFlags.slice(0, 3);
 
   const localSignals = {
-    wallDriftPct: Number(evidence.drift.wallPercent.toFixed(1)),
-    maskedDriftPct: Number(evidence.drift.maskedEdgePercent.toFixed(1)),
+    wallDriftPct: Number(gatedEvidence.drift.wallPercent.toFixed(1)),
+    maskedDriftPct: Number(gatedEvidence.drift.maskedEdgePercent.toFixed(1)),
     openingDelta: {
       windows: windowsDelta,
       doors: doorsDelta,
     },
-    lineDeviationDeg: Number(evidence.drift.angleDegrees.toFixed(1)),
+    lineDeviationDeg: Number(gatedEvidence.drift.angleDegrees.toFixed(1)),
     anchorFlags,
   };
 
@@ -72,18 +157,18 @@ Visual comparison between images is primary authority.
 These are computer-vision measurements from the validation pipeline.
 They are factual measurements, not opinions.
 
-SSIM: ${evidence.ssim.toFixed(4)} (threshold: ${evidence.ssimThreshold}, ${evidence.ssimPassed ? "OK" : "LOW"})
+SSIM: ${gatedEvidence.ssim.toFixed(4)} (threshold: ${gatedEvidence.ssimThreshold}, ${gatedEvidence.ssimPassed ? "OK" : "LOW"})
 Risk Level: ${riskLevel || "UNKNOWN"}
-Geometry Profile: ${evidence.geometryProfile}
+Geometry Profile: ${gatedEvidence.geometryProfile}
 
 Openings Delta:
-- Windows: ${evidence.openings.windowsBefore} → ${evidence.openings.windowsAfter} (delta: ${windowsDelta >= 0 ? "+" : ""}${windowsDelta})
-- Doors: ${evidence.openings.doorsBefore} → ${evidence.openings.doorsAfter} (delta: ${doorsDelta >= 0 ? "+" : ""}${doorsDelta})
+- Windows: ${gatedEvidence.openings.windowsBefore} → ${gatedEvidence.openings.windowsAfter} (delta: ${windowsDelta >= 0 ? "+" : ""}${windowsDelta})
+- Doors: ${gatedEvidence.openings.doorsBefore} → ${gatedEvidence.openings.doorsAfter} (delta: ${doorsDelta >= 0 ? "+" : ""}${doorsDelta})
 
 Drift Metrics:
-- Wall drift: ${(evidence.drift.wallPercent).toFixed(1)}%
-- Masked edge drift: ${(evidence.drift.maskedEdgePercent).toFixed(1)}%
-- Angle deviation: ${evidence.drift.angleDegrees.toFixed(1)}°
+- Wall drift: ${(gatedEvidence.drift.wallPercent).toFixed(1)}%
+- Masked edge drift: ${(gatedEvidence.drift.maskedEdgePercent).toFixed(1)}%
+- Angle deviation: ${gatedEvidence.drift.angleDegrees.toFixed(1)}°
 
 Anchor Region Flags: ${anchorFlags.length > 0 ? anchorFlags.join(", ") : "NONE"}
 
@@ -131,8 +216,8 @@ unless you have HIGH CONFIDENCE (>0.90) that the flag is a false positive.
 ` : "";
 
   logger.info("[VALIDATION_EVIDENCE] injected", {
-    stage: evidence.stage,
-    jobId: evidence.jobId,
+    stage: gatedEvidence.stage,
+    jobId: gatedEvidence.jobId,
   });
 
   return basePrompt + signalBlock + overrideBlock;
