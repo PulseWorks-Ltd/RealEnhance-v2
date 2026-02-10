@@ -132,6 +132,28 @@ KEEP EXACTLY:
   architectural features.
 • Original walls, ceilings, flooring, and their colors and materials.
 
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
 STRICT RULES:
 • Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe,
   zoom, or change the camera angle or perspective.
@@ -139,6 +161,9 @@ STRICT RULES:
 • Do NOT alter the shape, size, location, or framing of windows or doors.
 • Do NOT repaint, brighten, recolor, or re-texture walls, ceilings, or floors.
 • Do NOT create new structures, cabinets, or built-in elements.
+
+Do NOT remove built-in structures or fixed architectural elements.
+Declutter applies only to movable objects and furniture.
 
 Produce a completely empty, clutter-free room with ONLY the permanent
 architecture and fixed kitchen fixtures remaining — ready for virtual staging.
@@ -189,10 +214,43 @@ HARD RULES — BASE IMAGE (MUST NEVER BE BROKEN):
   - Do NOT repaint, re-texture, or change materials or colors of any existing surfaces or fixtures.
 • Do NOT add, remove, or move any structural elements or built-ins (no new walls, windows, doors, fireplaces, cabinets, niches, etc.).
 
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
+VISUAL STRUCTURE AUTHORITY RULE
+Visible built-in structures override user-provided room labels.
+If a kitchen island, fixed counter, or built-in cabinetry is visible,
+the space must be treated as a kitchen or kitchen-dining area
+even if the provided room type label says otherwise.
+Room labels must NOT cause removal, conversion, or replacement
+of visible built-in structures.
+
 ALLOWED ACTIONS (WHAT YOU MAY DO):
 • You may ONLY ADD movable furniture and decor on top of the existing image.
 • Allowed examples: sofas, armchairs, coffee tables, dining tables & chairs, beds, bedside tables, freestanding lamps, rugs, plants, small decor on furniture, lightweight wall art.
 • NO new built-in joinery, no new windows or doors, no new wall openings, no new ceiling features.
+
+Do NOT stage over, replace, or reinterpret built-in structures.
+Staging must respect fixed geometry and built-in elements.
 
 FURNITURE SCALE & PERSPECTIVE:
 • Furniture must be kept at TRUE, REALISTIC SCALE relative to the room.

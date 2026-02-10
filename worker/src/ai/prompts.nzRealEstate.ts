@@ -277,9 +277,33 @@ Window Treatments: Curtains, blinds, and rods must remain.
 
 Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
 
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
 CRITICAL SAFETY RULES:
 
 If unsure whether an item is built-in → treat it as fixed.
+Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
 Do NOT alter wall finishes, flooring materials, or structural features.
 Do NOT move or cover windows, doors, or architectural elements.
 Preserve outdoor items and landscaping visible through windows.
@@ -347,6 +371,31 @@ Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixture
 REMOVE ONLY:
 Loose personal items, paper, surface clutter, small decor, bench clutter.
 
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
+Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
+
 SAFE MODE:
 If unsure → KEEP IT.
 
@@ -412,6 +461,17 @@ Then you MUST:
 • Reduce staging density if needed
 • NEVER delete or replace built-ins to satisfy room type
 
+VISUAL STRUCTURE AUTHORITY RULE
+
+Visible built-in structures override user-provided room labels.
+
+If a kitchen island, fixed counter, or built-in cabinetry is visible,
+the space must be treated as a kitchen or kitchen-dining area
+even if the provided room type label says otherwise.
+
+Room labels must NOT cause removal, conversion, or replacement
+of visible built-in structures.
+
 ────────────────────────────────
 STRUCTURE FIRST LAYOUT CONSTRAINT
 ────────────────────────────────
@@ -430,6 +490,29 @@ If the staging zone is small due to structural anchors:
 → NEVER remove or relocate anchors to make room for staging
 → Prefer fewer, well-placed pieces over a crowded layout
 
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
 ────────────────────────────────
 ARCHITECTURAL SHELL — DO NOT TOUCH
 ────────────────────────────────
@@ -438,6 +521,9 @@ Preserve EXACTLY:
 - Fixed joinery and built-ins
 - Fixtures, lighting, vents
 - Exterior views
+
+Do NOT stage over, replace, or reinterpret built-in structures.
+Staging must respect fixed geometry and built-in elements.
 
 ────────────────────────────────
 IMMUTABLE ELEMENTS — HARD LOCK BLOCK

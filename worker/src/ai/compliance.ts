@@ -36,6 +36,8 @@ export async function checkCompliance(ai: GoogleGenAI, originalB64: string, edit
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     'Compare ORIGINAL vs EDITED. ok=false ONLY if the EDITED image alters fixed architectural features:',
     '- adds/removes/moves/resizes doors, windows, walls, ceilings, floors, stairs, pillars, beams, built-ins, fixed plumbing/electrical.',
+    '- kitchen islands, fixed counters, bench units, built-in cabinetry bases are structural built-ins.',
+    '- kitchen islands and fixed counters: removal, resizing, relocation, or conversion is ALWAYS a structural violation.',
     '- changes room perspective beyond minor lens/exposure correction (but NOT geometry).',
     'Allow staging furniture to overlap walls/floors visually; overlapping is NOT a structural violation.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
@@ -59,6 +61,8 @@ export async function checkCompliance(ai: GoogleGenAI, originalB64: string, edit
     '- blocking a DOOR or WINDOW,',
     '- overlapping fixed fixtures,',
     '- furniture not aligned to floor perspective.',
+    '- kitchen islands, fixed counters, bench units, built-in cabinetry bases are structural built-ins.',
+    '- kitchen islands and fixed counters: removal, resizing, relocation, or conversion is ALWAYS a structural violation.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
   const p = await ask(ai, originalB64, editedB64, placementPrompt);
