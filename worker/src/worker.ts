@@ -2030,19 +2030,50 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
   const declutterRequested = !!payload.options.declutter;
+  const stage1BRequested = declutterRequested;
   const lineage1A = stageLineage.stage1A?.output;
   const lineage1B = stageLineage.stage1B?.output;
-  if (declutterRequested && !lineage1B) {
+
+  const resolveStage2Source = (ctx: {
+    stage1BRequested: boolean;
+    stage1BOutputPath?: string | null;
+    stage1AOutputPath?: string | null;
+  }) => {
+    if (ctx.stage1BRequested) {
+      if (!ctx.stage1BOutputPath) {
+        throw new Error("Stage 2 blocked: Stage 1B requested but no Stage 1B output available");
+      }
+      return ctx.stage1BOutputPath;
+    }
+    return ctx.stage1AOutputPath;
+  };
+
+  let stage2InputPath: string | undefined;
+  try {
+    stage2InputPath = resolveStage2Source({
+      stage1BRequested,
+      stage1BOutputPath: lineage1B,
+      stage1AOutputPath: lineage1A,
+    }) || undefined;
+  } catch (err) {
     stage2Blocked = true;
-    stage2BlockedReason = "DECLUTTER_REQUESTED_BUT_STAGE1B_MISSING";
+    stage2BlockedReason = "missing_stage1b_source";
     nLog("[STAGE2_BLOCKED_NO_1B]", {
       jobId: payload.jobId,
-      declutterRequested: true,
+      declutterRequested: stage1BRequested,
     });
   }
-  let stage2InputPath = isExteriorScene ? lineage1A : (declutterRequested ? lineage1B : lineage1A);
+
+  if (stage2InputPath) {
+    nLog("[STAGE2_SOURCE_LOCK]", {
+      jobId: payload.jobId,
+      stage1BRequested,
+      using: stage2InputPath,
+    });
+  }
+
   stage12Success = true;
-  let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (declutterRequested ? "1B" : "1A");
+  let stage2BaseStage: "1A"|"1B" = stage1BRequested ? "1B" : "1A";
   const stage2InputUsing = stage2BaseStage === "1B" ? "1B" : "1A";
   const stage2InputSuffix = stage2InputPath ? stage2InputPath.substring(Math.max(0, stage2InputPath.length - 40)) : "";
   nLog("[STAGE2_INPUT_LINEAGE]", {
@@ -2052,7 +2083,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
   const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
     ? "1A"
-    : (declutterRequested && lineage1B
+    : (stage1BRequested && lineage1B
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
       : "1A");
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
