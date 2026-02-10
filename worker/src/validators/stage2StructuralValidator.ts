@@ -118,7 +118,8 @@ export async function validateStage2Structural(
   canonicalBasePath: string,
   stage2Path: string,
   masks: { structuralMask: StructuralMask },
-  buffers?: { baseGray: Uint8Array; candGray: Uint8Array; width: number; height: number }
+  buffers?: { baseGray: Uint8Array; candGray: Uint8Array; width: number; height: number },
+  options?: { dimensionTolerance?: number }
 ): Promise<Stage2ValidationResult> {
   const config = loadStageAwareConfig();
   const debug: Stage2ValidationResult["debug"] = {};
@@ -126,6 +127,7 @@ export async function validateStage2Structural(
   const dimNormalized = await normalizeImagePairForValidator({
     basePath: canonicalBasePath,
     candidatePath: stage2Path,
+    tolerance: options?.dimensionTolerance,
   });
 
   debug.dimensionNormalized = dimNormalized.normalized;

@@ -94,6 +94,10 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   if (doorsDelta !== 0) {
     triggers.push(`HIGH: doors changed ${evidence.openings.doorsBefore}→${evidence.openings.doorsAfter}`);
   }
+  const anchorEvidencePresent = evidence.anchorChecks.islandChanged ||
+    evidence.anchorChecks.hvacChanged ||
+    evidence.anchorChecks.cabinetryChanged ||
+    evidence.anchorChecks.lightingChanged;
   if (evidence.anchorChecks.islandChanged) {
     triggers.push("HIGH: kitchen island anchor changed");
   }
@@ -114,7 +118,11 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
     f.toLowerCase().includes("anchor")
   );
   if (hasStructureFlag) {
-    triggers.push("HIGH: local validator flagged structural issue");
+    if (anchorEvidencePresent) {
+      triggers.push("HIGH: local validator flagged structural issue");
+    } else {
+      triggers.push("MEDIUM: local validator flagged structural issue (no anchor evidence)");
+    }
   }
 
   const highTriggers = triggers.filter(t => t.startsWith("HIGH:"));

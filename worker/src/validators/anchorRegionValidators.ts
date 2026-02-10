@@ -25,6 +25,9 @@ export interface AnchorCheckResult {
   lightingChanged: boolean;
   details: {
     islandCentroidShift: number;
+    islandEdgeClusterDrift: number;
+    islandRectMassDelta: number;
+    islandMidToneDelta: number;
     hvacRegionDrift: number;
     cabinetLineDrift: number;
     lightingPositionDrift: number;
@@ -112,6 +115,109 @@ function regionEdgeDensity(
 }
 
 /**
+ * Compute vertical edge density in a region (for island edge clusters)
+ */
+function regionVerticalEdgeDensity(
+  data: Buffer,
+  width: number,
+  height: number,
+  regionTop: number,
+  regionBottom: number,
+  regionLeft: number,
+  regionRight: number,
+  edgeThreshold: number = 35
+): number {
+  let edgePixels = 0;
+  let totalPixels = 0;
+
+  for (let y = Math.max(1, regionTop); y < Math.min(height - 1, regionBottom); y++) {
+    for (let x = Math.max(1, regionLeft); x < Math.min(width - 1, regionRight); x++) {
+      const idx = y * width + x;
+      const gx = Math.abs(data[idx + 1] - data[idx - 1]);
+      if (gx > edgeThreshold) edgePixels++;
+      totalPixels++;
+    }
+  }
+
+  return totalPixels > 0 ? edgePixels / totalPixels : 0;
+}
+
+/**
+ * Count pixels within a tone range in a region
+ */
+function regionToneCount(
+  data: Buffer,
+  width: number,
+  height: number,
+  regionTop: number,
+  regionBottom: number,
+  regionLeft: number,
+  regionRight: number,
+  minVal: number,
+  maxVal: number
+): number {
+  let count = 0;
+
+  for (let y = regionTop; y < regionBottom; y++) {
+    for (let x = regionLeft; x < regionRight; x++) {
+      const val = data[y * width + x];
+      if (val >= minVal && val <= maxVal) count++;
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Detect rectangular mass in a region
+ */
+function detectRectangularMass(
+  data: Buffer,
+  width: number,
+  height: number,
+  regionTop: number,
+  regionBottom: number,
+  regionLeft: number,
+  regionRight: number,
+  minVal: number,
+  maxVal: number
+): { present: boolean; widthRatio: number; heightRatio: number } {
+  let minX = regionRight;
+  let maxX = regionLeft;
+  let minY = regionBottom;
+  let maxY = regionTop;
+  let count = 0;
+
+  for (let y = regionTop; y < regionBottom; y++) {
+    for (let x = regionLeft; x < regionRight; x++) {
+      const val = data[y * width + x];
+      if (val >= minVal && val <= maxVal) {
+        count++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (count === 0 || minX >= maxX || minY >= maxY) {
+    return { present: false, widthRatio: 0, heightRatio: 0 };
+  }
+
+  const boxWidth = maxX - minX + 1;
+  const boxHeight = maxY - minY + 1;
+  const widthRatio = boxWidth / width;
+  const heightRatio = boxHeight / height;
+
+  const present =
+    widthRatio >= 0.15 && widthRatio <= 0.60 &&
+    heightRatio >= 0.05 && heightRatio <= 0.35;
+
+  return { present, widthRatio, heightRatio };
+}
+
+/**
  * Count strong horizontal lines in a region (for cabinetry)
  */
 function horizontalLineCount(
@@ -153,16 +259,29 @@ function horizontalLineCount(
 // compare shift between original and enhanced.
 
 const ISLAND_CENTROID_SHIFT_THRESHOLD = 0.15; // 15% of image dimension
+const ISLAND_EDGE_CLUSTER_DENSITY_THRESHOLD = 0.08;
+const ISLAND_EDGE_CLUSTER_DRIFT_THRESHOLD = 0.35;
+const ISLAND_RECT_MASS_DELTA_THRESHOLD = 0.20;
 
 async function detectIslandChange(
   originalData: Buffer, enhancedData: Buffer,
   width: number, height: number
-): Promise<{ changed: boolean; shift: number }> {
+): Promise<{ changed: boolean; shift: number; edgeDrift: number; rectMassDelta: number; midToneDelta: number }> {
   // Lower 40% of image, center 60%
   const regionTop = Math.floor(height * 0.6);
   const regionBottom = height;
   const regionLeft = Math.floor(width * 0.2);
   const regionRight = Math.floor(width * 0.8);
+
+  const edgeRegionTop = Math.floor(height * 0.5);
+  const edgeRegionBottom = height;
+  const edgeRegionLeft = Math.floor(width * 0.2);
+  const edgeRegionRight = Math.floor(width * 0.8);
+
+  const rectRegionTop = Math.floor(height * 0.5);
+  const rectRegionBottom = height;
+  const rectRegionLeft = 0;
+  const rectRegionRight = width;
 
   const origCentroid = regionCentroid(
     originalData, width, height,
@@ -176,17 +295,66 @@ async function detectIslandChange(
     80, "dark"
   );
 
+  const origMidToneCount = regionToneCount(
+    originalData, width, height,
+    regionTop, regionBottom, regionLeft, regionRight,
+    80, 160
+  );
+  const enhMidToneCount = regionToneCount(
+    enhancedData, width, height,
+    regionTop, regionBottom, regionLeft, regionRight,
+    80, 160
+  );
+
+  const origEdgeDensity = regionVerticalEdgeDensity(
+    originalData, width, height,
+    edgeRegionTop, edgeRegionBottom, edgeRegionLeft, edgeRegionRight
+  );
+  const enhEdgeDensity = regionVerticalEdgeDensity(
+    enhancedData, width, height,
+    edgeRegionTop, edgeRegionBottom, edgeRegionLeft, edgeRegionRight
+  );
+
+  const origRect = detectRectangularMass(
+    originalData, width, height,
+    rectRegionTop, rectRegionBottom, rectRegionLeft, rectRegionRight,
+    80, 160
+  );
+  const enhRect = detectRectangularMass(
+    enhancedData, width, height,
+    rectRegionTop, rectRegionBottom, rectRegionLeft, rectRegionRight,
+    80, 160
+  );
+
+  const darkMassOrig = origCentroid.count >= (width * height * 0.01);
+  const darkMassEnh = enhCentroid.count >= (width * height * 0.01);
+  const midToneMassOrig = origMidToneCount >= (width * height * 0.01);
+  const midToneMassEnh = enhMidToneCount >= (width * height * 0.01);
+  const edgeClusterOrig = origEdgeDensity >= ISLAND_EDGE_CLUSTER_DENSITY_THRESHOLD;
+  const edgeClusterEnh = enhEdgeDensity >= ISLAND_EDGE_CLUSTER_DENSITY_THRESHOLD;
+  const rectMassOrig = origRect.present;
+  const rectMassEnh = enhRect.present;
+
+  console.log("[ANCHOR_ISLAND_SIGNALS]", {
+    darkMass: { orig: darkMassOrig, enh: darkMassEnh },
+    edgeCluster: { orig: edgeClusterOrig, enh: edgeClusterEnh },
+    rectMass: { orig: rectMassOrig, enh: rectMassEnh },
+  });
+
+  const islandPresentOrig = darkMassOrig || midToneMassOrig || edgeClusterOrig || rectMassOrig;
+  const islandPresentEnh = darkMassEnh || midToneMassEnh || edgeClusterEnh || rectMassEnh;
+
   // If neither image has a significant dark mass, no island
-  if (origCentroid.count < (width * height * 0.01) && enhCentroid.count < (width * height * 0.01)) {
-    return { changed: false, shift: 0 };
+  if (!islandPresentOrig && !islandPresentEnh) {
+    return { changed: false, shift: 0, edgeDrift: 0, rectMassDelta: 0, midToneDelta: 0 };
   }
 
   // If one image has island and other doesn't → changed
-  if (origCentroid.count >= (width * height * 0.01) && enhCentroid.count < (width * height * 0.005)) {
-    return { changed: true, shift: 1.0 };
+  if (islandPresentOrig && !islandPresentEnh) {
+    return { changed: true, shift: 1.0, edgeDrift: 1.0, rectMassDelta: 1.0, midToneDelta: 1.0 };
   }
-  if (enhCentroid.count >= (width * height * 0.01) && origCentroid.count < (width * height * 0.005)) {
-    return { changed: true, shift: 1.0 };
+  if (islandPresentEnh && !islandPresentOrig) {
+    return { changed: true, shift: 1.0, edgeDrift: 1.0, rectMassDelta: 1.0, midToneDelta: 1.0 };
   }
 
   // Both have mass — compare centroids
@@ -194,9 +362,28 @@ async function detectIslandChange(
   const dy = Math.abs(origCentroid.cy - enhCentroid.cy) / height;
   const shift = Math.sqrt(dx * dx + dy * dy);
 
+  let edgeDrift = 0;
+  const avgEdgeDensity = (origEdgeDensity + enhEdgeDensity) / 2;
+  if (avgEdgeDensity > 0.01) {
+    edgeDrift = Math.abs(enhEdgeDensity - origEdgeDensity) / avgEdgeDensity;
+  }
+
+  const rectMassDelta = Math.max(
+    Math.abs(origRect.widthRatio - enhRect.widthRatio),
+    Math.abs(origRect.heightRatio - enhRect.heightRatio)
+  );
+
+  const midToneDelta = Math.abs(enhMidToneCount - origMidToneCount) / Math.max(width * height, 1);
+
   return {
-    changed: shift > ISLAND_CENTROID_SHIFT_THRESHOLD,
+    changed: shift > ISLAND_CENTROID_SHIFT_THRESHOLD ||
+      edgeDrift > ISLAND_EDGE_CLUSTER_DRIFT_THRESHOLD ||
+      rectMassDelta > ISLAND_RECT_MASS_DELTA_THRESHOLD ||
+      midToneDelta > 0.01,
     shift,
+    edgeDrift,
+    rectMassDelta,
+    midToneDelta,
   };
 }
 
@@ -370,6 +557,9 @@ export async function runAnchorRegionValidators(params: {
       lightingChanged: lighting.changed,
       details: {
         islandCentroidShift: island.shift,
+        islandEdgeClusterDrift: island.edgeDrift,
+        islandRectMassDelta: island.rectMassDelta,
+        islandMidToneDelta: island.midToneDelta,
         hvacRegionDrift: hvac.drift,
         cabinetLineDrift: cabinetry.drift,
         lightingPositionDrift: lighting.drift,
@@ -387,6 +577,9 @@ export async function runAnchorRegionValidators(params: {
       lightingChanged: false,
       details: {
         islandCentroidShift: 0,
+        islandEdgeClusterDrift: 0,
+        islandRectMassDelta: 0,
+        islandMidToneDelta: 0,
         hvacRegionDrift: 0,
         cabinetLineDrift: 0,
         lightingPositionDrift: 0,

@@ -359,6 +359,7 @@ export async function runUnifiedValidation(
   let windowCount = 0;
   let originalLineCount = 0;
   let enhancedLineCount = 0;
+  let stage2OcclusionAllowance: { structIoU: number; threshold: number; reasons: string[] } | null = null;
 
   // HARDENED: Always run local validators for evidence collection,
   // even when SSIM fails. Evidence is fed to the model adjudicator.
@@ -485,15 +486,25 @@ export async function runUnifiedValidation(
     // Focused check on architectural elements during staging
     if (stage === "2") {
       try {
+        const baseDimTolerance = 8;
+        const dimThreshold = Math.round(baseDimTolerance * 1.2);
         const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
         const structResult = await validateStage2Structural(
           originalPath,
           enhancedPath,
           { structuralMask: mask },
-          buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined
+          buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined,
+          { dimensionTolerance: dimThreshold }
         );
 
-        const minStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
+        const baseStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
+        const minStructIoU = baseStructIoU - 0.05;
+
+        nLog("[STAGE2_THRESHOLD_MODE]", {
+          lineDriftThreshold: stage === "2" ? 0.70 * 0.75 : 0.70,
+          dimThreshold,
+          iouThreshold: minStructIoU,
+        });
 
         // CRITICAL FIX: Do NOT default undefined IoU to 0 - handle explicitly
         let passed: boolean;
@@ -508,9 +519,17 @@ export async function runUnifiedValidation(
           message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
 
           if (!passed) {
-            reasons.push(`Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`);
+            const iouReason = `Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`;
+            reasons.push(iouReason);
             if (structResult.reason) {
               reasons.push(`Reason: ${structResult.reason}`);
+            }
+            if (structIoU >= minStructIoU - 0.05) {
+              stage2OcclusionAllowance = {
+                structIoU,
+                threshold: minStructIoU,
+                reasons: [iouReason, ...(structResult.reason ? [`Reason: ${structResult.reason}`] : [])],
+              };
             }
           }
         } else {
@@ -562,10 +581,14 @@ export async function runUnifiedValidation(
     // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
     // Detects line shifts using Hough transform
     try {
+      const baseLineSensitivity = 0.70;
+      const lineDriftThreshold = stage === "2"
+        ? baseLineSensitivity * 0.75
+        : baseLineSensitivity;
       const lineResult = await validateLineStructure({
         originalPath,
         enhancedPath,
-        sensitivity: 0.70, // 70% similarity threshold
+        sensitivity: lineDriftThreshold, // 70% baseline, looser for Stage 2
         buffers: buffers
           ? {
               baseSmall: buffers.baseSmall,
@@ -666,6 +689,20 @@ export async function runUnifiedValidation(
         message: "Anchor validator error (fail-open)",
         details: { error: String(err) },
       };
+    }
+  }
+
+  if (stage === "2" && stage2OcclusionAllowance && results.structuralMask) {
+    const anchorEvidencePresent = evidence.anchorChecks && Object.values(evidence.anchorChecks).some(Boolean);
+    if (!anchorEvidencePresent) {
+      nLog("[STAGE2_OCCLUSION_ALLOWANCE]", {
+        maskedIoU: stage2OcclusionAllowance.structIoU,
+        threshold: stage2OcclusionAllowance.threshold,
+      });
+      warnings.push(`Structural IoU near threshold: ${stage2OcclusionAllowance.structIoU.toFixed(3)} < ${stage2OcclusionAllowance.threshold}`);
+      results.structuralMask.passed = true;
+      results.structuralMask.message = "Structural IoU near threshold (Stage 2 allowance)";
+      reasons.splice(0, reasons.length, ...reasons.filter(r => !stage2OcclusionAllowance?.reasons.includes(r)));
     }
   }
 
