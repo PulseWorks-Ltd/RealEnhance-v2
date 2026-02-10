@@ -2030,16 +2030,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isExteriorScene = sceneLabel === "exterior";
   const declutterRequested = !!payload.options.declutter;
   if (declutterRequested && !path1B) {
+    stage2Blocked = true;
+    stage2BlockedReason = "DECLUTTER_REQUESTED_BUT_STAGE1B_MISSING";
     nLog("[STAGE2_BLOCKED_NO_1B]", {
       jobId: payload.jobId,
-      declutterRequested,
-      stage1BCommitted: stageLineage.stage1B.committed,
-      stage1BOutput: stageLineage.stage1B.output,
+      declutterRequested: true,
     });
-    payload.options.virtualStage = false;
-    stage2Blocked = true;
-    stage2BlockedReason = "stage1b_missing";
-    stage2FallbackStage = "1A";
   }
   let stage2InputPath = isExteriorScene ? path1A : (declutterRequested ? path1B! : path1A);
   stage12Success = true;
@@ -2057,7 +2053,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
 
   // ═══ STAGE 2 INPUT LINEAGE GUARD ═══
-  if (payload.options.virtualStage) {
+  if (payload.options.virtualStage && !stage2Blocked) {
     const expectedInput = stage2BaseStage === "1B" ? stageLineage.stage1B.output : stageLineage.stage1A.output;
     if (!expectedInput) {
       nLog("[STAGE2_INPUT_GUARD_FAIL]", {
@@ -2085,7 +2081,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2TimedOut = false; // FIX 4: Track timeout status
   
   try {
-    if (payload.options.virtualStage) {
+    if (payload.options.virtualStage && !stage2Blocked) {
       await ensureStage2AttemptId();
     }
     // Only allow exterior staging if allowStaging is true
@@ -2093,7 +2089,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
-      if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_start"))) return;
+      if (payload.options.virtualStage && !stage2Blocked && !(await ensureStage2AttemptOwner("stage2_start"))) return;
       stage2SummaryEligible = true;
       // FIX 6: Track Stage 2 start
       timestamps.stage2Start = Date.now();
@@ -2106,7 +2102,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // FIX 4: Add Stage 2 timeout with Promise.race
       const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default
-      const stage2Promise = payload.options.virtualStage
+      const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? await runStage2(stage2InputPath, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
@@ -2173,7 +2169,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // FIX 6: Track Stage 2 end
       timestamps.stage2End = Date.now();
-      if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_end"))) return;
+      if (payload.options.virtualStage && !stage2Blocked && !(await ensureStage2AttemptOwner("stage2_end"))) return;
       updateJob(payload.jobId, { 'timestamps.stage2End': timestamps.stage2End });
 
       if (typeof stage2Outcome === "string") {
@@ -2367,7 +2363,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let validationAttempt = 0;
   const validationMaxAttempts = Math.max(1, stage2MaxAttempts || 1);
 
-  while (path2 && payload.options.virtualStage) {
+  while (path2 && payload.options.virtualStage && !stage2Blocked) {
     try {
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
         const fallbackStage = path1B ? "1B" : "1A";
