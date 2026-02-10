@@ -487,6 +487,22 @@ The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
 ────────────────────────────────
+ROOM TYPE INTENT LOCK — MUST FOLLOW
+────────────────────────────────
+
+The requested room type is authoritative and must be obeyed.
+
+You MUST stage the space according to the requested room type provided by the system or user.
+
+Do NOT substitute a different room function, even if the layout could support multiple uses.
+
+If the space is visually ambiguous, still follow the requested room type exactly.
+
+Room type intent has higher priority than staging style preference.
+
+If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
+
+────────────────────────────────
 ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
 ────────────────────────────────
 
@@ -774,6 +790,22 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────────────
+ROOM TYPE INTENT LOCK — MUST FOLLOW
+────────────────────────────────
+
+The requested room type is authoritative and must be obeyed.
+
+You MUST stage the space according to the requested room type provided by the system or user.
+
+Do NOT substitute a different room function, even if the layout could support multiple uses.
+
+If the space is visually ambiguous, still follow the requested room type exactly.
+
+Room type intent has higher priority than staging style preference.
+
+If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
 
 Staging style:
 • A single outdoor furniture set (lounge or dining).
