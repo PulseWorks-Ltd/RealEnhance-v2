@@ -2030,7 +2030,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
   const declutterRequested = !!payload.options.declutter;
-  if (declutterRequested && !path1B) {
+  const lineage1A = stageLineage.stage1A?.output;
+  const lineage1B = stageLineage.stage1B?.output;
+  if (declutterRequested && !lineage1B) {
     stage2Blocked = true;
     stage2BlockedReason = "DECLUTTER_REQUESTED_BUT_STAGE1B_MISSING";
     nLog("[STAGE2_BLOCKED_NO_1B]", {
@@ -2038,12 +2040,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       declutterRequested: true,
     });
   }
-  let stage2InputPath = isExteriorScene ? path1A : (declutterRequested ? path1B! : path1A);
+  let stage2InputPath = isExteriorScene ? lineage1A : (declutterRequested ? lineage1B : lineage1A);
   stage12Success = true;
   let stage2BaseStage: "1A"|"1B" = isExteriorScene ? "1A" : (declutterRequested ? "1B" : "1A");
+  const stage2InputUsing = stage2BaseStage === "1B" ? "1B" : "1A";
+  const stage2InputSuffix = stage2InputPath ? stage2InputPath.substring(Math.max(0, stage2InputPath.length - 40)) : "";
+  nLog("[STAGE2_INPUT_LINEAGE]", {
+    jobId: payload.jobId,
+    using: stage2InputUsing,
+    pathSuffix: stage2InputSuffix,
+  });
   const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
     ? "1A"
-    : (declutterRequested && path1B
+    : (declutterRequested && lineage1B
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
       : "1A");
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
@@ -2078,7 +2087,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageLineage.stage2.input = stage2InputPath;
     logStageInput("2", stage2BaseStage, stage2InputPath);
   }
-  let path2: string = stage2InputPath;
+  let stage2InputResolved = stage2InputPath ?? "";
+  let path2: string = stage2InputResolved;
   let stage2TimedOut = false; // FIX 4: Track timeout status
   
   try {
@@ -2104,7 +2114,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // FIX 4: Add Stage 2 timeout with Promise.race
       const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
-        ? await runStage2(stage2InputPath, stage2BaseStage, {
+        ? await runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -2179,7 +2189,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } else {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
-        recordStage2AttemptsFromResult(stage2InputPath, stage2Outcome.attempts);
+        recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -2251,13 +2261,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       stage2InputPath = lightPath1B;
+      stage2InputResolved = stage2InputPath ?? "";
       stage2BaseStage = "1B";
       const stagingStyleFallback = (() => {
         const raw: any = (payload as any)?.options?.stagingStyle;
         return raw && typeof raw === "string" ? raw.trim() : undefined;
       })();
 
-      const stage2Outcome = await runStage2(stage2InputPath, stage2BaseStage, {
+      const stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
         roomType: (
           !payload.options.roomType ||
           ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -2304,7 +2315,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } else {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
-        recordStage2AttemptsFromResult(stage2InputPath, stage2Outcome.attempts);
+        recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -2411,7 +2422,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ✅ FIX: Log validation baseline paths for Stage 2 lineage verification
       nLog(`[STAGE2_VALIDATION_BASELINE]`, {
         jobId: payload.jobId,
-        stage2InputPath: stage2InputPath.substring(stage2InputPath.length - 40),
+        stage2InputPath: stage2InputResolved.substring(stage2InputResolved.length - 40),
         validationBasePath: validationBasePath.substring(validationBasePath.length - 40),
         stage2BaseStage,
         declutterEnabled: payload.options.declutter,
@@ -2512,7 +2523,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
           await scheduleStage2Retry("stage2_validation_hard_fail");
           // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
-          const stage2OutcomeRetry = await runStage2(stage2InputPath, stage2BaseStage, {
+          const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -2563,7 +2574,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             path2 = stage2OutcomeRetry.outputPath;
             stage2CandidatePath = path2;
             commitStageOutput("2", stage2OutcomeRetry.outputPath);
-            recordStage2AttemptsFromResult(stage2InputPath, stage2OutcomeRetry.attempts);
+            recordStage2AttemptsFromResult(stage2InputResolved, stage2OutcomeRetry.attempts);
             stage2AttemptsUsed = stage2OutcomeRetry.attempts;
             stage2MaxAttempts = stage2OutcomeRetry.maxAttempts;
             stage2ValidationRisk = stage2OutcomeRetry.validationRisk;
@@ -2789,8 +2800,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         try {
           // Re-run Stage 2 (enhanceWithGemini) with reduced sampling parameters
-          const retryOutputPath = siblingOutPath(stage2InputPath, `-2-retry${geminiRetries}`, ".webp");
-          const retryStage2Path = await enhanceWithGemini(stage2InputPath, {
+          const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${geminiRetries}`, ".webp");
+          const retryStage2Path = await enhanceWithGemini(stage2InputResolved, {
             ...payload.options,
             stage: "2",
             temperature: geminiRetryTemp,
