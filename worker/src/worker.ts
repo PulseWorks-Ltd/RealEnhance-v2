@@ -3180,8 +3180,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let lastViolationMsg = "";
       // Single-pass compliance: no retries here; stage retries happen in dedicated loops
     if (compliance && compliance.ok === false) {
-      const HIGH_CONF = 0.90;
-      const MED_CONF = 0.80;
+      const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
+      const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
       const confidence = compliance.confidence ?? 0.6;
       const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
       const hasAnchorEvidence = !!anchorChecks && (
@@ -3202,6 +3202,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         hasAnchorEvidence,
         structuralViolation,
         placementViolation,
+        highThreshold: HIGH_CONF,
+        medThreshold: MED_CONF,
         action: shouldBlock ? "block" : "soft-pass",
       });
 
@@ -3221,6 +3223,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           confidence,
           reasons: compliance.reasons,
           threshold: MED_CONF,
+          highThreshold: HIGH_CONF,
         });
         nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
       }
