@@ -3149,9 +3149,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let lastViolationMsg = "";
       // Single-pass compliance: no retries here; stage retries happen in dedicated loops
     if (compliance && compliance.ok === false) {
+      const HIGH_CONF = 0.90;
+      const MED_CONF = 0.80;
       const confidence = compliance.confidence ?? 0.6;
+      const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
+      const hasAnchorEvidence = !!anchorChecks && (
+        anchorChecks.islandChanged ||
+        anchorChecks.cabinetryChanged ||
+        anchorChecks.hvacChanged ||
+        anchorChecks.lightingChanged
+      );
+      const structuralViolation = !!compliance.structuralViolation;
+      const placementViolation = !!compliance.placementViolation;
       lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      if (confidence >= COMPLIANCE_BLOCK_THRESHOLD) {
+      const shouldBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
+
+      nLog("[COMPLIANCE_GATE_DECISION]", {
+        jobId: payload.jobId,
+        ok: compliance.ok,
+        confidence,
+        hasAnchorEvidence,
+        structuralViolation,
+        placementViolation,
+        action: shouldBlock ? "block" : "soft-pass",
+      });
+
+      if (shouldBlock) {
         // CRITICAL FIX: Block job when Gemini detects major structural violations with high confidence
         const complianceError = new Error(`Gemini semantic validation failed with confidence ${confidence.toFixed(2)}: ${lastViolationMsg}`);
         (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
@@ -3166,9 +3189,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           confidence,
           reasons: compliance.reasons,
-          threshold: COMPLIANCE_BLOCK_THRESHOLD
+          threshold: MED_CONF,
         });
-        nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${COMPLIANCE_BLOCK_THRESHOLD} threshold) - allowing job to proceed`);
+        nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
       }
     }
   } catch (e: any) {
