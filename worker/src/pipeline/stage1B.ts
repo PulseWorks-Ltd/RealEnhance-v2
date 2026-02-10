@@ -4,6 +4,7 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
+import type { BaseArtifacts } from "../validators/baseArtifacts";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -23,12 +24,18 @@ export async function runStage1B(
     sceneType?: "interior" | "exterior" | string;
     roomType?: string;
     declutterMode?: "light" | "stage-ready";
-    jobId?: string;
+    jobId: string;
+    canonicalPath?: string | null;
+    baseArtifacts?: BaseArtifacts;
+    curtainRailLikely?: boolean | "unknown";
+    jobDeclutterIntensity?: "light" | "standard" | "heavy";
+    jobSampling?: { temperature?: number; topP?: number; topK?: number };
     attempt?: number;
-  } = {}
+  }
 ): Promise<string> {
   const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, attempt = 0 } = options;
-  const jobId = jobIdOpt || (global as any).__jobId;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
+  const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   const suffix = attemptIndex > 0 ? `-1B-retry${attemptIndex}` : "-1B";
   const outputPath = siblingOutPath(stage1APath, suffix, ".webp");
@@ -71,7 +78,8 @@ If uncertain whether built-in or movable — treat as movable and remove.
 `;
     }
 
-    const railLikely = (global as any).__curtainRailLikely as boolean | "unknown";
+    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__curtainRailLikely" });
+    const railLikely = options.curtainRailLikely as boolean | "unknown";
     if (railLikely === false) {
       promptOverride += `
 
@@ -128,6 +136,8 @@ Do not add blinds.
       ? Math.max(0.05, baseTemp * 0.9)
       : baseTemp;
 
+    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobDeclutterIntensity" });
+    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobSampling" });
     const declutteredPath = await enhanceWithGemini(stage1APath, {
       replaceSky,
       declutter: true,
@@ -146,8 +156,8 @@ Do not add blinds.
       // When decluttering, allow interior floor cleanup and exterior hardscape cleanup
       floorClean: sceneType === "interior",
       hardscapeClean: sceneType === "exterior",
-      declutterIntensity: (global as any).__jobDeclutterIntensity || undefined,
-      ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+      declutterIntensity: options.jobDeclutterIntensity || undefined,
+      ...(options.jobSampling || {}),
     });
     
     console.log(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
@@ -156,9 +166,11 @@ Do not add blinds.
     // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
       const { validateStageOutput } = await import("../validators/index.js");
-      const canonicalPath: string | undefined = (global as any).__canonicalPath;
+      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__canonicalPath" });
+      const canonicalPath: string | undefined = options.canonicalPath || undefined;
       const base = canonicalPath || stage1APath;
-      const baseArtifacts = (global as any).__baseArtifacts;
+      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__baseArtifacts" });
+      const baseArtifacts = options.baseArtifacts ?? undefined;
       const verdict1 = await validateStageOutput("stage1B", base, declutteredPath, {
         sceneType: (sceneType === 'interior' ? 'interior' : 'exterior') as any,
         roomType,
@@ -167,7 +179,7 @@ Do not add blinds.
       // Soft mode: log verdict, always proceed
       console.log(`[stage1B] Validator verdict:`, verdict1);
       const { validateStage1BStructural } = await import("../validators/stage1BValidator.js");
-      const jobId = (global as any).__jobId || "default";
+      console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
       const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
       const maskPath = await loadOrComputeStructuralMask(jobId, base, baseArtifacts);
       const masks = { structuralMask: maskPath };

@@ -318,7 +318,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     curtainRailLikely: boolean | "unknown";
     curtainRailConfidence: number;
     jobSampling: any;
-    jobDeclutterIntensity?: number;
+    jobDeclutterIntensity?: "light" | "standard" | "heavy";
     stagingRegion: any;
   }
 
@@ -1063,6 +1063,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     skyMode: skyModeForStage1A,
     jobId: payload.jobId,
     roomType: payload.options.roomType,
+    baseArtifacts: jobContext.baseArtifacts,
+    baseArtifactsCache: jobContext.baseArtifactsCache,
+    jobSampling: jobContext.jobSampling,
   });
 
   try {
@@ -1196,6 +1199,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         declutterMode: mode,
         jobId: payload.jobId,
         attempt: attemptIndex,
+        canonicalPath: jobContext.canonicalPath,
+        baseArtifacts: jobContext.baseArtifacts,
+        curtainRailLikely: jobContext.curtainRailLikely,
+        jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
+        jobSampling: jobContext.jobSampling,
       });
       if (attemptIndex > 0) {
         nLog(`[RETRY_OUTPUT] stage=1B attempt=${attemptIndex} path=${output}`);
@@ -1595,6 +1603,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             declutterMode: declutterMode as "light" | "stage-ready",
             jobId: payload.jobId,
             attempt: geminiRetries,
+            canonicalPath: jobContext.canonicalPath,
+            baseArtifacts: jobContext.baseArtifacts,
+            curtainRailLikely: jobContext.curtainRailLikely,
+            jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
+            jobSampling: jobContext.jobSampling,
           });
           if (retryPath1B === path1A) {
             nLog("[STAGE1B_RETRY_OUTPUT_MATCHES_1A]", {
@@ -2068,6 +2081,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         declutterMode: "light",
         jobId: payload.jobId,
         attempt: 0,
+        canonicalPath: jobContext.canonicalPath,
+        baseArtifacts: jobContext.baseArtifacts,
+        curtainRailLikely: jobContext.curtainRailLikely,
+        jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
+        jobSampling: jobContext.jobSampling,
       });
 
       stage2InputPath = lightPath1B;
@@ -2587,6 +2605,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             topP: geminiRetryTopP,
             topK: geminiRetryTopK,
             jobId: payload.jobId,
+            roomType: payload.options.roomType,
             sceneType: sceneLabel,
             modelReason: `stage2 gemini_block retry ${geminiRetries}`,
             outputPath: retryOutputPath,

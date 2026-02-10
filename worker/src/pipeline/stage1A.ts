@@ -102,8 +102,9 @@ async function enhanceWithGeminiStage1A(
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
   skyMode: "safe" | "strong" = "safe",
-  jobId?: string,
-  roomType?: string
+  jobId: string,
+  roomType?: string,
+  jobSampling?: { temperature?: number; topP?: number; topK?: number }
 ): Promise<string> {
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
@@ -149,7 +150,7 @@ async function enhanceWithGeminiStage1A(
     topK: nzTopK,
     floorClean: false,
     hardscapeClean: sceneType === "exterior",
-    ...(typeof (global as any).__jobSampling === 'object' ? (global as any).__jobSampling : {}),
+    ...(jobSampling || {}),
   });
 }
 
@@ -173,14 +174,21 @@ export async function runStage1A(
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
     skyMode?: "safe" | "strong";
-    jobId?: string;
+    jobId: string;
     roomType?: string;
-  } = {}
+    baseArtifacts?: BaseArtifacts;
+    baseArtifactsCache?: Map<string, BaseArtifacts>;
+    jobSampling?: { temperature?: number; topP?: number; topK?: number };
+  }
 ): Promise<string> {
   const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
-  const baseArtifacts = (global as any).__baseArtifacts;
-  const jobIdResolved = jobId || (global as any).__jobId || "default";
-  const roomTypeResolved = roomType || (global as any).__jobRoomType;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
+  const baseArtifacts = options.baseArtifacts ?? undefined;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
+  const jobIdResolved = jobId;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobRoomType" });
+  const roomTypeResolved = roomType;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -263,7 +271,8 @@ export async function runStage1A(
   });
   
   // 12. Export Sharp enhancement with maximum quality
-  const baseArtifactsCache: Map<string, BaseArtifacts> = (global as any).__baseArtifactsCache || new Map();
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
+  const baseArtifactsCache: Map<string, BaseArtifacts> = options.baseArtifactsCache || new Map();
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
   const artifactsPromise = buildArtifacts ? ((): Promise<BaseArtifacts> => {
     const base = img.clone();
@@ -304,7 +313,6 @@ export async function runStage1A(
     try {
       const artifacts = await artifactsPromise;
       baseArtifactsCache.set(sharpOutputPath, artifacts);
-      (global as any).__baseArtifactsCache = baseArtifactsCache;
     } catch (e) {
       console.warn("[stage1A] Failed to build BaseArtifacts cache:", e);
     }
@@ -329,7 +337,7 @@ export async function runStage1A(
 
       if (forceGemini) {
         console.warn("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
-        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
+        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
         return geminiOutputPath;
       }
     } else {
@@ -352,7 +360,7 @@ export async function runStage1A(
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
       console.warn("[stage1A] 🔁 Falling back to Gemini...");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
@@ -366,7 +374,7 @@ export async function runStage1A(
       console.warn("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
 
         // Run structural validator on Gemini output
         const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
@@ -425,7 +433,7 @@ export async function runStage1A(
         : "feature flag off";
     console.log(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
 
     console.log("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 

@@ -52,7 +52,7 @@ export async function runStage2(
     /** Stage1A output path for stage-aware validation baseline (CRITICAL) */
     stage1APath?: string;
     /** Job ID for validation tracking */
-    jobId?: string;
+    jobId: string;
     /** Validation configuration (local-mode driven) */
     validationConfig?: { localMode?: Mode };
   }
@@ -69,7 +69,8 @@ export async function runStage2(
   let localReasons: string[] = [];
 
   const stageAwareConfig = loadStageAwareConfig();
-  const jobId = opts.jobId || (global as any).__jobId || `stage2-${Date.now()}`;
+  console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__jobId" });
+  const jobId = opts.jobId;
   let attemptsUsed = 0;
   let validationRisk = false;
   let retryCount = 0;
@@ -223,9 +224,8 @@ export async function runStage2(
       strictPrompt = true;
     }
 
-    const railLikely = (typeof opts.curtainRailLikely === "boolean" || opts.curtainRailLikely === "unknown")
-      ? opts.curtainRailLikely
-      : (global as any).__curtainRailLikely;
+    console.log("GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
+    const railLikely = opts.curtainRailLikely;
     if (railLikely === false) {
       textPrompt += `
 

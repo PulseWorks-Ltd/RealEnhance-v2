@@ -163,7 +163,7 @@ export async function enhanceWithGemini(
     sceneType?: "interior" | "exterior" | string;
     stage?: "1A" | "1B" | "2";  // Added to determine model selection
     strictMode?: boolean;          // Stricter constraints
-    jobId?: string;                // For logging which job triggered the call
+    jobId: string;                 // For logging which job triggered the call
     roomType?: string;             // For logging + prompt context
     modelReason?: string;          // Human-readable reason for model choice
     // Sampling controls (optional overrides)
@@ -177,11 +177,13 @@ export async function enhanceWithGemini(
     hardscapeClean?: boolean;
     declutterIntensity?: "light" | "standard" | "heavy";
     outputPath?: string;
-  } = {}
+  }
 ): Promise<string> {
   const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason, outputPath } = options;
-  const jobId = jobIdOpt || (global as any).__jobId;
-  const roomType = roomTypeOpt || (global as any).__jobRoomType;
+  console.log("GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobId" });
+  const jobId = jobIdOpt;
+  console.log("GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobRoomType" });
+  const roomType = roomTypeOpt;
   const filename = path.basename(inputPath || "");
 
   // Check if Gemini API key is available
