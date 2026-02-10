@@ -1967,8 +1967,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               void (async () => {
-                if (!stage2Active) return;
-                if (!(await ensureStage2AttemptOwner("stage2_strict_retry"))) return;
+                if (stage2Active) {
+                  if (!(await ensureStage2AttemptOwner("stage2_strict_retry"))) return;
+                }
                 try {
                   const msg = reasons && reasons.length
                     ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
@@ -2116,8 +2117,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onStrictRetry: ({ reasons }) => {
           void (async () => {
-            if (!stage2Active) return;
-            if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
+            if (stage2Active) {
+              if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
+            }
             try {
               const msg = reasons && reasons.length
                 ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
@@ -2155,7 +2157,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (fallbackErr: any) {
       const errMsg = fallbackErr?.message || String(fallbackErr);
       nLog(`[worker] Fallback light declutter failed: ${errMsg}`);
-      if (stage2Active && !(await ensureStage2AttemptOwner("stage2_fallback_failed"))) return;
+      if (stage2Active) {
+        if (!(await ensureStage2AttemptOwner("stage2_fallback_failed"))) return;
+      }
       await safeWriteJobStatus(
         payload.jobId,
         { status: "failed", errorMessage: errMsg, error: errMsg, meta: { ...sceneMeta }, fallbackUsed: "light_declutter_backstop" },
@@ -2351,8 +2355,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
             onStrictRetry: ({ reasons }) => {
               void (async () => {
-                if (!stage2Active) return;
-                if (!(await ensureStage2AttemptOwner("stage2_retry_strict_retry"))) return;
+                if (stage2Active) {
+                  if (!(await ensureStage2AttemptOwner("stage2_retry_strict_retry"))) return;
+                }
                 try {
                   const msg = reasons && reasons.length
                     ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
