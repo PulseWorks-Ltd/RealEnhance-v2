@@ -2036,7 +2036,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     : (payload.options.declutter && path1B
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
       : "1A");
-  const stage2ValidationBaseline = stage2BaseStage === "1B" && path1B ? path1B : path1A;
+  // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
+  // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
+  const stage2ValidationBaseline = path1A;
   const stage2PromptMode = stage2SourceStage === "1B-stage-ready" ? "full" : "refresh";
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
@@ -2396,6 +2398,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                      (payload.options.declutter ? "1B" : "1A");
       const validationBasePath = validationStage === "2" ? stage2ValidationBaseline : path1A;
 
+      // ✅ FIX: Log validation baseline paths for Stage 2 lineage verification
+      nLog(`[STAGE2_VALIDATION_BASELINE]`, {
+        jobId: payload.jobId,
+        stage2InputPath: stage2InputPath.substring(stage2InputPath.length - 40),
+        validationBasePath: validationBasePath.substring(validationBasePath.length - 40),
+        stage2BaseStage,
+        declutterEnabled: payload.options.declutter,
+        path1BExists: !!path1B,
+      });
+
       nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${validationAttempt}/${validationMaxAttempts}) ═══════════`);
 
       effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
@@ -2689,7 +2701,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath && stage2NeedsConfirm) {
       nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-      const baselineForConfirm = (path1B && stage2BaseStage === "1B") ? path1B : path1A;
+      // ✅ FIX: Gemini confirmation must ALWAYS use Stage 1A as baseline (not Stage 1B)
+      const baselineForConfirm = path1A;
       let geminiRetries = 0;
       const geminiMaxRetries = GEMINI_CONFIRM_MAX_RETRIES;
       let geminiRetryTemp: number | undefined;
@@ -3210,7 +3223,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   //   2) Stage 1B (decluttered) if available
   //   3) Stage 1A
   const hasStage2 = payload.options.virtualStage && !stage2Blocked && !!pub2Url;
-  const finalBasePath = hasStage2 ? stage2CandidatePath : (payload.options.declutter && path1B ? path1B! : path1A);
+  let finalBasePath = hasStage2 ? stage2CandidatePath : (payload.options.declutter && path1B ? path1B! : path1A);
   const finalStageLabel = hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A");
   
   // ═══ FINAL OUTPUT LINEAGE VALIDATION (FIX 1.3) ═══
@@ -3227,12 +3240,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       finalStageLabel,
       localPath: finalBasePath,
       lineagePath: lineageOutput,
-      correction: "using_lineage",
     });
-    // Correct from stageLineage (source of truth)
-    const correctedPath = lineageOutput;
-    // Note: This guard is defensive - in normal operation paths should match
-    nLog("[FINAL_OUTPUT_CORRECTED]", { from: finalBasePath, to: correctedPath });
+    // ✅ FIX: Apply lineage correction (was logging but not applying)
+    finalBasePath = lineageOutput;
+    nLog("[FINAL_OUTPUT_CORRECTED]", { correctedPath: finalBasePath.substring(finalBasePath.length - 40) });
   }
   
   nLog(`[FINAL_STAGE_DECISION] finalStageLabel=${finalStageLabel} hasStage2=${hasStage2} stage2Blocked=${stage2Blocked} pub2Url=${!!pub2Url} virtualStage=${payload.options.virtualStage} declutter=${payload.options.declutter}`);
