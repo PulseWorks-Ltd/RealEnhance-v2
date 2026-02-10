@@ -295,6 +295,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
   let stage2LocalReasons: string[] = [];
+  const stage2AttemptOutputs: Array<{ attempt: number; localPath: string; publishedUrl?: string }> = [];
+  let stage2SummaryLogged = false;
+  let stage2SummaryEligible = false;
   const localValidatorMode = getLocalValidatorMode();
   const geminiValidatorMode = getGeminiValidatorMode();
   const geminiBlockingEnabled = isGeminiBlockingEnabled();
@@ -354,6 +357,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const logStageOutput = (stage: string, path: string) => {
     nLog("[STAGE_OUTPUT_COMMITTED]", { jobId: payload.jobId, stage, path: path.substring(path.length - 40) });
+  };
+
+  const recordStage2AttemptOutput = (attempt: number, localPath: string) => {
+    if (!Number.isFinite(attempt) || attempt < 0) return;
+    if (stage2AttemptOutputs.some((entry) => entry.localPath === localPath)) return;
+    stage2AttemptOutputs.push({ attempt, localPath });
+  };
+
+  const recordStage2AttemptsFromResult = (basePath: string, attemptsUsed?: number) => {
+    if (!attemptsUsed || attemptsUsed < 1) return;
+    for (let attempt = 0; attempt < attemptsUsed; attempt++) {
+      const suffix = attempt === 0 ? "-2" : `-2-retry${attempt}`;
+      recordStage2AttemptOutput(attempt, siblingOutPath(basePath, suffix, ".webp"));
+    }
+  };
+
+  const attachStage2PublishedUrl = (localPath: string, publishedUrl: string) => {
+    const match = stage2AttemptOutputs.find((entry) => entry.localPath === localPath);
+    if (match) {
+      match.publishedUrl = publishedUrl;
+    }
+  };
+
+  const logStage2RetrySummary = (selectedPath?: string | null) => {
+    if (stage2SummaryLogged || !stage2SummaryEligible) return;
+    stage2SummaryLogged = true;
+    const selectedFinalAttempt = selectedPath
+      ? stage2AttemptOutputs.find((entry) => entry.localPath === selectedPath)?.attempt ?? null
+      : null;
+    nLog("[STAGE2_RETRY_SUMMARY]", {
+      jobId: payload.jobId,
+      attempts: stage2AttemptOutputs.map((entry) => ({
+        attempt: entry.attempt,
+        url: entry.publishedUrl ?? null,
+      })),
+      selectedFinalAttempt: selectedFinalAttempt ?? null,
+    });
   };
 
   const commitStageOutput = (stage: "1A" | "1B" | "2", outputPath: string) => {
@@ -564,6 +604,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
 
       // Run Stage-2 only (using 1B as base)
+      stage2SummaryEligible = true;
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -578,6 +619,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
       });
       const path2 = stage2Result.outputPath;
+      recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
       const stage2ValidationPassed = stage2Result.validationRisk !== true;
 
       timings.stage2Ms = Date.now() - t2;
@@ -608,6 +650,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (!(await ensureStage2AttemptOwner("stage2_only_publish"))) return;
       const pub2 = await publishImage(path2);
       const pub2Url = pub2.url;
+      if (pub2Url) {
+        attachStage2PublishedUrl(path2, pub2Url);
+      }
 
       stage2Success = true;
       
@@ -650,6 +695,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
+      logStage2RetrySummary(path2);
       return; // ✅ Exit early - full pipeline not needed
 
     } catch (err: any) {
@@ -1936,6 +1982,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
     } else {
       if (payload.options.virtualStage && !(await ensureStage2AttemptOwner("stage2_start"))) return;
+      stage2SummaryEligible = true;
       // FIX 6: Track Stage 2 start
       timestamps.stage2Start = Date.now();
       updateJob(payload.jobId, { 'timestamps.stage2Start': timestamps.stage2Start });
@@ -2023,6 +2070,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } else {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
+        recordStage2AttemptsFromResult(stage2InputPath, stage2Outcome.attempts);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -2050,6 +2098,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     await clearStage2RetryPending("stage2_error_clear_pending");
     if (!(await canCompleteStage2(true, "stage2_error_complete"))) return;
+    logStage2RetrySummary(null);
     await completePartialJob({
       jobId: payload.jobId,
       triggerStage: "2",
@@ -2146,6 +2195,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } else {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
+        recordStage2AttemptsFromResult(stage2InputPath, stage2Outcome.attempts);
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -2223,6 +2273,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         await clearStage2RetryPending("stage2_runtime_exceeded_clear_pending");
         if (!(await canCompleteStage2(true, "stage2_runtime_exceeded_complete"))) return;
+        logStage2RetrySummary(null);
         await clearStage2RetryPending("stage2_gemini_exhausted_clear_pending");
         if (!(await canCompleteStage2(true, "stage2_gemini_exhausted_complete"))) return;
         await completePartialJob({
@@ -2387,6 +2438,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             path2 = stage2OutcomeRetry.outputPath;
             stage2CandidatePath = path2;
             commitStageOutput("2", stage2OutcomeRetry.outputPath);
+            recordStage2AttemptsFromResult(stage2InputPath, stage2OutcomeRetry.attempts);
             stage2AttemptsUsed = stage2OutcomeRetry.attempts;
             stage2MaxAttempts = stage2OutcomeRetry.maxAttempts;
             stage2ValidationRisk = stage2OutcomeRetry.validationRisk;
@@ -2417,6 +2469,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           await clearStage2RetryPending("stage2_retries_exhausted_clear_pending");
           if (!(await canCompleteStage2(true, "stage2_retries_exhausted_complete"))) return;
+          logStage2RetrySummary(null);
           await completePartialJob({
             jobId: payload.jobId,
             triggerStage: "2",
@@ -2620,6 +2673,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             modelReason: `stage2 gemini_block retry ${geminiRetries}`,
             outputPath: retryOutputPath,
           });
+          recordStage2AttemptOutput(geminiRetries, retryStage2Path);
           nLog(`[RETRY_OUTPUT] stage=2 attempt=${geminiRetries} path=${retryStage2Path}`);
           nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} re-ran Stage 2: ${retryStage2Path}`);
 
@@ -2903,6 +2957,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const pub2 = await publishImage(stage2CandidatePath);
         pub2Url = pub2.url;
         stage2Success = true;
+        if (pub2Url) {
+          attachStage2PublishedUrl(stage2CandidatePath, pub2Url);
+        }
         
         // Track memory after Stage 2 (new path)
         updatePeakMemory(payload.jobId);
@@ -2931,6 +2988,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog('[worker] failed to publish Stage 2', e);
       }
     }
+  }
+
+  if (payload.options.virtualStage) {
+    logStage2RetrySummary(stage2Success ? stage2CandidatePath : null);
   }
 
   // COMPLIANCE VALIDATION (best-effort)
