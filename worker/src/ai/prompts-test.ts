@@ -206,6 +206,49 @@ GENERAL BEHAVIOUR:
 • Think like a real interior designer preparing a real listing: logical layout, comfortable circulation, and correct scale.
 • If the supplied room type seems wrong for the space, quietly pick the best matching common room type instead and stage for that.
 
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
+
 HARD RULES — BASE IMAGE (MUST NEVER BE BROKEN):
 • Use the image EXACTLY as provided.
 • Do NOT rotate, crop, reframe, zoom, or change the camera angle or perspective.
@@ -213,6 +256,12 @@ HARD RULES — BASE IMAGE (MUST NEVER BE BROKEN):
   - No changes to walls, ceilings, floors, windows, blinds, curtains, doors, trims, cupboards, fireplaces, or built-in shelving.
   - Do NOT repaint, re-texture, or change materials or colors of any existing surfaces or fixtures.
 • Do NOT add, remove, or move any structural elements or built-ins (no new walls, windows, doors, fireplaces, cabinets, niches, etc.).
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
 
 STRUCTURAL HARDLOCK RULES — MUST FOLLOW
 Treat the following as permanent built-in structures, NOT removable objects:
@@ -338,6 +387,49 @@ OUTPUT GOAL:
   // exterior
   return RULE_PREFIX + `
 Stage this outdoor area with realistic outdoor furniture for real estate marketing. Only proceed if there is sufficient hard-surface area (deck, patio, or paving).
+
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
 
 HARD RULES — BASE IMAGE:
 • Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe, zoom, or change the camera angle or perspective.

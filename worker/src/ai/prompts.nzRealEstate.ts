@@ -442,6 +442,51 @@ TopP: 0.70
 TopK: 24
 
 ────────────────────────────────
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+────────────────────────────────
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────────────
 ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
 ────────────────────────────────
 
@@ -686,6 +731,49 @@ Return ONLY the refreshed image.`.trim();
 function buildStage2ExteriorPromptNZStyle(): string {
   return `Stage this outdoor area with clean, contemporary New Zealand-style outdoor
 furniture consistent with Trade Me real estate photography.
+
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
 
 Staging style:
 • A single outdoor furniture set (lounge or dining).
