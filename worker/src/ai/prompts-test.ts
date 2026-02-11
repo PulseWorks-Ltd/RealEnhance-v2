@@ -210,7 +210,6 @@ Your job is to VIRTUALLY STAGE this empty ${rt} with realistic, modern furniture
 GENERAL BEHAVIOUR:
 • Treat the input image as a locked background plate.
 • Think like a real interior designer preparing a real listing: logical layout, comfortable circulation, and correct scale.
-• If the supplied room type seems wrong for the space, quietly pick the best matching common room type instead and stage for that.
 
 STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
 Fixture identity preservation has higher priority than staging style realism.
@@ -254,6 +253,27 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────
+ROOM TYPE AUTHORITY — HARD RULE
+────────────────────────
+
+The requested room type is authoritative.
+
+You MUST stage exactly as the requested room type.
+
+Do NOT reinterpret room function based on layout, furniture, or visual cues.
+
+Only override the requested room type if hard structural fixtures make it impossible, such as:
+- visible toilet
+- visible shower or bath
+- bathroom vanity and plumbing
+- tiny storage closet with no usable floor space
+
+Otherwise:
+Stage exactly as requested, even if the layout is unusual for that room type.
+
+User intent overrides model interpretation.
 
 ────────────────────────────────
 ROOM TYPE INTENT LOCK — MUST FOLLOW
@@ -315,6 +335,27 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────
+ROOM TYPE AUTHORITY — HARD RULE
+────────────────────────
+
+The requested room type is authoritative.
+
+You MUST stage exactly as the requested room type.
+
+Do NOT reinterpret room function based on layout, furniture, or visual cues.
+
+Only override the requested room type if hard structural fixtures make it impossible, such as:
+- visible toilet
+- visible shower or bath
+- bathroom vanity and plumbing
+- tiny storage closet with no usable floor space
+
+Otherwise:
+Stage exactly as requested, even if the layout is unusual for that room type.
+
+User intent overrides model interpretation.
 
 STRUCTURAL HARDLOCK RULES — MUST FOLLOW
 Treat the following as permanent built-in structures, NOT removable objects:
