@@ -13,6 +13,7 @@ import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, finalizeReservation } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
+import { estimateBatchCredits } from "@realenhance/shared";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -218,6 +219,45 @@ export function uploadRouter() {
           message: `Room type is required for interior image(s): ${missingRoomType.join(", ")}`
         });
       }
+    }
+
+    // ✅ PREFLIGHT CREDIT ESTIMATE
+    // Estimate total credits needed before processing to provide early feedback
+    try {
+      const estimateImages = files.map((f, i) => {
+        const meta = metaByIndex[i] || {};
+        const opts: any = optionsList[i] ?? {};
+        const sceneType = meta.sceneType || opts.sceneType || "auto";
+        const declutter = meta.declutter !== undefined ? meta.declutter : (opts.declutter !== undefined ? opts.declutter : declutterForm);
+        const virtualStage = meta.virtualStage !== undefined ? meta.virtualStage : (opts.virtualStage !== undefined ? opts.virtualStage : allowStagingForm);
+        
+        // Map sceneType to interior/exterior for billing
+        const billingSceneType = sceneType === "exterior" ? "exterior" : "interior";
+        
+        return {
+          sceneType: billingSceneType,
+          userSelectedStage1B: !!declutter,
+          userSelectedStage2: !!virtualStage,
+        };
+      });
+
+      const estimatedCredits = estimateBatchCredits(estimateImages);
+      console.log(
+        `[CREDIT_PREFLIGHT_ESTIMATE] ` +
+        `agencyId=${agencyId} ` +
+        `userId=${sessUser.id} ` +
+        `imageCount=${files.length} ` +
+        `estimatedCredits=${estimatedCredits} ` +
+        `breakdown=${JSON.stringify(estimateImages.map((img, idx) => ({
+          idx,
+          sceneType: img.sceneType,
+          stage1B: img.userSelectedStage1B,
+          stage2: img.userSelectedStage2,
+        })))}`
+      );
+    } catch (estimateErr) {
+      console.error("[CREDIT_PREFLIGHT_ESTIMATE] Failed to estimate credits:", estimateErr);
+      // Non-blocking - continue with job processing
     }
 
     for (let i = 0; i < files.length; i++) {

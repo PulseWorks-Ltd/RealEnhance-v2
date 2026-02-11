@@ -69,6 +69,7 @@ import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhanced
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
+import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
   if (!mask || !mask.width || !mask.height || !mask.data) {
@@ -316,6 +317,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   let stage12Success = false;
   let stage2Success = false;
+  // ✅ BILLING: Track individual stage success for finalize-at-end billing
+  let stage1ASuccess = false;
+  let stage1BSuccess = false;
   let stage2AttemptsUsed = 0;
   let stage2MaxAttempts = 1;
   let stage2ValidationRisk = false;
@@ -792,6 +796,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog("[BILLING] Failed to finalize reservation (stage2-only retry):", (billingErr as any)?.message || billingErr);
       }
 
+      // ✅ BILLING FINALIZATION: Compute final charge based on stage completion
+      try {
+        await finalizeImageChargeFromWorker({
+          jobId: payload.jobId,
+          stage1ASuccess: true, // Stage 2 retry implies Stage 1A succeeded previously
+          stage1BSuccess: true, // Stage 2 retry implies Stage 1B succeeded previously
+          stage2Success: true,
+          sceneType: sceneLabel || "interior",
+        });
+      } catch (chargeErr) {
+        nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
+      }
+
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
       logStage2RetrySummary(path2);
       return; // ✅ Exit early - full pipeline not needed
@@ -1229,6 +1246,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   logIfNotFocusMode(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   
   commitStageOutput("1A", path1A);
+  // ✅ BILLING: Mark Stage 1A as successful for finalize-at-end billing
+  stage1ASuccess = true;
   // Track memory after Stage 1A
   updatePeakMemory(payload.jobId);
   if (isMemoryCritical()) {
@@ -1663,6 +1682,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Commit Stage 1B output after successful completion
     if (path1B) {
       commitStageOutput("1B", path1B);
+      // ✅ BILLING: Mark Stage 1B as successful for finalize-at-end billing
+      stage1BSuccess = true;
     }
 
     const stage1BLocalStatus = stage1BStructuralSafe
@@ -1796,6 +1817,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             // Retry passed — adopt the retried output and continue pipeline
             path1B = retryPath1B;
             commitStageOutput("1B", retryPath1B);
+            // ✅ BILLING: Mark Stage 1B as successful for finalize-at-end billing
+            stage1BSuccess = true;
             geminiRetryPassed = true;
             nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
             break;
@@ -3743,6 +3766,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Billing must never block job completion, but log error for reconciliation
     nLog("[BILLING] Failed to finalize reservation (non-blocking):", (billingErr as any)?.message || billingErr);
     // In production, you might want to queue this for retry or manual reconciliation
+  }
+
+  // ✅ BILLING FINALIZATION: Compute final charge based on stage completion
+  // This runs AFTER job is marked complete to ensure idempotent charging
+  try {
+    await finalizeImageChargeFromWorker({
+      jobId: payload.jobId,
+      stage1ASuccess, // Tracked throughout pipeline
+      stage1BSuccess, // Tracked throughout pipeline
+      stage2Success, // Tracked throughout pipeline
+      sceneType: sceneLabel || "interior",
+    });
+  } catch (chargeErr) {
+    // Billing errors must not crash the worker
+    nLog("[BILLING] Failed to finalize charge (non-blocking):", (chargeErr as any)?.message || chargeErr);
   }
 
   // Persist finalized metadata with longer history TTL

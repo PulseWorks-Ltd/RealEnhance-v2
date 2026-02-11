@@ -21,3 +21,6 @@ export * from "./usage/usageCharging";
 export * from "./analysis/types";
 export * from "./analysis/storage";
 export * from "./types/jobMetadata";
+// Billing finalization
+export * from "./billing/rules";
+export * from "./billing/finalization";
