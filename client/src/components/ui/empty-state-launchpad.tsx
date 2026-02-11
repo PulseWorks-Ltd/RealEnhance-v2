@@ -3,11 +3,12 @@ import { useState } from 'react';
 import { Button } from './button';
 
 interface EmptyStateLaunchpadProps {
-  onUploadClick: () => void;
+  onFileSelect: () => void;
+  onFileDrop: (files: File[]) => void;
   onSampleSelect?: (sampleType: 'interior' | 'exterior' | 'kitchen') => void;
 }
 
-export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStateLaunchpadProps) {
+export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }: EmptyStateLaunchpadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -31,7 +32,12 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    onUploadClick();
+    
+    // Extract files from drop event and pass to parent handler
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      onFileDrop(droppedFiles);
+    }
   };
 
   const sampleImages = [
@@ -85,7 +91,7 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
               : 'border-slate-300 hover:border-blue-400 hover:shadow-2xl'
             }
           `}
-          onClick={onUploadClick}
+          onClick={onFileSelect}
         >
           <div className="p-12 flex flex-col items-center text-center space-y-6">
             
@@ -138,7 +144,7 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-6 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
               onClick={(e) => {
                 e.stopPropagation();
-                onUploadClick();
+                onFileSelect();
               }}
             >
               Choose Files

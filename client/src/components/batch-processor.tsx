@@ -511,6 +511,12 @@ export default function BatchProcessor() {
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
   
   const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Constants for file validation
+  const MAX_FILES = 50;
+  const MAX_FILE_SIZE_MB = 15;
+  const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
   
   // Tab state for clean UI flow - default to images tab when empty to show launchpad
   const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">(
@@ -3721,6 +3727,140 @@ export default function BatchProcessor() {
     }
   };
 
+  // Trigger file selector (for launchpad and other UI surfaces)
+  const triggerFileSelector = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  // Centralized file validation and processing handler
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    
+    // Filter by MIME type
+    const imageFiles = selectedFiles.filter(f => f.type.startsWith("image/"));
+    
+    if (imageFiles.length !== selectedFiles.length) {
+      toast({
+        title: "Non-image files skipped",
+        description: `${selectedFiles.length - imageFiles.length} file(s) were not images and were skipped.`,
+        variant: "default",
+      });
+    }
+    
+    // Validate file count
+    if (files.length + imageFiles.length > MAX_FILES) {
+      toast({
+        title: "Too many files",
+        description: `Maximum ${MAX_FILES} images allowed per batch. Current: ${files.length}, Attempting to add: ${imageFiles.length}`,
+        variant: "destructive",
+      });
+      e.target.value = '';
+      return;
+    }
+    
+    // Validate file sizes
+    const oversizedFiles = imageFiles.filter(f => f.size > MAX_FILE_SIZE_BYTES);
+    if (oversizedFiles.length > 0) {
+      toast({
+        title: "Files too large",
+        description: `${oversizedFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB limit and were skipped.`,
+        variant: "destructive",
+      });
+    }
+    
+    const validFiles = imageFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
+    
+    if (validFiles.length === 0) {
+      e.target.value = '';
+      return;
+    }
+    
+    // Deduplicate by name+size
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => `${f.name}-${f.size}`));
+      const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
+      
+      if (unique.length !== validFiles.length) {
+        toast({
+          title: "Duplicate files skipped",
+          description: `${validFiles.length - unique.length} duplicate file(s) were skipped.`,
+          variant: "default",
+        });
+      }
+      
+      return [...prev, ...unique];
+    });
+    
+    // Context-safe tab switch - only switch from images tab
+    if (validFiles.length > 0) {
+      setActiveTab(prev => prev === "images" ? "describe" : prev);
+    }
+    
+    // Reset input to allow re-selection of same files
+    e.target.value = '';
+  }, [files, toast]);
+
+  // Drag-drop handler for EmptyStateLaunchpad
+  const handleFileDrop = useCallback((droppedFiles: File[]) => {
+    // Filter by MIME type (drag/drop bypasses accept attribute)
+    const imageFiles = droppedFiles.filter(f => f.type.startsWith("image/"));
+    
+    if (imageFiles.length !== droppedFiles.length) {
+      toast({
+        title: "Non-image files skipped",
+        description: `${droppedFiles.length - imageFiles.length} file(s) were not images and were skipped.`,
+        variant: "default",
+      });
+    }
+    
+    // Validate file count
+    if (files.length + imageFiles.length > MAX_FILES) {
+      toast({
+        title: "Too many files",
+        description: `Maximum ${MAX_FILES} images allowed per batch. Current: ${files.length}, Attempting to add: ${imageFiles.length}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate file sizes
+    const oversizedFiles = imageFiles.filter(f => f.size > MAX_FILE_SIZE_BYTES);
+    if (oversizedFiles.length > 0) {
+      toast({
+        title: "Files too large",
+        description: `${oversizedFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB limit and were skipped.`,
+        variant: "destructive",
+      });
+    }
+    
+    const validFiles = imageFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
+    
+    if (validFiles.length === 0) {
+      return;
+    }
+    
+    // Deduplicate by name+size
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => `${f.name}-${f.size}`));
+      const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
+      
+      if (unique.length !== validFiles.length) {
+        toast({
+          title: "Duplicate files skipped",
+          description: `${validFiles.length - unique.length} duplicate file(s) were skipped.`,
+          variant: "default",
+        });
+      }
+      
+      return [...prev, ...unique];
+    });
+    
+    // Context-safe tab switch - only switch from images tab
+    if (validFiles.length > 0) {
+      setActiveTab(prev => prev === "images" ? "describe" : prev);
+    }
+  }, [files, toast]);
+
   const clearAllFiles = () => {
     setFiles([]);
     setSelection(new Set());
@@ -3920,6 +4060,16 @@ export default function BatchProcessor() {
 
   return (
   <div className="w-full">
+      {/* Hidden global file input for launchpad and other UI surfaces */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
+      
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
@@ -4306,7 +4456,8 @@ export default function BatchProcessor() {
           <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 overflow-hidden shadow-sm border-t border-slate-200">
             {files.length === 0 ? (
               <EmptyStateLaunchpad 
-                onUploadClick={() => setActiveTab("upload")}
+                onFileSelect={triggerFileSelector}
+                onFileDrop={handleFileDrop}
                 onSampleSelect={(sampleType) => {
                   // TODO: Implement sample image loading
                   console.log('[BatchProcessor] Sample selected:', sampleType);
