@@ -532,11 +532,17 @@ export default function BatchProcessor() {
 
   // Auto-switch from images tab to upload tab when files are restored asynchronously (one-shot guard)
   useEffect(() => {
-    if (!hasRestoredRef.current && files.length > 0 && activeTab === "images") {
+    const hasRestoredFiles = files.some(f => (f as any).__restored === true);
+    
+    if (
+      !hasRestoredRef.current &&
+      hasRestoredFiles &&
+      activeTab === "images"
+    ) {
       setActiveTab("upload");
       hasRestoredRef.current = true;
     }
-  }, [files.length, activeTab]);
+  }, [files, activeTab]);
 
   // Transparent AI simulation
   const [aiSteps, setAiSteps] = useState<Record<number, string>>({});
