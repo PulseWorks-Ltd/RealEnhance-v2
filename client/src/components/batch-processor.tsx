@@ -509,11 +509,14 @@ const StatusBadge = ({ status, className }: { status: 'processing' | 'completed'
 export default function BatchProcessor() {
     // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
-  // Tab state for clean UI flow
-  const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">("upload");
-  const [isUploading, setIsUploading] = useState(false);
   
   const [files, setFiles] = useState<File[]>([]);
+  
+  // Tab state for clean UI flow - default to images tab when empty to show launchpad
+  const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">(
+    () => files.length === 0 ? "images" : "upload"
+  );
+  const [isUploading, setIsUploading] = useState(false);
   const [globalGoal, setGlobalGoal] = useState("");
   const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
   const presetKey = "realestate"; // Locked to Real Estate only
