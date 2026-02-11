@@ -3735,42 +3735,47 @@ export default function BatchProcessor() {
   // Centralized file validation and processing handler
   const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
+    let processingFiles = selectedFiles;
+    const rejectionReasons: string[] = [];
     
     // Filter by MIME type
-    const imageFiles = selectedFiles.filter(f => f.type.startsWith("image/"));
-    
-    if (imageFiles.length !== selectedFiles.length) {
-      toast({
-        title: "Non-image files skipped",
-        description: `${selectedFiles.length - imageFiles.length} file(s) were not images and were skipped.`,
-        variant: "default",
-      });
+    const imageFiles = processingFiles.filter(f => f.type.startsWith("image/"));
+    if (imageFiles.length !== processingFiles.length) {
+      rejectionReasons.push(`${processingFiles.length - imageFiles.length} non-image file(s)`);
     }
+    processingFiles = imageFiles;
     
-    // Validate file count
-    if (files.length + imageFiles.length > MAX_FILES) {
-      toast({
-        title: "Too many files",
-        description: `Maximum ${MAX_FILES} images allowed per batch. Current: ${files.length}, Attempting to add: ${imageFiles.length}`,
-        variant: "destructive",
-      });
-      e.target.value = '';
-      return;
+    // Validate file count - accept as many as possible up to limit
+    const availableSlots = MAX_FILES - files.length;
+    if (processingFiles.length > availableSlots) {
+      if (availableSlots > 0) {
+        rejectionReasons.push(`${processingFiles.length - availableSlots} file(s) exceed batch limit`);
+        processingFiles = processingFiles.slice(0, availableSlots);
+      } else {
+        toast({
+          title: "Batch limit reached",
+          description: `Maximum ${MAX_FILES} images allowed per batch. Remove files to add more.`,
+          variant: "destructive",
+        });
+        e.target.value = '';
+        return;
+      }
     }
     
     // Validate file sizes
-    const oversizedFiles = imageFiles.filter(f => f.size > MAX_FILE_SIZE_BYTES);
-    if (oversizedFiles.length > 0) {
-      toast({
-        title: "Files too large",
-        description: `${oversizedFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB limit and were skipped.`,
-        variant: "destructive",
-      });
+    const validFiles = processingFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
+    if (validFiles.length !== processingFiles.length) {
+      rejectionReasons.push(`${processingFiles.length - validFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB`);
     }
     
-    const validFiles = imageFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
-    
     if (validFiles.length === 0) {
+      if (rejectionReasons.length > 0) {
+        toast({
+          title: "No valid files",
+          description: `Skipped: ${rejectionReasons.join(', ')}`,
+          variant: "destructive",
+        });
+      }
       e.target.value = '';
       return;
     }
@@ -3781,10 +3786,15 @@ export default function BatchProcessor() {
       const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
       
       if (unique.length !== validFiles.length) {
+        rejectionReasons.push(`${validFiles.length - unique.length} duplicate(s)`);
+      }
+      
+      // Show aggregated feedback
+      if (rejectionReasons.length > 0) {
         toast({
-          title: "Duplicate files skipped",
-          description: `${validFiles.length - unique.length} duplicate file(s) were skipped.`,
-          variant: "default",
+          title: unique.length > 0 ? `Added ${unique.length} file(s)` : "Files skipped",
+          description: `Skipped: ${rejectionReasons.join(', ')}`,
+          variant: unique.length > 0 ? "default" : "destructive",
         });
       }
       
@@ -3802,40 +3812,46 @@ export default function BatchProcessor() {
 
   // Drag-drop handler for EmptyStateLaunchpad
   const handleFileDrop = useCallback((droppedFiles: File[]) => {
+    let processingFiles = droppedFiles;
+    const rejectionReasons: string[] = [];
+    
     // Filter by MIME type (drag/drop bypasses accept attribute)
-    const imageFiles = droppedFiles.filter(f => f.type.startsWith("image/"));
-    
-    if (imageFiles.length !== droppedFiles.length) {
-      toast({
-        title: "Non-image files skipped",
-        description: `${droppedFiles.length - imageFiles.length} file(s) were not images and were skipped.`,
-        variant: "default",
-      });
+    const imageFiles = processingFiles.filter(f => f.type.startsWith("image/"));
+    if (imageFiles.length !== processingFiles.length) {
+      rejectionReasons.push(`${processingFiles.length - imageFiles.length} non-image file(s)`);
     }
+    processingFiles = imageFiles;
     
-    // Validate file count
-    if (files.length + imageFiles.length > MAX_FILES) {
-      toast({
-        title: "Too many files",
-        description: `Maximum ${MAX_FILES} images allowed per batch. Current: ${files.length}, Attempting to add: ${imageFiles.length}`,
-        variant: "destructive",
-      });
-      return;
+    // Validate file count - accept as many as possible up to limit
+    const availableSlots = MAX_FILES - files.length;
+    if (processingFiles.length > availableSlots) {
+      if (availableSlots > 0) {
+        rejectionReasons.push(`${processingFiles.length - availableSlots} file(s) exceed batch limit`);
+        processingFiles = processingFiles.slice(0, availableSlots);
+      } else {
+        toast({
+          title: "Batch limit reached",
+          description: `Maximum ${MAX_FILES} images allowed per batch. Remove files to add more.`,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     
     // Validate file sizes
-    const oversizedFiles = imageFiles.filter(f => f.size > MAX_FILE_SIZE_BYTES);
-    if (oversizedFiles.length > 0) {
-      toast({
-        title: "Files too large",
-        description: `${oversizedFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB limit and were skipped.`,
-        variant: "destructive",
-      });
+    const validFiles = processingFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
+    if (validFiles.length !== processingFiles.length) {
+      rejectionReasons.push(`${processingFiles.length - validFiles.length} file(s) exceed ${MAX_FILE_SIZE_MB}MB`);
     }
     
-    const validFiles = imageFiles.filter(f => f.size <= MAX_FILE_SIZE_BYTES);
-    
     if (validFiles.length === 0) {
+      if (rejectionReasons.length > 0) {
+        toast({
+          title: "No valid files",
+          description: `Skipped: ${rejectionReasons.join(', ')}`,
+          variant: "destructive",
+        });
+      }
       return;
     }
     
@@ -3845,10 +3861,15 @@ export default function BatchProcessor() {
       const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
       
       if (unique.length !== validFiles.length) {
+        rejectionReasons.push(`${validFiles.length - unique.length} duplicate(s)`);
+      }
+      
+      // Show aggregated feedback
+      if (rejectionReasons.length > 0) {
         toast({
-          title: "Duplicate files skipped",
-          description: `${validFiles.length - unique.length} duplicate file(s) were skipped.`,
-          variant: "default",
+          title: unique.length > 0 ? `Added ${unique.length} file(s)` : "Files skipped",
+          description: `Skipped: ${rejectionReasons.join(', ')}`,
+          variant: unique.length > 0 ? "default" : "destructive",
         });
       }
       

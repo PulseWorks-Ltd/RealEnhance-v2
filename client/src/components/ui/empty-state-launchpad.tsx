@@ -112,7 +112,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
             {/* Heading */}
             <div className="space-y-2">
               <h2 className="text-3xl font-bold text-slate-900">
-                {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos with AI Staging & Cleanup'}
+                {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos with Professional Staging & Cleanup'}
               </h2>
               <p className="text-lg text-slate-600 max-w-md">
                 {isDragOver 
