@@ -806,6 +806,39 @@ If a conflict occurs:
 Reduce furniture — never block access.
 
 ────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
+
+────────────────────────────────
 STYLE PROFILE
 ────────────────────────────────
 NZ Contemporary / Scandi Minimalist.
@@ -1012,6 +1045,39 @@ When arranging furniture, follow this strict priority:
 
 If a conflict occurs:
 Reduce furniture — never block access.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
 
 ABSOLUTE STRUCTURAL RULES:
 • No rotation/crop/zoom or perspective changes.

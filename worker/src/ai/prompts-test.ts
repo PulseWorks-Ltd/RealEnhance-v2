@@ -438,7 +438,34 @@ WINDOW & GLAZING PROTECTION RULES:
 • Windows and glass doors must remain completely free of added objects.
 • No item may overlap, intersect, or partially cover the glazing, the frame, curtains, blinds, tracks, or hardware.
 • Treat the full window area — frame + glass + sill + curtains/blinds — as a protected “no-mount zone.”
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE:
 
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+WALL-MOUNTED ADDITIONS — PROHIBITED:
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
 ROOM-TYPE-SPECIFIC LAYOUT (IF APPLICABLE):
 • If this is a KITCHEN:
   - Kitchen staging should be minimal and realistic.
