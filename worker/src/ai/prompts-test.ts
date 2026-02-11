@@ -254,6 +254,26 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
+KITCHEN STRUCTURE OVERRIDE GUARD — MUST FOLLOW
+
+If requested room type conflicts with visible kitchen structure,
+you MUST preserve all kitchen layout and built-in elements exactly.
+
+Never resize, restyle, replace, or add:
+- kitchen islands
+- fixed counters
+- cabinetry runs
+- appliances
+- splashbacks
+- ventilation hoods
+
+Satisfy room-type intent using movable furniture placement only.
+
+DINING LAYOUT MICRO-HINT
+
+For dining_room staging, prioritize a dining table and chair set as the primary focal furniture.
+Do not substitute lounge seating as the primary layout when dining_room is requested.
+
 ────────────────────────
 ROOM TYPE AUTHORITY — HARD RULE
 ────────────────────────
@@ -524,6 +544,26 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
+
+KITCHEN STRUCTURE OVERRIDE GUARD — MUST FOLLOW
+
+If requested room type conflicts with visible kitchen structure,
+you MUST preserve all kitchen layout and built-in elements exactly.
+
+Never resize, restyle, replace, or add:
+- kitchen islands
+- fixed counters
+- cabinetry runs
+- appliances
+- splashbacks
+- ventilation hoods
+
+Satisfy room-type intent using movable furniture placement only.
+
+DINING LAYOUT MICRO-HINT
+
+For dining_room staging, prioritize a dining table and chair set as the primary focal furniture.
+Do not substitute lounge seating as the primary layout when dining_room is requested.
 
 ────────────────────────────────
 ROOM TYPE INTENT LOCK — MUST FOLLOW
