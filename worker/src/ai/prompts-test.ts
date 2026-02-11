@@ -128,8 +128,14 @@ REMOVE (full list):
 KEEP EXACTLY:
 • Built-in stoves/ovens, range hoods, sinks, taps, cabinets, countertops,
   fixed shelving, and all permanently attached fixtures.
-• All windows, blinds, curtains, doors, trims, skirting boards, and all
+• All windows, doors, trims, skirting boards, and all
   architectural features.
+
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
+
 • Original walls, ceilings, flooring, and their colors and materials.
 
 STRUCTURAL HARDLOCK RULES — MUST FOLLOW
@@ -264,6 +270,37 @@ If the space is visually ambiguous, still follow the requested room type exactly
 Room type intent has higher priority than staging style preference.
 
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
+
+────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
 
 HARD RULES — BASE IMAGE (MUST NEVER BE BROKEN):
 • Use the image EXACTLY as provided.
@@ -462,6 +499,37 @@ If the space is visually ambiguous, still follow the requested room type exactly
 Room type intent has higher priority than staging style preference.
 
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
+
+────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
 
 HARD RULES — BASE IMAGE:
 • Use the image EXACTLY as provided. Do NOT rotate, crop, straighten, reframe, zoom, or change the camera angle or perspective.

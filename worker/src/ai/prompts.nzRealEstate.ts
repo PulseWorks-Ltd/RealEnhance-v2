@@ -273,7 +273,10 @@ Built-in Joinery: Kitchen cabinets, islands, built-in wardrobes (floor-to-ceilin
 
 Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switches, outlets, thermostats, vents, radiators, towel rails.
 
-Window Treatments: Curtains, blinds, and rods must remain.
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
 
 Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
 
@@ -503,6 +506,37 @@ Room type intent has higher priority than staging style preference.
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
 
 ────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
+
+────────────────────────────────
 ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
 ────────────────────────────────
 
@@ -606,11 +640,10 @@ FIXED ARCHITECTURE:
 • Doors, frames, architraves, sliders, tracks
 • Windows, frames, glazing, sills
 
-WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
-• Curtains and drapes
-• Curtain rails, rods, and tracks
-• Blinds and shutters
-• Curtain openness state (open/closed/half)
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
 
 LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
 • Pendant lights
@@ -807,6 +840,37 @@ Room type intent has higher priority than staging style preference.
 
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
 
+────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
+
 Staging style:
 • A single outdoor furniture set (lounge or dining).
 • Neutral tones: charcoal, white, light wood, or grey.
@@ -909,11 +973,10 @@ FIXED ARCHITECTURE:
 • Doors, frames, architraves, sliders, tracks
 • Windows, frames, glazing, sills
 
-WINDOW COVERINGS (ALWAYS FIXED — NEVER MODIFY):
-• Curtains and drapes
-• Curtain rails, rods, and tracks
-• Blinds and shutters
-• Curtain openness state (open/closed/half)
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
 
 LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
 • Pendant lights
