@@ -552,6 +552,22 @@ Bedroom → MUST include:
 Office → MUST include:
 - desk + work chair
 
+Kitchen → staging guidance:
+
+Kitchen staging should be minimal and realistic.
+
+Allowed:
+- small kitchen appliances (coffee machine, kettle, toaster)
+- small kitchen accessories (fruit bowl, plant, cookbooks, tray)
+
+Bar stools:
+Do NOT add bar stools in Stage 2 empty-room staging.
+Only keep or replace bar stools if they are already present in the original image (refresh staging).
+Never introduce new bar stools.
+
+Built-in cabinetry, counters, and islands remain the dominant visual elements.
+Do not crowd kitchen walkways or work zones.
+
 If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
 
 Do NOT substitute a different furniture category due to layout preference.
@@ -578,16 +594,15 @@ Then you MUST:
 • Reduce staging density if needed
 • NEVER delete or replace built-ins to satisfy room type
 
-VISUAL STRUCTURE AUTHORITY RULE
+STRUCTURE AWARENESS RULE
 
-Visible built-in structures override user-provided room labels.
+Visible built-in elements (kitchen counters, islands, cabinetry, wardrobes)
+indicate functional constraints but do NOT override the user-selected room type.
 
-If a kitchen island, fixed counter, or built-in cabinetry is visible,
-the space must be treated as a kitchen or kitchen-dining area
-even if the provided room type label says otherwise.
+Always stage primarily as the selected room type: ${room}.
 
-Room labels must NOT cause removal, conversion, or replacement
-of visible built-in structures.
+Adapt furniture placement around built-ins instead of changing the room type.
+Never remove, hide, or replace built-in structures.
 
 ────────────────────────────────
 STRUCTURE FIRST LAYOUT CONSTRAINT
@@ -694,12 +709,23 @@ EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT upgrade weather, sky, landscape, or buildings
 
 ────────────────────────────────
-KITCHEN OVERRIDES ALL
+KITCHEN ZONE FURNITURE RESTRICTIONS
 ────────────────────────────────
-- NO sofas, armchairs, TVs, coffee tables, or rugs.
-- NO dining table unless roomType = dining_room.
-- Bar stools ONLY if island overhang is visible.
-- Max 2 stools. Align under overhang.
+When the selected room type is ${room}:
+
+Prohibited in immediate kitchen zone (within 1.5m of island/counters):
+- NO sofas, armchairs, TVs, coffee tables, or rugs in kitchen work zone
+- NO large dining table directly adjacent to island (creates visual clash)
+
+Permitted in kitchen zone:
+- Bar stools (max 2-3) aligned under island/peninsula overhang - ONLY in refresh mode
+- Small dining set IF open-plan layout has clear separation (>2m from island)
+- Minimal counter decor (fruit bowl, coffee machine, small plant)
+
+Permitted in adjacent open-plan zones:
+- If room type is "dining_room" → dining set in separate zone
+- If room type is "living_room" → lounge furniture in separate zone
+- If room type is "kitchen" → focus on kitchen accessories only
 
 ────────────────────────────────
 ${isFullStaging ? 'FULL STAGING MODE' : 'REFRESH MODE'} — STRICT LOGIC

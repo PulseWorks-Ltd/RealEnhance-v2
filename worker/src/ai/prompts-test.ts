@@ -380,13 +380,15 @@ These must NEVER be:
 
 Kitchen islands must NEVER be converted into dining tables or staging furniture.
 
-VISUAL STRUCTURE AUTHORITY RULE
-Visible built-in structures override user-provided room labels.
-If a kitchen island, fixed counter, or built-in cabinetry is visible,
-the space must be treated as a kitchen or kitchen-dining area
-even if the provided room type label says otherwise.
-Room labels must NOT cause removal, conversion, or replacement
-of visible built-in structures.
+STRUCTURE AWARENESS RULE
+
+Visible built-in elements (kitchen counters, islands, cabinetry, wardrobes)
+indicate functional constraints but do NOT override the user-selected room type.
+
+Always stage primarily as the selected room type: ${rt}.
+
+Adapt furniture placement around built-ins instead of changing the room type.
+Never remove, hide, or replace built-in structures.
 
 ALLOWED ACTIONS (WHAT YOU MAY DO):
 • You may ONLY ADD movable furniture and decor on top of the existing image.
@@ -428,6 +430,12 @@ WINDOW & GLAZING PROTECTION RULES:
 • Treat the full window area — frame + glass + sill + curtains/blinds — as a protected “no-mount zone.”
 
 ROOM-TYPE-SPECIFIC LAYOUT (IF APPLICABLE):
+• If this is a KITCHEN:
+  - Kitchen staging should be minimal and realistic.
+  - Add small kitchen appliances (coffee machine, kettle, toaster) or accessories (fruit bowl, plant, cookbooks).
+  - Do NOT add bar stools in empty-room staging. Only keep/replace them if already present.
+  - Built-in cabinetry, counters, and islands remain the dominant visual elements.
+  - Do not crowd kitchen walkways or work zones.
 • If this is a LIVING ROOM:
   - Provide a main seating area (sofa and/or armchairs) oriented toward the obvious focal point (e.g., TV wall, fireplace, or main window).
   - Place the main sofa so that it does NOT sit in the middle of a clear access route to any door or sliding door.
