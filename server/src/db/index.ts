@@ -8,7 +8,7 @@ if (!connectionString) {
 // Small helper to share a single pool across the server
 export const pool = new Pool({ connectionString, max: 10 });
 
-pool.on("error", (err) => {
+pool.on("error", (err: Error) => {
   console.error("[db] Unexpected PG pool error", err);
 });
 

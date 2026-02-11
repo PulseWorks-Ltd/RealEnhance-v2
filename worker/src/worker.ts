@@ -69,6 +69,29 @@ import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhanced
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
+
+async function detectLargeFurnitureGemini(ai: any, imageBase64: string): Promise<boolean> {
+  const prompt = `
+Return JSON only: {"hasLargeFurniture": true|false}
+
+Large furniture means:
+bed, sofa, couch, dining table, large table, sectional, large desk.
+
+Ignore:
+chairs, lamps, rugs, decor, wall art, small items.
+
+Answer true ONLY if clearly visible.
+`;
+
+  const res = await ai.generateJson({
+    model: "gemini-2.0-flash",
+    prompt,
+    imageBase64,
+    temperature: 0,
+  });
+
+  return res?.hasLargeFurniture === true;
+}
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
@@ -581,6 +604,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
   let stage2AttemptId: string | undefined;
+  let autoFurnitureDetected = false;
+  const jobMeta = { autoInsertedStage1B: false };
+
+  if (payload.options?.stage2Only === true) {
+    const base64 = toBase64(origPath).data;
+    const ai = getGeminiClient();
+    autoFurnitureDetected = await detectLargeFurnitureGemini(ai, base64);
+
+    nLog("[AUTO_FURNITURE_DETECT]", {
+      jobId: payload.jobId,
+      detected: autoFurnitureDetected,
+    });
+
+    if (autoFurnitureDetected) {
+      payload.options.declutter = true;
+      payload.options.declutterMode = "stage-ready";
+      payload.options.virtualStage = true;
+      jobMeta.autoInsertedStage1B = true;
+    }
+  }
 
   const getStage2Context = async () => {
     const latestJob = await getJob(payload.jobId);
@@ -777,7 +820,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         meta: {
           stage2OnlyRetry: true,
           timings,
-          scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }
+          scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
+          autoFurnitureDetected,
+          autoInsertedStage1B: jobMeta.autoInsertedStage1B === true,
         }
       }, "stage2_only_complete");
 
@@ -3574,6 +3619,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
+    autoFurnitureDetected,
+    autoInsertedStage1B: jobMeta.autoInsertedStage1B === true,
   };
 
   // ⚡ CRITICAL: Mark job as complete IMMEDIATELY with final URL

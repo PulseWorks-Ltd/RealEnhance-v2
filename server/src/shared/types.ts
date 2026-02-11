@@ -158,6 +158,7 @@ export interface EnhanceJobPayload {
     virtualStage: boolean;
     roomType: string;
     sceneType: string | "auto";
+    stage2Only?: boolean;
     replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)
     stagingStyle?: string;           // Staging style (defaults to nz_standard)
     declutterMode?: DeclutterMode;   // Stage 1B mode

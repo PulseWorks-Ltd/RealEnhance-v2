@@ -362,8 +362,6 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
   
   return { locked: row.amendments_locked, editCount: row.edit_count };
 }
-  return { locked: row.amendments_locked, editCount: row.edit_count };
-}
 
 export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot> {
   const monthKey = await getBillingCycleKey(agencyId);

@@ -32,6 +32,7 @@
     "@types/form-data": "^2.5.0",
     "@types/jest": "^30.0.0",
     "@types/node-fetch": "^2.6.11",
+    "@types/pg": "^8.15.2",
     "jest": "^30.2.0",
     "tsx": "^4.20.6",
     "typescript": "^5.6.3"

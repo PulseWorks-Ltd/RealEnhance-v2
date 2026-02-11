@@ -4,6 +4,33 @@
  */
 
 import { finalizeImageCharge, type StageFlags } from "@realenhance/shared";
+import { Pool, type PoolClient } from "pg";
+
+const connectionString = process.env.DATABASE_URL;
+const pool = connectionString ? new Pool({ connectionString, max: 5 }) : null;
+
+async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  if (!pool) {
+    throw new Error("DATABASE_URL is required for billing finalization");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("[billing] rollback failed", rollbackErr);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 export async function finalizeImageChargeFromWorker(params: {
   jobId: string;
@@ -23,6 +50,7 @@ export async function finalizeImageChargeFromWorker(params: {
     const result = await finalizeImageCharge({
       jobId: params.jobId,
       stageFlags,
+      withTransaction,
     });
 
     if (result.alreadyFinalized) {

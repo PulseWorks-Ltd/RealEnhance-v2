@@ -7,13 +7,7 @@
  * direct database access. It uses the server's database pool.
  */
 
-import { pool, withTransaction } from "../../../server/src/db/index.js";
-import type { PoolClient } from "pg";
-import { computeCharge, type StageFlags } from "./rules.js
-import { pool, withTransaction } from "../../../server/src/db/index.js";
-import type { PoolClient } from "pg";
-import { computeCharge } from "./rules.js";
-import type { StageFlags } from "./rules.js";
+import { computeCharge, type StageFlags } from "./rules.js";
 
 export type { StageFlags } from "./rules.js";
 
@@ -24,6 +18,15 @@ export interface ChargeResult {
   alreadyFinalized: boolean;
 }
 
+type DbClient = {
+  query: (
+    sql: string,
+    params?: unknown[]
+  ) => Promise<{ rowCount: number; rows: Array<Record<string, unknown>> }>;
+};
+
+type WithTransaction = <T>(fn: (client: DbClient) => Promise<T>) => Promise<T>;
+
 /**
  * Finalize charge for an image with idempotent guard
  * 
@@ -33,8 +36,9 @@ export interface ChargeResult {
 export async function finalizeImageCharge(params: {
   jobId: string;
   stageFlags: StageFlags;
+  withTransaction: WithTransaction;
 }): Promise<ChargeResult> {
-  return await withTransaction(async (client: PoolClient) => {
+  return await params.withTransaction(async (client) => {
     // Lock the job reservation row
     const res = await client.query(
       `SELECT * FROM job_reservations WHERE job_id = $1 FOR UPDATE`,
@@ -51,7 +55,12 @@ export async function finalizeImageCharge(params: {
       };
     }
 
-    const reservation = res.rows[0];
+    const reservation = res.rows[0] as {
+      charge_finalized: boolean;
+      charge_amount: number;
+      charge_log: string | null;
+      agency_id?: string | null;
+    };
 
     // Idempotent guard: check if already finalized
     if (reservation.charge_finalized) {

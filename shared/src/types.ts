@@ -94,6 +94,7 @@ export interface EnhanceJobPayload {
   options: {
     declutter: boolean;
     virtualStage: boolean;
+    stage2Only?: boolean;
     roomType: string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)

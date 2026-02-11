@@ -24,7 +24,6 @@ import { CompareSlider } from "./CompareSlider";
 import { RegionEditor } from "./region-editor";
 import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
@@ -564,14 +563,8 @@ export default function BatchProcessor() {
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
   const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
-  const [isFurnishedOverride, setIsFurnishedOverride] = useState<boolean | null>(null);
-  const [isStagingConfirmOpen, setIsStagingConfirmOpen] = useState(false);
-  const [stagingPreference, setStagingPreference] = useState<"refresh" | "full" | undefined>(undefined);
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
-  const isFurnishedOverrideRef = useRef<boolean | null>(null);
-  const stagingPreferenceRef = useRef<"refresh" | "full" | undefined>(undefined);
-  const furnishedPromptShownRef = useRef<boolean>(false);
   const clientBatchIdRef = useRef<string | null>(null);
   const previousFileCountRef = useRef<number>(0);
   
@@ -650,24 +643,7 @@ export default function BatchProcessor() {
   useEffect(() => { manualSceneTypesByIdRef.current = manualSceneTypesById; }, [manualSceneTypesById]);
   useEffect(() => { imageSceneTypesByIdRef.current = imageSceneTypesById; }, [imageSceneTypesById]);
   useEffect(() => { scenePredictionsByIdRef.current = scenePredictionsById; }, [scenePredictionsById]);
-  useEffect(() => { isFurnishedOverrideRef.current = isFurnishedOverride; }, [isFurnishedOverride]);
-  useEffect(() => { stagingPreferenceRef.current = stagingPreference; }, [stagingPreference]);
   
-  const resetFurnishedStateForNewBatch = useCallback((reason: string) => {
-    setIsFurnishedOverride(null);
-    setStagingPreference(undefined);
-    isFurnishedOverrideRef.current = null;
-    stagingPreferenceRef.current = undefined;
-    furnishedPromptShownRef.current = false;
-    if (IS_DEV) {
-      console.log('[BATCH][RESET_FURNISHED]', { reason, isFurnishedOverride: isFurnishedOverrideRef.current, stagingPreference: stagingPreferenceRef.current });
-      console.assert(isFurnishedOverrideRef.current === null && stagingPreferenceRef.current === undefined, "[DEV_ASSERT] furnished choice should reset for new batch");
-    }
-  }, []);
-
-
-
-
   // Compute currentImageIndex from selectedImageId for backwards compatibility
   const currentImageIndex = useMemo(() => {
     if (!selectedImageId) return 0;
@@ -687,23 +663,11 @@ export default function BatchProcessor() {
     }
   }, [files, selectedImageId]);
 
-  useEffect(() => {
-    if (!allowStaging) {
-      setIsFurnishedOverride(null);
-      setStagingPreference(undefined);
-    }
-    if (declutter) {
-      setIsFurnishedOverride(null);
-      setStagingPreference(undefined);
-    }
-  }, [allowStaging, declutter]);
-
-  // Detect brand new batch (first files added after empty state) and clear furnished choice
+  // Detect brand new batch (first files added after empty state)
   useEffect(() => {
     const prev = previousFileCountRef.current;
     const isNewBatch = prev === 0 && files.length > 0 && runState !== 'running';
     if (isNewBatch) {
-      resetFurnishedStateForNewBatch('files_added_new_batch');
       const newClientBatchId = `client-batch-${Date.now()}`;
       clientBatchIdRef.current = newClientBatchId;
       setClientBatchId(newClientBatchId);
@@ -713,7 +677,7 @@ export default function BatchProcessor() {
       setClientBatchId(null);
     }
     previousFileCountRef.current = files.length;
-  }, [files.length, runState, resetFurnishedStateForNewBatch]);
+  }, [files.length, runState]);
 
   // Helper to set current image by index (for UI that uses indices)
   const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
@@ -761,6 +725,7 @@ export default function BatchProcessor() {
   const statusHasUrlLoggedRef = useRef<Set<string>>(new Set());
   const statusTargetNotReachedLoggedRef = useRef<Set<string>>(new Set());
   const retryChildMappingLoggedRef = useRef<Set<string>>(new Set());
+  const autoFurnitureNoticeLoggedRef = useRef<Set<number>>(new Set());
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -2057,8 +2022,8 @@ export default function BatchProcessor() {
           const warnings = filterWarningsForDisplay(rawWarnings);
           let hardFail = typeof validation?.hardFail === 'boolean' ? validation.hardFail : false;
           const stage2UrlRaw = stageUrls?.['2'] || stageUrls?.stage2 || null;
-          const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || stageUrls?.['1b'] || null;
-          const stage1aUrl = stageUrls?.['1A'] || stageUrls?.stage1A || stageUrls?.['1'] || null;
+          const stage1bUrl = stageUrls?.['1B'] || stageUrls?.stage1B || null;
+          const stage1aUrl = stageUrls?.['1A'] || stageUrls?.stage1A || null;
           const resultStageNorm = String(resultStage || "").toUpperCase();
           const stage2Mismatch = requestedStage2 === false && (stage2UrlRaw || resultStageNorm === "2");
           const stage2Url = stage2Mismatch ? null : stage2UrlRaw;
@@ -2115,10 +2080,10 @@ export default function BatchProcessor() {
           }
 
           // FIX: Only mark as completed when target stage is reached
-          const completedFinal = (status === "completed" || status === "complete" || status === "done") && !!displayUrl && targetUrlPresent;
+          const completedFinal = status === "completed" && !!displayUrl && targetUrlPresent;
           
           // Log when backend says completed but target not reached (still processing)
-          if ((status === "completed" || status === "complete" || status === "done") && displayUrl && !targetUrlPresent) {
+          if (status === "completed" && displayUrl && !targetUrlPresent) {
             if (!statusTargetNotReachedLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
               statusTargetNotReachedLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
               console.log('[BATCH][target_not_reached]', { jobId: key, status, targetStage, hasStage2: !!stage2Url, hasStage1B: !!stage1bUrl, hasStage1A: !!stage1aUrl, targetPresent: targetUrlPresent });
@@ -2128,7 +2093,7 @@ export default function BatchProcessor() {
           // Missing final URL while marked complete is a warning bug surface
           const warningList = (() => {
             const base = warnings.slice();
-              if ((status === "completed" || status === "complete" || status === "done") && !resultUrlSafe) {
+              if (status === "completed" && !resultUrlSafe) {
                 base.push("Image Enhancement didn’t finalise. Please retry image.");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
@@ -2164,7 +2129,8 @@ export default function BatchProcessor() {
             const lastTs = lastActivityByIndexRef.current[idx]?.ts ?? now;
             const ageMs = now - lastTs;
             const hasOnlyStage1A = !!stage1aUrl && !stage1bUrl && !stage2Url && !resultUrlSafe;
-            const uiOverrideFailed = (status === "processing" || status === "queued") && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
+            const isQueued = pipelineStatusRaw === "queued" || pipelineStatusRaw === "waiting";
+            const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             if (uiOverrideFailed && !warningList.includes("Enhanced copy of the original is available.")) {
               warningList.push("Enhanced copy of the original is available.");
             }
@@ -2234,7 +2200,7 @@ export default function BatchProcessor() {
             });
 
             if (IS_DEV) {
-              const stageKeys = stageUrls ? Object.keys(stageUrls).filter(k => stageUrls[k]) : [];
+              const stageKeys = stageUrls ? Object.keys(stageUrls).filter(k => (stageUrls as Record<string, any>)[k]) : [];
               console.debug('[BATCH][stage-preview]', {
                 jobId: key,
                 index: idx,
@@ -2571,7 +2537,7 @@ export default function BatchProcessor() {
   };
 
 
-  const startBatchProcessing = async (stagingPreferenceOverride?: "refresh" | "full") => {
+  const startBatchProcessing = async () => {
     // Guard: no files, no spin
     if (!files.length) {
       toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
@@ -2628,10 +2594,6 @@ export default function BatchProcessor() {
     setProcessedImages([]);
     setProcessedImagesByIndex({});
     setDisplayStageByIndex({});
-    setIsFurnishedOverride(null);
-    isFurnishedOverrideRef.current = null;
-    stagingPreferenceRef.current = undefined;
-    setStagingPreference(undefined);
     processedSetRef.current.clear(); // Reset processed tracking for new batch
     
     // Create abort controller for cleanup
@@ -2656,20 +2618,12 @@ export default function BatchProcessor() {
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
     const stage1BLightSelected = declutter && declutterMode === "light";
-    const stagingPreferenceFinal = stage1BLightSelected
-      ? "refresh"
-      : stagingPreferenceOverride
-        ?? stagingPreference
-        ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
-
+    const stage2Only = allowStaging && !declutter;
     const stage2Variant: "2A" | "2B" | undefined = (() => {
       if (!allowStaging) return undefined;
       if (declutter) return declutterMode === "stage-ready" ? "2B" : "2A";
-      if (stagingPreferenceFinal === "refresh") return "2A";
-      if (stagingPreferenceFinal === "full") return "2B";
-      return undefined;
+      return "2B";
     })();
-    const furnishedState: "furnished" | "empty" | undefined = stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined;
 
     if (IS_DEV && declutter) {
       console.assert(!!declutterMode, "[DEV_ASSERT] declutterMode must be non-null when declutter is enabled");
@@ -2685,21 +2639,15 @@ export default function BatchProcessor() {
     console.log("[BATCH] start payload", {
       clientBatchId: activeClientBatchId,
       batchId: "pending",
-      furnishedChoice: stagingPreferenceFinal ?? null,
-      furnishedOverride: isFurnishedOverrideRef.current,
+      stage2Only,
       allowStaging,
       declutter,
       files: files.length,
     });
-    if (stagingPreferenceFinal) {
-      fd.append("stagingPreference", stagingPreferenceFinal);
-    }
     if (stage2Variant) {
       fd.append("stage2Variant", stage2Variant);
     }
-    if (furnishedState) {
-      fd.append("furnishedState", furnishedState);
-    }
+    fd.append("stage2Only", stage2Only.toString());
     fd.append("outdoorStaging", outdoorStaging);
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);
@@ -2711,14 +2659,13 @@ export default function BatchProcessor() {
         allowStaging,
         declutter,
         declutterMode,
-        stagingPreference: stagingPreferenceFinal,
         stage2Variant,
-        furnishedState,
+        stage2Only,
       });
       console.log("[ENHANCE_REQUEST] image payload preview", {
         stage2Variant,
-        furnishedState,
         declutterMode,
+        stage2Only,
         stagesSelected: { stage1A: true, stage1B: declutter, stage2: allowStaging },
       });
       // Phase 1: Start batch processing with files
@@ -2757,10 +2704,9 @@ export default function BatchProcessor() {
       console.log("[BATCH] start", {
         clientBatchId: activeClientBatchId,
         batchId: ids[0] || "unknown",
-        furnishedChoice: stagingPreferenceFinal ?? null,
-        furnishedOverride: isFurnishedOverrideRef.current,
         allowStaging,
         declutter,
+        stage2Only,
       });
       setJobIds(ids);
       setCancelIds(ids);
@@ -2791,18 +2737,6 @@ export default function BatchProcessor() {
         return;
       }
     }
-  };
-
-  const startEnhancementWithPreference = (pref?: "refresh" | "full") => {
-    setStagingPreference(pref);
-    setActiveTab("enhance");
-    startBatchProcessing(pref);
-  };
-
-  const confirmFurnished = (mode: "refresh" | "full") => {
-    console.info("[STAGING_CONFIRM] answer", { mode });
-    setIsStagingConfirmOpen(false);
-    startEnhancementWithPreference(mode);
   };
 
   const downloadZip = async () => {
@@ -2922,17 +2856,11 @@ export default function BatchProcessor() {
   };
 
   const handleStartEnhance = () => {
-    const stage1BLightSelected = declutter && declutterMode === "light";
-    const resolvedPreference = stage1BLightSelected
-      ? "refresh"
-      : stagingPreference ?? (typeof isFurnishedOverride === "boolean" ? (isFurnishedOverride ? "refresh" : "full") : undefined);
-
     console.info("[ENHANCE_CLICK] start", {
       count: files.length,
       allowStaging,
       declutter,
       declutterMode,
-      stagingPreference: resolvedPreference,
       clientBatchId,
     });
 
@@ -2941,17 +2869,7 @@ export default function BatchProcessor() {
       return;
     }
 
-    const shouldPrompt = allowStaging && !declutter && !resolvedPreference;
-    if (shouldPrompt) {
-      if (IS_DEV) {
-        console.assert(stagingPreferenceRef.current === undefined && isFurnishedOverrideRef.current === null, "[DEV_ASSERT] furnished choice unset; prompt should display for new batch");
-      }
-      console.info("[STAGING_CONFIRM] opened");
-      setIsStagingConfirmOpen(true);
-      return;
-    }
-
-    startEnhancementWithPreference(resolvedPreference);
+    startBatchProcessing();
   };
 
   const handleRetryFailed = async () => {
@@ -3708,7 +3626,6 @@ export default function BatchProcessor() {
 
   const handleRestart = () => {
     // Clear all state to start fresh
-    resetFurnishedStateForNewBatch('handle_restart_button');
     setFiles([]);
     setGlobalGoal("");
     setPreserveStructure(true);
@@ -3720,7 +3637,6 @@ export default function BatchProcessor() {
     setProcessedImages([]);
     setProcessedImagesByIndex({});
     setActiveTab("upload"); // Reset to first tab
-    setIsStagingConfirmOpen(false);
     // Cancel any ongoing processing
     if (abortController) {
       abortController.abort();
@@ -3992,23 +3908,6 @@ export default function BatchProcessor() {
 
   return (
   <div className="w-full">
-      <AlertDialog open={isStagingConfirmOpen} onOpenChange={setIsStagingConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Choose staging mode</AlertDialogTitle>
-            <AlertDialogDescription>Are these rooms already furnished?</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setIsStagingConfirmOpen(false)}>Cancel</AlertDialogCancel>
-            <Button variant="secondary" onClick={() => confirmFurnished("full")}>
-              No
-            </Button>
-            <Button onClick={() => confirmFurnished("refresh")}>
-              Yes
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
@@ -5005,6 +4904,15 @@ export default function BatchProcessor() {
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
+                        const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
+                          || result?.result?.meta?.autoInsertedStage1B === true;
+                        if (autoInsertedStage1B && !autoFurnitureNoticeLoggedRef.current.has(i)) {
+                          console.log("[UI_AUTO_FURNITURE_NOTICE_SHOWN]", {
+                            index: i,
+                            jobId: result?.jobId || result?.result?.jobId || null,
+                          });
+                          autoFurnitureNoticeLoggedRef.current.add(i);
+                        }
 
                         // Stage URL resolution (supports new stage1A/1B keys)
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
@@ -5247,6 +5155,15 @@ export default function BatchProcessor() {
                                   {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
                                 </p>
                               )}
+                              {autoInsertedStage1B && (
+                                <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                                  <Info className="mt-0.5 h-3.5 w-3.5 text-amber-600" />
+                                  <div>
+                                    <p>Furniture was automatically detected and removed before staging.</p>
+                                    <p>An additional processing step was required, so 1 extra image credit was used.</p>
+                                  </div>
+                                </div>
+                              )}
 
                               <div className="mt-2 space-y-1.5">
                                 <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedStage === '2' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
@@ -5352,21 +5269,6 @@ export default function BatchProcessor() {
                     </div>
                 )}
                 
-                {/* Failsafe: Always provide way to clear results if stuck in any other state */}
-                {results.length > 0 && runState === "idle" && (
-                    <div className="mt-8 flex flex-col items-center gap-4">
-                        <div className="text-center text-sm text-amber-600">
-                            <p>⚠️ Unexpected state detected. Clear results to continue.</p>
-                        </div>
-                        <button 
-                            onClick={handleRestart}
-                            className="bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 transition-colors font-medium"
-                        >
-                            Clear Results
-                        </button>
-                    </div>
-                )}
-
              </div>
             )}
           </div>
@@ -5622,19 +5524,19 @@ export default function BatchProcessor() {
 
       {/* Editing in Progress Alert */}
       {isEditingInProgress && (
-        <AlertDialog open={true}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
+        <Dialog open={true}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                 Editing image as requested
-              </AlertDialogTitle>
-              <AlertDialogDescription>
+              </DialogTitle>
+              <DialogDescription>
                 Please wait while we enhance your image with the requested changes...
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-          </AlertDialogContent>
-        </AlertDialog>
+              </DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

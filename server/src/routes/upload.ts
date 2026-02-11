@@ -13,7 +13,7 @@ import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, finalizeReservation } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
-import { estimateBatchCredits } from "@realenhance/shared";
+import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -65,6 +65,7 @@ export function uploadRouter() {
     const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
     const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
+    const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
@@ -313,6 +314,11 @@ export function uploadRouter() {
         opts.furnishedState = metaFurnishedState;
       } else if (furnishedStateForm === "furnished" || furnishedStateForm === "empty") {
         opts.furnishedState = furnishedStateForm as "furnished" | "empty";
+      }
+      if (meta.stage2Only !== undefined) {
+        opts.stage2Only = !!meta.stage2Only;
+      } else if (stage2OnlyForm) {
+        opts.stage2Only = true;
       }
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
