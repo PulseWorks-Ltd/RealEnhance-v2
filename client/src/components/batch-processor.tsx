@@ -2869,6 +2869,7 @@ export default function BatchProcessor() {
       return;
     }
 
+    setActiveTab("enhance");
     startBatchProcessing();
   };
 
