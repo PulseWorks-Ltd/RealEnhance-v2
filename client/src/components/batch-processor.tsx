@@ -512,6 +512,7 @@ export default function BatchProcessor() {
   
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasRestoredRef = useRef(false);
   
   // Constants for file validation
   const MAX_FILES = 50;
@@ -529,10 +530,11 @@ export default function BatchProcessor() {
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
 
-  // Auto-switch from images tab to upload tab when files are restored asynchronously
+  // Auto-switch from images tab to upload tab when files are restored asynchronously (one-shot guard)
   useEffect(() => {
-    if (files.length > 0 && activeTab === "images") {
+    if (!hasRestoredRef.current && files.length > 0 && activeTab === "images") {
       setActiveTab("upload");
+      hasRestoredRef.current = true;
     }
   }, [files.length, activeTab]);
 
