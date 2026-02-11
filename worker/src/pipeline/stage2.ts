@@ -24,59 +24,6 @@ import { focusLog } from "../utils/logFocus";
 
 // Stage 2: virtual staging (add furniture)
 
-// ============================================================================
-// STRUCTURAL OVERRIDE RESOLVER (RESTORED)
-// ============================================================================
-
-interface SpatialStructure {
-  isBathroom: boolean;
-  isKitchen: boolean;
-  canFitRoomType: (roomType: string) => boolean;
-  suggestFallback: (roomType: string) => string;
-}
-
-/**
- * Analyzes image for structural constraints that override user room type selection.
- * Override authority limited to:
- * - Bathroom fixtures (toilet, bath, shower, vanity)
- * - Kitchen counters + fixed appliances
- * - Room size below minimum footprint for requested furniture set
- * - Structural built-ins conflict with requested room type
- */
-async function analyzeSpatialStructure(imagePath: string): Promise<SpatialStructure> {
-  try {
-    const metadata = await sharp(imagePath).metadata();
-    const width = metadata.width || 0;
-    const height = metadata.height || 0;
-    const pixelArea = width * height;
-
-    // Minimal viable implementation - can be enhanced with AI detection
-    // For now, use conservative heuristics to avoid false overrides
-    return {
-      isBathroom: false, // TODO: Add fixture detection if needed
-      isKitchen: false,  // TODO: Add counter/appliance detection if needed
-      canFitRoomType: (roomType: string) => {
-        // Check if image dimensions allow for requested furniture set
-        // Only block if physically impossible (very small images)
-        const minPixels = 200000; // ~500x400 minimum for any staging
-        return pixelArea >= minPixels;
-      },
-      suggestFallback: (roomType: string) => {
-        // Conservative fallback - prefer user intent
-        return roomType;
-      }
-    };
-  } catch (e) {
-    // On error, allow user intent to proceed
-    return {
-      isBathroom: false,
-      isKitchen: false,
-      canFitRoomType: () => true,
-      suggestFallback: (rt) => rt
-    };
-  }
-}
-
 export type Stage2Result = {
   outputPath: string;
   attempts: number;
@@ -111,11 +58,8 @@ export async function runStage2(
     validationConfig?: { localMode?: Mode };
   }
 ): Promise<Stage2Result> {
-  // ============================================================================
-  // PATCH 1: ROOM TYPE NORMALIZATION (Prompt Token Format Fix)
-  // ============================================================================
+  // Normalize room type format for prompt compatibility
   // Client sends "dining-room" (hyphen), prompts expect "dining_room" (underscore)
-  // This normalization ensures conditional checks in prompts work correctly
   const normalizedRoomType = (opts.roomType || "")
     .toLowerCase()
     .replace(/-/g, "_")
@@ -206,39 +150,6 @@ export async function runStage2(
     return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
-  // ============================================================================
-  // PATCH 2: STRUCTURAL OVERRIDE RESOLVER (RESTORED)
-  // ============================================================================
-  // Analyze structural reality and apply override ONLY when physically impossible
-  const spatial = await analyzeSpatialStructure(basePath);
-  let finalRoomType = normalizedRoomType;
-  let overrideReason: string | null = null;
-
-  if (spatial.isBathroom === true) {
-    finalRoomType = "bathroom";
-    overrideReason = "bathroom_fixtures";
-    console.log("[ROOMTYPE_OVERRIDE]", { reason: "bathroom_fixtures", user: opts.roomType, final: finalRoomType });
-  }
-  else if (spatial.isKitchen === true) {
-    finalRoomType = "kitchen";
-    overrideReason = "kitchen_fixtures";
-    console.log("[ROOMTYPE_OVERRIDE]", { reason: "kitchen_fixtures", user: opts.roomType, final: finalRoomType });
-  }
-  else if (!spatial.canFitRoomType(normalizedRoomType)) {
-    finalRoomType = spatial.suggestFallback(normalizedRoomType);
-    overrideReason = "size_impossible";
-    console.log("[ROOMTYPE_OVERRIDE]", { reason: "size_impossible", user: opts.roomType, final: finalRoomType });
-  }
-
-  // Debug log showing resolution flow
-  console.log("[ROOMTYPE_RESOLUTION]", {
-    user: opts.roomType,
-    normalized: normalizedRoomType,
-    final: finalRoomType,
-    overridden: overrideReason !== null,
-    reason: overrideReason
-  });
-
   if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
   // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
@@ -301,16 +212,13 @@ export async function runStage2(
       ? stagingStyleRaw.trim()
       : "none";
 
-    // ============================================================================
-    // PATCH 3: USE FINAL ROOM TYPE FOR PROMPT CONSTRUCTION
-    // ============================================================================
     let textPrompt = useTest
-      ? require("../ai/prompts-test").buildTestStage2Prompt(scene, finalRoomType)
-      : buildStage2PromptNZStyle(finalRoomType, scene, { stagingStyle: stagingStyleNorm, sourceStage: opts.sourceStage });
+      ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
+      : buildStage2PromptNZStyle(normalizedRoomType, scene, { stagingStyle: stagingStyleNorm, sourceStage: opts.sourceStage });
     // Build a high-priority staging style directive (system-like block)
     const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
-      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, finalRoomType);
+      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType);
     }
 
     // Apply prompt tightening based on retry attempt
