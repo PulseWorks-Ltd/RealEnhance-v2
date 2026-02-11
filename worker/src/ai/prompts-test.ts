@@ -331,6 +331,16 @@ HARD RULES — BASE IMAGE (MUST NEVER BE BROKEN):
   - Do NOT repaint, re-texture, or change materials or colors of any existing surfaces or fixtures.
 • Do NOT add, remove, or move any structural elements or built-ins (no new walls, windows, doors, fireplaces, cabinets, niches, etc.).
 
+FLOORING IDENTITY LOCK — STRICT
+
+Do NOT change, replace, or upgrade flooring material or flooring type.
+
+The floor must remain the same material and visual style as in the original image
+(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).
+
+You may clean or subtly enhance the appearance of the same flooring,
+but do not substitute it with a different material or style.
+
 Visual structure authority overrides staging style goals.
 If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
 
@@ -434,6 +444,7 @@ ROOM-TYPE-SPECIFIC LAYOUT (IF APPLICABLE):
   - Kitchen staging should be minimal and realistic.
   - Add small kitchen appliances (coffee machine, kettle, toaster) or accessories (fruit bowl, plant, cookbooks).
   - Do NOT add bar stools in empty-room staging. Only keep/replace them if already present.
+  - Do NOT add curtains, drapes, or fabric window coverings to kitchen windows.
   - Built-in cabinetry, counters, and islands remain the dominant visual elements.
   - Do not crowd kitchen walkways or work zones.
 • If this is a LIVING ROOM:

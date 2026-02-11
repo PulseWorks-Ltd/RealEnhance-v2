@@ -565,6 +565,9 @@ Do NOT add bar stools in Stage 2 empty-room staging.
 Only keep or replace bar stools if they are already present in the original image (refresh staging).
 Never introduce new bar stools.
 
+Curtains and drapes in kitchens — STRICT RULE:
+Do NOT add curtains, drapes, or fabric window coverings to kitchen windows in Stage 2 staging.
+
 Built-in cabinetry, counters, and islands remain the dominant visual elements.
 Do not crowd kitchen walkways or work zones.
 
@@ -676,6 +679,16 @@ FIXED ARCHITECTURE:
 • Floor plank direction and tile pattern must remain identical
 • Doors, frames, architraves, sliders, tracks
 • Windows, frames, glazing, sills
+
+FLOORING IDENTITY LOCK — STRICT
+
+Do NOT change, replace, or upgrade flooring material or flooring type.
+
+The floor must remain the same material and visual style as in the original image
+(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).
+
+You may clean or subtly enhance the appearance of the same flooring,
+but do not substitute it with a different material or style.
 
 WINDOW TREATMENTS — STRUCTURAL
 Curtains, blinds, and rods must remain unchanged.
@@ -1042,6 +1055,16 @@ FIXED ARCHITECTURE:
 • Floor plank direction and tile pattern must remain identical
 • Doors, frames, architraves, sliders, tracks
 • Windows, frames, glazing, sills
+
+FLOORING IDENTITY LOCK — STRICT
+
+Do NOT change, replace, or upgrade flooring material or flooring type.
+
+The floor must remain the same material and visual style as in the original image
+(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).
+
+You may clean or subtly enhance the appearance of the same flooring,
+but do not substitute it with a different material or style.
 
 WINDOW TREATMENTS — STRUCTURAL
 Curtains, blinds, and rods must remain unchanged.
