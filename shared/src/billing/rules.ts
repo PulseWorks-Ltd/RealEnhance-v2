@@ -27,18 +27,21 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
     return { amount: 0, reason: "stage1A_failed" };
   }
 
-  // Exterior billing cap: always 1 credit
-  if (flags.sceneType === "exterior") {
-    return { amount: 1, reason: "exterior_cap" };
-  }
-
-  // Interior: 2 credits if both Stage 1B and Stage 2 succeeded
+  // Compute raw charge from stage outcomes first
+  let amount = 1;
+  let reason = "interior_partial_pipeline";
   if (flags.stage1B && flags.stage2) {
-    return { amount: 2, reason: "interior_full_pipeline" };
+    amount = 2;
+    reason = "interior_full_pipeline";
   }
 
-  // Otherwise 1 credit
-  return { amount: 1, reason: "interior_partial_pipeline" };
+  // Apply exterior billing cap after stage-based computation
+  if (flags.sceneType === "exterior" && amount > 1) {
+    amount = 1;
+    reason = "exterior_cap";
+  }
+
+  return { amount, reason };
 }
 
 /**
