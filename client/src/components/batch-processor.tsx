@@ -523,6 +523,13 @@ export default function BatchProcessor() {
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
 
+  // Auto-switch from images tab to upload tab when files are restored asynchronously
+  useEffect(() => {
+    if (files.length > 0 && activeTab === "images") {
+      setActiveTab("upload");
+    }
+  }, [files.length, activeTab]);
+
   // Transparent AI simulation
   const [aiSteps, setAiSteps] = useState<Record<number, string>>({});
   useEffect(() => {
