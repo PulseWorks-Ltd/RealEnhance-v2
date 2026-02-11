@@ -730,18 +730,20 @@ export function RegionEditor({
       }
 
       if (!response.ok) {
-        let errorText = "";
+        let errorMessage = response.statusText;
         try {
-          errorText = await response.text();
+          const errorData = await response.json();
           console.error("[region-editor] ❌ HTTP ERROR - Response not OK");
           console.error("[region-editor]   - Status:", response.status);
-          console.error("[region-editor]   - Response body:", errorText);
+          console.error("[region-editor]   - Response body:", errorData);
+          // Extract user-friendly message if available
+          errorMessage = errorData.message || errorData.error || response.statusText;
         } catch {
           console.error(
             "[region-editor] ❌ HTTP ERROR - Could not read response body",
           );
         }
-        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+        throw new Error(errorMessage);
       }
 
       let result: { success: boolean; jobId?: string; error?: string };

@@ -46,7 +46,11 @@ export function editRouter() {
     if (baseJobId) {
       const editCheck = await incrementEdit(baseJobId as string);
       if (editCheck.locked) {
-        return res.status(429).json({ error: "edit_limit_reached", editCount: editCheck.editCount });
+        return res.status(429).json({ 
+          error: "edit_limit_reached", 
+          editCount: editCheck.editCount,
+          message: "You have reached the maximum allowed free edits for this image. If you want to edit other images, please upload them."
+        });
       }
     }
 

@@ -22,7 +22,11 @@ export function retryRouter() {
 
     const retryCheck = await incrementRetry(jobId);
     if (retryCheck.locked) {
-      return res.status(429).json({ error: "retry_limit_reached", retryCount: retryCheck.retryCount });
+      return res.status(429).json({ 
+        error: "retry_limit_reached", 
+        retryCount: retryCheck.retryCount,
+        message: "You have reached the maximum allowed free retries for this image. If you want to try again, please upload it as a new image."
+      });
     }
 
     // Clone with new jobId
