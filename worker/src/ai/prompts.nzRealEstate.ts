@@ -547,6 +547,24 @@ Room type intent has higher priority than staging style preference.
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
 
 ────────────────────────────────
+HUMAN LAYOUT HEURISTICS — MICRO RULES
+
+Follow common real-world furniture layout behavior.
+
+Bedroom:
+Place the bed with the headboard against a solid wall.
+Avoid placing the headboard against windows.
+Do not block doors or wardrobes with the bed.
+
+Dining room:
+Make the dining table and chairs the primary focal furniture group.
+Do not substitute lounge seating as the main layout.
+
+Living room:
+Anchor seating toward a focal wall or central furniture grouping.
+Avoid scattered or non-anchored seating layouts.
+
+────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
 ────────────────────────────────
 
@@ -921,6 +939,24 @@ If the space is visually ambiguous, still follow the requested room type exactly
 Room type intent has higher priority than staging style preference.
 
 If room-type intent conflicts with stylistic assumptions, adjust furniture selection — not room function.
+
+────────────────────────────────
+HUMAN LAYOUT HEURISTICS — MICRO RULES
+
+Follow common real-world furniture layout behavior.
+
+Bedroom:
+Place the bed with the headboard against a solid wall.
+Avoid placing the headboard against windows.
+Do not block doors or wardrobes with the bed.
+
+Dining room:
+Make the dining table and chairs the primary focal furniture group.
+Do not substitute lounge seating as the main layout.
+
+Living room:
+Anchor seating toward a focal wall or central furniture grouping.
+Avoid scattered or non-anchored seating layouts.
 
 ────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
