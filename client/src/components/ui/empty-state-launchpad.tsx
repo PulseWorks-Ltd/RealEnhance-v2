@@ -106,12 +106,12 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
             {/* Heading */}
             <div className="space-y-2">
               <h2 className="text-3xl font-bold text-slate-900">
-                {isDragOver ? 'Drop to Upload' : 'Transform Your Photos'}
+                {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos with AI Staging & Cleanup'}
               </h2>
               <p className="text-lg text-slate-600 max-w-md">
                 {isDragOver 
                   ? 'Release to start enhancing your images' 
-                  : 'Drag & drop images here or click to browse'
+                  : 'Upload property photos to declutter, enhance, and stage them in seconds'
                 }
               </p>
             </div>
@@ -146,6 +146,36 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
           </div>
         </div>
 
+        {/* What Happens Next - Process Flow */}
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-center gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold text-xs">
+                1
+              </div>
+              <span className="text-slate-700 font-medium">Upload</span>
+            </div>
+            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs">
+                2
+              </div>
+              <span className="text-slate-700 font-medium">Choose Room Type</span>
+            </div>
+            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs">
+                3
+              </div>
+              <span className="text-slate-700 font-medium">Get Staged Results</span>
+            </div>
+          </div>
+        </div>
+
         {/* Sample Images Gallery */}
         <div className="space-y-6">
           <div className="text-center space-y-2">
@@ -162,7 +192,7 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
               <button
                 key={sample.type}
                 onClick={() => onSampleSelect?.(sample.type)}
-                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 border border-slate-200"
+                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 border border-slate-200 cursor-pointer"
               >
                 {/* Gradient Background */}
                 <div className={`
@@ -175,7 +205,7 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
                   <div className="text-4xl">{sample.icon}</div>
                   <div>
                     <div className="font-semibold text-slate-900">{sample.label}</div>
-                    <div className="text-xs text-slate-600 mt-1">Sample image</div>
+                    <div className="text-xs text-slate-600 mt-1">Try a demo enhancement</div>
                   </div>
                   
                   {/* Hover Effect */}
@@ -184,7 +214,7 @@ export function EmptyStateLaunchpad({ onUploadClick, onSampleSelect }: EmptyStat
                       inline-flex items-center gap-1 text-xs font-medium 
                       bg-gradient-to-r ${sample.gradient} bg-clip-text text-transparent
                     `}>
-                      Try now
+                      Start demo
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
                       </svg>

@@ -6,8 +6,8 @@ export default function Home() {
   return (
     <div className="space-y-6" data-testid="home-page">
       <PageHeader
-        title="Enhance Photos"
-        description="Upload property photos and let AI enhance them with professional-quality improvements"
+        title="Enhance Property Photos"
+        description="Upload property photos to declutter, enhance, and stage them with professional AI in seconds"
       />
       
       {/* Batch Processor - Main Interface */}
