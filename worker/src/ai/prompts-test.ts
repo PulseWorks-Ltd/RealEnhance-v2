@@ -472,6 +472,7 @@ ROOM-TYPE-SPECIFIC LAYOUT (IF APPLICABLE):
   - Add small kitchen appliances (coffee machine, kettle, toaster) or accessories (fruit bowl, plant, cookbooks).
   - Do NOT add bar stools in empty-room staging. Only keep/replace them if already present.
   - Do NOT add curtains, drapes, or fabric window coverings to kitchen windows.
+  - KITCHEN SURFACE FOOTPRINT — STRICT: Treat all countertops, benches, and islands as fixed-size built-in elements. Do NOT extend, widen, deepen, or create new countertops, islands, or bench space to fit staging items. Only place appliances or accessories within clearly visible existing surface area. If there is not enough visible space, add fewer items — do not modify the surface.
   - Built-in cabinetry, counters, and islands remain the dominant visual elements.
   - Do not crowd kitchen walkways or work zones.
 • If this is a LIVING ROOM:
