@@ -26,6 +26,7 @@ import { RetryDialog } from "./retry-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Dropzone } from "@/components/ui/dropzone";
 import { ProcessingSteps, type ProcessingStep } from "@/components/ui/processing-steps";
+import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
@@ -4294,28 +4295,17 @@ export default function BatchProcessor() {
           /* WORKBENCH LAYOUT: Full width container with side-by-side grid */
           <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 overflow-hidden shadow-sm border-t border-slate-200">
             {files.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center px-6 text-center">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-800">No images in this batch</h3>
-                  <p className="text-sm text-slate-600">Add images to continue to the studio.</p>
-                  <div className="flex justify-center gap-2">
-                    <Button
-                      type="button"
-                      onClick={() => setActiveTab("upload")}
-                      className="bg-action-600 text-white hover:bg-action-700"
-                    >
-                      Upload images
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setActiveTab("describe")}
-                    >
-                      Back to settings
-                    </Button>
-                  </div>
-                </div>
-              </div>
+              <EmptyStateLaunchpad 
+                onUploadClick={() => setActiveTab("upload")}
+                onSampleSelect={(sampleType) => {
+                  // TODO: Implement sample image loading
+                  console.log('[BatchProcessor] Sample selected:', sampleType);
+                  toast({
+                    title: "Sample images coming soon",
+                    description: `${sampleType} sample will be available in the next release.`,
+                  });
+                }}
+              />
             ) : (
               <>
                 {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
