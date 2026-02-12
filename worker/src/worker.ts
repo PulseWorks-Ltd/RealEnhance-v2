@@ -4229,6 +4229,20 @@ const worker = new Worker(
       }
     } catch (err: any) {
       nLog("[worker] job failed", err);
+      
+      // ✅ CHECK 1: Release reservation on job failure to prevent credit leaks
+      // If job fails before reaching finalization, refund the reserved credits
+      try {
+        await finalizeReservationFromWorker({
+          jobId: (payload as any).jobId,
+          stage12Success: false, // Job failed - refund Stage 1/2 credits
+          stage2Success: false,  // Job failed - refund Stage 2 credits
+        });
+        nLog(`[BILLING] Released reservation for failed job: ${(payload as any).jobId}`);
+      } catch (billingErr) {
+        nLog("[BILLING] Failed to release reservation on job failure (non-blocking):", (billingErr as any)?.message || billingErr);
+      }
+      
       await safeWriteJobStatus((payload as any).jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
       throw err;
     }

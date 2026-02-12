@@ -330,6 +330,24 @@ export async function finalizeReservation(params: {
   });
 }
 
+/**
+ * ✅ CHECK 4: Increment retry count for MANUAL retries only
+ * 
+ * Scope: Per parent jobId (not per user, not per imageId)
+ * 
+ * This function is ONLY called by:
+ * - /api/batch/retry-single (manual retry route)
+ * - /api/retry (legacy manual retry route)
+ * 
+ * NOT called by:
+ * - validator_retry (auto-retry after false positive) - FREE
+ * - system_retry (auto-retry after worker crash) - FREE
+ * 
+ * Enforces: Max 2 manual retries per parent job
+ * 
+ * @param jobId - The parent job ID to track retries against
+ * @returns locked: true if retry limit exceeded, retryCount: current count
+ */
 export async function incrementRetry(jobId: string): Promise<{ locked: boolean; retryCount: number }> {
   const res = await pool.query(
     `UPDATE job_reservations

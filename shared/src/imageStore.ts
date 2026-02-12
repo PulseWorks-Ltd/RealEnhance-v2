@@ -50,6 +50,7 @@ export type HistoryEntry = {
   publicUrl: string;
   baseKey: string;
   versionId: string;
+  family?: string;
   stage?: string;
   stage2?: string;
   isRetry?: boolean;
@@ -77,6 +78,7 @@ export async function recordEnhancedImageRedis(opts: {
   baseKey: string; // now required
   versionId?: string;
   fallbackVersionKey?: string;
+  family?: string;
   stage?: string;
   stage2?: string;
   isRetry?: boolean;
@@ -108,6 +110,7 @@ export async function recordEnhancedImageRedis(opts: {
     publicUrl: opts.publicUrl,
     baseKey,
     versionId: versionId || "",
+    family: opts.family,
     stage: opts.stage,
     stage2: opts.stage2,
     isRetry: opts.isRetry ?? retryFromFilename,

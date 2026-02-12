@@ -133,6 +133,9 @@ export function retrySingleRouter() {
       let retrySourceStage: string | undefined = undefined;
       let retrySourceUrl: string | undefined = undefined;
       let retrySourceKey: string | undefined = undefined;
+      let selectedSourceStage: string | undefined = undefined;
+      let selectedSourceUrl: string | undefined = undefined;
+      let stage2OnlyDisabled = false;
       let rec: any = undefined;
       let parentJob: any = undefined;
       let parentMeta: any = undefined;
@@ -147,10 +150,9 @@ export function retrySingleRouter() {
           await fs.unlink((file as any).path).catch(() => {});
         }
 
-        const parsedKey = extractKeyFromS3Url(sourceUrlRaw);
-        if (!parsedKey) {
-          return res.status(400).json({ success: false, error: "invalid_source_url", message: "Retry source URL is not in the expected bucket" });
-        }
+        // Defaults when no parent metadata is available
+        selectedSourceStage = sourceStageRaw || "stage2";
+        selectedSourceUrl = sourceUrlRaw || undefined;
 
         if (parentJobId) {
           [parentJob, parentMeta] = await Promise.all([
@@ -167,16 +169,18 @@ export function retrySingleRouter() {
           const metaStageUrls = parentMeta?.stageUrls;
           
           // ✅ PATCH 1: Stage-aware baseline selection
-          let selectedSourceStage: string;
-          let selectedSourceUrl: string;
-          
           // Merge stage URLs from both sources
           const allStageUrls = { ...metaStageUrls, ...parentStageUrls };
           
           // Filter out edit stages - never use as baseline
           const validStageUrls = Object.entries(allStageUrls || {})
             .filter(([stage]) => !stage.toLowerCase().startsWith('edit'))
-            .reduce((acc, [stage, url]) => ({ ...acc, [stage]: url }), {} as Record<string, string>);
+            .reduce((acc, [stage, url]) => {
+              if (typeof url === "string" && url.length > 0) {
+                acc[stage] = url;
+              }
+              return acc;
+            }, {} as Record<string, string>);
           
           if (requestedStage === '1A') {
             // Retry from Stage 1A → full pipeline
@@ -186,10 +190,26 @@ export function retrySingleRouter() {
             // Retry from Stage 1B → Stage 2 only
             selectedSourceStage = '1B-stage-ready';
             selectedSourceUrl = validStageUrls['1B'];
+            
+            // ✅ CHECK 2: Fallback to Stage1A if Stage1B missing
+            if (!selectedSourceUrl && validStageUrls['1A']) {
+              console.warn(`[RETRY_FALLBACK] Stage1B missing, falling back to Stage1A for requestedStage=1B`);
+              selectedSourceStage = '1A';
+              selectedSourceUrl = validStageUrls['1A'];
+            }
           } else if (requestedStage === '2') {
             // CRITICAL: Retry Stage 2 from Stage 1B, NOT Stage 2
             selectedSourceStage = '1B-stage-ready';
             selectedSourceUrl = validStageUrls['1B'];
+            
+            // ✅ CHECK 2: Fallback to Stage1A if Stage1B missing
+            if (!selectedSourceUrl && validStageUrls['1A']) {
+              console.warn(`[RETRY_FALLBACK] Stage1B missing, falling back to Stage1A for requestedStage=2`);
+              selectedSourceStage = '1A';
+              selectedSourceUrl = validStageUrls['1A'];
+              // Disable stage2OnlyMode if falling back to 1A (need full pipeline)
+              stage2OnlyDisabled = true;
+            }
           } else if (sourceUrlRaw) {
             // Fallback: use provided sourceUrl (backward compat)
             selectedSourceStage = sourceStageRaw || 'stage2';
@@ -219,30 +239,30 @@ export function retrySingleRouter() {
           const collectedUrls = Object.values(allStageUrls || {}).filter(Boolean) as string[];
 
           if (collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
-            return res.status(400).json({ success: false, error: \"source_url_mismatch\", message: \"Selected source URL does not match recorded job outputs\" });
+            return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Selected source URL does not match recorded job outputs" });
           }
 
           if (collectedUrls.length === 0) {
             // Fallback to history lookup; allow but warn if missing
             const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, selectedSourceUrl).catch(() => null) : null;
             if (!history) {
-              console.warn(\"[RETRY_META_MISSING_ALLOW]\", { jobId: parentJobId, reason: \"no_stage_urls_or_history\", selectedSourceUrl });
+              console.warn("[RETRY_META_MISSING_ALLOW]", { jobId: parentJobId, reason: "no_stage_urls_or_history", selectedSourceUrl });
             }
           }
         }
 
         const parsedKey = extractKeyFromS3Url(selectedSourceUrl || sourceUrlRaw);
         if (!parsedKey) {
-          return res.status(400).json({ success: false, error: \"invalid_source_url\", message: \"Retry source URL is not in the expected bucket\" });
+          return res.status(400).json({ success: false, error: "invalid_source_url", message: "Retry source URL is not in the expected bucket" });
         }
 
-        const prefix = (process.env.S3_PREFIX || \"realenhance/originals\").replace(/\/+$/, \"\");
-        const targetKey = `${prefix}/retry/${sessUser.id}/${Date.now()}-${path.basename(parsedKey)}`.replace(/^\/+/, \"\");
+        const prefix = (process.env.S3_PREFIX || "realenhance/originals").replace(/\/+$/, "");
+        const targetKey = `${prefix}/retry/${sessUser.id}/${Date.now()}-${path.basename(parsedKey)}`.replace(/^\/+/, "");
 
         const copy = await copyS3Object(parsedKey, targetKey);
         remoteOriginalUrl = copy.url;
         remoteOriginalKey = copy.key;
-        retrySourceStage = selectedSourceStage || sourceStageRaw || \"stage2\";
+        retrySourceStage = selectedSourceStage || sourceStageRaw || "stage2";
         retrySourceUrl = selectedSourceUrl || sourceUrlRaw;
         retrySourceKey = parsedKey;
 
@@ -359,12 +379,17 @@ export function retrySingleRouter() {
       // ✅ Smart Stage-2-only retry logic (PATCH 4)
       // When retrying from Stage1B baseline (selectedSourceStage="1B-stage-ready"),
       // skip Stage1A/1B processing and run only Stage2
-      const stage2OnlyMode = selectedSourceStage === "1B-stage-ready" ? {
+      // ✅ CHECK 2: Disable stage2OnlyMode if we fell back to Stage1A due to missing Stage1B
+      const stage2OnlyMode = (selectedSourceStage === "1B-stage-ready" && !stage2OnlyDisabled && selectedSourceUrl) ? {
         enabled: true,
         base1BUrl: selectedSourceUrl  // Use Stage1B output as baseline for Stage2
       } : undefined;
 
-      // ✅ PATCH 3: Billing - reserve 1 credit for manual retry
+      // ✅ PATCH 3 & CHECK 4: Billing - reserve 1 credit for manual retry
+      // Retry quota enforcement (CHECK 4):
+      // - Scope: Per parent job (not per user, not per imageId)
+      // - Counts: Manual retries ONLY (not validator/system retries)
+      // - Limit: Max 2 manual retries per parent job
       const agencyId = sessUser.agencyId || null;
       if (!agencyId) {
         return res.status(400).json({ 
