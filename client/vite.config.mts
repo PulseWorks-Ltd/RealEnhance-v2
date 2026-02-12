@@ -19,6 +19,18 @@ export default defineConfig({
   build: {
     outDir: "dist", // ✅ build stays inside client/
     emptyOutDir: true,
+    // Enable better chunk splitting for lazy routes
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split vendor chunks for better caching
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu'],
+        },
+      },
+    },
+    // Generate manifest for tracking assets
+    manifest: true,
   },
   server: {
     port: 5173,
@@ -42,5 +54,7 @@ export default defineConfig({
     allowedHosts: true,
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 8080,
-  },
-});
+    headers: {
+      // Prevent caching of index.html
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+    },

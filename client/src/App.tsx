@@ -5,25 +5,47 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
 
+// Helper to create retry-enabled lazy imports
+function lazyWithRetry(componentImport: () => Promise<any>) {
+  return lazy(async () => {
+    try {
+      return await componentImport();
+    } catch (error) {
+      console.error('[LazyLoad] Failed to load component:', error);
+      // If chunk loading fails, reload the page to get fresh chunks
+      if (error instanceof Error && 
+          (error.message.includes('Failed to fetch') || 
+           error.message.includes('Importing a module script failed'))) {
+        console.warn('[LazyLoad] Chunk loading failed - triggering page reload');
+        sessionStorage.setItem('vite-chunk-reload', window.location.href);
+        window.location.reload();
+        // Return a dummy component that will never render (reload happens first)
+        return { default: () => null };
+      }
+      throw error;
+    }
+  });
+}
+
 // Match the filenames exactly (case sensitive on Linux)
-const Landing        = lazy(() => import("@/pages/landing"));
-const Login          = lazy(() => import("@/pages/login"));
-const Signup         = lazy(() => import("@/pages/signup"));
-const Home           = lazy(() => import("@/pages/home"));
-const Editor         = lazy(() => import("@/pages/Editor"));
-const Results        = lazy(() => import("@/pages/Results"));
-const RegionEditPage = lazy(() => import("@/pages/RegionEditPage"));
-const Agency         = lazy(() => import("@/pages/agency"));
-const AcceptInvite   = lazy(() => import("@/pages/accept-invite"));
-const EnhancedHistory = lazy(() => import("@/pages/enhanced-history"));
-const ForgotPassword = lazy(() => import("@/pages/forgot-password"));
-const ResetPassword = lazy(() => import("@/pages/reset-password"));
-const ChangePassword = lazy(() => import("@/pages/change-password"));
-const ProfileSettings = lazy(() => import("@/pages/settings/profile"));
-const SecuritySettings = lazy(() => import("@/pages/settings/security"));
-const BillingSettings = lazy(() => import("@/pages/agency"));
-const NotFound       = lazy(() => import("@/pages/not-found"));
-const StartTrial     = lazy(() => import("@/pages/start-trial"));
+const Landing        = lazyWithRetry(() => import("@/pages/landing"));
+const Login          = lazyWithRetry(() => import("@/pages/login"));
+const Signup         = lazyWithRetry(() => import("@/pages/signup"));
+const Home           = lazyWithRetry(() => import("@/pages/home"));
+const Editor         = lazyWithRetry(() => import("@/pages/Editor"));
+const Results        = lazyWithRetry(() => import("@/pages/Results"));
+const RegionEditPage = lazyWithRetry(() => import("@/pages/RegionEditPage"));
+const Agency         = lazyWithRetry(() => import("@/pages/agency"));
+const AcceptInvite   = lazyWithRetry(() => import("@/pages/accept-invite"));
+const EnhancedHistory = lazyWithRetry(() => import("@/pages/enhanced-history"));
+const ForgotPassword = lazyWithRetry(() => import("@/pages/forgot-password"));
+const ResetPassword = lazyWithRetry(() => import("@/pages/reset-password"));
+const ChangePassword = lazyWithRetry(() => import("@/pages/change-password"));
+const ProfileSettings = lazyWithRetry(() => import("@/pages/settings/profile"));
+const SecuritySettings = lazyWithRetry(() => import("@/pages/settings/security"));
+const BillingSettings = lazyWithRetry(() => import("@/pages/agency"));
+const NotFound       = lazyWithRetry(() => import("@/pages/not-found"));
+const StartTrial     = lazyWithRetry(() => import("@/pages/start-trial"));
 
 function LegacyMyPhotosRedirect() {
   const location = useLocation();
@@ -33,10 +55,22 @@ function LegacyMyPhotosRedirect() {
   return <Navigate to={`/enhanced-history${search}${hash}`} replace />;
 }
 
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center space-y-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <>
-      <Suspense fallback={<div className="p-6">Loading…</div>}>
+      <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public Routes with Header */}
           <Route element={<><Header /><Outlet /></>}>

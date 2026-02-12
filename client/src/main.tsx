@@ -7,15 +7,43 @@ import App from "./App";
 import "@/index.css";
 import { ErrorBoundary } from "@/shared/ErrorBoundary";
 
-const qc = new QueryClient({
-  defaultOptions: { queries: { refetchOnWindowFocus: false } },
-});
+// ============================================================================
+// CHUNK LOADING ERROR HANDLER
+// ============================================================================
+// Handle Vite chunk loading failures (e.g., after redeployment with new hashes)
+// If a dynamically imported module fails to load, reload the page once to get fresh chunks
+let chunkLoadingErrorHandled = false;
 
-const rootEl = document.getElementById("root");
-if (!rootEl) throw new Error('Root element "#root" not found');
+window.addEventListener('error', (event) => {
+  // Check if this is a chunk loading error
+  const isChunkError = event.message?.includes('Failed to fetch dynamically imported module') ||
+                       event.message?.includes('Importing a module script failed');
+  
+  if (isChunkError && !chunkLoadingErrorHandled) {
+    chunkLoadingErrorHandled = true;
+    console.warn('[App] Chunk loading failed - reloading page to fetch updated assets');
+    
+    // Store current path to restore after reload
+    sessionStorage.setItem('vite-chunk-reload', window.location.href);
+    
+    // Reload to get fresh chunks
+    window.location.reload();
+    
+    // Prevent default error handling
+    event.preventDefault();
+  }
+}, true);
 
-createRoot(rootEl).render(
-  <React.StrictMode>
+// Restore previous path after chunk reload
+const reloadedFrom = sessionStorage.getItem('vite-chunk-reload');
+if (reloadedFrom) {
+  sessionStorage.removeItem('vite-chunk-reload');
+  // If we were trying to navigate somewhere, go there after reload
+  if (window.location.href !== reloadedFrom) {
+    window.history.replaceState(null, '', reloadedFrom);
+  }
+}
+
     <QueryClientProvider client={qc}>
       <AuthProvider>
         <BrowserRouter>
