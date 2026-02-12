@@ -243,6 +243,8 @@ export type GeminiSemanticVerdict = {
   category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
   reasons: string[];
   confidence: number;
+  builtInDetected?: boolean;
+  structuralAnchorCount?: number;
   rawText?: string;
 };
 
@@ -321,27 +323,35 @@ Anchors are physically fixed to the building. They cannot move.
 Any positional shift — even if the element looks identical — is a failure.
 
 ─────────────────────────────
-BUILT-IN vs MOVABLE DISAMBIGUATION
+BUILT-IN vs MOVABLE DISAMBIGUATION (STRICT)
 ─────────────────────────────
-Before classifying any element as "movable furniture":
+Only classify an object as BUILT-IN if it meets at least TWO physical criteria.
 
-CHECK: Is this element a built-in or structural anchor?
+BUILT-IN OBJECT = MUST meet >= 2:
+• Physically continuous with wall surface
+• No visible rear gap
+• No visible legs or movable base
+• Extends from floor to wall or wall to ceiling
+• Shares material + finish with wall cabinetry
+• Enclosed in recess or alcove
+• Part of a continuous cabinetry run
+• Cannot be moved without tools or demolition
 
-BUILT-IN indicators (treat as STRUCTURAL):
-• Connected to walls, floor, or ceiling with fixed joinery
-• Has plumbing, electrical, or ventilation connections
-• Kitchen islands, counter runs, vanities with plumbing
-• Wardrobes built into alcoves or walls
-• Shelving integrated into wall framing
+MOVABLE OBJECT = ANY object with:
+• Legs
+• Visible rear gap
+• Shadow gap behind
+• Separate base
+• Freestanding footprint
+• Visible floor clearance
 
-MOVABLE indicators (treat as FURNITURE):
-• Freestanding with visible floor gap
-• No utility connections
-• Can be lifted and carried out
-• Standalone chairs, tables, sofas, beds, rugs
+Set builtInDetected = true only if structuralAnchorCount >= 2.
+structuralAnchorCount = number of built-in criteria matched.
+Only block for built-in violations when builtInDetected == true AND structuralAnchorCount >= 2.
 
-When in doubt, treat as BUILT-IN and protect it.
-DO NOT classify built-in elements as furniture to justify their removal.
+Desk + shelving units with legs or visible floor clearance MUST be treated as movable furniture — not built-in — even if positioned against a wall.
+
+If uncertain, treat as MOVABLE (do NOT elevate to built-in without evidence).
 
 ─────────────────────────────
 STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
@@ -470,14 +480,22 @@ CATEGORIES
 - style_only (PASS)
 - unknown (PASS only if confidence < 0.75)
 
+BUILT-IN DOWNGRADE RULE:
+If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
+→ hardFail = false (warning only)
+
 ─────────────────────────────
 OUTPUT JSON
 ─────────────────────────────
+Return JSON only. Include builtInDetected and structuralAnchorCount.
+structuralAnchorCount = number of built-in criteria matched (0-8).
 {
   "hardFail": boolean,
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
-  "confidence": number
+  "confidence": number,
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
 }`;
   }
 
@@ -559,27 +577,35 @@ Anchors are physically fixed to the building. They cannot move.
 Any positional shift — even if the element looks identical — is a failure.
 
 ─────────────────────────────
-BUILT-IN vs MOVABLE DISAMBIGUATION
+BUILT-IN vs MOVABLE DISAMBIGUATION (STRICT)
 ─────────────────────────────
-Before classifying any element as "movable furniture":
+Only classify an object as BUILT-IN if it meets at least TWO physical criteria.
 
-CHECK: Is this element a built-in or structural anchor?
+BUILT-IN OBJECT = MUST meet >= 2:
+• Physically continuous with wall surface
+• No visible rear gap
+• No visible legs or movable base
+• Extends from floor to wall or wall to ceiling
+• Shares material + finish with wall cabinetry
+• Enclosed in recess or alcove
+• Part of a continuous cabinetry run
+• Cannot be moved without tools or demolition
 
-BUILT-IN indicators (treat as STRUCTURAL):
-• Connected to walls, floor, or ceiling with fixed joinery
-• Has plumbing, electrical, or ventilation connections
-• Kitchen islands, counter runs, vanities with plumbing
-• Wardrobes built into alcoves or walls
-• Shelving integrated into wall framing
+MOVABLE OBJECT = ANY object with:
+• Legs
+• Visible rear gap
+• Shadow gap behind
+• Separate base
+• Freestanding footprint
+• Visible floor clearance
 
-MOVABLE indicators (treat as FURNITURE):
-• Freestanding with visible floor gap
-• No utility connections
-• Can be lifted and carried out
-• Standalone chairs, tables, sofas, beds, rugs
+Set builtInDetected = true only if structuralAnchorCount >= 2.
+structuralAnchorCount = number of built-in criteria matched.
+Only block for built-in violations when builtInDetected == true AND structuralAnchorCount >= 2.
 
-When in doubt, treat as BUILT-IN and protect it.
-DO NOT classify built-in elements as furniture to justify their removal.
+Desk + shelving units with legs or visible floor clearance MUST be treated as movable furniture — not built-in — even if positioned against a wall.
+
+If uncertain, treat as MOVABLE (do NOT elevate to built-in without evidence).
 
 ─────────────────────────────
 STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
@@ -744,14 +770,22 @@ CATEGORIES
 - style_only (PASS)
 - unknown (PASS only if confidence < 0.75)
 
+BUILT-IN DOWNGRADE RULE:
+If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
+→ hardFail = false (warning only)
+
 ─────────────────────────────
 OUTPUT JSON
 ─────────────────────────────
+Return JSON only. Include builtInDetected and structuralAnchorCount.
+structuralAnchorCount = number of built-in criteria matched (0-8).
 {
   "hardFail": boolean,
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
-  "confidence": number
+  "confidence": number,
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
 }`;
   }
 
@@ -829,27 +863,35 @@ Anchors are physically fixed to the building. They cannot move.
 Any positional shift — even if the element looks identical — is a failure.
 
 ────────────────────────────────
-BUILT-IN vs MOVABLE DISAMBIGUATION
+BUILT-IN vs MOVABLE DISAMBIGUATION (STRICT)
 ────────────────────────────────
-Before classifying any element as "movable furniture":
+Only classify an object as BUILT-IN if it meets at least TWO physical criteria.
 
-CHECK: Is this element a built-in or structural anchor?
+BUILT-IN OBJECT = MUST meet >= 2:
+• Physically continuous with wall surface
+• No visible rear gap
+• No visible legs or movable base
+• Extends from floor to wall or wall to ceiling
+• Shares material + finish with wall cabinetry
+• Enclosed in recess or alcove
+• Part of a continuous cabinetry run
+• Cannot be moved without tools or demolition
 
-BUILT-IN indicators (treat as STRUCTURAL):
-• Connected to walls, floor, or ceiling with fixed joinery
-• Has plumbing, electrical, or ventilation connections
-• Kitchen islands, counter runs, vanities with plumbing
-• Wardrobes built into alcoves or walls
-• Shelving integrated into wall framing
+MOVABLE OBJECT = ANY object with:
+• Legs
+• Visible rear gap
+• Shadow gap behind
+• Separate base
+• Freestanding footprint
+• Visible floor clearance
 
-MOVABLE indicators (treat as FURNITURE):
-• Freestanding with visible floor gap
-• No utility connections
-• Can be lifted and carried out
-• Standalone chairs, tables, sofas, beds, rugs
+Set builtInDetected = true only if structuralAnchorCount >= 2.
+structuralAnchorCount = number of built-in criteria matched.
+Only block for built-in violations when builtInDetected == true AND structuralAnchorCount >= 2.
 
-When in doubt, treat as BUILT-IN and protect it.
-DO NOT classify built-in elements as furniture to justify their removal.
+Desk + shelving units with legs or visible floor clearance MUST be treated as movable furniture — not built-in — even if positioned against a wall.
+
+If uncertain, treat as MOVABLE (do NOT elevate to built-in without evidence).
 
 ────────────────────────────────
 STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
@@ -1049,11 +1091,13 @@ opening_blocked → hardFail = true
 furniture_change → hardFail = false  
 style_only → hardFail = false  
 If confidence < ${MIN_CONFIDENCE} → hardFail = false  
+If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85) → hardFail = false  
 
 ────────────────────────────────
 OUTPUT FORMAT (JSON ONLY)
 ────────────────────────────────
-
+Return JSON only. Include builtInDetected and structuralAnchorCount.
+structuralAnchorCount = number of built-in criteria matched (0-8).
 {
   "hardFail": boolean,
   "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
@@ -1061,7 +1105,9 @@ OUTPUT FORMAT (JSON ONLY)
     "Concise, specific reasons such as 'Window count changed from 2 to 1'",
     "or 'Doorway blocked by fixed wardrobe'"
   ],
-  "confidence": number
+  "confidence": number,
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
 }
 
 Stage: ${stageLabel}
@@ -1074,6 +1120,8 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
     category: "unknown",
     reasons: [],
     confidence: 0,
+    builtInDetected: false,
+    structuralAnchorCount: 0,
     rawText: text,
   };
 
@@ -1088,6 +1136,10 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
       category: parsed.category || "unknown",
       reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map(String) : [],
       confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+      builtInDetected: Boolean(parsed.builtInDetected),
+      structuralAnchorCount: typeof parsed.structuralAnchorCount === "number"
+        ? Math.max(0, Math.floor(parsed.structuralAnchorCount))
+        : 0,
       rawText: text,
     };
   } catch (err) {
@@ -1145,6 +1197,11 @@ export async function runGeminiSemanticValidator(opts: {
 
     const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
     const category = parsed.category as GeminiSemanticVerdict["category"];
+    const builtInDetected = parsed.builtInDetected === true;
+    const structuralAnchorCount = typeof parsed.structuralAnchorCount === "number"
+      ? parsed.structuralAnchorCount
+      : 0;
+    const builtInLowConfidence = builtInDetected && parsed.confidence < 0.85;
 
     let hardFail = parsed.hardFail;
     if (category === "structure") hardFail = true;
@@ -1152,12 +1209,16 @@ export async function runGeminiSemanticValidator(opts: {
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
     if (lowConfidence) hardFail = false;
+    if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
+    if (builtInLowConfidence) hardFail = false;
 
     const verdict: GeminiSemanticVerdict = {
       hardFail,
       category,
       reasons: parsed.reasons || [],
       confidence: parsed.confidence ?? 0,
+      builtInDetected,
+      structuralAnchorCount,
       rawText: text,
     };
 
