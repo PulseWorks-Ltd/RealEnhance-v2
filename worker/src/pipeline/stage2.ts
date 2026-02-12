@@ -21,6 +21,7 @@ import { isTerminalStatus } from "../utils/statusUtils";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
+import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 
 // Stage 2: virtual staging (add furniture)
 
@@ -152,6 +153,79 @@ export async function runStage2(
 
   if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
 
+  // ═══════════════════════════════════════════════════════════
+  // LAYOUT PLANNER PRE-PASS (Gemini Vision - Low Cost)
+  // Only for Stage 2 FULL staging (empty rooms)
+  // KILL SWITCH: USE_GEMINI_LAYOUT_PLANNER=1
+  // ═══════════════════════════════════════════════════════════
+  let layoutContext: LayoutContextResult | null = null;
+  const isFullStaging = opts.sourceStage === "1B-stage-ready";
+  const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
+  
+  if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && layoutPlannerEnabled) {
+    focusLog("LAYOUT_PLANNER", "[stage2] 🔍 Running layout planner pre-pass for FULL staging...");
+    const plannerStartTime = Date.now();
+    try {
+      layoutContext = await buildLayoutContext(basePath);
+      const plannerElapsed = Date.now() - plannerStartTime;
+      
+      if (layoutContext) {
+        focusLog("LAYOUT_PLANNER", "[stage2] ✅ Layout context extracted", {
+          elapsed: plannerElapsed,
+          roomTypeGuess: layoutContext.room_type_guess,
+          complexity: layoutContext.layout_complexity,
+          confidence: layoutContext.confidence,
+          zoneCount: layoutContext.zones.length,
+          featureCount: layoutContext.major_fixed_features.length,
+        });
+        
+        // Store in job metadata for ROI tracking
+        try {
+          await updateJob(jobId, {
+            layoutPlannerUsed: true,
+            layoutPlannerElapsed: plannerElapsed,
+            layoutContext: {
+              room_type_guess: layoutContext.room_type_guess,
+              open_plan: layoutContext.open_plan,
+              layout_complexity: layoutContext.layout_complexity,
+              occlusion_risk: layoutContext.occlusion_risk,
+              confidence: layoutContext.confidence,
+              zones: layoutContext.zones.slice(0, 4), // Cap at 4 zones
+              major_fixed_features: layoutContext.major_fixed_features.slice(0, 6), // Cap at 6 features
+              staging_risk_flags: layoutContext.staging_risk_flags.slice(0, 4), // Cap at 4 flags
+            }
+          });
+        } catch (updateError) {
+          focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Failed to store layout context in job metadata", updateError);
+        }
+      } else {
+        focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Layout planner returned null - continuing without layout context", {
+          elapsed: plannerElapsed,
+        });
+        // Log that planner was attempted but failed
+        try {
+          await updateJob(jobId, { layoutPlannerUsed: false, layoutPlannerFailed: true });
+        } catch {}
+      }
+    } catch (error: any) {
+      const plannerElapsed = Date.now() - plannerStartTime;
+      focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Layout planner failed - continuing without layout context", {
+        elapsed: plannerElapsed,
+        error: error.message,
+      });
+      // Log failure for ROI tracking
+      try {
+        await updateJob(jobId, { layoutPlannerUsed: false, layoutPlannerFailed: true, layoutPlannerError: error.message });
+      } catch {}
+    }
+  } else if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && !layoutPlannerEnabled) {
+    focusLog("LAYOUT_PLANNER", "[stage2] ℹ️ Layout planner disabled (USE_GEMINI_LAYOUT_PLANNER!=1)");
+    // Log that planner was not used
+    try {
+      await updateJob(jobId, { layoutPlannerUsed: false });
+    } catch {}
+  }
+
   // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
   const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
   const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw) ? Math.max(0, Math.floor(geminiMaxRetriesRaw)) : null;
@@ -214,7 +288,11 @@ export async function runStage2(
 
     let textPrompt = useTest
       ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
-      : buildStage2PromptNZStyle(normalizedRoomType, scene, { stagingStyle: stagingStyleNorm, sourceStage: opts.sourceStage });
+      : buildStage2PromptNZStyle(normalizedRoomType, scene, { 
+          stagingStyle: stagingStyleNorm, 
+          sourceStage: opts.sourceStage,
+          layoutContext: layoutContext || undefined 
+        });
     // Build a high-priority staging style directive (system-like block)
     const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
     if (useTest) {
@@ -490,5 +568,39 @@ Do not add blinds.
   }
   // After retry, always return the last output and notes
   if (attemptsUsed === 0) attemptsUsed = Math.max(1, maxAttempts);
+  
+  // ═══════════════════════════════════════════════════════════
+  // ROI METRICS TRACKING (Layout Planner Impact)
+  // ═══════════════════════════════════════════════════════════
+  try {
+    const finalJob = await getJob(jobId);
+    const layoutPlannerWasUsed = (finalJob as any)?.layoutPlannerUsed === true;
+    
+    focusLog("LAYOUT_PLANNER_ROI", "[stage2] ROI Metrics", {
+      jobId,
+      layoutPlannerUsed: layoutPlannerWasUsed,
+      stage2RetryCount: attemptsUsed - 1, // 0-indexed retries
+      totalAttempts: attemptsUsed,
+      validationRisk,
+      validatorEscalations: validatorNotes.length,
+      finalPassValidatorLevel: localMode, // 'log' or 'block'
+      needsRetry: needsRetry,
+    });
+    
+    // Store final metrics in job for analysis
+    await updateJob(jobId, {
+      stage2Metrics: {
+        retryCount: attemptsUsed - 1,
+        totalAttempts: attemptsUsed,
+        validationRisk,
+        validatorEscalations: validatorNotes.length,
+        finalValidatorMode: localMode,
+      }
+    });
+  } catch (metricsError) {
+    // Don't fail the job if metrics logging fails
+    focusLog("LAYOUT_PLANNER_ROI", "[stage2] ⚠️ Failed to log ROI metrics", metricsError);
+  }
+  
   return { outputPath: out, attempts: attemptsUsed, maxAttempts, validationRisk, fallbackUsed: false, localReasons };
 }

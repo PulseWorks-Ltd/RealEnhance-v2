@@ -412,7 +412,15 @@ OUTPUT:
 Return only processed image.`.trim();
   }
 
-export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior" | "exterior", opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
+export function buildStage2PromptNZStyle(
+  roomType: string, 
+  sceneType: "interior" | "exterior", 
+  opts?: { 
+    stagingStyle?: string | null; 
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    layoutContext?: import("./layoutPlanner").LayoutContextResult;
+  }
+): string {
   if (sceneType === "exterior") return buildStage2ExteriorPromptNZStyle();
   // Require roomType for interior staging
   if (!roomType || typeof roomType !== 'string' || !roomType.trim()) {
@@ -422,7 +430,14 @@ export function buildStage2PromptNZStyle(roomType: string, sceneType: "interior"
   return buildStage2InteriorPromptNZStyle(roomType, opts);
 }
 
-function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyle?: string | null; sourceStage?: "1A" | "1B-light" | "1B-stage-ready" }): string {
+function buildStage2InteriorPromptNZStyle(
+  roomType: string, 
+  opts?: { 
+    stagingStyle?: string | null; 
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    layoutContext?: import("./layoutPlanner").LayoutContextResult;
+  }
+): string {
   const room = roomType || "room";
   const sourceStage = opts?.sourceStage || "1A";
   
@@ -434,6 +449,62 @@ function buildStage2InteriorPromptNZStyle(roomType: string, opts?: { stagingStyl
     ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
     : "Refresh ALL existing furniture with modern equivalents.\nPreserve layout, architecture, and flow EXACTLY.";
 
+  // Format layout context if available (FULL staging only)
+  let layoutContextBlock = "";
+  if (isFullStaging && opts?.layoutContext) {
+    const ctx = opts.layoutContext;
+    
+    // Cap array lengths to prevent prompt token creep
+    const zones = ctx.zones.slice(0, 4); // Max 4 zones
+    const features = ctx.major_fixed_features.slice(0, 6); // Max 6 features
+    const riskFlags = ctx.staging_risk_flags.slice(0, 4); // Max 4 flags
+    
+    layoutContextBlock = `
+
+────────────────────────────────
+LAYOUT CONTEXT — ADVISORY ONLY
+(Vision Pre-Pass Spatial Guidance)
+────────────────────────────────
+
+⚠️ CRITICAL: This is spatial guidance, NOT a rule set.
+If any layout hint conflicts with visible architecture or structural constraints,
+follow the image and structural rules — IGNORE the hint.
+
+Room Type Detection: ${ctx.room_type_guess || "unknown"}
+(NOTE: User-selected room type "${room}" takes precedence — do NOT override)
+
+Open Plan: ${ctx.open_plan === true ? "yes" : ctx.open_plan === false ? "no" : "unknown"}
+Layout Complexity: ${ctx.layout_complexity}
+Occlusion Risk: ${ctx.occlusion_risk.toFixed(2)}
+Confidence: ${ctx.confidence?.toFixed(2) || "0.00"}
+
+Zones Detected (max 4):
+${zones.map(z => `  • ${z.type} (${z.position_hint})`).join("\n") || "  (none)"}
+
+Major Fixed Features (max 6):
+${features.map(f => `  • ${f}`).join("\n") || "  (none)"}
+
+Primary Focal Wall: ${ctx.primary_focal_wall}
+
+${riskFlags.length > 0 ? `Staging Risk Flags (max 4):\n${riskFlags.map(f => `  ⚠ ${f}`).join("\n")}\n` : ""}
+ADVISORY USAGE:
+• Use detected zones for furniture placement hints
+• Consider focal wall for staging composition
+• Respect occlusion risk when adding items
+• Adjust to detected complexity level
+
+ABSOLUTE PRIORITY:
+1. Visible architectural structure (highest)
+2. User-selected room type: ${room} (must stage as ${room})
+3. Structural lock rules (all previous rules)
+4. Layout context hints (lowest — advisory only)
+
+If planner hints conflict with structure → IGNORE HINTS.
+
+────────────────────────────────
+`;
+  }
+
   return `ROLE: Interior ${isFullStaging ? 'Virtual Staging' : 'Furniture Refresh'} Specialist — NZ Real Estate
 
 TASK:
@@ -443,6 +514,7 @@ MODEL:
 Temperature: 0.10
 TopP: 0.70
 TopK: 24
+${layoutContextBlock}
 
 ────────────────────────────────
 STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
