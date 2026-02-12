@@ -3322,6 +3322,36 @@ export default function BatchProcessor() {
         }
         console.log("[retry-single] submitted", { imageIndex, jobId, imageId: imageIdForRetry });
 
+        // ✅ IMMEDIATELY update batch item state to reflect retry processing
+        setResults(prev => prev.map((r, i) => {
+          if (i !== imageIndex) return r;
+          return {
+            ...r,
+            status: "processing",
+            progress: 0,
+            resultUrl: null,
+            imageUrl: null,
+            stageUrls: null,
+            completionSource: null,
+            jobId: jobId, // Store the new retry jobId
+            statusLastModified: Date.now(),
+          };
+        }));
+
+        // ✅ Register retry job with polling infrastructure
+        jobIdToIndexRef.current[jobId] = imageIndex;
+        if (imageIdForRetry) {
+          imageIdToIndexRef.current[imageIdForRetry] = imageIndex;
+          jobIdToImageIdRef.current[jobId] = imageIdForRetry;
+        }
+
+        // ✅ Add retry jobId to jobIds array for main poller
+        setJobIds(prev => {
+          const updated = [...prev];
+          updated[imageIndex] = jobId;
+          return updated;
+        });
+
         // ✅ DO NOT set global progress - retry is image-only operation
         // ❌ setProgressText("Retry submitted. Waiting for enhanced image...");
         // ❌ setRunState("running");
@@ -5197,11 +5227,13 @@ export default function BatchProcessor() {
                         })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : isRetrying
+                          ? "Retrying enhancement..."  // ✅ Show explicit retry message
                           : isIntermediateProcessing && intermediateStageMessage
                           ? intermediateStageMessage  // ✅ Show intermediate stage message
                           : isUiComplete
                           ? "Enhancement Complete"
-                          : (isRetrying || isStrictRetry || attempts > 1)
+                          : (isStrictRetry || attempts > 1)
                           ? improvingMessage
                           : isUploading
                           ? "Uploading..."
@@ -5328,7 +5360,15 @@ export default function BatchProcessor() {
                               {/* Status Badges */}
                               <div className="flex items-center gap-3 mt-1.5 h-7">
                                   {isProcessing ? (
-                                   <StatusBadge status="processing" />
+                                   <div className="flex items-center gap-2">
+                                     <StatusBadge status="processing" />
+                                     {isRetrying && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md">
+                                         <RefreshCw className="w-3 h-3 animate-spin" />
+                                         Retrying…
+                                       </span>
+                                     )}
+                                   </div>
                                 ) : isError ? (
                                     <div className="flex items-center gap-3">
                                       <StatusBadge status="failed" />
