@@ -126,8 +126,6 @@ export function buildPrompt(opts: PromptOptions): string {
     "",
     "FINISHES LOCKED: Do not change wall/ceiling paint, wallpaper, textures, or flooring material/color/pattern.",
     "FIXTURES LOCKED (BUILT-INS): Do not add/remove/move/extend/reshape doors, windows, cabinetry, counters, kitchen islands, peninsulas, fireplaces, stairs, columns, light fixtures, fans, or window coverings. Do not modify counter surfaces, edges, or dimensions in any way. NOTE: Loose furniture (sofas, beds, tables, chairs) may be moved/removed/replaced.",
-    "ARCHITECTURAL ANCHOR FOCUS (STAGING REFERENCE RULE): First identify 3-5 prominent fixed architectural/built-in features (examples: cabinetry/wardrobes, counters/islands, flooring material/pattern, pendant/fixed lighting, windows/doors, fireplaces/built-in shelving). Treat these as anchors.",
-    "STAGING MUST HARMONIZE WITH ANCHORS: Do not modify, restyle, recolor, or substitute anchor elements. If staging style conflicts with anchors, adjust staging to match the anchors, not the other way around.",
     "",
     "NEVER CREATE FALSE ARCHITECTURE (CRITICAL - ZERO TOLERANCE): DO NOT invent or create new windows, doors, or openings that do not exist in the original image. Do not add window frames, door frames, or architectural openings to blank walls. Only the openings present in the original photograph may appear in the enhanced version. Creating false architectural elements is a critical violation.",
     "",
@@ -713,6 +711,8 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     referenceImageUrl,
     roomType,
     spatialBlueprint,
+    declutterLevel = "standard",
+    furnitureReplacementMode = false,
   } = opts;
 
   // Resolve active scene
@@ -1196,12 +1196,46 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     ? buildSpatialConstraints(spatialBlueprint)
     : [];
 
+  // ========== ARCHITECTURAL ANCHOR FOCUS (Stage 2 FULL staging only - empty room staging) ==========
+  // This rule applies ONLY when staging from empty rooms (declutterLevel === "heavy")
+  // NOT for refresh staging or furniture replacement on existing furniture
+  const architecturalAnchorFocus = declutterLevel === "heavy" ? [
+    "[ARCHITECTURAL ANCHOR FOCUS - STAGE 2 FULL STAGING GUIDANCE]",
+    "",
+    "This is FULL staging from an empty room. Before placing new furniture:",
+    "",
+    "STEP 1: IDENTIFY ARCHITECTURAL ANCHORS",
+    "First identify 3-5 prominent fixed architectural/built-in features that define this space's character:",
+    "• Cabinetry, wardrobes, built-in shelving",
+    "• Counters, islands, peninsulas",
+    "• Flooring material, pattern, color",
+    "• Pendant lights, fixed lighting fixtures",
+    "• Windows, doors, architectural openings",
+    "• Fireplaces, mantels",
+    "",
+    "STEP 2: TREAT ANCHORS AS IMMUTABLE STYLE REFERENCES",
+    "These anchors define the room's existing aesthetic and MUST remain unchanged.",
+    "Do not modify, restyle, recolor, or substitute anchor elements.",
+    "",
+    "STEP 3: HARMONIZE STAGING WITH ANCHORS",
+    "Choose furniture style, colors, and materials that complement the existing anchors.",
+    "If your initial staging style conflicts with the anchors, adjust the STAGING to match the anchors.",
+    "Never adjust the anchors to match your staging vision.",
+    "",
+    "Example: If cabinetry is traditional dark wood → choose furniture with warm tones and classic styling.",
+    "Example: If flooring is modern light timber → choose contemporary furniture with clean lines.",
+    "",
+    "The architectural anchors are the design authority. Staging must adapt to them.",
+    "",
+  ] : [];
+
   const lines: string[] = [];
 
   lines.push(
     ...primaryTaskEncouragement, // MOVE TO TOP - Most critical directive must be first
     ...preValidation,
     ...spatialConstraints, // Add spatial blueprint constraints BEFORE architectural freeze for maximum impact
+    ...architecturalAnchorFocus, // ONLY for Stage 2 FULL staging (empty room) - guides furniture style selection
     ...architecturalFreeze,
     ...roomTypeGuidance,
     industry.toLowerCase().includes("real estate")
