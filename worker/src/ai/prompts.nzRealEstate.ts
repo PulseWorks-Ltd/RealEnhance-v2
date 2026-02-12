@@ -249,6 +249,15 @@ You must NOT add, create, or invent ANY structural features or landscape element
 
 If you add ANY structural feature that wasn't already visible, the task is FAILED.
 
+COLOR PRESERVATION — LOCKED
+
+All surface colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, cladding colors, or paint tones
+- Do NOT change deck colors, paving colors, or surface tones
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind furniture, match the EXACT surrounding surface color
+- Wall colors = LOCKED | Surface colors = LOCKED
+
 REMOVE:
 - All outdoor furniture (chairs, tables, loungers, benches)
 - BBQs and outdoor cooking equipment
@@ -295,6 +304,16 @@ You must NOT add, create, or invent ANY structural features:
 - When uncertain what's behind furniture, recreate matching wall/floor patterns — NEVER invent openings
 
 If you add ANY structural feature that wasn't already visible, the task is FAILED.
+
+COLOR PRESERVATION — LOCKED
+
+Wall, floor, and ceiling colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, paint tones, or wallpaper colors
+- Do NOT change floor colors, carpet tones, or flooring colors
+- Do NOT change ceiling colors or paint
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind furniture, match the EXACT surrounding wall/floor/ceiling color
+- Wall colors = LOCKED | Floor colors = LOCKED | Ceiling colors = LOCKED
 
 ARCHITECTURAL SHELL — PRESERVE & PROTECT
 
@@ -381,6 +400,15 @@ YOUR ONLY JOB is to remove movable clutter and reconstruct the exact same underl
 - If uncertain what is under an object, recreate matching surface patterns — NEVER create structural features.
 - If any new structural feature is introduced, the result is invalid.
 
+COLOR PRESERVATION — LOCKED
+
+All surface colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, cladding colors, or paint tones
+- Do NOT change deck colors, paving colors, or surface tones
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind clutter, match the EXACT surrounding surface color
+- Wall colors = LOCKED | Surface colors = LOCKED
+
 REMOVE:
 - Outdoor furniture
 - BBQs
@@ -427,6 +455,16 @@ YOUR ONLY JOB is to remove or reduce movable clutter and reconstruct the exact s
 - Only reveal portions of existing openings that are clearly already present but partially blocked by clutter.
 - If uncertain what is behind an object, recreate matching wall/floor surface — NEVER create an opening.
 - If any new structural feature is introduced, the result is invalid.
+
+COLOR PRESERVATION — LOCKED
+
+Wall, floor, and ceiling colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, paint tones, or wallpaper colors
+- Do NOT change floor colors, carpet tones, or flooring colors
+- Do NOT change ceiling colors or paint
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind clutter, match the EXACT surrounding surface color
+- Wall colors = LOCKED | Floor colors = LOCKED | Ceiling colors = LOCKED
 
 DO NOT TOUCH:
 Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixtures, appliances.

@@ -3680,7 +3680,7 @@ export default function BatchProcessor() {
     setProgressText("");
     setProcessedImages([]);
     setProcessedImagesByIndex({});
-    setActiveTab("upload"); // Reset to first tab
+    setActiveTab("images"); // Reset to images tab to show the new launchpad
     // Cancel any ongoing processing
     if (abortController) {
       abortController.abort();

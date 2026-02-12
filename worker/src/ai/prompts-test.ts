@@ -117,6 +117,16 @@ YOUR ONLY JOB is to remove movable items and reconstruct the exact same underlyi
 - If uncertain what is behind furniture, recreate matching wall/floor surface — NEVER create an opening.
 - If any new structural feature is introduced, the result is invalid.
 
+COLOR PRESERVATION — LOCKED
+
+Wall, floor, and ceiling colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, paint tones, or wallpaper colors
+- Do NOT change floor colors, carpet tones, or flooring colors
+- Do NOT change ceiling colors or paint
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind furniture, match the EXACT surrounding wall/floor/ceiling color
+- Wall colors = LOCKED | Floor colors = LOCKED | Ceiling colors = LOCKED
+
 REMOVE (full list):
 • All sofas, armchairs, ottomans, coffee tables, side tables, dining tables,
   chairs, consoles, bookcases, shelving units, nightstands, beds, TV units.
@@ -206,6 +216,15 @@ YOUR ONLY JOB is to remove transient clutter and reconstruct the exact same unde
 - Only reveal portions of existing surfaces that were blocked by removable clutter.
 - If uncertain what is under clutter, recreate matching surface patterns — NEVER create structural features.
 - If any new structural feature is introduced, the result is invalid.
+
+COLOR PRESERVATION — LOCKED
+
+All surface colors must remain IDENTICAL to the input image:
+- Do NOT change wall colors, cladding colors, or paint tones
+- Do NOT change deck colors, paving colors, or surface tones
+- Do NOT brighten, darken, or shift any surface colors
+- When reconstructing behind clutter, match the EXACT surrounding surface color
+- Wall colors = LOCKED | Surface colors = LOCKED
 
 REMOVE:
 • Hoses, garden tools, bins, toys, tarps, and temporary equipment.
