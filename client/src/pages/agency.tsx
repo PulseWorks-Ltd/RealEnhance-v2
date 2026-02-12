@@ -73,9 +73,10 @@ interface AgencyInfo {
     billingCountry?: string | null;
     allowance: {
       monthlyIncluded: number;
-      used: number;
-      remaining: number;
+      monthlyUsed: number;
+      monthlyRemaining: number;
       addonBalance: number;
+      totalRemaining: number;
       monthKey: string;
     };
   };
@@ -512,14 +513,14 @@ export default function AgencyPage() {
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Monthly included</p>
-                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyIncluded}</p>
+                  <p className="text-xs text-muted-foreground">Monthly allowance</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyUsed} / {agencyInfo.subscription.allowance.monthlyIncluded}</p>
                   <p className="text-xs text-muted-foreground">
-                    Used {agencyInfo.subscription.allowance.used} • Remaining {agencyInfo.subscription.allowance.remaining}
+                    {agencyInfo.subscription.allowance.monthlyRemaining} remaining this month
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Add-on / carry-over</p>
+                  <p className="text-xs text-muted-foreground">Add-on balance</p>
                   <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
                   <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
                 </div>

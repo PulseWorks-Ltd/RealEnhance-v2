@@ -11,10 +11,11 @@ export type ReservationStatus = "reserved" | "consumed" | "released" | "partiall
 export interface UsageSnapshot {
   includedLimit: number;
   includedUsed: number;
+  includedRemaining: number; // remaining from monthly allowance only
   addonBalance: number; // legacy name for compatibility
   addonRemaining: number; // canonical add-on remaining (non-negative)
   addonUsed: number;
-  remaining: number;
+  remaining: number; // total remaining (includedRemaining + addonRemaining)
   monthKey: string;
 }
 
@@ -82,6 +83,7 @@ function buildSnapshot(row: any, addonRemaining: number, monthKey: string): Usag
   return {
     includedLimit: row.included_limit,
     includedUsed: row.included_used,
+    includedRemaining,
     addonBalance: safeAddon,
     addonRemaining: safeAddon,
     addonUsed: row.addon_used,
@@ -378,10 +380,10 @@ export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot>
 export async function getTopUsersByUsage(agencyId: string): Promise<Array<{ userId: string; used: number }>> {
   const monthKey = await getBillingCycleKey(agencyId);
   const res = await pool.query(
-    `SELECT user_id, SUM(CASE WHEN stage12_consumed THEN 1 ELSE 0 END + CASE WHEN stage2_consumed THEN 1 ELSE 0 END) AS used
+    `SELECT user_id, SUM(charge_amount) AS used
      FROM job_reservations
      WHERE agency_id = $1 AND yyyymm = $2 AND user_id IS NOT NULL
-       AND (stage12_consumed = TRUE OR stage2_consumed = TRUE)
+       AND charge_finalized = TRUE
      GROUP BY user_id
      ORDER BY used DESC
      LIMIT 10`,

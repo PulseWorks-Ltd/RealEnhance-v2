@@ -300,8 +300,10 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       allowInvites: effectivePlan.allowInvites,
       allowance: {
         monthlyIncluded: effectivePlan.mainAllowance,
-        used: usage.includedUsed,
-        remaining: usage.remaining,
+        monthlyUsed: usage.includedUsed,
+        monthlyRemaining: usage.includedRemaining,
+        addonBalance: usage.addonRemaining,
+        totalRemaining: usage.remaining,
       },
       usage: {
         monthKey: usage.monthKey,

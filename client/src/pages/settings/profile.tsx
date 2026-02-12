@@ -23,7 +23,13 @@ type SubscriptionData = {
   currentPeriodEnd: string | null;
   billingCountry: string | null;
   billingCurrency: string;
-  allowance: { monthlyIncluded: number; used: number; remaining: number };
+  allowance: { 
+    monthlyIncluded: number; 
+    monthlyUsed: number;
+    monthlyRemaining: number;
+    addonBalance: number;
+    totalRemaining: number;
+  };
   usage: { monthKey: string; includedUsed: number; addonUsed: number };
   addOns: { balance: number };
   seatLimit: number | null;

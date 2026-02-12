@@ -159,7 +159,7 @@ export function UsageSummary({
       )}
 
       <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
-        <p className="font-semibold mb-1">Image consumption:</p>
+        <p className="font-semibold mb-1">How billing works:</p>
         <ul className="space-y-0.5 ml-2">
           <li>• Enhancement only (1A): <span className="font-medium">1 image</span></li>
           <li>• Enhancement + Declutter (1A + 1B): <span className="font-medium">1 image</span></li>
