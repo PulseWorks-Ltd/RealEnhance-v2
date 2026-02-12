@@ -2,6 +2,22 @@ import fs from "fs";
 import path from "path";
 import { pool } from "./index.js";
 
+async function waitForDatabase(maxRetries = 30, delayMs = 2000) {
+  for (let i = 1; i <= maxRetries; i++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('[migrate] Database connection established');
+      return;
+    } catch (err) {
+      console.log(`[migrate] Waiting for database... (attempt ${i}/${maxRetries})`);
+      if (i === maxRetries) {
+        throw new Error(`Failed to connect to database after ${maxRetries} attempts: ${err}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function ensureSchemaTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -18,6 +34,10 @@ async function getApplied(): Promise<Set<string>> {
 }
 
 async function applyMigration(filePath: string, filename: string) {
+  
+  // Wait for database to be ready before running migrations
+  await waitForDatabase();
+  
   const sql = await fs.promises.readFile(filePath, "utf8");
   console.log(`[migrate] applying ${filename}`);
   await pool.query("BEGIN");
