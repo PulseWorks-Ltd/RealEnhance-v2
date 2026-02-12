@@ -419,77 +419,141 @@ Goal: Clean, tidy exterior with only transient clutter removed. No structural or
 **Default Sampling:** temp=0.45, topP=0.80, topK=40
 
 ```
-You are a professional real-estate photo editor.
+STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
 
 TASK:
-Completely remove ALL furniture, ALL décor, and ALL clutter to create a fully EMPTY, clean, stage-ready room.
+Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
 
-YOU MUST REMOVE:
-• All sofas, couches, armchairs, stools, and lounge chairs
-• All coffee tables, side tables, and display tables
-• All dining tables and ALL dining chairs
-• All beds, mattresses, and bedside tables
-• All wardrobes, dressers, cabinets, shelving, and storage units (non-built-in)
-• All TV units, entertainment units, and media furniture
-• All rugs, mats, and movable floor coverings
-• All personal belongings and household items
-• All wall art, framed pictures, mirrors, and decorative wall objects
-• All pot plants, indoor plants, flowers, vases, and artificial greenery
-• All background furniture, even if partially visible
-• All furniture touching walls, windows, cabinetry, splashbacks, or kitchen islands
-• All bar stools and kitchen seating
-• All loose items on floors, benches, shelves, and surfaces
+YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 
-DO NOT REMOVE OR ALTER (FIXED / STRUCTURAL):
-• Walls, ceilings, floors, trims, skirting, cornices
-• Windows, doors, closet openings, arches, and frames
-• Curtains, blinds, rods, tracks, and window coverings
-• Built-in cabinetry, wardrobes, shelving, benchtops, kitchen islands
-• Built-in stoves/ovens/cooktops, range hoods, dishwashers (built-in)
-• Sinks, faucets, plumbing fixtures, towel rails
-• Fixed light fittings, pendant lights, ceiling fans, recessed lights
-• Switches, outlets, thermostats, doorbell screens
-• Wall coverings, paint color, flooring materials or finishes
-• Outdoor landscaping visible through windows
+CRITICAL — DO NOT ADD OR CREATE ANYTHING:
 
-ABSOLUTE RULES:
-• Do NOT repaint walls, change floor coverings, or alter any fixed feature.
-• Do NOT cover or block windows/doors with any object or paint.
+You must NOT add, create, or invent ANY structural features:
+- Do NOT create new windows, doors, openings, arches, or alcoves
+- Do NOT add built-in features, fixtures, or joinery that don't already exist
+- Do NOT invent architectural elements or structural details
+- Do NOT extend openings beyond their original visible boundaries
+- ONLY reveal surfaces that were hidden behind furniture
+- When furniture blocks part of a window/door, only extend to its ORIGINAL edges
+- When uncertain what's behind furniture, recreate matching wall/floor patterns — NEVER invent openings
 
-FAIL CONSTRAINT:
-If ANY furniture, dining pieces, loose cabinets, stools, wall art, plants, or personal items remain after editing, the task is considered FAILED.
+If you add ANY structural feature that wasn't already visible, the task is FAILED.
 
-GOAL:
-Produce a completely empty, realistic architectural shell that is perfectly clean and ready for virtual staging, while preserving the original room structure exactly.
+ARCHITECTURAL SHELL — PRESERVE & PROTECT
+
+You must KEEP all fixed elements exactly as they are:
+
+Surfaces: Walls, ceilings, continuous floor surfaces (including wall-to-wall carpets), skirting boards, trims, cornices, door frames, arches, closet openings.
+
+Built-in Joinery: Kitchen cabinets, islands, built-in wardrobes (floor-to-ceiling), recessed shelving, fireplaces.
+
+Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switches, outlets, thermostats, vents, radiators, towel rails.
+
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
+
+Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
+
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
+CRITICAL SAFETY RULES:
+
+If unsure whether an item is built-in → treat it as fixed.
+Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
+Do NOT alter wall finishes, flooring materials, or structural features.
+Do NOT move or cover windows, doors, or architectural elements.
+Preserve outdoor items and landscaping visible through windows.
+
+TARGETS FOR REMOVAL (ERASE ALL MOVABLE ITEMS)
+
+Seating, tables, freestanding storage, decor, rugs, plants, clutter, personal items.
+
+RECONSTRUCTION RULES:
+Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
+
+FAIL CONDITIONS:
+Any movable items remain → FAIL
+
+OUTPUT:
+Return only the empty room image.
 ```
 
 ---
 
 ## 6. STAGE 1B: FULL FURNITURE REMOVAL (EXTERIOR)
 
-**Purpose:** Remove transient clutter only (same as light declutter)  
+**Purpose:** Remove outdoor furniture and movable items  
 **Model:** Gemini 3 Pro Image (fallback to Gemini 2.5)  
 **Default Sampling:** temp=0.50, topP=0.86, topK=45
 
 ```
-Declutter this exterior property image for professional New Zealand real estate marketing.
+You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
 
-REMOVE (transient items ONLY):
-• Hoses, bins, toys, tools, tarps, ladders, bags, packaging, garden equipment
-• Loose debris: bark, stones, leaves, scattered items, dirt piles
-• Random accessories on decks/paths that are not permanently fixed
+GOAL:
+Empty the outdoor space while preserving all fixed structures.
 
-KEEP EXACTLY (PERMANENT):
-• All buildings, windows, doors, rooflines, fences, gates, retaining walls
-• All permanent landscaping (trees, shrubs, hedges, garden beds)
-• All driveways, paths, decks, patios — preserve shape, size, materials, and patterns
+YOUR ONLY JOB: Remove movable outdoor furniture and items. NOTHING MORE.
 
-HARD RULES — NON‑NEGOTIABLE:
-• Use the image EXACTLY as provided. No rotate/crop/zoom or perspective changes.
-• Do NOT change, resize, move, or remove any permanent structure or landscaping.
-• Do NOT alter driveway, deck, or path geometry or surface type.
+CRITICAL — DO NOT ADD OR CREATE ANYTHING:
 
-Goal: Clean, tidy exterior with only transient clutter removed. No structural or material changes.
+You must NOT add, create, or invent ANY structural features or landscape elements:
+- Do NOT create new windows, doors, openings, or architectural features
+- Do NOT add or extend decking, paths, or hardscaping
+- Do NOT add or remove fixed landscaping, trees, or garden beds
+- Do NOT create fences, walls, or structures that don't already exist
+- ONLY reveal surfaces (deck boards, paving, grass) that were hidden behind furniture
+- When uncertain what's under furniture, recreate matching surface patterns — NEVER invent structures
+
+If you add ANY structural feature that wasn't already visible, the task is FAILED.
+
+REMOVE:
+- All outdoor furniture (chairs, tables, loungers, benches)
+- BBQs and outdoor cooking equipment
+- Umbrellas and shade structures (movable)
+- Heaters and portable fixtures
+- All movable pots, planters, and decor
+- Toys, tools, hoses, bins
+
+KEEP EXACTLY AS-IS:
+- Decks, pergolas, railings, fixed awnings
+- All fixed structures, fences, walls, retaining walls
+- Permanent landscaping (trees, shrubs, hedges, garden beds)
+- Exterior lighting fixtures (wall-mounted, overhead)
+- Walls, windows, doors, rooflines, gutters
+- Driveways, paths, paving — preserve exact shape and materials
+
+DO NOT TOUCH:
+- Any permanent structures or architecture
+- Decking, paths, driveways, paving
+- Fixed lighting, plumbing fixtures
+- Windows, doors, frames
+- Trees, shrubs, landscaping, and garden beds
+- Exterior views and background scenery
+
+Preserve surface textures and shadows.
 ```
 
 ---

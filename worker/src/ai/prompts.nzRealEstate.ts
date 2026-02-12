@@ -235,25 +235,43 @@ Return ONLY the enhanced image.`.trim();
 GOAL:
 Empty the outdoor space while preserving all fixed structures.
 
-REMOVE:
-- All outdoor furniture
-- BBQs
-- Umbrellas
-- Heaters
-- All movable pots and decor
+YOUR ONLY JOB: Remove movable outdoor furniture and items. NOTHING MORE.
 
-KEEP:
-- Decks, pergolas, railings
-- All fixed structures, fences, landscaping
-- Exterior lighting fixtures
-- Walls, windows, doors, rooflines
+CRITICAL — DO NOT ADD OR CREATE ANYTHING:
+
+You must NOT add, create, or invent ANY structural features or landscape elements:
+- Do NOT create new windows, doors, openings, or architectural features
+- Do NOT add or extend decking, paths, or hardscaping
+- Do NOT add or remove fixed landscaping, trees, or garden beds
+- Do NOT create fences, walls, or structures that don't already exist
+- ONLY reveal surfaces (deck boards, paving, grass) that were hidden behind furniture
+- When uncertain what's under furniture, recreate matching surface patterns — NEVER invent structures
+
+If you add ANY structural feature that wasn't already visible, the task is FAILED.
+
+REMOVE:
+- All outdoor furniture (chairs, tables, loungers, benches)
+- BBQs and outdoor cooking equipment
+- Umbrellas and shade structures (movable)
+- Heaters and portable fixtures
+- All movable pots, planters, and decor
+- Toys, tools, hoses, bins
+
+KEEP EXACTLY AS-IS:
+- Decks, pergolas, railings, fixed awnings
+- All fixed structures, fences, walls, retaining walls
+- Permanent landscaping (trees, shrubs, hedges, garden beds)
+- Exterior lighting fixtures (wall-mounted, overhead)
+- Walls, windows, doors, rooflines, gutters
+- Driveways, paths, paving — preserve exact shape and materials
 
 DO NOT TOUCH:
 - Any permanent structures or architecture
-- Decking, paths, driveways
+- Decking, paths, driveways, paving
 - Fixed lighting, plumbing fixtures
 - Windows, doors, frames
-- Landscaping and exterior views
+- Trees, shrubs, landscaping, and garden beds
+- Exterior views and background scenery
 
 Preserve surface textures and shadows.`.trim();
     }
@@ -263,9 +281,24 @@ Preserve surface textures and shadows.`.trim();
 TASK:
 Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
 
+YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
+
+CRITICAL — DO NOT ADD OR CREATE ANYTHING:
+
+You must NOT add, create, or invent ANY structural features:
+- Do NOT create new windows, doors, openings, arches, or alcoves
+- Do NOT add built-in features, fixtures, or joinery that don't already exist
+- Do NOT invent architectural elements or structural details
+- Do NOT extend openings beyond their original visible boundaries
+- ONLY reveal surfaces that were hidden behind furniture
+- When furniture blocks part of a window/door, only extend to its ORIGINAL edges
+- When uncertain what's behind furniture, recreate matching wall/floor patterns — NEVER invent openings
+
+If you add ANY structural feature that wasn't already visible, the task is FAILED.
+
 ARCHITECTURAL SHELL — PRESERVE & PROTECT
 
-You must KEEP all fixed elements:
+You must KEEP all fixed elements exactly as they are:
 
 Surfaces: Walls, ceilings, continuous floor surfaces (including wall-to-wall carpets), skirting boards, trims, cornices, door frames, arches, closet openings.
 
@@ -334,6 +367,20 @@ Return only the empty room image.`.trim();
 GOAL:
 Clean the exterior space while preserving the property and landscaping.
 
+STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
+
+YOUR ONLY JOB is to remove movable clutter and reconstruct the exact same underlying surfaces. Nothing else.
+
+- Do NOT create any new openings, doors, doorways, arches, niches, or alcoves.
+- Do NOT add new windows or change window size or position.
+- Do NOT create wall gaps or structural voids.
+- Do NOT add or extend decking, paths, or hardscaping.
+- Do NOT invent architectural features, fences, or permanent structures.
+- Wall and surface topology must remain identical to the input image.
+- Only reveal portions of existing surfaces that were blocked by removable items.
+- If uncertain what is under an object, recreate matching surface patterns — NEVER create structural features.
+- If any new structural feature is introduced, the result is invalid.
+
 REMOVE:
 - Outdoor furniture
 - BBQs
@@ -367,6 +414,19 @@ Maintain realistic ground textures and shadows.`.trim();
 TASK:
 Remove small, loose, and personal clutter ONLY to depersonalize the space.
 Preserve all architecture and major furniture.
+
+STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
+
+YOUR ONLY JOB is to remove or reduce movable clutter and reconstruct the exact same underlying surfaces. Nothing else.
+
+- Do NOT create any new openings, doors, doorways, arches, niches, or alcoves.
+- Do NOT add new windows or change window size or position.
+- Do NOT create wall gaps or structural voids.
+- Do NOT invent architectural features or built-ins.
+- Wall topology must remain identical to the input image.
+- Only reveal portions of existing openings that are clearly already present but partially blocked by clutter.
+- If uncertain what is behind an object, recreate matching wall/floor surface — NEVER create an opening.
+- If any new structural feature is introduced, the result is invalid.
 
 DO NOT TOUCH:
 Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixtures, appliances.

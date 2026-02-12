@@ -104,6 +104,19 @@ export function buildTestStage1BPrompt(sceneType: string, roomType?: string) {
 Remove ALL movable furniture, decor, and household items from this ${roomType || "room"}
 interior, to prepare it for digital staging.
 
+STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
+
+YOUR ONLY JOB is to remove movable items and reconstruct the exact same underlying surfaces. Nothing else.
+
+- Do NOT create any new openings, doors, doorways, arches, niches, or alcoves.
+- Do NOT add new windows or change window size or position.
+- Do NOT create wall gaps or structural voids.
+- Do NOT invent architectural features or built-ins.
+- Wall topology must remain identical to the input image.
+- Only reveal portions of existing openings that are clearly already present but partially blocked by furniture.
+- If uncertain what is behind furniture, recreate matching wall/floor surface — NEVER create an opening.
+- If any new structural feature is introduced, the result is invalid.
+
 REMOVE (full list):
 • All sofas, armchairs, ottomans, coffee tables, side tables, dining tables,
   chairs, consoles, bookcases, shelving units, nightstands, beds, TV units.
@@ -179,6 +192,20 @@ Temperature: 0.60
   // exterior
   return RULE_PREFIX + `
 Declutter this exterior property image for real estate marketing.
+
+STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
+
+YOUR ONLY JOB is to remove transient clutter and reconstruct the exact same underlying surfaces. Nothing else.
+
+- Do NOT create any new openings, doors, doorways, arches, or architectural features.
+- Do NOT add new windows or change window size or position.
+- Do NOT create wall gaps or structural voids.
+- Do NOT add or extend decking, paths, driveways, or hardscaping.
+- Do NOT invent fences, walls, or permanent structures.
+- Surface topology must remain identical to the input image.
+- Only reveal portions of existing surfaces that were blocked by removable clutter.
+- If uncertain what is under clutter, recreate matching surface patterns — NEVER create structural features.
+- If any new structural feature is introduced, the result is invalid.
 
 REMOVE:
 • Hoses, garden tools, bins, toys, tarps, and temporary equipment.
