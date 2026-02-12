@@ -58,3 +58,5 @@ export default defineConfig({
       // Prevent caching of index.html
       'Cache-Control': 'no-cache, no-store, must-revalidate',
     },
+  },
+});
