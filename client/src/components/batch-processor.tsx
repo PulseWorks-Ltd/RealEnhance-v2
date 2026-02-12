@@ -2167,6 +2167,23 @@ export default function BatchProcessor() {
             setResults(prev => {
               const copy = prev ? [...prev] : [];
               const existing = copy[idx] || {};
+              
+              // ✅ PATCH 5: Version timestamp race guard - only accept newer updates
+              const incomingVersion = it?.version || it?.updatedAt || it?.updated_at || Date.now();
+              const existingVersion = existing.version || existing.updatedAt || 0;
+              
+              if (incomingVersion < existingVersion) {
+                // Stale update - ignore it
+                console.log('[BATCH][version_guard_rejected]', {
+                  jobId: polledId || parentJobId,
+                  idx,
+                  existingVersion,
+                  incomingVersion,
+                  delta: existingVersion - incomingVersion
+                });
+                return copy; // Keep existing state
+              }
+              
               // Persist requestedStages and meta so target-stage completion logic works
               const mergedRequestedStages = requestedStages || existing.requestedStages || existing.result?.requestedStages || null;
               const mergedMeta = {
@@ -2184,6 +2201,7 @@ export default function BatchProcessor() {
                 resultUrl: displayUrl ?? null,
                 stageUrls: stageUrls ?? null,
                 completionSource,
+                version: incomingVersion, // ✅ Update version timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
                 jobId: polledId || parentJobId || existing.jobId,
@@ -5224,6 +5242,11 @@ export default function BatchProcessor() {
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const previewUrl = enhancedUrl || previewUrls[i];
                         const stageBadgeLabel = (() => {
+                          // ✅ PATCH 7: Show "Edited" badge for edit outputs instead of stage labels
+                          if (result?.editLatestUrl || result?.completionSource === "region-edit") {
+                            return isUiComplete ? "Edited (Final)" : "Preview • Edited";
+                          }
+                          
                           const stageLabel = selectedStage === "2" && stage2Url
                             ? "Stage 2"
                             : selectedStage === "1B"
@@ -5600,23 +5623,27 @@ export default function BatchProcessor() {
                   results[editingImageIndex]?.originalImageUrl ||
                   results[editingImageIndex]?.originalUrl;
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
-                const existingStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
-                const finalStageUrls: Record<string, string> = {
-                  ...existingStageUrls,
-                  '1': result.imageUrl,
-                  '1A': result.imageUrl,
-                  '1a': result.imageUrl,
-                  '1B': result.imageUrl,
-                  '1b': result.imageUrl,
-                  '2': result.imageUrl,
-                  'stage1A': result.imageUrl,
-                  'stage1B': result.imageUrl,
-                  'stage2': result.imageUrl,
-                };
+                
+                // ✅ PATCH 1: Preserve original stage URLs - never overwrite stage baselines with edit outputs
+                const preservedStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
+                
+                // ✅ Track edit lineage separately from stage pipeline
+                const editHistory = results[editingImageIndex]?.editHistory || [];
+                const updatedEditHistory = [
+                  ...editHistory,
+                  {
+                    url: result.imageUrl,
+                    ts: Date.now(),
+                    maskUrl: result.maskUrl,
+                    mode: result.mode || "region-edit"
+                  }
+                ];
+                
                 const mergedMeta = {
                   ...(results[editingImageIndex]?.meta || {}),
                   ...(results[editingImageIndex]?.result?.meta || {}),
                 };
+                
                 setResults(prev => prev.map((r, i) =>
                   i === editingImageIndex ? {
                     ...r,
@@ -5626,15 +5653,22 @@ export default function BatchProcessor() {
                     mode: result.mode,
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: finalStageUrls,
+                    
+                    // ✅ Keep original stage URLs intact - never overwrite with edit outputs
+                    stageUrls: preservedStageUrls,
+                    
+                    // ✅ Store edit lineage separately
+                    editHistory: updatedEditHistory,
+                    editLatestUrl: result.imageUrl,
+                    
                     status: "completed",
                     uiStatus: "ok",
                     uiOverrideFailed: false,
                     error: null,
                     errorCode: undefined,
                     warnings: [],
-                    resultStage: "2",
-                    finalStage: "2",
+                    resultStage: null, // ✅ Don't mark as stage2 - this is an edit
+                    finalStage: null,
                     completionSource: "region-edit",
                     result: {
                       ...(normalizeBatchItem(result) || {}),
@@ -5642,10 +5676,11 @@ export default function BatchProcessor() {
                       imageUrl: result.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                      stageUrls: finalStageUrls,
+                      stageUrls: preservedStageUrls, // ✅ Preserve original stage URLs
+                      editLatestUrl: result.imageUrl,
                       status: "completed",
-                      resultStage: "2",
-                      finalStage: "2",
+                      resultStage: null,
+                      finalStage: null,
                       meta: mergedMeta,
                     },
                     filename: r?.filename

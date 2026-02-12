@@ -4167,7 +4167,8 @@ const worker = new Worker(
               publicUrl: pub.url,
               baseKey: pub.url.split("?")[0].split("/").pop() || "",
               versionId: "", // Region edits don't have version IDs
-              stage: "region-edit",
+              stage: "edit", // ✅ PATCH 6: Mark as edit stage
+              family: "edit" as any, // ✅ PATCH 6: Separate edit lineage from stage pipeline
             });
             nLog("[worker-region-edit] Redis image history recorded");
           } catch (err) {
@@ -4199,6 +4200,10 @@ const worker = new Worker(
                 type: "region-edit",
                 mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
                 instruction: prompt,
+                // ✅ PATCH 3: Tag edit jobs explicitly to prevent billing/retry confusion
+                jobType: "region_edit",
+                retryEligible: false, // Edit outputs cannot be retry baselines
+                consumesCredits: false, // Edits are always FREE
               },
             },
             "region_edit_complete"

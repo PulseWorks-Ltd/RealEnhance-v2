@@ -217,11 +217,18 @@ export async function finalizeReservation(params: {
   stage12Success: boolean;
   stage2Success: boolean;
 }): Promise<void> {
+  // ✅ PATCH 4: Edit jobs safety guard
+  // Region edit jobs (jobType="region_edit") never create reservations via reserveAllowance
+  // so they will naturally have rowCount=0 below and exit early (no billing).
+  // This is the primary safety mechanism ensuring edits consume 0 credits.
+  
   await withTransaction(async (client) => {
     const res = await client.query(
       `SELECT * FROM job_reservations WHERE job_id = $1 FOR UPDATE`,
       [params.jobId]
     );
+    
+    // ✅ No reservation = no billing. This catches all non-billable jobs including edits.
     if (res.rowCount === 0) return;
     const jr = res.rows[0];
 
