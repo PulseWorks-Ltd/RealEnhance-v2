@@ -628,8 +628,8 @@ export default function BatchProcessor() {
     });
   }, []);
 
-  // Retry timeout safety (60 seconds max)
-  const RETRY_TIMEOUT_MS = 60_000;
+  // Retry timeout safety (5 minutes max for full pipeline jobs)
+  const RETRY_TIMEOUT_MS = 300_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Retry dialog state
@@ -3234,7 +3234,7 @@ export default function BatchProcessor() {
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
-      if (retryStage) fd.append("retryStage", retryStage);
+      if (retryStage) fd.append("requestedStage", retryStage);
 
       try {
         const response = await fetch(api("/api/batch/retry-single"), withDevice({

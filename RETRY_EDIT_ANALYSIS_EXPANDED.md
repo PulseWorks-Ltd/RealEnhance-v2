@@ -213,12 +213,24 @@ Result: ❌ User pays 2 credits, gets 1 upload + 3 FREE edits
 
 ### 1.5 BILLING FIXES REQUIRED
 
-#### Fix #1: Add Retry Reservation (CRITICAL)
+#### Fix #1: Add Retry Reservation with Type Classification (CRITICAL)
 **File**: `server/src/routes/retrySingle.ts`  
 **Location**: Lines 290-310 (before enqueueEnhanceJob)
 
+**Retry Type Classification**:
 ```typescript
-// ✅ ADD: Retry quota enforcement
+// Retry types:
+// - "manual_retry": User-initiated retry (BILLABLE)
+// - "validator_retry": Auto-retry after false positive validator fail (FREE)
+// - "system_retry": Auto-retry after worker crash (FREE)
+```
+
+```typescript
+// ✅ ADD: Determine retry type (manual vs system/validator)
+const retryType = retryInfo?.retryType || "manual_retry";
+const isManualRetry = retryType === "manual_retry";
+
+// ✅ ADD: Retry quota enforcement (for all retry types)
 if (parentJobId) {
   const retryCheck = await incrementRetry(parentJobId);
   if (retryCheck.locked) {
@@ -227,12 +239,24 @@ if (parentJobId) {
       error: "retry_limit_reached", 
       code: "RETRY_LIMIT_REACHED",
       retryCount: retryCheck.retryCount,
-      message: "You have reached the maximum allowed free retries (2) for this image."
+      message: "You have reached the maximum allowed retries (2) for this image."
     });
   }
 }
 
-// ✅ ADD: Retry reservation (charge 1 credit for full re-run)
+// ✅ ADD: Idempotency check (prevent double-submit spam)
+const idempotencyKey = `retry:${sessUser.id}:${parentJobId}:${Date.now() - (Date.now() % 30000)}`;
+const existingRetry = await redisClient.get(idempotencyKey);
+if (existingRetry) {
+  return res.status(409).json({
+    success: false,
+    code: "DUPLICATE_RETRY",
+    jobId: existingRetry,
+    message: "Retry already in progress for this image."
+  });
+}
+
+// ✅ ADD: Retry reservation (ONLY for manual retries)
 const agencyId = sessUser.agencyId || null;
 if (!agencyId) {
   return res.status(400).json({ 
@@ -241,40 +265,59 @@ if (!agencyId) {
   });
 }
 
-// Retry gets fresh reservation (Stage 1A + 1B + 2 = 2 credits)
-const requiredImages = effectiveDeclutter && allowStaging ? 2 : 1;
-try {
-  const reservation = await reserveAllowance({
-    jobId: jobId,  // Use NEW job's ID
-    agencyId,
-    userId: sessUser.id,
-    requiredImages,
-    requestedStage12: true,
-    requestedStage2: allowStaging,
-  });
-  console.log(`[retry-single] reserved ${requiredImages} credits for retry job ${jobId}`);
-} catch (err: any) {
-  if (err?.code === "QUOTA_EXCEEDED") {
-    return res.status(402).json({ 
-      success: false,
-      code: "QUOTA_EXCEEDED", 
-      snapshot: err.snapshot 
+// Charge credits only for manual user retries, not system/validator retries
+if (isManualRetry) {
+  const requiredImages = effectiveDeclutter && allowStaging ? 2 : 1;
+  try {
+    const reservation = await reserveAllowance({
+      jobId: jobId,  // Use NEW job's ID
+      agencyId,
+      userId: sessUser.id,
+      requiredImages,
+      requestedStage12: true,
+      requestedStage2: allowStaging,
+    });
+    console.log(`[retry-single] reserved ${requiredImages} credits for manual retry job ${jobId}`);
+  } catch (err: any) {
+    if (err?.code === "QUOTA_EXCEEDED") {
+      return res.status(402).json({ 
+        success: false,
+        code: "QUOTA_EXCEEDED", 
+        snapshot: err.snapshot 
+      });
+    }
+    return res.status(503).json({ 
+      success: false, 
+      error: "reservation_failed" 
     });
   }
-  return res.status(503).json({ 
-    success: false, 
-    error: "reservation_failed" 
-  });
+} else {
+  console.log(`[retry-single] FREE retry (type: ${retryType}) - no billing for job ${jobId}`);
 }
 
+// Store idempotency key (30 second window)
+await redisClient.setex(idempotencyKey, 30, jobId);
+
 // Then enqueue as normal...
-const { jobId: enqueuedJobId } = await enqueueEnhanceJob({ ... });
+const { jobId: enqueuedJobId } = await enqueueEnhanceJob({ 
+  // ... existing params,
+  retryInfo: {
+    ...retryInfo,
+    retryType, // Ensure retryType is passed through
+  }
+});
 ```
 
-**Required Import**:
+**Required Imports**:
 ```typescript
 import { reserveAllowance, incrementRetry } from "../services/usageLedger.js";
+import { redisClient } from "../services/redis.js";
 ```
+
+**Billing Rules**:
+- ✅ **Manual retry** (`retryType === "manual_retry"`) → Charge credits
+- ❌ **Validator retry** (`retryType === "validator_retry"`) → FREE (our fault)
+- ❌ **System retry** (`retryType === "system_retry"`) → FREE (infra fault)
 
 ---
 
@@ -454,16 +497,20 @@ if (job && job.status === "completed" && job.imageUrl) {
   const currentVersion = currentResult?.version || 0;
   const newVersion = Date.now();
   
+  // VERSION is primary authority, not jobId
+  // (jobId changes during retry/edit flows intentionally)
   if (currentResult?.jobId && currentResult.jobId !== jobId) {
-    // Different jobId - check if this is an older retry
+    // Different jobId - check if newer result already present
     console.warn('[retry] jobId mismatch, checking version', {
       currentJobId: currentResult.jobId,
       newJobId: jobId,
       currentVersion,
     });
-    // Allow update only if no version set (first completion)
-    // or if current result is failed/stuck
-    if (currentVersion > 0 && currentResult.status === 'completed') {
+    
+    // ONLY block if BOTH conditions true:
+    // 1. Current result is completed
+    // 2. Current result has newer timestamp
+    if (currentResult.status === 'completed' && currentVersion > newVersion - 5000) {
       console.warn('[retry] skipping stale update - newer result already present');
       clearRetryFlags(imageIndex);
       return;
@@ -634,20 +681,29 @@ T=5: Client shows broken image or 403 error
 ```typescript
 // worker/src/worker.ts - atomic completion gate
 async function markJobComplete(jobId: string, imageUrl: string, stageUrls: any) {
-  // 1. Verify S3 publish succeeded (authoritative check)
-  try {
-    const headResponse = await fetch(imageUrl, { method: 'HEAD' });
-    if (!headResponse.ok) {
-      throw new Error(`S3 verification failed: ${headResponse.status}`);
+  // 1. CONDITIONAL S3 verification (only if DEBUG mode or escalation)
+  const shouldVerifyS3 = process.env.DEBUG_PUBLISH_VERIFY === '1' || 
+                         payload.escalated === true;
+  
+  if (shouldVerifyS3) {
+    try {
+      const headResponse = await fetch(imageUrl, { method: 'HEAD' });
+      if (!headResponse.ok) {
+        throw new Error(`S3 verification failed: ${headResponse.status}`);
+      }
+      console.log('[JOB_COMPLETE] S3 verification passed', { jobId, imageUrl });
+    } catch (err) {
+      console.error('[JOB_COMPLETE_BLOCKED] S3 verification failed', { jobId, imageUrl, err });
+      // Mark as failed instead of complete
+      await updateJob(jobId, {
+        status: "failed",
+        error: "Image publish verification failed",
+      });
+      return;
     }
-  } catch (err) {
-    console.error('[JOB_COMPLETE_BLOCKED] S3 verification failed', { jobId, imageUrl, err });
-    // Mark as failed instead of complete
-    await updateJob(jobId, {
-      status: "failed",
-      error: "Image publish verification failed",
-    });
-    return;
+  } else {
+    // Trust publish step result (faster, no extra S3 cost)
+    console.log('[JOB_COMPLETE] Trusting publish step result (no HEAD verification)', { jobId });
   }
   
   // 2. Mark complete in Redis (authoritative status)
@@ -670,31 +726,90 @@ async function markJobComplete(jobId: string, imageUrl: string, stageUrls: any) 
 }
 ```
 
+**When to enable S3 verification**:
+- Set `DEBUG_PUBLISH_VERIFY=1` during debugging
+- Automatically enabled when validator escalation triggered
+- Otherwise: trust publish step (faster, cheaper)
+
 ---
 
 ## PART 4: PHASED IMPLEMENTATION PLAN
 
-### Phase 1: Retry Stability (Week 1) 🔴 CRITICAL
+### Phase 1: Critical Production Blockers (Week 1) 🔴 MUST SHIP
 
-**Goal**: Stop timeout false-positives and add basic guards
+**Goal**: Stop revenue leak, fix false failures, prevent UI corruption
 
 **Changes**:
-1. Increase retry timeout: 60s → 5min (`batch-processor.tsx:632`)
-2. Add jobId ownership guard before setResults (`batch-processor.tsx:3392`)
-3. Add retry telemetry logging (`retrySingle.ts:310`)
-4. Add polling source-of-truth verification (`worker.ts:3900`)
+1. **Retry billing with type classification** (`retrySingle.ts:290`)
+   - Add retry type check (`manual_retry` vs `validator_retry` vs `system_retry`)
+   - Reserve allowance ONLY for manual retries
+   - Add idempotency key (30-second window)
+   - Enforce retry cap (2 max)
+
+2. **Timeout mismatch fix** (`batch-processor.tsx:632`)
+   - Increase from 60s → 5min
+   - Add spinner message: "Processing — complex staging may take up to 4 minutes"
+
+3. **Race condition guards** (`batch-processor.tsx:3392`)
+   - Add jobId ownership validation
+   - Add version timestamp checks (primary authority)
+   - Add index bounds checks
+   - Add jobIdToIndexRef maintenance on removals
+
+4. **Idempotency protection** (NEW)
+   - Prevent double-submit spam
+   - 30-second deduplication window
+   - Applies to both retry and edit endpoints
+
+**Implementation Details**:
+
+**1a. Retry Type Classification**:
+```typescript
+// server/src/routes/retrySingle.ts
+type RetryType = "manual_retry" | "validator_retry" | "system_retry";
+
+interface RetryInfo {
+  retryType: RetryType;
+  parentJobId?: string;
+  reason?: string;
+}
+
+// Decision table:
+// manual_retry    → CHARGE credits, increment quota
+// validator_retry → FREE (our fault), increment quota
+// system_retry    → FREE (infra fault), increment quota
+```
+
+**1b. Idempotency Key Pattern**:
+```typescript
+// 30-second window (rounds down to nearest 30s)
+const idempotencyKey = `retry:${userId}:${parentJobId}:${Math.floor(Date.now() / 30000)}`;
+const existing = await redisClient.get(idempotencyKey);
+if (existing) {
+  return res.status(409).json({ 
+    code: "DUPLICATE_RETRY", 
+    jobId: existing 
+  });
+}
+await redisClient.setex(idempotencyKey, 30, newJobId);
+```
 
 **Testing**:
-- Upload image with full pipeline (1A+1B+2) → takes 3-5min
-- Retry with scene change → should complete without timeout
-- Submit 2 concurrent retries → verify no UI corruption
-- Check logs for telemetry data
+- ✅ Manual retry → verify credit charged, quota incremented
+- ✅ Validator false-positive retry → verify FREE
+- ✅ Worker crash retry → verify FREE
+- ✅ Double-click retry → verify 409 response
+- ✅ Upload with full pipeline → verify completes in 3-5min without timeout
+- ✅ Submit 2 concurrent retries → verify no UI corruption
+- ✅ Remove image during retry → verify no crash
 
 **Success Criteria**:
+- ✅ Zero free retry exploits (manual retries billed)
+- ✅ System/validator retries remain free
 - ✅ Zero timeout errors on successful jobs
-- ✅ jobId mismatches logged and handled
-- ✅ S3 verification gates job completion
-- ✅ Telemetry data collected
+- ✅ jobId mismatches logged and handled via version check
+- ✅ Zero duplicate job spam
+- ✅ Zero React errors in console
 
 ---
 
@@ -707,45 +822,122 @@ async function markJobComplete(jobId: string, imageUrl: string, stageUrls: any) 
 2. Add edit as separate stage key (`'edit'`, `'region-edit'`)
 3. Preserve retry baseline URL for subsequent edits
 4. Mark edits as derived stage in lineage
+5. **CRITICAL**: Exclude edit stage from retry auto-baseline selection
+
+**Edit Stage URL Structure**:
+```typescript
+// BEFORE edit:
+stageUrls = {
+  "1A": url1A,
+  "1B": url1B,
+  "2": url2
+}
+
+// AFTER edit:
+stageUrls = {
+  "1A": url1A,       // ✅ Preserved
+  "1B": url1B,       // ✅ Preserved
+  "2": url2,         // ✅ Preserved (original)
+  "edit": urlEdit1   // ✅ New edit stage
+}
+
+// AFTER second edit:
+stageUrls = {
+  "1A": url1A,
+  "1B": url1B,
+  "2": url2,
+  "edit": urlEdit2,   // ✅ Latest edit
+  "edit-1": urlEdit1  // ✅ Previous edit archived
+}
+```
+
+**Retry Baseline Selection Guard**:
+```typescript
+// client/src/components/batch-processor.tsx
+function selectRetryBaseline(result: Result): string {
+  const { stageUrls } = result;
+  
+  // ⚠️ EXCLUDE edit stages from auto-baseline
+  const retryableStages = Object.entries(stageUrls || {})
+    .filter(([stage, url]) => !stage.startsWith('edit')) // ✅ Guard
+    .sort((a, b) => stageRank(b[0]) - stageRank(a[0]));
+  
+  // Prefer highest non-edit stage as retry baseline
+  return retryableStages[0]?.[1] || result.imageUrl;
+}
+```
+
+**Why This Matters**:
+- Edit may modify structure (furniture added/removed)
+- Using edit as retry baseline would fail structural validation
+- Retry should restart from last structural-clean stage (1B or 2)
 
 **Testing**:
-- Upload → Stage 2 completes → note stageUrls
-- Edit region → verify stageUrls['2'] unchanged
-- Edit result again → verify previous edit in stageUrls['edit']
+- Upload image with full pipeline (1A+1B+2) → takes 3-5min
+- Perform region edit → verify stageUrls preserves original stages
+- Edit result again → verify edit chain (edit, edit-1, edit-2)
+- Retry after edit → verify baseline excludes edit stages
 - Switch between stages using selector → all outputs intact
 
 **Success Criteria**:
 - ✅ Original Stage 2 output viewable after edit
-- ✅ Multiple edits create chain (edit1, edit2, edit3)
+- ✅ Multiple edits create chain (edit, edit-1, edit-2)
 - ✅ Stage selector shows all available outputs
+- ✅ Retry excludes edit stages from baseline selection
 - ✅ No data loss on edit operations
 
 ---
 
-### Phase 3: Billing & Reservation Audit (Week 3) 🔴 CRITICAL
+### Phase 3: Edit Policy & Source-of-Truth (Week 3) 🟡 DEFERRED DECISION
 
-**Goal**: Eliminate free retry loopholes and define edit policy
+**Goal**: Formalize edit billing policy and completion authority
 
 **Changes**:
-1. Add retry quota enforcement (`retrySingle.ts:295`)
-2. Add retry reservation creation (`retrySingle.ts:305`)
-3. Decide edit billing policy (free vs paid)
-4. Verify no double-charge scenarios
-5. Add charge_finalized checks in status endpoint
+1. **Edit billing decision: Keep FREE** (Option A)
+   - Edit count cap (3) remains as rate limiting only
+   - No credit charges for edits
+   - Monitor usage for 30 days
+   - Re-evaluate based on abuse metrics
+
+2. **Source-of-truth declaration** (documentation)
+   - Redis `jobs:<jobId>` = status authority
+   - S3 publish = asset authority
+   - Postgres `job_reservations` = billing authority
+   - History table = archival only
+
+3. **Conditional S3 verification** (optional)
+   - Enable via `DEBUG_PUBLISH_VERIFY=1`
+   - Or auto-enable on validator escalation
+   - Default: trust publish step (faster, cheaper)
+
+4. **Verify no orphaned reservations**
+   - Audit query: reservations where `charge_finalized = FALSE` and `created > 1 hour ago`
+   - Alert on orphans
+   - Reconciliation script for cleanup
+
+**Why Keep Edits Free**:
+- Edits are refinement, not full compute pipeline
+- Already capped at 3 (rate limiting sufficient)
+- Region edit cost << full staging pipeline
+- No abuse metrics yet justify charging
+- Reduces UX friction during rollout
 
 **Testing**:
-- Upload image → retry 3 times → 4th retry should return 429
-- Check job_reservations → verify retry creates new row
-- Check agency_month_usage → verify credits deducted
-- Verify worker finalizes reservations correctly
-- Check for any orphaned reservations (reserved but never finalized)
+- Upload image → edit 3 times → 4th edit blocked (quota cap)
+- Verify no credit charges for edits
+- Check job_reservations → verify edits don't create rows
+- Monitor edit frequency metrics for 30 days
+- Check for orphaned reservations (should be zero)
 
 **Success Criteria**:
-- ✅ Retry cap enforced (max 2 retries/image)
-- ✅ Each retry creates reservation and charges credits
-- ✅ Edit policy documented and enforced
+- ✅ Edit policy documented (free, 3 cap)
+- ✅ Edit frequency metrics collected
+- ✅ Source-of-truth hierarchy documented
 - ✅ Zero orphaned reservations
-- ✅ charge_finalized=TRUE for all completed jobs
+- ✅ S3 verification conditional (not default)
+
+**Future Review Trigger**:
+If edit frequency > 10 per user per month OR abuse detected → revisit pricing
 
 ---
 
@@ -899,32 +1091,150 @@ if (!RETRY_CIRCUIT_BREAKER) {
 
 ## FINAL VERDICT
 
-### Critical Path (Must Fix Before Production)
+### ✅ APPROVED - Proceed with Implementation
 
-1. **Billing Loophole** - ❌ Revenue loss, immediate fix required
-2. **Timeout Mismatch** - ❌ User confusion, high priority
-3. **jobId Guards** - ⚠️ Rare but nasty UI corruption
+**Critical Path (Must Fix Before Wide Production)**:
 
-### Medium Priority (Fix Within 2 Weeks)
+1. ✅ **Retry billing with type classification** - Revenue leak + quota bypass
+   - Charge manual retries only
+   - Free validator/system retries
+   - Add idempotency key (30s window)
+   
+2. ✅ **Timeout mismatch fix** - User confusion + false failures
+   - 60s → 5min timeout
+   - Add progress messaging
+   
+3. ✅ **Race condition guards** - UI corruption risk
+   - Version timestamp as primary authority
+   - jobId validation (but not blocking)
+   - Index bounds checks
+   
+4. ✅ **Stage URL preservation** - Data loss on edits
+   - Preserve original stageUrls
+   - Edit as separate stage key
+   - **Exclude edit from retry baseline**
 
-4. **Stage URL Preservation** - Data loss on edits
-5. **Source-of-Truth Declaration** - Edge-case desync
-6. **Edit Billing Policy** - Business decision needed
+**Estimated Effort**: 3-5 days (Phase 1)
 
-### Low Priority (Fix Within 4 Weeks)
+---
 
-7. **State Race Protection** - Advanced edge cases
-8. **Index Drift Maintenance** - Rare scenarios
-9. **Stale Update Detection** - Logging/debugging aid
+### 🟡 Next Sprint (Fix Within 2-4 Weeks)
 
-### Estimated Total Effort
+5. 🟡 **Edit billing policy** - Defer decision
+   - **Keep FREE for now** (Option A)
+   - Monitor for 30 days
+   - Re-evaluate based on abuse metrics
+   
+6. 🟡 **S3 verification** - Make conditional
+   - Enable via `DEBUG_PUBLISH_VERIFY=1`
+   - Or auto-enable on escalation
+   - **Not default** (adds latency + cost)
 
-- **Phase 1** (Retry Stability): 2-3 days
-- **Phase 2** (Edit Integrity): 2-3 days
-- **Phase 3** (Billing Audit): 3-5 days (includes testing)
-- **Phase 4** (UI Consistency): 2-3 days
-- **Testing & QA**: 3-5 days
-- **Total**: ~15-20 days (3-4 weeks)
+**Estimated Effort**: 2-3 days (Phase 2-3)
+
+---
+
+### Key Refinements from Review
+
+**Retry Type Classification**:
+```
+┌─────────────────┬──────────┬─────────────────────────┐
+│ Retry Cause     │ Charge?  │ Reason                  │
+├─────────────────┼──────────┼─────────────────────────┤
+│ Manual retry    │ ✅ Yes   │ User value action       │
+│ Validator retry │ ❌ No    │ Your validator fault    │
+│ System retry    │ ❌ No    │ Infra fault             │
+└─────────────────┴──────────┴─────────────────────────┘
+```
+
+**Race Condition Authority**:
+- ✅ **Version timestamp** = primary authority
+- ⚠️ **jobId** = secondary (changes during retry/edit)
+- Block only if: `status === completed` AND `version > new` AND `jobId !== current`
+
+**S3 Verification**:
+- ❌ **Not default** (latency, cost, eventual consistency risk)
+- ✅ **Conditional**: DEBUG mode or validator escalation only
+
+**Edit Baseline Exclusion**:
+- Edit stages must not be used as retry baseline
+- Retry should use last structural-clean stage (1B or 2)
+- Guard: `filter(([stage]) => !stage.startsWith('edit'))`
+
+**Idempotency Protection** (NEW):
+- Prevent double-submit spam
+- 30-second deduplication window
+- Redis key pattern: `retry:{userId}:{parentJobId}:{timestamp/30000}`
+
+---
+
+### 🎯 Implementation Order
+
+**Week 1** (Ship ASAP):
+1. Retry billing + type classification
+2. Idempotency key
+3. Timeout fix (60s → 5min)
+4. Race condition guards (version-based)
+5. Stage URL preservation + baseline exclusion
+
+**Week 2-3** (Next Sprint):
+6. Edit policy documentation (free)
+7. S3 verification (conditional)
+8. Edit frequency metrics
+9. Orphaned reservation monitoring
+
+**Week 4** (Polish):
+10. Advanced UI consistency guards
+11. Stale update detection logging
+12. Performance monitoring
+
+---
+
+### 📊 Success Metrics
+
+**Revenue Protection**:
+- Zero free manual retries exploited
+- System/validator retries = 0 charges
+- Retry cap enforced (max 2 per image)
+
+**Reliability**:
+- Zero timeout errors on successful 3-5min jobs
+- Zero React state corruption errors
+- Zero duplicate job spam
+
+**Data Integrity**:
+- Zero stage URL overwrites on edit
+- Zero retry-from-edit structural failures
+- Zero orphaned reservations
+
+---
+
+### ⚠️ Production Monitoring
+
+**Watch for**:
+- Retry frequency spike (potential abuse)
+- Edit frequency > 10/user/month (pricing review trigger)
+- Orphaned reservations (billing leak)
+- Idempotency 409 rate (UX issue indicator)
+
+**Alerts**:
+```sql
+-- Orphaned reservation alert (run hourly)
+SELECT COUNT(*) FROM job_reservations
+WHERE charge_finalized = FALSE
+  AND created_at < NOW() - INTERVAL '1 hour'
+  AND reservation_status = 'reserved';
+-- Alert if > 10
+
+-- Retry abuse detection (run daily)
+SELECT user_id, COUNT(*) as retry_count
+FROM job_reservations
+WHERE retry_count > 0
+  AND created_at > NOW() - INTERVAL '24 hours'
+GROUP BY user_id
+HAVING COUNT(*) > 20;
+-- Alert if any users > 20 retries/day
+```
 
 ---
 

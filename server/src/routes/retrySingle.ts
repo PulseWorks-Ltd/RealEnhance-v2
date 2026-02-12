@@ -3,6 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as fss from "node:fs";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
@@ -10,6 +11,8 @@ import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getJobMetadata } from "@realenhance/shared/imageStore";
 import { findByPublicUrlRedis } from "@realenhance/shared";
+import { getRedis } from "@realenhance/shared/redisClient.js";
+import { reserveAllowance, incrementRetry } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -96,7 +99,24 @@ export function retrySingleRouter() {
       const parentImageId = body.imageId || body.retryParentImageId || null;
       const parentJobId = body.parentJobId || body.retryParentJobId || null;
       const clientBatchId = body.clientBatchId || body.batchId || null;
+      const requestedStage = String(body.requestedStage || '').trim().toUpperCase();
       const useStageSource = !!sourceUrlRaw;
+
+      // ✅ PATCH 2: Idempotency guard (30-second window)
+      if (parentJobId) {
+        const retryKey = `retry:${sessUser.id}:${parentJobId}:${Math.floor(Date.now() / 30000)}`;
+        const redis = getRedis();
+        const exists = await redis.get(retryKey);
+        if (exists) {
+          console.log(`[retry-single] Duplicate retry suppressed: ${retryKey}`);
+          return res.status(409).json({ 
+            success: false, 
+            error: "duplicate_retry",
+            message: "Duplicate retry suppressed" 
+          });
+        }
+        await redis.setEx(retryKey, 35, "1");
+      }
 
       // Optional tuning
       const temperature = parseNumber(body.temperature);
@@ -145,32 +165,85 @@ export function retrySingleRouter() {
 
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
           const metaStageUrls = parentMeta?.stageUrls;
-          const collectedUrls = [parentStageUrls, metaStageUrls]
-            .filter(Boolean)
-            .flatMap((m: any) => Object.values(m as Record<string, string | null>))
-            .filter(Boolean) as string[];
+          
+          // ✅ PATCH 1: Stage-aware baseline selection
+          let selectedSourceStage: string;
+          let selectedSourceUrl: string;
+          
+          // Merge stage URLs from both sources
+          const allStageUrls = { ...metaStageUrls, ...parentStageUrls };
+          
+          // Filter out edit stages - never use as baseline
+          const validStageUrls = Object.entries(allStageUrls || {})
+            .filter(([stage]) => !stage.toLowerCase().startsWith('edit'))
+            .reduce((acc, [stage, url]) => ({ ...acc, [stage]: url }), {} as Record<string, string>);
+          
+          if (requestedStage === '1A') {
+            // Retry from Stage 1A → full pipeline
+            selectedSourceStage = '1A';
+            selectedSourceUrl = validStageUrls['1A'];
+          } else if (requestedStage === '1B') {
+            // Retry from Stage 1B → Stage 2 only
+            selectedSourceStage = '1B-stage-ready';
+            selectedSourceUrl = validStageUrls['1B'];
+          } else if (requestedStage === '2') {
+            // CRITICAL: Retry Stage 2 from Stage 1B, NOT Stage 2
+            selectedSourceStage = '1B-stage-ready';
+            selectedSourceUrl = validStageUrls['1B'];
+          } else if (sourceUrlRaw) {
+            // Fallback: use provided sourceUrl (backward compat)
+            selectedSourceStage = sourceStageRaw || 'stage2';
+            selectedSourceUrl = sourceUrlRaw;
+          } else {
+            // Default: retry from highest available non-edit stage
+            const stageRanks = { '2': 3, '1B': 2, '1A': 1 };
+            const sortedStages = Object.entries(validStageUrls)
+              .sort(([a], [b]) => (stageRanks[b as keyof typeof stageRanks] || 0) - (stageRanks[a as keyof typeof stageRanks] || 0));
+            
+            if (sortedStages.length > 0) {
+              const [stage, url] = sortedStages[0];
+              selectedSourceStage = stage === '1B' ? '1B-stage-ready' : stage === '2' ? '1B-stage-ready' : '1A';
+              selectedSourceUrl = stage === '2' ? validStageUrls['1B'] : url;
+            } else {
+              return res.status(400).json({ success: false, error: 'no_valid_baseline', message: 'No valid retry baseline found' });
+            }
+          }
+          
+          // Never allow edit stages as baseline
+          if (!selectedSourceUrl || selectedSourceStage.toLowerCase().startsWith('edit')) {
+            return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline - edit stages not allowed' });
+          }
+          
+          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} url=${selectedSourceUrl}`);
+          
+          const collectedUrls = Object.values(allStageUrls || {}).filter(Boolean) as string[];
 
-          if (collectedUrls.length > 0 && !collectedUrls.includes(sourceUrlRaw)) {
-            return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Provided source URL does not match recorded job outputs" });
+          if (collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
+            return res.status(400).json({ success: false, error: \"source_url_mismatch\", message: \"Selected source URL does not match recorded job outputs\" });
           }
 
           if (collectedUrls.length === 0) {
             // Fallback to history lookup; allow but warn if missing
-            const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, sourceUrlRaw).catch(() => null) : null;
+            const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, selectedSourceUrl).catch(() => null) : null;
             if (!history) {
-              console.warn("[RETRY_META_MISSING_ALLOW]", { jobId: parentJobId, reason: "no_stage_urls_or_history", sourceUrlRaw });
+              console.warn(\"[RETRY_META_MISSING_ALLOW]\", { jobId: parentJobId, reason: \"no_stage_urls_or_history\", selectedSourceUrl });
             }
           }
         }
 
-        const prefix = (process.env.S3_PREFIX || "realenhance/originals").replace(/\/+$/, "");
-        const targetKey = `${prefix}/retry/${sessUser.id}/${Date.now()}-${path.basename(parsedKey)}`.replace(/^\/+/, "");
+        const parsedKey = extractKeyFromS3Url(selectedSourceUrl || sourceUrlRaw);
+        if (!parsedKey) {
+          return res.status(400).json({ success: false, error: \"invalid_source_url\", message: \"Retry source URL is not in the expected bucket\" });
+        }
+
+        const prefix = (process.env.S3_PREFIX || \"realenhance/originals\").replace(/\/+$/, \"\");
+        const targetKey = `${prefix}/retry/${sessUser.id}/${Date.now()}-${path.basename(parsedKey)}`.replace(/^\/+/, \"\");
 
         const copy = await copyS3Object(parsedKey, targetKey);
         remoteOriginalUrl = copy.url;
         remoteOriginalKey = copy.key;
-        retrySourceStage = sourceStageRaw || "stage2";
-        retrySourceUrl = sourceUrlRaw;
+        retrySourceStage = selectedSourceStage || sourceStageRaw || \"stage2\";
+        retrySourceUrl = selectedSourceUrl || sourceUrlRaw;
         retrySourceKey = parsedKey;
 
         const userDir = path.join(uploadRoot, sessUser.id);
@@ -283,13 +356,75 @@ export function retrySingleRouter() {
         };
       }
 
-      // ✅ Smart Stage-2-only retry logic
-      // Check if there's a previous job for this image with structurally safe Stage-1B
-      // Note: This is a simplified implementation - in production you'd query job history by imageId
-      // For now, we'll add the capability but it will only activate if explicitly passed
-      const stage2OnlyMode = undefined; // Will be populated in future enhancement
+      // ✅ Smart Stage-2-only retry logic (PATCH 4)
+      // When retrying from Stage1B baseline (selectedSourceStage="1B-stage-ready"),
+      // skip Stage1A/1B processing and run only Stage2
+      const stage2OnlyMode = selectedSourceStage === "1B-stage-ready" ? {
+        enabled: true,
+        base1BUrl: selectedSourceUrl  // Use Stage1B output as baseline for Stage2
+      } : undefined;
 
-      const { jobId } = await enqueueEnhanceJob({
+      // ✅ PATCH 3: Billing - reserve 1 credit for manual retry
+      const agencyId = sessUser.agencyId || null;
+      if (!agencyId) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "missing_agency",
+          message: "Agency ID required for retry billing"
+        });
+      }
+
+      // Enforce retry quota cap
+      if (parentJobId) {
+        try {
+          const retryCheck = await incrementRetry(parentJobId);
+          if (retryCheck.locked) {
+            return res.status(429).json({ 
+              success: false,
+              error: "retry_limit_reached", 
+              code: "RETRY_LIMIT_REACHED",
+              retryCount: retryCheck.retryCount,
+              message: "Maximum retry limit (2) reached for this image"
+            });
+          }
+        } catch (err: any) {
+          console.error('[retry-single] incrementRetry failed:', err);
+          // Continue - don't block on quota check failure
+        }
+      }
+
+      // Generate job ID for reservation
+      const jobId = "job_" + crypto.randomUUID();
+
+      // Reserve exactly 1 credit for manual retry (all retries cost 1 credit)
+      try {
+        await reserveAllowance({
+          jobId,
+          agencyId,
+          userId: sessUser.id,
+          requiredImages: 1,  // Always 1 credit per retry
+          requestedStage12: true,
+          requestedStage2: allowStaging,
+        });
+        console.log(`[retry-single] Reserved 1 credit for manual retry job ${jobId}`);
+      } catch (err: any) {
+        if (err?.code === "QUOTA_EXCEEDED") {
+          return res.status(402).json({ 
+            success: false,
+            code: "QUOTA_EXCEEDED", 
+            snapshot: err.snapshot,
+            message: "Insufficient credits for retry"
+          });
+        }
+        console.error('[retry-single] Reservation failed:', err);
+        return res.status(503).json({ 
+          success: false, 
+          error: "reservation_failed",
+          message: "Failed to reserve credits for retry"
+        });
+      }
+
+      const result = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId: (rec as any).imageId,
         remoteOriginalUrl,
@@ -305,7 +440,7 @@ export function retrySingleRouter() {
           parentJobId,
           clientBatchId,
         }
-      });
+      }, jobId);  // Pass pre-generated jobId for billing
 
       // Track usage for analytics (non-blocking)
       recordUsageEvent({
