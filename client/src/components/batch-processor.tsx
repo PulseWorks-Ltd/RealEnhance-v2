@@ -3100,11 +3100,58 @@ export default function BatchProcessor() {
     return { stage: null, url: null };
   };
 
-  // Handle edit image - just open the modal (don't add to editing set yet)
+  // Handle edit image - resolve URL before opening editor
   const handleEditImage = (imageIndex: number) => {
+    const item = results[imageIndex];
+    if (!item) {
+      console.error('[EDIT][load_source] No result data for index:', imageIndex);
+      toast({
+        title: "Cannot open editor",
+        description: "Image data not available",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // ✅ Use resolveSafeStageUrl for proper stage-aware URL resolution
+    // Priority: stage2 → stage1B → stage1A → publishedUrl → imageUrl
+    const resolved = resolveSafeStageUrl(item);
+    const imageUrl = resolved.url;
+    const urlSource = resolved.stage || 'explicitResult';
+    const imageId = item?.imageId || item?.result?.imageId || null;
+
+    // ✅ Verify URL is non-null before opening editor
+    if (!imageUrl) {
+      console.error('[EDIT][load_source] No valid URL found', {
+        imageId,
+        imageIndex,
+        urlSource: 'none',
+        item: {
+          stageUrls: item?.stageUrls || null,
+          resultUrl: item?.resultUrl || null,
+          imageUrl: item?.imageUrl || null
+        }
+      });
+      toast({
+        title: "Cannot open editor",
+        description: "No valid image URL available for editing",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // ✅ Log selected URL source
+    console.log('[EDIT][load_source]', {
+      imageId,
+      imageIndex,
+      urlSource,
+      url: imageUrl.substring(0, 100) + (imageUrl.length > 100 ? '...' : ''),
+      completionSource: item?.completionSource || null
+    });
+
+    // ✅ Store completion source in editor state for reference
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
-    // The RegionEditor will consume resolved URLs in the modal section below
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string) => {
@@ -5610,25 +5657,53 @@ export default function BatchProcessor() {
           <RegionEditor
             initialImageUrl={(() => {
               const item = results[editingImageIndex];
-              const selectedStage = displayStageByIndex[editingImageIndex] as StageKey | undefined;
-              const best = resolveBestStageOutput(item, selectedStage, previewUrls[editingImageIndex] || null);
-              const versioned = withVersion(best.url, item?.version || item?.updatedAt) || best.url;
-              const fallback = withVersion(getDisplayUrl(item), item?.version || item?.updatedAt) || previewUrls[editingImageIndex];
-              const initial = versioned || fallback || undefined;
-              console.log('[BatchProcessor] Resolved initialImageUrl (bestAvailable||fallback):', { best, versioned, fallback, selectedStage });
-              return initial;
+              if (!item) return undefined;
+              
+              // ✅ Use resolveSafeStageUrl for consistent stage-aware URL resolution
+              // Priority: stage2 → stage1B → stage1A → publishedUrl → imageUrl
+              const resolved = resolveSafeStageUrl(item);
+              let imageUrl = resolved.url;
+              
+              // ✅ Apply version cache-busting if available
+              if (imageUrl) {
+                imageUrl = withVersion(imageUrl, item?.version || item?.updatedAt) || imageUrl;
+              }
+              
+              // ✅ Fallback to preview URL if stage resolution failed
+              const fallback = previewUrls[editingImageIndex] || undefined;
+              const finalUrl = imageUrl || fallback;
+              
+              console.log('[EDIT][RegionEditor] Resolved initialImageUrl:', {
+                resolvedStage: resolved.stage,
+                hasUrl: !!imageUrl,
+                hasFallback: !!fallback,
+                finalUrlPreview: finalUrl ? finalUrl.substring(0, 100) : 'none'
+              });
+              
+              return finalUrl;
             })()}
-            // Explicit mapping for restore base: prefer Stage 1B then Stage 1A. No broad fallbacks.
+            // ✅ Restore base: prefer explicit original, then stage1A quality-enhanced baseline
             originalImageUrl={(() => {
               const item = results[editingImageIndex];
+              if (!item) return undefined;
+              
+              // Priority for restore base: explicitOriginal → stage1A → stage1B → preview
               const explicitOriginal = item?.result?.originalImageUrl || item?.originalImageUrl || item?.result?.originalUrl || item?.originalUrl;
               const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
-              const stage1b = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
-              const stage1a = stageUrls?.['1A'] || stageUrls?.['1a'] || undefined;
-              const display = withVersion(getDisplayUrl(item), item?.version || item?.updatedAt) || undefined;
-              const previewFallback = previewUrls[editingImageIndex];
-              const resolved = explicitOriginal || stage1b || stage1a || display || previewFallback || undefined;
-              console.log('[BatchProcessor] Resolved originalImageUrl (explicitOriginal||1B||1A||display||preview):', { explicitOriginal, stage1b, stage1a, display, previewFallback, resolved });
+              const stage1A = stageUrls?.['1A'] || stageUrls?.['1a'] || stageUrls?.['1'] || undefined;
+              const stage1B = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
+              const previewFallback = previewUrls[editingImageIndex] || undefined;
+              
+              const resolved = explicitOriginal || stage1A || stage1B || previewFallback;
+              
+              console.log('[EDIT][RegionEditor] Resolved originalImageUrl:', {
+                hasExplicitOriginal: !!explicitOriginal,
+                hasStage1A: !!stage1A,
+                hasStage1B: !!stage1B,
+                hasPreview: !!previewFallback,
+                resolvedPreview: resolved ? resolved.substring(0, 100) : 'none'
+              });
+              
               return resolved;
             })()}
             initialGoal={globalGoal}
