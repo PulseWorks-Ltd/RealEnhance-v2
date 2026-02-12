@@ -8,6 +8,7 @@ import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
 const logger = console;
 
 const MIN_CONFIDENCE = 0.75;
+const BUILTIN_HARDFAIL_CONFIDENCE = 0.85;
 
 /**
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
@@ -243,6 +244,7 @@ export type GeminiSemanticVerdict = {
   category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
   reasons: string[];
   confidence: number;
+  violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "layout_only" | "other";
   builtInDetected?: boolean;
   structuralAnchorCount?: number;
   rawText?: string;
@@ -484,6 +486,24 @@ BUILT-IN DOWNGRADE RULE:
 If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
 → hardFail = false (warning only)
 
+VIOLATION TYPE (REQUIRED)
+Choose exactly one:
+- opening_change = window/door/opening added/removed/moved
+- wall_change = wall added/removed/shifted
+- camera_shift = viewpoint or perspective changed
+- built_in_moved = built-in cabinetry or anchored fixture changed
+- layout_only = furniture/layout/staging only
+- other = none of the above
+
+VIOLATION TYPE (REQUIRED)
+Choose exactly one:
+- opening_change = window/door/opening added/removed/moved
+- wall_change = wall added/removed/shifted
+- camera_shift = viewpoint or perspective changed
+- built_in_moved = built-in cabinetry or anchored fixture changed
+- layout_only = furniture/layout/staging only
+- other = none of the above
+
 ─────────────────────────────
 OUTPUT JSON
 ─────────────────────────────
@@ -494,6 +514,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }`;
@@ -784,6 +805,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }`;
@@ -1093,6 +1115,15 @@ style_only → hardFail = false
 If confidence < ${MIN_CONFIDENCE} → hardFail = false  
 If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85) → hardFail = false  
 
+VIOLATION TYPE (REQUIRED)
+Choose exactly one:
+- opening_change = window/door/opening added/removed/moved
+- wall_change = wall added/removed/shifted
+- camera_shift = viewpoint or perspective changed
+- built_in_moved = built-in cabinetry or anchored fixture changed
+- layout_only = furniture/layout/staging only
+- other = none of the above
+
 ────────────────────────────────
 OUTPUT FORMAT (JSON ONLY)
 ────────────────────────────────
@@ -1106,6 +1137,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
     "or 'Doorway blocked by fixed wardrobe'"
   ],
   "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }
@@ -1120,6 +1152,7 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
     category: "unknown",
     reasons: [],
     confidence: 0,
+    violationType: "other",
     builtInDetected: false,
     structuralAnchorCount: 0,
     rawText: text,
@@ -1131,11 +1164,23 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
 
   try {
     const parsed = JSON.parse(target);
+    const violationType = typeof parsed.violationType === "string"
+      ? parsed.violationType.toLowerCase()
+      : "other";
+    const normalizedViolationType = (
+      violationType === "opening_change" ||
+      violationType === "wall_change" ||
+      violationType === "camera_shift" ||
+      violationType === "built_in_moved" ||
+      violationType === "layout_only" ||
+      violationType === "other"
+    ) ? (violationType as GeminiSemanticVerdict["violationType"]) : "other";
     return {
       hardFail: Boolean(parsed.hardFail),
       category: parsed.category || "unknown",
       reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map(String) : [],
       confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+      violationType: normalizedViolationType,
       builtInDetected: Boolean(parsed.builtInDetected),
       structuralAnchorCount: typeof parsed.structuralAnchorCount === "number"
         ? Math.max(0, Math.floor(parsed.structuralAnchorCount))
@@ -1201,10 +1246,43 @@ export async function runGeminiSemanticValidator(opts: {
     const structuralAnchorCount = typeof parsed.structuralAnchorCount === "number"
       ? parsed.structuralAnchorCount
       : 0;
-    const builtInLowConfidence = builtInDetected && parsed.confidence < 0.85;
+    const builtInLowConfidence = builtInDetected && parsed.confidence < BUILTIN_HARDFAIL_CONFIDENCE;
+    const violationType = parsed.violationType || "other";
+
+    const reasonText = (parsed.reasons || []).join(" ").toLowerCase();
+    const alwaysHardFail = violationType === "opening_change" ||
+      violationType === "wall_change" ||
+      violationType === "camera_shift" ||
+      [
+        "window count",
+        "door count",
+        "opening count",
+        "new opening",
+        "added opening",
+        "removed opening",
+        "opening removed",
+        "opening added",
+        "new window",
+        "removed window",
+        "new door",
+        "removed door",
+        "camera viewpoint",
+        "camera angle",
+        "perspective shift",
+        "viewpoint shift",
+        "wall removed",
+        "wall removal",
+        "wall added",
+        "wall addition",
+        "wall deleted",
+      ].some((token) => reasonText.includes(token));
 
     let hardFail = parsed.hardFail;
-    if (category === "structure") hardFail = true;
+    if (category === "structure") {
+      const builtInViolation = violationType === "built_in_moved" || builtInDetected;
+      const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
+      hardFail = alwaysHardFail || builtInHardFail;
+    }
     else if (category === "opening_blocked") hardFail = parsed.hardFail;
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
@@ -1217,6 +1295,7 @@ export async function runGeminiSemanticValidator(opts: {
       category,
       reasons: parsed.reasons || [],
       confidence: parsed.confidence ?? 0,
+      violationType,
       builtInDetected,
       structuralAnchorCount,
       rawText: text,
