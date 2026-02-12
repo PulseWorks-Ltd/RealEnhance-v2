@@ -225,6 +225,9 @@ ${hasAnchorViolation ? `⚠️ ANCHOR REGION FLAGS ACTIVE: ${anchorFlags.join(",
 
 Do NOT downgrade to style_only or furniture_change when anchor/opening flags are active
 unless you have HIGH CONFIDENCE (>0.90) that the flag is a false positive.
+
+Do not assign high-confidence structural violation scores to desks, shelving,
+or freestanding storage furniture.
 ` : "";
 
   logger.info("[VALIDATION_EVIDENCE] injected", {
@@ -317,6 +320,52 @@ MOVABLE indicators (treat as FURNITURE):
 
 When in doubt, treat as BUILT-IN and protect it.
 DO NOT classify built-in elements as furniture to justify their removal.
+
+─────────────────────────────
+STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
+─────────────────────────────
+Only classify an object as a structural built-in if it is permanently
+integrated into the architecture and would require construction work to remove.
+
+TRUE structural built-ins include:
+• Kitchen cabinetry fixed to walls
+• Kitchen counters and islands
+• Bathroom vanities connected to plumbing
+• Recessed built-in wardrobes
+• Fixed wall cabinetry
+• Fireplaces
+• Staircases
+• Permanently installed window seating
+• Architectural millwork fixed into walls
+
+The following are NOT structural built-ins and must NOT trigger
+structural violation failures:
+✗ Desks
+✗ Freestanding shelving units
+✗ Bookcases
+✗ Dressers
+✗ Tallboys
+✗ Sideboards
+✗ Staging wardrobes
+✗ Modular storage systems
+✗ Removable shelving
+✗ Office furniture
+✗ Nightstands
+✗ Staging cabinets
+
+Desks and shelving units must be treated as movable furniture unless
+clearly recessed into wall structure.
+
+Never classify freestanding desks or shelving as structural built-ins.
+
+─────────────────────────────
+STAGING CONTEXT OVERRIDE RULE
+─────────────────────────────
+If furniture appears newly added, replaced, refreshed, or staged as part
+of the enhancement process, it must be treated as movable staging furniture
+— not as a structural built-in — even if it visually aligns with walls.
+
+Staged furniture must not trigger structural violation blocks.
 
 ─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
@@ -487,6 +536,52 @@ MOVABLE indicators (treat as FURNITURE):
 
 When in doubt, treat as BUILT-IN and protect it.
 DO NOT classify built-in elements as furniture to justify their removal.
+
+─────────────────────────────
+STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
+─────────────────────────────
+Only classify an object as a structural built-in if it is permanently
+integrated into the architecture and would require construction work to remove.
+
+TRUE structural built-ins include:
+• Kitchen cabinetry fixed to walls
+• Kitchen counters and islands
+• Bathroom vanities connected to plumbing
+• Recessed built-in wardrobes
+• Fixed wall cabinetry
+• Fireplaces
+• Staircases
+• Permanently installed window seating
+• Architectural millwork fixed into walls
+
+The following are NOT structural built-ins and must NOT trigger
+structural violation failures:
+✗ Desks
+✗ Freestanding shelving units
+✗ Bookcases
+✗ Dressers
+✗ Tallboys
+✗ Sideboards
+✗ Staging wardrobes
+✗ Modular storage systems
+✗ Removable shelving
+✗ Office furniture
+✗ Nightstands
+✗ Staging cabinets
+
+Desks and shelving units must be treated as movable furniture unless
+clearly recessed into wall structure.
+
+Never classify freestanding desks or shelving as structural built-ins.
+
+─────────────────────────────
+STAGING CONTEXT OVERRIDE RULE
+─────────────────────────────
+If furniture appears newly added, replaced, refreshed, or staged as part
+of the enhancement process, it must be treated as movable staging furniture
+— not as a structural built-in — even if it visually aligns with walls.
+
+Staged furniture must not trigger structural violation blocks.
 
 ─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
@@ -689,6 +784,52 @@ MOVABLE indicators (treat as FURNITURE):
 
 When in doubt, treat as BUILT-IN and protect it.
 DO NOT classify built-in elements as furniture to justify their removal.
+
+────────────────────────────────
+STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
+────────────────────────────────
+Only classify an object as a structural built-in if it is permanently
+integrated into the architecture and would require construction work to remove.
+
+TRUE structural built-ins include:
+• Kitchen cabinetry fixed to walls
+• Kitchen counters and islands
+• Bathroom vanities connected to plumbing
+• Recessed built-in wardrobes
+• Fixed wall cabinetry
+• Fireplaces
+• Staircases
+• Permanently installed window seating
+• Architectural millwork fixed into walls
+
+The following are NOT structural built-ins and must NOT trigger
+structural violation failures:
+✗ Desks
+✗ Freestanding shelving units
+✗ Bookcases
+✗ Dressers
+✗ Tallboys
+✗ Sideboards
+✗ Staging wardrobes
+✗ Modular storage systems
+✗ Removable shelving
+✗ Office furniture
+✗ Nightstands
+✗ Staging cabinets
+
+Desks and shelving units must be treated as movable furniture unless
+clearly recessed into wall structure.
+
+Never classify freestanding desks or shelving as structural built-ins.
+
+────────────────────────────────
+STAGING CONTEXT OVERRIDE RULE
+────────────────────────────────
+If furniture appears newly added, replaced, refreshed, or staged as part
+of the enhancement process, it must be treated as movable staging furniture
+— not as a structural built-in — even if it visually aligns with walls.
+
+Staged furniture must not trigger structural violation blocks.
 
 ────────────────────────────────
 CORE PRINCIPLE
