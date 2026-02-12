@@ -126,6 +126,8 @@ export function buildPrompt(opts: PromptOptions): string {
     "",
     "FINISHES LOCKED: Do not change wall/ceiling paint, wallpaper, textures, or flooring material/color/pattern.",
     "FIXTURES LOCKED (BUILT-INS): Do not add/remove/move/extend/reshape doors, windows, cabinetry, counters, kitchen islands, peninsulas, fireplaces, stairs, columns, light fixtures, fans, or window coverings. Do not modify counter surfaces, edges, or dimensions in any way. NOTE: Loose furniture (sofas, beds, tables, chairs) may be moved/removed/replaced.",
+    "ARCHITECTURAL ANCHOR FOCUS (STAGING REFERENCE RULE): First identify 3-5 prominent fixed architectural/built-in features (examples: cabinetry/wardrobes, counters/islands, flooring material/pattern, pendant/fixed lighting, windows/doors, fireplaces/built-in shelving). Treat these as anchors.",
+    "STAGING MUST HARMONIZE WITH ANCHORS: Do not modify, restyle, recolor, or substitute anchor elements. If staging style conflicts with anchors, adjust staging to match the anchors, not the other way around.",
     "",
     "NEVER CREATE FALSE ARCHITECTURE (CRITICAL - ZERO TOLERANCE): DO NOT invent or create new windows, doors, or openings that do not exist in the original image. Do not add window frames, door frames, or architectural openings to blank walls. Only the openings present in the original photograph may appear in the enhanced version. Creating false architectural elements is a critical violation.",
     "",
