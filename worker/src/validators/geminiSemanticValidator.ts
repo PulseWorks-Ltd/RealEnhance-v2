@@ -286,6 +286,28 @@ If a lower-priority rule conflicts with a higher-priority rule,
 the higher-priority rule ALWAYS wins.
 
 ─────────────────────────────
+PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
+─────────────────────────────
+Do not classify a window or opening as structurally modified if the
+difference is caused by:
+• Perspective correction
+• Vertical line straightening
+• Minor camera geometry normalization
+• Small crop or framing shift
+• Slightly increased or decreased visible window area
+
+These are considered camera or lens corrections, not architectural changes.
+
+Only flag a structural violation if the window or opening itself has been:
+✗ Moved to a new wall position
+✗ Removed entirely
+✗ Newly created
+✗ Shape changed
+✗ Proportionally resized relative to wall structure
+
+A change in how much of the window is visible is NOT a structural modification.
+
+─────────────────────────────
 ANCHOR RELOCATION RULE
 ─────────────────────────────
 If a structural anchor (kitchen island, counter run, built-in wardrobe,
@@ -500,6 +522,28 @@ When evaluating the AFTER image, apply rules in this strict order:
 
 If a lower-priority rule conflicts with a higher-priority rule,
 the higher-priority rule ALWAYS wins.
+
+─────────────────────────────
+PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
+─────────────────────────────
+Do not classify a window or opening as structurally modified if the
+difference is caused by:
+• Perspective correction
+• Vertical line straightening
+• Minor camera geometry normalization
+• Small crop or framing shift
+• Slightly increased or decreased visible window area
+
+These are considered camera or lens corrections, not architectural changes.
+
+Only flag a structural violation if the window or opening itself has been:
+✗ Moved to a new wall position
+✗ Removed entirely
+✗ Newly created
+✗ Shape changed
+✗ Proportionally resized relative to wall structure
+
+A change in how much of the window is visible is NOT a structural modification.
 
 ─────────────────────────────
 ANCHOR RELOCATION RULE
@@ -748,6 +792,28 @@ When evaluating the AFTER image, apply rules in this strict order:
 
 If a lower-priority rule conflicts with a higher-priority rule,
 the higher-priority rule ALWAYS wins.
+
+────────────────────────────────
+PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
+────────────────────────────────
+Do not classify a window or opening as structurally modified if the
+difference is caused by:
+• Perspective correction
+• Vertical line straightening
+• Minor camera geometry normalization
+• Small crop or framing shift
+• Slightly increased or decreased visible window area
+
+These are considered camera or lens corrections, not architectural changes.
+
+Only flag a structural violation if the window or opening itself has been:
+✗ Moved to a new wall position
+✗ Removed entirely
+✗ Newly created
+✗ Shape changed
+✗ Proportionally resized relative to wall structure
+
+A change in how much of the window is visible is NOT a structural modification.
 
 ────────────────────────────────
 ANCHOR RELOCATION RULE
