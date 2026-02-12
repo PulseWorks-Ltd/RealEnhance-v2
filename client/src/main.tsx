@@ -44,7 +44,28 @@ if (reloadedFrom) {
   }
 }
 
-    <QueryClientProvider client={qc}>
+// ============================================================================
+// QUERY CLIENT SETUP
+// ============================================================================
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+// ============================================================================
+// ROOT RENDER
+// ============================================================================
+const container = document.getElementById('root');
+if (!container) throw new Error('Failed to find root element');
+const root = createRoot(container);
+
+root.render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
           <ErrorBoundary>
@@ -54,5 +75,5 @@ if (reloadedFrom) {
       </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>
-); 
+);
 
