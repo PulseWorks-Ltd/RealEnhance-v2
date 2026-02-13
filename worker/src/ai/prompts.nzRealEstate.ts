@@ -450,6 +450,25 @@ These must NEVER be:
 
 Kitchen islands must NEVER be converted into dining tables or staging furniture.
 
+BUILT-IN VS LOOSE FURNITURE — IMPORTANT DISTINCTION
+
+Beds, bed frames, mattresses, and bedroom furniture are ALWAYS considered loose removable furniture — even if heavy or made of timber.
+
+Do NOT classify beds or bed frames as built-in joinery.
+
+Only treat an item as built-in if it is visibly attached to walls, floors, or structure with no gaps and no independent frame.
+
+Freestanding beds are NEVER built-ins and should be removed in stage-ready declutter mode.
+
+Similarly, freestanding furniture items like:
+- wardrobes (not built into walls)
+- dressers and chests of drawers
+- bedside tables
+- desks (unless visibly integrated into wall units)
+- bookcases (unless built-in shelving)
+
+are ALL removable furniture — remove them completely.
+
 ARCHITECTURE HINTS — CONTEXT ONLY, REMOVAL ONLY
 
 Architecture hints (built-in detection, fixture identification) are provided as
