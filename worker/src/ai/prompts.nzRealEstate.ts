@@ -459,6 +459,27 @@ If unsure → KEEP IT.
 SURFACE RESTORATION:
 Repair surfaces realistically where items are removed.
 
+PRESENTATION TIDYING — ALLOWED SMALL ADJUSTMENTS
+
+You may perform SMALL PRESENTATION TIDYING actions only, without redesign:
+
+Allowed:
+- Smooth and straighten bedding and duvet covers
+- Align and neaten couch cushions and pillows
+- Push loose dining chairs neatly under tables
+- Straighten slightly skewed rugs
+- Tidy minor surface clutter into neater arrangement
+
+Strict rules:
+- Do NOT change furniture type, size, style, or position
+- Do NOT change colors or materials
+- Do NOT replace textiles or décor
+- Do NOT add new objects
+- Do NOT remove major objects
+- Do NOT redesign or restyle
+
+This is presentation tidying only — not staging or redesign.
+
 ABSOLUTE PROHIBITIONS:
 No staging, no redesign, no recolor, no geometry change.
 
