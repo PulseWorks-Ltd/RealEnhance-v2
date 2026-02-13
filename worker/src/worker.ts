@@ -882,37 +882,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // (Don't introduce new publish steps; use URLs available post-publish below)
 
       // AUDIT FIX: Compliance gate before publish in stage2-only path
-      try {
-        const ai = getGeminiClient();
-        const baseRef = toBase64(basePath);
-        const enhanced = toBase64(path2);
-        const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data);
-        if (s2oCompliance && s2oCompliance.ok === false) {
-          const confidence = s2oCompliance.confidence ?? 0.6;
-          const shouldBlock = confidence >= COMPLIANCE_BLOCK_THRESHOLD;
-          nLog("[COMPLIANCE_GATE_DECISION]", {
-            jobId: payload.jobId,
-            path: "stage2_only",
-            ok: false,
-            confidence,
-            action: shouldBlock ? "block" : "soft-pass",
-          });
-          if (shouldBlock) {
-            const msg = `Structural violations: ${(s2oCompliance.reasons || ["Compliance failed"]).join("; ")}`;
-            const err = new Error(`Compliance failed (stage2-only) confidence=${confidence.toFixed(2)}: ${msg}`);
-            (err as any).code = "COMPLIANCE_VALIDATION_FAILED";
-            (err as any).violations = s2oCompliance.reasons || [];
-            (err as any).confidence = confidence;
-            nLog(`[worker] ❌ BLOCKING stage2-only job ${payload.jobId} PRE-PUBLISH: ${msg}`);
-            throw err;
+      // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
+      if (geminiSemanticValidatorMode !== null) {
+        try {
+          const ai = getGeminiClient();
+          const baseRef = toBase64(basePath);
+          const enhanced = toBase64(path2);
+          const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data);
+          if (s2oCompliance && s2oCompliance.ok === false) {
+            const confidence = s2oCompliance.confidence ?? 0.6;
+            const shouldBlock = confidence >= COMPLIANCE_BLOCK_THRESHOLD;
+            nLog("[COMPLIANCE_GATE_DECISION]", {
+              jobId: payload.jobId,
+              path: "stage2_only",
+              ok: false,
+              confidence,
+              mode: geminiSemanticValidatorMode,
+              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "block" : "log-only",
+            });
+            if (shouldBlock && geminiSemanticValidatorMode === "block") {
+              const msg = `Structural violations: ${(s2oCompliance.reasons || ["Compliance failed"]).join("; ")}`;
+              const err = new Error(`Compliance failed (stage2-only) confidence=${confidence.toFixed(2)}: ${msg}`);
+              (err as any).code = "COMPLIANCE_VALIDATION_FAILED";
+              (err as any).violations = s2oCompliance.reasons || [];
+              (err as any).confidence = confidence;
+              nLog(`[worker] ❌ BLOCKING stage2-only job ${payload.jobId} PRE-PUBLISH: ${msg}`);
+              throw err;
+            } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
+              const msg = `Structural violations: ${(s2oCompliance.reasons || ["Compliance failed"]).join("; ")}`;
+              nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${msg}`);
+            } else {
+              nLog(`[worker] ⚠️  Compliance soft-fail (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
+            }
+          } else {
+            nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
           }
-          nLog(`[worker] ⚠️  Compliance soft-fail (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
-        } else {
-          nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
+        } catch (compErr: any) {
+          if (compErr?.code === "COMPLIANCE_VALIDATION_FAILED") throw compErr;
+          nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
         }
-      } catch (compErr: any) {
-        if (compErr?.code === "COMPLIANCE_VALIDATION_FAILED") throw compErr;
-        nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
+      } else {
+        nLog(`[worker] Compliance check skipped (stage2-only) - geminiSemanticValidatorMode=disabled`);
       }
 
       // Publish Stage-2 result
@@ -3376,82 +3386,90 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // AUDIT FIX: Compliance gate moved BEFORE publish — only publish if compliance passes
+  // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
   let compliance: any = undefined;
   const tVal = Date.now();
-  try {
-    const ai = getGeminiClient();
-    const base1A = toBase64(path1A);
-    const baseFinal = toBase64(path2);
-    compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
-    if (compliance && compliance.ok === false) {
-      const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
-      const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
-      const confidence = compliance.confidence ?? 0.6;
-      const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
-      const hasAnchorEvidence = !!anchorChecks && (
-        anchorChecks.islandChanged ||
-        anchorChecks.cabinetryChanged ||
-        anchorChecks.hvacChanged ||
-        anchorChecks.lightingChanged
-      );
-      const structuralViolation = !!compliance.structuralViolation;
-      const placementViolation = !!compliance.placementViolation;
-      const lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-      const shouldBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
+  if (geminiSemanticValidatorMode !== null) {
+    try {
+      const ai = getGeminiClient();
+      const base1A = toBase64(path1A);
+      const baseFinal = toBase64(path2);
+      compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
+      if (compliance && compliance.ok === false) {
+        const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
+        const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
+        const confidence = compliance.confidence ?? 0.6;
+        const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
+        const hasAnchorEvidence = !!anchorChecks && (
+          anchorChecks.islandChanged ||
+          anchorChecks.cabinetryChanged ||
+          anchorChecks.hvacChanged ||
+          anchorChecks.lightingChanged
+        );
+        const structuralViolation = !!compliance.structuralViolation;
+        const placementViolation = !!compliance.placementViolation;
+        const lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
+        const shouldBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
 
-      nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
-        jobId: payload.jobId,
-        complianceOk: compliance.ok,
-        complianceConfidence: compliance.confidence,
-        complianceReasons: compliance.reasons?.length ?? 0,
-        hasAnchorEvidence,
-        anchorFlags: anchorChecks ?? null,
-        maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
-        lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
-        dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
-        riskLevel: unifiedValidation?.riskLevel ?? null,
-        stage2Input: stage2InputResolved ?? null,
-        stage1AUrl: pub1AUrl ?? null,
-        stage1BUrl: pub1BUrl ?? null,
-        finalStage2Url: null, // Not yet published (compliance runs pre-publish)
-      });
-
-      nLog("[COMPLIANCE_GATE_DECISION]", {
-        jobId: payload.jobId,
-        ok: compliance.ok,
-        confidence,
-        hasAnchorEvidence,
-        structuralViolation,
-        placementViolation,
-        highThreshold: HIGH_CONF,
-        medThreshold: MED_CONF,
-        action: shouldBlock ? "block" : "soft-pass",
-      });
-
-      if (shouldBlock) {
-        const complianceError = new Error(`Gemini semantic validation failed with confidence ${confidence.toFixed(2)}: ${lastViolationMsg}`);
-        (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
-        (complianceError as any).violations = compliance.reasons || [];
-        (complianceError as any).confidence = confidence;
-        nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)})`);
-        nLog(`[worker] Job blocked PRE-PUBLISH - structural integrity cannot be guaranteed`);
-        throw complianceError;
-      } else {
-        nLog("[COMPLIANCE_SOFT_FAIL]", {
+        nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
           jobId: payload.jobId,
-          confidence,
-          reasons: compliance.reasons,
-          threshold: MED_CONF,
-          highThreshold: HIGH_CONF,
+          complianceOk: compliance.ok,
+          complianceConfidence: compliance.confidence,
+          complianceReasons: compliance.reasons?.length ?? 0,
+          hasAnchorEvidence,
+          anchorFlags: anchorChecks ?? null,
+          maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
+          lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
+          dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
+          riskLevel: unifiedValidation?.riskLevel ?? null,
+          stage2Input: stage2InputResolved ?? null,
+          stage1AUrl: pub1AUrl ?? null,
+          stage1BUrl: pub1BUrl ?? null,
+          finalStage2Url: null, // Not yet published (compliance runs pre-publish)
         });
-        nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
+
+        nLog("[COMPLIANCE_GATE_DECISION]", {
+          jobId: payload.jobId,
+          ok: compliance.ok,
+          confidence,
+          hasAnchorEvidence,
+          structuralViolation,
+          placementViolation,
+          highThreshold: HIGH_CONF,
+          medThreshold: MED_CONF,
+          mode: geminiSemanticValidatorMode,
+          action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "block" : "log-only",
+        });
+
+        if (shouldBlock && geminiSemanticValidatorMode === "block") {
+          const complianceError = new Error(`Gemini semantic validation failed with confidence ${confidence.toFixed(2)}: ${lastViolationMsg}`);
+          (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
+          (complianceError as any).violations = compliance.reasons || [];
+          (complianceError as any).confidence = confidence;
+          nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)})`);
+          nLog(`[worker] Job blocked PRE-PUBLISH - structural integrity cannot be guaranteed`);
+          throw complianceError;
+        } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
+          nLog(`[worker] ⚠️  Compliance failure detected (confidence ${confidence.toFixed(2)}) mode=log - ALLOWING job to proceed: ${lastViolationMsg}`);
+        } else {
+          nLog("[COMPLIANCE_SOFT_FAIL]", {
+            jobId: payload.jobId,
+            confidence,
+            reasons: compliance.reasons,
+            threshold: MED_CONF,
+            highThreshold: HIGH_CONF,
+          });
+          nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
+        }
       }
+    } catch (e: any) {
+      if (e?.code === "COMPLIANCE_VALIDATION_FAILED") {
+        throw e;
+      }
+      nLog("[worker] compliance check skipped or error:", e?.message || e);
     }
-  } catch (e: any) {
-    if (e?.code === "COMPLIANCE_VALIDATION_FAILED") {
-      throw e;
-    }
-    nLog("[worker] compliance check skipped or error:", e?.message || e);
+  } else {
+    nLog(`[worker] Compliance check skipped - geminiSemanticValidatorMode=disabled`);
   }
   timings.validateMs = Date.now() - tVal;
   nLog(`[AUDIT FIX] Compliance passed — proceeding to publish Stage 2 image`);
