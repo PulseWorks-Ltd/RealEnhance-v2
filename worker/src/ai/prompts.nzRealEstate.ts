@@ -396,43 +396,138 @@ Return only the empty room image.`.trim();
   // This mode is for tidying up a space without removing the furniture itself
   export function buildLightDeclutterPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return `You are performing Stage 1B: LIGHT DECLUTTER for EXTERNAL real estate imagery.
+      return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (EXTERIOR)
 
-GOAL:
-Clean the exterior space while preserving the property and landscaping.
+    TASK:
+    Remove loose, portable clutter ONLY to depersonalize and tidy the outdoor space.
+    Preserve all architecture, hardscape, landscaping, and major outdoor furniture.
 
-STRUCTURE SAFETY — LIGHT MODE
-Do not alter walls, fences, decking, paths, driveways, plumbing fixtures, or fixed structures.
-Do not create holes, openings, or remove architectural elements.
-Only remove loose, portable, non-attached items.
-Match surrounding surface colors when reconstructing behind removed items.
+    PRIMARY OBJECTIVE — LISTING-READY PRESENTATION
 
-REMOVE:
-- Outdoor furniture
-- BBQs
-- Bins
-- Toys
-- Bikes, scooters
-- Garden tools
-- Loose hoses
-- Small movable pots
+    Your goal is to make the exterior look clean, tidy, and presentation-ready for a real estate listing photo,
+    while preserving all structures, hardscape, and major outdoor furniture.
 
-KEEP:
-- Decks, pergolas, railings
-- Fixed benches
-- Landscaping, lawns, trees
-- Fences
-- Exterior lighting
-- Neighbouring buildings and views
+    This is NOT staging or redesign — but the space should look clearly tidied and prepared for photography.
 
-DO NOT TOUCH:
-- Any permanent structures or architecture
-- Decking, paths, driveways
-- Fixed lighting, plumbing fixtures
-- Windows, doors, frames
-- Landscaping and exterior views
+    If an item is loose, personal, messy, or visually distracting — remove it or tidy it.
+    If movable textiles or seating setups look messy — straighten and neaten them.
 
-Maintain realistic ground textures and shadows.`.trim();
+    NO NEW OBJECTS — STRICT
+
+    You must NOT add any new furniture, electronics, decor, or objects that were not clearly present in the original image.
+
+    Do NOT:
+    - Add outdoor furniture, decor, planters, or accessories
+    - Add replacement items after removing clutter
+    - “Fill” empty surfaces with new objects
+
+    If an area becomes empty after decluttering, leave it empty and realistic.
+
+    DECLUTTER OBJECT CLASS RULES — LIGHT MODE (EXTERIOR)
+
+    Remove loose, portable, personal-use items that are not furniture and not built-in.
+
+    ALWAYS REMOVE when visible:
+    - garden tools and loose maintenance equipment
+    - loose hoses and extension cords on ground
+    - rubbish, bags, packaging, and discarded items
+    - children’s toys, ride-ons, balls, and play clutter
+    - scooters, bikes, skateboards, and sports gear
+    - portable heaters, fans, and loose devices
+    - movable clutter on decks, patios, paths, and driveways
+
+    REMOVE SMALL SURFACE CLUTTER:
+    - small loose items on outdoor tables/benches
+    - random containers and scattered accessories
+    - loose personal items and visual clutter hotspots
+    - small decorative pot plants causing visual clutter (only if clearly minor and portable)
+
+    TIDY BUT DO NOT REMOVE:
+    - outdoor dining suites (align chairs neatly around table)
+    - outdoor lounge seating (align cushions neatly)
+    - umbrellas already present (straighten orientation only)
+    - door mats and small outdoor rugs (straighten)
+    - BBQ grills and smokers already present (straighten and clean appearance only)
+
+    NEVER REMOVE:
+    - major outdoor furniture sets
+    - fixed benches and built-in seating
+    - permanently installed BBQ/outdoor kitchen components
+    - fixed planters or integrated landscaping elements
+
+    EXTERIOR WALL ITEM DECLUTTER — LIGHT MODE
+
+    You may remove:
+    - temporary signs
+    - taped notices
+    - temporary decorations
+    - small temporary wall hangings
+
+    Do NOT remove:
+    - address numbers
+    - security signage
+    - permanent plaques
+    - mounted fixtures
+
+    STRUCTURE SAFETY — LIGHT MODE
+
+    Do not alter walls, fences, decking, paths, driveways, plumbing fixtures, or fixed structures.
+    Do not create holes, openings, or remove architectural elements.
+    Only remove loose, portable, non-attached items.
+    Match surrounding surface colors when reconstructing behind removed items.
+
+    NATURAL ENVIRONMENT LOCK
+
+    Do NOT modify natural environment elements:
+    - Do NOT change grass, soil, plants, or trees
+    - Do NOT improve or “fix” lawns or garden health
+    - Do NOT alter sky, weather, or lighting conditions
+    - Do NOT change season or foliage density
+
+    Only remove loose man-made clutter — not natural features.
+
+    DO NOT TOUCH:
+    - Any permanent structures or architecture
+    - Decking, paths, driveways, paving
+    - Fixed lighting, plumbing fixtures, mounted equipment
+    - Windows, doors, frames
+    - Landscaping and exterior views
+
+    SAFE MODE:
+    If unsure → KEEP IT.
+
+    SURFACE RESTORATION:
+    Repair surfaces realistically where items are removed.
+
+    OUTDOOR PRESENTATION TIDY — REQUIRED WHEN NEEDED
+
+    You should tidy presentation when exterior areas appear messy or unprepared.
+
+    Allowed tidying actions:
+    - align outdoor chairs neatly around tables
+    - align and neaten outdoor cushions
+    - fold/straighten loose throws on outdoor seating
+    - straighten mats/rugs and obvious skewed soft items
+    - organize small remaining items into a cleaner arrangement
+
+    These are expected actions when messiness is visible.
+    Do not leave seating areas visibly disordered.
+
+    Strict rules:
+    - Do NOT change furniture type, size, style, or position substantially
+    - Do NOT change colors or materials
+    - Do NOT replace textiles or décor
+    - Do NOT add new objects
+    - Do NOT remove major objects
+    - Do NOT redesign or restyle
+
+    This is presentation tidying only — not staging or redesign.
+
+    ABSOLUTE PROHIBITIONS:
+    No staging, no redesign, no recolor, no geometry change.
+
+    OUTPUT:
+    Return only processed image.`.trim();
     }
 
     return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (INTERIOR)
