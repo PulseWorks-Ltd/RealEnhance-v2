@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
+import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -56,8 +57,20 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     const body = (req.body || {}) as any;
     
-    // Extract all fields from body
+    // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
     const imageUrl = body.imageUrl as string | undefined;
+    if (imageUrl) {
+      const dedupKey = `region-edit:${sessUser.id}:${imageUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
+      const redis = getRedis();
+      const exists = await redis.get(dedupKey);
+      if (exists) {
+        console.log(`[region-edit] Duplicate suppressed: ${dedupKey}`);
+        return res.status(409).json({ success: false, error: "duplicate_request", message: "Duplicate region edit suppressed" });
+      }
+      await redis.setEx(dedupKey, 35, "1");
+    }
+    
+    // Extract all fields from body
     const clientBaseImageUrl = body.baseImageUrl as string | undefined;
     const mode = body.mode as "edit" | "restore_original" | undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";

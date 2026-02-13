@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs/promises";
 import { randomUUID } from "crypto";
 import type { StagingRegion } from "../ai/region-detector";
+import { safeToBuffer, safeMetadata } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrappers
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { shouldRetryStage, markStageFailed, logRetryState, isJobFailedFinal } from "../validators/stageRetryManager";
@@ -133,7 +134,8 @@ export async function runStage2(
   // Run OpenCV validator after Stage 1B (before staging) - legacy behavior
   if (!stageAwareConfig.enabled) {
     try {
-      const imageBuffer = await sharp(basePath).toBuffer();
+      // AUDIT FIX: routed through safeToBuffer for safe cleanup
+      const imageBuffer = await safeToBuffer(basePath, jobId);
       const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
       validatorNotes.push({ stage: '1B', validator: 'OpenCV', result: result1B });
       lastValidatorResults['1B'] = result1B;
@@ -529,7 +531,8 @@ Do not add blinds.
       } else {
         // ===== LEGACY VALIDATION (OpenCV) =====
         try {
-          const stagedBuffer = await sharp(out).toBuffer();
+          // AUDIT FIX: routed through safeToBuffer for safe cleanup
+          const stagedBuffer = await safeToBuffer(out, jobId);
           const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
           validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
           lastValidatorResults['2'] = result2;

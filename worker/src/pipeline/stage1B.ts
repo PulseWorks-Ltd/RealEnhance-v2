@@ -6,6 +6,7 @@ import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { logIfNotFocusMode } from "../logger";
+import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -223,13 +224,8 @@ Do not add blinds.
     // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
     logIfNotFocusMode(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
     const out = outputPath;
-    await sharp(stage1APath)
-      .rotate()
-      .median(3)
-      .blur(0.5)
-      .sharpen(0.4)
-      .webp({ quality: 90 })
-      .toFile(out);
+    // AUDIT FIX: routed through applyTransformation for safe cleanup
+    await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
     logIfNotFocusMode(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
     return out;
     
@@ -237,13 +233,8 @@ Do not add blinds.
     logIfNotFocusMode(`[stage1B] Error during declutter:`, error);
     // Fallback to Sharp on error
     const out = outputPath;
-    await sharp(stage1APath)
-      .rotate()
-      .median(3)
-      .blur(0.5)
-      .sharpen(0.4)
-      .webp({ quality: 90 })
-      .toFile(out);
+    // AUDIT FIX: routed through applyTransformation for safe cleanup
+    await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
     return out;
   }
 }

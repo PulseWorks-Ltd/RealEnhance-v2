@@ -59,6 +59,25 @@ router.post('/submit', async (req, res) => {
       return res.status(400).json({ error: 'images array required' });
     }
 
+    // AUDIT FIX: Queue depth soft limit — prevent one user from flooding the queue
+    const MAX_WAITING_PER_USER = Number(process.env.MAX_WAITING_PER_USER ?? 100);
+    try {
+      const waitingJobs = await enhanceQueue.getJobs(['waiting', 'active']);
+      const userJobCount = waitingJobs.filter(j => j?.data?.userId === userId).length;
+      if (userJobCount >= MAX_WAITING_PER_USER) {
+        console.warn(`[Batch] Queue depth limit reached for user ${userId}: ${userJobCount} active/waiting jobs`);
+        return res.status(429).json({
+          error: 'queue_depth_exceeded',
+          message: `You have ${userJobCount} jobs in progress. Please wait for some to finish before submitting more.`,
+          current: userJobCount,
+          limit: MAX_WAITING_PER_USER,
+        });
+      }
+    } catch (qErr) {
+      // Non-blocking: if queue check fails, allow submission
+      console.warn('[Batch] Queue depth check failed (non-blocking):', (qErr as Error)?.message);
+    }
+
     // Generate unique batchId
     const batchId = `batch_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
     

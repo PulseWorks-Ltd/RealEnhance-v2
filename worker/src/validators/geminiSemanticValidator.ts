@@ -7,7 +7,10 @@ import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
 
 const logger = console;
 
+// AUDIT FIX: Validator thresholds consolidated and documented
+// MIN_CONFIDENCE: Below this, never hard-fail (low confidence = uncertain → allow through)
 const MIN_CONFIDENCE = 0.75;
+// BUILTIN_HARDFAIL_CONFIDENCE: Built-in violation requires this + ≥2 structural anchors to hard-fail
 const BUILTIN_HARDFAIL_CONFIDENCE = 0.85;
 
 /**

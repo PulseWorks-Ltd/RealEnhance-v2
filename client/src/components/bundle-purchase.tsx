@@ -20,6 +20,8 @@ interface BundleOption {
   recommended?: boolean;
 }
 
+// AUDIT FIX: Bundle prices must match shared/src/bundles.ts (source of truth)
+// If prices change, update BOTH files.
 const BUNDLES: BundleOption[] = [
   {
     code: "BUNDLE_50",

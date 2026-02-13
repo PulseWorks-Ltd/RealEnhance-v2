@@ -705,10 +705,12 @@ export function RegionEditor({
 
       let response: Response;
       try {
+        // AUDIT FIX: added timeout to prevent hung region-edit submit
         response = await fetch(api("/api/region-edit"), {
           method: "POST",
           body: data,
           credentials: "include",
+          signal: AbortSignal.timeout(30_000),
         });
         console.log("[region-editor] ✅ Fetch completed successfully");
         console.log(
@@ -851,7 +853,8 @@ export function RegionEditor({
             result.jobId,
           );
           console.log("[region-editor] Polling URL:", pollUrl);
-          const res = await fetch(pollUrl, { credentials: "include" });
+          // AUDIT FIX: added timeout to prevent hung poll requests
+          const res = await fetch(pollUrl, { credentials: "include", signal: AbortSignal.timeout(15_000) });
           const json = await res.json();
           console.log("[region-editor] Poll response:", json);
           const item = json.items?.[0];

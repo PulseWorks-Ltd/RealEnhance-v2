@@ -189,3 +189,111 @@ export function createImageStream(inputPath: string): sharp.Sharp {
     sequentialRead: true
   });
 }
+
+// AUDIT FIX: Safe wrappers with try/catch, logging, and cleanup
+
+/**
+ * Safe resize — wraps sharp resize with error handling and structured logging
+ */
+export async function safeResize(
+  inputPath: string,
+  outputPath: string,
+  width: number | undefined,
+  height: number | undefined,
+  jobId: string,
+  options?: sharp.ResizeOptions & { format?: 'jpeg' | 'webp' | 'png'; quality?: number }
+): Promise<void> {
+  let inst: sharp.Sharp | null = null;
+  try {
+    inst = sharp(inputPath);
+    let chain = inst.resize(width, height, {
+      fit: options?.fit ?? 'inside',
+      withoutEnlargement: options?.withoutEnlargement ?? true,
+      ...options,
+    });
+    const fmt = options?.format ?? 'jpeg';
+    const q = options?.quality ?? 95;
+    if (fmt === 'webp') chain = chain.webp({ quality: q });
+    else if (fmt === 'png') chain = chain.png();
+    else chain = chain.jpeg({ quality: q });
+    await chain.toFile(outputPath);
+    updatePeakMemory(jobId);
+    console.log(`[sharp-safe] safeResize OK job=${jobId} ${width ?? '?'}x${height ?? '?'} → ${outputPath}`);
+  } catch (err) {
+    console.error(`[sharp-safe] safeResize FAILED job=${jobId}:`, (err as Error)?.message ?? err);
+    throw err;
+  } finally {
+    if (inst) { try { inst.destroy(); } catch (_) { /* noop */ } }
+  }
+}
+
+/**
+ * Safe rotate — wraps sharp rotate with error handling and structured logging
+ */
+export async function safeRotate(
+  inputPath: string,
+  outputPath: string,
+  jobId: string,
+  options?: { angle?: number; format?: 'jpeg' | 'webp' | 'png'; quality?: number }
+): Promise<void> {
+  let inst: sharp.Sharp | null = null;
+  try {
+    inst = sharp(inputPath);
+    let chain = inst.rotate(options?.angle);
+    const fmt = options?.format ?? 'jpeg';
+    const q = options?.quality ?? 95;
+    if (fmt === 'webp') chain = chain.webp({ quality: q });
+    else if (fmt === 'png') chain = chain.png();
+    else chain = chain.jpeg({ quality: q });
+    await chain.toFile(outputPath);
+    updatePeakMemory(jobId);
+    console.log(`[sharp-safe] safeRotate OK job=${jobId} → ${outputPath}`);
+  } catch (err) {
+    console.error(`[sharp-safe] safeRotate FAILED job=${jobId}:`, (err as Error)?.message ?? err);
+    throw err;
+  } finally {
+    if (inst) { try { inst.destroy(); } catch (_) { /* noop */ } }
+  }
+}
+
+/**
+ * Safe toBuffer — raw buffer without forced jpeg encoding
+ */
+export async function safeToBuffer(
+  input: string | Buffer,
+  jobId: string,
+): Promise<Buffer> {
+  let inst: sharp.Sharp | null = null;
+  try {
+    inst = sharp(input);
+    const buf = await inst.toBuffer();
+    updatePeakMemory(jobId);
+    return buf;
+  } catch (err) {
+    console.error(`[sharp-safe] safeToBuffer FAILED job=${jobId}:`, (err as Error)?.message ?? err);
+    throw err;
+  } finally {
+    if (inst) { try { inst.destroy(); } catch (_) { /* noop */ } }
+  }
+}
+
+/**
+ * Safe metadata — accepts both path and Buffer input
+ */
+export async function safeMetadata(
+  input: string | Buffer,
+  jobId: string,
+): Promise<sharp.Metadata> {
+  let inst: sharp.Sharp | null = null;
+  try {
+    inst = sharp(input);
+    const meta = await inst.metadata();
+    updatePeakMemory(jobId);
+    return meta;
+  } catch (err) {
+    console.error(`[sharp-safe] safeMetadata FAILED job=${jobId}:`, (err as Error)?.message ?? err);
+    throw err;
+  } finally {
+    if (inst) { try { inst.destroy(); } catch (_) { /* noop */ } }
+  }
+}

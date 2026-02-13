@@ -567,7 +567,10 @@ export default function BatchProcessor() {
   const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
   const [processedImages, setProcessedImages] = useState<string[]>([]); // Track processed image URLs for ZIP download
   const [processedImagesByIndex, setProcessedImagesByIndex] = useState<{[key: number]: string}>({}); // Track processed image URLs by original index
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  // AUDIT FIX: AbortController moved from useState to useRef to avoid stale closure issues
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortController = abortControllerRef.current;
+  const setAbortController = (ctrl: AbortController | null) => { abortControllerRef.current = ctrl; };
   
   // Additional boolean flags for processing control
   const [allowStaging, setAllowStaging] = useState(true);
@@ -1493,7 +1496,8 @@ export default function BatchProcessor() {
     };
     window.addEventListener(CLEAR_EVENT, handler);
     return () => window.removeEventListener(CLEAR_EVENT, handler);
-  }, [abortController]);
+  // AUDIT FIX: abortController is now a ref, no need in deps
+  }, []);
 
   // Auto-save state when key values change
   useEffect(() => {
@@ -2556,11 +2560,13 @@ export default function BatchProcessor() {
       }
       const ids = cancelIds;
       if (ids.length) {
+        // AUDIT FIX: added timeout to prevent hung cancel requests
         await fetch(api('/api/jobs/cancel-batch'), withDevice({
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids })
+          body: JSON.stringify({ ids }),
+          signal: AbortSignal.timeout(15_000)
         }));
       }
       setRunState("idle");
@@ -2849,7 +2855,8 @@ export default function BatchProcessor() {
             imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
           } else {
             // Handle regular URLs
-            const response = await fetch(item.url);
+            // AUDIT FIX: added timeout to prevent hung blob downloads
+            const response = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
             if (!response.ok) {
               console.warn(`Failed to fetch image: ${item.url}`, response.status);
               continue;
@@ -2954,10 +2961,12 @@ export default function BatchProcessor() {
     fd.append("metaJson", metaJson);
 
     try {
+      // AUDIT FIX: added timeout to prevent hung retry upload
       const res = await fetch(api("/api/upload"), withDevice({
         method: "POST",
         body: fd,
-        credentials: "include"
+        credentials: "include",
+        signal: AbortSignal.timeout(60_000)
       }));
       
       if (!res.ok) {
@@ -3175,7 +3184,8 @@ export default function BatchProcessor() {
         return;
       }
       try {
-        const resp = await fetch(originalFromStoreUrl);
+        // AUDIT FIX: added timeout to prevent hung original re-download
+        const resp = await fetch(originalFromStoreUrl, { signal: AbortSignal.timeout(30_000) });
         if (!resp.ok) throw new Error("Unable to download the original image");
         const blob = await resp.blob();
         const revived = new File([blob], fileToRetry.name || "retry-image.jpg", {
@@ -3300,10 +3310,12 @@ export default function BatchProcessor() {
       if (retryStage) fd.append("requestedStage", retryStage);
 
       try {
+        // AUDIT FIX: added timeout to prevent hung retry requests
         const response = await fetch(api("/api/batch/retry-single"), withDevice({
           method: "POST",
           body: fd,
-          credentials: "include"
+          credentials: "include",
+          signal: AbortSignal.timeout(30_000)
         }));
 
         if (!response.ok) {
@@ -3638,12 +3650,14 @@ export default function BatchProcessor() {
       // Batch refine is a free Sharp-based enhancement - only ensure user is signed in
       await ensureLoggedInAndCredits(0); // 0 credits needed, just validates authentication
       
+      // AUDIT FIX: added timeout to prevent hung refine requests
       const response = await fetch(api("/api/batch/refine"), {
         method: "POST",
                headers: {
           "Content-Type": "application/json",
           ...withDevice().headers        },
         credentials: "include",
+        signal: AbortSignal.timeout(60_000),
         body: JSON.stringify({ 
           imageUrlsWithIndex: Object.entries(processedImagesByIndex).map(([index, url]) => ({index: parseInt(index), url})),
           profession: industryMap[presetKey] || "Real Estate"
@@ -3793,11 +3807,13 @@ export default function BatchProcessor() {
   const cancelBatch = async () => {
     if (!jobIds.length) return;
     try {
+      // AUDIT FIX: added timeout to prevent hung cancel requests
       await fetch(api("/api/jobs/cancel-batch"), withDevice({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: jobIds })
+        body: JSON.stringify({ ids: jobIds }),
+        signal: AbortSignal.timeout(15_000)
       }));
       if (abortController) abortController.abort();
       setRunState("idle");

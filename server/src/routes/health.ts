@@ -62,5 +62,26 @@ export function healthRouter() {
       res.status(500).json({ ok: false, error: err?.message || String(err) });
     }
   });
+  // AUDIT FIX: Worker health — checks for active/waiting jobs and queue responsiveness
+  r.get("/health/worker", async (_req: Request, res: Response) => {
+    try {
+      const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+      const counts = await q.getJobCounts();
+      const workers = await q.getWorkers();
+      await q.close();
+      const healthy = workers.length > 0;
+      res.status(healthy ? 200 : 503).json({
+        ok: healthy,
+        workers: workers.length,
+        active: counts.active ?? 0,
+        waiting: counts.waiting ?? 0,
+        failed: counts.failed ?? 0,
+        completed: counts.completed ?? 0,
+      });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  });
+
   return r;
 }

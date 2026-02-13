@@ -8,6 +8,7 @@ import { selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
+import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import type { EnhancementProfile } from "../config/enhancementProfiles";
 import { buildStage1AInteriorPromptNZStandard, buildStage1AInteriorPromptNZHighEnd } from "../ai/prompts.nzInterior";
 import { validateStage } from "../ai/unified-validator";
@@ -351,9 +352,8 @@ export async function runStage1A(
     try {
       const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
       const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
-      await sharp(stabilityJpeg)
-        .webp({ quality: 95 })
-        .toFile(stabilityWebp);
+      // AUDIT FIX: routed through applyTransformation for safe cleanup
+      await applyTransformation(stabilityJpeg, stabilityWebp, s => s.webp({ quality: 95 }), jobIdResolved);
       primary1AImage = stabilityWebp;
     } catch (err) {
       logIfNotFocusMode("[stage1A] ❌ Stability API failed:", err);
