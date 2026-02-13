@@ -410,6 +410,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
   const structureValidatorMode = localValidatorMode;
   const COMPLIANCE_BLOCK_THRESHOLD = Number(process.env.COMPLIANCE_BLOCK_THRESHOLD ?? 0.85);
+  
+  // Sharp-based semantic structure validator control
+  const sharpFinalValidatorRaw = process.env.SHARP_FINAL_VALIDATOR;
+  const sharpFinalValidatorMode = sharpFinalValidatorRaw?.trim().toLowerCase() === "block" ? "block" : 
+                                   sharpFinalValidatorRaw?.trim().toLowerCase() === "log" ? "log" : null;
+  const SHARP_SEMANTIC_ENABLED = sharpFinalValidatorMode !== null;
+  
+  // Gemini-based semantic validation control (Stage 2 perspective/furniture/realism checks)
+  const geminiSemanticValidatorRaw = process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION;
+  const geminiSemanticValidatorMode = geminiSemanticValidatorRaw?.trim().toLowerCase() === "block" ? "block" : 
+                                       geminiSemanticValidatorRaw?.trim().toLowerCase() === "log" ? "log" : null;
+  
   logValidationModes();
 
   // ═══════════ PER-IMAGE JOB EXECUTION CONTEXT (CROSS-IMAGE ISOLATION) ═══════════
@@ -1024,7 +1036,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
-  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}`);
+  nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}, sharpSemantic=${sharpFinalValidatorMode || "disabled"}, geminiSemantic=${geminiSemanticValidatorMode || "disabled"}`);
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -2914,34 +2926,60 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====
   // Run semantic structure validator ONLY after Stage-2 virtual staging
   // This validator detects window/door count changes, wall drift, and opening modifications
-  // MODE: LOG-ONLY (non-blocking)
-  if (path2 && payload.options.virtualStage) {
+  // MODE: Controlled by SHARP_FINAL_VALIDATOR env var ("log" or "block")
+  if (path2 && payload.options.virtualStage && SHARP_SEMANTIC_ENABLED) {
     try {
-      nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) ═══════════`);
+      nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) mode=${sharpFinalValidatorMode} ═══════════`);
 
       const semanticResult = await runSemanticStructureValidator({
         originalImagePath: path1A,  // Pre-staging baseline
         enhancedImagePath: path2,   // Final staged output
         scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: "log",
+        mode: sharpFinalValidatorMode as any,
       });
 
       if (semanticResult && !semanticResult.passed) {
-        if (GEMINI_CONFIRMATION_ENABLED) {
-          stage2NeedsConfirm = true;
+        const semanticReason = `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`;
+        
+        if (sharpFinalValidatorMode === "block") {
+          // BLOCKING MODE: Fail the job if semantic validation fails
+          nLog(`[worker] ❌ Semantic validation FAILED (blocking mode) - falling back to Stage 1B or 1A`);
+          const fallbackStage = path1B ? "1B" : "1A";
+          const fallbackPath = path1B ? path1B : path1A;
+          
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "2",
+            finalStage: fallbackStage,
+            finalPath: fallbackPath,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, semanticValidationBlocked: true },
+            userMessage: fallbackStage === "1B"
+              ? "We decluttered your image but could not safely stage it due to structural changes."
+              : "We enhanced your image but could not safely stage it due to structural changes.",
+            reason: "semantic_validation_failed",
+            stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+          });
+          return;
+        } else {
+          // LOG MODE: Record failure but continue
+          if (GEMINI_CONFIRMATION_ENABLED) {
+            stage2NeedsConfirm = true;
+          }
+          stage2LocalReasons.push(semanticReason);
         }
-        stage2LocalReasons.push(
-          `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`
-        );
       }
 
-      nLog(`[worker] Semantic validation completed (log-only, non-blocking)`);
+      nLog(`[worker] Semantic validation completed (mode=${sharpFinalValidatorMode})`);
     } catch (semanticError: any) {
       // Semantic validation errors should never crash the job
       nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
       nLog(`[worker] Stack:`, semanticError?.stack);
       // Continue processing - fail-open behavior
     }
+  } else if (path2 && payload.options.virtualStage && !SHARP_SEMANTIC_ENABLED) {
+    nLog(`[worker] Sharp semantic validator disabled (SHARP_FINAL_VALIDATOR not set)`);
   }
 
   // ===== MASKED EDGE GEOMETRY VALIDATOR (Stage-2 ONLY) =====

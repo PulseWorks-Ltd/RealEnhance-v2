@@ -350,7 +350,10 @@ export async function validateStage(
 
   // ===== GEMINI CHECKS (ONLY FOR COMPLEX SEMANTIC VALIDATION) =====
   // Only run Gemini checks for Stage 2 (staging) - semantic furniture/realism validation
-  const useGeminiValidation = cand.stage === "2" && process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION !== "0";
+  // Controlled by ENABLE_GEMINI_SEMANTIC_VALIDATION env var: "log" (non-blocking) or "block" (blocking)
+  const geminiSemanticRaw = process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION?.trim().toLowerCase();
+  const geminiSemanticMode = (geminiSemanticRaw === "log" || geminiSemanticRaw === "block") ? geminiSemanticRaw : null;
+  const useGeminiValidation = cand.stage === "2" && geminiSemanticMode !== null;
 
   // ===== LOCAL WINDOW MASK COMPARISON (IoU/Area/Centroid/Occlusion) =====
   try {
@@ -484,10 +487,13 @@ export async function validateStage(
   }
 
   if (useGeminiValidation) {
-    console.log("[VALIDATOR] Running Gemini semantic checks for Stage 2...");
+    console.log(`[VALIDATOR] Running Gemini semantic checks for Stage 2 (mode=${geminiSemanticMode})...`);
     const ai = getGeminiClient();
     const prevB64 = toBase64(prev.path).data;
     const candB64 = toBase64(cand.path).data;
+    
+    // Track Gemini semantic failures separately for log-only mode
+    const geminiSemanticReasons: string[] = [];
 
     // 1) Perspective stability - semantic check for staging
     try {
@@ -495,13 +501,26 @@ export async function validateStage(
       const ok = !!persp.ok;
       const s = ok ? 1 : 0;
       metrics.perspective = s;
-      if (!ok) reasons.push(persp.reason || "perspective violation");
+      if (!ok) {
+        const reason = persp.reason || "perspective violation";
+        geminiSemanticReasons.push(reason);
+        if (geminiSemanticMode === "block") {
+          reasons.push(reason);
+        }
+      }
       const w = weights.perspective;
-      score += s * w; totalW += w;
+      // Only affect score in block mode
+      if (geminiSemanticMode === "block") {
+        score += s * w; totalW += w;
+      }
     } catch (e) {
       metrics.perspective = 0;
-      reasons.push("perspective check failed");
-      totalW += weights.perspective;
+      const reason = "perspective check failed";
+      geminiSemanticReasons.push(reason);
+      if (geminiSemanticMode === "block") {
+        reasons.push(reason);
+        totalW += weights.perspective;
+      }
     }
 
     // 2) Furniture scale and placement - Stage 2 only
@@ -510,13 +529,26 @@ export async function validateStage(
       const ok = !!furn.ok;
       const s = ok ? 1 : 0;
       metrics.furniture = s;
-      if (!ok) reasons.push(furn.reason || "furniture scale/placement issue");
+      if (!ok) {
+        const reason = furn.reason || "furniture scale/placement issue";
+        geminiSemanticReasons.push(reason);
+        if (geminiSemanticMode === "block") {
+          reasons.push(reason);
+        }
+      }
       const w = weights.furniture;
-      score += s * w; totalW += w;
+      // Only affect score in block mode
+      if (geminiSemanticMode === "block") {
+        score += s * w; totalW += w;
+      }
     } catch (e) {
       metrics.furniture = 0;
-      reasons.push("furniture check failed");
-      totalW += weights.furniture;
+      const reason = "furniture check failed";
+      geminiSemanticReasons.push(reason);
+      if (geminiSemanticMode === "block") {
+        reasons.push(reason);
+        totalW += weights.furniture;
+      }
     }
 
     // 3) Realism check
@@ -524,10 +556,18 @@ export async function validateStage(
       const { validateRealism } = await import("../validators/realism.js");
       const realism = await validateRealism(cand.path);
       if (!realism.ok) {
-        reasons.push(...(realism.notes || ["realism violation detected"]));
+        const realismReasons = realism.notes || ["realism violation detected"];
+        geminiSemanticReasons.push(...realismReasons);
+        if (geminiSemanticMode === "block") {
+          reasons.push(...realismReasons);
+        }
       }
     } catch (e) {
-      reasons.push("realism check failed");
+      const reason = "realism check failed";
+      geminiSemanticReasons.push(reason);
+      if (geminiSemanticMode === "block") {
+        reasons.push(reason);
+      }
     }
 
     // 4) Exterior-specific surface/furniture checks
@@ -538,12 +578,24 @@ export async function validateStage(
         if (!ext.passed) {
           for (const v of ext.violations || []) {
             const msg = `exterior violation: ${v.type}${v.description ? ` - ${v.description}` : ''}`;
-            reasons.push(msg);
+            geminiSemanticReasons.push(msg);
+            if (geminiSemanticMode === "block") {
+              reasons.push(msg);
+            }
           }
         }
       }
     } catch (e) {
-      reasons.push("exterior surface check failed");
+      const reason = "exterior surface check failed";
+      geminiSemanticReasons.push(reason);
+      if (geminiSemanticMode === "block") {
+        reasons.push(reason);
+      }
+    }
+    
+    // Log semantic failures regardless of mode
+    if (geminiSemanticReasons.length > 0) {
+      console.log(`[VALIDATOR] Gemini semantic issues detected (mode=${geminiSemanticMode}): ${geminiSemanticReasons.join(", ")}`);
     }
   } else {
     console.log("[VALIDATOR] Skipping Gemini semantic checks (Stage 1 or disabled)");

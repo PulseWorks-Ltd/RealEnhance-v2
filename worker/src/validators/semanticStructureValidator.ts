@@ -210,7 +210,7 @@ export async function runSemanticStructureValidator({
   originalImagePath: string;
   enhancedImagePath: string;
   scene: "interior" | "exterior";
-  mode?: "log";
+  mode?: "log" | "block";
 }): Promise<SemanticStructureResult> {
   console.log(`[SEM][stage2] Starting semantic structural validation (${scene})`);
 
