@@ -136,6 +136,7 @@ export function retrySingleRouter() {
       let selectedSourceStage: string | undefined = undefined;
       let selectedSourceUrl: string | undefined = undefined;
       let stage2OnlyDisabled = false;
+      let retryFromStage: string | undefined = undefined;
       let rec: any = undefined;
       let parentJob: any = undefined;
       let parentMeta: any = undefined;
@@ -187,15 +188,17 @@ export function retrySingleRouter() {
             selectedSourceStage = '1A';
             selectedSourceUrl = validStageUrls['1A'];
           } else if (requestedStage === '1B') {
-            // Retry from Stage 1B → Stage 2 only
-            selectedSourceStage = '1B-stage-ready';
-            selectedSourceUrl = validStageUrls['1B'];
+            // Retry Stage 1B → regenerate 1B + Stage 2 from Stage 1A baseline
+            selectedSourceStage = '1A-stage-ready';
+            selectedSourceUrl =
+              validStageUrls['1A'] ||
+              validStageUrls['original'];
+            retryFromStage = '1B';
             
-            // ✅ CHECK 2: Fallback to Stage1A if Stage1B missing
-            if (!selectedSourceUrl && validStageUrls['1A']) {
-              console.warn(`[RETRY_FALLBACK] Stage1B missing, falling back to Stage1A for requestedStage=1B`);
+            // Fallback: if no Stage 1A available, fall back to original upload
+            if (!selectedSourceUrl) {
+              console.warn(`[RETRY_FALLBACK] Stage1A missing for 1B retry, will use uploaded file`);
               selectedSourceStage = '1A';
-              selectedSourceUrl = validStageUrls['1A'];
             }
           } else if (requestedStage === '2') {
             // CRITICAL: Retry Stage 2 from Stage 1B, NOT Stage 2
@@ -376,14 +379,17 @@ export function retrySingleRouter() {
         };
       }
 
-      // ✅ Smart Stage-2-only retry logic (PATCH 4)
-      // When retrying from Stage1B baseline (selectedSourceStage="1B-stage-ready"),
-      // skip Stage1A/1B processing and run only Stage2
-      // ✅ CHECK 2: Disable stage2OnlyMode if we fell back to Stage1A due to missing Stage1B
-      const stage2OnlyMode = (selectedSourceStage === "1B-stage-ready" && !stage2OnlyDisabled && selectedSourceUrl) ? {
-        enabled: true,
-        base1BUrl: selectedSourceUrl  // Use Stage1B output as baseline for Stage2
-      } : undefined;
+      // ✅ Smart Stage-2-only retry logic
+      // stage2OnlyMode activates ONLY for explicit Stage 2 retries (requestedStage='2')
+      // Stage 1B retries must regenerate 1B through the normal pipeline
+      const stage2OnlyMode =
+        requestedStage === '2' && !stage2OnlyDisabled && selectedSourceUrl
+          ? { enabled: true, base1BUrl: selectedSourceUrl }
+          : undefined;
+
+      if (retryFromStage) {
+        console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!stage2OnlyMode}`);
+      }
 
       // ✅ PATCH 3 & CHECK 4: Billing - reserve 1 credit for manual retry
       // Retry quota enforcement (CHECK 4):

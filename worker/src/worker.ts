@@ -766,26 +766,51 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
 
-      // Run validators on Stage-2 output (log-only)
+      // Run validators on Stage-2 output
+      // Baseline: use Stage 1B (basePath) — Stage 1A not available in stage2-only mode
       const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
+      const validationBaseline = basePath; // Stage 1B is best available baseline
 
-      // Note: runStructuralCheck requires URLs, but we'll skip geometry for stage2-only for now
-      // The semantic and masked edge validators are the key ones for Stage-2
+      // ═══ Unified Validation (primary validator) ═══
+      let unifiedRetryValidation: UnifiedValidationResult | undefined;
+      try {
+        const effectiveMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
+        nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=${effectiveMode} ═══════════`);
+        unifiedRetryValidation = await runUnifiedValidation({
+          originalPath: validationBaseline,
+          enhancedPath: path2,
+          stage: "2",
+          sceneType: sceneLabel as any,
+          roomType: payload.options.roomType,
+          mode: effectiveMode,
+          geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
+          jobId: payload.jobId,
+          stagingStyle: payload.options.stagingStyle || "nz_standard",
+          stage1APath: validationBaseline,
+        });
+        nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
+      } catch (unifiedErr: any) {
+        nLog(`[worker] Unified validation error (stage2-only, non-fatal):`, unifiedErr?.message || unifiedErr);
+      }
 
+      // ═══ Semantic + Masked Edge Validators (secondary) ═══
       await runSemanticStructureValidator({
-        originalImagePath: basePath,
+        originalImagePath: validationBaseline,
         enhancedImagePath: path2,
         scene: sceneLabel as any,
         mode: "log",
       });
 
       await runMaskedEdgeValidator({
-        originalImagePath: basePath,
+        originalImagePath: validationBaseline,
         enhancedImagePath: path2,
         scene: sceneLabel as any,
         mode: "log",
         jobId: payload.jobId,
       });
+
+      // ═══ Structural Geometry Check — only if published URLs exist ═══
+      // (Don't introduce new publish steps; use URLs available post-publish below)
 
       // Publish Stage-2 result
       if (!(await ensureStage2AttemptOwner("stage2_only_publish"))) return;
@@ -793,6 +818,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const pub2Url = pub2.url;
       if (pub2Url) {
         attachStage2PublishedUrl(path2, pub2Url);
+
+        // ═══ Structural Geometry Check (post-publish, log-only) ═══
+        // Only run if we now have a published Stage 1B URL available
+        const base1BPublishedUrl = payload.stage2OnlyMode.base1BUrl;
+        if (base1BPublishedUrl) {
+          try {
+            await runStructuralCheck(base1BPublishedUrl, pub2Url, { stage: "stage2", jobId: payload.jobId });
+          } catch (geoErr: any) {
+            nLog(`[worker] Structural geometry check error (stage2-only, non-fatal):`, geoErr?.message || geoErr);
+          }
+        }
       }
 
       stage2Success = true;

@@ -355,6 +355,21 @@ These must NEVER be:
 
 Kitchen islands must NEVER be converted into dining tables or staging furniture.
 
+ARCHITECTURE HINTS — CONTEXT ONLY, REMOVAL ONLY
+
+Architecture hints (built-in detection, fixture identification) are provided as
+context to help you decide what to KEEP — never what to ADD.
+
+  context_only = true
+  removal_only = true
+  no_completion = true
+  no_inference = true
+
+If any architecture hint conflicts with visible pixels → trust the pixels.
+Never add cabinetry, fixtures, or structures that are not clearly visible
+in the input image. Do NOT complete partially visible structures.
+Do NOT infer hidden built-ins from context clues.
+
 CRITICAL SAFETY RULES:
 
 If unsure whether an item is built-in → treat it as fixed.
@@ -496,6 +511,21 @@ These must NEVER be:
 Kitchen islands must NEVER be converted into dining tables or staging furniture.
 
 Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
+
+ARCHITECTURE HINTS — CONTEXT ONLY, REMOVAL ONLY
+
+Architecture hints (built-in detection, fixture identification) are provided as
+context to help you decide what to KEEP — never what to ADD.
+
+  context_only = true
+  removal_only = true
+  no_completion = true
+  no_inference = true
+
+If any architecture hint conflicts with visible pixels → trust the pixels.
+Never add cabinetry, fixtures, or structures that are not clearly visible
+in the input image. Do NOT complete partially visible structures.
+Do NOT infer hidden built-ins from context clues.
 
 SAFE MODE:
 If unsure → KEEP IT.

@@ -111,29 +111,9 @@ function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; erro
 }
 
 function getDisplayUrl(data: any): string | null {
-  if (!data) return null;
-
-  const stageMap =
-    data?.stageUrls ||
-    data?.result?.stageUrls ||
-    data?.stageOutputs ||
-    data?.result?.stageOutputs ||
-    null;
-
-  const stage2 = stageMap?.['2'] || stageMap?.[2] || data?.stage2Url || data?.result?.stage2Url || null;
-  const stage1B = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.[1] || null;
-  const stage1A = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
-
-  const explicitResult =
-    data?.resultUrl ||
-    data?.image ||
-    data?.imageUrl ||
-    data?.result?.image ||
-    data?.result?.imageUrl ||
-    data?.result?.result?.imageUrl ||
-    null;
-
-  return stage2 || stage1B || stage1A || explicitResult;
+  // Delegate to canonical resolver for all URL resolution
+  const resolved = resolveSafeStageUrl(data);
+  return resolved.url;
 }
 
 function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
@@ -187,11 +167,20 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
 }
 
 // Add cache-busting version to force browser reload (only when version exists)
+// NEVER modify signed URLs (AWS, GCS) — appending params breaks the signature
 function withVersion(url?: string | null, version?: string | number): string | null {
   if (!url) return null;
   // Only add version param if we have an explicit version (from retry/edit)
   // Don't use Date.now() as fallback - that would invalidate on every render
   if (!version) return url;
+  // Never append query params to signed URLs — breaks the signature
+  if (
+    url.includes('X-Amz-Signature') ||
+    url.includes('Signature=') ||
+    url.includes('GoogleAccessId=')
+  ) {
+    return url;
+  }
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}v=${version}`;
 }
@@ -2499,6 +2488,12 @@ export default function BatchProcessor() {
       setIsEditingInProgress(false);
       setRegionEditorOpen(false);
       setEditingImageIndex(null);
+      // Clear editing badge for this image
+      setEditingImages(prev => {
+        const next = new Set(prev);
+        next.delete(imageIndex);
+        return next;
+      });
     }
   };
 
@@ -3140,17 +3135,20 @@ export default function BatchProcessor() {
       return;
     }
 
-    // ✅ Log selected URL source
-    console.log('[EDIT][load_source]', {
+    // ✅ Log selected URL source for debugging edit flow
+    console.log('[edit] resolved image URL', {
       imageId,
       imageIndex,
-      urlSource,
-      url: imageUrl.substring(0, 100) + (imageUrl.length > 100 ? '...' : ''),
-      completionSource: item?.completionSource || null
+      stage: urlSource,
+      url: imageUrl,
+      completionSource: item?.completionSource || null,
+      stageUrls: item?.stageUrls || item?.result?.stageUrls || null,
+      resultUrl: item?.resultUrl || null,
     });
 
     // ✅ Store completion source in editor state for reference
     setEditingImageIndex(imageIndex);
+    setEditingImages(prev => new Set(prev).add(imageIndex));
     setRegionEditorOpen(true);
   };
 
@@ -5179,6 +5177,7 @@ export default function BatchProcessor() {
                         const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
+                        const isEditing = editingImages.has(i);
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
                         const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
                           || result?.result?.meta?.autoInsertedStage1B === true;
@@ -5255,7 +5254,7 @@ export default function BatchProcessor() {
                         })();
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
-                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying || isEditing || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = allowStaging
@@ -5274,6 +5273,8 @@ export default function BatchProcessor() {
                         })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : isEditing
+                          ? "Editing image..."  // ✅ Show explicit editing message
                           : isRetrying
                           ? "Retrying enhancement..."  // ✅ Show explicit retry message
                           : isIntermediateProcessing && intermediateStageMessage
@@ -5413,6 +5414,12 @@ export default function BatchProcessor() {
                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md">
                                          <RefreshCw className="w-3 h-3 animate-spin" />
                                          Retrying…
+                                       </span>
+                                     )}
+                                     {isEditing && (
+                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-md">
+                                         <Loader2 className="w-3 h-3 animate-spin" />
+                                         Editing…
                                        </span>
                                      )}
                                    </div>
@@ -5653,7 +5660,7 @@ export default function BatchProcessor() {
 
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && (
-        <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
+        <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); }} maxWidth="full" contentClassName="max-w-5xl">
           <RegionEditor
             initialImageUrl={(() => {
               const item = results[editingImageIndex];
