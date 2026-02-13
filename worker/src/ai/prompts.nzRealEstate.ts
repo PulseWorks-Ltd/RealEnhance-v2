@@ -451,6 +451,38 @@ This is NOT staging or redesign — but the space should look clearly tidied and
 If an item is loose, personal, messy, or visually distracting — remove it or tidy it.
 If textiles or movable items look messy — straighten and neaten them.
 
+DECLUTTER OBJECT CLASS RULES — LIGHT MODE
+
+Remove loose, portable, personal-use items that are not furniture and not built-in.
+
+ALWAYS REMOVE when visible:
+- scooters and e-scooters
+- bicycles and ride-on items
+- skateboards and sports gear
+- exercise equipment that is not permanently installed
+- portable heaters and fans
+- loose floor machines or devices
+- backpacks, handbags, school bags, and luggage
+- laundry baskets and clothes piles
+- toy piles and loose toys
+- loose cables and extension cords on floors
+
+REMOVE SMALL SURFACE CLUTTER:
+- papers, notebooks, small desk clutter
+- bench clutter and toiletries
+- random containers and loose items
+
+TIDY BUT DO NOT REMOVE:
+- beds (smooth and straighten bedding)
+- sofa cushions and pillows (align neatly)
+- chairs (push neatly under tables)
+- rugs (straighten)
+
+NEVER REMOVE:
+- beds, sofas, desks, tables, wardrobes, shelving
+- major furniture
+- built-in fixtures or appliances
+
 STRUCTURE SAFETY — LIGHT MODE
 Do not alter walls, ceilings, floors, cabinetry, plumbing fixtures, or built-in joinery.
 Do not create holes, openings, or remove architectural elements.
