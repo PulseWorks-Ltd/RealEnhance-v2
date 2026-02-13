@@ -451,6 +451,17 @@ This is NOT staging or redesign — but the space should look clearly tidied and
 If an item is loose, personal, messy, or visually distracting — remove it or tidy it.
 If textiles or movable items look messy — straighten and neaten them.
 
+NO NEW OBJECTS — STRICT
+
+You must NOT add any new furniture, electronics, decor, or objects that were not clearly present in the original image.
+
+Do NOT:
+- Add computers, monitors, TVs, lamps, decor, or accessories
+- Add replacement items after removing clutter
+- “Fill” empty surfaces with new objects
+
+If an area becomes empty after decluttering, leave it empty and realistic.
+
 DECLUTTER OBJECT CLASS RULES — LIGHT MODE
 
 Remove loose, portable, personal-use items that are not furniture and not built-in.
@@ -483,6 +494,23 @@ NEVER REMOVE:
 - major furniture
 - built-in fixtures or appliances
 
+WALL ITEM DECLUTTER — LIGHT MODE
+
+You may remove non-permanent wall clutter such as:
+- Loose papers taped to walls
+- Random drawings or notes
+- Temporary posters
+- Small unattractive or personal wall art
+- Stickers and decals
+
+Do NOT remove:
+- Built-in fixtures
+- Wall-mounted TVs
+- Permanent mirrors
+- Architectural elements
+
+When removing wall items, reconstruct the wall surface cleanly and match paint color.
+
 STRUCTURE SAFETY — LIGHT MODE
 Do not alter walls, ceilings, floors, cabinetry, plumbing fixtures, or built-in joinery.
 Do not create holes, openings, or remove architectural elements.
@@ -501,13 +529,24 @@ If unsure → KEEP IT.
 SURFACE RESTORATION:
 Repair surfaces realistically where items are removed.
 
+BED & SOFT FURNISHING TIDY — REQUIRED WHEN MESSY
+
+If a bed, sofa, or soft furnishing is visibly messy, you should tidy it.
+
+Required actions when messy:
+- Smooth and straighten duvet and bedding
+- Flatten and align blankets and throws
+- Arrange pillows neatly
+- Remove visible wrinkles and bunching
+
+This is presentation tidying — not redesign.
+Do not change color, style, or materials.
+
 PRESENTATION TIDYING — REQUIRED WHEN NEEDED
 
 You should tidy presentation when items appear messy or unprepared.
 
 Allowed tidying actions:
-- Smooth and straighten bedding and duvet covers
-- Fold or flatten blankets neatly
 - Align pillows and couch cushions
 - Push loose chairs neatly under tables
 - Straighten rugs
