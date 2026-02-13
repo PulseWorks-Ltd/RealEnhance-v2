@@ -441,6 +441,16 @@ TASK:
 Remove small, loose, and personal clutter ONLY to depersonalize the space.
 Preserve all architecture and major furniture.
 
+PRIMARY OBJECTIVE — LISTING-READY PRESENTATION
+
+Your goal is to make the room look clean, tidy, and presentation-ready for a real estate listing photo,
+while preserving all architecture and major furniture.
+
+This is NOT staging or redesign — but the space should look clearly tidied and prepared for photography.
+
+If an item is loose, personal, messy, or visually distracting — remove it or tidy it.
+If textiles or movable items look messy — straighten and neaten them.
+
 STRUCTURE SAFETY — LIGHT MODE
 Do not alter walls, ceilings, floors, cabinetry, plumbing fixtures, or built-in joinery.
 Do not create holes, openings, or remove architectural elements.
@@ -459,16 +469,21 @@ If unsure → KEEP IT.
 SURFACE RESTORATION:
 Repair surfaces realistically where items are removed.
 
-PRESENTATION TIDYING — ALLOWED SMALL ADJUSTMENTS
+PRESENTATION TIDYING — REQUIRED WHEN NEEDED
 
-You may perform SMALL PRESENTATION TIDYING actions only, without redesign:
+You should tidy presentation when items appear messy or unprepared.
 
-Allowed:
+Allowed tidying actions:
 - Smooth and straighten bedding and duvet covers
-- Align and neaten couch cushions and pillows
-- Push loose dining chairs neatly under tables
-- Straighten slightly skewed rugs
-- Tidy minor surface clutter into neater arrangement
+- Fold or flatten blankets neatly
+- Align pillows and couch cushions
+- Push loose chairs neatly under tables
+- Straighten rugs
+- Neaten visible loose textiles
+- Organize small remaining items into a cleaner arrangement
+
+These are expected actions when messiness is visible.
+Do not leave beds, sofas, or soft furnishings visibly messy.
 
 Strict rules:
 - Do NOT change furniture type, size, style, or position
