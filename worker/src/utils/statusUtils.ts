@@ -15,6 +15,8 @@ export async function safeWriteJobStatus(
   const currentStatus = current?.status as string | undefined;
 
   if (isTerminalStatus(currentStatus)) {
+    // Structured guard log per spec
+    console.log(`[status_guard] BLOCK overwrite terminal status jobId=${String(jobId)} current=${currentStatus} attempted=${patch?.status} reason=${reason}`);
     console.warn("[STATUS_LOCK_BLOCKED]", {
       jobId,
       current: currentStatus,

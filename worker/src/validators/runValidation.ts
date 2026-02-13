@@ -29,6 +29,9 @@ import { buildValidationBuffers, type ValidationBuffers } from "./validationBuff
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 
+// Re-export the normalized adapter for downstream consumers
+export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
+
 /**
  * Result from a single validator
  */
@@ -57,6 +60,12 @@ export type UnifiedValidationResult = {
   riskLevel?: RiskLevel;     // Deterministic risk classification
   riskTriggers?: string[];   // Risk trigger reasons
   modelUsed?: string;        // Which Gemini model was used
+  /** true when cheap gate (SSIM) failed and local validators were skipped */
+  earlyExit?: boolean;
+  /** true when Gemini escalation was triggered */
+  escalated?: boolean;
+  /** Ordered list of validators that executed (e.g. ["perceptualDiff","gemini"]) */
+  validatorPath?: string[];
 };
 
 export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
@@ -225,6 +234,8 @@ export async function runUnifiedValidation(
   }
 
   nLog(`[unified-validator] === Starting Unified Structural Validation ===`);
+  // Structured log for pipeline observability
+  console.log(`[validator] start jobId=${jobId ?? "unknown"} stage=${stage}`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
   nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
@@ -274,17 +285,26 @@ export async function runUnifiedValidation(
         forceGemini = true;
         reasons.push(`Perceptual diff failed: SSIM ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
         evidence.localFlags.push(`ssim_failed: ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
-        nLog(`[perceptual-diff] FAIL → escalating to Gemini (local validators still run for evidence collection)`);
+        nLog(`[perceptual-diff] FAIL → early exit, escalating directly to Gemini`);
       }
     } catch (err) {
       console.warn("[perceptual-diff] Error computing SSIM (fail-open):", err);
     }
   }
 
+  // ===== EARLY EXIT TRACKING =====
+  // When the cheap gate (SSIM) fails, skip local validators 1–2 and go straight to Gemini.
+  const earlyExit = perceptualFailed;
+  const validatorPath: string[] = ["perceptualDiff"];
+  if (earlyExit) {
+    validatorPath.push("gemini");
+    nLog(`[validator] early_exit=true path=${validatorPath.join(",")}`);
+  }
+
   // ===== STAGE-AWARE VALIDATION PATH =====
   // When enabled, use the new stage-aware validator for Stage 2
-  // NOTE: Always runs now — even when SSIM fails, we collect evidence for the adjudicator
-  if (stageAwareConfig.enabled && stage === "2") {
+  // Skipped on early exit (SSIM gate fail → direct Gemini escalation)
+  if (!earlyExit && stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
     // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
@@ -361,9 +381,8 @@ export async function runUnifiedValidation(
   let enhancedLineCount = 0;
   let stage2OcclusionAllowance: { structIoU: number; threshold: number; reasons: string[] } | null = null;
 
-  // HARDENED: Always run local validators for evidence collection,
-  // even when SSIM fails. Evidence is fed to the model adjudicator.
-  {
+  // Run local validators for evidence collection — skipped on early exit (SSIM gate fail).
+  if (!earlyExit) {
     try {
       buffers = await buildValidationBuffers(originalPath, enhancedPath, {
         blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
@@ -641,6 +660,11 @@ export async function runUnifiedValidation(
         details: { error: String(err) },
       };
     }
+  } // end if (!earlyExit)
+
+  // Track which local validators were actually executed
+  if (!earlyExit) {
+    validatorPath.push("structural", "geometry");
   }
 
   // ===== ANCHOR REGION VALIDATORS =====
@@ -870,9 +894,13 @@ export async function runUnifiedValidation(
     geminiPolicy === "always" ||
     (geminiPolicy === "on_local_fail" && localFailed);
 
+  let escalated = false;
   if (!shouldRunGemini) {
     nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, localFailed=${localFailed})`);
   } else {
+    escalated = true;
+    if (!earlyExit) validatorPath.push("gemini");
+    nLog(`[validator] escalated=${escalated} earlyExit=${earlyExit}`);
     try {
       nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
       const geminiResult = await runGeminiSemanticValidator({
@@ -1060,7 +1088,19 @@ export async function runUnifiedValidation(
     modelUsed: riskLevel === "LOW"
       ? (process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash")
       : (process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash"),
+    earlyExit: earlyExit || undefined,
+    escalated: escalated || undefined,
+    validatorPath,
   };
+
+  // ===== STRUCTURED PER-CHECK + VERDICT LOGS =====
+  for (const [, result] of Object.entries(results)) {
+    const sc = result.score !== undefined ? result.score.toFixed(3) : "N/A";
+    console.log(`[validator] check=${result.name} pass=${result.passed} score=${sc}`);
+  }
+  if (earlyExit) console.log(`[validator] early_exit=true`);
+  if (escalated) console.log(`[validator] escalated=true`);
+  console.log(`[validator] verdict=${finalResult.passed ? "PASS" : "FAIL"} score=${finalResult.score.toFixed(3)} jobId=${jobId ?? "unknown"}`);
 
   return finalResult;
 }

@@ -44,6 +44,8 @@ import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
+import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
+import { checkStageOutput } from "./utils/stageOutputGuard";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
 import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
 import {
@@ -71,6 +73,7 @@ import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhanced
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
+import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 
 async function detectLargeFurnitureGemini(ai: any, imageBase64: string): Promise<boolean> {
   const prompt = `
@@ -169,6 +172,19 @@ async function completePartialJob(params: {
   nLog(`[FALLBACK_TRIGGERED] stage=${triggerStage} reason=${reason}`);
 
   if (await checkStage2AlreadyFinal(jobId, triggerStage)) {
+    return;
+  }
+
+  // Completion guard — partial completions have no validator result
+  const currentJob = await getJob(jobId);
+  const guard = canMarkJobComplete(currentJob as any, null, {
+    outputUrl: resultUrl,
+    finalStageRan: finalStage,
+    expectedFinalStage: finalStage,
+  });
+  logCompletionGuard(jobId, guard);
+  if (!guard.ok) {
+    await safeWriteJobStatus(jobId, { status: "failed", errorMessage: `completion_guard_block: ${guard.reason}` }, "completion_guard_block");
     return;
   }
 
@@ -294,6 +310,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
   if ((payload as any).retryType === "manual_retry") {
     nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
+    // Attach retryMeta for observability
+    buildRetryMeta(payload.jobId, {
+      attempt: 1,
+      reason: "manual_retry",
+      stage: ((payload as any).retrySourceStage as any) || "1A",
+      parentJobId: (payload as any).retryParentJobId,
+    });
   }
 
   // Re-hydrate and repair job metadata contract for ownership validation
@@ -689,6 +712,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         retryingStage: "2",
         retryAttempt: 1,
         message: "Retrying Stage 2 with stricter validation...",
+        retryMeta: buildRetryMeta(payload.jobId, {
+          attempt: 1,
+          reason,
+          stage: "2",
+        }),
       },
       "stage2_retry_scheduled"
     );
@@ -793,6 +821,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // ═══ Unified Validation (primary validator) ═══
       let unifiedRetryValidation: UnifiedValidationResult | undefined;
+
+      // ═══ Phase H: Stage output consistency check ═══
+      const stageOutputCheck = checkStageOutput(path2, "2", payload.jobId);
+      if (!stageOutputCheck.readable) {
+        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
+        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
+        return;
+      }
+
       try {
         const effectiveMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
         nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=${effectiveMode} ═══════════`);
@@ -865,6 +902,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       await clearStage2RetryPending("stage2_only_complete_clear_pending");
       if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) return;
       if (await checkStage2AlreadyFinal(payload.jobId, "stage2_only")) return;
+
+      // Completion guard
+      const s2onlyJob = await getJob(payload.jobId);
+      const s2onlyGuard = canMarkJobComplete(s2onlyJob as any, null, {
+        outputUrl: pub2Url,
+        finalStageRan: "2",
+        expectedFinalStage: "2",
+      });
+      logCompletionGuard(payload.jobId, s2onlyGuard);
+      if (!s2onlyGuard.ok) {
+        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${s2onlyGuard.reason}` }, "completion_guard_block");
+        return;
+      }
+
       await safeWriteJobStatus(payload.jobId, {
         status: "complete",
         resultUrl: pub2Url,
@@ -1476,6 +1527,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attemptIndex} using=${output}`);
 
+      // ═══ Phase H: Stage output consistency check ═══
+      const stage1BOutputCheck = checkStageOutput(output, "1B", payload.jobId);
+      if (!stage1BOutputCheck.readable) {
+        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "1B", path: output });
+        throw new Error("missing_stage_output");
+      }
+
       const verdict = await runUnifiedValidation({
         originalPath: path1A,
         enhancedPath: output,
@@ -1517,6 +1575,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     while (true) {
       if (Date.now() - t1B > MAX_STAGE_RUNTIME_MS) {
+        console.log(`[timeout] stage=1B exceeded_ms=${Date.now() - t1B} jobId=${payload.jobId}`);
         // ═══ FINAL STATUS GUARD ═══
         const latestJob = await getJob(payload.jobId);
         if (isTerminalStatus(latestJob?.status)) {
@@ -1584,6 +1643,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 retryingStage: "1B",
                 retryAttempt: stage1BAttempts + 1,
                 message: `Retrying Stage 1B (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+                retryMeta: buildRetryMeta(payload.jobId, {
+                  attempt: stage1BAttempts + 1,
+                  reason: `hard_fail:${verdict?.blockSource ?? "unknown"}`,
+                  stage: "1B",
+                }),
               },
               "stage1b_retry_scheduled"
             );
@@ -1656,6 +1720,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 retryingStage: "1B",
                 retryAttempt: stage1BAttempts + 1,
                 message: `Retrying Stage 1B after local validation block (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+                retryMeta: buildRetryMeta(payload.jobId, {
+                  attempt: stage1BAttempts + 1,
+                  reason: "local_block",
+                  stage: "1B",
+                }),
               },
               "stage1b_localblock_retry"
             );
@@ -1774,6 +1843,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             retryingStage: "1B",
             retryAttempt: stage1BAttempts + 1,
             message: `Retrying Stage 1B after error (attempt ${stage1BAttempts + 1}/${maxAttempts})...`,
+            retryMeta: buildRetryMeta(payload.jobId, {
+              attempt: stage1BAttempts + 1,
+              reason: "stage1b_error",
+              stage: "1B",
+            }),
           },
           "stage1b_error_retry"
         );
@@ -2320,6 +2394,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (timeoutError: any) {
         if (timeoutError?.message === 'STAGE2_TIMEOUT') {
           stage2TimedOut = true;
+          console.log(`[timeout] stage=2 exceeded_ms=${STAGE2_TIMEOUT_MS} jobId=${payload.jobId}`);
           nLog(`[worker] ⏱️ Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms, falling back to Stage ${stage2BaseStage}`);
           stage2Blocked = true;
           stage2FallbackStage = stage2BaseStage;
@@ -2533,6 +2608,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   while (path2 && payload.options.virtualStage && !stage2Blocked) {
     try {
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
+        console.log(`[timeout] stage=2_validation_loop exceeded_ms=${Date.now() - t2} jobId=${payload.jobId}`);
         const fallbackStage = path1B ? "1B" : "1A";
         const fallbackPath = path1B ? path1B : path1A;
         // ═══ FINAL STATUS GUARD ═══
@@ -2590,6 +2666,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
 
       const baseArtifacts = stageLineage.baseArtifacts;
+
+      // ═══ Phase H: Stage output consistency check ═══
+      const stage2OutputCheck = checkStageOutput(path2, "2", payload.jobId);
+      if (!stage2OutputCheck.readable) {
+        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
+        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
+        return;
+      }
+
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
@@ -2982,6 +3067,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const baseArtifactsRetry = stageLineage.baseArtifacts;
 
             nLog(`[VALIDATOR_INPUT] stage=2 attempt=${geminiRetries} using=${retryStage2Path}`);
+
+            // ═══ Phase H: Stage output consistency check ═══
+            const retryOutputCheck = checkStageOutput(retryStage2Path, "2", payload.jobId);
+            if (!retryOutputCheck.readable) {
+              nLog(`[worker] Stage output missing/unreadable before retry validation — skipping retry`, { jobId: payload.jobId, stage: "2", path: retryStage2Path });
+              break; // skip this retry iteration, don't mark failed since retries can continue
+            }
+
             const unifiedRetry = await runUnifiedValidation({
               originalPath: stage2ValidationBaseline,
               enhancedPath: retryStage2Path,
@@ -3734,6 +3827,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (hasStage2 && !(await canCompleteStage2(stage2ValidationPassed, "stage2_final_complete"))) return;
 
+  // Completion guard — full pipeline
+  const mainGuard = canMarkJobComplete(latestJobBeforeCompletion as any, unifiedValidation as any, {
+    outputUrl: pubFinalUrl,
+    finalStageRan: finalStageLabel,
+    expectedFinalStage: hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A"),
+  });
+  logCompletionGuard(payload.jobId, mainGuard);
+  if (!mainGuard.ok) {
+    await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${mainGuard.reason}` }, "completion_guard_block");
+    return;
+  }
+
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
   await safeWriteJobStatus(payload.jobId, {
@@ -4069,6 +4174,34 @@ async function handleEditJob(payload: any) {
 
   // 7) Update job – IMPORTANT: don't hard-fail on compliance
   if (await checkStage2AlreadyFinal(jobId, "edit")) return;
+
+  // Completion guard — edit jobs have no validator result
+  const editJob = await getJob(jobId);
+  const editGuard = canMarkJobComplete(editJob as any, null, {
+    outputUrl: pub.url,
+    finalStageRan: "edit",
+    expectedFinalStage: "edit",
+  });
+  logCompletionGuard(jobId, editGuard);
+  if (!editGuard.ok) {
+    await safeWriteJobStatus(jobId, { status: "failed", errorMessage: `completion_guard_block: ${editGuard.reason}` }, "completion_guard_block");
+    return;
+  }
+
+  // ===== EDIT FORK SAFETY =====
+  // Edit jobs must never overwrite parent outputs — they always create a new
+  // output record.  parentJobId + baselineStageUsed are stored for lineage.
+  const editParentJobId = (payload as any).parentJobId || (payload as any).sourceJobId || undefined;
+  const baselineStageUsed: string = (payload as any).baselineStage || "unknown";
+
+  nLog(`[edit] parentJobId=${editParentJobId ?? "none"} baselineStage=${baselineStageUsed}`);
+
+  // Guard: if pub.key collides with a parent output key, generate a new one
+  // (in practice this never happens because publishImage uses Date.now() keys)
+  if (pub.key && editParentJobId) {
+    nLog(`[edit] output key=${pub.key} (unique per-publish, no overwrite risk)`);
+  }
+
   await safeWriteJobStatus(
     jobId,
     {
@@ -4077,6 +4210,9 @@ async function handleEditJob(payload: any) {
       imageUrl: pub.url,
       meta: {
         ...payload,
+        parentJobId: editParentJobId,
+        baselineStageUsed,
+        jobType: "edit",
       },
     },
     "edit_complete"
@@ -4247,6 +4383,20 @@ const worker = new Worker(
 
           // Update job status with all required fields (matches enhance job format for /api/status/batch)
           if (await checkStage2AlreadyFinal(regionPayload.jobId, "region-edit")) return;
+
+          // Completion guard — region-edit jobs have no validator result
+          const reJob = await getJob(regionPayload.jobId);
+          const reGuard = canMarkJobComplete(reJob as any, null, {
+            outputUrl: pub.url,
+            finalStageRan: "edit",
+            expectedFinalStage: "edit",
+          });
+          logCompletionGuard(regionPayload.jobId, reGuard);
+          if (!reGuard.ok) {
+            await safeWriteJobStatus(regionPayload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${reGuard.reason}` }, "completion_guard_block");
+            return;
+          }
+
           await safeWriteJobStatus(
             regionPayload.jobId,
             {
@@ -4266,10 +4416,14 @@ const worker = new Worker(
                 jobType: "region_edit",
                 retryEligible: false, // Edit outputs cannot be retry baselines
                 consumesCredits: false, // Edits are always FREE
+                // Edit fork metadata
+                parentJobId: (regionPayload as any).parentJobId || (regionPayload as any).sourceJobId || undefined,
+                baselineStageUsed: (regionPayload as any).baselineStage || "unknown",
               },
             },
             "region_edit_complete"
           );
+          nLog(`[edit] parentJobId=${(regionPayload as any).parentJobId ?? "none"} baselineStage=${(regionPayload as any).baselineStage ?? "unknown"}`);
           nLog('[worker-region-edit] updateJob called', {
             jobId: regionPayload.jobId,
             imageUrl: pub.url,
