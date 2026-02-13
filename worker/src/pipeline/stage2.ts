@@ -247,10 +247,20 @@ export async function runStage2(
     needsRetry = false;
     validationRisk = false;
     localReasons = [];
-    let inputForStage2 = out;
+    
+    // ✅ FIX: Always use baseline input (Stage 1B or 1A), never compound previous retry outputs
+    // This ensures each retry starts fresh from the correct stage baseline
+    let inputForStage2 = basePath;
+    
+    // ✅ GUARD: Log retry baseline usage for debugging
+    if (attempt > 0) {
+      focusLog("PIPELINE_VERBOSE", `[stage2] Retry attempt ${attempt}: using baseline ${basePath.substring(basePath.length - 60)} (NOT previous output)`);
+    }
+    
     if (opts.stagingRegion) {
       try {
-        const meta = await sharp(out).metadata();
+        // ✅ FIX: Build staging region overlay from baseline, not previous retry output
+        const meta = await sharp(basePath).metadata();
         const W = meta.width || 0;
         const H = meta.height || 0;
         const r = opts.stagingRegion;
@@ -259,15 +269,15 @@ export async function runStage2(
         const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
         const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
         const overlay = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.35 } } }).toBuffer();
-        const regionPatch = await sharp(out).extract({ left: x, top: y, width: w, height: h }).toBuffer();
-        const guided = await sharp(out)
+        const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
+        const guided = await sharp(basePath)
           .composite([
             { input: overlay, left: 0, top: 0 },
             { input: regionPatch, left: x, top: y }
           ])
           .toFormat("png")
           .toBuffer();
-        const guidedPath = siblingOutPath(out, "-staging-guide", ".png");
+        const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
         await sharp(guided).toFile(guidedPath);
         inputForStage2 = guidedPath;
         if (dbg) focusLog("TEMP_FILE", `[stage2] Built guided input for staging region: ${guidedPath}`);
