@@ -495,6 +495,15 @@ const StatusBadge = ({ status, className }: { status: 'processing' | 'completed'
   return null;
 };
 
+// Helper to generate retry-specific status text
+const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string => {
+  if (!stage || stage === "full") return "Retrying enhancement...";
+  if (stage === "1A") return "Retrying color enhancement...";
+  if (stage === "1B") return "Retrying declutter...";
+  if (stage === "2") return "Retrying staging...";
+  return "Retrying...";
+};
+
 export default function BatchProcessor() {
     // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
@@ -1303,6 +1312,8 @@ export default function BatchProcessor() {
             error: next.error || norm?.error,
             requestedStages: mergedRequestedStages,
             meta: mergedMeta,
+            retryInFlight: undefined, // Clear retry UI state when server update arrives
+            retryStage: undefined, // Clear retry stage when server update arrives
           };
           return copy;
         });
@@ -3257,6 +3268,8 @@ export default function BatchProcessor() {
         finalStage: null,
         currentStage: nextStage ? nextStage.toLowerCase() : "processing",
         statusLastModified: Date.now(), // Update timestamp for immediate UI refresh
+        retryInFlight: true, // UI-only flag for immediate badge update
+        retryStage: nextStage, // Store requested retry stage for status text
       };
     }));
     if (retryStage) {
@@ -3392,6 +3405,8 @@ export default function BatchProcessor() {
             completionSource: null,
             jobId: jobId, // Store the new retry jobId
             statusLastModified: Date.now(),
+            retryInFlight: true, // UI-only flag for immediate badge update
+            retryStage: retryStage || null, // Store requested retry stage for status text
           };
         }));
 
@@ -5270,7 +5285,7 @@ export default function BatchProcessor() {
                         })();
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
-                        const isProcessing = (!isUiComplete && !isError && (inFlightStatus || isRetrying || isEditing || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = result?.retryInFlight || (!isUiComplete && !isError && (inFlightStatus || isRetrying || isEditing || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = allowStaging
@@ -5289,6 +5304,8 @@ export default function BatchProcessor() {
                         })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : result?.retryInFlight
+                          ? getRetryStatusText(result?.retryStage)  // ✅ Show retry-specific message immediately
                           : isEditing
                           ? "Editing image..."  // ✅ Show explicit editing message
                           : isRetrying
@@ -5528,17 +5545,18 @@ export default function BatchProcessor() {
                                   </button>
                                    <button 
                                     onClick={() => handleEditImage(i)}
-                                    className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                    disabled={result?.retryInFlight || editingImages.has(i)}
+                                    className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     Edit
                                   </button>
                                     <button
                                     onClick={() => handleOpenRetryDialog(i)}
-                                    disabled={retryingImages.has(i)}
+                                    disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
                                     className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                                     data-testid={`button-retry-${i}`}
                                     >
-                                    {retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                    {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
                                     </button>
                                 </>
                               )}
