@@ -4909,8 +4909,8 @@ export default function BatchProcessor() {
                   </section>
                 )}
 
-                {/* Room Type Selection - Only for Interior when staging enabled */}
-                {allowStaging && (currentFinalScene !== "exterior") && (
+                {/* Room Type Selection - For interior photos */}
+                {(currentFinalScene !== "exterior") && (
                   <section className="pt-2 border-t border-slate-100">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Room Staging</label>
                     <FixedSelect
