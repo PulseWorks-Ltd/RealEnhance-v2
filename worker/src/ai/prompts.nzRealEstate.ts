@@ -1,3 +1,98 @@
+// ────────────────────────────────
+// MULTI-LIVING CONSTRAINT BLOCK
+// ────────────────────────────────
+// Applied only when roomType === "multi_living"
+// Prevents kitchen hallucination, cross-zone staging bleed, and invented cabinetry
+const MULTI_LIVING_CONSTRAINT_BLOCK = `
+────────────────────────────────
+MULTI-ZONE LAYOUT RULES — MULTIPLE LIVING AREAS
+────────────────────────────────
+
+This image contains multiple distinct functional living zones within one open or connected space
+(for example: lounge + dining, lounge + study nook, living + kitchen edge, or multiple seating areas).
+
+You must treat each visible functional zone independently.
+
+ZONE DETECTION — REQUIRED
+
+Before placing any staged furniture:
+
+Identify each distinct functional area by:
+  • furniture grouping
+  • floor covering changes
+  • lighting clusters
+  • wall alignment and openings
+  • existing layout cues
+
+Stage each zone separately and appropriately.
+
+Do NOT merge zones into one large staged layout.
+
+STRICT ZONE BOUNDARY PRESERVATION
+
+You must NOT extend staging elements across functional zone boundaries.
+
+Do NOT:
+  • extend living room staging into kitchen zones
+  • add kitchen furniture where none existed
+  • add cabinetry, appliances, or counters
+  • convert dining zones into lounge zones
+  • convert circulation areas into furnished zones
+
+If a zone appears empty or transitional:
+→ leave it clean and empty rather than inventing a function.
+
+Empty is valid. Invented rooms are not.
+
+KITCHEN + SERVICE AREA PROTECTION (CRITICAL)
+
+If any portion of the image appears to be kitchen, kitchenette, or service area:
+
+Do NOT:
+  • add cabinets
+  • add appliances
+  • add islands
+  • add counters
+  • add sinks
+  • add built-in storage
+  • restage as a kitchen if it is not clearly one
+
+Kitchen structure and layout must remain exactly as shown.
+
+You may only stage loose portable items appropriate to visible surfaces.
+
+FURNITURE PLACEMENT — MULTI-ZONE MODE
+
+Within each detected living zone:
+  • Create one coherent furniture grouping per zone
+  • Keep scale modest
+  • Avoid overcrowding
+  • Maintain clear walking paths between zones
+  • Respect existing focal directions (windows, walls, media walls)
+
+Do NOT create a single oversized staging cluster across the whole room.
+
+NO FUNCTION INVENTION
+
+Do NOT invent new room functions.
+
+If a second zone's purpose is unclear:
+→ keep it minimally staged or empty
+→ do NOT guess and fully furnish it.
+
+FAILURE SAFETY RULE
+
+If zone boundaries are ambiguous:
+
+→ Stage conservatively
+→ Place fewer items
+→ Do NOT expand staging footprint
+
+Over-staging is worse than under-staging.
+
+────────────────────────────────
+`;
+
 export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
   if (sceneType === "exterior") return buildStage1AExteriorPromptNZStyle();
   return buildStage1AInteriorPromptNZStyle(roomType);
@@ -914,7 +1009,7 @@ If the visible layout is ambiguous, you MUST still place the correct furniture s
 Do NOT substitute a different furniture category due to layout preference.
 
 Room type furniture requirements override layout heuristics.
-
+${room === "multi_living" ? MULTI_LIVING_CONSTRAINT_BLOCK : ""}
 ────────────────────────────────
 ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
 ────────────────────────────────
