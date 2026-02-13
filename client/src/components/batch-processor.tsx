@@ -5353,7 +5353,13 @@ export default function BatchProcessor() {
                         const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null);
                         const bestDisplayUrl = bestAvailable.url || displayedUrl || previewUrls[i] || null;
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
-                        const previewUrl = enhancedUrl || previewUrls[i];
+                        const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting"].includes(status);
+                        const canUseRemotePreview = status === "completed" || (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
+                        const previewUrl = isNonTerminalProcessingStatus
+                          ? (previewUrls[i] || null)
+                          : canUseRemotePreview
+                            ? (enhancedUrl || previewUrls[i] || null)
+                            : (previewUrls[i] || null);
                         const stageBadgeLabel = (() => {
                           // ✅ PATCH 7: Show "Edited" badge for edit outputs instead of stage labels
                           if (result?.editLatestUrl || result?.completionSource === "region-edit") {
@@ -5414,7 +5420,13 @@ export default function BatchProcessor() {
                                 alt={file.name} 
                                 className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                 onLoad={() => clearRetryFlags(i)}
-                                onError={() => clearRetryFlags(i)}
+                                onError={(e) => {
+                                  clearRetryFlags(i);
+                                  const localFallback = previewUrls[i] || "";
+                                  if (localFallback && e.currentTarget.src !== localFallback) {
+                                    e.currentTarget.src = localFallback;
+                                  }
+                                }}
                               />
                               {isProcessing && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
