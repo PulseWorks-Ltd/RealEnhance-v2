@@ -38,6 +38,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const pendingActionRef = useRef<null | (() => void)>(null);
+  // Ref tracks latest user so signOut callback never reads stale closure
+  const userRef = useRef<AuthUser | null>(null);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
     try {
@@ -68,7 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn("logout:", e);
     } finally {
       // Clear any persisted or in-memory enhancement state so new sessions start clean
-      try { requestClearEnhancementState(user?.id || null); } catch {}
+      try { requestClearEnhancementState(userRef.current?.id || null); } catch {}
       setUser(null);
       // Redirect to public landing after logout
       const landing = (import.meta as any)?.env?.VITE_PUBLIC_LANDING_URL || "https://www.realenhance.co.nz/";
@@ -116,10 +119,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Fallback A: detect when popup reaches same-origin (client) and then finish
       const pollSameOrigin = window.setInterval(async () => {
-        if (finished) { window.clearInterval(poll); return; }
+        if (finished) { window.clearInterval(pollSameOrigin); return; }
         try {
           // Will throw while cross-origin; succeeds once popup is on our origin
-          if (popup.closed) { window.clearInterval(poll); return; }
+          if (popup.closed) { window.clearInterval(pollSameOrigin); return; }
           const sameOrigin = popup.location.origin === clientOrigin;
           if (sameOrigin) {
             finished = true;

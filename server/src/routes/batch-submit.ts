@@ -42,7 +42,14 @@ interface BatchUploadRequest {
  */
 router.post('/submit', async (req, res) => {
   try {
-    const { userId, agencyId, images }: BatchUploadRequest = req.body;
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: 'not_authenticated' });
+    }
+
+    const { agencyId, images }: BatchUploadRequest = req.body;
+    // Always derive userId from session — never trust request body
+    const userId = sessUser.id;
 
     if (!userId) {
       return res.status(400).json({ error: 'userId required' });
@@ -120,6 +127,11 @@ router.post('/submit', async (req, res) => {
  */
 router.get('/status/:batchId', async (req, res) => {
   try {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: 'not_authenticated' });
+    }
+
     const { batchId } = req.params;
 
     // Find all jobs with this batchId

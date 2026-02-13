@@ -2612,8 +2612,8 @@ export default function BatchProcessor() {
           `You need ${more} more credits to process ${files.length} images (${creditsPerImage} credit${creditsPerImage > 1 ? 's' : ''}/image). Buy credits now?`
         );
         if (goBuy) {
-          // open checkout in a new tab; keep this page to preserve files
-          window.open("/buy-credits", "_blank");
+          // open billing page in a new tab; keep this page to preserve files
+          window.open("/settings/billing", "_blank");
         }
         return;
       }
@@ -3207,7 +3207,7 @@ export default function BatchProcessor() {
       if (e.code === "INSUFFICIENT_CREDITS") {
         const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
         if (goBuy) {
-          window.open("/buy-credits", "_blank");
+          window.open("/settings/billing", "_blank");
         }
         return;
       }
@@ -3315,7 +3315,7 @@ export default function BatchProcessor() {
             }
             const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
             if (goBuy) {
-              window.open("/buy-credits", "_blank");
+              window.open("/settings/billing", "_blank");
             }
             return;
           }

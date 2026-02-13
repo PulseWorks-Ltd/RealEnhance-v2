@@ -22,7 +22,8 @@ export function cleanupTempFiles(jobId: string): void {
   try {
     const tempDir = '/tmp';
     const files = fs.readdirSync(tempDir);
-    const jobFiles = files.filter(f => f.startsWith(jobId));
+    // Match files that start with jobId OR contain the jobId (downloadToTemp uses realenhance-{jobId}-... pattern)
+    const jobFiles = files.filter(f => f.startsWith(jobId) || (f.startsWith('realenhance-') && f.includes(jobId)));
     
     let cleaned = 0;
     for (const file of jobFiles) {

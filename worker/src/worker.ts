@@ -63,6 +63,8 @@ import { detectCurtainRail } from "./validators/curtainRailDetector";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
+import { createTempTracker, type TempTracker } from "./utils/tempTracker";
+import { cleanupTempFiles } from "./utils/sharp-utils";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
@@ -226,15 +228,33 @@ process.on('unhandledRejection', (reason, promise) => {
   // Don't exit - just log for debugging
 });
 
-process.on('SIGTERM', () => {
-  console.log('[WORKER] SIGTERM received, graceful shutdown...');
-  process.exit(0);
-});
+// Module-level ref so shutdown handlers can access the BullMQ worker
+// (assigned after the Worker constructor at the bottom of the file)
+let _workerRef: import('bullmq').Worker | null = null;
 
-process.on('SIGINT', () => {
-  console.log('[WORKER] SIGINT received, graceful shutdown...');
+async function gracefulShutdown(signal: string) {
+  console.log(`[WORKER] ${signal} received, graceful shutdown...`);
+  const FORCE_EXIT_MS = 10_000;
+  const forceTimer = setTimeout(() => {
+    console.error(`[WORKER] Forced exit after ${FORCE_EXIT_MS}ms`);
+    process.exit(1);
+  }, FORCE_EXIT_MS);
+  // Prevent the timer from keeping the process alive
+  forceTimer.unref();
+
+  try {
+    if (_workerRef) {
+      await _workerRef.close();
+      console.log('[WORKER] BullMQ worker closed cleanly');
+    }
+  } catch (err) {
+    console.error('[WORKER] Error closing worker:', err);
+  }
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
+process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2245,7 +2265,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // FIX 4: Add Stage 2 timeout with Promise.race
       const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
-        ? await runStage2(stage2InputResolved, stage2BaseStage, {
+        ? runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -2289,9 +2309,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         : (payload.options.declutter && path1B ? path1B : path1A);
       
       // FIX 4: Wrap Stage 2 execution with timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), STAGE2_TIMEOUT_MS)
-      );
+      let stage2TimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise((_, reject) => {
+        stage2TimeoutHandle = setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), STAGE2_TIMEOUT_MS);
+      });
       
       let stage2Outcome: any;
       try {
@@ -2307,6 +2328,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } else {
           throw timeoutError;
         }
+      } finally {
+        // Always clear the timeout to avoid timer leak
+        if (stage2TimeoutHandle) clearTimeout(stage2TimeoutHandle);
       }
       
       // FIX 6: Track Stage 2 end
@@ -4008,6 +4032,7 @@ async function handleEditJob(payload: any) {
   }
   if (!mask) {
     nLog("[worker-edit] No mask provided, aborting edit.");
+    await safeWriteJobStatus(jobId, { status: "failed", errorMessage: "No mask provided for edit" }, "edit_no_mask");
     return;
   }
 
@@ -4095,7 +4120,8 @@ const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
-    await safeWriteJobStatus((payload as any).jobId, { status: "processing" }, "job_start");
+    const jobId = (payload as any).jobId;
+    await safeWriteJobStatus(jobId, { status: "processing" }, "job_start");
     try {
       if (typeof payload === "object" && payload && "type" in payload) {
         if (payload.type === "enhance") {
@@ -4270,24 +4296,33 @@ const worker = new Worker(
       // If job fails before reaching finalization, refund the reserved credits
       try {
         await finalizeReservationFromWorker({
-          jobId: (payload as any).jobId,
+          jobId,
           stage12Success: false, // Job failed - refund Stage 1/2 credits
           stage2Success: false,  // Job failed - refund Stage 2 credits
         });
-        nLog(`[BILLING] Released reservation for failed job: ${(payload as any).jobId}`);
+        nLog(`[BILLING] Released reservation for failed job: ${jobId}`);
       } catch (billingErr) {
         nLog("[BILLING] Failed to release reservation on job failure (non-blocking):", (billingErr as any)?.message || billingErr);
       }
       
-      await safeWriteJobStatus((payload as any).jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
+      await safeWriteJobStatus(jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
       throw err;
+    } finally {
+      // Best-effort temp file cleanup — prevents /tmp from filling up
+      try {
+        if (jobId) cleanupTempFiles(jobId);
+      } catch { /* ignore */ }
     }
   },
   {
     connection: { url: REDIS_URL },
-    concurrency: Number(process.env.WORKER_CONCURRENCY || 2)
+    concurrency: Number(process.env.WORKER_CONCURRENCY || 2),
+    lockDuration: Number(process.env.BULLMQ_LOCK_DURATION_MS || 300_000), // 5 min — jobs run 2–5 min
   }
 );
+
+// Wire up shutdown handler reference
+_workerRef = worker;
 
 // Show readiness (optional in BullMQ v5)
 (async () => {

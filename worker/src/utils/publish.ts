@@ -20,12 +20,22 @@ function sanitizeRegion(input?: string | null): string {
   return raw.toLowerCase();
 }
 
+export type PublishResult = {
+  url: string;
+  kind: "s3" | "data-url";
+  key?: string;
+  /** true when S3 was configured but upload failed — fell back to data URL */
+  degraded?: boolean;
+  /** The S3 error message when degraded */
+  s3Error?: string;
+};
+
 /**
  * Publish an image so the client can access it across services.
  * - If S3_BUCKET is set, uploads to S3 (optionally via S3_PUBLIC_BASEURL/CDN).
  * - Otherwise, returns a data URL (good for demo/smaller files).
  */
-export async function publishImage(filePath: string): Promise<{ url: string; kind: "s3" | "data-url"; key?: string }>{
+export async function publishImage(filePath: string): Promise<PublishResult> {
   const bucket = process.env.S3_BUCKET;
   logIfNotFocusMode('\n========================================\n');
   logIfNotFocusMode(`[PUBLISH] File: ${path.basename(filePath)}\n`);
@@ -114,22 +124,30 @@ export async function publishImage(filePath: string): Promise<{ url: string; kin
       logIfNotFocusMode('========================================\n\n');
       return { url, kind: 's3', key };
     } catch (e: any) {
-      // Module not installed or runtime import failed; fall back to data URL
-      logIfNotFocusMode('[PUBLISH] ❌ FAILED!\n');
-      logIfNotFocusMode(`[PUBLISH] Error: ${e?.message || String(e)}\n`);
+      // S3 was configured but upload failed — return data URL but mark degraded
+      const errMsg = e?.message || String(e);
+      console.error(`[PUBLISH] S3 UPLOAD FAILED (degraded): ${errMsg}`);
+      logIfNotFocusMode('[PUBLISH] ❌ S3 UPLOAD FAILED!\n');
+      logIfNotFocusMode(`[PUBLISH] Error: ${errMsg}\n`);
       logIfNotFocusMode(`[PUBLISH] Error code: ${e?.Code || e?.code || 'none'}\n`);
       logIfNotFocusMode(`[PUBLISH] Full error: ${JSON.stringify(e, null, 2)}\n`);
-      logIfNotFocusMode('[PUBLISH] >>> FALLING BACK TO DATA URL <<<\n');
+      logIfNotFocusMode('[PUBLISH] >>> Returning data URL with degraded flag <<<\n');
       logIfNotFocusMode('========================================\n\n');
+
+      // Build data URL fallback explicitly so callers still get a usable URL
+      const fallbackResult = await buildDataUrl(filePath);
+      return { ...fallbackResult, degraded: true, s3Error: errMsg };
     }
   } else {
     logIfNotFocusMode('[PUBLISH] S3_BUCKET not set - using data URL\n');
     logIfNotFocusMode('========================================\n\n');
   }
 
-  // Fallback for dev/demo: inline data URL
-  // IMPORTANT: For production, configure S3_BUCKET to avoid huge data URLs
-  // Resize to max 800px to keep data URL reasonable (<500KB typically)
+  return buildDataUrl(filePath);
+}
+
+/** Build a data-URL result from a local file (dev/demo fallback). */
+async function buildDataUrl(filePath: string): Promise<PublishResult> {
   logIfNotFocusMode('[PUBLISH] Generating data URL fallback...\n');
   const buf = fs.readFileSync(filePath);
   const mime = mimeFromExt(filePath);

@@ -10,6 +10,11 @@ export function cancelRouter() {
   const r = Router();
 
   r.post("/api/jobs/:id/cancel", async (req, res) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: "not_authenticated" });
+    }
+
     const { id } = req.params;
     const redis = createClient({ url: REDIS_URL });
     await redis.connect();
@@ -25,6 +30,11 @@ export function cancelRouter() {
   });
 
   r.post("/api/jobs/cancel-batch", async (req, res) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: "not_authenticated" });
+    }
+
     const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
     const redis = createClient({ url: REDIS_URL });
     await redis.connect();

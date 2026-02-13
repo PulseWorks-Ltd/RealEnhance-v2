@@ -13,9 +13,9 @@ export function getRedis(): RedisClientType {
       const fake: Partial<RedisClientType> = {
         // hash helpers
         hSet: async () => 1,
-        hGet: async () => null,
+        hGet: async () => null as any,
         // key expiry
-        expire: async () => 1,
+        expire: async () => true as any,
         // simple string key
         set: async () => "OK" as any,
         get: async () => null,
@@ -49,21 +49,25 @@ export function getRedis(): RedisClientType {
         hashStore.get(k)!.set(f, v);
         return 1;
       },
+      // @ts-ignore - Mock signature doesn't match all overloads
       hGet: async (key: any, field: any) => {
         const k = String(key);
         const f = String(field);
         return hashStore.get(k)?.get(f) ?? null;
       },
       // Key expiry (no-op in mock)
-      expire: async () => 1,
+      expire: async () => true as any,
       // Simple string operations
+      // @ts-ignore - Mock signature doesn't match all overloads
       set: async (key: any, value: any) => {
         store.set(String(key), String(value));
         return "OK" as any;
       },
+      // @ts-ignore - Mock signature doesn't match all overloads
       get: async (key: any) => {
         return store.get(String(key)) ?? null;
       },
+      // @ts-ignore - Mock signature doesn't match all overloads
       del: async (key: any) => {
         const existed = store.delete(String(key));
         return existed ? 1 : 0;
@@ -77,6 +81,7 @@ export function getRedis(): RedisClientType {
         return listStore.get(k)!.length as any;
       },
       lTrim: async () => "OK" as any,
+      // @ts-ignore - Mock signature doesn't match all overloads
       lRange: async (key: any, start: number, stop: number) => {
         const k = String(key);
         const list = listStore.get(k) || [];

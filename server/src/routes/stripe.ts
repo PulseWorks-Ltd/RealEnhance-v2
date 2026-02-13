@@ -299,6 +299,7 @@ router.post(
         }
 
         case "invoice.payment_succeeded": {
+          // Merged duplicate case: handles both credit granting AND agency status/period updates
           const invoice = event.data.object as Stripe.Invoice;
           const subscriptionId = (invoice as any).subscription as string | null;
 
@@ -321,6 +322,7 @@ router.post(
 
           await upsertAgencyAllowance(agencyId, planTier);
 
+          // Credit granting
           try {
             const result = await recordSubscriptionInvoiceCredit({
               agencyId,
@@ -341,6 +343,35 @@ router.post(
             }
           } catch (grantErr) {
             console.error(`[STRIPE] Failed to record subscription credits for invoice ${invoice.id}`, grantErr);
+          }
+
+          // Agency status & billing period update (was previously in unreachable duplicate case)
+          try {
+            const agency = await getAgency(agencyId);
+            if (agency) {
+              agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
+
+              const periodStart = (subscription as any).current_period_start;
+              const periodEnd = (subscription as any).current_period_end;
+              if (periodStart) {
+                agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
+              }
+              if (periodEnd) {
+                agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
+              }
+
+              if (priceId) {
+                agency.stripePriceId = priceId;
+                if (mapped) {
+                  agency.planTier = mapped.planTier;
+                }
+              }
+
+              await updateAgency(agency);
+              console.log(`[STRIPE] ✅ Invoice paid for agency ${agencyId}: $${(invoice.amount_paid / 100).toFixed(2)}`);
+            }
+          } catch (agencyErr) {
+            console.error(`[STRIPE] Failed to update agency for invoice ${invoice.id}`, agencyErr);
           }
 
           break;
@@ -367,59 +398,6 @@ router.post(
           await updateAgency(agency);
 
           console.log(`[STRIPE] ✅ Subscription cancelled for agency ${agencyId}`);
-          break;
-        }
-
-        case "invoice.payment_succeeded": {
-          const invoice = event.data.object as Stripe.Invoice;
-          const subscriptionId = (invoice as any).subscription as string;
-
-          if (!subscriptionId) {
-            break; // Not a subscription invoice
-          }
-
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-          const agencyId = subscription.metadata.agencyId;
-
-          if (!agencyId) {
-            console.error("[STRIPE] No agencyId in subscription metadata");
-            break;
-          }
-
-          const agency = await getAgency(agencyId);
-          if (!agency) {
-            console.error(`[STRIPE] Agency not found: ${agencyId}`);
-            break;
-          }
-
-          // Ensure status is ACTIVE after successful payment
-          agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
-
-          // Safely convert Unix timestamps to ISO strings
-          const periodStart = (subscription as any).current_period_start;
-          const periodEnd = (subscription as any).current_period_end;
-          if (periodStart) {
-            agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
-          }
-          if (periodEnd) {
-            agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
-          }
-
-          const priceId = subscription.items.data[0]?.price.id;
-          if (priceId) {
-            agency.stripePriceId = priceId;
-            const mapped = findPlanByPriceId(priceId);
-            if (mapped) {
-              agency.planTier = mapped.planTier;
-              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
-            } else {
-              console.error(`[STRIPE] Unknown price ID ${priceId} on invoice.payment_succeeded for agency ${agencyId}`);
-            }
-          }
-
-          await updateAgency(agency);
-
-          console.log(`[STRIPE] ✅ Invoice paid for agency ${agencyId}: $${(invoice.amount_paid / 100).toFixed(2)}`);
           break;
         }
 
