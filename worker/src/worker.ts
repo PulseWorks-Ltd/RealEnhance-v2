@@ -2279,18 +2279,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
+  const retrySourceStageRaw = String((payload as any).retrySourceStage || "").toLowerCase();
+  const isStage2Retry = (payload as any).retryType === "manual_retry"
+    && (retrySourceStageRaw === "stage2" || retrySourceStageRaw === "2" || retrySourceStageRaw === "1b-stage-ready");
   const declutterRequested = !!payload.options.declutter;
-  const stage1BRequested = declutterRequested;
+  const stage1BRequested = declutterRequested || !!payload.stage2OnlyMode?.enabled || isStage2Retry;
   const lineage1A = stageLineage.stage1A?.output;
   const lineage1B = stageLineage.stage1B?.output;
 
   const resolveStage2Source = (ctx: {
     stage1BRequested: boolean;
+    allowStage1AFallback: boolean;
     stage1BOutputPath?: string | null;
     stage1AOutputPath?: string | null;
   }) => {
     if (ctx.stage1BRequested) {
       if (!ctx.stage1BOutputPath) {
+        if (ctx.allowStage1AFallback && ctx.stage1AOutputPath) {
+          nLog("[stage2-retry] Stage1B baseline missing, falling back to Stage1A", {
+            jobId: payload.jobId,
+            stage1APath: ctx.stage1AOutputPath,
+          });
+          return ctx.stage1AOutputPath;
+        }
         throw new Error("Stage 2 blocked: Stage 1B requested but no Stage 1B output available");
       }
       return ctx.stage1BOutputPath;
@@ -2302,6 +2313,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     stage2InputPath = resolveStage2Source({
       stage1BRequested,
+      allowStage1AFallback: isStage2Retry || !!payload.stage2OnlyMode?.enabled,
       stage1BOutputPath: lineage1B,
       stage1AOutputPath: lineage1A,
     }) || undefined;
@@ -2320,10 +2332,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage1BRequested,
       using: stage2InputPath,
     });
+    if ((isStage2Retry || !!payload.stage2OnlyMode?.enabled) && stage2InputPath === lineage1B) {
+      nLog(`[stage2-retry] Using Stage1B baseline: ${stage2InputPath}`);
+    }
   }
 
   stage12Success = true;
-  let stage2BaseStage: "1A"|"1B" = stage1BRequested ? "1B" : "1A";
+  let stage2BaseStage: "1A"|"1B" = stage2InputPath && lineage1B && stage2InputPath === lineage1B ? "1B" : "1A";
   const stage2InputUsing = stage2BaseStage === "1B" ? "1B" : "1A";
   const stage2InputSuffix = stage2InputPath ? stage2InputPath.substring(Math.max(0, stage2InputPath.length - 40)) : "";
   nLog("[STAGE2_INPUT_LINEAGE]", {
