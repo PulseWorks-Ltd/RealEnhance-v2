@@ -344,6 +344,26 @@ You must NOT add, create, or invent ANY structural features or landscape element
 
 If you add ANY structural feature that wasn't already visible, the task is FAILED.
 
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region becomes newly visible during reconstruction,
+it may ONLY continue already-visible surfaces and lines.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, extend existing texture/paint/material conservatively.
+Never create new architectural or service elements.
+
 COLOR PRESERVATION — LOCKED
 
 All surface colors must remain IDENTICAL to the input image:
@@ -931,6 +951,26 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region appears newly visible during rendering,
+it may ONLY continue already-visible architecture and materials.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, continue existing surfaces conservatively with fewer additions.
+Never create new architectural or service elements.
+
 ────────────────────────
 ROOM TYPE AUTHORITY — HARD RULE
 ────────────────────────
@@ -1369,6 +1409,26 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
+
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region appears newly visible during rendering,
+it may ONLY continue already-visible architecture and materials.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, continue existing surfaces conservatively with fewer additions.
+Never create new architectural or service elements.
 
 ────────────────────────
 ROOM TYPE AUTHORITY — HARD RULE
