@@ -5493,7 +5493,7 @@ export default function BatchProcessor() {
                               <p className="mt-1 text-xs text-slate-600">
                                 {displayStatus}
                               </p>
-                              {isError && (stage1BUrl || stage1AUrl) && (
+                              {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
                                 <p className="mt-1 text-xs text-rose-600">
                                   {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
                                 </p>
