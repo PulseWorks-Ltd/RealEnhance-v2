@@ -129,3 +129,4 @@ railway logs --service worker | grep "No S3 configured"
 2. Check IAM/R2 permissions
 3. Test bucket access with AWS CLI
 4. Check worker logs for S3 upload errors
+
