@@ -401,28 +401,11 @@ Return only the empty room image.`.trim();
 GOAL:
 Clean the exterior space while preserving the property and landscaping.
 
-STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
-
-YOUR ONLY JOB is to remove movable clutter and reconstruct the exact same underlying surfaces. Nothing else.
-
-- Do NOT create any new openings, doors, doorways, arches, niches, or alcoves.
-- Do NOT add new windows or change window size or position.
-- Do NOT create wall gaps or structural voids.
-- Do NOT add or extend decking, paths, or hardscaping.
-- Do NOT invent architectural features, fences, or permanent structures.
-- Wall and surface topology must remain identical to the input image.
-- Only reveal portions of existing surfaces that were blocked by removable items.
-- If uncertain what is under an object, recreate matching surface patterns — NEVER create structural features.
-- If any new structural feature is introduced, the result is invalid.
-
-COLOR PRESERVATION — LOCKED
-
-All surface colors must remain IDENTICAL to the input image:
-- Do NOT change wall colors, cladding colors, or paint tones
-- Do NOT change deck colors, paving colors, or surface tones
-- Do NOT brighten, darken, or shift any surface colors
-- When reconstructing behind clutter, match the EXACT surrounding surface color
-- Wall colors = LOCKED | Surface colors = LOCKED
+STRUCTURE SAFETY — LIGHT MODE
+Do not alter walls, fences, decking, paths, driveways, plumbing fixtures, or fixed structures.
+Do not create holes, openings, or remove architectural elements.
+Only remove loose, portable, non-attached items.
+Match surrounding surface colors when reconstructing behind removed items.
 
 REMOVE:
 - Outdoor furniture
@@ -458,74 +441,17 @@ TASK:
 Remove small, loose, and personal clutter ONLY to depersonalize the space.
 Preserve all architecture and major furniture.
 
-STRUCTURAL INTEGRITY LOCK — MUST FOLLOW
-
-YOUR ONLY JOB is to remove or reduce movable clutter and reconstruct the exact same underlying surfaces. Nothing else.
-
-- Do NOT create any new openings, doors, doorways, arches, niches, or alcoves.
-- Do NOT add new windows or change window size or position.
-- Do NOT create wall gaps or structural voids.
-- Do NOT invent architectural features or built-ins.
-- Wall topology must remain identical to the input image.
-- Only reveal portions of existing openings that are clearly already present but partially blocked by clutter.
-- If uncertain what is behind an object, recreate matching wall/floor surface — NEVER create an opening.
-- If any new structural feature is introduced, the result is invalid.
-
-COLOR PRESERVATION — LOCKED
-
-Wall, floor, and ceiling colors must remain IDENTICAL to the input image:
-- Do NOT change wall colors, paint tones, or wallpaper colors
-- Do NOT change floor colors, carpet tones, or flooring colors
-- Do NOT change ceiling colors or paint
-- Do NOT brighten, darken, or shift any surface colors
-- When reconstructing behind clutter, match the EXACT surrounding surface color
-- Wall colors = LOCKED | Floor colors = LOCKED | Ceiling colors = LOCKED
+STRUCTURE SAFETY — LIGHT MODE
+Do not alter walls, ceilings, floors, cabinetry, plumbing fixtures, or built-in joinery.
+Do not create holes, openings, or remove architectural elements.
+Only remove loose, portable, non-attached items.
+Match surrounding surface colors when reconstructing behind removed items.
 
 DO NOT TOUCH:
 Architecture, built-in joinery, major furniture, curtains, blinds, rugs, fixtures, appliances.
 
 REMOVE ONLY:
 Loose personal items, paper, surface clutter, small decor, bench clutter.
-
-STRUCTURAL HARDLOCK RULES — MUST FOLLOW
-
-Treat the following as permanent built-in structures, NOT removable objects:
-- kitchen islands
-- built-in counters
-- fixed cabinetry
-- bench units
-- vanities
-- built-in storage
-- fixed appliances
-- structural fixtures
-
-These must NEVER be:
-- removed
-- replaced
-- converted
-- restaged
-- resized
-- moved
-- relabeled as furniture
-
-Kitchen islands must NEVER be converted into dining tables or staging furniture.
-
-Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
-
-ARCHITECTURE HINTS — CONTEXT ONLY, REMOVAL ONLY
-
-Architecture hints (built-in detection, fixture identification) are provided as
-context to help you decide what to KEEP — never what to ADD.
-
-  context_only = true
-  removal_only = true
-  no_completion = true
-  no_inference = true
-
-If any architecture hint conflicts with visible pixels → trust the pixels.
-Never add cabinetry, fixtures, or structures that are not clearly visible
-in the input image. Do NOT complete partially visible structures.
-Do NOT infer hidden built-ins from context clues.
 
 SAFE MODE:
 If unsure → KEEP IT.
