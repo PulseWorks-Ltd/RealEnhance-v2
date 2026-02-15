@@ -840,6 +840,10 @@ function buildStage2InteriorPromptNZStyle(
     ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
     : "Refresh ALL existing furniture with modern equivalents.\nPreserve layout, architecture, and flow EXACTLY.";
 
+  const modelTemperature = isFullStaging ? 0.25 : 0.33;
+  const modelTopP = isFullStaging ? 0.70 : 0.78;
+  const modelTopK = isFullStaging ? 30 : 34;
+
   // Format layout context if available (FULL staging only)
   let layoutContextBlock = "";
   if (isFullStaging && opts?.layoutContext) {
@@ -906,9 +910,9 @@ TASK:
 ${taskInstruction}
 
 MODEL:
-Temperature: 0.33
-TopP: 0.78
-TopK: 34
+Temperature: ${modelTemperature}
+TopP: ${modelTopP}
+TopK: ${modelTopK}
 ${layoutContextBlock}
 
 ────────────────────────────────
