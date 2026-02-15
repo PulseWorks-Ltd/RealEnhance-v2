@@ -2270,6 +2270,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage1BRequested = declutterRequested || !!payload.stage2OnlyMode?.enabled || isStage2Retry;
   const lineage1A = stageLineage.stage1A?.output;
   const lineage1B = stageLineage.stage1B?.output;
+  const hasStage1BOutput = !!lineage1B;
 
   const resolveStage2Source = (ctx: {
     stage1BRequested: boolean;
@@ -2277,18 +2278,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BOutputPath?: string | null;
     stage1AOutputPath?: string | null;
   }) => {
-    if (ctx.stage1BRequested) {
-      if (!ctx.stage1BOutputPath) {
-        if (ctx.allowStage1AFallback && ctx.stage1AOutputPath) {
-          nLog("[stage2-retry] Stage1B baseline missing, falling back to Stage1A", {
-            jobId: payload.jobId,
-            stage1APath: ctx.stage1AOutputPath,
-          });
-          return ctx.stage1AOutputPath;
-        }
-        throw new Error("Stage 2 blocked: Stage 1B requested but no Stage 1B output available");
-      }
+    // Source-of-truth routing: if Stage 1B output exists, Stage 2 must use it.
+    if (ctx.stage1BOutputPath) {
       return ctx.stage1BOutputPath;
+    }
+    if (ctx.stage1BRequested) {
+      if (ctx.allowStage1AFallback && ctx.stage1AOutputPath) {
+        nLog("[stage2-retry] Stage1B baseline missing, falling back to Stage1A", {
+          jobId: payload.jobId,
+          stage1APath: ctx.stage1AOutputPath,
+        });
+        return ctx.stage1AOutputPath;
+      }
+      throw new Error("Stage 2 blocked: Stage 1B requested but no Stage 1B output available");
     }
     return ctx.stage1AOutputPath;
   };
@@ -2321,6 +2323,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[STAGE2_SOURCE_LOCK]", {
       jobId: payload.jobId,
       stage1BRequested,
+      hasStage1BOutput,
       using: stage2InputPath,
     });
     if ((isStage2Retry || !!payload.stage2OnlyMode?.enabled) && stage2InputPath === lineage1B) {
@@ -2338,23 +2341,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     pathSuffix: stage2InputSuffix,
   });
   
-  // ✅ Determine Stage 2 source stage - PREFER RECORDED METADATA
+  // ✅ Determine Stage 2 source stage - based on actual Stage 2 input lineage
   let stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = "1A";
   
-  if (isExteriorScene || (payload.options as any)?.stage2Only === true) {
+  if (isExteriorScene) {
     stage2SourceStage = "1A";
-  } else if (stage1BRequested && lineage1B) {
-    // Check if stage1BMode was recorded in metadata (reliable source)
+  } else if (stage2BaseStage === "1B" && lineage1B) {
+    // Prefer recorded effective Stage 1B mode
     const recordedMode = (sceneMeta as any).stage1BMode;
     if (recordedMode === "light") {
       stage2SourceStage = "1B-light";
     } else if (recordedMode === "stage-ready") {
       stage2SourceStage = "1B-stage-ready";
     } else {
-      // Fallback: recompute from payload (for backward compatibility)
-      const fallbackMode = (payload.options as any).declutterMode;
+      // Fallback: use effective runtime mode (declutterMode), then payload mode for compatibility
+      const fallbackMode = declutterMode === "light" || declutterMode === "stage-ready"
+        ? declutterMode
+        : ((payload.options as any).declutterMode === "light" ? "light" : "stage-ready");
       stage2SourceStage = fallbackMode === "light" ? "1B-light" : "1B-stage-ready";
-      nLog(`[WORKER] ⚠️ stage1BMode not in metadata, using fallback: ${stage2SourceStage}`);
+      nLog(`[WORKER] ⚠️ stage1BMode missing in metadata, using effective fallback mode=${fallbackMode} sourceStage=${stage2SourceStage}`);
     }
   }
   
@@ -2378,6 +2383,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[PIPELINE_ROUTING] Stage 2 routing:`, {
     roomType: canonicalRoomTypeForStage2,
     isMultiRoom: forceRefreshRoomTypes.has(canonicalRoomTypeForStage2),
+    hasStage1BOutput,
+    stage2InputUsing,
+    stage1BModeRecorded: (sceneMeta as any).stage1BMode || null,
     sourceStage: stage2SourceStage,
     promptMode: stage2PromptMode,
     forceRefresh: forceRefreshPromptMode
