@@ -4261,7 +4261,7 @@ export default function BatchProcessor() {
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
-  <div className={(activeTab === 'enhance' || activeTab === 'images') ? "w-full min-h-screen font-sans text-slate-900" : "bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
+  <div className={(activeTab === 'enhance' || activeTab === 'images') ? "w-full min-h-screen font-sans text-slate-900" : "max-w-6xl mx-auto bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
         
         {/* Upload Tab */}
         {activeTab === "upload" && (

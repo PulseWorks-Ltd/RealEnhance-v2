@@ -62,7 +62,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
   ];
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-[calc(100vh-theme(spacing.16))] w-full overflow-hidden bg-slate-50">
+    <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-slate-50">
       {/* Dot Pattern Background */}
       <div 
         className="absolute inset-0 opacity-40"
