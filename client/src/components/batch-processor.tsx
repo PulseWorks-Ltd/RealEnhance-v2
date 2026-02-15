@@ -2225,6 +2225,7 @@ export default function BatchProcessor() {
                 imageId: imageId || existing.imageId,
                 jobId: polledId || parentJobId || existing.jobId,
                 originalUrl: originalUrl || existing.originalUrl,
+                originalImageUrl: originalUrl || existing.originalImageUrl || existing.originalUrl,
                 filename,
                 warnings: warningList,
                 uiStatus,
@@ -2237,6 +2238,8 @@ export default function BatchProcessor() {
                   ...(existing.result || {}),
                   imageUrl: completedFinal ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
                   resultUrl: displayUrl ?? null,
+                  originalImageUrl: originalUrl || existing.result?.originalImageUrl || existing.result?.originalUrl || existing.originalImageUrl || existing.originalUrl,
+                  originalUrl: originalUrl || existing.result?.originalUrl || existing.result?.originalImageUrl || existing.originalUrl || existing.originalImageUrl,
                   stageUrls: stageUrls ?? null,
                   requestedStages: mergedRequestedStages,
                   meta: mergedMeta,
@@ -3196,7 +3199,11 @@ export default function BatchProcessor() {
 
     // Check if this is a synthetic placeholder file created from batch persistence
     const isPlaceholder = (fileToRetry as any).__restored === true;
-    const originalFromStoreUrl = results[imageIndex]?.result?.originalImageUrl || results[imageIndex]?.originalImageUrl;
+    const originalFromStoreUrl =
+      results[imageIndex]?.result?.originalImageUrl ||
+      results[imageIndex]?.result?.originalUrl ||
+      results[imageIndex]?.originalImageUrl ||
+      results[imageIndex]?.originalUrl;
 
     // If we only have a placeholder, pull the original from storage so the retry uses a real image
     let fileForUpload: File = fileToRetry;
@@ -5375,6 +5382,13 @@ export default function BatchProcessor() {
                         const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null);
                         const bestDisplayUrl = bestAvailable.url || displayedUrl || previewUrls[i] || null;
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
+                        const persistedOriginalUrl =
+                          result?.result?.originalImageUrl ||
+                          result?.originalImageUrl ||
+                          result?.result?.originalUrl ||
+                          result?.originalUrl ||
+                          null;
+                        const compareOriginalUrl = persistedOriginalUrl || (((file as any)?.__restored !== true && previewUrls[i] && previewUrls[i] !== RESTORED_PLACEHOLDER) ? previewUrls[i] : undefined);
                         const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting"].includes(status);
                         const canUseRemotePreview = status === "completed" || (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
                         const previewUrl = isNonTerminalProcessingStatus
@@ -5432,7 +5446,7 @@ export default function BatchProcessor() {
                                 setPreviewImage({
                                   url: enhancedUrl || previewUrl,
                                   filename: file.name,
-                                  originalUrl: previewUrls[i],
+                                  originalUrl: compareOriginalUrl,
                                   index: i
                                 });
                               }}
@@ -5570,7 +5584,7 @@ export default function BatchProcessor() {
                                     onClick={() => setPreviewImage({
                                       url: enhancedUrl!,
                                       filename: file.name,
-                                      originalUrl: previewUrls[i],
+                                      originalUrl: compareOriginalUrl,
                                       index: i
                                     })}
                                     className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
