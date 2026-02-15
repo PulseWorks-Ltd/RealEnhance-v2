@@ -5,90 +5,66 @@
 // Prevents kitchen hallucination, cross-zone staging bleed, and invented cabinetry
 const MULTI_LIVING_CONSTRAINT_BLOCK = `
 ────────────────────────────────
-MULTI-ZONE LAYOUT RULES — MULTIPLE LIVING AREAS
+MULTI-ZONE STAGING — TWO-ZONE LIMIT (MULTIPLE LIVING AREAS)
 ────────────────────────────────
 
-This image contains multiple distinct functional living zones within one open or connected space
-(for example: lounge + dining, lounge + study nook, living + kitchen edge, or multiple seating areas).
+This image may contain more than one functional living zone.
+Examples: lounge + dining, dining + kitchen edge, lounge + study nook.
 
-You must treat each visible functional zone independently.
+You MUST detect functional zones — but you may stage a MAXIMUM of TWO zones only.
 
 ZONE DETECTION — REQUIRED
 
-Before placing any staged furniture:
+Identify candidate zones using:
+• furniture groupings
+• lighting clusters
+• floor covering changes
+• wall alignment and openings
+• built-in features
+• layout context hints (if provided)
 
-Identify each distinct functional area by:
-  • furniture grouping
-  • floor covering changes
-  • lighting clusters
-  • wall alignment and openings
-  • existing layout cues
+Rank zones by visual dominance and usable floor area.
 
-Stage each zone separately and appropriately.
+TWO-ZONE STAGING LIMIT — HARD RULE
 
-Do NOT merge zones into one large staged layout.
+Stage ONLY the TWO most visually dominant and clearly defined zones.
 
-STRICT ZONE BOUNDARY PRESERVATION
+Do NOT stage a third zone — even if space suggests one may exist outside frame.
 
-You must NOT extend staging elements across functional zone boundaries.
-
-Do NOT:
-  • extend living room staging into kitchen zones
-  • add kitchen furniture where none existed
-  • add cabinetry, appliances, or counters
-  • convert dining zones into lounge zones
-  • convert circulation areas into furnished zones
-
-If a zone appears empty or transitional:
-→ leave it clean and empty rather than inventing a function.
-
-Empty is valid. Invented rooms are not.
-
-KITCHEN + SERVICE AREA PROTECTION (CRITICAL)
-
-If any portion of the image appears to be kitchen, kitchenette, or service area:
-
-Do NOT:
-  • add cabinets
-  • add appliances
-  • add islands
-  • add counters
-  • add sinks
-  • add built-in storage
-  • restage as a kitchen if it is not clearly one
-
-Kitchen structure and layout must remain exactly as shown.
-
-You may only stage loose portable items appropriate to visible surfaces.
-
-FURNITURE PLACEMENT — MULTI-ZONE MODE
-
-Within each detected living zone:
-  • Create one coherent furniture grouping per zone
-  • Keep scale modest
-  • Avoid overcrowding
-  • Maintain clear walking paths between zones
-  • Respect existing focal directions (windows, walls, media walls)
-
-Do NOT create a single oversized staging cluster across the whole room.
+If more than two zones are detected:
+→ stage the top two only
+→ leave remaining zones clean and minimally treated
 
 NO FUNCTION INVENTION
 
-Do NOT invent new room functions.
+Do NOT invent missing zones.
 
-If a second zone's purpose is unclear:
-→ keep it minimally staged or empty
-→ do NOT guess and fully furnish it.
+If a kitchen is not clearly visible:
+→ do NOT add kitchen staging elements
+→ do NOT add cabinetry, counters, or appliances
 
-FAILURE SAFETY RULE
+If a dining area is not clearly visible:
+→ do NOT create one.
 
-If zone boundaries are ambiguous:
+Partial hints are NOT permission to stage a full zone.
 
-→ Stage conservatively
-→ Place fewer items
-→ Do NOT expand staging footprint
+ZONE BOUNDARY PRESERVATION
 
-Over-staging is worse than under-staging.
+Do NOT let staging from one zone bleed into another.
+Each staged zone must remain spatially contained.
+
+If boundaries are unclear:
+→ reduce furniture count
+→ stage conservatively
+→ prefer under-staging over overreach.
+
+FAIL-SAFE RULE
+
+When uncertain which zones are valid:
+
+→ stage ONE primary zone only.
+
+Never exceed two staged zones.
 
 ────────────────────────────────
 `;
@@ -856,7 +832,7 @@ function buildStage2InteriorPromptNZStyle(
     layoutContextBlock = `
 
 ────────────────────────────────
-LAYOUT CONTEXT — ADVISORY ONLY
+LAYOUT CONTEXT — STRONG SPATIAL GUIDANCE (DO NOT OVERRIDE STRUCTURE)
 (Vision Pre-Pass Spatial Guidance)
 ────────────────────────────────
 
@@ -886,6 +862,10 @@ ADVISORY USAGE:
 • Consider focal wall for staging composition
 • Respect occlusion risk when adding items
 • Adjust to detected complexity level
+${room === "multi_living" ? `
+When multi_living is active:
+• Use detected zones to choose the TWO staging zones only
+• Ignore lower-ranked zones` : ""}
 
 ABSOLUTE PRIORITY:
 1. Visible architectural structure (highest)
@@ -1012,6 +992,7 @@ Otherwise:
 Stage exactly as requested, even if the layout is unusual for that room type.
 
 User intent overrides model interpretation.
+${room === "multi_living" ? MULTI_LIVING_CONSTRAINT_BLOCK : ""}
 
 ────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
@@ -1073,7 +1054,6 @@ If the visible layout is ambiguous, you MUST still place the correct furniture s
 Do NOT substitute a different furniture category due to layout preference.
 
 Room type furniture requirements override layout heuristics.
-${room === "multi_living" ? MULTI_LIVING_CONSTRAINT_BLOCK : ""}
 ────────────────────────────────
 ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
 ────────────────────────────────
@@ -1234,6 +1214,13 @@ Permitted in adjacent open-plan zones:
 - If room type is "dining_room" → dining set in separate zone
 - If room type is "living_room" → lounge furniture in separate zone
 - If room type is "kitchen" → focus on kitchen accessories only
+
+KITCHEN EDGE SAFETY — MULTI-LIVING MODE
+
+If only part of a kitchen is visible:
+• Do NOT expand kitchen staging beyond visible counters/surfaces
+• Do NOT add cabinets, islands, or appliances
+• Only add small portable accessories on clearly visible surfaces
 
 ────────────────────────────────
 ${isFullStaging ? 'FULL STAGING MODE' : 'REFRESH MODE'} — STRICT LOGIC
