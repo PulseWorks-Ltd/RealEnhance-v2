@@ -426,6 +426,26 @@ Do NOT remove, replace, resize, restyle, or reposition them.
 
 Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
 
+SMALL WALL FIXTURES — STRICT PRESERVATION (CRITICAL)
+
+Light switches, power outlets, wall plates, control panels, thermostats,
+data ports, and similar small wall-mounted fixtures are FIXED ELEMENTS.
+
+You must NOT:
+• add new switches or outlets
+• duplicate switches or outlets
+• move switch or outlet positions
+• invent missing wall controls
+• “complete” partially visible switch plates
+• generate new wall hardware when reconstructing surfaces
+
+If a switch or outlet was hidden behind removed furniture:
+→ reconstruct the wall surface cleanly
+→ do NOT add a replacement fixture.
+
+If uncertain whether a wall detail is a fixture:
+→ leave the wall plain.
+
 STRUCTURAL HARDLOCK RULES — MUST FOLLOW
 
 Treat the following as permanent built-in structures, NOT removable objects:
@@ -498,6 +518,7 @@ Seating, tables, freestanding storage, decor, rugs, plants, clutter, personal it
 
 QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
+When reconstructing walls, prefer clean blank wall over adding any wall hardware.
 
 SAFETY FAIL RULES:
 Any movable items remain → FAIL
