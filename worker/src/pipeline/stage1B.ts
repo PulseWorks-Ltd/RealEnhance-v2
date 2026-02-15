@@ -157,8 +157,8 @@ Do not add blinds.
       }
     }
 
-    const baseTemp = 0.30;
-    const retryTemp = (declutterMode === "stage-ready" && attemptIndex >= 1)
+    const baseTemp = 0.24;
+    const retryTemp = attemptIndex >= 1
       ? Math.max(0.05, baseTemp * 0.9)
       : baseTemp;
 
@@ -175,7 +175,7 @@ Do not add blinds.
       outputPath,
       // Low-temp for deterministic, aggressive removal
       temperature: retryTemp,
-      topP: 0.72,
+      topP: 0.70,
       topK: 30,
       // NZ explicit 1B prompt (mode-specific)
       promptOverride,

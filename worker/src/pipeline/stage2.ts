@@ -169,6 +169,7 @@ export async function runStage2(
   };
   const resolvedSourceStage1B = resolveStageUrl(sourceStageMap, "1B");
   const isFullStaging = resolvedSourceStage1B === "1B-stage-ready";
+  const isRefreshStaging = !isFullStaging;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   
   if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && layoutPlannerEnabled) {
@@ -394,21 +395,27 @@ Do not add blinds.
       let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
       if (isNZStyleEnabled()) {
         const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
-        let temperature = preset.temperature;
+        const refreshSampling = { temperature: 0.33, topP: 0.78, topK: 34 };
+        const fullSampling = { temperature: 0.25, topP: 0.70, topK: 30 };
+        const isInteriorScene = scene === 'interior';
+        const baseSampling = isInteriorScene
+          ? (isRefreshStaging ? refreshSampling : fullSampling)
+          : { temperature: preset.temperature, topP: preset.topP, topK: preset.topK };
+        let temperature = baseSampling.temperature;
 
         // Apply tightened generation config when stage-aware is enabled
         if (stageAwareConfig.enabled && currentTightenLevel > 0) {
           const tightenedConfig = getTightenedGenerationConfig(currentTightenLevel, {
-            temperature: preset.temperature,
-            topP: preset.topP,
-            topK: preset.topK,
+            temperature: baseSampling.temperature,
+            topP: baseSampling.topP,
+            topK: baseSampling.topK,
           });
           generationConfig = { ...(generationConfig || {}), ...tightenedConfig };
           focusLog("PIPELINE_VERBOSE", `[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
         } else {
           // Legacy behavior
           if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
-          generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
+          generationConfig = { ...(generationConfig || {}), temperature, topP: baseSampling.topP, topK: baseSampling.topK };
         }
 
         // Required fixed retry sampling for Stage 2
