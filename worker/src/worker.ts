@@ -848,6 +848,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         finalMode: stage2OnlyRouting.mode,
         reason: stage2OnlyRouting.reason,
       });
+      nLog("[STAGE2_BASE_PROOF]", {
+        jobId: payload.jobId,
+        path: "stage2_only",
+        stage1APath: stageLineage.stage1A.output,
+        stage1BPath: basePath,
+        chosenBasePath: basePath,
+        chosenBaseStage: "1B",
+        stage1BRequested: !!payload.options.declutter || !!payload.stage2OnlyMode?.enabled,
+      });
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -2357,6 +2366,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const lineage1B = stageLineage.stage1B?.output;
   const hasStage1BOutput = !!lineage1B;
 
+  // CONTRACT: Stage2 must prefer Stage1B lineage over request flags.
+  // - If Stage1B output exists, Stage2 must use it.
+  // - Request flags must not force Stage1A while Stage1B lineage exists.
+  // - Retries may use Stage1A only when Stage1B is truly unavailable and fallback is explicitly allowed.
   const resolveStage2Source = (ctx: {
     stage1BRequested: boolean;
     allowStage1AFallback: boolean;
@@ -2530,6 +2543,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // FIX 4: Add Stage 2 timeout with Promise.race
       const STAGE2_TIMEOUT_MS = Number(process.env.STAGE2_TIMEOUT_MS || 180000); // 3 minutes default
+      if (payload.options.virtualStage && !stage2Blocked) {
+        nLog("[STAGE2_BASE_PROOF]", {
+          jobId: payload.jobId,
+          path: "main",
+          stage1APath: path1A,
+          stage1BPath: lineage1B,
+          chosenBasePath: stage2InputResolved,
+          chosenBaseStage: stage2BaseStage,
+          stage1BRequested,
+        });
+      }
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
@@ -2703,6 +2727,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: fallbackRouting.sourceStage,
         finalMode: fallbackRouting.mode,
         reason: fallbackRouting.reason,
+      });
+      nLog("[STAGE2_BASE_PROOF]", {
+        jobId: payload.jobId,
+        path: "light_declutter_backstop",
+        stage1APath: path1A,
+        stage1BPath: lightPath1B,
+        chosenBasePath: stage2InputResolved,
+        chosenBaseStage: stage2BaseStage,
+        stage1BRequested,
       });
       const stagingStyleFallback = (() => {
         const raw: any = (payload as any)?.options?.stagingStyle;
@@ -2985,6 +3018,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sourceStage: stage2SourceStage,
             finalMode: stage2PromptMode,
             reason: "validation_hard_fail_retry",
+          });
+          nLog("[STAGE2_BASE_PROOF]", {
+            jobId: payload.jobId,
+            path: "validation_retry",
+            stage1APath: path1A,
+            stage1BPath: lineage1B,
+            chosenBasePath: stage2InputResolved,
+            chosenBaseStage: stage2BaseStage,
+            stage1BRequested,
           });
           const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
