@@ -25,18 +25,27 @@ export function cleanupTempFiles(jobId: string): void {
     // Match files that start with jobId OR contain the jobId (downloadToTemp uses realenhance-{jobId}-... pattern)
     const jobFiles = files.filter(f => f.startsWith(jobId) || (f.startsWith('realenhance-') && f.includes(jobId)));
     
+    const MIN_AGE_MS = 10_000; // Only delete files idle for 10+ seconds
+    const now = Date.now();
     let cleaned = 0;
+    let skippedRecent = 0;
     for (const file of jobFiles) {
       try {
-        fs.unlinkSync(path.join(tempDir, file));
+        const filePath = path.join(tempDir, file);
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs < MIN_AGE_MS) {
+          skippedRecent++;
+          continue; // Skip recently modified files to avoid race with concurrent jobs
+        }
+        fs.unlinkSync(filePath);
         cleaned++;
       } catch (err) {
         console.warn(`[Cleanup] Failed to delete ${file}:`, err);
       }
     }
     
-    if (cleaned > 0) {
-      console.log(`[Cleanup] Deleted ${cleaned} temp files for job ${jobId}`);
+    if (cleaned > 0 || skippedRecent > 0) {
+      console.log(`[Cleanup] Deleted ${cleaned} temp files for job ${jobId}${skippedRecent > 0 ? ` (${skippedRecent} skipped: recent)` : ''}`);
     }
   } catch (err) {
     console.error(`[Cleanup] Error cleaning temp files for ${jobId}:`, err);

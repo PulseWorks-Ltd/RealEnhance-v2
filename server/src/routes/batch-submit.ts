@@ -92,6 +92,12 @@ router.post('/submit', async (req, res) => {
         throw new Error(`Image ${image.imageId} missing originalPath`);
       }
 
+      // ✅ FIX: Derive declutterMode from flags if not explicitly provided (matches upload.ts logic)
+      const declutter = image.options.declutter || false;
+      const virtualStage = image.options.virtualStage || false;
+      const declutterMode = image.options.declutterMode
+        || (declutter ? (virtualStage ? 'stage-ready' : 'light') : undefined);
+
       const { jobId: enqueuedJobId } = await enqueueEnhanceJob({
         userId,
         imageId: image.imageId,
@@ -100,9 +106,9 @@ router.post('/submit', async (req, res) => {
         options: {
           sceneType: image.options.sceneType || 'auto',
           roomType: image.options.roomType || 'unknown',
-          declutter: image.options.declutter || false,
-          declutterMode: image.options.declutterMode,
-          virtualStage: image.options.virtualStage || false,
+          declutter,
+          declutterMode,
+          virtualStage,
           stagingStyle: image.options.stagingStyle,
           replaceSky: image.options.replaceSky
         }

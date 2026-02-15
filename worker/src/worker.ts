@@ -1529,8 +1529,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   stageLineage.stage1B.input = stageLineage.stage1A.output;
   logStageInput("1B", "1A", stageLineage.stage1A.output!);
   
-  // ✅ STRICT PAYLOAD MODE ONLY — NO INFERENCE OR DEFAULTS
-  const declutterMode = (payload.options as any).declutterMode;
+  // ✅ STRICT PAYLOAD MODE — derive declutterMode if missing but declutter requested (safety net)
+  let declutterMode: "light" | "stage-ready" | null = (payload.options as any).declutterMode || null;
+  if (!declutterMode && payload.options.declutter) {
+    declutterMode = payload.options.virtualStage ? "stage-ready" : "light";
+    nLog(`[WORKER] ⚠️ declutterMode missing in payload — derived from flags: ${declutterMode} (declutter=${payload.options.declutter}, virtualStage=${payload.options.virtualStage})`);
+  }
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
@@ -2393,8 +2397,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
-      nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${payload.options.declutter && path1B ? '1B' : '1A'} output.`);
-      path2 = payload.options.declutter && path1B ? path1B : path1A; // Only enhancement, no staging
+      const extFallback = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
+      const extFallbackStage = extFallback === path1A ? "1A" : "1B";
+      nLog(`[WORKER] Exterior image: No suitable outdoor area detected, skipping staging. Returning ${extFallbackStage} output.`);
+      path2 = extFallback; // Only enhancement, no staging
     } else {
       if (payload.options.virtualStage && !stage2Blocked && !(await ensureStage2AttemptOwner("stage2_start"))) return;
       stage2SummaryEligible = true;
@@ -2451,7 +2457,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               stage2AttemptId = nextAttemptId;
             }
           })
-        : (payload.options.declutter && path1B ? path1B : path1A);
+        : (stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A);
       
       // FIX 4: Wrap Stage 2 execution with timeout
       let stage2TimeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -2470,7 +2476,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2Blocked = true;
           stage2FallbackStage = stage2BaseStage;
           stage2BlockedReason = `Stage 2 processing exceeded ${STAGE2_TIMEOUT_MS / 1000}s timeout. Using best available result.`;
-          stage2Outcome = payload.options.declutter && path1B ? path1B : path1A;
+          stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
         } else {
           throw timeoutError;
         }
