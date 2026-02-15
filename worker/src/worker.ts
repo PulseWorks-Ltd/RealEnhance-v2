@@ -2983,7 +2983,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1BMode: stage2SourceStage === "1B-light" ? "light" : stage2SourceStage === "1B-stage-ready" ? "stage-ready" : null,
             roomType: payload.options.roomType,
             sourceStage: stage2SourceStage,
-            finalMode: stage2SourceStage === "1B-stage-ready" && !forceRefreshPromptMode ? "full" : "refresh",
+            finalMode: stage2PromptMode,
             reason: "validation_hard_fail_retry",
           });
           const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {

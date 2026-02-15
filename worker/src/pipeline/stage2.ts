@@ -1,5 +1,4 @@
 import { getGeminiClient } from "../ai/gemini";
-import { resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
@@ -166,14 +165,9 @@ export async function runStage2(
   // KILL SWITCH: USE_GEMINI_LAYOUT_PLANNER=1
   // ═══════════════════════════════════════════════════════════
   let layoutContext: LayoutContextResult | null = null;
-  const sourceStageMap = {
-    "1A": opts.sourceStage === "1A" ? opts.sourceStage : null,
-    "1B": (opts.sourceStage === "1B-light" || opts.sourceStage === "1B-stage-ready") ? opts.sourceStage : null,
-  };
-  const resolvedSourceStage1B = resolveStageUrl(sourceStageMap, "1B");
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
-  const isFullStaging = resolvedSourceStage1B === "1B-stage-ready" && !forceRefreshMode;
+  const isFullStaging = opts.sourceStage === "1B-stage-ready" && !forceRefreshMode;
   const isRefreshStaging = !isFullStaging;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   
@@ -350,20 +344,17 @@ Leave windows bare.
     } else if (railLikely === true) {
       textPrompt += `
 
-WINDOW COVERING LIMITED FLEXIBILITY:
+WINDOW COVERING PRESERVATION:
 Curtain rails/tracks are present.
-Curtains may be changed or replaced.
-Rails/tracks must remain unchanged.
+Keep existing curtains and rails/tracks unchanged.
 Do not add blinds.
 `;
     } else if (railLikely === "unknown") {
       textPrompt += `
 
-WINDOW COVERING LIMITED FLEXIBILITY:
-Curtain rails/tracks may be present.
-Curtains may be changed or replaced.
-Rails/tracks must remain unchanged.
-Do not add blinds.
+WINDOW COVERING PRESERVATION:
+If curtain rails/tracks and curtains are present, keep them unchanged.
+Do not add blinds, rods, tracks, or new window coverings.
 `;
     }
     const requestParts: any[] = [];
