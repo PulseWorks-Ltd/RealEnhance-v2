@@ -627,6 +627,14 @@ export default function BatchProcessor() {
       next.delete(index);
       return next;
     });
+    setResults(prev => prev.map((r, i) => {
+      if (i !== index) return r;
+      return {
+        ...r,
+        retryInFlight: undefined,
+        retryStage: undefined,
+      };
+    }));
   }, []);
 
   // Retry timeout safety (5 minutes max for full pipeline jobs)
@@ -3457,6 +3465,8 @@ export default function BatchProcessor() {
             uiStatus: "error",
             error: "Retry timed out",
             currentStage: null,
+            retryInFlight: undefined,
+            retryStage: undefined,
           } : r));
 
           retryTimeoutRef.current = null;
@@ -3529,6 +3539,9 @@ export default function BatchProcessor() {
                     imageId: imageIdFromJob || r?.imageId,
                     status: "completed",
                     uiStatus: "ok",
+                    currentStage: null,
+                    retryInFlight: undefined,
+                    retryStage: undefined,
                     resultStage: (job.resultStage || job.finalStage || retryStage || r?.resultStage || null) as StageKey | null,
                     finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
                     result: {
@@ -3586,6 +3599,8 @@ export default function BatchProcessor() {
                   uiStatus: "error",
                   error: job.error || "The retry job failed to process.",
                   currentStage: null,
+                  retryInFlight: undefined,
+                  retryStage: undefined,
                 } : r));
                 clearRetryFlags(imageIndex);
 

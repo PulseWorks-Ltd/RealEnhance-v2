@@ -81,6 +81,19 @@ function deriveBaseFromInitial(initialUrl?: string | null): string | null {
   }
 }
 
+function stripTransientQueryParams(urlValue?: string | null): string {
+  if (!urlValue) return "";
+  try {
+    const parsed = new URL(urlValue);
+    const transientParams = ["v", "t", "ts", "cb", "cacheBust"];
+    transientParams.forEach((key) => parsed.searchParams.delete(key));
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return urlValue;
+  }
+}
+
 interface RegionEditorProps {
   onComplete?: (result: {
     imageUrl: string;
@@ -1029,14 +1042,17 @@ export function RegionEditor({
     // Compute baseImageUrl:
     // - For restore_original: use originalImageUrl (Stage 1) or derived base, never Stage 2
     // - For other modes: prefer originalImageUrl, fall back to initialImageUrl
-    const baseImageUrl =
+    const baseImageUrlRaw =
       mode === "restore_original"
         ? (originalImageUrl || derivedBaseFromInitial || "")
         : (originalImageUrl || initialImageUrl || "");
+    const sanitizedInitialImageUrl = stripTransientQueryParams(initialImageUrl);
+    const baseImageUrl = stripTransientQueryParams(baseImageUrlRaw);
 
     console.log("[region-editor] Mode:", mode);
     console.log("[region-editor] originalImageUrl:", originalImageUrl);
     console.log("[region-editor] initialImageUrl:", initialImageUrl);
+    console.log("[region-editor] sanitizedInitialImageUrl:", sanitizedInitialImageUrl);
     console.log("[region-editor] derivedBaseFromInitial:", derivedBaseFromInitial);
     console.log("[region-editor] Final baseImageUrl:", baseImageUrl);
 
@@ -1108,8 +1124,8 @@ export function RegionEditor({
       const formData = new FormData();
       if (selectedFile) {
         formData.append("image", selectedFile);
-      } else if (initialImageUrl) {
-        formData.append("imageUrl", initialImageUrl);
+      } else if (sanitizedInitialImageUrl) {
+        formData.append("imageUrl", sanitizedInitialImageUrl);
       }
       // Always append baseImageUrl if present
       if (baseImageUrl) {

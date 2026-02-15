@@ -36,6 +36,19 @@ async function findByPublicUrl(userId: string, url: string) {
   };
 }
 
+function normalizeLookupUrl(urlValue?: string): string {
+  if (!urlValue) return "";
+  try {
+    const parsed = new URL(urlValue);
+    const transientParams = ["v", "t", "ts", "cb", "cacheBust"];
+    transientParams.forEach((key) => parsed.searchParams.delete(key));
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return urlValue;
+  }
+}
+
 export const regionEditRouter = Router();
 
 // Accept ANY file fields (no more "Unexpected field")
@@ -58,7 +71,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const body = (req.body || {}) as any;
     
     // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
-    const imageUrl = body.imageUrl as string | undefined;
+    const rawImageUrl = body.imageUrl as string | undefined;
+    const imageUrl = normalizeLookupUrl(rawImageUrl);
     if (imageUrl) {
       const dedupKey = `region-edit:${sessUser.id}:${imageUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
       const redis = getRedis();
@@ -71,7 +85,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
     
     // Extract all fields from body
-    const clientBaseImageUrl = body.baseImageUrl as string | undefined;
+    const rawClientBaseImageUrl = body.baseImageUrl as string | undefined;
+    const clientBaseImageUrl = normalizeLookupUrl(rawClientBaseImageUrl);
     const mode = body.mode as "edit" | "restore_original" | undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";
     const sceneType = body.sceneType;
@@ -99,7 +114,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // Enhanced logging
     console.log("[region-edit] Request details:", {
       imageUrl: imageUrl ? imageUrl.substring(0, 80) + "..." : "MISSING",
+      rawImageUrl: rawImageUrl ? rawImageUrl.substring(0, 80) + "..." : "MISSING",
       clientBaseImageUrl: clientBaseImageUrl ? clientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
+      rawClientBaseImageUrl: rawClientBaseImageUrl ? rawClientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
       mode,
       goal: goal ? goal.substring(0, 50) + "..." : "MISSING",
       hasMask: !!maskDataUrl,
