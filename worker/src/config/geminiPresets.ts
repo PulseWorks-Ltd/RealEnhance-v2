@@ -19,9 +19,9 @@ export const NZ_REAL_ESTATE_PRESETS = {
     styleName: "nz-real-estate-exterior",
   },
   stage2Interior: <StagePresetConfig>{
-    temperature: 0.08,
-    topP: 0.70,
-    topK: 24,
+    temperature: 0.33,
+    topP: 0.78,
+    topK: 34,
     styleName: "nz-real-estate-staging-interior",
   },
   stage2Exterior: <StagePresetConfig>{

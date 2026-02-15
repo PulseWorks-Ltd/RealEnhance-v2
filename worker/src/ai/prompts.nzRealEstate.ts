@@ -405,9 +405,12 @@ Preserve surface textures and shadows.`.trim();
 TASK:
 Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
 
+    PRIMARY OBJECTIVE:
+    Create a stage-ready empty room while preserving architecture, built-ins, fixtures, and window treatments exactly.
+
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 
-CRITICAL — DO NOT ADD OR CREATE ANYTHING:
+    NON-NEGOTIABLE LOCKS — DO NOT ADD OR CREATE ANYTHING:
 
 You must NOT add, create, or invent ANY structural features:
 - Do NOT create new windows, doors, openings, arches, or alcoves
@@ -478,7 +481,7 @@ Do NOT classify beds or bed frames as built-in joinery.
 
 Only treat an item as built-in if it is visibly attached to walls, floors, or structure with no gaps and no independent frame.
 
-Freestanding beds are NEVER built-ins and should be removed in stage-ready declutter mode.
+Freestanding beds are NEVER built-ins and should be removed in stage-ready declutter mode when clearly identifiable as freestanding.
 
 Similarly, freestanding furniture items like:
 - wardrobes (not built into walls)
@@ -507,6 +510,7 @@ Do NOT infer hidden built-ins from context clues.
 CRITICAL SAFETY RULES:
 
 If unsure whether an item is built-in → treat it as fixed.
+If an item is clearly freestanding furniture (including beds), remove it.
 Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
 Do NOT alter wall finishes, flooring materials, or structural features.
 Do NOT move or cover windows, doors, or architectural elements.
@@ -516,10 +520,10 @@ TARGETS FOR REMOVAL (ERASE ALL MOVABLE ITEMS)
 
 Seating, tables, freestanding storage, decor, rugs, plants, clutter, personal items.
 
-RECONSTRUCTION RULES:
+QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
 
-FAIL CONDITIONS:
+SAFETY FAIL RULES:
 Any movable items remain → FAIL
 
 OUTPUT:
@@ -901,10 +905,27 @@ TASK:
 ${taskInstruction}
 
 MODEL:
-Temperature: 0.10
-TopP: 0.70
-TopK: 24
+Temperature: 0.33
+TopP: 0.78
+TopK: 34
 ${layoutContextBlock}
+
+────────────────────────────────
+PRIMARY OBJECTIVE — USER INTENT FIRST
+────────────────────────────────
+
+Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
+
+Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
+
+The staged result must visually and unambiguously read as the selected room type.
+
+Do not substitute another dominant room function.
+Do not dilute the requested room type by staging it mainly as a different kind of space.
+
+If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
+
+When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
 
 ────────────────────────────────
 STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
@@ -993,23 +1014,6 @@ Stage exactly as requested, even if the layout is unusual for that room type.
 User intent overrides model interpretation.
 
 ────────────────────────────────
-PRIMARY STAGING OBJECTIVE — USER INTENT FIRST
-────────────────────────────────
-
-Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
-
-Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
-
-The staged result must visually and unambiguously read as the selected room type.
-
-Do not substitute another dominant room function.
-Do not dilute the requested room type by staging it mainly as a different kind of space.
-
-If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
-
-When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
-
-────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
 ────────────────────────────────
 
@@ -1048,7 +1052,8 @@ Only keep or replace bar stools if they are already present in the original imag
 Never introduce new bar stools.
 
 Curtains and drapes in kitchens — STRICT RULE:
-Do NOT add curtains, drapes, or fabric window coverings to kitchen windows in Stage 2 staging.
+Do NOT introduce new curtains, drapes, or fabric window coverings in kitchen windows.
+Existing window treatments must remain unchanged.
 
 KITCHEN SURFACE FOOTPRINT — STRICT
 
@@ -1152,8 +1157,6 @@ Preserve EXACTLY:
 Do NOT stage over, replace, or reinterpret built-in structures.
 Staging must respect fixed geometry and built-in elements.
 
-────────────────────────────────
-IMMUTABLE ELEMENTS — HARD LOCK BLOCK
 ────────────────────────────────
 IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
 ────────────────────────────────

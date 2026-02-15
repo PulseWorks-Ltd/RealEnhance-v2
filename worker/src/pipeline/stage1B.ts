@@ -175,8 +175,8 @@ Do not add blinds.
       outputPath,
       // Low-temp for deterministic, aggressive removal
       temperature: retryTemp,
-      topP: 0.70,
-      topK: 32,
+      topP: 0.72,
+      topK: 30,
       // NZ explicit 1B prompt (mode-specific)
       promptOverride,
       // When decluttering, allow interior floor cleanup and exterior hardscape cleanup

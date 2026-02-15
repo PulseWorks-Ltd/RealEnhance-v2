@@ -403,6 +403,12 @@ Do not add blinds.
           if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
           generationConfig = { ...(generationConfig || {}), temperature, topP: preset.topP, topK: preset.topK };
         }
+
+        // Required fixed retry sampling for Stage 2
+        if (attempt > 0) {
+          generationConfig = { ...(generationConfig || {}), temperature: 0.26, topP: 0.68, topK: 26 };
+          focusLog("PIPELINE_VERBOSE", `[stage2] Applied fixed retry sampling: temp=0.26, topP=0.68, topK=26`);
+        }
       }
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
