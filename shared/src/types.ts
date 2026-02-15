@@ -150,6 +150,8 @@ export interface EnhanceJobPayload {
   stage2OnlyMode?: {
     enabled: boolean;
     base1BUrl: string;  // URL of Stage-1B output to reuse
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    stage1BMode?: "light" | "stage-ready";
   };
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   remoteOriginalKey?: string; // S3 key of original if uploaded

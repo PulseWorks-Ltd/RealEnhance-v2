@@ -130,6 +130,8 @@ export async function enqueueEnhanceJob(params: {
   stage2OnlyMode?: {
     enabled: boolean;
     base1BUrl: string;
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    stage1BMode?: "light" | "stage-ready";
   };
 }, jobIdOverride?: JobId) {
   const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());

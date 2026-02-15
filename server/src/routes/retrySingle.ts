@@ -507,9 +507,21 @@ export function retrySingleRouter() {
       // ✅ Smart Stage-2-only retry logic
       // stage2OnlyMode activates ONLY for explicit Stage 2 retries (requestedStage='2')
       // Stage 1B retries must regenerate 1B through the normal pipeline
+      const stage2OnlyStage1BMode: "light" | "stage-ready" = declutterMode === "light" ? "light" : "stage-ready";
+      const stage2OnlySourceStage: "1A" | "1B-light" | "1B-stage-ready" =
+        selectedSourceStage === "1A"
+          ? "1A"
+          : stage2OnlyStage1BMode === "light"
+            ? "1B-light"
+            : "1B-stage-ready";
       const stage2OnlyMode =
         requestedStage === '2' && !stage2OnlyDisabled && selectedSourceUrl
-          ? { enabled: true, base1BUrl: selectedSourceUrl }
+          ? {
+              enabled: true,
+              base1BUrl: selectedSourceUrl,
+              sourceStage: stage2OnlySourceStage,
+              stage1BMode: stage2OnlyStage1BMode,
+            }
           : undefined;
 
       if (retryFromStage) {

@@ -637,6 +637,60 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
   let stage2AttemptId: string | undefined;
+  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+
+  const canonicalizeStage2RoomType = (rawRoomType: unknown) => {
+    const normalizedRoomType = String(rawRoomType || "")
+      .toLowerCase()
+      .replace(/-/g, "_")
+      .trim();
+    return normalizedRoomType === "multiple_living_areas"
+      ? "multiple_living"
+      : normalizedRoomType;
+  };
+
+  const resolveStage2Routing = (ctx: {
+    roomType: unknown;
+    isExteriorScene: boolean;
+    baseStage: "1A" | "1B";
+    stage1BMode?: "light" | "stage-ready" | null;
+    sourceStageHint?: "1A" | "1B-light" | "1B-stage-ready" | null;
+  }) => {
+    const canonicalRoomType = canonicalizeStage2RoomType(ctx.roomType);
+    const forceRefresh = STAGE2_FORCE_REFRESH_ROOM_TYPES.has(canonicalRoomType);
+
+    let sourceStage: "1A" | "1B-light" | "1B-stage-ready" = "1A";
+    let reason = "default_1a";
+
+    if (ctx.isExteriorScene) {
+      sourceStage = "1A";
+      reason = "exterior_scene";
+    } else if (ctx.sourceStageHint === "1A" || ctx.sourceStageHint === "1B-light" || ctx.sourceStageHint === "1B-stage-ready") {
+      sourceStage = ctx.sourceStageHint;
+      reason = "hint";
+    } else if (ctx.baseStage === "1B") {
+      if (ctx.stage1BMode === "light") {
+        sourceStage = "1B-light";
+        reason = "stage1b_mode_light";
+      } else {
+        sourceStage = "1B-stage-ready";
+        reason = ctx.stage1BMode === "stage-ready" ? "stage1b_mode_stage_ready" : "stage1b_mode_default_stage_ready";
+      }
+    }
+
+    const mode: "refresh" | "full" = sourceStage === "1B-stage-ready" && !forceRefresh ? "full" : "refresh";
+    if (forceRefresh && sourceStage === "1B-stage-ready") {
+      reason = `${reason}+force_refresh_room_type`;
+    }
+
+    return {
+      canonicalRoomType,
+      forceRefresh,
+      sourceStage,
+      mode,
+      reason,
+    };
+  };
 
   const getStage2Context = async () => {
     const latestJob = await getJob(payload.jobId);
@@ -764,6 +818,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Run Stage-2 only (using 1B as base)
       stage2SummaryEligible = true;
+      const stage2OnlyMeta = (payload.stage2OnlyMode as any) || {};
+      const stage2OnlyRouting = resolveStage2Routing({
+        roomType: payload.options.roomType,
+        isExteriorScene: payload.options.sceneType === "exterior",
+        baseStage: "1B",
+        stage1BMode: stage2OnlyMeta.stage1BMode || undefined,
+        sourceStageHint: stage2OnlyMeta.sourceStage || undefined,
+      });
+      if (!stage2OnlyMeta.sourceStage && !stage2OnlyMeta.stage1BMode) {
+        nLog("[STAGE2_ONLY_MODE_CONTEXT_MISSING]", {
+          jobId: payload.jobId,
+          warning: "stage2_only payload missing sourceStage/stage1BMode; using deterministic fallback resolver",
+          roomType: payload.options.roomType,
+          resolvedSourceStage: stage2OnlyRouting.sourceStage,
+          resolvedMode: stage2OnlyRouting.mode,
+        });
+      }
+      nLog("[STAGE2_ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "stage2_only",
+        baseStage: "1B",
+        hasStage1BLineage: true,
+        stage1BMode: stage2OnlyMeta.stage1BMode || null,
+        roomType: payload.options.roomType,
+        canonicalRoomType: stage2OnlyRouting.canonicalRoomType,
+        forceRefresh: stage2OnlyRouting.forceRefresh,
+        sourceStage: stage2OnlyRouting.sourceStage,
+        finalMode: stage2OnlyRouting.mode,
+        reason: stage2OnlyRouting.reason,
+      });
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -771,6 +855,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         angleHint: undefined,
         profile: undefined,
         stagingRegion: undefined,
+        sourceStage: stage2OnlyRouting.sourceStage,
         jobId: payload.jobId,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
@@ -2341,54 +2426,55 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     pathSuffix: stage2InputSuffix,
   });
   
-  // ✅ Determine Stage 2 source stage - based on actual Stage 2 input lineage
-  let stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = "1A";
+  // ✅ Resolve Stage 2 routing from lineage + effective Stage1B mode + room override
+  const recordedStage1BMode = (sceneMeta as any).stage1BMode;
+  const effectiveStage1BMode = recordedStage1BMode === "light" || recordedStage1BMode === "stage-ready"
+    ? recordedStage1BMode
+    : (declutterMode === "light" || declutterMode === "stage-ready"
+      ? declutterMode
+      : ((payload.options as any).declutterMode === "light" ? "light" : "stage-ready"));
+  const stage2Routing = resolveStage2Routing({
+    roomType: payload.options.roomType,
+    isExteriorScene,
+    baseStage: stage2BaseStage,
+    stage1BMode: stage2BaseStage === "1B" ? effectiveStage1BMode : undefined,
+  });
+  const stage2SourceStage = stage2Routing.sourceStage;
   
-  if (isExteriorScene) {
-    stage2SourceStage = "1A";
-  } else if (stage2BaseStage === "1B" && lineage1B) {
-    // Prefer recorded effective Stage 1B mode
-    const recordedMode = (sceneMeta as any).stage1BMode;
-    if (recordedMode === "light") {
-      stage2SourceStage = "1B-light";
-    } else if (recordedMode === "stage-ready") {
-      stage2SourceStage = "1B-stage-ready";
-    } else {
-      // Fallback: use effective runtime mode (declutterMode), then payload mode for compatibility
-      const fallbackMode = declutterMode === "light" || declutterMode === "stage-ready"
-        ? declutterMode
-        : ((payload.options as any).declutterMode === "light" ? "light" : "stage-ready");
-      stage2SourceStage = fallbackMode === "light" ? "1B-light" : "1B-stage-ready";
-      nLog(`[WORKER] ⚠️ stage1BMode missing in metadata, using effective fallback mode=${fallbackMode} sourceStage=${stage2SourceStage}`);
-    }
-  }
-  
-  const normalizedRoomTypeForStage2 = String(payload.options.roomType || "")
-    .toLowerCase()
-    .replace(/-/g, "_")
-    .trim();
-  const canonicalRoomTypeForStage2 = normalizedRoomTypeForStage2 === "multiple_living_areas"
-    ? "multiple_living"
-    : normalizedRoomTypeForStage2;
-  const forceRefreshRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshPromptMode = forceRefreshRoomTypes.has(canonicalRoomTypeForStage2);
+  const canonicalRoomTypeForStage2 = stage2Routing.canonicalRoomType;
+  const forceRefreshPromptMode = stage2Routing.forceRefresh;
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
   // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
   const stage2ValidationBaseline = path1A;
-  const stage2PromptMode = stage2SourceStage === "1B-stage-ready" && !forceRefreshPromptMode ? "full" : "refresh";
+  const stage2PromptMode = stage2Routing.mode;
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   
   // 📊 STRUCTURED ROUTING LOG - Stage 2
   nLog(`[PIPELINE_ROUTING] Stage 2 routing:`, {
     roomType: canonicalRoomTypeForStage2,
-    isMultiRoom: forceRefreshRoomTypes.has(canonicalRoomTypeForStage2),
+    isMultiRoom: forceRefreshPromptMode,
     hasStage1BOutput,
     stage2InputUsing,
-    stage1BModeRecorded: (sceneMeta as any).stage1BMode || null,
+    stage1BModeRecorded: recordedStage1BMode || null,
+    stage1BModeEffective: stage2BaseStage === "1B" ? effectiveStage1BMode : null,
     sourceStage: stage2SourceStage,
     promptMode: stage2PromptMode,
-    forceRefresh: forceRefreshPromptMode
+    forceRefresh: forceRefreshPromptMode,
+    reason: stage2Routing.reason,
+  });
+  nLog("[STAGE2_ROUTING_DECISION]", {
+    jobId: payload.jobId,
+    path: "main",
+    baseStage: stage2BaseStage,
+    hasStage1BLineage: hasStage1BOutput,
+    stage1BMode: stage2BaseStage === "1B" ? effectiveStage1BMode : null,
+    roomType: payload.options.roomType,
+    canonicalRoomType: canonicalRoomTypeForStage2,
+    forceRefresh: forceRefreshPromptMode,
+    sourceStage: stage2SourceStage,
+    finalMode: stage2PromptMode,
+    reason: stage2Routing.reason,
   });
 
   // ═══ STAGE 2 INPUT LINEAGE GUARD ═══
@@ -2599,6 +2685,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage2InputPath = lightPath1B;
       stage2InputResolved = stage2InputPath ?? "";
       stage2BaseStage = "1B";
+      const fallbackRouting = resolveStage2Routing({
+        roomType: payload.options.roomType,
+        isExteriorScene: sceneLabel === "exterior",
+        baseStage: "1B",
+        stage1BMode: "light",
+      });
+      nLog("[STAGE2_ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "light_declutter_backstop",
+        baseStage: "1B",
+        hasStage1BLineage: true,
+        stage1BMode: "light",
+        roomType: payload.options.roomType,
+        canonicalRoomType: fallbackRouting.canonicalRoomType,
+        forceRefresh: fallbackRouting.forceRefresh,
+        sourceStage: fallbackRouting.sourceStage,
+        finalMode: fallbackRouting.mode,
+        reason: fallbackRouting.reason,
+      });
       const stagingStyleFallback = (() => {
         const raw: any = (payload as any)?.options?.stagingStyle;
         return raw && typeof raw === "string" ? raw.trim() : undefined;
@@ -2616,6 +2721,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         angleHint,
         stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
         stagingStyle: stagingStyleFallback,
+        sourceStage: fallbackRouting.sourceStage,
         jobId: payload.jobId,
         validationConfig: { localMode: localValidatorMode },
         stage1APath: stage2ValidationBaseline,
@@ -2869,6 +2975,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
           await scheduleStage2Retry("stage2_validation_hard_fail");
           // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
+          nLog("[STAGE2_ROUTING_DECISION]", {
+            jobId: payload.jobId,
+            path: "validation_retry",
+            baseStage: stage2BaseStage,
+            hasStage1BLineage: stage2BaseStage === "1B",
+            stage1BMode: stage2SourceStage === "1B-light" ? "light" : stage2SourceStage === "1B-stage-ready" ? "stage-ready" : null,
+            roomType: payload.options.roomType,
+            sourceStage: stage2SourceStage,
+            finalMode: stage2SourceStage === "1B-stage-ready" && !forceRefreshPromptMode ? "full" : "refresh",
+            reason: "validation_hard_fail_retry",
+          });
           const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
