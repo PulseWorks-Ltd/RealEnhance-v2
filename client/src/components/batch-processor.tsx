@@ -1318,6 +1318,13 @@ export default function BatchProcessor() {
           return copy;
         });
 
+        // Also clear retry tracking Sets if this is a terminal status
+        const hasRetryFlags = retryingImages.has(next.index) || retryLoadingImages.has(next.index);
+        const isTerminalStatus = next.result?.status === 'completed' || next.result?.status === 'failed';
+        if (hasRetryFlags && isTerminalStatus) {
+          clearRetryFlags(next.index);
+        }
+
         // If the server included job meta like scene detection, surface it
         if (next.result && next.result.meta && next.result.meta.scene) {
           const scene = next.result.meta.scene;
