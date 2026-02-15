@@ -1,6 +1,7 @@
 export * from "./constants";
 export * from "./imageHistory";
 export * from "./imageStore";
+export * from "./stageUrlResolver";
 export * from "./jsonStore";
 export * from "./redisClient";
 export * from "./types";

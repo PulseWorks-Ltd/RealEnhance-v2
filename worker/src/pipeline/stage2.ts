@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
@@ -75,7 +76,8 @@ export async function runStage2(
   let tempMultiplier = 1.0;
   let strictPrompt = false;
   const localMode: Mode = opts.validationConfig?.localMode || "log";
-  const allowRetries = localMode === "block";
+  const effectiveMode: "off" | "log" | "block" = localMode === "block" ? "block" : (localMode === "log" ? "log" : "off");
+  const allowRetries = effectiveMode === "block";
   let localReasons: string[] = [];
 
   const stageAwareConfig = loadStageAwareConfig();
@@ -161,7 +163,12 @@ export async function runStage2(
   // KILL SWITCH: USE_GEMINI_LAYOUT_PLANNER=1
   // ═══════════════════════════════════════════════════════════
   let layoutContext: LayoutContextResult | null = null;
-  const isFullStaging = opts.sourceStage === "1B-stage-ready";
+  const sourceStageMap = {
+    "1A": opts.sourceStage === "1A" ? opts.sourceStage : null,
+    "1B": (opts.sourceStage === "1B-light" || opts.sourceStage === "1B-stage-ready") ? opts.sourceStage : null,
+  };
+  const resolvedSourceStage1B = resolveStageUrl(sourceStageMap, "1B");
+  const isFullStaging = resolvedSourceStage1B === "1B-stage-ready";
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   
   if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && layoutPlannerEnabled) {
@@ -529,6 +536,7 @@ Do not add blinds.
                 break;
               }
             } else {
+              console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
               attemptsUsed = attempt + 1;
               break;
             }
@@ -572,6 +580,10 @@ Do not add blinds.
           retryCount++;
           console.log(`[stage2] Validator requested retry (single retry)`);
           continue;
+        } else if (validatorFailed && !allowRetries) {
+          console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
+          attemptsUsed = attempt + 1;
+          break;
         } else {
           attemptsUsed = attempt + 1;
           break;

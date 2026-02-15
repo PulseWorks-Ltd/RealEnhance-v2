@@ -8,6 +8,7 @@ import {
   ImageId,
   UserId
 } from "@realenhance/shared/types";
+import { mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });
@@ -49,10 +50,7 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
       const existing = rec && rec.stageUrls ? rec.stageUrls : {};
       patch = {
         ...patch,
-        stageUrls: {
-          ...existing,
-          ...patch.stageUrls,
-        },
+        stageUrls: mergeStageUrls(existing, patch.stageUrls),
       };
     } catch (mergeErr) {
       console.error(`[updateJob] Failed to merge stageUrls for job ${jobId}:`, mergeErr);

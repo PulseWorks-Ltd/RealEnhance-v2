@@ -34,6 +34,7 @@ import {
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
+import { resolveStageUrl, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
@@ -2284,6 +2285,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Exterior: always use Stage 1A
   const isExteriorScene = sceneLabel === "exterior";
   const retrySourceStageRaw = String((payload as any).retrySourceStage || "").toLowerCase();
+  const retryStage1BWasRequested = Boolean((payload as any).retryStage1BWasRequested);
   const isStage2Retry = (payload as any).retryType === "manual_retry"
     && (retrySourceStageRaw === "stage2" || retrySourceStageRaw === "2" || retrySourceStageRaw === "1b-stage-ready");
   const declutterRequested = !!payload.options.declutter;
@@ -2315,9 +2317,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   let stage2InputPath: string | undefined;
   try {
+    const allowStage1AFallback = (isStage2Retry || !!payload.stage2OnlyMode?.enabled) && !retryStage1BWasRequested;
+    if (!allowStage1AFallback && stage1BRequested && !lineage1B) {
+      nLog("[stage2-retry] Stage1B required by retry context; Stage1A fallback disabled", {
+        jobId: payload.jobId,
+        retryStage1BWasRequested,
+      });
+    }
     stage2InputPath = resolveStage2Source({
       stage1BRequested,
-      allowStage1AFallback: isStage2Retry || !!payload.stage2OnlyMode?.enabled,
+      allowStage1AFallback,
       stage1BOutputPath: lineage1B,
       stage1AOutputPath: lineage1A,
     }) || undefined;
@@ -4103,12 +4112,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Persist finalized metadata with longer history TTL
   try {
     const existingMeta = await getJobMetadata(payload.jobId);
-    const stageUrlsMeta = {
-      stage1a: pub1AUrl || undefined,
-      stage1b: pub1BUrl || undefined,
-      stage2: pub2Url || undefined,
-      publish: pubFinalUrl || undefined,
-    };
+    const existingStageUrls = (existingMeta?.stageUrls || {}) as Record<string, string | null | undefined>;
+    const stageUrlsMeta = mergeStageUrls(existingStageUrls, {
+      "1A": pub1AUrl || null,
+      stage1a: pub1AUrl || null,
+      "1B": pub1BUrl || null,
+      stage1b: pub1BUrl || null,
+      "2": pub2Url || null,
+      stage2: pub2Url || null,
+      publish: pubFinalUrl || null,
+    });
+    const resolvedResultFallback =
+      resolveStageUrl(stageUrlsMeta, "2")
+      || resolveStageUrl(stageUrlsMeta, "1B")
+      || resolveStageUrl(stageUrlsMeta, "1A");
     const stage2ModeUsed: "refresh" | "empty" | undefined = hasStage2
       ? ((payload as any).options?.stagingPreference === "refresh"
         ? "refresh"
@@ -4130,7 +4147,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       createdAt: existingMeta?.createdAt || payload.createdAt || new Date().toISOString(),
       requestedStages: existingMeta?.requestedStages || buildRequestedStages(),
       stageUrls: stageUrlsMeta,
-      resultUrl: pubFinalUrl || existingMeta?.resultUrl,
+      resultUrl: pubFinalUrl || existingMeta?.resultUrl || resolvedResultFallback || undefined,
       s3: existingMeta?.s3,
       warnings: existingMeta?.warnings,
       debug: debugMeta,

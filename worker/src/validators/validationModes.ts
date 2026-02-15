@@ -1,6 +1,6 @@
 import { nLog } from "../logger";
 
-export type Mode = "log" | "block";
+export type Mode = "off" | "log" | "block";
 
 type Resolution = {
   localMode: Mode;
@@ -15,6 +15,7 @@ let logged = false;
 function normalizeMode(value: string | undefined, fallback: Mode): Mode {
   if (!value) return fallback;
   const v = value.trim().toLowerCase();
+  if (v === "off") return "off";
   if (v === "block") return "block";
   if (v === "log") return "log";
   return fallback;

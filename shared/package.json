@@ -21,6 +21,14 @@
       "types": "./dist/imageStore.d.ts",
       "default": "./dist/imageStore.js"
     },
+    "./stageUrlResolver": {
+      "types": "./dist/stageUrlResolver.d.ts",
+      "default": "./dist/stageUrlResolver.js"
+    },
+    "./stageUrlResolver.js": {
+      "types": "./dist/stageUrlResolver.d.ts",
+      "default": "./dist/stageUrlResolver.js"
+    },
     "./usageTracker": {
       "types": "./dist/usageTracker.d.ts",
       "default": "./dist/usageTracker.js"

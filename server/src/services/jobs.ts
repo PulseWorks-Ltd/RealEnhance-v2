@@ -44,6 +44,7 @@ import type {
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { createClient } from 'redis';
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
+import { normalizeStageLabel, resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
 import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/types/jobMetadata";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
@@ -93,6 +94,7 @@ export async function enqueueEnhanceJob(params: {
     sourceStage?: string | null;
     sourceUrl?: string | null;
     sourceKey?: string | null;
+    stage1BWasRequested?: boolean;
     parentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
@@ -166,9 +168,23 @@ export async function enqueueEnhanceJob(params: {
     remoteOriginalUrl: params.remoteOriginalUrl as any,
     remoteOriginalKey: params.remoteOriginalKey as any,
     retryType: params.retryInfo?.retryType,
-    retrySourceStage: params.retryInfo?.sourceStage,
+    retrySourceStage: (() => {
+      const rawSourceStage = String(params.retryInfo?.sourceStage || "").trim().toLowerCase();
+      const direct = normalizeStageLabel(rawSourceStage);
+      if (direct) return direct;
+      const hints = {
+        "1A": rawSourceStage.includes("1a") ? "1A" : null,
+        "1B": rawSourceStage.includes("1b") ? "1B" : null,
+        "2": rawSourceStage === "2" || rawSourceStage.includes("stage2") ? "2" : null,
+      };
+      return resolveStageUrl(hints, "1B") ? "1B"
+        : resolveStageUrl(hints, "1A") ? "1A"
+          : resolveStageUrl(hints, "2") ? "2"
+            : (params.retryInfo?.sourceStage || undefined);
+    })(),
     retrySourceUrl: params.retryInfo?.sourceUrl,
     retrySourceKey: params.retryInfo?.sourceKey,
+    retryStage1BWasRequested: params.retryInfo?.stage1BWasRequested,
     retryParentImageId: params.retryInfo?.parentImageId,
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,

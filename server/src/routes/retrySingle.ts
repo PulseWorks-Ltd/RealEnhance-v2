@@ -11,6 +11,7 @@ import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getJobMetadata } from "@realenhance/shared/imageStore";
 import { findByPublicUrlRedis } from "@realenhance/shared";
+import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { reserveAllowance, incrementRetry } from "../services/usageLedger.js";
 
@@ -60,6 +61,101 @@ function toBool(v: any, d = false) {
 function parseNumber(v: any): number | undefined {
   const n = Number(v);
   return Number.isFinite(n) ? n : undefined;
+}
+
+function resolveRetryBaseline(params: {
+  jobId: string;
+  requestedStage: string;
+  sourceStageRaw: string;
+  sourceUrlRaw: string;
+  stageUrls: Record<string, string | null>;
+  stage1BWasRequested: boolean;
+}): {
+  selectedSourceStage: string | null;
+  selectedSourceUrl: string | null;
+  retryFromStage: string | null;
+  stage2OnlyDisabled: boolean;
+  hardFail: { code: string; message: string } | null;
+} {
+  const { jobId, requestedStage, sourceStageRaw, sourceUrlRaw, stageUrls, stage1BWasRequested } = params;
+
+  let selectedSourceStage: string | null = null;
+  let selectedSourceUrl: string | null = null;
+  let retryFromStage: string | null = null;
+  let stage2OnlyDisabled = false;
+  let hardFail: { code: string; message: string } | null = null;
+
+  let selectedKey: string | null = null;
+  const captureKey = (_message: string, payload: any) => {
+    selectedKey = payload?.selectedKey || null;
+  };
+
+  const resolve = (stage: "1A" | "1B" | "2") =>
+    resolveStageUrl(stageUrls, stage, {
+      context: `retry:${requestedStage}`,
+      logger: captureKey,
+    });
+
+  if (requestedStage === "1A") {
+    selectedSourceStage = "1A";
+    selectedSourceUrl = resolve("1A");
+  } else if (requestedStage === "1B") {
+    selectedSourceStage = "1A-stage-ready";
+    selectedSourceUrl = resolve("1A") || (typeof stageUrls.original === "string" ? stageUrls.original : null);
+    retryFromStage = "1B";
+    if (!selectedSourceUrl) {
+      selectedSourceStage = "1A";
+    }
+  } else if (requestedStage === "2") {
+    selectedSourceStage = "1B-stage-ready";
+    selectedSourceUrl = resolve("1B");
+    if (!selectedSourceUrl) {
+      if (stage1BWasRequested) {
+        hardFail = {
+          code: "missing_stage1b_baseline",
+          message: "Stage 1B baseline is required for Stage 2 retry but was not found",
+        };
+      } else {
+        selectedSourceStage = "1A";
+        selectedSourceUrl = resolve("1A");
+        stage2OnlyDisabled = true;
+      }
+    }
+  } else if (sourceUrlRaw) {
+    selectedSourceStage = normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "stage2";
+    selectedSourceUrl = sourceUrlRaw;
+  } else {
+    const stage2Url = resolve("2");
+    const stage1BUrl = resolve("1B");
+    const stage1AUrl = resolve("1A");
+    if (stage2Url && stage1BUrl) {
+      selectedSourceStage = "1B-stage-ready";
+      selectedSourceUrl = stage1BUrl;
+    } else if (stage1BUrl) {
+      selectedSourceStage = "1B-stage-ready";
+      selectedSourceUrl = stage1BUrl;
+    } else if (stage1AUrl) {
+      selectedSourceStage = "1A";
+      selectedSourceUrl = stage1AUrl;
+    }
+  }
+
+  const keysFound = Object.keys(stageUrls).filter((key) => {
+    const value = stageUrls[key];
+    return typeof value === "string" && value.trim().length > 0;
+  });
+
+  console.log(
+    `[retry-baseline] jobId=${jobId} requestedStage=${requestedStage || "default"} stage1BRequested=${stage1BWasRequested} keysFound=${JSON.stringify(keysFound)} selectedKey=${selectedKey || "none"} selectedUrl=${selectedSourceUrl || "none"} fallback=${stage2OnlyDisabled} reason=${hardFail ? hardFail.code : (selectedSourceUrl ? "alias-match" : "not-found")}`,
+  );
+
+  return {
+    selectedSourceStage,
+    selectedSourceUrl,
+    retryFromStage,
+    stage2OnlyDisabled,
+    hardFail,
+  };
 }
 
 export function retrySingleRouter() {
@@ -137,6 +233,7 @@ export function retrySingleRouter() {
       let selectedSourceUrl: string | undefined = undefined;
       let stage2OnlyDisabled = false;
       let retryFromStage: string | undefined = undefined;
+      let stage1BWasRequested = toBool(body.stage1BWasRequested, false);
       let rec: any = undefined;
       let parentJob: any = undefined;
       let parentMeta: any = undefined;
@@ -152,7 +249,7 @@ export function retrySingleRouter() {
         }
 
         // Defaults when no parent metadata is available
-        selectedSourceStage = sourceStageRaw || "stage2";
+        selectedSourceStage = normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "stage2";
         selectedSourceUrl = sourceUrlRaw || undefined;
 
         if (parentJobId) {
@@ -168,72 +265,37 @@ export function retrySingleRouter() {
 
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
           const metaStageUrls = parentMeta?.stageUrls;
-          
-          // ✅ PATCH 1: Stage-aware baseline selection
-          // Merge stage URLs from both sources
-          const allStageUrls = { ...metaStageUrls, ...parentStageUrls };
-          
-          // Filter out edit stages - never use as baseline
-          const validStageUrls = Object.entries(allStageUrls || {})
-            .filter(([stage]) => !stage.toLowerCase().startsWith('edit'))
-            .reduce((acc, [stage, url]) => {
-              if (typeof url === "string" && url.length > 0) {
-                acc[stage] = url;
-              }
-              return acc;
-            }, {} as Record<string, string>);
-          
-          if (requestedStage === '1A') {
-            // Retry from Stage 1A → full pipeline
-            selectedSourceStage = '1A';
-            selectedSourceUrl = validStageUrls['1A'];
-          } else if (requestedStage === '1B') {
-            // Retry Stage 1B → regenerate 1B + Stage 2 from Stage 1A baseline
-            selectedSourceStage = '1A-stage-ready';
-            selectedSourceUrl =
-              validStageUrls['1A'] ||
-              validStageUrls['original'];
-            retryFromStage = '1B';
-            
-            // Fallback: if no Stage 1A available, fall back to original upload
-            if (!selectedSourceUrl) {
-              console.warn(`[RETRY_FALLBACK] Stage1A missing for 1B retry, will use uploaded file`);
-              selectedSourceStage = '1A';
-            }
-          } else if (requestedStage === '2') {
-            // CRITICAL: Retry Stage 2 from Stage 1B, NOT Stage 2
-            selectedSourceStage = '1B-stage-ready';
-            selectedSourceUrl = validStageUrls['1B'];
-            
-            // ✅ CHECK 2: Fallback to Stage1A if Stage1B missing
-            if (!selectedSourceUrl && validStageUrls['1A']) {
-              console.warn(`[RETRY_FALLBACK] Stage1B missing, falling back to Stage1A for requestedStage=2`);
-              selectedSourceStage = '1A';
-              selectedSourceUrl = validStageUrls['1A'];
-              // Disable stage2OnlyMode if falling back to 1A (need full pipeline)
-              stage2OnlyDisabled = true;
-            }
-          } else if (sourceUrlRaw) {
-            // Fallback: use provided sourceUrl (backward compat)
-            selectedSourceStage = sourceStageRaw || 'stage2';
-            selectedSourceUrl = sourceUrlRaw;
-          } else {
-            // Default: retry from highest available non-edit stage
-            const stageRanks = { '2': 3, '1B': 2, '1A': 1 };
-            const sortedStages = Object.entries(validStageUrls)
-              .sort(([a], [b]) => (stageRanks[b as keyof typeof stageRanks] || 0) - (stageRanks[a as keyof typeof stageRanks] || 0));
-            
-            if (sortedStages.length > 0) {
-              const [stage, url] = sortedStages[0];
-              selectedSourceStage = stage === '1B' ? '1B-stage-ready' : stage === '2' ? '1B-stage-ready' : '1A';
-              selectedSourceUrl = stage === '2' ? validStageUrls['1B'] : url;
-            } else {
-              return res.status(400).json({ success: false, error: 'no_valid_baseline', message: 'No valid retry baseline found' });
-            }
+
+          const allStageUrls = mergeStageUrls(metaStageUrls as any, parentStageUrls as any);
+          stage1BWasRequested = stage1BWasRequested
+            || !!parentMeta?.requestedStages?.stage1b
+            || !!(parentJob as any)?.metadata?.requestedStages?.stage1b
+            || !!(parentJob as any)?.options?.declutter;
+
+          const baseline = resolveRetryBaseline({
+            jobId: parentJobId,
+            requestedStage,
+            sourceStageRaw,
+            sourceUrlRaw,
+            stageUrls: allStageUrls,
+            stage1BWasRequested,
+          });
+
+          if (baseline.hardFail) {
+            return res.status(409).json({
+              success: false,
+              error: baseline.hardFail.code,
+              message: baseline.hardFail.message,
+            });
           }
+
+          selectedSourceStage = baseline.selectedSourceStage || undefined;
+          selectedSourceUrl = baseline.selectedSourceUrl || undefined;
+          retryFromStage = baseline.retryFromStage || undefined;
+          stage2OnlyDisabled = baseline.stage2OnlyDisabled;
           
           // Never allow edit stages as baseline
-          if (!selectedSourceUrl || selectedSourceStage.toLowerCase().startsWith('edit')) {
+          if (!selectedSourceUrl || !selectedSourceStage || selectedSourceStage.toLowerCase().startsWith('edit')) {
             return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline - edit stages not allowed' });
           }
           
@@ -265,7 +327,7 @@ export function retrySingleRouter() {
         const copy = await copyS3Object(parsedKey, targetKey);
         remoteOriginalUrl = copy.url;
         remoteOriginalKey = copy.key;
-        retrySourceStage = selectedSourceStage || sourceStageRaw || "stage2";
+        retrySourceStage = normalizeStageLabel(selectedSourceStage || sourceStageRaw) || selectedSourceStage || sourceStageRaw || "stage2";
         retrySourceUrl = selectedSourceUrl || sourceUrlRaw;
         retrySourceKey = parsedKey;
 
@@ -467,6 +529,7 @@ export function retrySingleRouter() {
           sourceStage: retrySourceStage,
           sourceUrl: retrySourceUrl,
           sourceKey: retrySourceKey,
+          stage1BWasRequested,
           parentImageId,
           parentJobId,
           clientBatchId,
