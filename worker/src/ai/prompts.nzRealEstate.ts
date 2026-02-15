@@ -1133,10 +1133,12 @@ Allowed:
 - small kitchen appliances (coffee machine, kettle, toaster)
 - small kitchen accessories (fruit bowl, plant, cookbooks, tray)
 
-Bar stools:
-Do NOT add bar stools in Stage 2 empty-room staging.
-Only keep or replace bar stools if they are already present in the original image (refresh staging).
-Never introduce new bar stools.
+Bar/counter/island seating (STRICT):
+This includes bar stools, counter stools, high chairs, and any island seating.
+REFRESH MODE: You may only keep or restyle seats that are already visible in the input image, in the same island/counter seating footprint.
+REFRESH MODE: Do NOT increase seat count. Do NOT add new seating positions around an island/counter.
+FULL STAGING MODE: Do NOT add any island/counter seating.
+Never introduce new island seating when none exists in the input.
 
 Curtains and drapes in kitchens — STRICT RULE:
 Do NOT introduce new curtains, drapes, or fabric window coverings in kitchen windows.
@@ -1312,7 +1314,8 @@ Prohibited in immediate kitchen zone (within 1.5m of island/counters):
 - NO large dining table directly adjacent to island (creates visual clash)
 
 Permitted in kitchen zone:
-- Bar stools (max 2-3) aligned under island/peninsula overhang - ONLY in refresh mode
+- Existing island/counter seating only (refresh mode): may be visually refreshed but must keep existing count and placement.
+- No new bar stools, counter stools, high chairs, or new island seating positions.
 - Small dining set IF open-plan layout has clear separation (>2m from island)
 - Minimal counter decor (fruit bowl, coffee machine, small plant)
 
@@ -1341,6 +1344,7 @@ ${isFullStaging
 2. Replace EACH item with a modern equivalent.
 3. Preserve: type, position, orientation, functional role.
 4. Do NOT add new furniture; empty areas remain empty.
+  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
 5. If replacement risks artifacts, keep the original item unchanged.
 
 CONSISTENCY RULE:
