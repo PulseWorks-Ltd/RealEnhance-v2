@@ -391,7 +391,7 @@ Do not add blinds, rods, tracks, or new window coverings.
       let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
       if (isNZStyleEnabled()) {
         const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
-        const refreshSampling = { temperature: 0.33, topP: 0.78, topK: 34 };
+        const refreshSampling = { temperature: 0.30, topP: 0.73, topK: 31 };
         const fullSampling = { temperature: 0.25, topP: 0.70, topK: 30 };
         const isInteriorScene = scene === 'interior';
         const baseSampling = isInteriorScene
