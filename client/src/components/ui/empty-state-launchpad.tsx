@@ -1,4 +1,4 @@
-import { CloudUpload } from 'lucide-react';
+import { CloudUpload, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './button';
 
@@ -45,19 +45,19 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
       type: 'interior' as const, 
       label: 'Interior', 
       gradient: 'from-blue-500 to-purple-600',
-      icon: '🏠'
+      description: 'Living Room Enhancement'
     },
     { 
       type: 'exterior' as const, 
       label: 'Exterior', 
       gradient: 'from-emerald-500 to-teal-600',
-      icon: '🏡'
+      description: 'Home Facade Staging'
     },
     { 
       type: 'kitchen' as const, 
       label: 'Kitchen', 
       gradient: 'from-orange-500 to-pink-600',
-      icon: '🍳'
+      description: 'Kitchen Declutter'
     },
   ];
 
@@ -87,7 +87,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
             bg-white rounded-2xl shadow-xl
             border-2 border-dashed transition-all duration-300
             ${isDragOver 
-              ? 'border-emerald-500 bg-emerald-50/50 scale-[1.02] shadow-2xl' 
+              ? 'border-blue-500 bg-blue-50/30 scale-[1.02] shadow-2xl' 
               : 'border-slate-300 hover:border-blue-400 hover:shadow-2xl'
             }
           `}
@@ -99,49 +99,49 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
             <div className={`
               p-6 rounded-full bg-gradient-to-br from-blue-50 to-purple-50
               transition-all duration-300
-              ${isDragOver ? 'scale-110 bg-gradient-to-br from-emerald-50 to-teal-50' : 'group-hover:scale-105'}
+              ${isDragOver ? 'scale-110 bg-gradient-to-br from-blue-50 to-blue-100 animate-pulse' : 'group-hover:scale-105'}
             `}>
               <CloudUpload 
                 className={`
                   w-16 h-16 text-blue-500 transition-all duration-300
-                  ${isDragOver ? 'text-emerald-600 animate-bounce' : 'group-hover:text-blue-600'}
+                  ${isDragOver ? 'text-blue-600 animate-bounce' : 'group-hover:text-blue-600'}
                 `}
               />
             </div>
 
-            {/* Heading */}
-            <div className="space-y-2">
-              <h2 className="text-3xl font-bold text-slate-900">
-                {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos with Professional Staging & Cleanup'}
-              </h2>
-              <p className="text-lg text-slate-600 max-w-md">
+            {/* Heading with Structure-Preserving Badge */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-center gap-2">
+                <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                  {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos'}
+                </h1>
+                {!isDragOver && (
+                  <div className="group/badge relative">
+                    <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide">Structure-Safe</span>
+                    </div>
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 text-white text-xs rounded-lg opacity-0 group-hover/badge:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl z-10">
+                      <div className="font-medium mb-0.5">Structure-Preserving AI</div>
+                      <div className="text-slate-300">Floor plans and walls stay intact</div>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900"></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="text-base text-slate-600 max-w-lg">
                 {isDragOver 
                   ? 'Release to start enhancing your images' 
-                  : 'Upload property photos to declutter, enhance, and stage them in seconds'
+                  : 'Professional staging & cleanup powered by structure-preserving AI'
                 }
               </p>
-            </div>
-
-            {/* Technical Details */}
-            <div className="flex items-center gap-6 text-sm text-slate-500">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span>Up to 50 images</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Max 15MB each</span>
-              </div>
             </div>
 
             {/* Call to Action */}
             <Button
               size="lg"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-6 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-10 py-7 text-lg font-bold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-[1.02]"
               onClick={(e) => {
                 e.stopPropagation();
                 onFileSelect();
@@ -149,35 +149,52 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
             >
               Choose Files
             </Button>
+
+            {/* Technical Details - Subtle at bottom */}
+            <div className="flex items-center gap-4 text-xs text-slate-600 font-medium">
+              <div className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Up to 50 images</span>
+              </div>
+              <span className="text-slate-400">•</span>
+              <div className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Max 15MB each</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* What Happens Next - Process Flow */}
+        {/* What Happens Next - Process Flow with Stronger Active States */}
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center justify-center gap-3 text-sm">
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold text-xs">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shadow-lg ring-2 ring-blue-200">
                 1
               </div>
-              <span className="text-slate-700 font-medium">Upload</span>
+              <span className="text-slate-800 font-semibold">Upload</span>
             </div>
-            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 text-white font-bold text-sm shadow-lg ring-2 ring-purple-200">
                 2
               </div>
-              <span className="text-slate-700 font-medium">Choose Room Type</span>
+              <span className="text-slate-800 font-semibold">Configure</span>
             </div>
-            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 font-semibold text-xs">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg ring-2 ring-emerald-200">
                 3
               </div>
-              <span className="text-slate-700 font-medium">Get Staged Results</span>
+              <span className="text-slate-800 font-semibold">Download</span>
             </div>
           </div>
         </div>
@@ -198,30 +215,59 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
               <button
                 key={sample.type}
                 onClick={() => onSampleSelect?.(sample.type)}
-                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 border border-slate-200 cursor-pointer"
+                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:scale-[1.08] border border-slate-200 cursor-pointer"
               >
-                {/* Gradient Background */}
-                <div className={`
-                  absolute inset-0 bg-gradient-to-br ${sample.gradient} opacity-10 
-                  group-hover:opacity-20 transition-opacity duration-300
-                `} />
+                {/* Before/After Split Preview */}
+                <div className="relative h-48 bg-gradient-to-br from-slate-100 to-slate-200">
+                  {/* Simulated Before/After with peek effect */}
+                  <div className="absolute inset-0 flex">
+                    {/* Before (left side) */}
+                    <div className="flex-1 bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 relative">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center space-y-1">
+                          <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Before</div>
+                          <div className="w-12 h-12 mx-auto bg-slate-600/20 rounded-lg"></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Divider with hover effect */}
+                    <div className="w-0.5 bg-white/80 relative z-10 shadow-lg">
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-slate-200 group-hover:scale-110 transition-transform duration-300">
+                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                      </div>
+                    </div>
+                    
+                    {/* After (right side) */}
+                    <div className={`flex-1 bg-gradient-to-br ${sample.gradient} relative`}>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center space-y-1">
+                          <div className="text-xs font-semibold text-white uppercase tracking-wider">After</div>
+                          <div className="w-12 h-12 mx-auto bg-white/20 rounded-lg backdrop-blur-sm"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 
                 {/* Content */}
-                <div className="relative p-6 flex flex-col items-center space-y-3">
-                  <div className="text-4xl">{sample.icon}</div>
-                  <div>
-                    <div className="font-semibold text-slate-900">{sample.label}</div>
-                    <div className="text-xs text-slate-600 mt-1">Try a demo enhancement</div>
+                <div className="relative p-5 bg-white">
+                  <div className="space-y-1 text-center">
+                    <div className="font-bold text-slate-900 text-lg">{sample.label}</div>
+                    <div className="text-xs text-slate-500">{sample.description}</div>
                   </div>
                   
-                  {/* Hover Effect */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  {/* Hover CTA with high contrast */}
+                  <div className="mt-3 opacity-0 group-hover:opacity-100 transition-all duration-300 transform group-hover:translate-y-0 translate-y-2">
                     <div className={`
-                      inline-flex items-center gap-1 text-xs font-medium 
-                      bg-gradient-to-r ${sample.gradient} bg-clip-text text-transparent
+                      inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg
+                      text-xs font-bold uppercase tracking-wide
+                      bg-gradient-to-r ${sample.gradient} text-white shadow-md
                     `}>
-                      Start demo
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      Try Demo
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
                       </svg>
                     </div>

@@ -54,6 +54,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
     : user?.email?.split('@')[0] || 'User';
 
   const planName = usage?.planName || 'Free';
+  const isPro = planName.toLowerCase() === 'pro' || planName.toLowerCase().includes('professional');
 
   // Refresh the page after 30 minutes of inactivity
   useEffect(() => {
@@ -67,26 +68,31 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       }, INACTIVITY_MS);
     };
 
-    const events: Array<keyof WindowEventMap> = [
+    const events = [
       'mousemove',
       'keydown',
       'scroll',
       'touchstart',
-      'click',
-      'visibilitychange'
-    ];
+      'click'
+    ] as const;
 
     const handler = () => {
       if (document.hidden) return;
       resetTimer();
     };
 
+    const visibilityHandler = () => {
+      if (!document.hidden) resetTimer();
+    };
+
     events.forEach((evt) => window.addEventListener(evt, handler));
+    document.addEventListener('visibilitychange', visibilityHandler);
     resetTimer();
 
     return () => {
       window.clearTimeout(timer);
       events.forEach((evt) => window.removeEventListener(evt, handler));
+      document.removeEventListener('visibilitychange', visibilityHandler);
     };
   }, []);
 
@@ -144,10 +150,10 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             ))}
             <a
               href="mailto:support@realenhance.ai"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-300 hover:bg-brand-800/50 hover:text-white transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-200 hover:bg-brand-800/60 hover:text-white transition-colors"
             >
               <HelpCircle className="w-[18px] h-[18px]" />
-              <span className="text-sm font-medium">Support</span>
+              <span className="text-sm font-semibold">Support</span>
             </a>
           </div>
         </nav>
@@ -165,8 +171,15 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
                   {userInitials}
                 </div>
                 <div className="flex-1 min-w-0 text-left">
-                  <p className="text-sm font-medium truncate">{userName}</p>
-                  <p className="text-brand-400 text-xs">{planName}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate text-white">{userName}</p>
+                    {isPro && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-amber-400 to-amber-500 text-amber-900 shadow-sm">
+                        Pro
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-brand-300 text-xs font-medium">{planName}</p>
                 </div>
               </button>
             </DropdownMenuTrigger>
@@ -220,14 +233,14 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// Navigation section label
+// Navigation section label with editorial styling
 const NavSectionLabel = ({ children }: { children: React.ReactNode }) => (
-  <span className="px-3 text-[11px] font-semibold uppercase tracking-wider text-brand-400">
+  <span className="px-3 text-[11px] font-bold uppercase tracking-widest text-brand-300">
     {children}
   </span>
 );
 
-// Navigation item component
+// Navigation item component with improved contrast for WCAG compliance
 const NavItem = ({
   to,
   icon: Icon,
@@ -246,7 +259,7 @@ const NavItem = ({
       "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 group",
       isActive
         ? "bg-brand-800 text-white shadow-sm border-l-2 border-action-500"
-        : "text-brand-400 hover:bg-brand-800/50 hover:text-brand-100"
+        : "text-brand-200 hover:bg-brand-800/60 hover:text-white"
     )}
   >
     {({ isActive }) => (
@@ -254,10 +267,10 @@ const NavItem = ({
         <Icon
           className={cn(
             "w-[18px] h-[18px] flex-shrink-0",
-            isActive ? "text-action-400" : "text-brand-500 group-hover:text-brand-200"
+            isActive ? "text-action-400" : "text-brand-400 group-hover:text-white"
           )}
         />
-        <span className="text-sm font-medium">{label}</span>
+        <span className="text-sm font-semibold">{label}</span>
       </>
     )}
   </NavLink>
