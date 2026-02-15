@@ -5830,7 +5830,7 @@ export default function BatchProcessor() {
               console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex });
               startRegionEditPolling(jobId, editingImageIndex);
             }}
-            onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string }) => {
+            onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string; shouldAutoClose?: boolean }) => {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
                 const preservedOriginalUrl =
@@ -5915,8 +5915,19 @@ export default function BatchProcessor() {
                 });
               }
               refreshUser();
-              // DON'T close modal - keep it open so user can do more edits
-              // User can manually close with the Cancel button
+              
+              // 🔒 Check shouldAutoClose flag from RegionEditor
+              if (result.shouldAutoClose) {
+                console.log('[BatchProcessor] Auto-closing region editor on successful completion');
+                setRegionEditorOpen(false);
+                setEditingImageIndex(null);
+                setEditingImages(prev => {
+                  const next = new Set(prev);
+                  if (editingImageIndex !== null) next.delete(editingImageIndex);
+                  return next;
+                });
+              }
+              // Otherwise keep modal open so user can do more edits
             }}
             onCancel={() => {
               setIsEditingInProgress(false);

@@ -1487,7 +1487,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   
   // ✅ STRICT PAYLOAD MODE — derive declutterMode if missing but declutter requested (safety net)
   let declutterMode: "light" | "stage-ready" | null = (payload.options as any).declutterMode || null;
-  if (!declutterMode && payload.options.declutter) {
+  
+  // ✅ PER-IMAGE ROUTING: Override for multi-room types (must have virtualStage enabled)
+  const roomType = payload.options.roomType;
+  const normalizedRoomType = String(roomType || "").toLowerCase().replace(/-/g, "_").trim();
+  const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
+  const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  
+  if (payload.options.declutter && payload.options.virtualStage && forceLightRoomTypes.has(canonicalRoomType)) {
+    declutterMode = "light"; // Override to light for multi-room types
+    nLog(`[WORKER] 🔄 Multi-room type detected: ${canonicalRoomType} - forcing declutterMode=light for refresh staging`);
+  } else if (!declutterMode && payload.options.declutter) {
     declutterMode = payload.options.virtualStage ? "stage-ready" : "light";
     nLog(`[WORKER] ⚠️ declutterMode missing in payload — derived from flags: ${declutterMode} (declutter=${payload.options.declutter}, virtualStage=${payload.options.virtualStage})`);
   }
@@ -1520,6 +1530,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
     nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Remove clutter/mess, keep furniture" : "Remove ALL furniture (empty room ready for staging)"}`);
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
+    
+    // 📊 STRUCTURED ROUTING LOG
+    nLog(`[PIPELINE_ROUTING] Image routing decision:`, {
+      roomType: canonicalRoomType,
+      isMultiRoom: forceLightRoomTypes.has(canonicalRoomType),
+      declutterMode,
+      virtualStage: payload.options.virtualStage,
+      expectedStage2Mode: declutterMode === "stage-ready" && !forceLightRoomTypes.has(canonicalRoomType) ? "full" : "refresh"
+    });
 
       const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
       const attemptIndex = Math.max(0, attempt - 1);
@@ -1873,6 +1892,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Commit Stage 1B output after successful completion
     if (path1B) {
       commitStageOutput("1B", path1B);
+      // Record the actual mode used for Stage 1B (for Stage 2 routing)
+      const finalMode = useLightFallback ? "light" : declutterMode;
+      (sceneMeta as any).stage1BMode = finalMode;
+      nLog(`[WORKER] ✅ Recorded stage1BMode in metadata: ${finalMode}`);
     }
 
     const stage1BLocalStatus = stage1BStructuralSafe
@@ -2314,13 +2337,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     using: stage2InputUsing,
     pathSuffix: stage2InputSuffix,
   });
-  const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
-    ? "1A"
-    : ((payload.options as any)?.stage2Only === true
-      ? "1A"
-      : (stage1BRequested && lineage1B
-      ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
-      : "1A"));
+  
+  // ✅ Determine Stage 2 source stage - PREFER RECORDED METADATA
+  let stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = "1A";
+  
+  if (isExteriorScene || (payload.options as any)?.stage2Only === true) {
+    stage2SourceStage = "1A";
+  } else if (stage1BRequested && lineage1B) {
+    // Check if stage1BMode was recorded in metadata (reliable source)
+    const recordedMode = (sceneMeta as any).stage1BMode;
+    if (recordedMode === "light") {
+      stage2SourceStage = "1B-light";
+    } else if (recordedMode === "stage-ready") {
+      stage2SourceStage = "1B-stage-ready";
+    } else {
+      // Fallback: recompute from payload (for backward compatibility)
+      const fallbackMode = (payload.options as any).declutterMode;
+      stage2SourceStage = fallbackMode === "light" ? "1B-light" : "1B-stage-ready";
+      nLog(`[WORKER] ⚠️ stage1BMode not in metadata, using fallback: ${stage2SourceStage}`);
+    }
+  }
+  
   const normalizedRoomTypeForStage2 = String(payload.options.roomType || "")
     .toLowerCase()
     .replace(/-/g, "_")
@@ -2336,6 +2373,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2PromptMode = stage2SourceStage === "1B-stage-ready" && !forceRefreshPromptMode ? "full" : "refresh";
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
+  
+  // 📊 STRUCTURED ROUTING LOG - Stage 2
+  nLog(`[PIPELINE_ROUTING] Stage 2 routing:`, {
+    roomType: canonicalRoomTypeForStage2,
+    isMultiRoom: forceRefreshRoomTypes.has(canonicalRoomTypeForStage2),
+    sourceStage: stage2SourceStage,
+    promptMode: stage2PromptMode,
+    forceRefresh: forceRefreshPromptMode
+  });
 
   // ═══ STAGE 2 INPUT LINEAGE GUARD ═══
   if (payload.options.virtualStage && !stage2Blocked) {

@@ -1,15 +1,16 @@
 // ────────────────────────────────
-// MULTI-LIVING CONSTRAINT BLOCK
+// MULTI-ZONE CONSTRAINT SYSTEM (REFACTORED — DRY)
 // ────────────────────────────────
-// Applied only when roomType === "multi_living"
-// Prevents kitchen hallucination, cross-zone staging bleed, and invented cabinetry
-const MULTI_LIVING_CONSTRAINT_BLOCK = `
+// Base block contains shared rules for all multi-room types
+// Zone configs only specify zone-specific instruction — no duplication
+
+// 📦 BASE MULTI-ZONE BLOCK — Shared constraints for ALL multi-room types
+const BASE_MULTI_ZONE_BLOCK = `
 ────────────────────────────────
-MULTI-ZONE STAGING — TWO-ZONE LIMIT (MULTIPLE LIVING AREAS)
+MULTI-ZONE STAGING — TWO-ZONE LIMIT
 ────────────────────────────────
 
-This image may contain more than one functional living zone.
-Examples: lounge + dining, dining + kitchen edge, lounge + study nook.
+This image contains more than one functional zone.
 
 You MUST detect functional zones — but you may stage a MAXIMUM of TWO zones only.
 
@@ -39,13 +40,6 @@ NO FUNCTION INVENTION
 
 Do NOT invent missing zones.
 
-If a kitchen is not clearly visible:
-→ do NOT add kitchen staging elements
-→ do NOT add cabinetry, counters, or appliances
-
-If a dining area is not clearly visible:
-→ do NOT create one.
-
 Partial hints are NOT permission to stage a full zone.
 
 ZONE BOUNDARY PRESERVATION
@@ -66,8 +60,76 @@ When uncertain which zones are valid:
 
 Never exceed two staged zones.
 
+`;
+
+// 🔧 ZONE-SPECIFIC CONFIGS (inject into base block)
+const ZONE_CONFIGS: Record<string, string> = {
+  multiple_living: `
+ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
+Examples: lounge + dining, dining + study nook, lounge + reading area.
+
+If a kitchen is not clearly visible:
+→ do NOT add kitchen staging elements
+→ do NOT add cabinetry, counters, or appliances
+
+If a dining area is not clearly visible:
+→ do NOT create one.
+`,
+
+  kitchen_dining: `
+ZONE EXPECTATIONS (KITCHEN + DINING):
+The two primary zones are: kitchen zone and dining zone.
+
+Kitchen zone must contain visible counters, cabinetry, or appliance fixtures.
+Dining zone must be a separate area suitable for dining furniture.
+
+If a kitchen is NOT clearly visible with cabinetry:
+→ do NOT add kitchen elements
+→ stage as a single dining zone only
+
+If a dining area cannot be clearly separated from kitchen:
+→ stage kitchen zone primarily
+→ add minimal dining accessories only (not a full dining set)
+`,
+
+  kitchen_living: `
+ZONE EXPECTATIONS (KITCHEN + LIVING):
+The two primary zones are: kitchen zone and living/lounge zone.
+
+Kitchen zone must contain visible counters, cabinetry, or appliance fixtures.
+Living zone must be a separate area suitable for lounge seating.
+
+If a kitchen is NOT clearly visible with cabinetry:
+→ do NOT add kitchen elements
+→ stage as a single living room only
+
+If a living area cannot be clearly separated from kitchen:
+→ stage kitchen zone primarily
+→ add minimal lounge accessories only (not a full lounge set)
+`,
+
+  living_dining: `
+ZONE EXPECTATIONS (LIVING + DINING):
+The two primary zones are: living/lounge zone and dining zone.
+
+Living zone: lounge seating, coffee table, living area layout.
+Dining zone: dining table and chairs, dining area layout.
+
+If one zone is not clearly visible or definable:
+→ stage the dominant zone only
+→ do NOT force a second zone
+`,
+};
+
+// 🏗️ Build multi-zone block by injecting zone config into base
+function buildMultiZoneConstraintBlock(roomType: string): string {
+  const zoneConfig = ZONE_CONFIGS[roomType] || "";
+  return BASE_MULTI_ZONE_BLOCK + zoneConfig + `
 ────────────────────────────────
 `;
+}
+
+
 
 export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
   if (sceneType === "exterior") return buildStage1AExteriorPromptNZStyle();
@@ -896,10 +958,15 @@ ADVISORY USAGE:
 • Consider focal wall for staging composition
 • Respect occlusion risk when adding items
 • Adjust to detected complexity level
-${room === "multi_living" ? `
-When multi_living is active:
+${(() => {
+  const multiRoomTypes = ["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"];
+  return multiRoomTypes.includes(canonicalRoom)
+    ? `
+When multi-zone mode is active (${canonicalRoom}):
 • Use detected zones to choose the TWO staging zones only
-• Ignore lower-ranked zones` : ""}
+• Ignore lower-ranked zones`
+    : "";
+})()}
 
 ABSOLUTE PRIORITY:
 1. Visible architectural structure (highest)
@@ -1026,7 +1093,12 @@ Otherwise:
 Stage exactly as requested, even if the layout is unusual for that room type.
 
 User intent overrides model interpretation.
-${room === "multi_living" ? MULTI_LIVING_CONSTRAINT_BLOCK : ""}
+
+${(() => {
+  // 🔄 Inject multi-zone block for ALL multi-room types
+  const multiRoomTypes = ["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"];
+  return multiRoomTypes.includes(canonicalRoom) ? buildMultiZoneConstraintBlock(canonicalRoom) : "";
+})()}
 
 ────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW

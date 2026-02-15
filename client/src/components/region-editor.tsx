@@ -173,6 +173,8 @@ export function RegionEditor({
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  // 🔒 Auto-close control: signals parent that edit completed successfully
+  const [shouldAutoClose, setShouldAutoClose] = useState(false);
   // Staging style is now batch-level only; removed from region editor
   const [roomType, setRoomType] = useState<string>(initialRoomType || "auto");
   const [imageLoading, setImageLoading] = useState(false);
@@ -610,6 +612,27 @@ export function RegionEditor({
         originalWidth,
         originalHeight,
       });
+      
+      // ✅ Validate mask matches image dimensions
+      const imageElem = imageRef.current;
+      const imageDimensions = {
+        width: imageElem?.naturalWidth || 0,
+        height: imageElem?.naturalHeight || 0
+      };
+      const dimensionMatch = originalWidth === imageDimensions.width && 
+                            originalHeight === imageDimensions.height;
+      
+      console.log("[region-editor] 🔍 Mask-to-Image dimension check:", {
+        maskWidth: originalWidth,
+        maskHeight: originalHeight,
+        imageWidth: imageDimensions.width,
+        imageHeight: imageDimensions.height,
+        dimensionsMatch: dimensionMatch
+      });
+      
+      if (!dimensionMatch) {
+        console.warn("[region-editor] ⚠️ Mask dimensions don't match image - mask may not align correctly");
+      }
 
       const offscreenCanvas = document.createElement("canvas");
       offscreenCanvas.width = originalWidth;
@@ -918,10 +941,7 @@ export function RegionEditor({
                 item.imageUrl,
               );
 
-                // 🔥 Cache-bust *for the preview only* so React + the browser
-                // see a new image every time, even if the S3 key is reused
-              // Always cache-bust the preview URL so React and the browser
-              // re-render even when the S3 key stays identical
+              // 🔒 Single preview update at completion (no intermediate updates)
               const cacheBuster = `${Date.now()}`;
               const previewUrlWithVersion =
                 item.imageUrl +
@@ -933,7 +953,7 @@ export function RegionEditor({
                 previewUrlWithVersion,
               );
 
-              // This must ALWAYS run—even on the second edit
+              // Update preview and reset editor state
               setPreviewUrl(previewUrlWithVersion);
               setSelectedFile(null);
               setMaskData(null);
@@ -944,16 +964,24 @@ export function RegionEditor({
                 setTimeout(() => regionEditMutation.reset(), 0);
               }
 
-              // IMPORTANT: still pass the canonical URL (without cache-busting)
-              // back to the parent/global state
+              // 🖼️ Show success toast
+              toast({
+                title: "Edit completed",
+                description: "Your image has been successfully edited",
+              });
+              
+              // 🔒 Signal auto-close to parent
+              setShouldAutoClose(true);
+
+              // IMPORTANT: pass canonical URL (without cache-busting) to parent
               onComplete?.({
                 imageUrl: item.imageUrl,
                 originalUrl: item.originalUrl || "",
                 maskUrl: item.maskUrl || "",
                 mode: item.mode || "",
+                shouldAutoClose: true, // 🔒 Tell parent to close modal automatically
               });
 
-              // Keep editor open so user can inspect or do further edits
               return;
             }
           }
@@ -1315,6 +1343,17 @@ export function RegionEditor({
                       <div className="text-center text-white">
                         <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-2 border-white/30 border-b-white" />
                         <p className="text-sm font-medium">Loading image...</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* 🔄 Loading overlay during edit processing */}
+                  {regionEditMutation.isLoading && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+                      <div className="bg-white rounded-lg p-6 shadow-xl flex flex-col items-center gap-3">
+                        <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+                        <p className="text-sm font-medium text-slate-700">Processing edit...</p>
+                        <p className="text-xs text-slate-500">This may take 10-30 seconds</p>
                       </div>
                     </div>
                   )}
