@@ -830,11 +830,20 @@ function buildStage2InteriorPromptNZStyle(
   }
 ): string {
   const room = roomType || "room";
+  const normalizedRoom = String(roomType || "")
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .trim();
+  const canonicalRoom = normalizedRoom === "multiple_living_areas"
+    ? "multiple_living"
+    : normalizedRoom;
   const sourceStage = opts?.sourceStage || "1A";
+  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoom);
   
   // Determine staging mode based on source stage
-  const isFullStaging = sourceStage === "1B-stage-ready"; // Room was fully decluttered → stage empty room
-  const isRefreshStaging = sourceStage === "1A" || sourceStage === "1B-light"; // Furniture present → refresh existing
+  const isFullStaging = sourceStage === "1B-stage-ready" && !forceRefreshMode; // Room was fully decluttered → stage empty room
+  const isRefreshStaging = !isFullStaging; // Furniture present or refresh-forced → refresh existing
   
   const taskInstruction = isFullStaging
     ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."

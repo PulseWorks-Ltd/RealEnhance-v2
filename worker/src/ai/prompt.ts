@@ -169,7 +169,7 @@ export function buildPrompt(opts: PromptOptions): string {
   const interiorRules = [
     "[INTERIOR STAGING – PRACTICAL & MODERN]",
     "Follow all ABSOLUTE STRUCTURAL rules above.",
-    roomType?.toLowerCase() === "multiple-living-areas" 
+    ["multiple-living-areas", "multiple_living", "multi-living", "multi_living"].includes(String(roomType || "").toLowerCase())
       ? "Multi-zone staging: This image contains multiple functional zones (e.g., open-plan living/dining, lounge/office combo). Stage EACH distinct area appropriately with cohesive style across zones."
       : "Stage the room according to the requested room type and keep it as one unified space.",
     "Place large furniture on the floor plane with correct scale, contact shadows, and perspective. Prefer floor-standing pieces; avoid wall-mounted or floating desks, side tables, and shelves.",
@@ -1348,7 +1348,7 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     lines.push(
       "[INTERIOR STAGING – PRACTICAL & MODERN]",
       "Follow all ABSOLUTE STRUCTURAL rules above.",
-      roomType?.toLowerCase() === "multiple-living-areas" 
+      ["multiple-living-areas", "multiple_living", "multi-living", "multi_living"].includes(String(roomType || "").toLowerCase())
         ? "Multi-zone staging: This image contains multiple functional zones (e.g., open-plan living/dining, lounge/office combo). Stage EACH distinct area appropriately with cohesive style across zones."
         : "Identify the SINGLE most practical use for this room based on its layout, features, and size. Stage it accordingly as one unified space (bedroom/living/dining/office/kitchen).",
       "Place large furniture on the floor plane with correct scale, contact shadows, and perspective. Prefer floor-standing pieces; avoid wall-mounted or floating desks, side tables, and shelves.",

@@ -45,6 +45,63 @@ function safeParseOptions(raw: unknown): any[] {
   }
 }
 
+const CANONICAL_ROOM_TYPES = new Set([
+  "bedroom",
+  "living_room",
+  "dining_room",
+  "kitchen",
+  "kitchen_dining",
+  "kitchen_living",
+  "living_dining",
+  "multiple_living",
+  "study",
+  "office",
+  "bathroom",
+  "bathroom_1",
+  "bathroom_2",
+  "laundry",
+  "garage",
+  "basement",
+  "attic",
+  "hallway",
+  "staircase",
+  "entryway",
+  "closet",
+  "pantry",
+  "outdoor",
+  "exterior",
+  "other",
+]);
+
+function normalizeRoomType(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "";
+  const aliases: Record<string, string> = {
+    "bedroom-1": "bedroom",
+    "bedroom-2": "bedroom",
+    "bedroom-3": "bedroom",
+    "bedroom-4": "bedroom",
+    "living": "living_room",
+    "living-room": "living_room",
+    "dining": "dining_room",
+    "dining-room": "dining_room",
+    "multiple-living-areas": "multiple_living",
+    "multiple_living_areas": "multiple_living",
+    "multiple-living": "multiple_living",
+    "multiple living": "multiple_living",
+    "multi-living": "multiple_living",
+    "kitchen & dining": "kitchen_dining",
+    "kitchen-and-dining": "kitchen_dining",
+    "kitchen & living": "kitchen_living",
+    "kitchen-and-living": "kitchen_living",
+    "living & dining": "living_dining",
+    "living-and-dining": "living_dining",
+    "bathroom-1": "bathroom_1",
+    "bathroom-2": "bathroom_2",
+  };
+  return aliases[value] || value.replace(/-/g, "_");
+}
+
 export function uploadRouter() {
   const r = Router();
 
@@ -201,23 +258,24 @@ export function uploadRouter() {
 
     // Server-side validation: if staging is enabled, every interior image must have a valid roomType
     if (allowStagingForm) {
-      const missingRoomType: number[] = [];
+      const invalidRoomType: number[] = [];
       for (let i = 0; i < files.length; i++) {
         // Determine sceneType and roomType from metaJson or options
         const meta = metaByIndex[i] || {};
         const sceneType = meta.sceneType || (optionsList[i]?.sceneType) || "auto";
-        const roomType = meta.roomType || (optionsList[i]?.roomType);
+        const roomTypeRaw = meta.roomType || (optionsList[i]?.roomType);
+        const roomType = normalizeRoomType(roomTypeRaw);
         if (sceneType !== "exterior") {
-          // Must have a non-empty roomType string
-          if (!roomType || typeof roomType !== "string" || !roomType.trim()) {
-            missingRoomType.push(i + 1);
+          // Must have a valid canonical room type string
+          if (!roomType || !CANONICAL_ROOM_TYPES.has(roomType)) {
+            invalidRoomType.push(i + 1);
           }
         }
       }
-      if (missingRoomType.length) {
+      if (invalidRoomType.length) {
         return res.status(400).json({
-          error: "missing_room_type",
-          message: `Room type is required for interior image(s): ${missingRoomType.join(", ")}`
+          error: "invalid_room_type",
+          message: `A valid room type is required for interior image(s): ${invalidRoomType.join(", ")}`
         });
       }
     }
@@ -276,7 +334,7 @@ export function uploadRouter() {
       // Merge metadata from metaJson if available
       const meta = metaByIndex[i] || {};
       if (meta.sceneType) opts.sceneType = meta.sceneType;
-      if (meta.roomType) opts.roomType = meta.roomType;
+      if (meta.roomType) opts.roomType = normalizeRoomType(meta.roomType);
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
@@ -320,6 +378,10 @@ export function uploadRouter() {
       } else if (stage2OnlyForm) {
         opts.stage2Only = true;
       }
+            if (typeof opts.roomType === "string") {
+              opts.roomType = normalizeRoomType(opts.roomType);
+            }
+
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
         opts.manualSceneOverride = true;
@@ -395,6 +457,13 @@ export function uploadRouter() {
       opts.declutterMode = declutterMode;
       // Align declutter boolean with authoritative mode to avoid null skips downstream
       opts.declutter = declutterMode !== null;
+
+      // Stage2-only always uses refresh-mode metadata (no empty-room/full staging intent)
+      if (opts.stage2Only === true) {
+        opts.stagingPreference = "refresh";
+        if (!opts.stage2Variant) opts.stage2Variant = "2A";
+        if (!opts.furnishedState) opts.furnishedState = "furnished";
+      }
 
       // Derive Stage 2 variant defaults if still unset
       if (!opts.stage2Variant && opts.virtualStage) {
@@ -573,6 +642,7 @@ export function uploadRouter() {
           declutter: finalDeclutter,
           declutterMode: opts.declutterMode,
           virtualStage: finalVirtualStage,
+          stage2Only: !!opts.stage2Only,
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky, // Pass through sky replacement preference

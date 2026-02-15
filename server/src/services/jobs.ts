@@ -103,6 +103,7 @@ export async function enqueueEnhanceJob(params: {
     declutter: boolean;
     declutterMode?: "light" | "stage-ready";
     virtualStage: boolean;
+    stage2Only?: boolean;
     roomType: string;
     sceneType: string;
     replaceSky?: boolean;  // Sky replacement toggle

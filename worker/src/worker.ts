@@ -75,29 +75,6 @@ import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
-
-async function detectLargeFurnitureGemini(ai: any, imageBase64: string): Promise<boolean> {
-  const prompt = `
-Return JSON only: {"hasLargeFurniture": true|false}
-
-Large furniture means:
-bed, sofa, couch, dining table, large table, sectional, large desk.
-
-Ignore:
-chairs, lamps, rugs, decor, wall art, small items.
-
-Answer true ONLY if clearly visible.
-`;
-
-  const res = await ai.generateJson({
-    model: "gemini-2.0-flash",
-    prompt,
-    imageBase64,
-    temperature: 0,
-  });
-
-  return res?.hasLargeFurniture === true;
-}
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
@@ -660,26 +637,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
   let stage2AttemptId: string | undefined;
-  let autoFurnitureDetected = false;
-  const jobMeta = { autoInsertedStage1B: false };
-
-  if (payload.options?.stage2Only === true) {
-    const base64 = toBase64(origPath).data;
-    const ai = getGeminiClient();
-    autoFurnitureDetected = await detectLargeFurnitureGemini(ai, base64);
-
-    nLog("[AUTO_FURNITURE_DETECT]", {
-      jobId: payload.jobId,
-      detected: autoFurnitureDetected,
-    });
-
-    if (autoFurnitureDetected) {
-      payload.options.declutter = true;
-      payload.options.declutterMode = "stage-ready";
-      payload.options.virtualStage = true;
-      jobMeta.autoInsertedStage1B = true;
-    }
-  }
 
   const getStage2Context = async () => {
     const latestJob = await getJob(payload.jobId);
@@ -985,8 +942,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2OnlyRetry: true,
           timings,
           scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
-          autoFurnitureDetected,
-          autoInsertedStage1B: jobMeta.autoInsertedStage1B === true,
         }
       }, "stage2_only_complete");
 
@@ -2361,13 +2316,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
   const stage2SourceStage: "1A" | "1B-light" | "1B-stage-ready" = isExteriorScene
     ? "1A"
-    : (stage1BRequested && lineage1B
+    : ((payload.options as any)?.stage2Only === true
+      ? "1A"
+      : (stage1BRequested && lineage1B
       ? (((payload.options as any).declutterMode === "light") ? "1B-light" : "1B-stage-ready")
-      : "1A");
+      : "1A"));
+  const normalizedRoomTypeForStage2 = String(payload.options.roomType || "")
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .trim();
+  const canonicalRoomTypeForStage2 = normalizedRoomTypeForStage2 === "multiple_living_areas"
+    ? "multiple_living"
+    : normalizedRoomTypeForStage2;
+  const forceRefreshRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const forceRefreshPromptMode = forceRefreshRoomTypes.has(canonicalRoomTypeForStage2);
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
   // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
   const stage2ValidationBaseline = path1A;
-  const stage2PromptMode = stage2SourceStage === "1B-stage-ready" ? "full" : "refresh";
+  const stage2PromptMode = stage2SourceStage === "1B-stage-ready" && !forceRefreshPromptMode ? "full" : "refresh";
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
 
@@ -3885,8 +3851,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
-    autoFurnitureDetected,
-    autoInsertedStage1B: jobMeta.autoInsertedStage1B === true,
   };
 
   // ⚡ CRITICAL: Mark job as complete IMMEDIATELY with final URL

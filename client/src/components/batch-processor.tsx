@@ -664,6 +664,12 @@ export default function BatchProcessor() {
   const [manualSceneTypesById, setManualSceneTypesById] = useState<Record<string, SceneLabel | null>>({});
   const [scenePredictionsById, setScenePredictionsById] = useState<Record<string, SceneDetectResult>>({});
   const [imageRoomTypesById, setImageRoomTypesById] = useState<Record<string, string>>({});
+  const refreshModeOnlyRoomTypes = useMemo(() => new Set([
+    "multiple_living",
+    "kitchen_dining",
+    "kitchen_living",
+    "living_dining",
+  ]), []);
   const [imageSkyReplacementById, setImageSkyReplacementById] = useState<Record<string, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
   const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
@@ -4951,14 +4957,14 @@ export default function BatchProcessor() {
                       placeholder="Select room type…"
                       className="w-full"
                     >
-                      <FixedSelectItem value="bedroom-1">Bedroom 1</FixedSelectItem>
-                      <FixedSelectItem value="bedroom-2">Bedroom 2</FixedSelectItem>
-                      <FixedSelectItem value="bedroom-3">Bedroom 3</FixedSelectItem>
-                      <FixedSelectItem value="bedroom-4">Bedroom 4</FixedSelectItem>
+                      <FixedSelectItem value="bedroom">Bedroom</FixedSelectItem>
+                      <FixedSelectItem value="living_room">Living</FixedSelectItem>
+                      <FixedSelectItem value="dining_room">Dining</FixedSelectItem>
                       <FixedSelectItem value="kitchen">Kitchen</FixedSelectItem>
-                      <FixedSelectItem value="living-room">Living Room</FixedSelectItem>
-                      <FixedSelectItem value="multi-living">Multiple Living Areas</FixedSelectItem>
-                      <FixedSelectItem value="dining-room">Dining Room</FixedSelectItem>
+                      <FixedSelectItem value="kitchen_dining">Kitchen &amp; Dining</FixedSelectItem>
+                      <FixedSelectItem value="kitchen_living">Kitchen &amp; Living</FixedSelectItem>
+                      <FixedSelectItem value="living_dining">Living &amp; Dining</FixedSelectItem>
+                      <FixedSelectItem value="multiple_living">Multiple Living</FixedSelectItem>
                       <FixedSelectItem value="study">Study</FixedSelectItem>
                       <FixedSelectItem value="office">Office</FixedSelectItem>
                       <FixedSelectItem value="bathroom-1">Bathroom 1</FixedSelectItem>
@@ -4973,6 +4979,12 @@ export default function BatchProcessor() {
                       <FixedSelectItem value="closet">Closet</FixedSelectItem>
                       <FixedSelectItem value="pantry">Pantry</FixedSelectItem>
                     </FixedSelect>
+                    {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
+                      <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
+                        <p>Open-plan and multi-zone spaces are staged using layout-preserving refresh mode.</p>
+                        <p>This protects kitchens, islands, and walkways and avoids incorrect empty-room staging.</p>
+                      </div>
+                    )}
                   </section>
                 )}
 

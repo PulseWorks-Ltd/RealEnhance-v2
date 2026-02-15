@@ -69,6 +69,35 @@ export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed
  */
 export type DeclutterMode = "light" | "stage-ready";
 
+export type RoomType =
+  | "bedroom"
+  | "living_room"
+  | "dining_room"
+  | "kitchen"
+  | "kitchen_dining"
+  | "kitchen_living"
+  | "living_dining"
+  | "multiple_living"
+  | "study"
+  | "office"
+  | "bathroom"
+  | "bathroom_1"
+  | "bathroom_2"
+  | "laundry"
+  | "garage"
+  | "basement"
+  | "attic"
+  | "hallway"
+  | "staircase"
+  | "entryway"
+  | "closet"
+  | "pantry"
+  | "outdoor"
+  | "exterior"
+  | "other"
+  | "unknown"
+  | "auto";
+
 export type SceneLabel =
   | "exterior"
   | "living_room"
@@ -95,7 +124,7 @@ export interface EnhanceJobPayload {
     declutter: boolean;
     virtualStage: boolean;
     stage2Only?: boolean;
-    roomType: string;
+    roomType: RoomType | string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
     stagingStyle?: string;  // Staging style (defaults to nz_standard)

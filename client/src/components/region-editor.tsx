@@ -1453,11 +1453,15 @@ export function RegionEditor({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto</SelectItem>
-                    <SelectItem value="living_room">Living Room</SelectItem>
                     <SelectItem value="bedroom">Bedroom</SelectItem>
+                    <SelectItem value="living_room">Living</SelectItem>
+                    <SelectItem value="dining_room">Dining</SelectItem>
                     <SelectItem value="kitchen">Kitchen</SelectItem>
+                    <SelectItem value="kitchen_dining">Kitchen &amp; Dining</SelectItem>
+                    <SelectItem value="kitchen_living">Kitchen &amp; Living</SelectItem>
+                    <SelectItem value="living_dining">Living &amp; Dining</SelectItem>
+                    <SelectItem value="multiple_living">Multiple Living</SelectItem>
                     <SelectItem value="bathroom">Bathroom</SelectItem>
-                    <SelectItem value="dining">Dining</SelectItem>
                     <SelectItem value="exterior">Exterior</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>

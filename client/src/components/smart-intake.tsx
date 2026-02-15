@@ -145,14 +145,14 @@ export default function SmartIntake({
               avoidCollisions={false}
             >
               <SelectItem value="auto">Auto Detect{detectedRoomType ? ` (${detectedRoomType})` : ""}</SelectItem>
-              <SelectItem value="bedroom-1">Bedroom 1</SelectItem>
-              <SelectItem value="bedroom-2">Bedroom 2</SelectItem>
-              <SelectItem value="bedroom-3">Bedroom 3</SelectItem>
-              <SelectItem value="bedroom-4">Bedroom 4</SelectItem>
+              <SelectItem value="bedroom">Bedroom</SelectItem>
+              <SelectItem value="living_room">Living</SelectItem>
+              <SelectItem value="dining_room">Dining</SelectItem>
               <SelectItem value="kitchen">Kitchen</SelectItem>
-              <SelectItem value="living-room">Living Room</SelectItem>
-              <SelectItem value="multiple-living-areas">Multiple Living Areas</SelectItem>
-              <SelectItem value="dining-room">Dining Room</SelectItem>
+              <SelectItem value="kitchen_dining">Kitchen &amp; Dining</SelectItem>
+              <SelectItem value="kitchen_living">Kitchen &amp; Living</SelectItem>
+              <SelectItem value="living_dining">Living &amp; Dining</SelectItem>
+              <SelectItem value="multiple_living">Multiple Living</SelectItem>
               <SelectItem value="study">Study</SelectItem>
               <SelectItem value="office">Office</SelectItem>
               <SelectItem value="bathroom-1">Bathroom 1</SelectItem>

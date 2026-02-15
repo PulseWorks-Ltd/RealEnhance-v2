@@ -2,7 +2,18 @@
 
 import { GoogleGenAI } from '@google/genai';
 
-export type RoomType = 'living_room' | 'bedroom' | 'dining_room' | 'office' | 'kitchen' | 'bathroom' | 'multiple-living-areas' | 'other';
+export type RoomType =
+  | 'living_room'
+  | 'bedroom'
+  | 'dining_room'
+  | 'office'
+  | 'kitchen'
+  | 'bathroom'
+  | 'multiple_living'
+  | 'kitchen_dining'
+  | 'kitchen_living'
+  | 'living_dining'
+  | 'other';
 
 export interface RoomTypeAnalysis {
   roomType: RoomType;
@@ -23,7 +34,7 @@ Classify based on ARCHITECTURAL FEATURES and BUILT-IN ELEMENTS only.
 
 Return JSON with this exact structure:
 {
-  "roomType": "living_room"|"bedroom"|"dining_room"|"office"|"kitchen"|"bathroom"|"multiple-living-areas"|"other",
+  "roomType": "living_room"|"bedroom"|"dining_room"|"office"|"kitchen"|"bathroom"|"multiple_living"|"kitchen_dining"|"kitchen_living"|"living_dining"|"other",
   "confidence": "high"|"medium"|"low",
   "reasoning": "brief explanation of classification"
 }
@@ -218,6 +229,20 @@ LOW:
     }
 
     const analysis = JSON.parse(jsonMatch[1]) as RoomTypeAnalysis;
+    const normalizedRoomType = String((analysis as any)?.roomType || "")
+      .toLowerCase()
+      .replace(/-/g, "_");
+    const roomTypeAliases: Record<string, RoomType> = {
+      multiple_living_areas: "multiple_living",
+      multiple_living: "multiple_living",
+      multi_living: "multiple_living",
+      kitchen_and_dining: "kitchen_dining",
+      kitchen_and_living: "kitchen_living",
+      living_and_dining: "living_dining",
+    };
+    if (roomTypeAliases[normalizedRoomType]) {
+      (analysis as any).roomType = roomTypeAliases[normalizedRoomType];
+    }
     console.log(`[ROOM-TYPE-DETECTOR] Detected: ${analysis.roomType} (confidence: ${analysis.confidence})`);
     console.log(`[ROOM-TYPE-DETECTOR] Reasoning: ${analysis.reasoning}`);
 

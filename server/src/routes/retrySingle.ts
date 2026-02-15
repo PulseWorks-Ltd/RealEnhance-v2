@@ -63,6 +63,65 @@ function parseNumber(v: any): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+const CANONICAL_ROOM_TYPES = new Set([
+  "bedroom",
+  "living_room",
+  "dining_room",
+  "kitchen",
+  "kitchen_dining",
+  "kitchen_living",
+  "living_dining",
+  "multiple_living",
+  "study",
+  "office",
+  "bathroom",
+  "bathroom_1",
+  "bathroom_2",
+  "laundry",
+  "garage",
+  "basement",
+  "attic",
+  "hallway",
+  "staircase",
+  "entryway",
+  "closet",
+  "pantry",
+  "outdoor",
+  "exterior",
+  "other",
+  "unknown",
+  "auto",
+]);
+
+function normalizeRoomType(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "unknown";
+  const aliases: Record<string, string> = {
+    "bedroom-1": "bedroom",
+    "bedroom-2": "bedroom",
+    "bedroom-3": "bedroom",
+    "bedroom-4": "bedroom",
+    "living": "living_room",
+    "living-room": "living_room",
+    "dining": "dining_room",
+    "dining-room": "dining_room",
+    "multiple-living-areas": "multiple_living",
+    "multiple_living_areas": "multiple_living",
+    "multiple-living": "multiple_living",
+    "multiple living": "multiple_living",
+    "multi-living": "multiple_living",
+    "kitchen & dining": "kitchen_dining",
+    "kitchen-and-dining": "kitchen_dining",
+    "kitchen & living": "kitchen_living",
+    "kitchen-and-living": "kitchen_living",
+    "living & dining": "living_dining",
+    "living-and-dining": "living_dining",
+    "bathroom-1": "bathroom_1",
+    "bathroom-2": "bathroom_2",
+  };
+  return aliases[value] || value.replace(/-/g, "_");
+}
+
 function resolveRetryBaseline(params: {
   jobId: string;
   requestedStage: string;
@@ -177,7 +236,7 @@ export function retrySingleRouter() {
       // Extract form fields
       const body = req.body || {} as any;
       const sceneType = body.sceneType || 'auto';
-      const roomType = body.roomType || 'unknown';
+      const roomType = normalizeRoomType(body.roomType || 'unknown');
       const allowStaging = toBool(body.allowStaging, true);
       const stagingStyle = String(body.stagingStyle || '').trim();
       const declutter = toBool(body.declutter, false);
@@ -218,6 +277,10 @@ export function retrySingleRouter() {
       const temperature = parseNumber(body.temperature);
       const topP = parseNumber(body.topP);
       const topK = parseNumber(body.topK);
+
+      if (sceneType !== "exterior" && !CANONICAL_ROOM_TYPES.has(roomType)) {
+        return res.status(400).json({ success: false, error: "invalid_room_type", message: "Invalid roomType for interior retry" });
+      }
 
       if (!useStageSource && !file) {
         return res.status(400).json({ success: false, error: "missing_image", message: "No image provided for retry" });

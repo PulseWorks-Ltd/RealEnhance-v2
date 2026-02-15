@@ -121,6 +121,35 @@ export type JobStatus =
 // Declutter mode tuning for Stage 1B
 export type DeclutterMode = "light" | "stage-ready";
 
+export type RoomType =
+  | "bedroom"
+  | "living_room"
+  | "dining_room"
+  | "kitchen"
+  | "kitchen_dining"
+  | "kitchen_living"
+  | "living_dining"
+  | "multiple_living"
+  | "study"
+  | "office"
+  | "bathroom"
+  | "bathroom_1"
+  | "bathroom_2"
+  | "laundry"
+  | "garage"
+  | "basement"
+  | "attic"
+  | "hallway"
+  | "staircase"
+  | "entryway"
+  | "closet"
+  | "pantry"
+  | "outdoor"
+  | "exterior"
+  | "other"
+  | "unknown"
+  | "auto";
+
 export type JobKind =
   | "enhance"
   | "edit"
@@ -156,7 +185,7 @@ export interface EnhanceJobPayload {
   options: {
     declutter: boolean;
     virtualStage: boolean;
-    roomType: string;
+    roomType: RoomType | string;
     sceneType: string | "auto";
     stage2Only?: boolean;
     replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)

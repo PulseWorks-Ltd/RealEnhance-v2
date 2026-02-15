@@ -67,6 +67,9 @@ export async function runStage2(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
+  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
+    ? "multiple_living"
+    : normalizedRoomType;
 
   let out = basePath;
   const dbg = process.env.STAGE2_DEBUG === "1";
@@ -168,7 +171,9 @@ export async function runStage2(
     "1B": (opts.sourceStage === "1B-light" || opts.sourceStage === "1B-stage-ready") ? opts.sourceStage : null,
   };
   const resolvedSourceStage1B = resolveStageUrl(sourceStageMap, "1B");
-  const isFullStaging = resolvedSourceStage1B === "1B-stage-ready";
+  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
+  const isFullStaging = resolvedSourceStage1B === "1B-stage-ready" && !forceRefreshMode;
   const isRefreshStaging = !isFullStaging;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   

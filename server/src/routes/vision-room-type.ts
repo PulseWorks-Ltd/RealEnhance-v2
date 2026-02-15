@@ -13,7 +13,7 @@ async function detectRoomTypeFromUrl(imageUrl: string, sceneTypeHint?: string) {
 You are a classifier that labels real-estate photos by room type.
 Return a JSON object with:
 - "sceneType": "interior" or "exterior"
-- "roomType": one of ["living_room","bedroom","kitchen","bathroom","dining_room","office",
+- "roomType": one of ["living_room","bedroom","kitchen","bathroom","dining_room","office","multiple_living","kitchen_dining","kitchen_living","living_dining",
   "hallway","laundry","garage","exterior_front","exterior_backyard","balcony","pool","view","other_interior"]
 - "confidence": number between 0 and 1
 Strict JSON only, no extra text.
