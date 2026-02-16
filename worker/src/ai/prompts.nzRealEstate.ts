@@ -134,16 +134,16 @@ If room type is NOT multi-room:
 • Stage ONLY the selected room type
 • No secondary zones
 • No mixed-use furniture
-• Ignore other apparent room functions
+Ignore other apparent functions.
 `;
 
 const MULTI_ROOM_LOCK = `
-MULTI-ROOM ZONE LOCK:
-If room type IS multi-room:
-• Stage ONLY the allowed zone types for this room label
+MULTI-ROOM TYPE LOCK:
+If room type is multi-room:
+• Stage ONLY the allowed room types in the selection
 • Maximum TWO functional zones
-• Do NOT introduce any third zone
-• Do NOT add furniture outside the allowed zone types
+• No third-zone furniture
+Choose the two visually dominant zones only.
 `;
 
 // 🏗️ Build multi-zone block by injecting zone config into base
