@@ -100,12 +100,19 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
+import { createHash } from "crypto";
 import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 import { focusLog } from "../utils/logFocus";
+
+export const STAGE1B_FULL_SAMPLING = Object.freeze({
+  temperature: 0.24,
+  topP: 0.70,
+  topK: 30,
+});
 
 let singleton: GoogleGenAI | null = null;
 
@@ -211,6 +218,13 @@ export async function enhanceWithGemini(
   try {
     const client = getGeminiClient();
     focusLog("GEMINI_CLIENT", `[Gemini] ✓ Gemini client initialized`);
+    const modelReasonText = (modelReason || "").toLowerCase();
+    const isStage1BFullDeclutter =
+      stage === "1B" &&
+      (
+        modelReasonText.includes("declutter:stage-ready") ||
+        (typeof promptOverride === "string" && /full furniture removal|stage 1b\s*—\s*full furniture removal/i.test(promptOverride))
+      );
 
     // Build prompt and image parts
     // Map config-based declutter intensity to env for prompt builder (kept sync)
@@ -321,20 +335,52 @@ export async function enhanceWithGemini(
     const cfgTopK = typeof cfgForMode?.topK === 'number' ? cfgForMode.topK : undefined;
 
     const usingTest = process.env.USE_TEST_PROMPTS === "1";
-    const sampling = usingTest
-      ? { temperature: undefined as any, topP: undefined as any, topK: undefined as any }
-      : {
-          temperature: typeof temperature === 'number' ? temperature : (cfgTemp ?? envTemp ?? baseSampling.temperature),
-          topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
-          topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
-        };
+    const sampling = isStage1BFullDeclutter
+      ? {
+          temperature: STAGE1B_FULL_SAMPLING.temperature,
+          topP: STAGE1B_FULL_SAMPLING.topP,
+          topK: STAGE1B_FULL_SAMPLING.topK,
+        }
+      : usingTest
+        ? { temperature: undefined as any, topP: undefined as any, topK: undefined as any }
+        : {
+            temperature: typeof temperature === 'number' ? temperature : (cfgTemp ?? envTemp ?? baseSampling.temperature),
+            topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
+            topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
+          };
     const sourceNotes: string[] = [];
-    if (!usingTest) {
+    if (isStage1BFullDeclutter) {
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} (stage1b_full_locked)`);
+    } else if (!usingTest) {
       if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
       if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
       focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
     } else {
       focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
+    }
+
+    if (stage === "1B") {
+      const promptHash = createHash("sha256").update(prompt).digest("hex").slice(0, 12);
+      const attemptMatch = outputPath?.match(/-1B-retry(\d+)/);
+      const attempt = attemptMatch ? Number(attemptMatch[1]) : 0;
+      const modeFromReason = modelReasonText.includes("declutter:light")
+        ? "light"
+        : (modelReasonText.includes("declutter:stage-ready") ? "stage-ready" : "unknown");
+      const retryType = attempt === 0
+        ? "initial"
+        : (modeFromReason === "stage-ready" ? "full_retry" : (modeFromReason === "light" ? "light_retry" : "retry"));
+      focusLog("STAGE1B_CALL_PROOF", `[STAGE1B_CALL_PROOF] ${JSON.stringify({
+        attempt,
+        declutterMode: modeFromReason,
+        promptHash,
+        sampling: {
+          temperature: sampling.temperature,
+          topP: sampling.topP,
+          topK: sampling.topK,
+        },
+        model: MODEL_CONFIG.stage1B.primary,
+        retryType,
+      })}`);
     }
 
     // ✅ PER-STAGE MODEL SELECTION WITH SAFE FALLBACK

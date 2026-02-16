@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
-import { enhanceWithGemini } from "../ai/gemini";
+import { enhanceWithGemini, STAGE1B_FULL_SAMPLING } from "../ai/gemini";
 import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
@@ -85,19 +85,16 @@ export async function runStage1B(
       throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
     }
     
-    if (declutterMode === "stage-ready" && attemptIndex >= 2) {
-      promptOverride += `
-
-RETRY REMOVAL REINFORCEMENT:
-Remove ALL movable furniture completely.
-Do not preserve partial furniture.
-If uncertain whether built-in or movable — treat as movable and remove.
-`;
-    }
-
     logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__curtainRailLikely" });
     const railLikely = options.curtainRailLikely as boolean | "unknown";
-    if (railLikely === false) {
+    if (declutterMode === "stage-ready") {
+      promptOverride += `
+
+WINDOW TREATMENT HARD LOCK (STAGE 1B FULL):
+Preserve existing curtains, drapes, blinds, rods, tracks, and rails exactly as shown.
+Do not add, remove, replace, restyle, or reposition any window treatment components.
+`;
+    } else if (railLikely === false) {
       promptOverride += `
 
 WINDOW COVERING HARD PROHIBITION:
@@ -157,10 +154,16 @@ Do not add blinds.
       }
     }
 
-    const baseTemp = 0.24;
-    const retryTemp = attemptIndex >= 1
-      ? Math.max(0.05, baseTemp * 0.9)
-      : baseTemp;
+    const baseTemp = STAGE1B_FULL_SAMPLING.temperature;
+    const retryTemp = declutterMode === "stage-ready"
+      ? STAGE1B_FULL_SAMPLING.temperature
+      : (attemptIndex >= 1 ? Math.max(0.05, baseTemp * 0.9) : baseTemp);
+    const samplingTopP = declutterMode === "stage-ready"
+      ? STAGE1B_FULL_SAMPLING.topP
+      : 0.70;
+    const samplingTopK = declutterMode === "stage-ready"
+      ? STAGE1B_FULL_SAMPLING.topK
+      : 30;
 
     logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobDeclutterIntensity" });
     logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobSampling" });
@@ -175,8 +178,8 @@ Do not add blinds.
       outputPath,
       // Low-temp for deterministic, aggressive removal
       temperature: retryTemp,
-      topP: 0.70,
-      topK: 30,
+      topP: samplingTopP,
+      topK: samplingTopK,
       // NZ explicit 1B prompt (mode-specific)
       promptOverride,
       // When decluttering, allow interior floor cleanup and exterior hardscape cleanup

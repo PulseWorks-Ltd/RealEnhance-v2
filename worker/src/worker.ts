@@ -2022,6 +2022,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let geminiRetryTopK = 32;
       let lastGeminiConfirm: any = null;
       let geminiRetryPassed = false;
+      const stage1BRetryMode: "light" | "stage-ready" = useLightFallback ? "light" : declutterMode as "light" | "stage-ready";
 
       // Gate evidence injection based on threshold
       const gatedEvidence = shouldInjectEvidence(stage1BLastVerdict?.evidence)
@@ -2085,7 +2086,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             replaceSky: false,
             sceneType: sceneLabel,
             roomType: payload.options.roomType,
-            declutterMode: declutterMode as "light" | "stage-ready",
+            declutterMode: stage1BRetryMode,
             jobId: payload.jobId,
             attempt: geminiRetries,
             canonicalPath: jobContext.canonicalPath,
