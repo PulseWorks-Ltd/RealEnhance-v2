@@ -255,6 +255,7 @@ export function retrySingleRouter() {
       const parentJobId = body.parentJobId || body.retryParentJobId || null;
       const clientBatchId = body.clientBatchId || body.batchId || null;
       const requestedStage = String(body.requestedStage || '').trim().toUpperCase();
+      const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
       const useStageSource = !!sourceUrlRaw;
 
       // ✅ PATCH 2: Idempotency guard (30-second window)
@@ -499,7 +500,7 @@ export function retrySingleRouter() {
       const options: any = {
         declutter: effectiveDeclutter,
         declutterMode: declutterMode ?? undefined,
-        virtualStage: !!allowStaging,
+        virtualStage: effectiveAllowStaging,
         roomType,
         sceneType,
         replaceSky,
@@ -582,7 +583,7 @@ export function retrySingleRouter() {
           userId: sessUser.id,
           requiredImages: 1,  // Always 1 credit per retry
           requestedStage12: true,
-          requestedStage2: allowStaging,
+          requestedStage2: effectiveAllowStaging,
         });
         console.log(`[retry-single] Reserved 1 credit for manual retry job ${jobId}`);
       } catch (err: any) {

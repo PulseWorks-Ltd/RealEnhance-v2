@@ -393,6 +393,17 @@ function computeRetryBaseline(
     };
   }
 
+  // Case A2: Viewing Stage 2 but no Stage 1B available → re-stage from Stage 1A
+  if (viewingStage === "2" && stage1AUrl) {
+    return {
+      baselineStage: "1A",
+      stagesToRun: ["2"],
+      allowStaging: true,
+      sourceUrl: stage1AUrl,
+      sourceStageLabel: "stage1a",
+    };
+  }
+
   // Case B: Viewing Stage 1B and Stage 2 exists → re-declutter from 1A, then re-stage
   if (viewingStage === "1B" && stage2Url && stage1AUrl) {
     return {
@@ -3090,6 +3101,10 @@ export default function BatchProcessor() {
       // Determine what stage the user is currently viewing
       const res = results[imageIndex];
       const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
+      const requestedStages = res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || null;
+      const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+      const blockedStage = (res?.validation as any)?.blockedStage || (res?.result?.validation as any)?.blockedStage || res?.blockedStage || res?.result?.blockedStage || res?.meta?.blockedStage || null;
+      const statusRaw = String(res?.status || res?.result?.status || "").toLowerCase();
       const viewingStage: StageKey | null = displayStageByIndex[imageIndex] || (() => {
         const s2 = stageMap?.['2'] || stageMap?.stage2 || null;
         const s1b = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
@@ -3099,13 +3114,21 @@ export default function BatchProcessor() {
         if (s1a) return "1A" as StageKey;
         return null;
       })();
+
+      // Preserve Stage 2 retry intent when Stage 2 was requested but no Stage 2 URL exists yet.
+      const forceStage2Retry = requestedStage2 && (blockedStage === "2" || statusRaw === "failed" || viewingStage !== "2");
+      const retryContextStage: StageKey | null = forceStage2Retry ? "2" : viewingStage;
       
       // Compute baseline and stages using the new context-aware logic
-      const baseline = computeRetryBaseline(viewingStage, stageMap);
+      const baseline = computeRetryBaseline(retryContextStage, stageMap);
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
         viewingStage,
+        retryContextStage,
+        forceStage2Retry,
+        requestedStage2,
+        blockedStage,
         baselineStage: baseline.baselineStage,
         stagesToRun: baseline.stagesToRun,
         allowStaging: baseline.allowStaging,
