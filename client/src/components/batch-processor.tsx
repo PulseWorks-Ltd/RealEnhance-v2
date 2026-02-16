@@ -119,6 +119,16 @@ function getDisplayUrl(data: any): string | null {
 function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
   if (!data) return { url: null, stage: null };
 
+  const isRegionEdit =
+    data?.completionSource === "region-edit" ||
+    data?.result?.completionSource === "region-edit" ||
+    String(data?.meta?.type || "").toLowerCase() === "region-edit" ||
+    String(data?.meta?.jobType || "").toLowerCase() === "region_edit";
+  const editLatestUrl =
+    data?.editLatestUrl ||
+    data?.result?.editLatestUrl ||
+    null;
+
   const status = String(data?.status || data?.result?.status || "").toLowerCase();
   const validation = data?.validation || data?.result?.validation || data?.meta?.unifiedValidation || {};
   const blockedStage = (validation as any)?.blockedStage || data?.blockedStage || data?.result?.blockedStage || data?.meta?.blockedStage || null;
@@ -140,10 +150,15 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     data?.resultUrl ||
     data?.image ||
     data?.imageUrl ||
+    data?.result?.resultUrl ||
     data?.result?.image ||
     data?.result?.imageUrl ||
     data?.result?.result?.imageUrl ||
     null;
+
+  if (isRegionEdit) {
+    return { url: editLatestUrl || explicitResult || null, stage: null };
+  }
 
   const pickFallback = (): { url: string | null; stage: StageKey | null } => {
     if (fallbackStage === "1B" && stage1B) return { url: stage1B, stage: "1B" };
@@ -207,7 +222,6 @@ const TECHNICAL_WARNINGS = [
   'metadata_updated',
 ];
 
-// User-friendly translations for technical messages
 const USER_FRIENDLY_MESSAGES: Record<string, string> = {
   'stage2Blocked': 'Virtual staging was not applied due to room layout or quality concerns',
   'complianceBlocked': 'Image could not be processed due to content policy',
@@ -232,6 +246,7 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
       return !TECHNICAL_WARNINGS.some(tech => warningLower.includes(tech.toLowerCase()));
     })
     .map(w => {
+        resultUrl: result.imageUrl,
       // Translate technical messages to user-friendly versions
       const warningLower = w.toLowerCase();
       for (const [key, friendlyMsg] of Object.entries(USER_FRIENDLY_MESSAGES)) {
@@ -239,12 +254,17 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
           return friendlyMsg;
         }
       }
+          resultUrl: result.imageUrl,
       return w;
     })
     .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
 }
 
-/**
+                setDisplayStageByIndex(prev => {
+                  const next = { ...prev };
+                  delete next[editingImageIndex];
+                  return next;
+                });
  * FIX 3: Only show error messages for terminal failure states, not transient errors
  */
 function shouldShowError(result: any): boolean {
@@ -377,7 +397,6 @@ function computeRetryBaseline(
       sourceUrl: stage1BUrl,
       sourceStageLabel: "stage1b",
     };
-  }
 
   // Case B: Viewing Stage 1B and Stage 2 exists → re-declutter from 1A, then re-stage
   if (viewingStage === "1B" && stage2Url && stage1AUrl) {
@@ -385,17 +404,11 @@ function computeRetryBaseline(
       baselineStage: "1A",
       stagesToRun: ["1B", "2"],
       allowStaging: true,
-      sourceUrl: stage1AUrl,
       sourceStageLabel: "stage1a",
     };
   }
 
-  // Case C: Viewing Stage 1B, no Stage 2 → re-declutter from 1A only
-  if (viewingStage === "1B" && stage1AUrl) {
-    return {
-      baselineStage: "1A",
-      stagesToRun: ["1B"],
-      allowStaging: false,
+
       sourceUrl: stage1AUrl,
       sourceStageLabel: "stage1a",
     };
@@ -2055,6 +2068,9 @@ export default function BatchProcessor() {
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
+          const isRegionEdit =
+            String(it?.meta?.type || "").toLowerCase() === "region-edit" ||
+            String(it?.meta?.jobType || "").toLowerCase() === "region_edit";
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
           const stagingAllowed = it?.meta?.allowStaging !== false && allowStaging;
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
@@ -2130,10 +2146,10 @@ export default function BatchProcessor() {
           }
 
           // FIX: Only mark as completed when target stage is reached
-          const completedFinal = status === "completed" && !!displayUrl && targetUrlPresent;
+          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit);
           
           // Log when backend says completed but target not reached (still processing)
-          if (status === "completed" && displayUrl && !targetUrlPresent) {
+          if (status === "completed" && displayUrl && !targetUrlPresent && !isRegionEdit) {
             if (!statusTargetNotReachedLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
               statusTargetNotReachedLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
               console.log('[BATCH][target_not_reached]', { jobId: key, status, targetStage, hasStage2: !!stage2Url, hasStage1B: !!stage1bUrl, hasStage1A: !!stage1aUrl, targetPresent: targetUrlPresent });
@@ -3121,10 +3137,21 @@ export default function BatchProcessor() {
   const resolveBestStageOutput = (result: any, selectedStage?: StageKey | null, originalFallback?: string | null): { stage: StageKey | null; url: string | null } => {
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
     const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
+    const editLatestUrl = result?.editLatestUrl || result?.result?.editLatestUrl || null;
+    const isRegionEdit =
+      result?.completionSource === "region-edit" ||
+      result?.result?.completionSource === "region-edit" ||
+      String(result?.meta?.type || "").toLowerCase() === "region-edit" ||
+      String(result?.meta?.jobType || "").toLowerCase() === "region_edit";
     const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || null;
     const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
     const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
     const originalUrl = result?.originalImageUrl || result?.result?.originalImageUrl || result?.originalUrl || result?.result?.originalUrl || originalFallback || null;
+
+    if (isRegionEdit) {
+      if (editLatestUrl) return { stage: null, url: editLatestUrl };
+      if (finalResultUrl) return { stage: null, url: finalResultUrl };
+    }
 
     if (selectedStage === "2" && stage2Url) return { stage: "2", url: stage2Url };
     if (selectedStage === "1B" && stage1BUrl) return { stage: "1B", url: stage1BUrl };
@@ -5865,6 +5892,7 @@ export default function BatchProcessor() {
                     ...r,
                     image: result.imageUrl,
                     imageUrl: result.imageUrl,
+                    resultUrl: result.imageUrl,
                     version: Date.now(),
                     mode: result.mode,
                     originalImageUrl: preservedOriginalUrl,
@@ -5890,6 +5918,7 @@ export default function BatchProcessor() {
                       ...(normalizeBatchItem(result) || {}),
                       image: result.imageUrl,
                       imageUrl: result.imageUrl,
+                      resultUrl: result.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
                       stageUrls: preservedStageUrls, // ✅ Preserve original stage URLs
@@ -5902,7 +5931,11 @@ export default function BatchProcessor() {
                     filename: r?.filename
                   } : r
                 ));
-                setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: "2" }));
+                setDisplayStageByIndex(prev => {
+                  const next = { ...prev };
+                  delete next[editingImageIndex];
+                  return next;
+                });
                 setProcessedImagesByIndex(prev => ({ ...prev, [String(editingImageIndex)]: result.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
