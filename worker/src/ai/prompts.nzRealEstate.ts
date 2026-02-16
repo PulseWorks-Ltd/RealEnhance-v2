@@ -121,6 +121,31 @@ If one zone is not clearly visible or definable:
 `,
 };
 
+const MULTI_ROOM_TYPES = new Set([
+  "multiple_living",
+  "kitchen_dining",
+  "kitchen_living",
+  "living_dining",
+]);
+
+const SINGLE_ROOM_LOCK = `
+SINGLE ROOM TYPE LOCK:
+If room type is NOT multi-room:
+• Stage ONLY the selected room type
+• No secondary zones
+• No mixed-use furniture
+• Ignore other apparent room functions
+`;
+
+const MULTI_ROOM_LOCK = `
+MULTI-ROOM ZONE LOCK:
+If room type IS multi-room:
+• Stage ONLY the allowed zone types for this room label
+• Maximum TWO functional zones
+• Do NOT introduce any third zone
+• Do NOT add furniture outside the allowed zone types
+`;
+
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string): string {
   const zoneConfig = ZONE_CONFIGS[roomType] || "";
@@ -896,12 +921,14 @@ function buildStage2InteriorPromptNZStyle(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
-  const canonicalRoom = normalizedRoom === "multiple_living_areas"
+  const canonicalRoomType = normalizedRoom === "multiple_living_areas"
     ? "multiple_living"
     : normalizedRoom;
   const sourceStage = opts?.sourceStage || "1A";
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoom);
+  const forceRefreshMode = MULTI_ROOM_TYPES.has(canonicalRoomType);
+  const roomTypeLockBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
+    ? MULTI_ROOM_LOCK
+    : SINGLE_ROOM_LOCK;
   
   // Determine staging mode based on source stage
   const isFullStaging = sourceStage === "1B-stage-ready" && !forceRefreshMode; // Room was fully decluttered → stage empty room
@@ -959,10 +986,9 @@ ADVISORY USAGE:
 • Respect occlusion risk when adding items
 • Adjust to detected complexity level
 ${(() => {
-  const multiRoomTypes = ["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"];
-  return multiRoomTypes.includes(canonicalRoom)
+  return MULTI_ROOM_TYPES.has(canonicalRoomType)
     ? `
-When multi-zone mode is active (${canonicalRoom}):
+When multi-zone mode is active (${canonicalRoomType}):
 • Use detected zones to choose the TWO staging zones only
 • Ignore lower-ranked zones`
     : "";
@@ -1094,10 +1120,13 @@ Stage exactly as requested, even if the layout is unusual for that room type.
 
 User intent overrides model interpretation.
 
+${roomTypeLockBlock}
+
 ${(() => {
   // 🔄 Inject multi-zone block for ALL multi-room types
-  const multiRoomTypes = ["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"];
-  return multiRoomTypes.includes(canonicalRoom) ? buildMultiZoneConstraintBlock(canonicalRoom) : "";
+  return MULTI_ROOM_TYPES.has(canonicalRoomType)
+    ? buildMultiZoneConstraintBlock(canonicalRoomType)
+    : "";
 })()}
 
 ────────────────────────────────
