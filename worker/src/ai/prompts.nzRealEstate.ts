@@ -150,6 +150,16 @@ If room type is multi-room:
 Choose the two visually dominant zones only.
 `;
 
+const ROOM_FUNCTION_PRESERVATION_LOCK = `
+ROOM FUNCTION PRESERVATION — HARD LOCK:
+Room-type enforcement applies to furniture and props only — not architecture.
+Do NOT create or extend cabinetry, counters, appliances, fixtures, or built-in structures.
+Do NOT construct missing room elements to satisfy room type.
+If required room features are not clearly visible:
+→ stage with props only
+→ do NOT build structure.
+`;
+
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string): string {
   const zoneConfig = ZONE_CONFIGS[roomType] || "";
@@ -1157,6 +1167,8 @@ Stage exactly as requested, even if the layout is unusual for that room type.
 User intent overrides model interpretation.
 
 ${roomTypeLockBlock}
+
+${ROOM_FUNCTION_PRESERVATION_LOCK}
 
 ${(() => {
   // 🔄 Inject multi-zone block for ALL multi-room types
