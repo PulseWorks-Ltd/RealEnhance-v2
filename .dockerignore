@@ -8,6 +8,14 @@
 
 # Dependencies (each Dockerfile will run its own install)
 node_modules/
+.venv/
+venv/
+
+# Transient local artifacts
+dist/
+coverage/
+.pytest_cache/
+__pycache__/
 
 # DO NOT ignore these; worker and shared are needed by the worker Dockerfile
 # client/
