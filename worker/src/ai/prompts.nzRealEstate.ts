@@ -1101,6 +1101,31 @@ ${(() => {
 })()}
 
 ────────────────────────────────
+BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
+────────────────────────────────
+
+When staging a BEDROOM:
+
+Headboard Placement (MANDATORY):
+• Bed headboard MUST be placed against a FULL, CONTINUOUS, VISIBLE wall
+• Full wall = clearly visible from side to side, not interrupted by windows or doors
+• Do NOT place headboards beneath windows
+• Do NOT place headboards in front of windows or glass doors
+• Do NOT place headboards on partial wall segments or narrow wall returns
+
+Wall Visibility Check:
+• The wall behind the headboard must be fully visible in the image frame
+• The headboard must visually anchor to that wall surface
+• Beds must not appear to "float" without a visible wall anchor
+
+If no suitable full wall is visible:
+→ Use a bed with no headboard OR
+→ Use a bed with a smaller headboard (not scaled down, but choose a smaller realistic headboard) OR
+→ Use a smaller bed (not scaled down, but choose a smaller realistic bed for the space)
+
+This rule overrides furniture completeness requirements.
+
+────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
 ────────────────────────────────
 
@@ -1351,35 +1376,101 @@ CONSISTENCY RULE:
 - No mixing old and new. Replace fully or not at all.`}
 
 ────────────────────────────────
-CRITICAL OPENING CLEARANCE RULE — HARD PLACEMENT CONSTRAINT
+CRITICAL OPENING CLEARANCE RULE — STRICT
 ────────────────────────────────
 
-Large openings and access doors have ABSOLUTE placement protection zones.
+Doors and full-height openings have absolute protection zones.
 
-These include:
+Protected openings include:
 • Sliding doors
-• Exterior doors
-• Main entry doors
+• Hinged doors
+• French doors
 • Bi-fold doors
 • Full-height glass doors
 
-HARD RULES:
+HARD PROHIBITIONS (ALL DOOR TYPES):
+• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of any door
+• Do NOT block door frames, handles, or tracks
+• Do NOT obstruct pass-through space at any opening
 
-• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of these openings
-• Do NOT place any furniture within the door swing or sliding track zone
-• Maintain a clear walk path to the handle side of the door
-• Maintain visible and usable access to the opening
+SLIDING DOORS — NUMERIC CLEARANCE RULE:
+Sliding doors require a MINIMUM clear walking pathway of 75–90 cm perpendicular to the door.
 
-Minimum clearance requirement:
-Keep at least one full human walking path width clear between furniture and door openings.
+You MUST:
+• Keep at least one full walking-path width clear in front of sliding doors
+• Keep tracks and opening span fully unobstructed
+• Maintain visible, usable access to the entire sliding panel
 
-If layout space is limited:
+SOFA & LARGE FURNITURE RESTRICTION:
+Sofas and large furniture MUST NOT:
+• Intersect the sliding door track zone
+• Sit directly against sliding door glass
+• Reduce the required 75–90 cm clearance zone
+• Visually block door operation
+
+If space is tight:
 → Reduce furniture count
-→ Use smaller furniture
-→ Remove secondary items
+→ Use smaller pieces
+→ Never violate door clearance rules
 
-Never block an opening to satisfy staging density.
-Access always has higher priority than furniture completeness.
+────────────────────────────────
+IMAGE BOUNDARY & SCENE CONTINUATION RULE
+────────────────────────────────
+
+CRITICAL: Do NOT place major furniture where the surrounding space is cut off by the image boundary.
+
+Before placing any large furniture item (sofa, bed, dining table, cabinet, shelving, desk):
+
+• Check whether the supporting wall and floor context are fully visible
+• If the wall or floor behind the item is cut off by the image edge → placement is FORBIDDEN
+• Do NOT anchor furniture to walls that are only partially visible at the frame edge
+• Do NOT place large furniture where part of its required clearance extends beyond the visible frame
+
+FORBIDDEN examples:
+• Sofa against a wall that disappears at the image edge
+• Bed where side wall or headboard wall is not fully visible
+• Dining table placed into space that continues beyond the frame
+• Storage furniture backed against a cropped wall edge
+
+PERMITTED:
+• Furniture against fully visible walls
+• Furniture with complete visible floor and wall context
+• Furniture fully supported by visible geometry
+
+When in doubt → omit the furniture rather than guess beyond the image boundary.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
 
 ────────────────────────────────
 FURNITURE PLACEMENT PRIORITY ORDER
