@@ -1419,6 +1419,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // STAGE 1A
   const t1A = Date.now();
   timestamps.stage1AStart = t1A; // FIX 6: Track Stage 1A start
+  try {
+    const stage1AInputMeta = await sharp(canonicalPath).metadata();
+    nLog(`[stage0] STAGE1A_INPUT size=${stage1AInputMeta.width || 0}x${stage1AInputMeta.height || 0}`);
+  } catch {}
   // Inject per-job tuning into context for pipeline modules (simple dependency injection)
   try {
     const s = (payload.options as any)?.sampling || {};

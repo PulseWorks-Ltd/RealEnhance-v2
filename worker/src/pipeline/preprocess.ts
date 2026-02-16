@@ -108,6 +108,8 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
         width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
         height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
       };
+      console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=opencv`);
+      console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
       logCropStats("opencv", beforeW, beforeH, clamped);
       return img.extract(clamped);
     }
@@ -128,6 +130,8 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
     const afterH = trimmed.info.height || beforeH;
 
     if (afterW > 0 && afterH > 0 && (afterW < beforeW || afterH < beforeH)) {
+      console.log(`[stage0] CROP rect=0,0,${afterW},${afterH} method=trim`);
+      console.log(`[stage0] POST-CROP size=${afterW}x${afterH}`);
       logCropStats("trim", beforeW, beforeH, {
         left: 0,
         top: 0,
@@ -139,6 +143,9 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
   } catch {
     // fail-open: keep image unchanged
   }
+
+  console.log(`[stage0] CROP rect=none method=none`);
+  console.log(`[stage0] POST-CROP size=${beforeW}x${beforeH}`);
 
   return img;
 }
@@ -203,8 +210,12 @@ export async function preprocessToCanonical(
   options: { buildArtifacts?: boolean; smallSize?: number } = {}
 ): Promise<BaseArtifacts | undefined> {
   let img = sharp(inputPath);
+  const inputMeta = await img.metadata();
+  console.log(`[stage0] ROTATE size=before ${inputMeta.width || 0}x${inputMeta.height || 0}`);
   // Auto-orient (EXIF)
   img = img.rotate();
+  const rotatedMeta = await img.metadata();
+  console.log(`[stage0] ROTATE size=after ${rotatedMeta.width || 0}x${rotatedMeta.height || 0}`);
 
   // Deterministic pre-Stage1A geometric straightening (global roll only)
   // Keeps correction conservative to avoid over-cropping and structural drift.
@@ -285,5 +296,9 @@ export async function preprocessToCanonical(
   }
 
   await img.toFile(outputPath);
+  try {
+    const finalMeta = await sharp(outputPath).metadata();
+    console.log(`[stage0] FINAL size=${finalMeta.width || 0}x${finalMeta.height || 0}`);
+  } catch {}
   return artifactsPromise ? await artifactsPromise : undefined;
 }

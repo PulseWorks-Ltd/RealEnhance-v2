@@ -1456,7 +1456,18 @@ ${isFullStaging
 3. Ensure all furniture grounds properly with shadows.
 4. Match NZ Contemporary / Scandi Minimalist style.
 5. Focus staging on the main target area; it is acceptable to leave secondary/non-target areas empty.
-6. Larger primary furniture pieces are allowed when scale and walkways remain correct.`
+6. Larger primary furniture pieces are allowed when scale and walkways remain correct.
+
+FURNITURE SCALE RULE:
+Primary furniture must match room scale.
+Use large-format pieces in large rooms.
+Do NOT undersize main furniture to create excess empty space.
+Maintain clearance but maximize realistic size.
+
+WALL ART PLACEMENT RULE:
+Framed artwork must be wall-mounted only.
+Do NOT lean artwork on furniture.
+Do NOT place framed art sitting on dressers or consoles.`
   : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
 3. Preserve: type, position, orientation, functional role.
