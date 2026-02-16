@@ -132,8 +132,10 @@ const SINGLE_ROOM_LOCK = `
 SINGLE ROOM TYPE LOCK:
 If room type is NOT multi-room:
 • Stage ONLY the selected room type
-• No secondary zones
-• No mixed-use furniture
+• No secondary room-function staging
+• No mixed-use furniture from other room categories
+• Any visible non-target areas must remain empty or minimally treated
+• In FULL staging from empty, do NOT "fill" non-target areas
 Ignore other apparent functions.
 `;
 
@@ -143,6 +145,8 @@ If room type is multi-room:
 • Stage ONLY the allowed room types in the selection
 • Maximum TWO functional zones
 • No third-zone furniture
+• If only one allowed zone is clearly visible, stage that one only
+• Any non-allowed zone must remain empty or minimally treated
 Choose the two visually dominant zones only.
 `;
 
@@ -1162,6 +1166,20 @@ ${(() => {
 })()}
 
 ────────────────────────────────
+ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
+────────────────────────────────
+
+${MULTI_ROOM_TYPES.has(canonicalRoomType)
+  ? `Selected mode is multi-room (${room}).
+Stage ONLY zones that match the selected multi-room definition.
+Do NOT stage any other apparent room-function zones.
+If an allowed zone is weak/ambiguous, leave it unstaged rather than inventing it.`
+  : `Selected mode is single-room (${room}).
+Stage ONLY this room type.
+Do NOT stage secondary room functions in adjacent/ambiguous areas.
+Non-target areas may remain intentionally empty.`}
+
+────────────────────────────────
 BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
 ────────────────────────────────
 
@@ -1425,7 +1443,8 @@ ${isFullStaging
 2. Add appropriate furniture for room type: ${room}.
 3. Ensure all furniture grounds properly with shadows.
 4. Match NZ Contemporary / Scandi Minimalist style.
-5. Fill the room to look inviting and lived-in — not sparse or empty.`
+5. Focus staging on the main target area; it is acceptable to leave secondary/non-target areas empty.
+6. Larger primary furniture pieces are allowed when scale and walkways remain correct.`
   : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
 3. Preserve: type, position, orientation, functional role.
