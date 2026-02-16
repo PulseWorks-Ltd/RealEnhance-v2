@@ -5,6 +5,8 @@
 .git/
 .gitignore
 *.log
+logs*
+Validator Logs - *.txt
 
 # Dependencies (each Dockerfile will run its own install)
 node_modules/
@@ -16,6 +18,8 @@ dist/
 coverage/
 .pytest_cache/
 __pycache__/
+dump.rdb
+attached_assets/
 
 # DO NOT ignore these; worker and shared are needed by the worker Dockerfile
 # client/
