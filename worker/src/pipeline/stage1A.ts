@@ -4,7 +4,7 @@ import { enhanceWithGemini } from "../ai/gemini";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
-import { selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
+import { getAverageLuminance, selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
@@ -168,6 +168,23 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
   });
 }
 
+function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
+  if (typeof meanBrightness !== "number" || !Number.isFinite(meanBrightness)) {
+    return baseBrightness;
+  }
+
+  // Taper brightness lift on already-bright inputs to avoid overexposure.
+  // 125 -> no taper, 195+ -> full taper to neutral (1.0)
+  if (meanBrightness <= 125) {
+    return baseBrightness;
+  }
+
+  const taper = Math.min(1, (meanBrightness - 125) / 70);
+  const maxReduction = Math.max(0, baseBrightness - 1.0);
+  const guarded = baseBrightness - (maxReduction * taper);
+  return Math.max(1.0, Number(guarded.toFixed(3)));
+}
+
 export async function runStage1A(
   inputPath: string,
   options: { 
@@ -204,6 +221,7 @@ export async function runStage1A(
   
   const sharpOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A-sharp.webp");
   const finalOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
+  const inputMeanBrightness = await getAverageLuminance(inputPath).catch(() => undefined);
   
   let img = sharp(inputPath);
   const metadata = await img.metadata();
@@ -225,19 +243,23 @@ export async function runStage1A(
   
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
   if (applyInteriorProfile) {
-    const brightness = 1 + interiorCfg.brightnessBoost; // strong global lift
+    const baseBrightness = 1 + interiorCfg.brightnessBoost; // strong global lift
+    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     // Base saturation 1.15 plus profile extra (kept lower than exterior to avoid colour cast)
     const saturation = 1.15 + interiorCfg.saturation;
     img = img.modulate({ brightness, saturation });
     // Additional midtone/local contrast shaping
     img = img.gamma(1.0 + (interiorCfg.midtoneLift * 0.12)); // gentle gamma tweak for midtones
     img = img.linear(1 + interiorCfg.localContrast, -(128 * interiorCfg.localContrast));
-    logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)})`);
+    logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   } else {
+    const baseBrightness = 1.14; // +14% brightness (adaptive, marketing-grade)
+    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     img = img.modulate({
-      brightness: 1.14,  // +14% brightness (adaptive, marketing-grade)
+      brightness,
       saturation: 1.20,  // +20% saturation (clamped to avoid orange shift)
     });
+    logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=1.20, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
   
   // 7. Gamma correction for shadow detail (lower = brighter shadows)
