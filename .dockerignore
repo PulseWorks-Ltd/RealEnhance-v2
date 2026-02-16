@@ -15,11 +15,16 @@ venv/
 
 # Transient local artifacts
 dist/
+**/dist/
 coverage/
+**/coverage/
 .pytest_cache/
 __pycache__/
 dump.rdb
 attached_assets/
+
+# External validator service source (not needed in worker/server images)
+opencv-validator/
 
 # DO NOT ignore these; worker and shared are needed by the worker Dockerfile
 # client/
