@@ -471,6 +471,20 @@ Completely remove all movable furniture, decor, and personal items to create a p
     PRIMARY OBJECTIVE:
     Create a stage-ready empty room while preserving architecture, built-ins, fixtures, and window treatments exactly.
 
+────────────────────────────────
+PERSPECTIVE & GEOMETRY LOCK — STRICT
+────────────────────────────────
+
+Camera viewpoint and room geometry are LOCKED.
+
+• Do NOT change camera position, angle, height, or field of view
+• Do NOT alter wall angles, room proportions, or perspective lines
+• Do NOT widen, narrow, deepen, or square the room
+• All edges, corners, and vanishing lines must match the input image
+
+Furniture removal must NOT change scene geometry.
+Only remove objects and reconstruct surfaces — never reinterpret layout.
+
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 
     NON-NEGOTIABLE LOCKS — DO NOT ADD OR CREATE ANYTHING:
