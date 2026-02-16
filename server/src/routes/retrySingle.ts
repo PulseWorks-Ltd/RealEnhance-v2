@@ -357,12 +357,22 @@ export function retrySingleRouter() {
           retryFromStage = baseline.retryFromStage || undefined;
           stage2OnlyDisabled = baseline.stage2OnlyDisabled;
           
+          // ✅ FIX: Set stage1BWasRequested=true when resolved baseline is Stage 1B
+          // This ensures worker doesn't fall back to 1A when 1B is the intended baseline
+          if (selectedSourceStage &&
+              (selectedSourceStage === "1B" || 
+               selectedSourceStage === "1B-light" || 
+               selectedSourceStage === "1B-stage-ready" ||
+               selectedSourceStage.startsWith("1b"))) {
+            stage1BWasRequested = true;
+          }
+          
           // Never allow edit stages as baseline
           if (!selectedSourceUrl || !selectedSourceStage || selectedSourceStage.toLowerCase().startsWith('edit')) {
             return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline - edit stages not allowed' });
           }
           
-          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} url=${selectedSourceUrl}`);
+          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
           
           const collectedUrls = Object.values(allStageUrls || {}).filter(Boolean) as string[];
 

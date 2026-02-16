@@ -387,6 +387,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
   const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
   const structureValidatorMode = localValidatorMode;
+  
+  // Unified flag: true when ANY validator can block images
+  // Used for retry gating, fallback gating, and validation behavior
+  const VALIDATORS_ARE_BLOCKING = VALIDATION_BLOCKING_ENABLED || geminiBlockingEnabled;
   const COMPLIANCE_BLOCK_THRESHOLD = Number(process.env.COMPLIANCE_BLOCK_THRESHOLD ?? 0.85);
   
   // Sharp-based semantic structure validator control
@@ -2708,7 +2712,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     payload.options.virtualStage &&
     stage2ValidationRisk &&
     stage2AttemptsUsed >= stage2MaxAttempts &&
-    declutterModeFallback === "stage-ready";
+    declutterModeFallback === "stage-ready" &&
+    VALIDATORS_ARE_BLOCKING;  // Only fallback when validators are actually blocking images
 
   if (shouldFallbackLightDeclutter) {
     try {
