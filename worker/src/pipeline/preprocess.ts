@@ -6,6 +6,25 @@ import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 
 type CropRect = { left: number; top: number; width: number; height: number };
 
+function parseByteThreshold(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(255, Math.round(parsed)));
+}
+
+function getStage0CropThresholds(): { opencvBlackThreshold: number; trimThreshold: number } {
+  const shared = parseByteThreshold(process.env.PREPROCESS_CROP_BLACK_THRESHOLD, 10);
+  const opencvBlackThreshold = parseByteThreshold(
+    process.env.PREPROCESS_CROP_OPENCV_THRESHOLD,
+    shared
+  );
+  const trimThreshold = parseByteThreshold(
+    process.env.PREPROCESS_CROP_TRIM_THRESHOLD,
+    shared
+  );
+  return { opencvBlackThreshold, trimThreshold };
+}
+
 function logCropStats(method: "opencv" | "trim", beforeW: number, beforeH: number, rect: CropRect): void {
   const beforeArea = beforeW * beforeH;
   const afterArea = rect.width * rect.height;
@@ -21,7 +40,10 @@ function logCropStats(method: "opencv" | "trim", beforeW: number, beforeH: numbe
   }
 }
 
-async function detectCropRectWithOpenCv(tempImagePath: string): Promise<CropRect | null> {
+async function detectCropRectWithOpenCv(
+  tempImagePath: string,
+  blackThreshold: number
+): Promise<CropRect | null> {
   let src: any = null;
   let gray: any = null;
   let mask: any = null;
@@ -44,7 +66,7 @@ async function detectCropRectWithOpenCv(tempImagePath: string): Promise<CropRect
     cv.cvtColor(src, gray, toGrayCode);
 
     mask = new cv.Mat();
-    cv.threshold(gray, mask, 10, 255, cv.THRESH_BINARY);
+    cv.threshold(gray, mask, blackThreshold, 255, cv.THRESH_BINARY);
 
     contours = new cv.MatVector();
     hierarchy = new cv.Mat();
@@ -89,12 +111,17 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
   const beforeH = meta.height || 0;
   if (!beforeW || !beforeH) return img;
 
+  const thresholds = getStage0CropThresholds();
+  console.log(
+    `[stage0] CROP thresholds opencv=${thresholds.opencvBlackThreshold} trim=${thresholds.trimThreshold}`
+  );
+
   // Primary method: OpenCV contour crop on non-black region
   const tempPath = `/tmp/preprocess-straighten-${randomUUID()}.png`;
   try {
     const pngBuf = await img.clone().png().toBuffer();
     await fs.writeFile(tempPath, pngBuf);
-    const rect = await detectCropRectWithOpenCv(tempPath);
+    const rect = await detectCropRectWithOpenCv(tempPath, thresholds.opencvBlackThreshold);
 
     if (
       rect &&
@@ -123,7 +150,7 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
   try {
     const trimmed = await img
       .clone()
-      .trim({ threshold: 10 })
+      .trim({ threshold: thresholds.trimThreshold })
       .toBuffer({ resolveWithObject: true });
 
     const afterW = trimmed.info.width || beforeW;
