@@ -857,6 +857,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         chosenBaseStage: "1B",
         stage1BRequested: !!payload.options.declutter || !!payload.stage2OnlyMode?.enabled,
       });
+      if (basePath && stageLineage.stage1A.output && basePath === stageLineage.stage1A.output) {
+        nLog("[STAGE2_INVARIANT_VIOLATION]", {
+          jobId: payload.jobId,
+          path: "stage2_only",
+          stage1A: stageLineage.stage1A.output,
+          stage1B: basePath,
+          chosen: basePath,
+          chosenBaseStage: "1B",
+        });
+      }
       const stage2Result = await runStage2(basePath, "1B", {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -2553,6 +2563,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           chosenBaseStage: stage2BaseStage,
           stage1BRequested,
         });
+        if (lineage1B && stage2InputResolved === path1A) {
+          nLog("[STAGE2_INVARIANT_VIOLATION]", {
+            jobId: payload.jobId,
+            path: "main",
+            stage1A: path1A,
+            stage1B: lineage1B,
+            chosen: stage2InputResolved,
+            chosenBaseStage: stage2BaseStage,
+            stage1BRequested,
+          });
+        }
       }
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? runStage2(stage2InputResolved, stage2BaseStage, {
@@ -2737,6 +2758,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         chosenBaseStage: stage2BaseStage,
         stage1BRequested,
       });
+      if (lightPath1B && stage2InputResolved === path1A) {
+        nLog("[STAGE2_INVARIANT_VIOLATION]", {
+          jobId: payload.jobId,
+          path: "light_declutter_backstop",
+          stage1A: path1A,
+          stage1B: lightPath1B,
+          chosen: stage2InputResolved,
+          chosenBaseStage: stage2BaseStage,
+          stage1BRequested,
+        });
+      }
       const stagingStyleFallback = (() => {
         const raw: any = (payload as any)?.options?.stagingStyle;
         return raw && typeof raw === "string" ? raw.trim() : undefined;
@@ -3028,6 +3060,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             chosenBaseStage: stage2BaseStage,
             stage1BRequested,
           });
+          if (lineage1B && stage2InputResolved === path1A) {
+            nLog("[STAGE2_INVARIANT_VIOLATION]", {
+              jobId: payload.jobId,
+              path: "validation_retry",
+              stage1A: path1A,
+              stage1B: lineage1B,
+              chosen: stage2InputResolved,
+              chosenBaseStage: stage2BaseStage,
+              stage1BRequested,
+            });
+          }
           const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
