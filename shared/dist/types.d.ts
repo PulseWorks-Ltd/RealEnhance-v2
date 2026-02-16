@@ -61,6 +61,7 @@ export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed
  * - "stage-ready": Remove ALL furniture and clutter (empty room ready for staging)
  */
 export type DeclutterMode = "light" | "stage-ready";
+export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface EnhanceJobPayload {
     jobId: JobId;
@@ -74,7 +75,7 @@ export interface EnhanceJobPayload {
         declutter: boolean;
         virtualStage: boolean;
         stage2Only?: boolean;
-        roomType: string;
+        roomType: RoomType | string;
         sceneType: string | "auto";
         replaceSky?: boolean;
         stagingStyle?: string;
@@ -98,6 +99,8 @@ export interface EnhanceJobPayload {
     stage2OnlyMode?: {
         enabled: boolean;
         base1BUrl: string;
+        sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+        stage1BMode?: "light" | "stage-ready";
     };
     remoteOriginalUrl?: string;
     remoteOriginalKey?: string;
