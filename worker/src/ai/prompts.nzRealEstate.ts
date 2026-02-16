@@ -1098,6 +1098,24 @@ CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
 Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
 Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
 
+────────────────────────────────
+CAMERA & SCALE LOCK — STRICT
+────────────────────────────────
+
+Camera framing and zoom are LOCKED.
+
+• Do NOT zoom in or zoom out
+• Do NOT widen or narrow field of view
+• Do NOT change lens perspective
+• Do NOT make the room appear larger or smaller
+
+Object scale must remain consistent with the input image:
+• Windows, doors, and fixtures must keep the same apparent size
+• Furniture must be scaled to the room — not the room scaled to furniture
+• If furniture does not fit at true scale → use smaller furniture or fewer items
+
+Never change camera scale to make staging fit.
+
 NEWLY REVEALED AREA RULE — CONTINUATION ONLY
 
 If a tiny boundary region appears newly visible during rendering,
