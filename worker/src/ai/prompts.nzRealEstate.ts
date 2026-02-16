@@ -472,18 +472,18 @@ Completely remove all movable furniture, decor, and personal items to create a p
     Create a stage-ready empty room while preserving architecture, built-ins, fixtures, and window treatments exactly.
 
 ────────────────────────────────
-PERSPECTIVE & GEOMETRY LOCK — STRICT
+CAMERA & PERSPECTIVE LOCK — STRICT
 ────────────────────────────────
 
-Camera viewpoint and room geometry are LOCKED.
+Camera and lens characteristics are LOCKED.
 
-• Do NOT change camera position, angle, height, or field of view
-• Do NOT alter wall angles, room proportions, or perspective lines
-• Do NOT widen, narrow, deepen, or square the room
-• All edges, corners, and vanishing lines must match the input image
+• Do NOT change camera position, angle, or height
+• Do NOT change zoom or field of view
+• Do NOT change lens perspective or distortion
+• Do NOT shift viewpoint or framing
 
-Furniture removal must NOT change scene geometry.
-Only remove objects and reconstruct surfaces — never reinterpret layout.
+Room geometry and perspective lines must match the input exactly.
+Furniture removal must NOT change apparent room size or depth.
 
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 
