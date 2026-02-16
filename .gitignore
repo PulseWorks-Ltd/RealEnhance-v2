@@ -16,3 +16,11 @@ package-lock.json
 server/package-lock.json
 worker/src/validators/testPromptStrength.ts
 worker/test-data/Rental 03.jpg
+
+# Generated root-level implementation/change reports (keep docs/** tracked)
+/ANALYSIS*.md
+/FIX*.md
+/QUICK_FIX*.md
+/SPRINT_*_SUMMARY*.md
+/VALIDATOR*_SUMMARY*.md
+/Validator Logs - *.txt
