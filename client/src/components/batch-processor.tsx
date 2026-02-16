@@ -246,7 +246,6 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
       return !TECHNICAL_WARNINGS.some(tech => warningLower.includes(tech.toLowerCase()));
     })
     .map(w => {
-        resultUrl: result.imageUrl,
       // Translate technical messages to user-friendly versions
       const warningLower = w.toLowerCase();
       for (const [key, friendlyMsg] of Object.entries(USER_FRIENDLY_MESSAGES)) {
@@ -254,17 +253,12 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
           return friendlyMsg;
         }
       }
-          resultUrl: result.imageUrl,
       return w;
     })
     .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
 }
 
-                setDisplayStageByIndex(prev => {
-                  const next = { ...prev };
-                  delete next[editingImageIndex];
-                  return next;
-                });
+/**
  * FIX 3: Only show error messages for terminal failure states, not transient errors
  */
 function shouldShowError(result: any): boolean {
@@ -397,6 +391,7 @@ function computeRetryBaseline(
       sourceUrl: stage1BUrl,
       sourceStageLabel: "stage1b",
     };
+  }
 
   // Case B: Viewing Stage 1B and Stage 2 exists → re-declutter from 1A, then re-stage
   if (viewingStage === "1B" && stage2Url && stage1AUrl) {
@@ -404,11 +399,17 @@ function computeRetryBaseline(
       baselineStage: "1A",
       stagesToRun: ["1B", "2"],
       allowStaging: true,
+      sourceUrl: stage1AUrl,
       sourceStageLabel: "stage1a",
     };
   }
 
-
+  // Case C: Viewing Stage 1B, no Stage 2 → re-declutter from 1A only
+  if (viewingStage === "1B" && stage1AUrl) {
+    return {
+      baselineStage: "1A",
+      stagesToRun: ["1B"],
+      allowStaging: false,
       sourceUrl: stage1AUrl,
       sourceStageLabel: "stage1a",
     };
