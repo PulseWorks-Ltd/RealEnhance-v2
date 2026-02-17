@@ -5627,6 +5627,12 @@ export default function BatchProcessor() {
                           if (result?.editLatestUrl || result?.completionSource === "region-edit") {
                             return isUiComplete ? "Edited (Final)" : "Preview • Edited";
                           }
+
+                          const artifactFinalLabel = stage2Url
+                            ? "Staged"
+                            : stage1BUrl
+                              ? stage1BLabel
+                              : "Enhanced";
                           
                           const stageLabel = selectedStage === "retried"
                             ? "Retried"
@@ -5637,13 +5643,7 @@ export default function BatchProcessor() {
                                 : selectedStage === "1B"
                                   ? stage1BLabel
                                   : "Enhanced";
-                          const finalStageLabel = resolvedFinalStage === "2"
-                            ? "Staged"
-                            : resolvedFinalStage === "1B"
-                              ? stage1BLabel
-                              : resolvedFinalStage === "1A"
-                                ? "Enhanced"
-                                : stageLabel;
+                          const finalStageLabel = artifactFinalLabel || stageLabel;
                           return isUiComplete ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
                         })();
 

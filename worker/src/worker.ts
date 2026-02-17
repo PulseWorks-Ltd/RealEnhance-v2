@@ -377,6 +377,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   let stage12Success = false;
   let stage2Success = false;
+  let stage2PublishSuccess = false;
+  let stage2PublishedUrl: string | undefined = undefined;
   let stage2AttemptsUsed = 0;
   let stage2MaxAttempts = 1;
   let stage2ValidationRisk = false;
@@ -1037,6 +1039,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       stage2Success = true;
+      stage2PublishSuccess = !!pub2Url;
+      stage2PublishedUrl = pub2Url;
       
       // Track memory after Stage 2
       updatePeakMemory(payload.jobId);
@@ -3795,6 +3799,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stage2CandidatePath === path1B && pub1BUrl) {
       pub2Url = pub1BUrl;
       stage2Success = true;
+      stage2PublishSuccess = true;
+      stage2PublishedUrl = pub2Url;
       
       // Track memory after Stage 2 (reused path)
       updatePeakMemory(payload.jobId);
@@ -3822,6 +3828,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const pub2 = await publishWithOptionalBlackEdgeGuard(stage2CandidatePath, "2");
         pub2Url = pub2.url;
         stage2Success = true;
+        stage2PublishSuccess = !!pub2?.url;
+        stage2PublishedUrl = pub2?.url;
         if (pub2Url) {
           attachStage2PublishedUrl(stage2CandidatePath, pub2Url);
         }
@@ -4145,6 +4153,84 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   }
 
+  const stage2OutputCheckAtCommit = (payload.options.virtualStage && stage2CandidatePath)
+    ? checkStageOutput(stage2CandidatePath, "2", payload.jobId)
+    : { exists: false, readable: false, reason: "missing_stage_output" as const };
+  const stage2LineageConsistent = !!(
+    payload.options.virtualStage
+    && stage2CandidatePath
+    && stageLineage.stage2.committed
+    && stageLineage.stage2.output === stage2CandidatePath
+  );
+  const stage2PublishConfirmed = !!(
+    stage2PublishSuccess
+    && stage2PublishedUrl
+    && pub2Url
+    && stage2PublishedUrl === pub2Url
+  );
+  const stage2ArtifactReady = !!(
+    pub2Url
+    && stage2OutputCheckAtCommit.readable
+    && stage2LineageConsistent
+    && stage2PublishConfirmed
+  );
+
+  const stage1BOutputCheckAtCommit = path1B
+    ? checkStageOutput(path1B, "1B", payload.jobId)
+    : { exists: false, readable: false, reason: "missing_stage_output" as const };
+  const stage1BLineageConsistent = !!(
+    path1B
+    && stageLineage.stage1B.committed
+    && stageLineage.stage1B.output === path1B
+  );
+  const stage1BReady = !!(pub1BUrl && stage1BOutputCheckAtCommit.readable && stage1BLineageConsistent);
+
+  const stage1AOutputCheckAtCommit = checkStageOutput(path1A, "1A", payload.jobId);
+  const stage1ALineageConsistent = !!(
+    stageLineage.stage1A.committed
+    && stageLineage.stage1A.output === path1A
+  );
+  const stage1AReady = !!(pub1AUrl && stage1AOutputCheckAtCommit.readable && stage1ALineageConsistent);
+
+  const committedFinalStageLabel: "1A" | "1B" | "2" = stage2ArtifactReady
+    ? "2"
+    : stage1BReady
+      ? "1B"
+      : "1A";
+  const committedStage2Url = stage2ArtifactReady ? (pub2Url ?? null) : null;
+  const committedStage1BUrl = stage1BReady ? (pub1BUrl ?? null) : null;
+  const committedStage1AUrl = stage1AReady ? (pub1AUrl ?? null) : null;
+  const committedResultUrl = committedFinalStageLabel === "2"
+    ? (committedStage2Url || pubFinalUrl)
+    : committedFinalStageLabel === "1B"
+      ? (committedStage1BUrl || pubFinalUrl)
+      : (committedStage1AUrl || pubFinalUrl);
+  const stage2AdvertisedButMissing = finalStageLabel === "2" && committedFinalStageLabel !== "2";
+
+  nLog("[FINAL_STAGE2_ARTIFACT_GUARD]", {
+    jobId: payload.jobId,
+    stage2ArtifactReady,
+    stage2UrlPresent: !!pub2Url,
+    stage2Readable: stage2OutputCheckAtCommit.readable,
+    stage2LineageConsistent,
+    stage2PublishConfirmed,
+    stage2PublishedUrlMatchesStored: !!(stage2PublishedUrl && pub2Url && stage2PublishedUrl === pub2Url),
+    finalStageBeforeGuard: finalStageLabel,
+    finalStageAfterGuard: committedFinalStageLabel,
+    stage2AdvertisedButMissing,
+  });
+
+  console.assert(
+    committedFinalStageLabel !== "2" || !!committedStage2Url,
+    "[INVARIANT] resultStage=2 requires readable Stage 2 artifact URL",
+    {
+      jobId: payload.jobId,
+      committedFinalStageLabel,
+      committedStage2Url,
+      stage2ArtifactReady,
+    }
+  );
+
   // Build metadata BEFORE any async operations that could fail
   const meta = {
     ...sceneMeta,
@@ -4158,6 +4244,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
+    ...(stage2AdvertisedButMissing ? { stage2AdvertisedButMissing: true } : {}),
   };
 
   // ⚡ CRITICAL: Mark job as complete IMMEDIATELY with final URL
@@ -4180,13 +4267,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   
   nLog("[worker] Marking job complete", {
     jobId: payload.jobId,
-    finalStageLabel,
-    resultUrl: pubFinalUrl,
+    finalStageLabel: committedFinalStageLabel,
+    resultUrl: committedResultUrl,
     originalUrl: publishedOriginal?.url,
     stageUrls: {
-      "1A": pub1AUrl ?? null,
-      "1B": pub1BUrl ?? null,
-      "2": hasStage2 ? (pub2Url ?? null) : null,
+      "1A": committedStage1AUrl,
+      "1B": committedStage1BUrl,
+      "2": committedStage2Url,
     },
     stage2Blocked,
     fallbackStage: stage2Blocked ? stage2FallbackStage : undefined,
@@ -4213,8 +4300,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Completion guard — full pipeline
   const mainGuard = canMarkJobComplete(latestJobBeforeCompletion as any, unifiedValidation as any, {
-    outputUrl: pubFinalUrl,
-    finalStageRan: finalStageLabel,
+    outputUrl: committedResultUrl || pubFinalUrl,
+    finalStageRan: committedFinalStageLabel,
     expectedFinalStage: hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A"),
   });
   logCompletionGuard(payload.jobId, mainGuard);
@@ -4231,24 +4318,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     success: true,
     completed: true,
     currentStage: "finalizing",
-    finalStage: finalStageLabel,
-    resultStage: finalStageLabel,
+    finalStage: committedFinalStageLabel,
+    resultStage: committedFinalStageLabel,
     
     // URLs (all written together, no partial state possible)
     originalUrl: publishedOriginal?.url,
-    resultUrl: pubFinalUrl,
-    imageUrl: pubFinalUrl,
+    resultUrl: committedResultUrl,
+    imageUrl: committedResultUrl,
     stageUrls: {
-      "1A": pub1AUrl ?? null,
-      "1B": pub1BUrl ?? null,
-      "2": hasStage2 ? (pub2Url ?? null) : null
+      "1A": committedStage1AUrl,
+      "1B": committedStage1BUrl,
+      "2": committedStage2Url
     },
     
     // Stage outputs
     stageOutputs: {
       "1A": path1A,
-      "1B": payload.options.declutter ? path1B : undefined,
-      "2": hasStage2 ? path2 : undefined
+      "1B": stage1BReady ? path1B : undefined,
+      "2": stage2ArtifactReady ? stage2CandidatePath : undefined
     },
     
     // Version tracking
@@ -4321,8 +4408,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog("[worker] ✅ ATOMIC completion write completed", {
     jobId: payload.jobId,
     status: "complete",
-    resultUrl: pubFinalUrl,
-    finalStage: finalStageLabel,
+    resultUrl: committedResultUrl,
+    finalStage: committedFinalStageLabel,
     stage2TimedOut,
     timestamps: {
       total: timestamps.completed - timestamps.queued,
@@ -4367,7 +4454,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const billingStage1BSuccess = (finalStageLabel === "1B" || finalStageLabel === "2")
       ? !!pub1BUrl
       : false;
-    const billingStage2Success = finalStageLabel === "2" ? !!pub2Url : false;
+    const billingStage2Success = committedFinalStageLabel === "2" ? !!committedStage2Url : false;
     await finalizeImageChargeFromWorker({
       jobId: payload.jobId,
       stage1ASuccess: billingStage1ASuccess,
@@ -4389,9 +4476,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage1a: pub1AUrl || null,
       "1B": pub1BUrl || null,
       stage1b: pub1BUrl || null,
-      "2": pub2Url || null,
-      stage2: pub2Url || null,
-      publish: pubFinalUrl || null,
+      "2": committedStage2Url,
+      stage2: committedStage2Url,
+      publish: committedResultUrl || null,
     });
     const resolvedResultFallback =
       resolveStageUrl(stageUrlsMeta, "2")
