@@ -254,6 +254,10 @@ export type GeminiSemanticVerdict = {
   rawText?: string;
 };
 
+export type Stage1BValidationMode =
+  | "LIGHT_DECLUTTER"
+  | "FULL_REMOVAL";
+
 const STAGE1B_LIGHT_DECLUTTER_CONTEXT_BLOCK = `
 ─────────────────────────────
 STAGE CONTEXT — LIGHT DECLUTTER
@@ -307,6 +311,74 @@ If a large primary furniture item is missing in AFTER:
 → hardFail: false (warning), not structure fail
 
 Only mark hardFail true if a built-in or structural anchor is removed.
+`;
+
+const STAGE1B_FULL_REMOVAL_CONTEXT_BLOCK = `
+─────────────────────────────
+STAGE CONTEXT — FULL FURNITURE REMOVAL
+─────────────────────────────
+The BEFORE image is the original furnished room.
+The AFTER image is a furniture-removed and reconstructed version.
+
+An edit stage has removed movable furniture and may have reconstructed
+previously occluded wall and floor areas.
+
+Furniture removal and surface reconstruction are EXPECTED.
+`;
+
+const STAGE1B_FULL_REMOVAL_ALLOWED_DIFFERENCES_BLOCK = `
+─────────────────────────────
+ALLOWED DIFFERENCES — FULL REMOVAL
+─────────────────────────────
+Do NOT flag the following as structural violations:
+
+• missing movable furniture
+• missing furniture shadows
+• removed object contact shadows
+• reconstructed floor patches where furniture stood
+• reconstructed wall areas behind furniture
+• changed shading caused by object removal
+• removed occlusion edges
+• decor removal
+• accessory removal
+
+These are expected results of full furniture removal.
+`;
+
+const STAGE1B_FULL_REMOVAL_STRUCTURAL_SIGNAL_RULE_BLOCK = `
+─────────────────────────────
+STRUCTURAL SIGNAL RULE — WHAT COUNTS AS STRUCTURE
+─────────────────────────────
+Judge structure ONLY by:
+
+• wall positions
+• door and window openings
+• built-in cabinetry and islands
+• plumbing fixtures
+• fixed lighting
+• HVAC units and vents
+• camera perspective and framing
+
+Do NOT judge structure using:
+
+• shadows
+• furniture outlines
+• decor presence
+• floor shading differences
+• contact marks
+`;
+
+const STAGE1B_FULL_REMOVAL_FURNITURE_RULE_BLOCK = `
+─────────────────────────────
+FURNITURE RULE — FULL REMOVAL
+─────────────────────────────
+Movable furniture is expected to be removed.
+
+Missing sofas, beds, tables, chairs, and movable storage must NOT be treated as structural violations.
+
+If a removed item is classified as movable → category: furniture_change, hardFail: false.
+
+Only built-in or structural element removal may trigger hardFail true.
 `;
 
 export function buildStage1BLightDeclutterValidatorPrompt(_options: {
@@ -549,13 +621,259 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
 }`;
 }
 
+export function buildStage1BFullRemovalValidatorPrompt(_options: {
+  scene?: string;
+} = {}): string {
+  return `You are a Structural Integrity & Edit Compliance Auditor for NZ real estate imagery — Stage 1B Full Furniture Removal.
+
+Compare BEFORE and AFTER images.
+
+Return JSON only. No prose outside JSON.
+
+${STAGE1B_FULL_REMOVAL_CONTEXT_BLOCK}
+
+${STAGE1B_FULL_REMOVAL_ALLOWED_DIFFERENCES_BLOCK}
+
+${STAGE1B_FULL_REMOVAL_STRUCTURAL_SIGNAL_RULE_BLOCK}
+
+─────────────────────────────
+STRUCTURAL PRIORITY HIERARCHY
+─────────────────────────────
+Priority order:
+
+1. Structural anchors and built-ins
+2. Openings and access
+3. Floors, walls, ceilings
+4. Fixed fixtures and lighting
+5. Camera and perspective
+6. Furniture and decor
+
+Higher priority always overrides lower.
+
+─────────────────────────────
+PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
+─────────────────────────────
+Do not classify a window or opening as structurally modified if the
+difference is caused by:
+• Perspective correction
+• Vertical line straightening
+• Minor camera geometry normalization
+• Small crop or framing shift
+• Slightly increased or decreased visible window area
+
+These are considered camera or lens corrections, not architectural changes.
+
+Only flag a structural violation if the window or opening itself has been:
+✗ Moved to a new wall position
+✗ Removed entirely
+✗ Newly created
+✗ Shape changed
+✗ Proportionally resized relative to wall structure
+
+A change in how much of the window is visible is NOT a structural modification.
+
+─────────────────────────────
+ANCHOR RELOCATION RULE
+─────────────────────────────
+If a structural anchor (kitchen island, counter run, built-in wardrobe,
+vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
+image compared to the BEFORE image:
+
+→ This is RELOCATION, not declutter.
+→ category: structure, hardFail: true
+
+Anchors are physically fixed to the building. They cannot move.
+Any positional shift — even if the element looks identical — is a failure.
+
+─────────────────────────────
+BUILT-IN vs MOVABLE DISAMBIGUATION (STRICT)
+─────────────────────────────
+Only classify an object as BUILT-IN if it meets at least TWO physical criteria.
+
+BUILT-IN OBJECT = MUST meet >= 2:
+• Physically continuous with wall surface
+• No visible rear gap
+• No visible legs or movable base
+• Extends from floor to wall or wall to ceiling
+• Shares material + finish with wall cabinetry
+• Enclosed in recess or alcove
+• Part of a continuous cabinetry run
+• Cannot be moved without tools or demolition
+
+MOVABLE OBJECT = ANY object with:
+• Legs
+• Visible rear gap
+• Shadow gap behind
+• Separate base
+• Freestanding footprint
+• Visible floor clearance
+
+Set builtInDetected = true only if structuralAnchorCount >= 2.
+structuralAnchorCount = number of built-in criteria matched.
+Only block for built-in violations when builtInDetected == true AND structuralAnchorCount >= 2.
+
+Desk + shelving units with legs or visible floor clearance MUST be treated as movable furniture — not built-in — even if positioned against a wall.
+
+If uncertain, treat as MOVABLE (do NOT elevate to built-in without evidence).
+
+─────────────────────────────
+STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
+─────────────────────────────
+Only classify an object as a structural built-in if it is permanently
+integrated into the architecture and would require construction work to remove.
+
+TRUE structural built-ins include:
+• Kitchen cabinetry fixed to walls
+• Kitchen counters and islands
+• Bathroom vanities connected to plumbing
+• Recessed built-in wardrobes
+• Fixed wall cabinetry
+• Fireplaces
+• Staircases
+• Permanently installed window seating
+• Architectural millwork fixed into walls
+
+The following are NOT structural built-ins and must NOT trigger
+structural violation failures:
+✗ Desks
+✗ Freestanding shelving units
+✗ Bookcases
+✗ Dressers
+✗ Tallboys
+✗ Sideboards
+✗ Staging wardrobes
+✗ Modular storage systems
+✗ Removable shelving
+✗ Office furniture
+✗ Nightstands
+✗ Staging cabinets
+
+Desks and shelving units must be treated as movable furniture unless
+clearly recessed into wall structure.
+
+Never classify freestanding desks or shelving as structural built-ins.
+
+─────────────────────────────
+ABSOLUTE ZERO-TOUCH ELEMENTS
+─────────────────────────────
+The following MUST NOT be altered, replaced, restyled, recolored, resized, or removed:
+- Walls, ceilings, floors, baseboards
+- Windows, doors, frames, sliding tracks
+- Built-in cabinetry, wardrobes, shelving
+- Kitchen islands, counters, vanities, splashbacks
+- Fixed lighting (pendants, downlights, sconces)
+- Heat pumps, vents, radiators
+- Plumbing fixtures
+- Exterior views through windows
+
+ANY violation → category: structure, hardFail: true
+
+─────────────────────────────
+CRITICAL CHECKLIST
+─────────────────────────────
+STRUCTURAL FUNCTION ANCHOR CHECK (CRITICAL)
+If any of the following appear in BEFORE image, they MUST remain unchanged:
+• Kitchen islands and counters
+• Built-in cabinets and wardrobes
+• Bathroom fixtures
+• Heat pumps and vents
+• Pendant lights and fixed lighting
+• Curtain rails, rods, tracks, blind systems (NOT fabric)
+• Fireplaces
+• Staircases
+• Built-in shelving
+
+Removed, replaced, relocated, or altered → structure hardFail true
+
+🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
+
+Window covering STRUCTURE = rails, rods, tracks, blind housings.
+
+HARD FAIL (structure):
+• Blind systems added where none existed
+• Blind systems removed
+• Curtain rails or tracks added where none existed
+• Curtain rails or tracks removed
+
+WARNING ONLY (style_only — NOT hardFail):
+• Curtain fabric changed but rail already existed
+• Curtains added to an EXISTING rail
+• Curtain color or material changed
+
+Curtain fabric is decor.
+Rails/tracks/blind systems are structure.
+
+FLOOR COLOR/MATERIAL LOCK
+• Floor material AND color must match
+• Carpet color must match
+• No floor recoloring allowed
+
+Any violation → structure hardFail true
+
+${STAGE1B_FULL_REMOVAL_FURNITURE_RULE_BLOCK}
+
+─────────────────────────────
+NUMERIC DRIFT ADVISORY
+─────────────────────────────
+SSIM failure alone is NOT structural.
+Edge IoU failure alone is NOT structural.
+Angle deviation alone is NOT structural.
+
+These signals are advisory unless accompanied by:
+• opening count change
+• anchor removal/addition
+• built-in joinery change
+• window/door relocation
+
+─────────────────────────────
+CATEGORIES
+─────────────────────────────
+- structure (HARD FAIL)
+- opening_blocked (HARD FAIL)
+- furniture_change (warning for large furniture removal)
+- style_only (PASS)
+- unknown (PASS only if confidence < 0.75)
+
+BUILT-IN DOWNGRADE RULE:
+If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
+→ hardFail = false (warning only)
+
+VIOLATION TYPE (REQUIRED)
+Choose exactly one:
+- opening_change = window/door/opening added/removed/moved
+- wall_change = wall added/removed/shifted
+- camera_shift = viewpoint or perspective changed
+- built_in_moved = built-in cabinetry or anchored fixture changed
+- layout_only = furniture/layout/staging only
+- other = none of the above
+
+─────────────────────────────
+OUTPUT JSON
+─────────────────────────────
+Return JSON only. Include builtInDetected and structuralAnchorCount.
+structuralAnchorCount = number of built-in criteria matched (0-8).
+{
+  "hardFail": boolean,
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": [string],
+  "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
+}`;
+}
+
 function buildPrompt(
   stage: "1A" | "1B" | "2",
   scene?: string,
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready",
-  validationMode?: Stage2ValidationMode
+  validationMode?: Stage2ValidationMode,
+  stage1BValidationMode?: Stage1BValidationMode
 ) {
   if (stage === "1B") {
+    if (stage1BValidationMode === "FULL_REMOVAL") {
+      return buildStage1BFullRemovalValidatorPrompt({ scene });
+    }
     return buildStage1BLightDeclutterValidatorPrompt({ scene });
   }
 
@@ -1243,6 +1561,7 @@ export async function runGeminiSemanticValidator(opts: {
   sceneType?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
   validationMode?: Stage2ValidationMode;
+  stage1BValidationMode?: Stage1BValidationMode;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
 }): Promise<GeminiSemanticVerdict> {
@@ -1251,7 +1570,10 @@ export async function runGeminiSemanticValidator(opts: {
   const after = toBase64(opts.candidatePath).data;
 
   // Build base prompt, then inject evidence signals
-  const basePrompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage, opts.validationMode);
+  if (opts.stage === "1B") {
+    logger.info("Stage1B validator mode", { mode: opts.stage1BValidationMode || "LIGHT_DECLUTTER" });
+  }
+  const basePrompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage, opts.validationMode, opts.stage1BValidationMode);
   if (opts.stage === "2" && opts.validationMode) {
     logger.info("Stage2 validator mode", { validationMode: opts.validationMode });
   }

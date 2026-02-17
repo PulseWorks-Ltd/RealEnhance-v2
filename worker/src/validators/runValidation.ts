@@ -25,6 +25,7 @@ import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
+import type { Stage1BValidationMode } from "./geminiSemanticValidator";
 import { buildValidationBuffers, type ValidationBuffers } from "./validationBuffers";
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
@@ -143,6 +144,7 @@ export interface UnifiedValidationParams {
   stage1APath?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
   validationMode?: Stage2ValidationMode;
+  stage1BValidationMode?: Stage1BValidationMode;
   baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
   /**
    * Gemini invocation policy:
@@ -218,6 +220,7 @@ export async function runUnifiedValidation(
     stage1APath,
     sourceStage,
     validationMode,
+    stage1BValidationMode,
     baseArtifacts,
     geminiPolicy = "always",
   } = params;
@@ -915,6 +918,7 @@ export async function runUnifiedValidation(
         sceneType,
         sourceStage,
         validationMode,
+        stage1BValidationMode,
         evidence,
         riskLevel,
       });

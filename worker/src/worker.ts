@@ -1702,6 +1702,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
         jobId: payload.jobId,
         stage1APath: path1A,
+        stage1BValidationMode: mode === "stage-ready" ? "FULL_REMOVAL" : "LIGHT_DECLUTTER",
         baseArtifacts,
       });
 
