@@ -254,45 +254,87 @@ export type GeminiSemanticVerdict = {
   rawText?: string;
 };
 
-function buildPrompt(
-  stage: "1A" | "1B" | "2",
-  scene?: string,
-  sourceStage?: "1A" | "1B-light" | "1B-stage-ready",
-  validationMode?: Stage2ValidationMode
-) {
-  if (stage === "1B") {
-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter / Removal).
+const STAGE1B_LIGHT_DECLUTTER_CONTEXT_BLOCK = `
+─────────────────────────────
+STAGE CONTEXT — LIGHT DECLUTTER
+─────────────────────────────
+The BEFORE image is the original furnished room.
+The AFTER image is a light decluttered version.
+
+Light declutter MAY remove:
+• small loose items
+• decor objects
+• table-top items
+• small floor clutter
+• portable accessories
+
+Light declutter MAY:
+• simplify surfaces
+• clear visual clutter
+• remove small movable objects
+
+Light declutter MUST NOT:
+• remove built-in furniture
+• remove large primary furniture
+• modify structure
+• change layout anchors
+• change fixtures
+• change camera viewpoint
+`;
+
+const STAGE1B_LIGHT_DECLUTTER_ALLOWED_DIFFERENCES_BLOCK = `
+─────────────────────────────
+ALLOWED DIFFERENCES — DO NOT FLAG
+─────────────────────────────
+Do NOT flag as violations:
+• missing small decor
+• cleared tabletops
+• removed small objects
+• simplified shelves
+• fewer loose accessories
+
+These are expected results of decluttering.
+`;
+
+const STAGE1B_LIGHT_DECLUTTER_FURNITURE_RULE_BLOCK = `
+─────────────────────────────
+FURNITURE RULE — LIGHT DECLUTTER
+─────────────────────────────
+Large primary furniture (sofas, beds, dining tables, cabinets, desks) should normally remain.
+
+If a large primary furniture item is missing in AFTER:
+→ category: furniture_change
+→ hardFail: false (warning), not structure fail
+
+Only mark hardFail true if a built-in or structural anchor is removed.
+`;
+
+export function buildStage1BLightDeclutterValidatorPrompt(_options: {
+  scene?: string;
+} = {}): string {
+  return `You are a Structural Integrity & Edit Compliance Auditor for NZ real estate imagery — Stage 1B Light Declutter.
 
 Compare BEFORE and AFTER images.
 
 Return JSON only. No prose outside JSON.
 
+${STAGE1B_LIGHT_DECLUTTER_CONTEXT_BLOCK}
+
+${STAGE1B_LIGHT_DECLUTTER_ALLOWED_DIFFERENCES_BLOCK}
+
 ─────────────────────────────
-DECISION PRIORITY HIERARCHY
+STRUCTURAL PRIORITY HIERARCHY
 ─────────────────────────────
-When evaluating the AFTER image, apply rules in this strict order:
+Priority order:
 
-1. STRUCTURAL ANCHORS — Kitchen islands, counter runs, built-in cabinetry,
-   plumbing fixtures, HVAC, fixed lighting. If ANY anchor is removed,
-   relocated, resized, reshaped, or replaced → structure, hardFail: true.
-   This takes ABSOLUTE PRIORITY over all other rules.
+1. Structural anchors and built-ins
+2. Openings and access
+3. Floors, walls, ceilings
+4. Fixed fixtures and lighting
+5. Camera and perspective
+6. Furniture and decor
 
-2. OPENINGS & ACCESS — Doors, windows, pass-throughs must remain functional.
-   Blocked or sealed → opening_blocked, hardFail: true.
-
-3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
-   material, color, and finish. Changes → structure, hardFail: true.
-
-4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails, rods, tracks, and blind
-  SYSTEMS are structural. Fabric/color changes on existing rails → style_only (PASS).
-  Adding/removing rails, tracks, or blind systems → structure, hardFail: true.
-  Floor color/material must match.
-
-5. STAGING / FURNITURE — Furniture placement, style, and completeness.
-   Furniture rules may NEVER override rules 1–4 above.
-
-If a lower-priority rule conflicts with a higher-priority rule,
-the higher-priority rule ALWAYS wins.
+Higher priority always overrides lower.
 
 ─────────────────────────────
 PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
@@ -323,7 +365,7 @@ If a structural anchor (kitchen island, counter run, built-in wardrobe,
 vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
 image compared to the BEFORE image:
 
-→ This is RELOCATION, not staging.
+→ This is RELOCATION, not declutter.
 → category: structure, hardFail: true
 
 Anchors are physically fixed to the building. They cannot move.
@@ -398,36 +440,36 @@ clearly recessed into wall structure.
 Never classify freestanding desks or shelving as structural built-ins.
 
 ─────────────────────────────
-STAGING CONTEXT OVERRIDE RULE
-─────────────────────────────
-If furniture appears newly added, replaced, refreshed, or staged as part
-of the enhancement process, it must be treated as movable staging furniture
-— not as a structural built-in — even if it visually aligns with walls.
-
-Staged furniture must not trigger structural violation blocks.
-
-─────────────────────────────
 ABSOLUTE ZERO-TOUCH ELEMENTS
 ─────────────────────────────
-The following MUST NOT be altered in any way:
+The following MUST NOT be altered, replaced, restyled, recolored, resized, or removed:
 - Walls, ceilings, floors, baseboards
-- Windows, doors, sliding doors, frames
+- Windows, doors, frames, sliding tracks
 - Built-in cabinetry, wardrobes, shelving
 - Kitchen islands, counters, vanities, splashbacks
 - Fixed lighting (pendants, downlights, sconces)
-- Heat pumps, radiators, vents
+- Heat pumps, vents, radiators
 - Plumbing fixtures
 - Exterior views through windows
 
-ANY modification → category: structure, hardFail: true
+ANY violation → category: structure, hardFail: true
 
 ─────────────────────────────
 CRITICAL CHECKLIST
 ─────────────────────────────
+STRUCTURAL FUNCTION ANCHOR CHECK (CRITICAL)
+If any of the following appear in BEFORE image, they MUST remain unchanged:
+• Kitchen islands and counters
+• Built-in cabinets and wardrobes
+• Bathroom fixtures
+• Heat pumps and vents
+• Pendant lights and fixed lighting
+• Curtain rails, rods, tracks, blind systems (NOT fabric)
+• Fireplaces
+• Staircases
+• Built-in shelving
 
-1. STRUCTURAL PRESERVATION
-- Confirm all ZERO-TOUCH elements are present, aligned, and unchanged.
-- Warping, removal, distortion, recoloring, or hallucination → structure, hardFail: true
+Removed, replaced, relocated, or altered → structure hardFail true
 
 🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
 
@@ -448,22 +490,13 @@ Curtain fabric is decor.
 Rails/tracks/blind systems are structure.
 
 FLOOR COLOR/MATERIAL LOCK
-- Floor material AND FLOOR COLOR; carpet color/texture; timber tone/stain; tile color must match.
+• Floor material AND color must match
+• Carpet color must match
+• No floor recoloring allowed
 
-Any violation → structure, hardFail: true.
+Any violation → structure hardFail true
 
-2. DECLUTTER COMPLETENESS
-- ALL movable items must be removed: chairs, tables, sofas, beds, stools, loose shelving, decor, clutter, appliances.
-- Partial removal (some furniture left behind) → category: furniture_change, hardFail: true
-
-3. MATERIAL & INPAINTING QUALITY
-- Floors, walls, ceilings retain original texture and continuity.
-- No blur, smudge, ghost shadows, or texture mismatch.
-- Damaged surfaces → category: structure, hardFail: true
-
-4. FUNCTIONAL OPENINGS
-- Doors and windows remain fully passable and unobstructed.
-- Any blockage or sealing → opening_blocked, hardFail: true
+${STAGE1B_LIGHT_DECLUTTER_FURNITURE_RULE_BLOCK}
 
 ─────────────────────────────
 NUMERIC DRIFT ADVISORY
@@ -483,22 +516,13 @@ CATEGORIES
 ─────────────────────────────
 - structure (HARD FAIL)
 - opening_blocked (HARD FAIL)
-- furniture_change (FAIL if incomplete removal)
+- furniture_change (warning for large furniture removal)
 - style_only (PASS)
 - unknown (PASS only if confidence < 0.75)
 
 BUILT-IN DOWNGRADE RULE:
 If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
 → hardFail = false (warning only)
-
-VIOLATION TYPE (REQUIRED)
-Choose exactly one:
-- opening_change = window/door/opening added/removed/moved
-- wall_change = wall added/removed/shifted
-- camera_shift = viewpoint or perspective changed
-- built_in_moved = built-in cabinetry or anchored fixture changed
-- layout_only = furniture/layout/staging only
-- other = none of the above
 
 VIOLATION TYPE (REQUIRED)
 Choose exactly one:
@@ -523,6 +547,16 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }`;
+}
+
+function buildPrompt(
+  stage: "1A" | "1B" | "2",
+  scene?: string,
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready",
+  validationMode?: Stage2ValidationMode
+) {
+  if (stage === "1B") {
+    return buildStage1BLightDeclutterValidatorPrompt({ scene });
   }
 
   if (stage === "2") {
