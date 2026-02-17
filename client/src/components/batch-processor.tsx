@@ -3195,6 +3195,10 @@ export default function BatchProcessor() {
       const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
       const requestedStages = res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || null;
       const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+      const stage1BWasRequested = !!requestedStages?.stage1b
+        || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false)
+        || !!res?.options?.declutter
+        || !!res?.result?.options?.declutter;
       const blockedStage = (res?.validation as any)?.blockedStage || (res?.result?.validation as any)?.blockedStage || res?.blockedStage || res?.result?.blockedStage || res?.meta?.blockedStage || null;
       const statusRaw = String(res?.status || res?.result?.status || "").toLowerCase();
       const selectedOutput = displayStageByIndex[imageIndex];
@@ -3213,16 +3217,23 @@ export default function BatchProcessor() {
       // Preserve Stage 2 retry intent when Stage 2 was requested but no Stage 2 URL exists yet.
       const forceStage2Retry = requestedStage2 && (blockedStage === "2" || statusRaw === "failed" || viewingStage !== "2");
       const retryContextStage: StageKey | null = forceStage2Retry ? "2" : viewingStage;
+      const hasStage1BBaseline = !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
       
       // Compute baseline and stages using the new context-aware logic
       const baseline = computeRetryBaseline(retryContextStage, stageMap);
 
+      // Backend contract: if Stage 1B was part of the requested pipeline, Stage 2 retry requires Stage 1B baseline.
+      // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
+      const requiresStage1BRebuild = forceStage2Retry && stage1BWasRequested && !hasStage1BBaseline;
+
       // Guard: when user intent is Stage 2 retry, never downgrade to 1A-only due to sparse stage metadata.
-      const effectiveStagesToRun = forceStage2Retry
+      const effectiveStagesToRun = requiresStage1BRebuild
+        ? (["1B"] as StageKey[])
+        : forceStage2Retry
         ? (["2"] as StageKey[])
         : baseline.stagesToRun;
       const effectiveAllowStaging = forceStage2Retry ? true : baseline.allowStaging;
-      const effectiveSourceUrl = forceStage2Retry
+      const effectiveSourceUrl = (forceStage2Retry || requiresStage1BRebuild)
         ? (
             baseline.sourceUrl ||
             stageMap?.['1A'] ||
@@ -3234,7 +3245,7 @@ export default function BatchProcessor() {
             null
           )
         : baseline.sourceUrl;
-      const effectiveSourceStageLabel = forceStage2Retry
+      const effectiveSourceStageLabel = (forceStage2Retry || requiresStage1BRebuild)
         ? (effectiveSourceUrl ? "stage1a" : "original")
         : baseline.sourceStageLabel;
       
@@ -3243,6 +3254,9 @@ export default function BatchProcessor() {
         viewingStage,
         retryContextStage,
         forceStage2Retry,
+        requiresStage1BRebuild,
+        stage1BWasRequested,
+        hasStage1BBaseline,
         requestedStage2,
         blockedStage,
         baselineStage: baseline.baselineStage,
