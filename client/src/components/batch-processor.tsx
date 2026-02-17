@@ -2205,8 +2205,12 @@ export default function BatchProcessor() {
                 base.push("Image Enhancement didn’t finalise. Please retry image.");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
+                if (status === "completed" && targetStage === "2" && !stage2Url) {
+                  base.push("Staged output is missing for this completed job. Please retry image.");
+                  uiStatus = uiStatus === 'error' ? 'error' : 'warning';
+                }
                 if (stage2Mismatch) {
-                  base.push("Stage 2 output present but not requested.");
+                  base.push("Staged output present but wasn’t requested.");
                   uiStatus = uiStatus === 'error' ? 'error' : 'warning';
                 }
             return base;
@@ -2273,6 +2277,23 @@ export default function BatchProcessor() {
                 ...(existing.meta || {}),
                 ...(it?.meta || {}),
               };
+              const existingStageMap = existing.stageUrls || existing.result?.stageUrls || existing.stageOutputs || existing.result?.stageOutputs || null;
+              const mergedStageUrls = stageUrls
+                ? {
+                    ...(existingStageMap || {}),
+                    ...(stageUrls || {}),
+                    '2': stageUrls['2'] || stageUrls.stage2 || existingStageMap?.['2'] || existingStageMap?.stage2 || null,
+                    '1B': stageUrls['1B'] || stageUrls['1b'] || stageUrls.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || existingStageMap?.stage1B || null,
+                    '1A': stageUrls['1A'] || stageUrls['1'] || stageUrls.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || existingStageMap?.stage1A || null,
+                    stage2: stageUrls.stage2 || stageUrls['2'] || existingStageMap?.stage2 || existingStageMap?.['2'] || null,
+                    stage1B: stageUrls.stage1B || stageUrls['1B'] || stageUrls['1b'] || existingStageMap?.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || null,
+                    stage1A: stageUrls.stage1A || stageUrls['1A'] || stageUrls['1'] || existingStageMap?.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || null,
+                  }
+                : (existingStageMap || null);
+              const mergedResultUrl = resultUrlSafe
+                || existing.resultUrl
+                || existing.result?.resultUrl
+                || null;
               if (mergedMeta.allowStaging === undefined && typeof allowStaging === 'boolean') {
                 mergedMeta.allowStaging = allowStaging;
               }
@@ -2280,9 +2301,9 @@ export default function BatchProcessor() {
                 ...existing,
                 status,
                 progress,
-                resultStage: resultStage ?? null,
-                resultUrl: displayUrl ?? null,
-                stageUrls: stageUrls ?? null,
+                resultStage: resultStage ?? existing.resultStage ?? existing.result?.resultStage ?? null,
+                resultUrl: mergedResultUrl,
+                stageUrls: mergedStageUrls,
                 completionSource: completionSourceResolved,
                 editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.editLatestUrl ?? null) : (existing.editLatestUrl ?? null),
                 version: incomingVersion, // ✅ Update version timestamp
@@ -2302,14 +2323,14 @@ export default function BatchProcessor() {
                 result: {
                   ...(existing.result || {}),
                   imageUrl: completedFinal ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
-                  resultUrl: displayUrl ?? null,
+                  resultUrl: mergedResultUrl,
                   originalImageUrl: originalUrl || existing.result?.originalImageUrl || existing.result?.originalUrl || existing.originalImageUrl || existing.originalUrl,
                   originalUrl: originalUrl || existing.result?.originalUrl || existing.result?.originalImageUrl || existing.originalUrl || existing.originalImageUrl,
-                  stageUrls: stageUrls ?? null,
+                  stageUrls: mergedStageUrls,
                   requestedStages: mergedRequestedStages,
                   meta: mergedMeta,
                   status,
-                  resultStage: resultStage ?? null,
+                  resultStage: resultStage ?? existing.result?.resultStage ?? existing.resultStage ?? null,
                   progress,
                   warnings: warningList,
                   uiStatus,
@@ -2374,17 +2395,17 @@ export default function BatchProcessor() {
                   originalImageUrl: originalUrl,
                   qualityEnhancedUrl: null,
                   mode: it.mode || "enhanced",
-                  stageUrls: stageUrls || null,
+                  stageUrls: mergedStageUrls,
                   imageId,
                   status,
                   resultStage,
-                  requestedStages,
+                  requestedStages: mergedRequestedStages,
                   meta: it?.meta || {},
                 },
                 jobId: key,
                 imageId,
-                stageUrls: stageUrls || null,
-                requestedStages,
+                stageUrls: mergedStageUrls,
+                requestedStages: mergedRequestedStages,
                 filename,
               });
             }
