@@ -33,6 +33,7 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
+type DisplayOutputKey = StageKey | "retried" | "edited";
 
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
@@ -601,7 +602,7 @@ export default function BatchProcessor() {
   const imageIdToIndexRef = useRef<Record<string, number>>({});
   const jobIdToImageIdRef = useRef<Record<string, string>>({});
   const [results, setResults] = useState<any[]>([]);
-  const [displayStageByIndex, setDisplayStageByIndex] = useState<Record<number, StageKey>>({});
+  const [displayStageByIndex, setDisplayStageByIndex] = useState<Record<number, DisplayOutputKey>>({});
   const [progressText, setProgressText] = useState<string>("");
   const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
   const [processedImages, setProcessedImages] = useState<string[]>([]); // Track processed image URLs for ZIP download
@@ -3152,7 +3153,10 @@ export default function BatchProcessor() {
       const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
       const blockedStage = (res?.validation as any)?.blockedStage || (res?.result?.validation as any)?.blockedStage || res?.blockedStage || res?.result?.blockedStage || res?.meta?.blockedStage || null;
       const statusRaw = String(res?.status || res?.result?.status || "").toLowerCase();
-      const viewingStage: StageKey | null = displayStageByIndex[imageIndex] || (() => {
+      const selectedOutput = displayStageByIndex[imageIndex];
+      const viewingStage: StageKey | null = (selectedOutput === "1A" || selectedOutput === "1B" || selectedOutput === "2")
+        ? selectedOutput
+        : (() => {
         const s2 = stageMap?.['2'] || stageMap?.stage2 || null;
         const s1b = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
         const s1a = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
@@ -3563,9 +3567,9 @@ export default function BatchProcessor() {
             ...r,
             status: "processing",
             progress: 0,
-            resultUrl: null,
-            imageUrl: null,
-            stageUrls: null,
+            resultUrl: r?.resultUrl || r?.result?.resultUrl || null,
+            imageUrl: r?.imageUrl || r?.result?.imageUrl || null,
+            stageUrls: r?.stageUrls || r?.result?.stageUrls || null,
             completionSource: null,
             jobId: jobId, // Store the new retry jobId
             statusLastModified: Date.now(),
@@ -3675,6 +3679,9 @@ export default function BatchProcessor() {
                   results[imageIndex]?.originalImageUrl ||
                   results[imageIndex]?.originalUrl;
                 const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+                const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
+                  ? results[imageIndex].retryHistory
+                  : [];
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
                     ...r,
@@ -3684,8 +3691,18 @@ export default function BatchProcessor() {
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: stageUrls || r?.stageUrls || null,
+                    stageUrls: r?.stageUrls || stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
+                    retryLatestUrl: job.imageUrl,
+                    retryHistory: [
+                      ...existingRetryHistory,
+                      {
+                        url: job.imageUrl,
+                        ts: stamp,
+                        stage: retryStage || null,
+                        jobId,
+                      },
+                    ],
                     status: "completed",
                     uiStatus: "ok",
                     currentStage: null,
@@ -3698,17 +3715,16 @@ export default function BatchProcessor() {
                       image: job.imageUrl,
                       imageUrl: job.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
-                      stageUrls: stageUrls || (normalizedResult as any)?.stageUrls,
+                      stageUrls: r?.result?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
-                      qualityEnhancedUrl: preservedQualityEnhancedUrl
+                      qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                      retryLatestUrl: job.imageUrl,
                     },
                     error: null,
                     filename: r?.filename
                   } : r
                 ));
-                if (retryStage) {
-                  setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: retryStage }));
-                }
+                setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
                 setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: job.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
@@ -4557,7 +4573,7 @@ export default function BatchProcessor() {
                     />
                     <div>
                       <span className="text-sm font-medium text-white">Remove furniture & clutter</span>
-                      <p className="text-xs text-gray-400">Clean out existing furniture and clutter (Stage 1B)</p>
+                      <p className="text-xs text-gray-400">Create a decluttered or empty-room output</p>
                     </div>
                   </label>
 
@@ -4607,8 +4623,8 @@ export default function BatchProcessor() {
                       <span className="text-sm font-medium text-white">Add virtual staging</span>
                       <p className="text-xs text-gray-400">
                         {declutter 
-                          ? "Stage the empty room with new furniture (Stage 2)" 
-                          : "Add furniture and decor to existing room (Stage 2)"}
+                          ? "Create a staged version of the empty room" 
+                          : "Create a staged version with furniture and decor"}
                       </p>
                     </div>
                   </label>
@@ -5137,7 +5153,7 @@ export default function BatchProcessor() {
                   const isAlert = sceneNeeds || roomNeeds;
                   const lines: string[] = [];
                   if (sceneNeeds) lines.push("We couldn’t confidently detect whether this image is interior or exterior. Please select one to continue.");
-                  if (roomNeeds) lines.push("Room Type is required when Room Staging (Stage 2) is enabled.");
+                  if (roomNeeds) lines.push("Room Type is required when Staged output is enabled.");
                   if (!lines.length && detectedLine) lines.push(detectedLine);
                   if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
                   return (
@@ -5513,22 +5529,36 @@ export default function BatchProcessor() {
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
                         const disallowStage2 = (status === "failed") || !!blockedStage || hardFail;
                         const stagePreviewUrl = safeStage.url || null;
-                        const availableStages: { key: StageKey; label: string; url: string | null }[] = (
-                          [
-                            (!disallowStage2 && stage2Url) ? { key: "2" as StageKey, label: "Stage 2", url: stage2Url } : null,
-                            stage1BUrl ? { key: "1B" as StageKey, label: "Stage 1B", url: stage1BUrl } : null,
-                            stage1AUrl ? { key: "1A" as StageKey, label: "Stage 1A", url: stage1AUrl } : null,
-                          ].filter(Boolean) as { key: StageKey; label: string; url: string | null }[]
-                        );
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
                         const selectedStage = (() => {
-                          const requested = displayStageByIndex[i] as StageKey | undefined;
+                          const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
                           if (disallowStage2 && requested === "2") return defaultStage;
                           return requested || defaultStage;
                         })();
+                        const editedUrl = result?.editLatestUrl || result?.result?.editLatestUrl || null;
+                        const retriedUrl = result?.retryLatestUrl || result?.result?.retryLatestUrl || null;
+                        const stage1BIsFull = (() => {
+                          const req = result?.requestedStages || result?.result?.requestedStages || {};
+                          const reqMode = String(req?.declutterMode || "").toLowerCase();
+                          const variant = String(req?.stage2Variant || "").toUpperCase();
+                          const sourceStage = String(result?.meta?.sourceStage || result?.result?.meta?.sourceStage || "").toLowerCase();
+                          return reqMode === "stage-ready" || variant === "2B" || sourceStage.includes("stage-ready");
+                        })();
+                        const stage1BLabel = stage1BIsFull ? "Empty Room" : "Decluttered";
+                        const availableOutputs: { key: DisplayOutputKey; label: string; url: string | null }[] = (
+                          [
+                            stage2Url ? { key: "2" as DisplayOutputKey, label: "Staged", url: stage2Url } : null,
+                            stage1BUrl ? { key: "1B" as DisplayOutputKey, label: stage1BLabel, url: stage1BUrl } : null,
+                            stage1AUrl ? { key: "1A" as DisplayOutputKey, label: "Enhanced", url: stage1AUrl } : null,
+                            retriedUrl ? { key: "retried" as DisplayOutputKey, label: "Retried", url: retriedUrl } : null,
+                            editedUrl ? { key: "edited" as DisplayOutputKey, label: "Edited", url: editedUrl } : null,
+                          ].filter(Boolean) as { key: DisplayOutputKey; label: string; url: string | null }[]
+                        );
                         const defaultUrl = isDone ? (resolvedFinalUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
                           if (!selectedStage) return defaultUrl;
+                          if (selectedStage === "retried") return retriedUrl || defaultUrl;
+                          if (selectedStage === "edited") return editedUrl || defaultUrl;
                           if (selectedStage === "2") return stage2Url || defaultUrl;
                           if (selectedStage === "1B") return stage1BUrl || defaultUrl;
                           if (selectedStage === "1A") return stage1AUrl || defaultUrl;
@@ -5557,17 +5587,21 @@ export default function BatchProcessor() {
                             return isUiComplete ? "Edited (Final)" : "Preview • Edited";
                           }
                           
-                          const stageLabel = selectedStage === "2" && stage2Url
-                            ? "Stage 2"
-                            : selectedStage === "1B"
-                              ? "Stage 1B"
-                              : "Stage 1A";
+                          const stageLabel = selectedStage === "retried"
+                            ? "Retried"
+                            : selectedStage === "edited"
+                              ? "Edited"
+                              : selectedStage === "2" && stage2Url
+                                ? "Staged"
+                                : selectedStage === "1B"
+                                  ? stage1BLabel
+                                  : "Enhanced";
                           const finalStageLabel = resolvedFinalStage === "2"
-                            ? "Stage 2"
+                            ? "Staged"
                             : resolvedFinalStage === "1B"
-                              ? "Stage 1B"
+                              ? stage1BLabel
                               : resolvedFinalStage === "1A"
-                                ? "Stage 1A"
+                                ? "Enhanced"
                                 : stageLabel;
                           return isUiComplete ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
                         })();
@@ -5582,7 +5616,7 @@ export default function BatchProcessor() {
                           stage1BUrl: stage1BUrl || null,
                           stage1AUrl: stage1AUrl || null,
                           finalResultUrl: finalResultUrl || null,
-                          availableStages: availableStages.map(s => s.key),
+                          availableOutputs: availableOutputs.map(s => s.key),
                         });
                         if (stage2Url && !displayStageByIndex[i] && !isDone) {
                           console.assert(displayedUrl === stage2Url, "[DEV_ASSERT] Stage 2 should be the default when available", { index: i, displayedUrl, stage2Url });
@@ -5703,10 +5737,10 @@ export default function BatchProcessor() {
                                 <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedStage === '2' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
                                   {stageBadgeLabel}
                                 </span>
-                                {availableStages.length > 1 && (
+                                {availableOutputs.length > 1 && (
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="text-[11px] uppercase tracking-wide text-slate-500">Outputs:</span>
-                                    {availableStages.map(({ key, label }) => (
+                                    {availableOutputs.map(({ key, label }) => (
                                       <button
                                         key={key}
                                         type="button"
