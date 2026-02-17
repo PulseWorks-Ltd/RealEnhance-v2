@@ -856,12 +856,13 @@ export function RegionEditor({
         )}`,
       );
 
-      // Inform parent, but DO NOT exit – local polling still runs
+      // If parent handles job polling, delegate and stop here
       if (onJobStarted) {
         console.log(
-          "[region-editor] 🧩 Notifying parent via onJobStarted (global batch polling will also track this job)",
+          "[region-editor] 🧩 Notifying parent via onJobStarted (delegating polling to parent)",
         );
         onJobStarted(result.jobId);
+        return;
       }
 
       // Always run local polling so the modal can update its preview image

@@ -492,12 +492,12 @@ function clearBatchJobState(userId?: string | null, opts?: { resetUI?: boolean }
 }
 
 // Helper component for consistent status badges
-const StatusBadge = ({ status, className }: { status: 'processing' | 'completed' | 'failed' | 'queued', className?: string }) => {
+const StatusBadge = ({ status, className, label }: { status: 'processing' | 'completed' | 'failed' | 'queued', className?: string, label?: string }) => {
   if (status === 'processing' || status === 'queued') {
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 ring-1 ring-slate-200 animate-pulse ${className}`}>
         <Loader2 className="w-3 h-3 animate-spin" />
-        {status === 'queued' ? 'Queued' : 'Processing'}
+        {label || (status === 'queued' ? 'Queued' : 'Processing')}
       </span>
     );
   }
@@ -505,7 +505,7 @@ const StatusBadge = ({ status, className }: { status: 'processing' | 'completed'
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-600 text-white ring-1 ring-emerald-300/60 shadow-sm ${className}`}>
         <CheckCircle className="w-3.5 h-3.5" />
-        Enhancement Complete
+        {label || 'Enhancement Complete'}
       </span>
     );
   }
@@ -513,7 +513,7 @@ const StatusBadge = ({ status, className }: { status: 'processing' | 'completed'
     return (
       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-600 text-white shadow-sm ${className}`}>
         <AlertCircle className="w-3.5 h-3.5" />
-        Error
+        {label || 'Error'}
       </span>
     );
   }
@@ -639,6 +639,8 @@ export default function BatchProcessor() {
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
+  const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
+  const regionEditJobIdsRef = useRef<Set<string>>(new Set());
 
   // Helper to clear retry flags for a specific image index
   const clearRetryFlags = useCallback((index: number) => {
@@ -2080,7 +2082,8 @@ export default function BatchProcessor() {
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
-          const isRegionEdit =
+          const trackedRegionEditJob = !!polledId && regionEditJobIdsRef.current.has(polledId);
+          const isRegionEdit = trackedRegionEditJob ||
             String(it?.meta?.type || "").toLowerCase() === "region-edit" ||
             String(it?.meta?.jobType || "").toLowerCase() === "region_edit";
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
@@ -2159,6 +2162,7 @@ export default function BatchProcessor() {
 
           // FIX: Only mark as completed when target stage is reached
           const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit);
+          const completionSourceResolved = isRegionEdit && completedFinal ? "region-edit" : completionSource;
           
           // Log when backend says completed but target not reached (still processing)
           if (status === "completed" && displayUrl && !targetUrlPresent && !isRegionEdit) {
@@ -2253,7 +2257,8 @@ export default function BatchProcessor() {
                 resultStage: resultStage ?? null,
                 resultUrl: displayUrl ?? null,
                 stageUrls: stageUrls ?? null,
-                completionSource,
+                completionSource: completionSourceResolved,
+                editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.editLatestUrl ?? null) : (existing.editLatestUrl ?? null),
                 version: incomingVersion, // ✅ Update version timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
@@ -2283,6 +2288,8 @@ export default function BatchProcessor() {
                   warnings: warningList,
                   uiStatus,
                   hardFail,
+                  completionSource: completionSourceResolved,
+                  editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.result?.editLatestUrl ?? null) : (existing.result?.editLatestUrl ?? null),
                 },
                 // Preview URL used while processing
                 previewUrl: chosenPreview || existing.previewUrl || null,
@@ -2297,6 +2304,25 @@ export default function BatchProcessor() {
               };
               return copy;
             });
+
+            if (trackedRegionEditJob && completedFinal) {
+              setEditingImages(prev => {
+                const next = new Set(prev);
+                next.delete(idx);
+                return next;
+              });
+              setEditCompletedImages(prev => new Set(prev).add(idx));
+              if (polledId) regionEditJobIdsRef.current.delete(polledId);
+            }
+
+            if (trackedRegionEditJob && status === "failed") {
+              setEditingImages(prev => {
+                const next = new Set(prev);
+                next.delete(idx);
+                return next;
+              });
+              if (polledId) regionEditJobIdsRef.current.delete(polledId);
+            }
 
             if (IS_DEV) {
               const stageKeys = stageUrls ? Object.keys(stageUrls).filter(k => (stageUrls as Record<string, any>)[k]) : [];
@@ -2541,6 +2567,7 @@ export default function BatchProcessor() {
   // Helper: start polling a single region-edit job via the global batch status endpoint
   const startRegionEditPolling = async (jobId: string, imageIndex: number) => {
     console.log('[BatchProcessor] startRegionEditPolling', { jobId, imageIndex });
+    regionEditJobIdsRef.current.add(jobId);
 
     // Map this jobId to the relevant image index so pollForBatch knows where to route results
     jobIdToIndexRef.current[jobId] = imageIndex;
@@ -2551,16 +2578,9 @@ export default function BatchProcessor() {
     try {
       await pollForBatch([jobId], controller);
     } finally {
-      // Regardless of outcome, clear editing UI state
+      // Polling lifecycle ended for this job
+      regionEditJobIdsRef.current.delete(jobId);
       setIsEditingInProgress(false);
-      setRegionEditorOpen(false);
-      setEditingImageIndex(null);
-      // Clear editing badge for this image
-      setEditingImages(prev => {
-        const next = new Set(prev);
-        next.delete(imageIndex);
-        return next;
-      });
     }
   };
 
@@ -3243,7 +3263,6 @@ export default function BatchProcessor() {
 
     // ✅ Store completion source in editor state for reference
     setEditingImageIndex(imageIndex);
-    setEditingImages(prev => new Set(prev).add(imageIndex));
     setRegionEditorOpen(true);
   };
 
@@ -5301,6 +5320,11 @@ export default function BatchProcessor() {
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
                         const isEditing = editingImages.has(i);
+                        const isEditComplete = editCompletedImages.has(i)
+                          || !!result?.editLatestUrl
+                          || !!result?.result?.editLatestUrl
+                          || result?.completionSource === "region-edit"
+                          || result?.result?.completionSource === "region-edit";
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
                         const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
                           || result?.result?.meta?.autoInsertedStage1B === true;
@@ -5404,6 +5428,8 @@ export default function BatchProcessor() {
                           ? "Retrying enhancement..."  // ✅ Show explicit retry message
                           : isIntermediateProcessing && intermediateStageMessage
                           ? intermediateStageMessage  // ✅ Show intermediate stage message
+                          : isEditComplete
+                          ? "Edit complete"
                           : isUiComplete
                           ? "Enhancement Complete"
                           : (isStrictRetry || attempts > 1)
@@ -5583,7 +5609,7 @@ export default function BatchProcessor() {
                                     </div>
                                 ) : isUiComplete ? (
                                    <div className="flex items-center gap-2">
-                                     <StatusBadge status="completed" />
+                                     <StatusBadge status="completed" label={isEditComplete ? "Edit Complete" : "Enhancement Complete"} />
                                    </div>
                                 ) : (
                                   <StatusBadge status="queued" />
@@ -5871,15 +5897,32 @@ export default function BatchProcessor() {
               return meta?.roomType || meta?.room || meta?.room_type || undefined;
             })()}
             onStart={() => {
-              setIsEditingInProgress(true);
+              // Inline card indicators are used for edit progress; no extra popup state.
+              setIsEditingInProgress(false);
             }}
             onJobStarted={(jobId: string) => {
-              if (editingImageIndex == null) {
+              const activeEditIndex = editingImageIndex;
+              if (activeEditIndex == null) {
                 console.warn('[BatchProcessor] onJobStarted called but editingImageIndex is null');
                 return;
               }
-              console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex });
-              startRegionEditPolling(jobId, editingImageIndex);
+              console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex: activeEditIndex });
+
+              // Close modal immediately after Enhance submits successfully
+              setRegionEditorOpen(false);
+              setEditingImageIndex(null);
+
+              // Show inline per-image edit processing state
+              setEditingImages(prev => new Set(prev).add(activeEditIndex));
+              setEditCompletedImages(prev => {
+                const next = new Set(prev);
+                next.delete(activeEditIndex);
+                return next;
+              });
+
+              // Prefer card-level spinner/status over popup dialog while processing
+              setIsEditingInProgress(false);
+              startRegionEditPolling(jobId, activeEditIndex);
             }}
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string; shouldAutoClose?: boolean }) => {
               setIsEditingInProgress(false);
