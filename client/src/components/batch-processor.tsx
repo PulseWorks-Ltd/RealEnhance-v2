@@ -120,14 +120,24 @@ function getDisplayUrl(data: any): string | null {
 function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
   if (!data) return { url: null, stage: null };
 
+  const toDisplayUrl = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim();
+    if (!normalized) return null;
+    if (normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("blob:") || normalized.startsWith("data:image/")) {
+      return normalized;
+    }
+    return null;
+  };
+
   const isRegionEdit =
     data?.completionSource === "region-edit" ||
     data?.result?.completionSource === "region-edit" ||
     String(data?.meta?.type || "").toLowerCase() === "region-edit" ||
     String(data?.meta?.jobType || "").toLowerCase() === "region_edit";
   const editLatestUrl =
-    data?.editLatestUrl ||
-    data?.result?.editLatestUrl ||
+    toDisplayUrl(data?.editLatestUrl) ||
+    toDisplayUrl(data?.result?.editLatestUrl) ||
     null;
 
   const status = String(data?.status || data?.result?.status || "").toLowerCase();
@@ -143,18 +153,18 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     data?.result?.stageOutputs ||
     null;
 
-  const stage2 = stageMap?.['2'] || stageMap?.[2] || data?.stage2Url || data?.result?.stage2Url || null;
-  const stage1B = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.[1] || null;
-  const stage1A = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || null;
+  const stage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(data?.stage2Url) || toDisplayUrl(data?.result?.stage2Url) || null;
+  const stage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.[1]) || null;
+  const stage1A = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || null;
 
   const explicitResult =
-    data?.resultUrl ||
-    data?.image ||
-    data?.imageUrl ||
-    data?.result?.resultUrl ||
-    data?.result?.image ||
-    data?.result?.imageUrl ||
-    data?.result?.result?.imageUrl ||
+    toDisplayUrl(data?.resultUrl) ||
+    toDisplayUrl(data?.image) ||
+    toDisplayUrl(data?.imageUrl) ||
+    toDisplayUrl(data?.result?.resultUrl) ||
+    toDisplayUrl(data?.result?.image) ||
+    toDisplayUrl(data?.result?.imageUrl) ||
+    toDisplayUrl(data?.result?.result?.imageUrl) ||
     null;
 
   if (isRegionEdit) {
@@ -199,6 +209,16 @@ function withVersion(url?: string | null, version?: string | number): string | n
   }
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}v=${version}`;
+}
+
+function toDisplayUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("blob:") || normalized.startsWith("data:image/")) {
+    return normalized;
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2097,12 +2117,12 @@ export default function BatchProcessor() {
             : null;
           const stageUrlsRaw = it?.stageUrls || it?.stage_urls || null;
           const stageUrls = stageUrlsRaw ? {
-            '2': stageUrlsRaw['2'] || stageUrlsRaw.stage2 || null,
-            '1B': stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || stageUrlsRaw.stage1B || null,
-            '1A': stageUrlsRaw['1A'] || stageUrlsRaw['1'] || stageUrlsRaw.stage1A || null,
-            stage2: stageUrlsRaw.stage2 || stageUrlsRaw['2'] || null,
-            stage1B: stageUrlsRaw.stage1B || stageUrlsRaw['1B'] || stageUrlsRaw['1b'] || null,
-            stage1A: stageUrlsRaw.stage1A || stageUrlsRaw['1A'] || stageUrlsRaw['1'] || null,
+            '2': toDisplayUrl(stageUrlsRaw['2']) || toDisplayUrl(stageUrlsRaw.stage2) || null,
+            '1B': toDisplayUrl(stageUrlsRaw['1B']) || toDisplayUrl(stageUrlsRaw['1b']) || toDisplayUrl(stageUrlsRaw.stage1B) || null,
+            '1A': toDisplayUrl(stageUrlsRaw['1A']) || toDisplayUrl(stageUrlsRaw['1']) || toDisplayUrl(stageUrlsRaw.stage1A) || null,
+            stage2: toDisplayUrl(stageUrlsRaw.stage2) || toDisplayUrl(stageUrlsRaw['2']) || null,
+            stage1B: toDisplayUrl(stageUrlsRaw.stage1B) || toDisplayUrl(stageUrlsRaw['1B']) || toDisplayUrl(stageUrlsRaw['1b']) || null,
+            stage1A: toDisplayUrl(stageUrlsRaw.stage1A) || toDisplayUrl(stageUrlsRaw['1A']) || toDisplayUrl(stageUrlsRaw['1']) || null,
           } : null;
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
@@ -2117,8 +2137,8 @@ export default function BatchProcessor() {
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const extraResult = it?.result || {};
-          const resultUrl = it?.publishedUrl || it?.resultUrl || it?.publishUrl || it?.outputUrl || it?.finalUrl || extraResult?.resultUrl || extraResult?.imageUrl || extraResult?.url || null;
-          const originalUrl = it?.originalImageUrl || it?.originalUrl || it?.original || null;
+          const resultUrl = toDisplayUrl(it?.publishedUrl) || toDisplayUrl(it?.resultUrl) || toDisplayUrl(it?.publishUrl) || toDisplayUrl(it?.outputUrl) || toDisplayUrl(it?.finalUrl) || toDisplayUrl(extraResult?.resultUrl) || toDisplayUrl(extraResult?.imageUrl) || toDisplayUrl(extraResult?.url) || null;
+          const originalUrl = toDisplayUrl(it?.originalImageUrl) || toDisplayUrl(it?.originalUrl) || toDisplayUrl(it?.original) || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
           const fallbackStage = (validation as any)?.fallbackStage || it?.fallbackStage || it?.meta?.fallbackStage || null;
@@ -5441,11 +5461,11 @@ export default function BatchProcessor() {
 
                         // Stage URL resolution (supports new stage1A/1B keys)
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-                        const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || null;
-                        const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
-                        const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+                        const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || null;
+                        const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
+                        const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || null;
 
-                        const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
+                        const finalResultUrl = toDisplayUrl(result?.resultUrl) || toDisplayUrl(result?.result?.resultUrl) || null;
                         const hasPreviewOutputs = !!(stage2Url || stage1BUrl || stage1AUrl);
                         const hasOutputs = hasPreviewOutputs || !!finalResultUrl;
                         let derivedUiStatus = uiStatus;
@@ -5556,8 +5576,8 @@ export default function BatchProcessor() {
                           if (disallowStage2 && requested === "2") return defaultStage;
                           return requested || defaultStage;
                         })();
-                        const editedUrl = result?.editLatestUrl || result?.result?.editLatestUrl || null;
-                        const retriedUrl = result?.retryLatestUrl || result?.result?.retryLatestUrl || null;
+                        const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
+                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
                         const stage1BIsFull = (() => {
                           const req = result?.requestedStages || result?.result?.requestedStages || {};
                           const reqMode = String(req?.declutterMode || "").toLowerCase();

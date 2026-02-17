@@ -77,6 +77,21 @@ import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCriti
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
+import { applyFinalBlackEdgeGuard } from "./utils/finalBlackEdgeGuard";
+
+const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
+
+async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: string) {
+  if (FINAL_BLACK_EDGE_GUARD_ENABLED) {
+    const guard = await applyFinalBlackEdgeGuard(localPath);
+    if (guard.changed) {
+      nLog(`[BLACK_EDGE_GUARD] stage=${stageLabel} action=cropped reason=${guard.reason}`);
+    } else if (guard.reason !== "not_detected") {
+      nLog(`[BLACK_EDGE_GUARD] stage=${stageLabel} action=skipped reason=${guard.reason}`);
+    }
+  }
+  return publishImage(localPath);
+}
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
   if (!mask || !mask.width || !mask.height || !mask.data) {
@@ -144,7 +159,7 @@ async function completePartialJob(params: {
   const { jobId, triggerStage, finalStage, finalPath, pub1AUrl, pub1BUrl, sceneMeta, userMessage, reason, stageOutputs } = params;
   let resultUrl = finalStage === "1A" ? pub1AUrl : pub1BUrl;
   if (!resultUrl) {
-    const pub = await publishImage(finalPath);
+    const pub = await publishWithOptionalBlackEdgeGuard(finalPath, `partial-${finalStage}`);
     resultUrl = pub.url;
   }
 
@@ -1004,7 +1019,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Publish Stage-2 result
       if (!(await ensureStage2AttemptOwner("stage2_only_publish"))) return;
-      const pub2 = await publishImage(path2);
+      const pub2 = await publishWithOptionalBlackEdgeGuard(path2, "stage2-only");
       const pub2Url = pub2.url;
       if (pub2Url) {
         attachStage2PublishedUrl(path2, pub2Url);
@@ -1556,7 +1571,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let pub1AUrl: string | undefined = undefined;
   let pub1BUrl: string | undefined = undefined;
   try {
-    const pub1A = await publishImage(path1A);
+    const pub1A = await publishWithOptionalBlackEdgeGuard(path1A, "1A");
     pub1AUrl = pub1A.url;
     if (v1A) {
       try {
@@ -2186,7 +2201,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         let fallbackUrl = pub1AUrl;
         if (!fallbackUrl) {
           try {
-            const pubFallback = await publishImage(path1A);
+            const pubFallback = await publishWithOptionalBlackEdgeGuard(path1A, "fallback-1A");
             fallbackUrl = pubFallback.url;
           } catch (pubErr) {
             nLog(`[GEMINI_RETRY] Failed to publish Stage 1A fallback: ${pubErr}`);
@@ -2283,7 +2298,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     try {
-      const pub1B = await publishImage(path1B);
+      const pub1B = await publishWithOptionalBlackEdgeGuard(path1B, "1B");
       pub1BUrl = pub1B.url;
       await safeWriteJobStatus(
         payload.jobId,
@@ -3618,7 +3633,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         // Publish fallback if not already published
         if (!fallbackUrl) {
           try {
-            const pubFallback = await publishImage(fallbackPath);
+            const pubFallback = await publishWithOptionalBlackEdgeGuard(fallbackPath, `fallback-${fallbackStage}`);
             fallbackUrl = pubFallback.url;
           } catch (pubErr) {
             nLog(`[GEMINI_RETRY] Failed to publish Stage ${fallbackStage} fallback: ${pubErr}`);
@@ -3804,7 +3819,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       try {
         if (!(await ensureStage2AttemptOwner("stage2_publish_upload"))) return;
-        const pub2 = await publishImage(stage2CandidatePath);
+        const pub2 = await publishWithOptionalBlackEdgeGuard(stage2CandidatePath, "2");
         pub2Url = pub2.url;
         stage2Success = true;
         if (pub2Url) {
@@ -3892,7 +3907,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Silently ignore - images.json is not available in multi-service deployment
     }
     try {
-      const pub1B = await publishImage(path1B);
+      const pub1B = await publishWithOptionalBlackEdgeGuard(path1B, "1B-deferred");
       pub1BUrl = pub1B.url;
       if (v1B) {
         try {
@@ -4000,7 +4015,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } else {
     try {
       nLog(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
-      publishedFinal = await publishImage(path2);
+      publishedFinal = await publishWithOptionalBlackEdgeGuard(path2, "final");
       pubFinalUrl = publishedFinal?.url;
       if (!pubFinalUrl) {
         throw new Error('publishImage returned no URL');
