@@ -3168,6 +3168,27 @@ export default function BatchProcessor() {
       
       // Compute baseline and stages using the new context-aware logic
       const baseline = computeRetryBaseline(retryContextStage, stageMap);
+
+      // Guard: when user intent is Stage 2 retry, never downgrade to 1A-only due to sparse stage metadata.
+      const effectiveStagesToRun = forceStage2Retry
+        ? (["2"] as StageKey[])
+        : baseline.stagesToRun;
+      const effectiveAllowStaging = forceStage2Retry ? true : baseline.allowStaging;
+      const effectiveSourceUrl = forceStage2Retry
+        ? (
+            baseline.sourceUrl ||
+            stageMap?.['1A'] ||
+            stageMap?.['1a'] ||
+            stageMap?.['1'] ||
+            stageMap?.stage1A ||
+            res?.resultUrl ||
+            res?.result?.resultUrl ||
+            null
+          )
+        : baseline.sourceUrl;
+      const effectiveSourceStageLabel = forceStage2Retry
+        ? (effectiveSourceUrl ? "stage1a" : "original")
+        : baseline.sourceStageLabel;
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
@@ -3177,14 +3198,14 @@ export default function BatchProcessor() {
         requestedStage2,
         blockedStage,
         baselineStage: baseline.baselineStage,
-        stagesToRun: baseline.stagesToRun,
-        allowStaging: baseline.allowStaging,
-        sourceUrl: baseline.sourceUrl?.substring(0, 60),
-        sourceStageLabel: baseline.sourceStageLabel,
+        stagesToRun: effectiveStagesToRun,
+        allowStaging: effectiveAllowStaging,
+        sourceUrl: effectiveSourceUrl?.substring(0, 60),
+        sourceStageLabel: effectiveSourceStageLabel,
       });
 
       // Determine the retryStage to send (highest stage in the pipeline)
-      const highestStage = baseline.stagesToRun[baseline.stagesToRun.length - 1];
+      const highestStage = effectiveStagesToRun[effectiveStagesToRun.length - 1];
 
       // Optimistic UI: flip to Retrying immediately when modal closes
       setRetryingImages(prev => new Set(prev).add(imageIndex));
@@ -3208,14 +3229,14 @@ export default function BatchProcessor() {
         imageIndex,
         customInstructions,
         sceneType,
-        baseline.allowStaging,
+        effectiveAllowStaging,
         false, // furnitureReplacementMode
         roomType,
         undefined, // windowCount
         referenceImage,
         highestStage, // retryStage: tells the server which stage to produce
-        baseline.sourceUrl, // baselineUrl: correct upstream image
-        baseline.sourceStageLabel // sourceStageLabel: for server metadata
+        effectiveSourceUrl, // baselineUrl: correct upstream image
+        effectiveSourceStageLabel // sourceStageLabel: for server metadata
       );
     } catch (error) {
       // Error is already handled in handleRetryImage
