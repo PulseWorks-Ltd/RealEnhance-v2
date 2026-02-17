@@ -25,7 +25,7 @@ function getStage0CropThresholds(): { opencvBlackThreshold: number; trimThreshol
   return { opencvBlackThreshold, trimThreshold };
 }
 
-function logCropStats(method: "alpha" | "opencv" | "trim", beforeW: number, beforeH: number, rect: CropRect): void {
+function logCropStats(method: "alpha" | "opencv" | "trim" | "edge", beforeW: number, beforeH: number, rect: CropRect): void {
   const beforeArea = beforeW * beforeH;
   const afterArea = rect.width * rect.height;
   const removedPct = beforeArea > 0 ? ((beforeArea - afterArea) / beforeArea) * 100 : 0;
@@ -38,6 +38,98 @@ function logCropStats(method: "alpha" | "opencv" | "trim", beforeW: number, befo
       `[preprocess] auto-crop warning: removed ${removedPct.toFixed(2)}% area (>15%)`
     );
   }
+}
+
+async function detectCropRectFromEdgeBands(
+  img: sharp.Sharp,
+  darkThreshold: number,
+): Promise<CropRect | null> {
+  const raw = await img
+    .clone()
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = raw.info.width || 0;
+  const height = raw.info.height || 0;
+  const channels = raw.info.channels || 0;
+  if (!width || !height || channels < 4) return null;
+
+  const data = raw.data;
+
+  const maxTrimRatio = Number(process.env.PREPROCESS_CROP_EDGE_MAX_TRIM_RATIO ?? 0.12);
+  const lineDarkRatio = Number(process.env.PREPROCESS_CROP_EDGE_LINE_DARK_RATIO ?? 0.92);
+  const alphaDarkThreshold = parseByteThreshold(process.env.PREPROCESS_CROP_EDGE_ALPHA_THRESHOLD, 8);
+
+  const maxTrimX = Math.max(1, Math.floor(width * Math.max(0.01, Math.min(0.2, maxTrimRatio))));
+  const maxTrimY = Math.max(1, Math.floor(height * Math.max(0.01, Math.min(0.2, maxTrimRatio))));
+
+  const isDarkAt = (x: number, y: number): boolean => {
+    const i = (y * width + x) * channels;
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+    if (a <= alphaDarkThreshold) return true;
+    return r <= darkThreshold && g <= darkThreshold && b <= darkThreshold;
+  };
+
+  const darkRatioForCol = (x: number): number => {
+    let dark = 0;
+    for (let y = 0; y < height; y++) {
+      if (isDarkAt(x, y)) dark++;
+    }
+    return dark / Math.max(1, height);
+  };
+
+  const darkRatioForRow = (y: number): number => {
+    let dark = 0;
+    for (let x = 0; x < width; x++) {
+      if (isDarkAt(x, y)) dark++;
+    }
+    return dark / Math.max(1, width);
+  };
+
+  let leftTrim = 0;
+  while (leftTrim < maxTrimX) {
+    if (darkRatioForCol(leftTrim) < lineDarkRatio) break;
+    leftTrim++;
+  }
+
+  let rightTrim = 0;
+  while (rightTrim < maxTrimX) {
+    const x = width - 1 - rightTrim;
+    if (x < 0 || darkRatioForCol(x) < lineDarkRatio) break;
+    rightTrim++;
+  }
+
+  let topTrim = 0;
+  while (topTrim < maxTrimY) {
+    if (darkRatioForRow(topTrim) < lineDarkRatio) break;
+    topTrim++;
+  }
+
+  let bottomTrim = 0;
+  while (bottomTrim < maxTrimY) {
+    const y = height - 1 - bottomTrim;
+    if (y < 0 || darkRatioForRow(y) < lineDarkRatio) break;
+    bottomTrim++;
+  }
+
+  if (leftTrim + rightTrim >= width - 2 || topTrim + bottomTrim >= height - 2) {
+    return null;
+  }
+
+  if (!leftTrim && !rightTrim && !topTrim && !bottomTrim) {
+    return null;
+  }
+
+  return {
+    left: leftTrim,
+    top: topTrim,
+    width: width - leftTrim - rightTrim,
+    height: height - topTrim - bottomTrim,
+  };
 }
 
 async function detectCropRectWithOpenCv(
@@ -238,6 +330,32 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
     }
   } catch {
     // fail-open: keep image unchanged
+  }
+
+  // Final fallback: conservative edge-band crop for near-black/transparent wedges.
+  // This catches occasional rotation triangles that bypass contour + trim heuristics.
+  try {
+    const edgeThreshold = parseByteThreshold(process.env.PREPROCESS_CROP_EDGE_THRESHOLD, thresholds.trimThreshold);
+    const rect = await detectCropRectFromEdgeBands(img, edgeThreshold);
+    if (
+      rect &&
+      rect.width > 1 &&
+      rect.height > 1 &&
+      (rect.left > 0 || rect.top > 0 || rect.width < beforeW || rect.height < beforeH)
+    ) {
+      const clamped: CropRect = {
+        left: Math.max(0, Math.min(beforeW - 1, rect.left)),
+        top: Math.max(0, Math.min(beforeH - 1, rect.top)),
+        width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
+        height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
+      };
+      console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=edge`);
+      console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
+      logCropStats("edge", beforeW, beforeH, clamped);
+      return img.extract(clamped);
+    }
+  } catch {
+    // fail-open
   }
 
   console.log(`[stage0] CROP rect=none method=none`);
