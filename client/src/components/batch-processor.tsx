@@ -5524,7 +5524,8 @@ export default function BatchProcessor() {
                         })();
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
-                        const isProcessing = isEditing || result?.retryInFlight || (!isUiComplete && !isError && (inFlightStatus || isRetrying || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
+                        const isRetryActive = isRetrying || !!result?.retryInFlight;
+                        const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = allowStaging
@@ -5720,16 +5721,17 @@ export default function BatchProcessor() {
                               <div className="flex items-center gap-3 mt-1.5 h-7">
                                   {isProcessing ? (
                                    <div className="flex items-center gap-2">
-                                     <StatusBadge
-                                       status="processing"
-                                       label={isEditing ? "Editing..." : undefined}
-                                       className={isEditing ? "bg-blue-600 text-white ring-blue-300/60 animate-none" : undefined}
-                                     />
-                                     {isRetrying && (
-                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md">
-                                         <RefreshCw className="w-3 h-3 animate-spin" />
-                                         Retrying…
+                                     {isRetryActive ? (
+                                       <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-600 text-white ring-1 ring-blue-300/60 shadow-sm">
+                                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                         Retrying...
                                        </span>
+                                     ) : (
+                                       <StatusBadge
+                                         status="processing"
+                                         label={isEditing ? "Editing..." : undefined}
+                                         className={isEditing ? "bg-blue-600 text-white ring-blue-300/60 animate-none" : undefined}
+                                       />
                                      )}
                                    </div>
                                 ) : isError ? (
