@@ -4,6 +4,7 @@ import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import { createEmptyEvidence, shouldInjectEvidence } from "./validationEvidence";
 import { getEvidenceGatingVariant, isEvidenceGatingEnabledForJob } from "./evidenceGating";
 import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
+import type { Stage2ValidationMode } from "./stage2ValidationMode";
 
 const logger = console;
 
@@ -256,7 +257,8 @@ export type GeminiSemanticVerdict = {
 function buildPrompt(
   stage: "1A" | "1B" | "2",
   scene?: string,
-  sourceStage?: "1A" | "1B-light" | "1B-stage-ready"
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready",
+  validationMode?: Stage2ValidationMode
 ) {
   if (stage === "1B") {
     return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 1B: Declutter / Removal).
@@ -524,10 +526,13 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   }
 
   if (stage === "2") {
-    const isFullStaging = sourceStage === "1B-stage-ready";
+    const resolvedValidationMode: Stage2ValidationMode =
+      validationMode ?? (sourceStage === "1B-stage-ready" ? "FULL_AFTER_FULL_REMOVAL" : "REFRESH_OR_DIRECT");
+    const isFullStaging = resolvedValidationMode === "FULL_AFTER_FULL_REMOVAL";
+    const contextHeader = buildStage2ContextHeader(resolvedValidationMode);
     const stagingModeInstruction = isFullStaging
-      ? "The BEFORE image is an EMPTY/DECLUTTERED room. The AFTER image should contain NEW furniture appropriate for staging."
-      : "The BEFORE image contains EXISTING furniture. The AFTER image should show ALL furniture REPLACED with modern equivalents.";
+      ? "The BEFORE image is the post-Stage1B full-removal baseline (furniture largely cleared). The AFTER image should contain new staging furniture appropriate for the room type."
+      : "The BEFORE image may be direct enhancement output or light-declutter output. The AFTER image should show furniture refresh/replacement while preserving fixed architecture.";
     const stagingIntentRule = isFullStaging
       ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
       : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
@@ -537,6 +542,8 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
 Compare BEFORE and AFTER images.
 
 Return JSON only.
+
+  ${contextHeader}
 
 ─────────────────────────────
 DECISION PRIORITY HIERARCHY
@@ -1201,6 +1208,7 @@ export async function runGeminiSemanticValidator(opts: {
   stage: "1A" | "1B" | "2";
   sceneType?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+  validationMode?: Stage2ValidationMode;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
 }): Promise<GeminiSemanticVerdict> {
@@ -1209,7 +1217,10 @@ export async function runGeminiSemanticValidator(opts: {
   const after = toBase64(opts.candidatePath).data;
 
   // Build base prompt, then inject evidence signals
-  const basePrompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage);
+  const basePrompt = buildPrompt(opts.stage, opts.sceneType, opts.sourceStage, opts.validationMode);
+  if (opts.stage === "2" && opts.validationMode) {
+    logger.info("Stage2 validator mode", { validationMode: opts.validationMode });
+  }
   const prompt = buildAdjudicatorPrompt(basePrompt, opts.evidence, opts.riskLevel);
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
@@ -1317,4 +1328,18 @@ export async function runGeminiSemanticValidator(opts: {
       rawText: err?.message,
     };
   }
+}
+
+export function buildStage2ContextHeader(mode: Stage2ValidationMode): string {
+  if (mode === "FULL_AFTER_FULL_REMOVAL") {
+    return `STAGE2 VALIDATION CONTEXT
+- Mode: FULL_AFTER_FULL_REMOVAL
+- BEFORE is the post-full-removal baseline from Stage 1B (furniture cleared for full staging).
+- AFTER should introduce suitable staged furniture while preserving all fixed architecture.`;
+  }
+
+  return `STAGE2 VALIDATION CONTEXT
+- Mode: REFRESH_OR_DIRECT
+- BEFORE is direct enhancement output or light-declutter output.
+- AFTER should refresh/replace furniture presentation while preserving all fixed architecture.`;
 }

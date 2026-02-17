@@ -1,6 +1,7 @@
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import { getGeminiValidatorMode, isGeminiBlockingEnabled } from "./validationModes";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
+import type { Stage2ValidationMode } from "./stage2ValidationMode";
 
 type StageKey = "stage1b" | "stage2";
 
@@ -14,6 +15,7 @@ export async function confirmWithGeminiStructure(params: {
   localReasons: string[];
   localMetrics?: any;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+  validationMode?: Stage2ValidationMode;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
 }): Promise<{ confirmedFail: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "error" }> {
@@ -29,6 +31,7 @@ export async function confirmWithGeminiStructure(params: {
       stage: params.stage === "stage1b" ? "1B" : "2",
       sceneType: params.sceneType || "interior",
       sourceStage: params.sourceStage,
+      validationMode: params.validationMode,
       evidence: params.evidence,
       riskLevel: params.riskLevel,
     });

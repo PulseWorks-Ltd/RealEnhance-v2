@@ -28,6 +28,7 @@ import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
 import { buildValidationBuffers, type ValidationBuffers } from "./validationBuffers";
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
+import type { Stage2ValidationMode } from "./stage2ValidationMode";
 
 // Re-export the normalized adapter for downstream consumers
 export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
@@ -140,6 +141,8 @@ export interface UnifiedValidationParams {
    * If not provided, falls back to originalPath (legacy behavior).
    */
   stage1APath?: string;
+  sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+  validationMode?: Stage2ValidationMode;
   baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
   /**
    * Gemini invocation policy:
@@ -213,6 +216,8 @@ export async function runUnifiedValidation(
     jobId,
     stagingStyle,
     stage1APath,
+    sourceStage,
+    validationMode,
     baseArtifacts,
     geminiPolicy = "always",
   } = params;
@@ -908,6 +913,8 @@ export async function runUnifiedValidation(
         candidatePath: enhancedPath,
         stage,
         sceneType,
+        sourceStage,
+        validationMode,
         evidence,
         riskLevel,
       });

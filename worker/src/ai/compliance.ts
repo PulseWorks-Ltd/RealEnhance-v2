@@ -1,4 +1,5 @@
 import type { GoogleGenAI } from "@google/genai";
+import type { Stage2ValidationMode } from "../validators/stage2ValidationMode";
 
 export type ComplianceVerdict = {
   ok: boolean;
@@ -31,9 +32,32 @@ async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prom
   }
 }
 
-export async function checkCompliance(ai: GoogleGenAI, originalB64: string, editedB64: string): Promise<ComplianceVerdict> {
+function buildStage2ComplianceContext(mode?: Stage2ValidationMode): string[] {
+  if (!mode) return [];
+  if (mode === "FULL_AFTER_FULL_REMOVAL") {
+    return [
+      "STAGE2 VALIDATION CONTEXT: FULL_AFTER_FULL_REMOVAL",
+      "- BEFORE corresponds to post-full-removal baseline (furniture largely cleared).",
+      "- AFTER is expected to add appropriate staged furniture while preserving fixed architecture.",
+    ];
+  }
+  return [
+    "STAGE2 VALIDATION CONTEXT: REFRESH_OR_DIRECT",
+    "- BEFORE is direct-enhancement or light-declutter baseline.",
+    "- AFTER is expected to refresh/replace furniture while preserving fixed architecture.",
+  ];
+}
+
+export async function checkCompliance(
+  ai: GoogleGenAI,
+  originalB64: string,
+  editedB64: string,
+  opts?: { validationMode?: Stage2ValidationMode }
+): Promise<ComplianceVerdict> {
+  const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
   const structuralPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
+    ...stage2Context,
     'Compare ORIGINAL vs EDITED. ok=false ONLY if the EDITED image alters fixed architectural features:',
     '- adds/removes/moves/resizes doors, windows, walls, ceilings, floors, stairs, pillars, beams, built-ins, fixed plumbing/electrical.',
     '- kitchen islands, fixed counters, bench units, built-in cabinetry bases are structural built-ins.',
@@ -74,6 +98,7 @@ export async function checkCompliance(ai: GoogleGenAI, originalB64: string, edit
 
   const placementPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
+    ...stage2Context,
     'Compare ORIGINAL vs EDITED. ok=false if EDITED places objects in clearly unrealistic or unsafe positions, such as:',
     '- blocking a DOOR or WINDOW,',
     '- overlapping fixed fixtures,',

@@ -55,6 +55,7 @@ import {
   shouldInjectEvidence,
   type UnifiedValidationResult
 } from "./validators/runValidation";
+import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
 import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
 import { isJobFailedFinal } from "./validators/stageRetryManager";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
@@ -830,6 +831,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BMode: stage2OnlyMeta.stage1BMode || undefined,
         sourceStageHint: stage2OnlyMeta.sourceStage || undefined,
       });
+      const stage2OnlyValidationMode = getStage2ValidationModeFromPromptMode(stage2OnlyRouting.mode);
+      nLog("[STAGE2_VALIDATOR_MODE]", {
+        jobId: payload.jobId,
+        path: "stage2_only",
+        validationMode: stage2OnlyValidationMode,
+      });
       if (!stage2OnlyMeta.sourceStage && !stage2OnlyMeta.stage1BMode) {
         nLog("[STAGE2_ONLY_MODE_CONTEXT_MISSING]", {
           jobId: payload.jobId,
@@ -922,6 +929,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           stagingStyle: payload.options.stagingStyle || "nz_standard",
           stage1APath: validationBaseline,
+          sourceStage: stage2OnlyRouting.sourceStage,
+          validationMode: stage2OnlyValidationMode,
         });
         nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
       } catch (unifiedErr: any) {
@@ -954,7 +963,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const ai = getGeminiClient();
           const baseRef = toBase64(basePath);
           const enhanced = toBase64(path2);
-          const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data);
+          const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
+            validationMode: stage2OnlyValidationMode,
+          });
           if (s2oCompliance && s2oCompliance.ok === false) {
             const confidence = s2oCompliance.confidence ?? 0.6;
             const shouldBlock = confidence >= COMPLIANCE_BLOCK_THRESHOLD;
@@ -2479,7 +2490,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
   const stage2ValidationBaseline = path1A;
   const stage2PromptMode = stage2Routing.mode;
+  const stage2ValidationMode = getStage2ValidationModeFromPromptMode(stage2PromptMode);
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
+  nLog("[STAGE2_VALIDATOR_MODE]", {
+    jobId: payload.jobId,
+    path: "main",
+    validationMode: stage2ValidationMode,
+  });
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   
   // 📊 STRUCTURED ROUTING LOG - Stage 2
@@ -2973,6 +2990,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         stage1APath: validationBasePath,
+        sourceStage: validationStage === "2" ? stage2SourceStage : undefined,
+        validationMode: validationStage === "2" ? stage2ValidationMode : undefined,
         baseArtifacts,
       });
 
@@ -3333,6 +3352,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         localReasons: stage2LocalReasons,
         sourceStage: stage2SourceStage,
+        validationMode: stage2ValidationMode,
         evidence: gatedEvidence,
         riskLevel: unifiedValidation?.riskLevel,
       });
@@ -3430,6 +3450,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               jobId: payload.jobId,
               stagingStyle: payload.options.stagingStyle || "nz_standard",
               stage1APath: stage2ValidationBaseline,
+              sourceStage: stage2SourceStage,
+              validationMode: stage2ValidationMode,
               baseArtifacts: baseArtifactsRetry,
             });
 
@@ -3532,6 +3554,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             localReasons: stage2LocalReasons,
             sourceStage: stage2SourceStage,
+            validationMode: stage2ValidationMode,
             evidence: unifiedValidation?.evidence,
             riskLevel: unifiedValidation?.riskLevel,
           });
@@ -3656,7 +3679,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const ai = getGeminiClient();
       const base1A = toBase64(path1A);
       const baseFinal = toBase64(path2);
-      compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data);
+      compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
+        validationMode: stage2ValidationMode,
+      });
       if (compliance && compliance.ok === false) {
         const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
         const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
