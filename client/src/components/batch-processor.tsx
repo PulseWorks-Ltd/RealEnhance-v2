@@ -354,6 +354,11 @@ interface PersistedBatchJob {
 
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
+const EDIT_COMPLETE_FALLBACK_MS = (() => {
+  const raw = Number((import.meta as any).env?.VITE_EDIT_COMPLETE_FALLBACK_MS);
+  if (!Number.isFinite(raw) || raw < 3000) return 12000;
+  return Math.min(120000, Math.round(raw));
+})();
 
 /**
  * Context-aware baseline selection for retry.
@@ -641,6 +646,25 @@ export default function BatchProcessor() {
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
+  const editingImagesRef = useRef<Set<number>>(new Set());
+  const editFallbackTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const clearEditFallbackTimer = useCallback((index: number) => {
+    const t = editFallbackTimersRef.current[index];
+    if (t) {
+      clearTimeout(t);
+      delete editFallbackTimersRef.current[index];
+    }
+  }, []);
+  useEffect(() => {
+    editingImagesRef.current = editingImages;
+  }, [editingImages]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(editFallbackTimersRef.current).forEach((t) => clearTimeout(t));
+      editFallbackTimersRef.current = {};
+    };
+  }, []);
 
   // Helper to clear retry flags for a specific image index
   const clearRetryFlags = useCallback((index: number) => {
@@ -2083,7 +2107,8 @@ export default function BatchProcessor() {
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
           const trackedRegionEditJob = !!polledId && regionEditJobIdsRef.current.has(polledId);
-          const isRegionEdit = trackedRegionEditJob ||
+          const editInFlightForIdx = typeof idx === "number" && editingImagesRef.current.has(idx);
+          const isRegionEdit = trackedRegionEditJob || editInFlightForIdx ||
             String(it?.meta?.type || "").toLowerCase() === "region-edit" ||
             String(it?.meta?.jobType || "").toLowerCase() === "region_edit";
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
@@ -2305,7 +2330,8 @@ export default function BatchProcessor() {
               return copy;
             });
 
-            if (trackedRegionEditJob && completedFinal) {
+            if (isRegionEdit && completedFinal) {
+              clearEditFallbackTimer(idx);
               setEditingImages(prev => {
                 const next = new Set(prev);
                 next.delete(idx);
@@ -2315,7 +2341,8 @@ export default function BatchProcessor() {
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
 
-            if (trackedRegionEditJob && status === "failed") {
+            if (isRegionEdit && status === "failed") {
+              clearEditFallbackTimer(idx);
               setEditingImages(prev => {
                 const next = new Set(prev);
                 next.delete(idx);
@@ -3158,6 +3185,24 @@ export default function BatchProcessor() {
 
       // Determine the retryStage to send (highest stage in the pipeline)
       const highestStage = baseline.stagesToRun[baseline.stagesToRun.length - 1];
+
+      // Optimistic UI: flip to Retrying immediately when modal closes
+      setRetryingImages(prev => new Set(prev).add(imageIndex));
+      setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
+      setResults(prev => prev.map((r, i) => {
+        if (i !== imageIndex) return r;
+        return {
+          ...r,
+          status: "processing",
+          error: null,
+          errorCode: undefined,
+          uiStatus: "ok",
+          uiOverrideFailed: false,
+          retryInFlight: true,
+          retryStage: highestStage,
+          currentStage: highestStage,
+        };
+      }));
       
       await handleRetryImage(
         imageIndex,
@@ -5319,12 +5364,12 @@ export default function BatchProcessor() {
                         const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const isEditing = editingImages.has(i);
                         const isEditComplete = editCompletedImages.has(i)
                           || !!result?.editLatestUrl
                           || !!result?.result?.editLatestUrl
                           || result?.completionSource === "region-edit"
                           || result?.result?.completionSource === "region-edit";
+                        const isEditing = editingImages.has(i) && !isEditComplete;
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
                         const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
                           || result?.result?.meta?.autoInsertedStage1B === true;
@@ -5607,7 +5652,7 @@ export default function BatchProcessor() {
                                       </button>
                                       {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
                                     </div>
-                                ) : isUiComplete ? (
+                                ) : (isUiComplete || isEditComplete) ? (
                                    <div className="flex items-center gap-2">
                                      <StatusBadge status="completed" label={isEditComplete ? "Edit Complete" : "Enhancement Complete"} />
                                    </div>
@@ -5920,6 +5965,27 @@ export default function BatchProcessor() {
                 return next;
               });
 
+              clearEditFallbackTimer(activeEditIndex);
+              editFallbackTimersRef.current[activeEditIndex] = setTimeout(() => {
+                if (!editingImagesRef.current.has(activeEditIndex)) return;
+                console.warn('[edit-ui] fallback completion timer fired', { index: activeEditIndex, ms: EDIT_COMPLETE_FALLBACK_MS });
+                setEditingImages(prev => {
+                  const next = new Set(prev);
+                  next.delete(activeEditIndex);
+                  return next;
+                });
+                setEditCompletedImages(prev => new Set(prev).add(activeEditIndex));
+                setResults(prev => prev.map((r, i) => {
+                  if (i !== activeEditIndex) return r;
+                  return {
+                    ...r,
+                    status: (String(r?.status || '').toLowerCase() === 'failed') ? r.status : 'completed',
+                    completionSource: r?.completionSource || 'region-edit',
+                    uiStatus: r?.uiStatus === 'error' ? 'error' : 'ok',
+                  };
+                }));
+              }, EDIT_COMPLETE_FALLBACK_MS);
+
               // Prefer card-level spinner/status over popup dialog while processing
               setIsEditingInProgress(false);
               startRegionEditPolling(jobId, activeEditIndex);
@@ -5927,6 +5993,7 @@ export default function BatchProcessor() {
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string; shouldAutoClose?: boolean }) => {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
+                clearEditFallbackTimer(editingImageIndex);
                 const preservedOriginalUrl =
                   results[editingImageIndex]?.result?.originalImageUrl ||
                   results[editingImageIndex]?.result?.originalUrl ||
@@ -6031,12 +6098,18 @@ export default function BatchProcessor() {
             }}
             onCancel={() => {
               setIsEditingInProgress(false);
+              if (typeof editingImageIndex === 'number') {
+                clearEditFallbackTimer(editingImageIndex);
+              }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
             }}
             onError={(errorMessage?: string) => {
               console.error('[batch-processor] Region edit error:', errorMessage);
               setIsEditingInProgress(false);
+              if (typeof editingImageIndex === 'number') {
+                clearEditFallbackTimer(editingImageIndex);
+              }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
               // The error toast is already shown by RegionEditor, so we don't duplicate it here
