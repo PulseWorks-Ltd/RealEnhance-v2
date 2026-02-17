@@ -25,7 +25,7 @@ function getStage0CropThresholds(): { opencvBlackThreshold: number; trimThreshol
   return { opencvBlackThreshold, trimThreshold };
 }
 
-function logCropStats(method: "opencv" | "trim", beforeW: number, beforeH: number, rect: CropRect): void {
+function logCropStats(method: "alpha" | "opencv" | "trim", beforeW: number, beforeH: number, rect: CropRect): void {
   const beforeArea = beforeW * beforeH;
   const afterArea = rect.width * rect.height;
   const removedPct = beforeArea > 0 ? ((beforeArea - afterArea) / beforeArea) * 100 : 0;
@@ -105,6 +105,50 @@ async function detectCropRectWithOpenCv(
   }
 }
 
+async function detectCropRectFromAlpha(
+  img: sharp.Sharp,
+  minAlpha: number
+): Promise<CropRect | null> {
+  const alphaThreshold = Math.max(0, Math.min(255, Math.round(minAlpha)));
+  const rgba = await img
+    .clone()
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = rgba.info.width || 0;
+  const height = rgba.info.height || 0;
+  const channels = rgba.info.channels || 0;
+  if (!width || !height || channels < 4) return null;
+
+  const data = rgba.data;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * channels + 3];
+      if (alpha > alphaThreshold) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return null;
+
+  return {
+    left: minX,
+    top: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+  };
+}
+
 async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
   const meta = await img.metadata();
   const beforeW = meta.width || 0;
@@ -115,6 +159,31 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
   console.log(
     `[stage0] CROP thresholds opencv=${thresholds.opencvBlackThreshold} trim=${thresholds.trimThreshold}`
   );
+
+  // First pass: exact alpha crop (handles transparent wedges created by rotation).
+  try {
+    const alphaThreshold = parseByteThreshold(process.env.PREPROCESS_CROP_ALPHA_THRESHOLD, 1);
+    const rect = await detectCropRectFromAlpha(img, alphaThreshold);
+    if (
+      rect &&
+      rect.width > 1 &&
+      rect.height > 1 &&
+      (rect.left > 0 || rect.top > 0 || rect.width < beforeW || rect.height < beforeH)
+    ) {
+      const clamped: CropRect = {
+        left: Math.max(0, Math.min(beforeW - 1, rect.left)),
+        top: Math.max(0, Math.min(beforeH - 1, rect.top)),
+        width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
+        height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
+      };
+      console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=alpha`);
+      console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
+      logCropStats("alpha", beforeW, beforeH, clamped);
+      return img.extract(clamped);
+    }
+  } catch {
+    // Fail-open to OpenCV + trim fallback paths.
+  }
 
   // Primary method: OpenCV contour crop on non-black region
   const tempPath = `/tmp/preprocess-straighten-${randomUUID()}.png`;
@@ -266,10 +335,11 @@ export async function preprocessToCanonical(
         const clampedRoll = Math.max(-maxCorrectionDeg, Math.min(maxCorrectionDeg, estimatedRoll));
 
         if (Math.abs(clampedRoll) >= minApplyDeg) {
-          // Rotate opposite of measured drift, then crop back deterministically to original frame size.
+          // Rotate opposite of measured drift with transparent fill.
+          // Post-rotation crop removes wedges without inventing content beyond source pixels.
           img = img
-            .rotate(-clampedRoll)
-            .resize(targetW, targetH, { fit: "cover", position: "centre" });
+            .ensureAlpha()
+            .rotate(-clampedRoll, { background: { r: 0, g: 0, b: 0, alpha: 0 } });
         }
       }
     } catch {
@@ -280,6 +350,7 @@ export async function preprocessToCanonical(
   // Stage 0 post-straighten border crop to remove black wedges introduced by rotation.
   // Applied to image preprocessing only, before Stage 1A/1B/2.
   img = await autoCropPostStraighten(img);
+  img = img.removeAlpha();
 
   // For interiors, normalize brightness/saturation if too dark
   if (sceneType === "interior") {
