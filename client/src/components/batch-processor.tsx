@@ -2064,6 +2064,7 @@ export default function BatchProcessor() {
           const metaParentJobId = it?.meta?.parentJobId || it?.meta?.parent_job_id || null;
           const jobParentJobId = it?.job?.parentJobId || it?.job?.parent_job_id || null;
           const parentJobId = it?.parentJobId || it?.parent_job_id || retryInfo?.parentJobId || retryInfo?.parent_job_id || metaParentJobId || jobParentJobId || null;
+          const isRetryChildJob = !!(polledId && parentJobId && polledId !== parentJobId);
           const imageId = it?.imageId || it?.image_id || it?.meta?.imageId || it?.meta?.image_id || retryInfo?.imageId || retryInfo?.image_id || jobIdToImageIdRef.current[polledId || ''] || null;
           let idx = polledId ? jobIdToIndexRef.current[polledId] : undefined;
           let mappedViaParent = false;
@@ -2325,6 +2326,7 @@ export default function BatchProcessor() {
                 resultUrl: mergedResultUrl,
                 stageUrls: mergedStageUrls,
                 completionSource: completionSourceResolved,
+                retryLatestUrl: (isRetryChildJob && completedFinal ? (displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
                 editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.editLatestUrl ?? null) : (existing.editLatestUrl ?? null),
                 version: incomingVersion, // ✅ Update version timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
@@ -2356,6 +2358,7 @@ export default function BatchProcessor() {
                   uiStatus,
                   hardFail,
                   completionSource: completionSourceResolved,
+                  retryLatestUrl: (isRetryChildJob && completedFinal ? (displayUrl || existing.result?.retryLatestUrl || null) : (existing.result?.retryLatestUrl ?? null)),
                   editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.result?.editLatestUrl ?? null) : (existing.result?.editLatestUrl ?? null),
                 },
                 // Preview URL used while processing
@@ -3728,11 +3731,12 @@ export default function BatchProcessor() {
                     ...r,
                     image: job.imageUrl,
                     imageUrl: job.imageUrl,
+                    resultUrl: job.imageUrl,
                     version: stamp,
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: r?.stageUrls || stageUrls || null,
+                    stageUrls: stageUrls || r?.stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
                     retryLatestUrl: job.imageUrl,
                     retryHistory: [
@@ -3755,8 +3759,9 @@ export default function BatchProcessor() {
                       ...(normalizedResult || {}),
                       image: job.imageUrl,
                       imageUrl: job.imageUrl,
+                      resultUrl: job.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
-                      stageUrls: r?.result?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
+                      stageUrls: stageUrls || r?.result?.stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
                       retryLatestUrl: job.imageUrl,
@@ -5572,13 +5577,15 @@ export default function BatchProcessor() {
                         const disallowStage2 = (status === "failed") || !!blockedStage || hardFail;
                         const stagePreviewUrl = safeStage.url || null;
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
+                        const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
+                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
                           if (disallowStage2 && requested === "2") return defaultStage;
+                          if (!requested && retriedUrl) return "retried";
+                          if (!requested && editedUrl) return "edited";
                           return requested || defaultStage;
                         })();
-                        const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
-                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
                         const stage1BIsFull = (() => {
                           const req = result?.requestedStages || result?.result?.requestedStages || {};
                           const reqMode = String(req?.declutterMode || "").toLowerCase();
