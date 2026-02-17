@@ -2,6 +2,155 @@ import fs from "fs";
 import path from "path";
 import { logIfNotFocusMode } from "../logger";
 
+type EdgeTrim = { top: number; right: number; bottom: number; left: number };
+
+function parseEnvInt(raw: string | undefined, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.round(parsed);
+  return Math.max(min, Math.min(max, rounded));
+}
+
+function parseEnvFloat(raw: string | undefined, fallback: number, min = 0, max = 1): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+async function loadImageWithFinalBorderGuard(
+  filePath: string
+): Promise<{ body: Buffer; didTrim: boolean; trim?: EdgeTrim }> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext !== ".jpg" && ext !== ".jpeg" && ext !== ".png" && ext !== ".webp") {
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const enabled = process.env.PUBLISH_ANTI_BORDER_TRIM !== "0";
+  if (!enabled) {
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const importer: any = new Function("p", "return import(p)");
+  const sharpMod: any = await importer("sharp");
+  const sharp = sharpMod?.default ?? sharpMod;
+
+  const base = sharp(filePath);
+  const meta = await base.metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (!width || !height) {
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const threshold = parseEnvInt(process.env.PUBLISH_ANTI_BORDER_THRESHOLD, 10, 0, 255);
+  const minBlackFrac = parseEnvFloat(process.env.PUBLISH_ANTI_BORDER_MIN_BLACK_FRAC, 0.85, 0.5, 1);
+  const maxScan = parseEnvInt(process.env.PUBLISH_ANTI_BORDER_MAX_SCAN, 20, 1, 200);
+  const maxTrim = parseEnvInt(process.env.PUBLISH_ANTI_BORDER_MAX_TRIM_PX, 12, 1, 80);
+  const minResultW = parseEnvInt(process.env.PUBLISH_ANTI_BORDER_MIN_RESULT_W, 320, 64, 10000);
+  const minResultH = parseEnvInt(process.env.PUBLISH_ANTI_BORDER_MIN_RESULT_H, 240, 64, 10000);
+
+  const rawObj = await base
+    .clone()
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const channels = rawObj.info.channels || 3;
+  const data = rawObj.data;
+  const w = rawObj.info.width || width;
+  const h = rawObj.info.height || height;
+  if (!w || !h || channels < 3) {
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const isDarkAt = (offset: number): boolean => {
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    return r <= threshold && g <= threshold && b <= threshold;
+  };
+
+  const scanRow = (y: number): number => {
+    let dark = 0;
+    for (let x = 0; x < w; x++) {
+      const offset = (y * w + x) * channels;
+      if (isDarkAt(offset)) dark++;
+    }
+    return dark / w;
+  };
+
+  const scanCol = (x: number): number => {
+    let dark = 0;
+    for (let y = 0; y < h; y++) {
+      const offset = (y * w + x) * channels;
+      if (isDarkAt(offset)) dark++;
+    }
+    return dark / h;
+  };
+
+  const topLimit = Math.min(maxScan, h);
+  const bottomLimit = Math.min(maxScan, h);
+  const leftLimit = Math.min(maxScan, w);
+  const rightLimit = Math.min(maxScan, w);
+
+  let top = 0;
+  for (let i = 0; i < topLimit; i++) {
+    if (scanRow(i) >= minBlackFrac) top++;
+    else break;
+  }
+
+  let bottom = 0;
+  for (let i = 0; i < bottomLimit; i++) {
+    if (scanRow(h - 1 - i) >= minBlackFrac) bottom++;
+    else break;
+  }
+
+  let left = 0;
+  for (let i = 0; i < leftLimit; i++) {
+    if (scanCol(i) >= minBlackFrac) left++;
+    else break;
+  }
+
+  let right = 0;
+  for (let i = 0; i < rightLimit; i++) {
+    if (scanCol(w - 1 - i) >= minBlackFrac) right++;
+    else break;
+  }
+
+  const trim: EdgeTrim = {
+    top: Math.min(top, maxTrim),
+    right: Math.min(right, maxTrim),
+    bottom: Math.min(bottom, maxTrim),
+    left: Math.min(left, maxTrim),
+  };
+
+  const anyTrim = trim.top > 0 || trim.right > 0 || trim.bottom > 0 || trim.left > 0;
+  if (!anyTrim) {
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const outW = w - trim.left - trim.right;
+  const outH = h - trim.top - trim.bottom;
+  if (outW < minResultW || outH < minResultH) {
+    logIfNotFocusMode(`[PUBLISH] Anti-border trim skipped (result too small): ${outW}x${outH}`);
+    return { body: fs.readFileSync(filePath), didTrim: false };
+  }
+
+  const extracted = await sharp(filePath)
+    .extract({ left: trim.left, top: trim.top, width: outW, height: outH });
+
+  let body: Buffer;
+  if (ext === ".png") {
+    body = await extracted.png().toBuffer();
+  } else if (ext === ".jpg" || ext === ".jpeg") {
+    body = await extracted.jpeg({ quality: 92 }).toBuffer();
+  } else {
+    body = await extracted.webp({ quality: 90 }).toBuffer();
+  }
+
+  return { body, didTrim: true, trim };
+}
+
 function mimeFromExt(p: string) {
   const ext = path.extname(p).toLowerCase();
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
@@ -36,6 +185,11 @@ export type PublishResult = {
  * - Otherwise, returns a data URL (good for demo/smaller files).
  */
 export async function publishImage(filePath: string): Promise<PublishResult> {
+  const guarded = await loadImageWithFinalBorderGuard(filePath);
+  if (guarded.didTrim && guarded.trim) {
+    logIfNotFocusMode(`[PUBLISH] Anti-border trim applied top=${guarded.trim.top} right=${guarded.trim.right} bottom=${guarded.trim.bottom} left=${guarded.trim.left}`);
+  }
+
   const bucket = process.env.S3_BUCKET;
   logIfNotFocusMode('\n========================================\n');
   logIfNotFocusMode(`[PUBLISH] File: ${path.basename(filePath)}\n`);
@@ -54,7 +208,7 @@ export async function publishImage(filePath: string): Promise<PublishResult> {
       const { S3Client, PutObjectCommand } = mod;
       const prefix = (process.env.S3_PREFIX || 'realenhance/outputs').replace(/\/+$/, '');
       const key = `${prefix}/${Date.now()}-${path.basename(filePath)}`.replace(/^\//, '');
-      const Body = fs.readFileSync(filePath);
+      const Body = guarded.body;
       const ContentType = mimeFromExt(filePath);
 
       // Explicitly configure credentials if provided (Railway may not auto-detect)
@@ -135,7 +289,7 @@ export async function publishImage(filePath: string): Promise<PublishResult> {
       logIfNotFocusMode('========================================\n\n');
 
       // Build data URL fallback explicitly so callers still get a usable URL
-      const fallbackResult = await buildDataUrl(filePath);
+      const fallbackResult = await buildDataUrl(filePath, guarded.body);
       return { ...fallbackResult, degraded: true, s3Error: errMsg };
     }
   } else {
@@ -143,13 +297,13 @@ export async function publishImage(filePath: string): Promise<PublishResult> {
     logIfNotFocusMode('========================================\n\n');
   }
 
-  return buildDataUrl(filePath);
+  return buildDataUrl(filePath, guarded.body);
 }
 
 /** Build a data-URL result from a local file (dev/demo fallback). */
-async function buildDataUrl(filePath: string): Promise<PublishResult> {
+async function buildDataUrl(filePath: string, sourceBuffer?: Buffer): Promise<PublishResult> {
   logIfNotFocusMode('[PUBLISH] Generating data URL fallback...\n');
-  const buf = fs.readFileSync(filePath);
+  const buf = sourceBuffer || fs.readFileSync(filePath);
   const mime = mimeFromExt(filePath);
   logIfNotFocusMode(`[PUBLISH] Original size: ${buf.length} bytes\n`);
   
