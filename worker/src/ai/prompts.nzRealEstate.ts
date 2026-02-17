@@ -160,6 +160,48 @@ If required room features are not clearly visible:
 → do NOT build structure.
 `;
 
+const CAMERA_LOCK_BLOCK = `
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+This camera and viewpoint lock overrides all staging, layout, and style instructions.
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
+
+────────────────────────────────
+CAMERA & SCALE LOCK — STRICT
+────────────────────────────────
+
+Camera framing and zoom are LOCKED.
+
+• Do NOT zoom in or zoom out
+• Do NOT widen or narrow field of view
+• Do NOT change lens perspective
+• Do NOT make the room appear larger or smaller
+
+Object scale must remain consistent with the input image:
+• Windows, doors, and fixtures must keep the same apparent size
+• Furniture must be scaled to the room — not the room scaled to furniture
+• If furniture does not fit at true scale → use smaller furniture or fewer items
+
+Never change camera scale to make staging fit.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region appears newly visible during rendering,
+it may ONLY continue already-visible architecture and materials.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, continue existing surfaces conservatively with fewer additions.
+Never create new architectural or service elements.
+`;
+
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string): string {
   const zoneConfig = ZONE_CONFIGS[roomType] || "";
@@ -1045,22 +1087,7 @@ TopP: ${modelTopP}
 TopK: ${modelTopK}
 ${layoutContextBlock}
 
-────────────────────────────────
-PRIMARY OBJECTIVE — USER INTENT FIRST
-────────────────────────────────
-
-Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
-
-Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
-
-The staged result must visually and unambiguously read as the selected room type.
-
-Do not substitute another dominant room function.
-Do not dilute the requested room type by staging it mainly as a different kind of space.
-
-If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
-
-When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
+${CAMERA_LOCK_BLOCK}
 
 ────────────────────────────────
 STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
@@ -1106,90 +1133,6 @@ If staging style conflicts with existing fixtures, keep the fixtures unchanged a
 
 The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
-
-CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
-
-Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
-Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
-
-────────────────────────────────
-CAMERA & SCALE LOCK — STRICT
-────────────────────────────────
-
-Camera framing and zoom are LOCKED.
-
-• Do NOT zoom in or zoom out
-• Do NOT widen or narrow field of view
-• Do NOT change lens perspective
-• Do NOT make the room appear larger or smaller
-
-Object scale must remain consistent with the input image:
-• Windows, doors, and fixtures must keep the same apparent size
-• Furniture must be scaled to the room — not the room scaled to furniture
-• If furniture does not fit at true scale → use smaller furniture or fewer items
-
-Never change camera scale to make staging fit.
-
-NEWLY REVEALED AREA RULE — CONTINUATION ONLY
-
-If a tiny boundary region appears newly visible during rendering,
-it may ONLY continue already-visible architecture and materials.
-
-Do NOT invent or add any new:
-- openings (windows, doors, arches)
-- fixtures or cabinetry
-- electrical sockets, light switches, air vents
-- extractor fans, wall lights, ceiling fixtures
-- plumbing points, built-ins, or structural details
-
-If uncertain, continue existing surfaces conservatively with fewer additions.
-Never create new architectural or service elements.
-
-────────────────────────
-ROOM TYPE AUTHORITY — HARD RULE
-────────────────────────
-
-The requested room type is authoritative.
-
-You MUST stage exactly as the requested room type.
-
-Do NOT reinterpret room function based on layout, furniture, or visual cues.
-
-Only override the requested room type if hard structural fixtures make it impossible, such as:
-- visible toilet
-- visible shower or bath
-- bathroom vanity and plumbing
-- tiny storage closet with no usable floor space
-
-Otherwise:
-Stage exactly as requested, even if the layout is unusual for that room type.
-
-User intent overrides model interpretation.
-
-${roomTypeLockBlock}
-
-${ROOM_FUNCTION_PRESERVATION_LOCK}
-
-${(() => {
-  // 🔄 Inject multi-zone block for ALL multi-room types
-  return MULTI_ROOM_TYPES.has(canonicalRoomType)
-    ? buildMultiZoneConstraintBlock(canonicalRoomType)
-    : "";
-})()}
-
-────────────────────────────────
-ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
-────────────────────────────────
-
-${MULTI_ROOM_TYPES.has(canonicalRoomType)
-  ? `Selected mode is multi-room (${room}).
-Stage ONLY zones that match the selected multi-room definition.
-Do NOT stage any other apparent room-function zones.
-If an allowed zone is weak/ambiguous, leave it unstaged rather than inventing it.`
-  : `Selected mode is single-room (${room}).
-Stage ONLY this room type.
-Do NOT stage secondary room functions in adjacent/ambiguous areas.
-Non-target areas may remain intentionally empty.`}
 
 ────────────────────────────────
 BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
@@ -1419,6 +1362,69 @@ BUILT-INS:
 EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
+
+────────────────────────────────
+PRIMARY OBJECTIVE — USER INTENT FIRST
+────────────────────────────────
+
+Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
+
+Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
+
+The staged result must visually and unambiguously read as the selected room type.
+
+Do not substitute another dominant room function.
+Do not dilute the requested room type by staging it mainly as a different kind of space.
+
+If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
+
+When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
+
+────────────────────────
+ROOM TYPE AUTHORITY — HARD RULE
+────────────────────────
+
+The requested room type is authoritative.
+
+You MUST stage exactly as the requested room type.
+
+Do NOT reinterpret room function based on layout, furniture, or visual cues.
+
+Only override the requested room type if hard structural fixtures make it impossible, such as:
+- visible toilet
+- visible shower or bath
+- bathroom vanity and plumbing
+- tiny storage closet with no usable floor space
+
+Otherwise:
+Stage exactly as requested, even if the layout is unusual for that room type.
+
+User intent overrides model interpretation.
+
+${roomTypeLockBlock}
+
+${ROOM_FUNCTION_PRESERVATION_LOCK}
+
+${(() => {
+  // 🔄 Inject multi-zone block for ALL multi-room types
+  return MULTI_ROOM_TYPES.has(canonicalRoomType)
+    ? buildMultiZoneConstraintBlock(canonicalRoomType)
+    : "";
+})()}
+
+────────────────────────────────
+ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
+────────────────────────────────
+
+${MULTI_ROOM_TYPES.has(canonicalRoomType)
+  ? `Selected mode is multi-room (${room}).
+Stage ONLY zones that match the selected multi-room definition.
+Do NOT stage any other apparent room-function zones.
+If an allowed zone is weak/ambiguous, leave it unstaged rather than inventing it.`
+  : `Selected mode is single-room (${room}).
+Stage ONLY this room type.
+Do NOT stage secondary room functions in adjacent/ambiguous areas.
+Non-target areas may remain intentionally empty.`}
 
 ────────────────────────────────
 KITCHEN ZONE FURNITURE RESTRICTIONS

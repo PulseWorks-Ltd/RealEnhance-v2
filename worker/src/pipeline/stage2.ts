@@ -24,6 +24,8 @@ import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 
+const logger = console;
+
 // Stage 2: virtual staging (add furniture)
 
 export type Stage2Result = {
@@ -357,6 +359,7 @@ If curtain rails/tracks and curtains are present, keep them unchanged.
 Do not add blinds, rods, tracks, or new window coverings.
 `;
     }
+  logger.debug("Stage2 prompt hierarchy: camera lock placed first");
     const requestParts: any[] = [];
     // Always include the primary input image first
     requestParts.push({ inlineData: { mimeType: mime, data } });
