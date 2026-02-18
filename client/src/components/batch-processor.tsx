@@ -30,6 +30,7 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
+import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -578,6 +579,17 @@ export default function BatchProcessor() {
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
+  const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
+  const [creditGateModal, setCreditGateModal] = useState<{
+    open: boolean;
+    requiredCredits: number;
+    availableCredits: number;
+  }>({
+    open: false,
+    requiredCredits: 0,
+    availableCredits: 0,
+  });
 
   // Auto-switch from images tab to upload tab when files are restored asynchronously (one-shot guard)
   useEffect(() => {
@@ -1254,6 +1266,80 @@ export default function BatchProcessor() {
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
   const currentFinalScene = finalSceneForIndex(currentImageIndex);
+
+  const batchCreditEstimateInputs = useMemo(
+    () => files.map((_, index) => {
+      const perImageMeta = (metaByIndex as Record<number, any>)[index] || {};
+      const scene = finalSceneForIndex(index) === "exterior" ? "exterior" : "interior";
+      const userSelectedStage1B = perImageMeta.declutter !== undefined
+        ? !!perImageMeta.declutter
+        : !!declutter;
+      const userSelectedStage2 = perImageMeta.virtualStage !== undefined
+        ? !!perImageMeta.virtualStage
+        : !!allowStaging;
+
+      return {
+        sceneType: scene,
+        userSelectedStage1B,
+        userSelectedStage2,
+      };
+    }),
+    [allowStaging, declutter, files, finalSceneForIndex, metaByIndex]
+  );
+
+  const requiredBatchCredits = useMemo(
+    () => estimateBatchCredits(batchCreditEstimateInputs),
+    [batchCreditEstimateInputs]
+  );
+
+  const isEnhanceCreditBlocked = availableCredits !== null && requiredBatchCredits > availableCredits;
+
+  const openCreditGateModal = useCallback((requiredCredits: number, available: number) => {
+    setCreditGateModal({
+      open: true,
+      requiredCredits,
+      availableCredits: available,
+    });
+  }, []);
+
+  const refreshCreditSummary = useCallback(async () => {
+    if (!currentUserId) {
+      setAvailableCredits(null);
+      return null;
+    }
+
+    try {
+      setIsCreditSummaryLoading(true);
+      const summary = await apiJson<any>("/api/billing/subscription");
+      const monthlyRemaining = Math.max(0, Number(summary?.allowance?.monthlyRemaining ?? 0));
+      const addonRemaining = Math.max(0, Number(summary?.addOns?.remaining ?? 0));
+      const totalAvailable = monthlyRemaining + addonRemaining;
+      setAvailableCredits(totalAvailable);
+      return {
+        monthlyRemaining,
+        addonRemaining,
+        availableCredits: totalAvailable,
+      };
+    } catch (err) {
+      console.warn("[CREDIT_GATE] Failed to refresh billing summary", err);
+      setAvailableCredits(null);
+      return null;
+    } finally {
+      setIsCreditSummaryLoading(false);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    void refreshCreditSummary();
+  }, [refreshCreditSummary]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      void refreshCreditSummary();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshCreditSummary]);
 
   // Manual room linking functions
   function toggleSelect(i: number) {
@@ -2768,25 +2854,24 @@ export default function BatchProcessor() {
       return;
     }
 
-    // Calculate credits needed based on two-stage system:
-    // - Quality-only (no staging): 1 credit/image
-    // - Staged (quality + staging): 2 credits/image
-    const creditsPerImage = allowStaging ? 2 : 1;
-    const totalCreditsNeeded = files.length * creditsPerImage;
+    const totalCreditsNeeded = requiredBatchCredits;
+
+    const latestSummary = await refreshCreditSummary();
+    const latestAvailable = latestSummary?.availableCredits ?? availableCredits;
+    if (latestAvailable !== null && totalCreditsNeeded > latestAvailable) {
+      openCreditGateModal(totalCreditsNeeded, latestAvailable);
+      return;
+    }
     
     try {
       // Ensure signed in AND have enough credits (handles both in one call)
       await ensureLoggedInAndCredits(totalCreditsNeeded);
     } catch (e: any) {
       if (e.code === "INSUFFICIENT_CREDITS") {
-        const more = e.needed || totalCreditsNeeded;
-        const goBuy = confirm(
-          `You need ${more} more credits to process ${files.length} images (${creditsPerImage} credit${creditsPerImage > 1 ? 's' : ''}/image). Buy credits now?`
-        );
-        if (goBuy) {
-          // open billing page in a new tab; keep this page to preserve files
-          window.open("/settings/billing", "_blank");
-        }
+        const available = Number.isFinite(e.availableCredits)
+          ? Number(e.availableCredits)
+          : Math.max(0, Number(availableCredits ?? 0));
+        openCreditGateModal(totalCreditsNeeded, available);
         return;
       }
       toast({ title: "Cannot start", description: e.message || "Sign in and try again.", variant: "destructive" });
@@ -2898,6 +2983,12 @@ export default function BatchProcessor() {
         const err = await uploadResp.json().catch(() => ({}));
         if (uploadResp.status === 402 && err?.code === "QUOTA_EXCEEDED") {
           showQuotaExceededToast();
+          return;
+        }
+        if (uploadResp.status === 402 && err?.code === "INSUFFICIENT_CREDITS") {
+          const required = Number.isFinite(err?.requiredCredits) ? Number(err.requiredCredits) : totalCreditsNeeded;
+          const available = Number.isFinite(err?.availableCredits) ? Number(err.availableCredits) : Math.max(0, Number(availableCredits ?? 0));
+          openCreditGateModal(required, available);
           return;
         }
         console.error("[ENHANCE_REQUEST] failed", err);
@@ -3080,6 +3171,11 @@ export default function BatchProcessor() {
       return;
     }
 
+    if (isEnhanceCreditBlocked) {
+      openCreditGateModal(requiredBatchCredits, Math.max(0, Number(availableCredits ?? 0)));
+      return;
+    }
+
     setActiveTab("enhance");
     startBatchProcessing();
   };
@@ -3141,6 +3237,12 @@ export default function BatchProcessor() {
           const err = await res.json().catch(() => ({}));
           if (err?.code === "QUOTA_EXCEEDED") {
             showQuotaExceededToast();
+            return;
+          }
+          if (err?.code === "INSUFFICIENT_CREDITS") {
+            const required = Number.isFinite(err?.requiredCredits) ? Number(err.requiredCredits) : filesToRetry.length;
+            const available = Number.isFinite(err?.availableCredits) ? Number(err.availableCredits) : Math.max(0, Number(availableCredits ?? 0));
+            openCreditGateModal(required, available);
             return;
           }
         }
@@ -5268,11 +5370,15 @@ export default function BatchProcessor() {
                 <div className="flex justify-between text-sm mb-4">
                   <span className="text-slate-600">Estimated Cost</span>
                   <span className="font-semibold text-slate-900">
-                    {files.length} {files.length === 1 ? 'Credit' : 'Credits'}
+                    {requiredBatchCredits} {requiredBatchCredits === 1 ? 'Credit' : 'Credits'}
                   </span>
                 </div>
                 <div
                   onClick={() => {
+                    if (isEnhanceCreditBlocked) {
+                      openCreditGateModal(requiredBatchCredits, Math.max(0, Number(availableCredits ?? 0)));
+                      return;
+                    }
                     if (blockingCount > 0) {
                       startBatchProcessing();
                     }
@@ -5280,14 +5386,19 @@ export default function BatchProcessor() {
                 >
                   <button
                     onClick={handleStartEnhance}
-                    disabled={blockingCount > 0 || !files.length}
-                    title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                    disabled={blockingCount > 0 || !files.length || isEnhanceCreditBlocked}
+                    title={isEnhanceCreditBlocked ? "Not enough credits" : (blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined)}
                     className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
                     data-testid="button-proceed-enhance"
                   >
                     Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
                   </button>
                 </div>
+                {isEnhanceCreditBlocked && (
+                  <p className="mt-2 text-xs text-amber-700" title="Not enough credits">
+                    Batch requires {requiredBatchCredits} credits — you have {Math.max(0, Number(availableCredits ?? 0))} available.
+                  </p>
+                )}
                 {blockingCount > 0 && (
                   <p className="mt-2 text-xs text-red-700">
                     Complete required settings for images highlighted in red to continue.
@@ -5317,13 +5428,26 @@ export default function BatchProcessor() {
                     </p>
                     <button
                       onClick={handleStartEnhance}
-                      disabled={!files.length || blockingCount > 0}
-                      title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                      disabled={!files.length || blockingCount > 0 || isEnhanceCreditBlocked}
+                      title={isEnhanceCreditBlocked ? "Not enough credits" : (blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined)}
                       className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                       data-testid="button-start-batch"
                     >
                       Process Batch #{Math.floor(Math.random() * 1000) + 2000} ({files.length} Images)
                     </button>
+                    {isEnhanceCreditBlocked && (
+                      <button
+                        type="button"
+                        onClick={() => openCreditGateModal(requiredBatchCredits, Math.max(0, Number(availableCredits ?? 0)))}
+                        className="mt-3 text-xs text-amber-700 underline"
+                        title="Not enough credits"
+                      >
+                        Batch requires {requiredBatchCredits} credits — you have {Math.max(0, Number(availableCredits ?? 0))} available
+                      </button>
+                    )}
+                    {isCreditSummaryLoading && (
+                      <p className="mt-2 text-xs text-slate-500">Checking available credits…</p>
+                    )}
                     <div className="flex justify-center mt-4">
                       <button
                         onClick={() => setActiveTab("describe")}
@@ -6272,6 +6396,39 @@ export default function BatchProcessor() {
           return imgId ? (imageRoomTypesById[imgId] || "auto") : "auto";
         })() : "auto"}
       />
+
+      <Dialog
+        open={creditGateModal.open}
+        onOpenChange={(open) => setCreditGateModal((prev) => ({ ...prev, open }))}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Not enough credits to enhance this batch.</DialogTitle>
+            <DialogDescription>
+              Batch requires {creditGateModal.requiredCredits} credits — you have {creditGateModal.availableCredits} available.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button
+              type="button"
+              onClick={() => {
+                window.open(addonHref, "_blank");
+              }}
+            >
+              Buy Add-On Bundle
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                window.open(billingHref, "_blank");
+              }}
+            >
+              Upgrade Plan
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Editing in Progress Alert */}
       {isEditingInProgress && (

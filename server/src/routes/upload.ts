@@ -11,7 +11,7 @@ import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
-import { reserveAllowance, finalizeReservation } from "../services/usageLedger.js";
+import { reserveAllowance, finalizeReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import * as crypto from "node:crypto";
@@ -280,43 +280,60 @@ export function uploadRouter() {
       }
     }
 
-    // ✅ PREFLIGHT CREDIT ESTIMATE
-    // Estimate total credits needed before processing to provide early feedback
+    // CREDIT GATE LAYER (pre-submit): enforce credits before any reservation, DB row, or enqueue
+    let requiredCredits = 0;
+    let availableCredits = 0;
+    let monthlyRemaining = 0;
+    let addonRemaining = 0;
+
     try {
-      const estimateImages = files.map((f, i) => {
+      const estimateImages = files.map((_f, i) => {
         const meta = metaByIndex[i] || {};
         const opts: any = optionsList[i] ?? {};
-        const sceneType = meta.sceneType || opts.sceneType || "auto";
+        const sceneType = String(meta.sceneType || opts.sceneType || "auto").toLowerCase();
         const declutter = meta.declutter !== undefined ? meta.declutter : (opts.declutter !== undefined ? opts.declutter : declutterForm);
         const virtualStage = meta.virtualStage !== undefined ? meta.virtualStage : (opts.virtualStage !== undefined ? opts.virtualStage : allowStagingForm);
-        
-        // Map sceneType to interior/exterior for billing
-        const billingSceneType = sceneType === "exterior" ? "exterior" : "interior";
-        
+
         return {
-          sceneType: billingSceneType,
+          sceneType: sceneType === "exterior" ? "exterior" : "interior",
           userSelectedStage1B: !!declutter,
           userSelectedStage2: !!virtualStage,
         };
       });
 
-      const estimatedCredits = estimateBatchCredits(estimateImages);
+      requiredCredits = estimateBatchCredits(estimateImages);
+      const usageSnapshot = await getUsageSnapshot(agencyId);
+      monthlyRemaining = Math.max(0, Number(usageSnapshot.includedRemaining || 0));
+      addonRemaining = Math.max(0, Number(usageSnapshot.addonRemaining || 0));
+      availableCredits = monthlyRemaining + addonRemaining;
+
       console.log(
-        `[CREDIT_PREFLIGHT_ESTIMATE] ` +
+        `[CREDIT_PREFLIGHT_ENFORCED] ` +
         `agencyId=${agencyId} ` +
         `userId=${sessUser.id} ` +
         `imageCount=${files.length} ` +
-        `estimatedCredits=${estimatedCredits} ` +
-        `breakdown=${JSON.stringify(estimateImages.map((img, idx) => ({
-          idx,
-          sceneType: img.sceneType,
-          stage1B: img.userSelectedStage1B,
-          stage2: img.userSelectedStage2,
-        })))}`
+        `requiredCredits=${requiredCredits} ` +
+        `monthlyRemaining=${monthlyRemaining} ` +
+        `addonRemaining=${addonRemaining} ` +
+        `availableCredits=${availableCredits}`
       );
-    } catch (estimateErr) {
-      console.error("[CREDIT_PREFLIGHT_ESTIMATE] Failed to estimate credits:", estimateErr);
-      // Non-blocking - continue with job processing
+
+      if (requiredCredits > availableCredits) {
+        return res.status(402).json({
+          code: "INSUFFICIENT_CREDITS",
+          requiredCredits,
+          availableCredits,
+          monthlyRemaining,
+          addonRemaining,
+          message: "Not enough credits to enhance this batch.",
+        });
+      }
+    } catch (creditGateErr) {
+      console.error("[CREDIT_PREFLIGHT_ENFORCED] Failed to validate credits:", creditGateErr);
+      return res.status(503).json({
+        code: "CREDIT_CHECK_FAILED",
+        message: "Unable to verify available credits. Please try again.",
+      });
     }
 
     for (let i = 0; i < files.length; i++) {
