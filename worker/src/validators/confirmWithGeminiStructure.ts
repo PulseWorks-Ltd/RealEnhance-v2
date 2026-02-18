@@ -1,9 +1,48 @@
-import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
+import { buildFinalFixtureConfirmPrompt, runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import { getGeminiValidatorMode, isGeminiBlockingEnabled } from "./validationModes";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 
 type StageKey = "stage1b" | "stage2";
+
+function normalizeLocalFindings(params: {
+  localReasons: string[];
+  evidence?: ValidationEvidence;
+  localMetrics?: any;
+}): string[] {
+  const findings: string[] = [];
+
+  if (params.evidence) {
+    const e = params.evidence;
+    const windowsDelta = (e.openings?.windowsAfter ?? 0) - (e.openings?.windowsBefore ?? 0);
+    const doorsDelta = (e.openings?.doorsAfter ?? 0) - (e.openings?.doorsBefore ?? 0);
+    const openingsDelta = windowsDelta + doorsDelta;
+    findings.push(`window_count_delta: ${e.openings.windowsBefore} -> ${e.openings.windowsAfter}`);
+    findings.push(`door_count_delta: ${e.openings.doorsBefore} -> ${e.openings.doorsAfter}`);
+    findings.push(`openings_delta_total: ${openingsDelta >= 0 ? "+" : ""}${openingsDelta}`);
+    findings.push(`wall_drift_pct: ${e.drift.wallPercent.toFixed(2)}%`);
+    findings.push(`masked_drift_pct: ${e.drift.maskedEdgePercent.toFixed(2)}%`);
+    findings.push(`ssim: ${e.ssim.toFixed(4)} (threshold ${e.ssimThreshold})`);
+
+    if (e.anchorChecks.islandChanged) findings.push("anchor_flag: island_changed");
+    if (e.anchorChecks.hvacChanged) findings.push("anchor_flag: hvac_changed");
+    if (e.anchorChecks.cabinetryChanged) findings.push("anchor_flag: cabinetry_changed");
+    if (e.anchorChecks.lightingChanged) findings.push("anchor_flag: lighting_changed");
+  }
+
+  if (params.localMetrics && typeof params.localMetrics === "object") {
+    const metrics = params.localMetrics as Record<string, unknown>;
+    const metricKeys = ["ssim", "wallDrift", "maskedDrift", "openingsCreated", "openingsClosed", "windowDelta", "doorDelta"];
+    for (const key of metricKeys) {
+      if (metrics[key] !== undefined && metrics[key] !== null) {
+        findings.push(`metric_${key}: ${String(metrics[key])}`);
+      }
+    }
+  }
+
+  findings.push(...(params.localReasons || []).map((r) => String(r)));
+  return Array.from(new Set(findings)).slice(0, 40);
+}
 
 export async function confirmWithGeminiStructure(params: {
   baselinePathOrUrl: string;
@@ -25,6 +64,19 @@ export async function confirmWithGeminiStructure(params: {
   const reasons: string[] = [];
 
   try {
+    const finalFindings = normalizeLocalFindings({
+      localReasons: params.localReasons,
+      evidence: params.evidence,
+      localMetrics: params.localMetrics,
+    });
+
+    const promptOverride = params.stage === "stage2"
+      ? buildFinalFixtureConfirmPrompt({
+          sceneType: params.sceneType,
+          localFindings: finalFindings,
+        })
+      : undefined;
+
     const verdict = await runGeminiSemanticValidator({
       basePath: params.baselinePathOrUrl,
       candidatePath: params.candidatePathOrUrl,
@@ -32,6 +84,7 @@ export async function confirmWithGeminiStructure(params: {
       sceneType: params.sceneType || "interior",
       sourceStage: params.sourceStage,
       validationMode: params.validationMode,
+      promptOverride,
       evidence: params.evidence,
       riskLevel: params.riskLevel,
     });
