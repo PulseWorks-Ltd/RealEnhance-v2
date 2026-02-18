@@ -34,6 +34,13 @@ export function RequireAgency({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Preserve existing behavior for established users:
+      // if auth context already has agencyId, allow immediately.
+      if (user.agencyId) {
+        setChecking(false);
+        return;
+      }
+
       // Refresh user data to ensure we have latest agencyId
       const freshUser = await refreshUser();
 

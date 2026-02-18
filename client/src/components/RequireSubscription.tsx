@@ -17,7 +17,7 @@ import { useUsage } from "@/hooks/use-usage";
  */
 export function RequireSubscription({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
-  const { usage, loading: usageLoading } = useUsage();
+  const { usage, loading: usageLoading, error: usageError } = useUsage();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -25,6 +25,9 @@ export function RequireSubscription({ children }: { children: React.ReactNode })
     if (authLoading || usageLoading) return;
 
     if (!user || !user.agencyId) return;
+
+    // Do not redirect existing users on transient usage API failures.
+    if (usageError || !usage) return;
 
     const hasActiveSubscription = !!(usage?.planName && usage.planName !== "Free" && usage.status === "active");
     const hasValidTrial = !!(usage?.trial && usage.trial.status === "active" && (usage.trial.remaining ?? 0) > 0);
@@ -39,7 +42,7 @@ export function RequireSubscription({ children }: { children: React.ReactNode })
         state: { from: location.pathname, reason: "subscription_required" },
       });
     }
-  }, [user, authLoading, usage, usageLoading, navigate, location.pathname]);
+  }, [user, authLoading, usage, usageLoading, usageError, navigate, location.pathname]);
 
   return <>{children}</>;
 }
