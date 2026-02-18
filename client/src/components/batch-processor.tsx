@@ -3317,7 +3317,7 @@ export default function BatchProcessor() {
   };
 
   // Resolve the best available enhanced output for a given result and optional user-selected stage
-  const resolveBestStageOutput = (result: any, selectedStage?: StageKey | null, originalFallback?: string | null): { stage: StageKey | null; url: string | null } => {
+  const resolveBestStageOutput = (result: any, selectedStage?: DisplayOutputKey | null, originalFallback?: string | null): { stage: StageKey | null; url: string | null } => {
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
     const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
     const editLatestUrl = result?.editLatestUrl || result?.result?.editLatestUrl || null;
@@ -3331,10 +3331,12 @@ export default function BatchProcessor() {
     const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
     const originalUrl = result?.originalImageUrl || result?.result?.originalImageUrl || result?.originalUrl || result?.result?.originalUrl || originalFallback || null;
 
-    if (isRegionEdit) {
+    if (isRegionEdit && !selectedStage) {
       if (editLatestUrl) return { stage: null, url: editLatestUrl };
       if (finalResultUrl) return { stage: null, url: finalResultUrl };
     }
+
+    if (selectedStage === "edited" && editLatestUrl) return { stage: null, url: editLatestUrl };
 
     if (selectedStage === "2" && stage2Url) return { stage: "2", url: stage2Url };
     if (selectedStage === "1B" && stage1BUrl) return { stage: "1B", url: stage1BUrl };
@@ -5607,7 +5609,7 @@ export default function BatchProcessor() {
                         const isRegionEditOutput = result?.completionSource === "region-edit" || result?.result?.completionSource === "region-edit";
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
-                          if (isRegionEditOutput && editedUrl && requested !== "edited") return "edited";
+                          if (isRegionEditOutput && editedUrl && !requested) return "edited";
                           if (disallowStage2 && requested === "2") return defaultStage;
                           if (!requested && retriedUrl) return "retried";
                           if (!requested && editedUrl) return "edited";
