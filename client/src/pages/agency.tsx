@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { UsageSummary } from "@/components/usage-bar";
 import { useUsage } from "@/hooks/use-usage";
+import { usePostCheckoutSync } from "@/hooks/usePostCheckoutSync";
 import { BundlePurchase } from "@/components/bundle-purchase";
 import { BillingSection } from "@/components/BillingSection";
 import { PageHeader } from "@/components/ui/page-header";
@@ -100,6 +101,7 @@ export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const { usage } = useUsage();
+  const { syncing: postCheckoutSyncing } = usePostCheckoutSync();
   const navigate = useNavigate();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
   const [members, setMembers] = useState<AgencyMember[]>([]);
@@ -122,15 +124,7 @@ export default function AgencyPage() {
 
   useEffect(() => {
     loadAgencyData();
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("subscription") === "success") {
-      toast({
-        title: "Subscription Activated!",
-        description: "Your subscription has been successfully activated. Welcome aboard!",
-      });
-      window.history.replaceState({}, "", "/agency");
-    }
+    // Note: Post-checkout sync is now handled by usePostCheckoutSync hook
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -341,12 +335,17 @@ export default function AgencyPage() {
 
       if (res.ok) {
         const created = await res.json().catch(() => null);
+        
+        // RULE 2 & 7: Refresh user context after agency creation
         await refreshUser();
+        
         toast({
           title: "Success",
           description: "Organization created successfully!",
         });
+        
         setAgencyName("");
+        
         if (created?.agency && created?.user) {
           setAgencyInfo({
             agencyId: created.agency.agencyId,
@@ -362,8 +361,11 @@ export default function AgencyPage() {
             userRole: created.user.role || "owner",
           });
         }
-        navigate("/settings/billing#billing-section", { replace: true });
-        loadAgencyData();
+        
+        // RULE 2: After agency creation, reload data and stay on billing tab
+        // User can now select a plan or trial
+        await loadAgencyData();
+        setActiveTab("billing");
       } else {
         const errorData = await res.json().catch(() => ({}));
         toast({
@@ -383,8 +385,8 @@ export default function AgencyPage() {
     }
   };
 
-  // Loading state
-  if (loading) {
+  // Loading state (including post-checkout sync)
+  if (loading || postCheckoutSyncing) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -393,7 +395,9 @@ export default function AgencyPage() {
         />
         <div className="flex flex-col items-center justify-center py-12">
           <Loader2 className="w-8 h-8 text-muted-foreground animate-spin mb-3" />
-          <p className="text-sm text-muted-foreground">Loading organization info...</p>
+          <p className="text-sm text-muted-foreground">
+            {postCheckoutSyncing ? "Activating subscription..." : "Loading organization info..."}
+          </p>
         </div>
       </div>
     );

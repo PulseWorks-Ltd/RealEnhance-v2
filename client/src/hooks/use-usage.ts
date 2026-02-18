@@ -6,6 +6,7 @@ export interface UsageSummary {
   monthKey: string;
   planCode?: string;
   planName?: string;
+  status?: "active" | "trial" | "inactive" | "cancelled";
   price?: number;
   mainAllowance?: number;
   mainUsed?: number;
@@ -13,6 +14,7 @@ export interface UsageSummary {
   mainUsagePercent?: number;
   mainWarning?: "none" | "approaching" | "critical" | "exhausted";
   addonRemaining?: number;
+  remaining?: number; // Total remaining credits (main + addon)
   stagingAllowance?: number;
   stagingUsed?: number;
   stagingRemaining?: number;
@@ -22,6 +24,13 @@ export interface UsageSummary {
   userRole?: string;
   stagingNote?: string;
   topUsers?: Array<{ userId: string; name: string; used: number }>;
+  trial?: {
+    status: "none" | "pending" | "active" | "expired" | "converted";
+    expiresAt?: string | null;
+    creditsTotal?: number;
+    creditsUsed?: number;
+    remaining?: number;
+  };
 }
 
 export function useUsage() {

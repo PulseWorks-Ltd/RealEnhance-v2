@@ -5609,8 +5609,11 @@ export default function BatchProcessor() {
                         const isRegionEditOutput = result?.completionSource === "region-edit" || result?.result?.completionSource === "region-edit";
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
-                          if (isRegionEditOutput && editedUrl && !requested) return "edited";
                           if (disallowStage2 && requested === "2") return defaultStage;
+                          if (requested === "2" || requested === "1B" || requested === "1A" || requested === "retried" || requested === "edited") {
+                            return requested;
+                          }
+                          if (isRegionEditOutput && editedUrl) return "edited";
                           if (!requested && retriedUrl) return "retried";
                           if (!requested && editedUrl) return "edited";
                           return requested || defaultStage;
@@ -5660,11 +5663,6 @@ export default function BatchProcessor() {
                             ? (enhancedUrl || previewUrls[i] || null)
                             : (previewUrls[i] || null);
                         const stageBadgeLabel = (() => {
-                          // ✅ PATCH 7: Show "Edited" badge for edit outputs instead of stage labels
-                          if (result?.editLatestUrl || result?.completionSource === "region-edit") {
-                            return isUiComplete ? "Edited (Final)" : "Preview • Edited";
-                          }
-
                           const artifactFinalLabel = stage2Url
                             ? "Staged"
                             : stage1BUrl

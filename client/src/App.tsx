@@ -2,6 +2,9 @@ import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { Header } from "@/components/Header";
 import { AppShell } from "@/components/layout/AppShell";
+import { RequireAuth } from "@/components/RequireAuth";
+import { RequireAgency } from "@/components/RequireAgency";
+import { RequireSubscription } from "@/components/RequireSubscription";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
 
@@ -86,19 +89,30 @@ export default function App() {
           </Route>
 
           {/* App Routes with Sidebar Shell */}
-          <Route element={<AppShell><Outlet /></AppShell>}>
-            <Route path="/home" element={<Home />} />
-            <Route path="/change-password" element={<ChangePassword />} />
-            <Route path="/settings/profile" element={<ProfileSettings />} />
-            <Route path="/settings/security" element={<SecuritySettings />} />
-            <Route path="/editor" element={<Editor />} />
-            <Route path="/results" element={<Results />} />
-            <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
-            <Route path="/region-edit" element={<RegionEditPage />} />
-            <Route path="/agency" element={<Agency />} />
-            <Route path="/settings/billing" element={<BillingSettings />} />
-            <Route path="/enhanced-history" element={<EnhancedHistory />} />
-            <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+          {/* All routes require authentication via RequireAuth */}
+          <Route element={<RequireAuth><Outlet /></RequireAuth>}>
+            {/* Agency page: RequireAuth only (new users create agency here) */}
+            <Route path="/agency" element={<AppShell><Agency /></AppShell>} />
+            <Route path="/settings/billing" element={<AppShell><BillingSettings /></AppShell>} />
+            
+            {/* Protected routes: RequireAuth + RequireAgency */}
+            <Route element={<RequireAgency><Outlet /></RequireAgency>}>
+              {/* Enhance page: Additional RequireSubscription guard */}
+              <Route path="/home" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
+              
+              {/* Other app routes: RequireAuth + RequireAgency */}
+              <Route element={<AppShell><Outlet /></AppShell>}>
+                <Route path="/change-password" element={<ChangePassword />} />
+                <Route path="/settings/profile" element={<ProfileSettings />} />
+                <Route path="/settings/security" element={<SecuritySettings />} />
+                <Route path="/editor" element={<Editor />} />
+                <Route path="/results" element={<Results />} />
+                <Route path="/my-photos" element={<LegacyMyPhotosRedirect />} />
+                <Route path="/region-edit" element={<RegionEditPage />} />
+                <Route path="/enhanced-history" element={<EnhancedHistory />} />
+                <Route path="/dashboard" element={<Navigate to="/home" replace />} />
+              </Route>
+            </Route>
           </Route>
         </Routes>
       </Suspense>
