@@ -2179,6 +2179,15 @@ export default function BatchProcessor() {
           // Completion requires explicit completed status AND target stage reached
           let completionSource: string = "none";
           let displayUrl: string | null = resultUrlSafe || null;
+          if (isRegionEdit) {
+            displayUrl =
+              toDisplayUrl(it?.imageUrl) ||
+              toDisplayUrl(it?.image) ||
+              toDisplayUrl(extraResult?.imageUrl) ||
+              toDisplayUrl(extraResult?.url) ||
+              displayUrl;
+            if (displayUrl) completionSource = "region-edit";
+          }
           if (!displayUrl) {
             if (allowStaging) {
               if (stage2Url) {
@@ -2299,18 +2308,20 @@ export default function BatchProcessor() {
                 ...(it?.meta || {}),
               };
               const existingStageMap = existing.stageUrls || existing.result?.stageUrls || existing.stageOutputs || existing.result?.stageOutputs || null;
-              const mergedStageUrls = stageUrls
-                ? {
-                    ...(existingStageMap || {}),
-                    ...(stageUrls || {}),
-                    '2': stageUrls['2'] || stageUrls.stage2 || existingStageMap?.['2'] || existingStageMap?.stage2 || null,
-                    '1B': stageUrls['1B'] || stageUrls['1b'] || stageUrls.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || existingStageMap?.stage1B || null,
-                    '1A': stageUrls['1A'] || stageUrls['1'] || stageUrls.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || existingStageMap?.stage1A || null,
-                    stage2: stageUrls.stage2 || stageUrls['2'] || existingStageMap?.stage2 || existingStageMap?.['2'] || null,
-                    stage1B: stageUrls.stage1B || stageUrls['1B'] || stageUrls['1b'] || existingStageMap?.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || null,
-                    stage1A: stageUrls.stage1A || stageUrls['1A'] || stageUrls['1'] || existingStageMap?.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || null,
-                  }
-                : (existingStageMap || null);
+              const mergedStageUrls = (isRetryChildJob || isRegionEdit)
+                ? (existingStageMap || stageUrls || null)
+                : stageUrls
+                  ? {
+                      ...(existingStageMap || {}),
+                      ...(stageUrls || {}),
+                      '2': stageUrls['2'] || stageUrls.stage2 || existingStageMap?.['2'] || existingStageMap?.stage2 || null,
+                      '1B': stageUrls['1B'] || stageUrls['1b'] || stageUrls.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || existingStageMap?.stage1B || null,
+                      '1A': stageUrls['1A'] || stageUrls['1'] || stageUrls.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || existingStageMap?.stage1A || null,
+                      stage2: stageUrls.stage2 || stageUrls['2'] || existingStageMap?.stage2 || existingStageMap?.['2'] || null,
+                      stage1B: stageUrls.stage1B || stageUrls['1B'] || stageUrls['1b'] || existingStageMap?.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || null,
+                      stage1A: stageUrls.stage1A || stageUrls['1A'] || stageUrls['1'] || existingStageMap?.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || null,
+                    }
+                  : (existingStageMap || null);
               const mergedResultUrl = resultUrlSafe
                 || existing.resultUrl
                 || existing.result?.resultUrl
@@ -3750,7 +3761,7 @@ export default function BatchProcessor() {
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: stageUrls || r?.stageUrls || null,
+                    stageUrls: r?.stageUrls || stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
                     retryLatestUrl: job.imageUrl,
                     retryHistory: [
@@ -3775,7 +3786,7 @@ export default function BatchProcessor() {
                       imageUrl: job.imageUrl,
                       resultUrl: job.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
-                      stageUrls: stageUrls || r?.result?.stageUrls || (normalizedResult as any)?.stageUrls,
+                      stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
                       retryLatestUrl: job.imageUrl,
@@ -5593,8 +5604,10 @@ export default function BatchProcessor() {
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
                         const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
                         const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
+                        const isRegionEditOutput = result?.completionSource === "region-edit" || result?.result?.completionSource === "region-edit";
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
+                          if (isRegionEditOutput && editedUrl && requested !== "edited") return "edited";
                           if (disallowStage2 && requested === "2") return defaultStage;
                           if (!requested && retriedUrl) return "retried";
                           if (!requested && editedUrl) return "edited";
@@ -5747,11 +5760,16 @@ export default function BatchProcessor() {
                                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                          Retrying...
                                        </span>
+                                     ) : isEditing ? (
+                                       <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-600 text-white ring-1 ring-blue-300/60 shadow-sm">
+                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                         Editing...
+                                       </span>
                                      ) : (
                                        <StatusBadge
                                          status="processing"
-                                         label={isEditing ? "Editing..." : undefined}
-                                         className={isEditing ? "bg-blue-600 text-white ring-blue-300/60 animate-none" : undefined}
+                                         label={undefined}
+                                         className={undefined}
                                        />
                                      )}
                                    </div>
