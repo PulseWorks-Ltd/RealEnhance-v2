@@ -168,8 +168,18 @@ function buildAdjudicatorPrompt(
   const signalBlock = `
 ────────────────────────────────
 AUTOMATED STRUCTURE OBSERVATIONS (heuristic — may be noisy)
-Use as secondary signals only.
-Visual comparison between images is primary authority.
+These measurements are heuristic signals and may contain noise.
+
+You must independently verify any opening count change,
+anchor flag, or extreme wall drift by visually inspecting the images.
+
+If the visual evidence clearly supports the signal
+(e.g., an opening is missing, sealed, or relocated),
+you must classify it as structural.
+
+If the signal is contradicted by clear visual evidence
+(e.g., the opening still exists and remains functional),
+you may treat it as a false positive and explain why.
 ────────────────────────────────
 These are computer-vision measurements from the validation pipeline.
 They are factual measurements, not opinions.
@@ -273,6 +283,20 @@ You are the final-pass adjudicator for fixed fixtures and built-in identity cons
 
 Compare BEFORE (Stage 1A baseline/original-enhanced image) vs AFTER (Stage 2 candidate image).
 
+CRITICAL STRUCTURAL OPENING VERIFICATION
+
+You MUST verify that every doorway and window visible in BEFORE
+still exists in AFTER.
+
+If an opening has been sealed, covered with wall surface,
+visually removed, or converted into solid wall area,
+this is structural removal.
+
+This MUST be classified as:
+→ category = structure
+→ violationType = opening_change
+→ hardFail = true
+
 Focus ONLY on these fixed/built-in checks:
 • faucets and taps
 • sinks and sink count
@@ -294,12 +318,12 @@ Focus ONLY on these fixed/built-in checks:
 • doorway openings added or removed
 
 IGNORE (out of scope):
-• walls
-• floors
-• room layout
-• staging furniture
-• decor
-• styling differences
+• general wall surface color differences
+• general wall texture differences
+• cosmetic repainting
+• staging furniture styling
+• decor differences
+• lighting tone differences
 
 FINAL LOCAL VALIDATOR FINDINGS — MUST ADJUDICATE
 The following automated validators detected potential violations.
@@ -308,9 +332,13 @@ You MUST explicitly CONFIRM or REJECT each listed finding in your reasons output
 ${findingsBlock}
 
 Hard adjudication rule:
-If findings indicate openings delta ≠ 0, doorway removed/added, anchor moved, or built-in changed,
-you must return category=structure or opening_blocked with hardFail=true,
-unless you provide a high-confidence false-positive explanation in reasons.
+If findings indicate openings delta ≠ 0,
+doorway removed/added, opening sealed,
+anchor moved, or built-in changed,
+you must return category=structure or opening_blocked
+with hardFail=true,
+unless you provide a high-confidence, image-based
+false-positive explanation in reasons.
 
 Return JSON only.
 
@@ -1124,6 +1152,27 @@ ANY violation → category: structure, hardFail: true
 ─────────────────────────────
 CRITICAL CHECKLIST
 ─────────────────────────────
+
+1. OPENING COUNT
+Count all windows, doors, and pass-through openings in BOTH images.
+
+If the number of openings changes (added or removed):
+→ category = structure
+→ hardFail = true
+
+OPENING SEALING RULE (CRITICAL)
+
+If a doorway or window exists in BEFORE but is fully covered,
+sealed, replaced by wall surface, or no longer visibly present in AFTER,
+this is equivalent to removal.
+
+This MUST be classified as:
+→ category = structure
+→ violationType = opening_change
+→ hardFail = true
+
+Do NOT interpret a sealed opening as perspective change.
+Do NOT downgrade to layout_only or style_only.
 
 STRUCTURAL FUNCTION ANCHOR CHECK (CRITICAL)
 If any of the following appear in BEFORE image, they MUST remain unchanged:
