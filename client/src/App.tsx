@@ -7,6 +7,7 @@ import { RequireAgency } from "@/components/RequireAgency";
 import { RequireSubscription } from "@/components/RequireSubscription";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
+import Landing from "@/pages/landing";
 
 // Helper to create retry-enabled lazy imports
 function lazyWithRetry(componentImport: () => Promise<any>) {
@@ -31,7 +32,6 @@ function lazyWithRetry(componentImport: () => Promise<any>) {
 }
 
 // Match the filenames exactly (case sensitive on Linux)
-const Landing        = lazyWithRetry(() => import("@/pages/landing"));
 const Login          = lazyWithRetry(() => import("@/pages/login"));
 const Signup         = lazyWithRetry(() => import("@/pages/signup"));
 const Home           = lazyWithRetry(() => import("@/pages/home"));
