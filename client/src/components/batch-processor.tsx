@@ -692,6 +692,7 @@ export default function BatchProcessor() {
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
   const editingImagesRef = useRef<Set<number>>(new Set());
+  const preEditStageUrlsRef = useRef<Record<number, { stage2: string | null; stage1B: string | null; stage1A: string | null }>>({});
   const editFallbackTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const clearEditFallbackTimer = useCallback((index: number) => {
     const t = editFallbackTimersRef.current[index];
@@ -3431,7 +3432,12 @@ export default function BatchProcessor() {
   };
 
   // Resolve the best available enhanced output for a given result and optional user-selected stage
-  const resolveBestStageOutput = (result: any, selectedStage?: DisplayOutputKey | null, originalFallback?: string | null): { stage: StageKey | null; url: string | null } => {
+  const resolveBestStageOutput = (
+    result: any,
+    selectedStage?: DisplayOutputKey | null,
+    originalFallback?: string | null,
+    stageFallback?: { stage2?: string | null; stage1B?: string | null; stage1A?: string | null }
+  ): { stage: StageKey | null; url: string | null } => {
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
     const finalResultUrl = result?.resultUrl || result?.result?.resultUrl || null;
     const editLatestUrl = result?.editLatestUrl || result?.result?.editLatestUrl || null;
@@ -3440,9 +3446,9 @@ export default function BatchProcessor() {
       result?.result?.completionSource === "region-edit" ||
       String(result?.meta?.type || "").toLowerCase() === "region-edit" ||
       String(result?.meta?.jobType || "").toLowerCase() === "region_edit";
-    const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || null;
-    const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
-    const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
+    const stage2Url = stageMap?.['2'] || stageMap?.[2] || stageMap?.stage2 || result?.stage2Url || result?.result?.stage2Url || stageFallback?.stage2 || null;
+    const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || stageFallback?.stage1B || null;
+    const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || stageFallback?.stage1A || null;
     const originalUrl = result?.originalImageUrl || result?.result?.originalImageUrl || result?.originalUrl || result?.result?.originalUrl || originalFallback || null;
 
     if (isRegionEdit && !selectedStage) {
@@ -3477,6 +3483,16 @@ export default function BatchProcessor() {
       });
       return;
     }
+
+    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
+    const preservedStage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(item?.stage2Url) || toDisplayUrl(item?.result?.stage2Url) || null;
+    const preservedStage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
+    const preservedStage1A = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || null;
+    preEditStageUrlsRef.current[imageIndex] = {
+      stage2: preservedStage2,
+      stage1B: preservedStage1B,
+      stage1A: preservedStage1A,
+    };
 
     // ✅ Use resolveSafeStageUrl for proper stage-aware URL resolution
     // Priority: stage2 → stage1B → stage1A → publishedUrl → imageUrl
@@ -5629,9 +5645,28 @@ export default function BatchProcessor() {
 
                         // Stage URL resolution (supports new stage1A/1B keys)
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-                        const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || null;
-                        const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
-                        const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || null;
+                        const preEditSnapshot = preEditStageUrlsRef.current[i] || null;
+                        const stage2Url =
+                          toDisplayUrl(stageMap?.['2']) ||
+                          toDisplayUrl(stageMap?.[2]) ||
+                          toDisplayUrl(stageMap?.stage2) ||
+                          toDisplayUrl(result?.stage2Url) ||
+                          toDisplayUrl(result?.result?.stage2Url) ||
+                          toDisplayUrl(preEditSnapshot?.stage2) ||
+                          null;
+                        const stage1BUrl =
+                          toDisplayUrl(stageMap?.['1B']) ||
+                          toDisplayUrl(stageMap?.['1b']) ||
+                          toDisplayUrl(stageMap?.stage1B) ||
+                          toDisplayUrl(preEditSnapshot?.stage1B) ||
+                          null;
+                        const stage1AUrl =
+                          toDisplayUrl(stageMap?.['1A']) ||
+                          toDisplayUrl(stageMap?.['1a']) ||
+                          toDisplayUrl(stageMap?.['1']) ||
+                          toDisplayUrl(stageMap?.stage1A) ||
+                          toDisplayUrl(preEditSnapshot?.stage1A) ||
+                          null;
 
                         const finalResultUrl = toDisplayUrl(result?.resultUrl) || toDisplayUrl(result?.result?.resultUrl) || null;
                         const hasPreviewOutputs = !!(stage2Url || stage1BUrl || stage1AUrl);
@@ -5738,7 +5773,7 @@ export default function BatchProcessor() {
                         
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
                         const disallowStage2 = (status === "failed") || !!blockedStage || hardFail;
-                        const stagePreviewUrl = safeStage.url || null;
+                        const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
                         const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
                         const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
@@ -5781,7 +5816,11 @@ export default function BatchProcessor() {
                           if (selectedStage === "1A") return stage1AUrl || defaultUrl;
                           return defaultUrl;
                         })();
-                        const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null);
+                        const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null, {
+                          stage2: preEditSnapshot?.stage2 || null,
+                          stage1B: preEditSnapshot?.stage1B || null,
+                          stage1A: preEditSnapshot?.stage1A || null,
+                        });
                         const bestDisplayUrl = bestAvailable.url || displayedUrl || previewUrls[i] || null;
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const persistedOriginalUrl =
@@ -6273,7 +6312,36 @@ export default function BatchProcessor() {
                 const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
                 
                 // ✅ PATCH 1: Preserve original stage URLs - never overwrite stage baselines with edit outputs
-                const preservedStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
+                const existingStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
+                const stageSnapshot = preEditStageUrlsRef.current[editingImageIndex] || {};
+                const preservedStage2 =
+                  toDisplayUrl(existingStageUrls?.['2']) ||
+                  toDisplayUrl(existingStageUrls?.[2]) ||
+                  toDisplayUrl(existingStageUrls?.stage2) ||
+                  toDisplayUrl(stageSnapshot.stage2) ||
+                  null;
+                const preservedStage1B =
+                  toDisplayUrl(existingStageUrls?.['1B']) ||
+                  toDisplayUrl(existingStageUrls?.['1b']) ||
+                  toDisplayUrl(existingStageUrls?.stage1B) ||
+                  toDisplayUrl(stageSnapshot.stage1B) ||
+                  null;
+                const preservedStage1A =
+                  toDisplayUrl(existingStageUrls?.['1A']) ||
+                  toDisplayUrl(existingStageUrls?.['1a']) ||
+                  toDisplayUrl(existingStageUrls?.['1']) ||
+                  toDisplayUrl(existingStageUrls?.stage1A) ||
+                  toDisplayUrl(stageSnapshot.stage1A) ||
+                  null;
+                const preservedStageUrls = {
+                  ...(existingStageUrls || {}),
+                  '2': preservedStage2,
+                  '1B': preservedStage1B,
+                  '1A': preservedStage1A,
+                  stage2: preservedStage2,
+                  stage1B: preservedStage1B,
+                  stage1A: preservedStage1A,
+                };
                 
                 // ✅ Track edit lineage separately from stage pipeline
                 const editHistory = results[editingImageIndex]?.editHistory || [];
