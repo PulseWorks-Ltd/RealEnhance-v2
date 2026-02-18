@@ -92,16 +92,43 @@ export async function ensureBaseBlur(
   blurSigma: number
 ): Promise<Uint8Array> {
   if (artifacts.blur) return artifacts.blur;
-  const blurred = await sharp(artifacts.gray, {
-    raw: { width: artifacts.width, height: artifacts.height, channels: 1 },
-  })
+  const expectedGrayLength = artifacts.width * artifacts.height;
+  const hasValidGrayBuffer =
+    Number.isFinite(artifacts.width) &&
+    Number.isFinite(artifacts.height) &&
+    artifacts.width > 0 &&
+    artifacts.height > 0 &&
+    artifacts.gray.length >= expectedGrayLength;
+
+  if (hasValidGrayBuffer) {
+    try {
+      const blurred = await sharp(artifacts.gray, {
+        raw: { width: artifacts.width, height: artifacts.height, channels: 1 },
+      })
+        .blur(blurSigma)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      artifacts.blur = new Uint8Array(
+        blurred.data.buffer,
+        blurred.data.byteOffset,
+        blurred.data.byteLength
+      );
+      return artifacts.blur;
+    } catch {
+    }
+  }
+
+  const blurredFromPath = await sharp(artifacts.path)
+    .greyscale()
+    .resize(artifacts.width, artifacts.height, { fit: "fill", withoutEnlargement: false })
     .blur(blurSigma)
     .raw()
     .toBuffer({ resolveWithObject: true });
+
   artifacts.blur = new Uint8Array(
-    blurred.data.buffer,
-    blurred.data.byteOffset,
-    blurred.data.byteLength
+    blurredFromPath.data.buffer,
+    blurredFromPath.data.byteOffset,
+    blurredFromPath.data.byteLength
   );
   return artifacts.blur;
 }

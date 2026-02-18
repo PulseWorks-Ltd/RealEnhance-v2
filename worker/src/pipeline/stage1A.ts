@@ -344,6 +344,26 @@ export async function runStage1A(
   
   logIfNotFocusMode(`[stage1A] Sharp enhancement complete: ${inputPath} → ${sharpOutputPath}`);
 
+  const runStage1AStructuralValidationSafely = async (
+    baselinePath: string,
+    candidatePath: string,
+    label: "primary output" | "gemini output"
+  ): Promise<void> => {
+    try {
+      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
+      const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
+      const maskPath = await loadOrComputeStructuralMask(jobIdResolved, baselinePath, baseArtifacts);
+      const masks = { structuralMask: maskPath };
+      const verdict = await validateStage1AStructural(baselinePath, candidatePath, masks, sceneType as any);
+      logIfNotFocusMode(`[stage1A] Structural validator verdict (${label}):`, verdict);
+      if (!verdict.ok) {
+        logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
+      }
+    } catch (err) {
+      logIfNotFocusMode(`[stage1A] Structural validator failed-open (${label}):`, err);
+    }
+  };
+
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
   if (shouldUseStabilityStage1A()) {
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
@@ -399,17 +419,7 @@ export async function runStage1A(
       try {
         const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
 
-        // Run structural validator on Gemini output
-        const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-        const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-        const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
-        const masks = { structuralMask: maskPath };
-        let verdict = await validateStage1AStructural(sharpOutputPath, geminiImage, masks, sceneType as any);
-        logIfNotFocusMode(`[stage1A] Structural validator verdict (gemini output):`, verdict);
-
-        if (!verdict.ok) {
-          logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
-        }
+        await runStage1AStructuralValidationSafely(sharpOutputPath, geminiImage, "gemini output");
 
         const fs = await import("fs/promises");
         await fs.rename(geminiImage, finalOutputPath);
@@ -429,17 +439,7 @@ export async function runStage1A(
 
     logIfNotFocusMode("[stage1A] ✅ Stage 1A content diff validator PASSED");
 
-    // Run structural validator on primary output
-    const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-    const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-    const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
-    const masks = { structuralMask: maskPath };
-    let verdict = await validateStage1AStructural(sharpOutputPath, primary1AImage, masks, sceneType as any);
-    logIfNotFocusMode(`[stage1A] Structural validator verdict (primary output):`, verdict);
-
-    if (!verdict.ok) {
-      logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
-    }
+    await runStage1AStructuralValidationSafely(sharpOutputPath, primary1AImage, "primary output");
 
     const fs = await import("fs/promises");
     await fs.rename(primary1AImage, finalOutputPath);
@@ -461,16 +461,7 @@ export async function runStage1A(
     logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
     if (geminiOutputPath !== sharpOutputPath) {
-      const { loadOrComputeStructuralMask } = await import("../validators/structuralMask.js");
-      const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
-      const maskPath = await loadOrComputeStructuralMask(jobIdResolved, sharpOutputPath, baseArtifacts);
-      const masks = { structuralMask: maskPath };
-      let verdict = await validateStage1AStructural(sharpOutputPath, geminiOutputPath, masks, sceneType as any);
-      logIfNotFocusMode(`[stage1A] Structural validator verdict (gemini output):`, verdict);
-
-      if (!verdict.ok) {
-        logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
-      }
+      await runStage1AStructuralValidationSafely(sharpOutputPath, geminiOutputPath, "gemini output");
 
       const fs = await import("fs/promises");
       await fs.rename(geminiOutputPath, finalOutputPath);
