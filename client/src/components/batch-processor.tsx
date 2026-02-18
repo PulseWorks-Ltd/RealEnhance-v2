@@ -30,7 +30,6 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
-import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -56,6 +55,19 @@ type SceneDetectResult = {
 };
 
 const EMPTY_SCENE_FEATURES = { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 };
+
+function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
+  return images.reduce((sum, img) => {
+    const sceneType = String(img.sceneType || "").toLowerCase();
+    if (sceneType === "exterior") {
+      return sum + 1;
+    }
+    if (img.userSelectedStage1B && img.userSelectedStage2) {
+      return sum + 2;
+    }
+    return sum + 1;
+  }, 0);
+}
 
 // Generate a stable ID for a file based on its properties (not array index)
 function getFileId(f: File): string {
