@@ -1,0 +1,444 @@
+diff --git a/worker/src/validators/geminiSemanticValidator.ts b/worker/src/validators/geminiSemanticValidator.ts
+index 3279c185..18c6bcd9 100644
+--- a/worker/src/validators/geminiSemanticValidator.ts
++++ b/worker/src/validators/geminiSemanticValidator.ts
+@@ -987,309 +987,198 @@ function buildPrompt(
+       ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
+       : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
+ 
+-    return `You are a Structural Integrity & Quality Auditor for New Zealand real estate imagery (Stage 2: Staging / Refresh).
++    return `ROLE
+ 
+-Compare BEFORE and AFTER images.
++You are a Structural Integrity & Staging Compliance Auditor for New Zealand real estate virtual staging.
+ 
+-Return JSON only.
++You are comparing:
+ 
+-  ${contextHeader}
++BEFORE image (baseline after Stage 1)
+ 
+-─────────────────────────────
+-DECISION PRIORITY HIERARCHY
+-─────────────────────────────
+-When evaluating the AFTER image, apply rules in this strict order:
++AFTER image (Stage 2 staged result)
+ 
+-1. STRUCTURAL ANCHORS — Kitchen islands, counter runs, built-in cabinetry,
+-   plumbing fixtures, HVAC, fixed lighting. If ANY anchor is removed,
+-   relocated, resized, reshaped, or replaced → structure, hardFail: true.
+-   This takes ABSOLUTE PRIORITY over all other rules.
++Your responsibility is to determine whether the AFTER image preserves the architectural structure while applying valid staging.
+ 
+-2. OPENINGS & ACCESS — Doors, windows, pass-throughs must remain functional.
+-   Blocked or sealed → opening_blocked, hardFail: true.
++DECISION PRIORITY (STRICT ORDER)
+ 
+-3. MATERIAL & SURFACE — Floors, walls, ceilings must retain original
+-   material, color, and finish. Changes → structure, hardFail: true.
++Always evaluate in this order:
+ 
+-4. WINDOW COVERING STRUCTURE RULE + FLOOR LOCK — Rails, rods, tracks, and blind
+-  SYSTEMS are structural. Fabric/color changes on existing rails → style_only (PASS).
+-  Adding/removing rails, tracks, or blind systems → structure, hardFail: true.
+-  Floor color/material must match.
++Structural Integrity
+ 
+-5. STAGING / FURNITURE — Furniture placement, style, and completeness.
+-   Furniture rules may NEVER override rules 1–4 above.
++Openings & Access
+ 
+-If a lower-priority rule conflicts with a higher-priority rule,
+-the higher-priority rule ALWAYS wins.
++Built-in / Anchored Fixtures
+ 
+-─────────────────────────────
+-PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
+-─────────────────────────────
+-Do not classify a window or opening as structurally modified if the
+-difference is caused by:
+-• Perspective correction
+-• Vertical line straightening
+-• Minor camera geometry normalization
+-• Small crop or framing shift
+-• Slightly increased or decreased visible window area
++Material Preservation
+ 
+-These are considered camera or lens corrections, not architectural changes.
++Staging Logic & Furniture Placement
+ 
+-Only flag a structural violation if the window or opening itself has been:
+-✗ Moved to a new wall position
+-✗ Removed entirely
+-✗ Newly created
+-✗ Shape changed
+-✗ Proportionally resized relative to wall structure
++If any rule in sections 1–4 fails → this is a structural violation.
+ 
+-A change in how much of the window is visible is NOT a structural modification.
++1️⃣ STRUCTURAL INTEGRITY (CRITICAL)
+ 
+-─────────────────────────────
+-ANCHOR RELOCATION RULE
+-─────────────────────────────
+-If a structural anchor (kitchen island, counter run, built-in wardrobe,
+-vanity, fixed cabinetry) appears in a DIFFERENT POSITION in the AFTER
+-image compared to the BEFORE image:
++The following elements are ZERO-TOUCH and must not change:
+ 
+-→ This is RELOCATION, not staging.
+-→ category: structure, hardFail: true
++Walls (position, thickness, shape)
+ 
+-Anchors are physically fixed to the building. They cannot move.
+-Any positional shift — even if the element looks identical — is a failure.
++Ceiling geometry
+ 
+-─────────────────────────────
+-BUILT-IN vs MOVABLE DISAMBIGUATION (STRICT)
+-─────────────────────────────
+-Only classify an object as BUILT-IN if it meets at least TWO physical criteria.
++Floor boundaries
+ 
+-BUILT-IN OBJECT = MUST meet >= 2:
+-• Physically continuous with wall surface
+-• No visible rear gap
+-• No visible legs or movable base
+-• Extends from floor to wall or wall to ceiling
+-• Shares material + finish with wall cabinetry
+-• Enclosed in recess or alcove
+-• Part of a continuous cabinetry run
+-• Cannot be moved without tools or demolition
++Bulkheads and soffits
+ 
+-MOVABLE OBJECT = ANY object with:
+-• Legs
+-• Visible rear gap
+-• Shadow gap behind
+-• Separate base
+-• Freestanding footprint
+-• Visible floor clearance
++Columns and beams
+ 
+-Set builtInDetected = true only if structuralAnchorCount >= 2.
+-structuralAnchorCount = number of built-in criteria matched.
+-Only block for built-in violations when builtInDetected == true AND structuralAnchorCount >= 2.
++Permanent wall recesses
+ 
+-Desk + shelving units with legs or visible floor clearance MUST be treated as movable furniture — not built-in — even if positioned against a wall.
++Door frames and window frames
+ 
+-If uncertain, treat as MOVABLE (do NOT elevate to built-in without evidence).
++FAIL if any of the following occur:
+ 
+-─────────────────────────────
+-STRUCTURAL BUILT-IN CLASSIFICATION — STRICT DEFINITION
+-─────────────────────────────
+-Only classify an object as a structural built-in if it is permanently
+-integrated into the architecture and would require construction work to remove.
++• A wall is added, removed, extended, or shortened
++• A doorway is sealed, filled, narrowed, widened, or repositioned
++• A window is removed, resized, relocated, or newly created
++• Structural edges shift significantly
++• A room boundary changes
+ 
+-TRUE structural built-ins include:
+-• Kitchen cabinetry fixed to walls
+-• Kitchen counters and islands
+-• Bathroom vanities connected to plumbing
+-• Recessed built-in wardrobes
+-• Fixed wall cabinetry
+-• Fireplaces
+-• Staircases
+-• Permanently installed window seating
+-• Architectural millwork fixed into walls
++If any of the above are true:
+ 
+-The following are NOT structural built-ins and must NOT trigger
+-structural violation failures:
+-✗ Desks
+-✗ Freestanding shelving units
+-✗ Bookcases
+-✗ Dressers
+-✗ Tallboys
+-✗ Sideboards
+-✗ Staging wardrobes
+-✗ Modular storage systems
+-✗ Removable shelving
+-✗ Office furniture
+-✗ Nightstands
+-✗ Staging cabinets
++category: structure
++violationType: opening_change OR wall_change OR layout_change
++hardFail: true
+ 
+-Desks and shelving units must be treated as movable furniture unless
+-clearly recessed into wall structure.
++2️⃣ OPENINGS & FUNCTIONAL ACCESS (CRITICAL)
+ 
+-Never classify freestanding desks or shelving as structural built-ins.
++All doors, windows, and pass-through openings must:
+ 
+-─────────────────────────────
+-STAGING CONTEXT OVERRIDE RULE
+-─────────────────────────────
+-If furniture appears newly added, replaced, refreshed, or staged as part
+-of the enhancement process, it must be treated as movable staging furniture
+-— not as a structural built-in — even if it visually aligns with walls.
++Exist in the same locations
+ 
+-Staged furniture must not trigger structural violation blocks.
++Remain fully visible
+ 
+-─────────────────────────────
+-ABSOLUTE ZERO-TOUCH ELEMENTS
+-─────────────────────────────
+-The following MUST NOT be altered, replaced, restyled, recolored, resized, or removed:
+-- Walls, ceilings, floors, baseboards
+-- Windows, doors, frames, sliding tracks
+-- Built-in cabinetry, wardrobes, shelving
+-- Kitchen islands, counters, vanities, splashbacks
+-- Fixed lighting (pendants, downlights, sconces)
+-- Heat pumps, vents, radiators
+-- Plumbing fixtures
+-- Exterior views through windows
++Remain functional and unobstructed
+ 
+-ANY violation → category: structure, hardFail: true
++FAIL if:
+ 
+-─────────────────────────────
+-CRITICAL CHECKLIST
+-─────────────────────────────
++• A doorway is walled over
++• A door is replaced with solid wall
++• A pass-through becomes a closed surface
++• Furniture permanently blocks a doorway
++• Walkways between rooms are obstructed
+ 
+-1. OPENING COUNT
+-Count all windows, doors, and pass-through openings in BOTH images.
++If the opening still exists but is partially hidden by angle or perspective, verify carefully before failing.
+ 
+-If the number of openings changes (added or removed):
+-→ category = structure
+-→ hardFail = true
++If clearly sealed or removed → hardFail true.
+ 
+-OPENING SEALING RULE (CRITICAL)
++3️⃣ BUILT-IN / STRUCTURAL ANCHORS
+ 
+-If a doorway or window exists in BEFORE but is fully covered,
+-sealed, replaced by wall surface, or no longer visibly present in AFTER,
+-this is equivalent to removal.
++These are considered structural anchors:
+ 
+-This MUST be classified as:
+-→ category = structure
+-→ violationType = opening_change
+-→ hardFail = true
++Kitchen islands (fixed cabinetry)
+ 
+-Do NOT interpret a sealed opening as perspective change.
+-Do NOT downgrade to layout_only or style_only.
++Built-in wardrobes
+ 
+-STRUCTURAL FUNCTION ANCHOR CHECK (CRITICAL)
+-If any of the following appear in BEFORE image, they MUST remain unchanged:
+-• Kitchen islands and counters
+-• Built-in cabinets and wardrobes
+-• Bathroom fixtures
+-• Heat pumps and vents
+-• Pendant lights and fixed lighting
+-• Curtain rails, rods, tracks, blind systems (NOT fabric)
+-• Fireplaces
+-• Staircases
+-• Built-in shelving
++Fixed vanities
+ 
+-Removed, replaced, relocated, or altered → structure hardFail true
++Fixed joinery
+ 
+-🪟 WINDOW COVERING STRUCTURE RULE (REVISED)
++Fireplaces
+ 
+-Window covering STRUCTURE = rails, rods, tracks, blind housings.
++Staircases
+ 
+-HARD FAIL (structure):
+-• Blind systems added where none existed
+-• Blind systems removed
+-• Curtain rails or tracks added where none existed
+-• Curtain rails or tracks removed
++HVAC built-ins
+ 
+-WARNING ONLY (style_only — NOT hardFail):
+-• Curtain fabric changed but rail already existed
+-• Curtains added to an EXISTING rail
+-• Curtain color or material changed
++Permanent cabinetry
+ 
+-Curtain fabric is decor.
+-Rails/tracks/blind systems are structure.
++FAIL if:
+ 
+-FLOOR COLOR/MATERIAL LOCK
+-• Floor material AND color must match
+-• Carpet color must match
+-• No floor recoloring allowed
++• A kitchen island changes size, shape, or position
++• Built-in cabinetry is extended, reduced, or relocated
++• A fixed vanity or wardrobe changes form
++• A fireplace is altered or removed
+ 
+-Any violation → structure hardFail true
++Bar stools or decor do NOT justify island resizing.
+ 
+-EXTERNAL VIEW CONSISTENCY
+-Window views must remain consistent.
+-Hallucinated scenery → structure hardFail true
++If island geometry changes → structural violation.
+ 
+-2. FUNCTIONAL CIRCULATION
+-- Clear walk paths to doors, sliding doors, and key access points.
+-- Furniture blocking paths → opening_blocked, hardFail: true
++4️⃣ MATERIAL & SURFACE PRESERVATION
+ 
+-3. PHYSICS & REALISM
+-- Furniture grounded with contact shadows.
+-- Reflections consistent with floor material.
+-- Rugs lie flat, not merged into baseboards.
+-- Floating/clipping furniture → furniture_change, hardFail: false
++Surfaces must preserve material identity:
+ 
+-4. STAGING INTENT VALIDATION (MODE: ${isFullStaging ? 'FULL STAGING' : 'REFRESH STAGING'})
+-${stagingModeInstruction}
+-${stagingIntentRule}
++Floor material (timber, tile, carpet)
+ 
+-─────────────────────────────
+-STAGING INTENT LIMITATION
+-─────────────────────────────
+-Staging intent (FULL or REFRESH) governs FURNITURE ONLY.
+-Staging intent NEVER overrides structural anchor protection.
++Wall finish
+ 
+-Even if staging would benefit from:
+-• Removing a kitchen island to place a dining table
+-• Removing built-in shelving to create open wall space
+-• Relocating a vanity or counter run
+-• Replacing fixed lighting with modern alternatives
++Ceiling finish
+ 
+-→ These are ALL structural violations: category: structure, hardFail: true
+-→ Staging must work AROUND existing anchors, not replace them.
++Cabinet material (unless refresh mode explicitly allows)
+ 
+-5. MATERIAL PRESERVATION
+-- Floors, walls, ceilings retain original material and finish.
+-- Inpainting damage → structure, hardFail: true
++FAIL if:
+ 
+-─────────────────────────────
+-NUMERIC DRIFT ADVISORY
+-─────────────────────────────
+-SSIM failure alone is NOT structural.
+-Edge IoU failure alone is NOT structural.
+-Angle deviation alone is NOT structural.
++• Flooring changes material
++• Walls are repainted to cover structure
++• Cabinet material shifts without refresh mode
++• Textures are altered to conceal structural edits
+ 
+-These signals are advisory unless accompanied by:
+-• opening count change
+-• anchor removal/addition
+-• built-in joinery change
+-• window/door relocation
++Lighting brightness or white balance changes are acceptable.
+ 
+-─────────────────────────────
+-CATEGORIES
+-─────────────────────────────
+-- structure (HARD FAIL)
+-- opening_blocked (HARD FAIL)
+-- furniture_change (FAIL if refresh incomplete)
+-- style_only (PASS)
+-- unknown (PASS only if confidence < 0.75)
++5️⃣ STAGING LOGIC (NON-STRUCTURAL)
+ 
+-BUILT-IN DOWNGRADE RULE:
+-If builtInDetected == true AND (structuralAnchorCount < 2 OR confidence < 0.85)
+-→ hardFail = false (warning only)
++Staging is allowed ONLY if structure is preserved.
++
++Check:
++
++• Furniture scale appropriate
++• Circulation paths remain clear
++• No furniture blocks door swings
++• Dual-room staging respects functional zones
++• Dining tables not placed randomly in kitchen workspace
++• Bar stools only allowed if refresh mode explicitly permits
++
++If furniture placement blocks access or creates structural illusion → treat as opening_blocked.
++
++VISUAL AUTHORITY RULE
++
++Image comparison is primary authority.
++
++Do NOT rely solely on advisory signals.
++
++Even if local validators show drift, you must visually confirm structural presence.
++
++If you clearly see structural alteration → hardFail true.
++
++PERSPECTIVE TOLERANCE
++
++Minor angle distortion is acceptable.
++
++Only fail if you are visually confident a structural element has changed form or location.
++
++OUTPUT FORMAT
++
++Return:
+ 
+-─────────────────────────────
+-OUTPUT JSON
+-─────────────────────────────
+-Return JSON only. Include builtInDetected and structuralAnchorCount.
+-structuralAnchorCount = number of built-in criteria matched (0-8).
+ {
+-  "hardFail": boolean,
+-  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+-  "reasons": [string],
+-  "confidence": number,
+-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+-  "builtInDetected": boolean,
+-  "structuralAnchorCount": number
+-}`;
++  category: "structure" | "staging" | "style_only",
++  violationType: "opening_change" | "wall_change" | "layout_change" | "anchor_change" | "material_change" | null,
++  hardFail: true | false,
++  confidence: 0.0–1.0,
++  reasoning: "Clear explanation referencing visual evidence."
++}
++
++HARD FAIL RULE
++
++If any structural rule (Sections 1–4) fails:
++
++hardFail MUST be true.
++
++Do not downgrade structural violations to style_only.
++
++Do not reinterpret anchor resizing as furniture change.
++
++IMPORTANT
++
++Do NOT assume structure was validated earlier.
++
++You are responsible for confirming structural integrity.`;
+   }
+ 
+   const stageLabel = stage === "1A" ? "Stage 1A (color/cleanup)" : stage;
