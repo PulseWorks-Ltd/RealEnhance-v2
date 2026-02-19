@@ -181,7 +181,7 @@ function detectRectangularMass(
   regionRight: number,
   minVal: number,
   maxVal: number
-): { present: boolean; widthRatio: number; heightRatio: number } {
+): { present: boolean; widthRatio: number; heightRatio: number; fillRatio: number } {
   let minX = regionRight;
   let maxX = regionLeft;
   let minY = regionBottom;
@@ -202,19 +202,21 @@ function detectRectangularMass(
   }
 
   if (count === 0 || minX >= maxX || minY >= maxY) {
-    return { present: false, widthRatio: 0, heightRatio: 0 };
+    return { present: false, widthRatio: 0, heightRatio: 0, fillRatio: 0 };
   }
 
   const boxWidth = maxX - minX + 1;
   const boxHeight = maxY - minY + 1;
+  const boxArea = Math.max(1, boxWidth * boxHeight);
   const widthRatio = boxWidth / width;
   const heightRatio = boxHeight / height;
+  const fillRatio = count / boxArea;
 
   const present =
     widthRatio >= 0.15 && widthRatio <= 0.60 &&
     heightRatio >= 0.05 && heightRatio <= 0.35;
 
-  return { present, widthRatio, heightRatio };
+  return { present, widthRatio, heightRatio, fillRatio };
 }
 
 /**
@@ -393,12 +395,79 @@ async function detectIslandChange(
 
 const HVAC_DRIFT_THRESHOLD = 0.25; // 25% edge density change
 
+type HvacRegion = { top: number; bottom: number; left: number; right: number };
+
+type HvacSignature = {
+  present: boolean;
+  score: number;
+  edgeDensity: number;
+  brightRatio: number;
+  widthRatio: number;
+  heightRatio: number;
+  aspectRatio: number;
+  fillRatio: number;
+};
+
+function hvacRegionArea(region: HvacRegion): number {
+  return Math.max(1, (region.bottom - region.top) * (region.right - region.left));
+}
+
+function getHvacLikeSignature(
+  data: Buffer,
+  width: number,
+  height: number,
+  region: HvacRegion
+): HvacSignature {
+  const edgeDensity = regionEdgeDensity(data, width, height, region.top, region.bottom, region.left, region.right, 30);
+
+  const brightCount = regionToneCount(data, width, height, region.top, region.bottom, region.left, region.right, 160, 255);
+  const brightRatio = brightCount / hvacRegionArea(region);
+
+  const rect = detectRectangularMass(data, width, height, region.top, region.bottom, region.left, region.right, 160, 255);
+  const aspectRatio = rect.heightRatio > 0 ? rect.widthRatio / rect.heightRatio : 0;
+
+  const hasExpectedAspect = aspectRatio >= 1.6 && aspectRatio <= 10;
+  const hasExpectedSize =
+    rect.widthRatio >= 0.08 && rect.widthRatio <= 0.45 &&
+    rect.heightRatio >= 0.03 && rect.heightRatio <= 0.20;
+  const hasRegularShape = rect.fillRatio >= 0.22;
+  const hasTexture = edgeDensity >= 0.015;
+  const hasSufficientSignal = brightRatio >= 0.01;
+
+  const present =
+    rect.present &&
+    hasExpectedAspect &&
+    hasExpectedSize &&
+    hasRegularShape &&
+    hasTexture &&
+    hasSufficientSignal;
+
+  let score = 0;
+  if (rect.present) score += 0.30;
+  if (hasExpectedAspect) score += 0.20;
+  if (hasExpectedSize) score += 0.20;
+  if (hasRegularShape) score += 0.15;
+  if (hasTexture) score += 0.10;
+  if (hasSufficientSignal) score += 0.05;
+
+  return {
+    present,
+    score,
+    edgeDensity,
+    brightRatio,
+    widthRatio: rect.widthRatio,
+    heightRatio: rect.heightRatio,
+    aspectRatio,
+    fillRatio: rect.fillRatio,
+  };
+}
+
 async function detectHVACChange(
   originalData: Buffer, enhancedData: Buffer,
   width: number, height: number
 ): Promise<{ changed: boolean; drift: number }> {
   // Upper 30% of image, left/right wall zones (edges of frame)
-  const regions = [
+  const regions: HvacRegion[] = [
     // Left wall upper zone
     { top: Math.floor(height * 0.1), bottom: Math.floor(height * 0.4), left: 0, right: Math.floor(width * 0.25) },
     // Right wall upper zone
@@ -407,29 +476,70 @@ async function detectHVACChange(
     { top: 0, bottom: Math.floor(height * 0.25), left: Math.floor(width * 0.25), right: Math.floor(width * 0.75) },
   ];
 
-  let maxDrift = 0;
+  // Step 1: Presence gate in BEFORE image.
+  // If no HVAC-like object is detected in BEFORE, do not allow hvacChanged=true.
+  const beforeCandidates = regions.map((region) => ({
+    region,
+    signature: getHvacLikeSignature(originalData, width, height, region),
+  }));
 
-  for (const region of regions) {
-    const origDensity = regionEdgeDensity(
-      originalData, width, height,
-      region.top, region.bottom, region.left, region.right
-    );
+  const beforePresentCandidates = beforeCandidates
+    .filter((candidate) => candidate.signature.present)
+    .sort((a, b) => b.signature.score - a.signature.score);
 
-    const enhDensity = regionEdgeDensity(
-      enhancedData, width, height,
-      region.top, region.bottom, region.left, region.right
-    );
-
-    const avgDensity = (origDensity + enhDensity) / 2;
-    if (avgDensity > 0.01) {
-      const drift = Math.abs(enhDensity - origDensity) / avgDensity;
-      maxDrift = Math.max(maxDrift, drift);
-    }
+  const primaryBefore = beforePresentCandidates[0];
+  if (!primaryBefore) {
+    return { changed: false, drift: 0 };
   }
 
+  // Step 2: Confirm localized removal pattern in AFTER image.
+  const afterSignature = getHvacLikeSignature(enhancedData, width, height, primaryBefore.region);
+
+  const beforeEdge = primaryBefore.signature.edgeDensity;
+  const afterEdge = afterSignature.edgeDensity;
+  const localAvgDensity = (beforeEdge + afterEdge) / 2;
+  const localDrift = localAvgDensity > 0.01
+    ? Math.abs(afterEdge - beforeEdge) / localAvgDensity
+    : 0;
+
+  const topBandBefore = regionEdgeDensity(
+    originalData,
+    width,
+    height,
+    0,
+    Math.floor(height * 0.35),
+    0,
+    width,
+    30
+  );
+  const topBandAfter = regionEdgeDensity(
+    enhancedData,
+    width,
+    height,
+    0,
+    Math.floor(height * 0.35),
+    0,
+    width,
+    30
+  );
+  const topBandAvgDensity = (topBandBefore + topBandAfter) / 2;
+  const topBandDrift = topBandAvgDensity > 0.01
+    ? Math.abs(topBandAfter - topBandBefore) / topBandAvgDensity
+    : 0;
+
+  const removedInAfter = !afterSignature.present;
+  const stronglyDegradedInAfter =
+    afterSignature.present &&
+    afterSignature.score < primaryBefore.signature.score * 0.45 &&
+    afterSignature.widthRatio < primaryBefore.signature.widthRatio * 0.65;
+
+  const localizedChangeDominant = localDrift > Math.max(HVAC_DRIFT_THRESHOLD, topBandDrift + 0.12);
+
+  const changed = (removedInAfter || stronglyDegradedInAfter) && localizedChangeDominant;
+
   return {
-    changed: maxDrift > HVAC_DRIFT_THRESHOLD,
-    drift: maxDrift,
+    changed,
+    drift: localDrift,
   };
 }
 

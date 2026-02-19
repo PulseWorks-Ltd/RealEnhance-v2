@@ -88,6 +88,25 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
   const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
 
+  const onlyHvacAnchor =
+    evidence.anchorChecks.hvacChanged &&
+    !evidence.anchorChecks.islandChanged &&
+    !evidence.anchorChecks.cabinetryChanged &&
+    !evidence.anchorChecks.lightingChanged;
+
+  const hasNonHvacStructureFlag = evidence.localFlags.some((flag) => {
+    const value = flag.toLowerCase();
+    const structural = value.includes("structure") || value.includes("opening") || value.includes("anchor");
+    const hvacOnly = value.includes("hvac");
+    return structural && !hvacOnly;
+  });
+
+  const isolatedHvacSignal =
+    onlyHvacAnchor &&
+    windowsDelta === 0 &&
+    doorsDelta === 0 &&
+    !hasNonHvacStructureFlag;
+
   if (windowsDelta !== 0) {
     triggers.push(`HIGH: windows changed ${evidence.openings.windowsBefore}→${evidence.openings.windowsAfter}`);
   }
@@ -102,7 +121,11 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
     triggers.push("HIGH: kitchen island anchor changed");
   }
   if (evidence.anchorChecks.hvacChanged) {
-    triggers.push("HIGH: HVAC/heat pump anchor changed");
+    if (isolatedHvacSignal) {
+      triggers.push("MEDIUM: isolated HVAC/heat pump anchor signal (no openings/island/structure deltas)");
+    } else {
+      triggers.push("HIGH: HVAC/heat pump anchor changed");
+    }
   }
   if (evidence.anchorChecks.cabinetryChanged) {
     triggers.push("HIGH: cabinetry anchor changed");
@@ -118,7 +141,7 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
     f.toLowerCase().includes("anchor")
   );
   if (hasStructureFlag) {
-    if (anchorEvidencePresent) {
+    if (anchorEvidencePresent && !isolatedHvacSignal) {
       triggers.push("HIGH: local validator flagged structural issue");
     } else {
       triggers.push("MEDIUM: local validator flagged structural issue (no anchor evidence)");
