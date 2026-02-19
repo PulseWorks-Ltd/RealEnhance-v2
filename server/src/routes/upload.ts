@@ -293,10 +293,27 @@ export function uploadRouter() {
         const sceneType = String(meta.sceneType || opts.sceneType || "auto").toLowerCase();
         const declutter = meta.declutter !== undefined ? meta.declutter : (opts.declutter !== undefined ? opts.declutter : declutterForm);
         const virtualStage = meta.virtualStage !== undefined ? meta.virtualStage : (opts.virtualStage !== undefined ? opts.virtualStage : allowStagingForm);
+        const stage2Variant =
+          (meta.stage2Variant === "2A" || meta.stage2Variant === "2B")
+            ? meta.stage2Variant
+            : ((opts.stage2Variant === "2A" || opts.stage2Variant === "2B")
+              ? opts.stage2Variant
+              : (stage2VariantForm === "2A" || stage2VariantForm === "2B" ? stage2VariantForm : undefined));
+        const furnishedState =
+          (meta.furnishedState === "furnished" || meta.furnishedState === "empty")
+            ? meta.furnishedState
+            : ((opts.furnishedState === "furnished" || opts.furnishedState === "empty")
+              ? opts.furnishedState
+              : (furnishedStateForm === "furnished" || furnishedStateForm === "empty"
+                ? furnishedStateForm
+                : (stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined)));
+
+        // Declutter+Stage projected billing: empty -> 1 credit (skip 1B), furnished/unknown -> 2 credits.
+        const stage1BProjected = !!declutter && (!virtualStage || furnishedState !== "empty");
 
         return {
           sceneType: sceneType === "exterior" ? "exterior" : "interior",
-          userSelectedStage1B: !!declutter,
+          userSelectedStage1B: stage1BProjected,
           userSelectedStage2: !!virtualStage,
         };
       });
@@ -531,8 +548,11 @@ export function uploadRouter() {
       const jobId = "job_" + crypto.randomUUID();
       const finalDeclutter = parseStrictBool(opts.declutter);
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      // Pricing logic: 1 image for 1A-only, 1A+1B, or 1A+2; 2 images only when 1B and 2 both run
-      const requiredImages = finalDeclutter && finalVirtualStage ? 2 : 1;
+      const furnishedStateForBilling = opts.furnishedState === "empty" ? "empty" : (opts.furnishedState === "furnished" ? "furnished" : "unknown");
+      const stage1BProjectedForReservation = finalDeclutter && (!finalVirtualStage || furnishedStateForBilling !== "empty");
+      // Pricing logic: 2 images only when both Stage 1B and Stage 2 are projected to run.
+      // For Declutter+Stage with furnishedState=empty, reserve 1 (Stage 1A + Stage 2 full).
+      const requiredImages = stage1BProjectedForReservation && finalVirtualStage ? 2 : 1;
 
       const trialEligible = Boolean(
         trialSummary &&

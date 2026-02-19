@@ -22,6 +22,7 @@ import { preprocessToCanonical } from "./pipeline/preprocess";
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
+import { detectFurniture } from "./ai/furnitureDetector";
 
 import {
   updateJob,
@@ -80,6 +81,7 @@ import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 import { applyFinalBlackEdgeGuard } from "./utils/finalBlackEdgeGuard";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
+const logger = console;
 
 async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: string) {
   if (FINAL_BLACK_EDGE_GUARD_ENABLED) {
@@ -1630,6 +1632,85 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const normalizedRoomType = String(roomType || "").toLowerCase().replace(/-/g, "_").trim();
   const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
   const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+
+  // Furnished gate for Declutter + Stage path only (run once per image/job, cache via payload metadata)
+  if (payload.options.declutter && payload.options.virtualStage) {
+    const payloadFurnishedState: "furnished" | "empty" | undefined =
+      (payload.options as any).furnishedState === "furnished" || (payload.options as any).furnishedState === "empty"
+        ? (payload.options as any).furnishedState
+        : undefined;
+    let furnishedState: "furnished" | "empty" | undefined;
+    let furnishedSource: "detected" | "payload" | "fallback" = "fallback";
+
+    try {
+      if (sceneLabel === "interior") {
+        const ai = getGeminiClient();
+        if (ai) {
+          const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
+          if (furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean") {
+            furnishedState = furnishedAnalysis.hasFurniture ? "furnished" : "empty";
+            furnishedSource = "detected";
+          }
+        }
+      }
+    } catch (furnishedErr: any) {
+      nLog("[WORKER] Furnished gate detection failed; using fallback state", {
+        jobId: payload.jobId,
+        error: furnishedErr?.message || String(furnishedErr),
+      });
+    }
+
+    if (!furnishedState && payloadFurnishedState) {
+      furnishedState = payloadFurnishedState;
+      furnishedSource = "payload";
+    }
+
+    if (!furnishedState) {
+      furnishedState = "furnished";
+      furnishedSource = "fallback";
+    }
+
+    const furnished = furnishedState === "furnished";
+    logger.info("Declutter+Stage furnished gate result", { furnished });
+    nLog("[WORKER] Declutter+Stage furnished gate result", {
+      jobId: payload.jobId,
+      furnished,
+      source: furnishedSource,
+    });
+
+    (payload.options as any).furnishedState = furnishedState;
+    (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
+    (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
+
+    try {
+      await updateJob(payload.jobId, {
+        meta: {
+          ...(sceneLabel ? { ...sceneMeta } : {}),
+          furnishedGate: {
+            enabled: true,
+            furnished,
+            source: furnishedSource,
+            stage1BPlanned: furnished,
+          },
+        },
+      });
+    } catch (metaErr: any) {
+      nLog("[WORKER] Furnished gate metadata update failed (non-blocking)", {
+        jobId: payload.jobId,
+        error: metaErr?.message || String(metaErr),
+      });
+    }
+
+    if (!furnished) {
+      // Empty-room path for Declutter+Stage: skip Stage 1B and run Stage 2 Full from 1A.
+      payload.options.declutter = false;
+      (payload.options as any).declutterMode = null;
+      declutterMode = null;
+      nLog("[WORKER] Declutter+Stage furnished gate: empty room detected, skipping Stage 1B and routing Stage 2 as full", {
+        jobId: payload.jobId,
+      });
+    }
+  }
   
   if (payload.options.declutter && payload.options.virtualStage && forceLightRoomTypes.has(canonicalRoomType)) {
     declutterMode = "light"; // Override to light for multi-room types
