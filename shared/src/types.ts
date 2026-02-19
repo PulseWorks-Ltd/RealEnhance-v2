@@ -65,7 +65,7 @@ export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed
 /**
  * Declutter mode controls Stage 1B behavior:
  * - "light": Remove clutter/mess only, preserve all main furniture
- * - "stage-ready": Remove ALL furniture and clutter (empty room ready for staging)
+ * - "stage-ready": Structured retain declutter (preserve anchors, remove secondary items)
  */
 export type DeclutterMode = "light" | "stage-ready";
 
@@ -128,7 +128,7 @@ export interface EnhanceJobPayload {
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
     stagingStyle?: string;  // Staging style (defaults to nz_standard)
-    declutterMode?: DeclutterMode;  // Light (keeps furniture) or Stage-ready (full removal)
+    declutterMode?: DeclutterMode;  // Light declutter or structured-retain declutter
     // Optional tuning controls
     sampling?: {
       temperature?: number;

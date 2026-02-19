@@ -58,7 +58,7 @@ export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed
 /**
  * Declutter mode controls Stage 1B behavior:
  * - "light": Remove clutter/mess only, preserve all main furniture
- * - "stage-ready": Remove ALL furniture and clutter (empty room ready for staging)
+ * - "stage-ready": Structured retain declutter (preserve anchors, remove secondary items)
  */
 export type DeclutterMode = "light" | "stage-ready";
 export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";

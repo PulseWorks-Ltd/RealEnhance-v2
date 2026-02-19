@@ -118,7 +118,7 @@ export type JobStatus =
   | "credit-batch-transfer"
   | "credit-batch-purchase";
 
-// Declutter mode tuning for Stage 1B
+// Declutter mode tuning for Stage 1B (stage-ready token retained for compatibility)
 export type DeclutterMode = "light" | "stage-ready";
 
 export type RoomType =
@@ -190,7 +190,7 @@ export interface EnhanceJobPayload {
     stage2Only?: boolean;
     replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)
     stagingStyle?: string;           // Staging style (defaults to nz_standard)
-    declutterMode?: DeclutterMode;   // Stage 1B mode
+    declutterMode?: DeclutterMode;   // Stage 1B mode (light or structured-retain)
     declutterIntensity?: "light" | "standard" | "heavy";
     manualSceneOverride?: boolean;   // Per-image manual scene flag
     scenePrediction?: {              // Client-side scene prediction for SKY_SAFE forcing

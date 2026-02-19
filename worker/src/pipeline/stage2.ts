@@ -156,7 +156,7 @@ export async function runStage2(
   let layoutContext: LayoutContextResult | null = null;
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
-  const isFullStaging = opts.sourceStage === "1B-stage-ready" && !forceRefreshMode;
+  const isFullStaging = opts.sourceStage === "1A" && !forceRefreshMode;
   const isRefreshStaging = !isFullStaging;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   

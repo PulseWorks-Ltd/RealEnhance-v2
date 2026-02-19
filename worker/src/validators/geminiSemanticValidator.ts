@@ -266,7 +266,7 @@ export type GeminiSemanticVerdict = {
 
 export type Stage1BValidationMode =
   | "LIGHT_DECLUTTER"
-  | "FULL_REMOVAL";
+  | "STRUCTURED_RETAIN";
 
 function isBuiltInDowngradeAllowed(input: {
   violationType: GeminiSemanticVerdict["violationType"];
@@ -422,39 +422,36 @@ If a large primary furniture item is missing in AFTER:
 Only mark hardFail true if a built-in or structural anchor is removed.
 `;
 
-const STAGE1B_FULL_REMOVAL_CONTEXT_BLOCK = `
+const STAGE1B_STRUCTURED_RETAIN_CONTEXT_BLOCK = `
 ─────────────────────────────
-STAGE CONTEXT — FULL FURNITURE REMOVAL
+STAGE CONTEXT — STRUCTURED RETAIN DECLUTTER
 ─────────────────────────────
 The BEFORE image is the original furnished room.
-The AFTER image is a furniture-removed and reconstructed version.
+The AFTER image is a structured-retain decluttered version.
 
-An edit stage has removed movable furniture and may have reconstructed
-previously occluded wall and floor areas.
+This edit removes clutter and secondary/non-core items while retaining
+primary anchor furniture and layout structure.
 
-Furniture removal and surface reconstruction are EXPECTED.
+Empty-room output is NOT expected.
 `;
 
-const STAGE1B_FULL_REMOVAL_ALLOWED_DIFFERENCES_BLOCK = `
+const STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_BLOCK = `
 ─────────────────────────────
-ALLOWED DIFFERENCES — FULL REMOVAL
+ALLOWED DIFFERENCES — STRUCTURED RETAIN
 ─────────────────────────────
 Do NOT flag the following as structural violations:
 
-• missing movable furniture
-• missing furniture shadows
-• removed object contact shadows
-• reconstructed floor patches where furniture stood
-• reconstructed wall areas behind furniture
-• changed shading caused by object removal
-• removed occlusion edges
+• removed clutter and loose decor
+• removed wall art and accessories
+• removed secondary seating or small movable furniture
+• reduced non-core movable objects
 • decor removal
-• accessory removal
+• accessory cleanup
 
-These are expected results of full furniture removal.
+These are expected results of structured retain decluttering.
 `;
 
-const STAGE1B_FULL_REMOVAL_STRUCTURAL_SIGNAL_RULE_BLOCK = `
+const STAGE1B_STRUCTURED_RETAIN_STRUCTURAL_SIGNAL_RULE_BLOCK = `
 ─────────────────────────────
 STRUCTURAL SIGNAL RULE — WHAT COUNTS AS STRUCTURE
 ─────────────────────────────
@@ -477,15 +474,20 @@ Do NOT judge structure using:
 • contact marks
 `;
 
-const STAGE1B_FULL_REMOVAL_FURNITURE_RULE_BLOCK = `
+const STAGE1B_STRUCTURED_RETAIN_FURNITURE_RULE_BLOCK = `
 ─────────────────────────────
-FURNITURE RULE — FULL REMOVAL
+FURNITURE RULE — STRUCTURED RETAIN
 ─────────────────────────────
-Movable furniture is expected to be removed.
+Primary anchor furniture is expected to remain.
 
-Missing sofas, beds, tables, chairs, and movable storage must NOT be treated as structural violations.
+Preserved anchors must NOT be treated as violations.
 
-If a removed item is classified as movable → category: furniture_change, hardFail: false.
+Secondary furniture and non-core movable items are expected to be reduced/removed.
+
+If a primary anchor appears missing, classify as furniture_change (warning) unless
+clear structural/built-in alteration is also present.
+
+Missing secondary movable items should not trigger structural failure.
 
 Only built-in or structural element removal may trigger hardFail true.
 `;
@@ -730,20 +732,20 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
 }`;
 }
 
-export function buildStage1BFullRemovalValidatorPrompt(_options: {
+export function buildStage1BStructuredRetainValidatorPrompt(_options: {
   scene?: string;
 } = {}): string {
-  return `You are a Structural Integrity & Edit Compliance Auditor for NZ real estate imagery — Stage 1B Full Furniture Removal.
+  return `You are a Structural Integrity & Edit Compliance Auditor for NZ real estate imagery — Stage 1B Structured Retain Declutter.
 
 Compare BEFORE and AFTER images.
 
 Return JSON only. No prose outside JSON.
 
-${STAGE1B_FULL_REMOVAL_CONTEXT_BLOCK}
+${STAGE1B_STRUCTURED_RETAIN_CONTEXT_BLOCK}
 
-${STAGE1B_FULL_REMOVAL_ALLOWED_DIFFERENCES_BLOCK}
+${STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_BLOCK}
 
-${STAGE1B_FULL_REMOVAL_STRUCTURAL_SIGNAL_RULE_BLOCK}
+${STAGE1B_STRUCTURED_RETAIN_STRUCTURAL_SIGNAL_RULE_BLOCK}
 
 ─────────────────────────────
 STRUCTURAL PRIORITY HIERARCHY
@@ -919,7 +921,7 @@ FLOOR COLOR/MATERIAL LOCK
 
 Any violation → structure hardFail true
 
-${STAGE1B_FULL_REMOVAL_FURNITURE_RULE_BLOCK}
+${STAGE1B_STRUCTURED_RETAIN_FURNITURE_RULE_BLOCK}
 
 ─────────────────────────────
 NUMERIC DRIFT ADVISORY
@@ -980,27 +982,41 @@ function buildPrompt(
   stage1BValidationMode?: Stage1BValidationMode
 ) {
   if (stage === "1B") {
-    if (stage1BValidationMode === "FULL_REMOVAL") {
-      return buildStage1BFullRemovalValidatorPrompt({ scene });
+    if (stage1BValidationMode === "STRUCTURED_RETAIN") {
+      return buildStage1BStructuredRetainValidatorPrompt({ scene });
     }
     return buildStage1BLightDeclutterValidatorPrompt({ scene });
   }
 
   if (stage === "2") {
     const resolvedValidationMode: Stage2ValidationMode =
-      validationMode ?? (sourceStage === "1B-stage-ready" ? "FULL_AFTER_FULL_REMOVAL" : "REFRESH_OR_DIRECT");
-    const isFullStaging = resolvedValidationMode === "FULL_AFTER_FULL_REMOVAL";
+      validationMode ?? (sourceStage === "1A" ? "FULL_STAGE_ONLY" : "REFRESH_OR_DIRECT");
+    const isFullStaging = resolvedValidationMode === "FULL_STAGE_ONLY";
     const contextHeader = buildStage2ContextHeader(resolvedValidationMode);
     const stagingModeInstruction = isFullStaging
-      ? "The BEFORE image is the post-Stage1B full-removal baseline (furniture largely cleared). The AFTER image should contain new staging furniture appropriate for the room type."
-      : "The BEFORE image may be direct enhancement output or light-declutter output. The AFTER image should show furniture refresh/replacement while preserving fixed architecture.";
+      ? "The BEFORE image is a stage-only baseline (typically empty). The AFTER image should contain staged furniture appropriate for the room type."
+      : "The BEFORE image is a structured-retain or light-declutter baseline. The AFTER image should augment the room while preserving architecture and anchor geometry.";
     const stagingIntentRule = isFullStaging
       ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
-      : "- REFRESH STAGING MODE: ALL existing furniture must be replaced with new furniture.\n  Reusing original furniture without replacement → furniture_change, hardFail: true\n  Partially replaced furniture → furniture_change, hardFail: true";
+      : "- REFRESH STAGING MODE: Preserved anchors may remain and be restyled.\n  New complementary furniture/decor additions are allowed in augmentable zones.\n  Do NOT treat expected additions as structural drift.";
 
     return `ROLE
 
 You are a Structural Integrity & Staging Compliance Auditor for New Zealand real estate virtual staging.
+
+  ${contextHeader}
+
+  ${stagingModeInstruction}
+
+  ${stagingIntentRule}
+
+  IMMUTABLE ANCHOR RULE (REFRESH MODE)
+  In refresh mode, retained anchors are immutable geometry references.
+  They may be restyled, but must not be translated, rotated, resized, removed, or relaid out.
+
+  AUGMENTABLE ZONES RULE (REFRESH MODE)
+  New furniture/decor additions are allowed in non-anchor open zones when they preserve walkways and structural constraints.
+  Expected additions are not structural drift.
 
 You are comparing:
 
@@ -1722,15 +1738,15 @@ export async function runGeminiSemanticValidator(opts: {
 }
 
 export function buildStage2ContextHeader(mode: Stage2ValidationMode): string {
-  if (mode === "FULL_AFTER_FULL_REMOVAL") {
+  if (mode === "FULL_STAGE_ONLY") {
     return `STAGE2 VALIDATION CONTEXT
-- Mode: FULL_AFTER_FULL_REMOVAL
-- BEFORE is the post-full-removal baseline from Stage 1B (furniture cleared for full staging).
+- Mode: FULL_STAGE_ONLY
+- BEFORE is a stage-only baseline (typically empty input from user).
 - AFTER should introduce suitable staged furniture while preserving all fixed architecture.`;
   }
 
   return `STAGE2 VALIDATION CONTEXT
 - Mode: REFRESH_OR_DIRECT
-- BEFORE is direct enhancement output or light-declutter output.
-- AFTER should refresh/replace furniture presentation while preserving all fixed architecture.`;
+- BEFORE is a structured-retain or light-declutter baseline.
+- AFTER may augment furniture/decor while preserving fixed architecture and anchor geometry.`;
 }

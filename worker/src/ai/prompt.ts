@@ -63,10 +63,10 @@ function getDeclutterInstructions(level: "light" | "standard" | "heavy"): string
   }
   if (level === "heavy") {
     return [
-      "DECLUTTER INTENSITY: HEAVY (COMPLETE ROOM CLEARING) – remove ALL movable furniture and items to create a completely empty room.",
-      "REMOVE: ALL furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL lamps (portable only), ALL wall art (paintings, frames, mirrors, decorations), ALL decorative items (vases, plants, sculptures, candles, ornaments), ALL appliances EXCEPT built-in stoves.",
-      "KEEP ONLY: built-in stoves, countertops, cabinets, built-in shelving, recessed lighting, ceiling fans, window frames, door frames, baseboards, crown molding, fireplaces, mantels, ALL curtains, ALL blinds, ALL window treatments (MUST remain 100% visible and unchanged).",
-      "GOAL: Produce a completely empty room with bare walls and floors, preserving ONLY fixed architectural elements, built-in stoves, and ALL window treatments (curtains/blinds)."
+      "DECLUTTER INTENSITY: HEAVY (STRUCTURED RETAIN) – remove clutter and secondary non-core movable items while preserving primary anchors.",
+      "REMOVE: secondary seating, small movable furniture, wall art, loose decor, portable clutter, and partial fragments; preserve primary anchors.",
+      "KEEP: primary anchors, built-ins, countertops, cabinets, built-in shelving, recessed lighting, ceiling fans, window frames, door frames, baseboards, crown molding, fireplaces, mantels, curtains, blinds, and fixed structural elements.",
+      "GOAL: Produce a clean structured-retain baseline that preserves layout anchors without empty-room reconstruction."
     ];
   }
   return ["DECLUTTER INTENSITY: STANDARD – remove priority items and tidy visible clutter without over-editing."];
@@ -180,7 +180,7 @@ export function buildPrompt(opts: PromptOptions): string {
     "[DECLUTTER – TARGETED]",
     ...getDeclutterInstructions(declutterLevel),
     "REMOVE (for standard/heavy modes): trash bags, boxes, laundry piles, excess countertop items, window sill clutter, floor cables, fridge magnets/notes, personal toiletries, pet bowls, scattered toys.",
-    "REMOVE (heavy mode only): ALL movable furniture (sofas, chairs, beds, tables, dressers, nightstands, desks, bookcases, wardrobes, shelving units, entertainment centers, consoles), ALL rugs, ALL portable lamps, ALL wall art, ALL decorative items, ALL appliances EXCEPT built-in stoves.",
+    "REMOVE (heavy mode only): secondary seating, non-core movable furniture, wall art, decorative items, portable clutter, and partial fragments while preserving primary anchors.",
     "KEEP: built-ins, built-in stoves (preserve these explicitly), fixed appliances (dishwashers, range hoods), cabinets, countertops, light fixtures (recessed/hardwired), ALL curtains and blinds (MUST remain 100% visible), baseboards, crown molding, fireplaces, mantels, safety devices.",
     "MINIMIZE (standard mode): reduce duplicates to a tidy set; do not sterilize the scene.",
     "TRACELESS: remove without smudges/ghosting; preserve shadows/reflections of kept objects.",
@@ -201,7 +201,7 @@ export function buildPrompt(opts: PromptOptions): string {
     "[DECLUTTER – TARGETED]",
     ...getDeclutterInstructions(declutterLevel),
     "REMOVE: ALL clutter, personal effects, window sill clutter, ALL wall art and decorative items.",
-    "REMOVE (heavy mode only): ALL existing furniture and items to create empty room baseline; keep built-ins, built-in stoves, cabinets, countertops, curtains, blinds, and fixed elements ONLY.",
+    "REMOVE (heavy mode only): secondary/non-core movable items to produce a structured-retain baseline; keep built-ins, cabinets, countertops, curtains, blinds, and fixed elements.",
     "KEEP: built-ins, built-in stoves (preserve explicitly), cabinets, countertops, recessed lighting, window frames, door frames, ALL curtains and blinds (MUST remain 100% visible), and fixed architectural elements.",
     "",
     "[PHOTO QUALITY]",
@@ -527,8 +527,8 @@ export function buildQualityOnlyPrompt(opts: PromptOptions): string {
 }
 
 /**
- * Stage 1b: Furniture/Decor Removal (runs after quality enhancement when furniture replacement is enabled)
- * Focus: Complete removal of ALL furniture, decor, and clutter to create empty room
+ * Stage 1b: Furniture/Decor Declutter (runs after quality enhancement when furniture replacement is enabled)
+ * Focus: Structured retain declutter to preserve anchors while removing secondary items
  * Cost: Included in Stage 1 (no additional cost)
  */
 export function buildRemovalPrompt(opts: PromptOptions): string {
@@ -563,8 +563,8 @@ export function buildRemovalPrompt(opts: PromptOptions): string {
     `[STAGE] Furniture Removal (Stage 1b - after quality enhancement)`,
     "",
     "[TASK]",
-    "This image has ALREADY been quality-enhanced. Your ONLY task is to remove ALL furniture, wall art, décor, and clutter to create an EMPTY ROOM.",
-    "Leave ONLY the architectural shell: walls, floors, ceilings, windows, doors, and built-in elements.",
+    "This image has ALREADY been quality-enhanced. Your ONLY task is to perform structured-retain declutter.",
+    "Preserve primary anchors and architectural shell while removing clutter, decor, wall art, and secondary/non-core movable items.",
     "",
     "[🔥 CRITICAL: COMPLETE REMOVAL - NO EXCEPTIONS]",
     "",
@@ -592,7 +592,7 @@ export function buildRemovalPrompt(opts: PromptOptions): string {
     "  • If it's removable → REMOVE IT (sofas, chairs, tables, beds, etc.)",
     "  • If it's decorative → REMOVE IT (art, plants, lamps, rugs, etc.)",
     "  • If you're uncertain → REMOVE IT (default to removal, not preservation)",
-    "  • The goal is a COMPLETELY EMPTY ROOM with ONLY architectural shell remaining",
+    "  • The goal is a CLEAN STRUCTURED-RETAIN RESULT with primary anchors preserved",
   );
 
   // INJECT SPECIFIC FURNITURE REMOVAL RULES (if furniture detection ran)
@@ -668,7 +668,7 @@ export function buildRemovalPrompt(opts: PromptOptions): string {
     "[SUCCESS CRITERIA]",
     "",
     "The result MUST be:",
-    "✓ An EMPTY room with bare walls and floors",
+    "✓ A decluttered room with primary anchors preserved",
     "✓ Zero furniture, wall art, or decorative items remaining",
     "✓ All architectural elements perfectly preserved",
     "✓ Clean removal with no artifacts or ghosting",
@@ -681,7 +681,7 @@ export function buildRemovalPrompt(opts: PromptOptions): string {
     "✓ DOOR POSITIONS: Verify each door is in EXACT SAME position as original (NO movement)",
     "✓ CURTAINS/BLINDS: Verify ALL window treatments remain 100% visible (NO removal, NO hiding)",
     "✓ FIELD-OF-VIEW: Verify room dimensions and proportions are IDENTICAL to original (NO perspective changes)",
-    "✓ ALL furniture removed (check carefully - nothing should remain)",
+    "✓ Primary anchors preserved; secondary/non-core items removed",
     "✓ ALL wall art removed (bare walls only)",
     "✓ ALL decorative items removed (no plants, vases, objects)",
     "✓ Walls, windows, doors, built-ins unchanged",
@@ -1217,13 +1217,13 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     ? buildSpatialConstraints(spatialBlueprint)
     : [];
 
-  // ========== ARCHITECTURAL ANCHOR FOCUS (Stage 2 FULL staging only - empty room staging) ==========
-  // This rule applies ONLY when staging from empty rooms (declutterLevel === "heavy")
+  // ========== ARCHITECTURAL ANCHOR FOCUS (Stage 2 full staging for stage-only baselines) ==========
+  // This rule applies ONLY when staging from stage-only baseline (declutterLevel === "heavy")
   // NOT for refresh staging or furniture replacement on existing furniture
   const architecturalAnchorFocus = declutterLevel === "heavy" ? [
     "[ARCHITECTURAL ANCHOR FOCUS - STAGE 2 FULL STAGING GUIDANCE]",
     "",
-    "This is FULL staging from an empty room. Before placing new furniture:",
+    "This is FULL staging from stage-only baseline. Before placing new furniture:",
     "",
     "STEP 1: IDENTIFY ARCHITECTURAL ANCHORS",
     "First identify 3-5 prominent fixed architectural/built-in features that define this space's character:",
@@ -1256,7 +1256,7 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     ...primaryTaskEncouragement, // MOVE TO TOP - Most critical directive must be first
     ...preValidation,
     ...spatialConstraints, // Add spatial blueprint constraints BEFORE architectural freeze for maximum impact
-    ...architecturalAnchorFocus, // ONLY for Stage 2 FULL staging (empty room) - guides furniture style selection
+    ...architecturalAnchorFocus, // ONLY for Stage 2 full staging from stage-only baseline
     ...architecturalFreeze,
     ...roomTypeGuidance,
     industry.toLowerCase().includes("real estate")

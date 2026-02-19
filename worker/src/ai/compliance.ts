@@ -34,17 +34,17 @@ async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prom
 
 function buildStage2ComplianceContext(mode?: Stage2ValidationMode): string[] {
   if (!mode) return [];
-  if (mode === "FULL_AFTER_FULL_REMOVAL") {
+  if (mode === "FULL_STAGE_ONLY") {
     return [
-      "STAGE2 VALIDATION CONTEXT: FULL_AFTER_FULL_REMOVAL",
-      "- BEFORE corresponds to post-full-removal baseline (furniture largely cleared).",
+      "STAGE2 VALIDATION CONTEXT: FULL_STAGE_ONLY",
+      "- BEFORE corresponds to stage-only baseline (typically empty input).",
       "- AFTER is expected to add appropriate staged furniture while preserving fixed architecture.",
     ];
   }
   return [
     "STAGE2 VALIDATION CONTEXT: REFRESH_OR_DIRECT",
-    "- BEFORE is direct-enhancement or light-declutter baseline.",
-    "- AFTER is expected to refresh/replace furniture while preserving fixed architecture.",
+    "- BEFORE is structured-retain or light-declutter baseline.",
+    "- AFTER is expected to augment staging while preserving fixed architecture.",
   ];
 }
 

@@ -440,248 +440,124 @@ OUTPUT
 Return ONLY the enhanced image.`.trim();
 }
 
-  // Stage 1B: Aggressive furniture & clutter removal (NZ style)
-  // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.
+  // Stage 1B: Structured retain declutter (NZ style)
+  // Removes clutter/secondary items while preserving primary room anchors.
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
-      return `You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
-
-GOAL:
-Empty the outdoor space while preserving all fixed structures.
-
-YOUR ONLY JOB: Remove movable outdoor furniture and items. NOTHING MORE.
-
-CRITICAL — DO NOT ADD OR CREATE ANYTHING:
-
-You must NOT add, create, or invent ANY structural features or landscape elements:
-- Do NOT create new windows, doors, openings, or architectural features
-- Do NOT add or extend decking, paths, or hardscaping
-- Do NOT add or remove fixed landscaping, trees, or garden beds
-- Do NOT create fences, walls, or structures that don't already exist
-- ONLY reveal surfaces (deck boards, paving, grass) that were hidden behind furniture
-- When uncertain what's under furniture, recreate matching surface patterns — NEVER invent structures
-
-If you add ANY structural feature that wasn't already visible, the task is FAILED.
-
-CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
-
-Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
-Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided.
-
-NEWLY REVEALED AREA RULE — CONTINUATION ONLY
-
-If a tiny boundary region becomes newly visible during reconstruction,
-it may ONLY continue already-visible surfaces and lines.
-
-Do NOT invent or add any new:
-- openings (windows, doors, arches)
-- fixtures or cabinetry
-- electrical sockets, light switches, air vents
-- extractor fans, wall lights, ceiling fixtures
-- plumbing points, built-ins, or structural details
-
-If uncertain, extend existing texture/paint/material conservatively.
-Never create new architectural or service elements.
-
-COLOR PRESERVATION — LOCKED
-
-All surface colors must remain IDENTICAL to the input image:
-- Do NOT change wall colors, cladding colors, or paint tones
-- Do NOT change deck colors, paving colors, or surface tones
-- Do NOT brighten, darken, or shift any surface colors
-- When reconstructing behind furniture, match the EXACT surrounding surface color
-- Wall colors = LOCKED | Surface colors = LOCKED
-
-REMOVE:
-- All outdoor furniture (chairs, tables, loungers, benches)
-- BBQs and outdoor cooking equipment
-- Umbrellas and shade structures (movable)
-- Heaters and portable fixtures
-- All movable pots, planters, and decor
-- Toys, tools, hoses, bins
-
-KEEP EXACTLY AS-IS:
-- Decks, pergolas, railings, fixed awnings
-- All fixed structures, fences, walls, retaining walls
-- Permanent landscaping (trees, shrubs, hedges, garden beds)
-- Exterior lighting fixtures (wall-mounted, overhead)
-- Walls, windows, doors, rooflines, gutters
-- Driveways, paths, paving — preserve exact shape and materials
-
-DO NOT TOUCH:
-- Any permanent structures or architecture
-- Decking, paths, driveways, paving
-- Fixed lighting, plumbing fixtures
-- Windows, doors, frames
-- Trees, shrubs, landscaping, and garden beds
-- Exterior views and background scenery
-
-Preserve surface textures and shadows.`.trim();
-    }
-
-      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+      return `REALENHANCE — STAGE 1B: STRUCTURED RETAIN DECLUTTER (EXTERIOR)
 
 TASK:
-Completely remove all movable furniture, decor, and personal items to create a pristine, empty architectural shell. The room structure, fixtures, and finishes must remain intact.
+Remove loose clutter, portable decor, and non-core movable items while preserving fixed structures and major outdoor layout anchors.
 
-    PRIMARY OBJECTIVE:
-    Create a stage-ready empty room while preserving architecture, built-ins, fixtures, and window treatments exactly.
+PRIMARY OBJECTIVE:
+Create a clean, listing-ready exterior without emptying or rebuilding the space.
 
-────────────────────────────────
-CAMERA & PERSPECTIVE LOCK — STRICT
-────────────────────────────────
+REMOVE:
+- portable clutter and personal items
+- loose decor and small movable accessories
+- minor movable seating or secondary loose items when visually distracting
 
-Camera and lens characteristics are LOCKED.
+KEEP EXACTLY AS-IS:
+- all fixed structures and hardscape
+- major outdoor anchor elements and primary layout references
+- walls, windows, doors, rooflines, gutters
+- permanent landscaping and exterior lighting
 
-• Do NOT change camera position, angle, or height
-• Do NOT change zoom or field of view
-• Do NOT change lens perspective or distortion
-• Do NOT shift viewpoint or framing
+CRITICAL LOCKS:
+- Do NOT add, remove, move, resize, or reshape structural elements.
+- Do NOT change camera viewpoint, framing, perspective, or field of view.
+- Do NOT invent architecture, openings, fixtures, or service elements.
+- Do NOT recolor permanent surfaces.
 
-Room geometry and perspective lines must match the input exactly.
-Furniture removal must NOT change apparent room size or depth.
-
-YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
-
-    NON-NEGOTIABLE LOCKS — DO NOT ADD OR CREATE ANYTHING:
-
-You must NOT add, create, or invent ANY structural features:
-- Do NOT create new windows, doors, openings, arches, or alcoves
-- Do NOT add built-in features, fixtures, or joinery that don't already exist
-- Do NOT invent architectural elements or structural details
-- Do NOT extend openings beyond their original visible boundaries
-- ONLY reveal surfaces that were hidden behind furniture
-- When furniture blocks part of a window/door, only extend to its ORIGINAL edges
-- When uncertain what's behind furniture, recreate matching wall/floor patterns — NEVER invent openings
-
-If you add ANY structural feature that wasn't already visible, the task is FAILED.
-
-COLOR PRESERVATION — LOCKED
-
-Wall, floor, and ceiling colors must remain IDENTICAL to the input image:
-- Do NOT change wall colors, paint tones, or wallpaper colors
-- Do NOT change floor colors, carpet tones, or flooring colors
-- Do NOT change ceiling colors or paint
-- Do NOT brighten, darken, or shift any surface colors
-- When reconstructing behind furniture, match the EXACT surrounding wall/floor/ceiling color
-- Wall colors = LOCKED | Floor colors = LOCKED | Ceiling colors = LOCKED
-
-ARCHITECTURAL SHELL — PRESERVE & PROTECT
-
-You must KEEP all fixed elements exactly as they are:
-
-Surfaces: Walls, ceilings, continuous floor surfaces (including wall-to-wall carpets), skirting boards, trims, cornices, door frames, arches, closet openings.
-
-Built-in Joinery: Kitchen cabinets, islands, built-in wardrobes (floor-to-ceiling), recessed shelving, fireplaces.
-
-Fixtures: Ceiling lights (pendants/fans), recessed lighting, wall sconces, switches, outlets, thermostats, vents, radiators, towel rails.
-
-WINDOW TREATMENTS — STRUCTURAL
-Curtains, blinds, and rods must remain unchanged.
-Treat window treatments as fixed elements.
-Do NOT remove, replace, resize, restyle, or reposition them.
-
-Mirrors: Keep large wall-mounted or glued mirrors (bathroom vanities, built-in wardrobe doors). Remove only small decorative framed mirrors.
-
-SMALL WALL FIXTURES — STRICT PRESERVATION (CRITICAL)
-
-Light switches, power outlets, wall plates, control panels, thermostats,
-data ports, and similar small wall-mounted fixtures are FIXED ELEMENTS.
-
-You must NOT:
-• add new switches or outlets
-• duplicate switches or outlets
-• move switch or outlet positions
-• invent missing wall controls
-• “complete” partially visible switch plates
-• generate new wall hardware when reconstructing surfaces
-
-If a switch or outlet was hidden behind removed furniture:
-→ reconstruct the wall surface cleanly
-→ do NOT add a replacement fixture.
-
-If uncertain whether a wall detail is a fixture:
-→ leave the wall plain.
-
-STRUCTURAL HARDLOCK RULES — MUST FOLLOW
-
-Treat the following as permanent built-in structures, NOT removable objects:
-- kitchen islands
-- built-in counters
-- fixed cabinetry
-- bench units
-- vanities
-- built-in storage
-- fixed appliances
-- structural fixtures
-
-These must NEVER be:
-- removed
-- replaced
-- converted
-- restaged
-- resized
-- moved
-- relabeled as furniture
-
-Kitchen islands must NEVER be converted into dining tables or staging furniture.
-
-BUILT-IN VS LOOSE FURNITURE — IMPORTANT DISTINCTION
-
-Beds, bed frames, mattresses, and bedroom furniture are ALWAYS considered loose removable furniture — even if heavy or made of timber.
-
-Do NOT classify beds or bed frames as built-in joinery.
-
-Only treat an item as built-in if it is visibly attached to walls, floors, or structure with no gaps and no independent frame.
-
-Freestanding beds are NEVER built-ins and should be removed in stage-ready declutter mode when clearly identifiable as freestanding.
-
-Similarly, freestanding furniture items like:
-- wardrobes (not built into walls)
-- dressers and chests of drawers
-- bedside tables
-- desks (unless visibly integrated into wall units)
-- bookcases (unless built-in shelving)
-
-are ALL removable furniture — remove them completely.
-
-ARCHITECTURE HINTS — CONTEXT ONLY, REMOVAL ONLY
-
-Architecture hints (built-in detection, fixture identification) are provided as
-context to help you decide what to KEEP — never what to ADD.
-
-  context_only = true
-  removal_only = true
-  no_completion = true
-  no_inference = true
-
-If any architecture hint conflicts with visible pixels → trust the pixels.
-Never add cabinetry, fixtures, or structures that are not clearly visible
-in the input image. Do NOT complete partially visible structures.
-Do NOT infer hidden built-ins from context clues.
-
-CRITICAL SAFETY RULES:
-
-If unsure whether an item is built-in → treat it as fixed.
-If an item is clearly freestanding furniture (including beds), remove it.
-Do NOT remove built-in structures or fixed architectural elements. Declutter applies only to movable objects and furniture.
-Do NOT alter wall finishes, flooring materials, or structural features.
-Do NOT move or cover windows, doors, or architectural elements.
-Preserve outdoor items and landscaping visible through windows.
-
-TARGETS FOR REMOVAL (ERASE ALL MOVABLE ITEMS)
-
-Seating, tables, freestanding storage, decor, rugs, plants, clutter, personal items.
-
-QUALITY RULES:
-Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
-When reconstructing walls, prefer clean blank wall over adding any wall hardware.
-
-SAFETY FAIL RULES:
-Any movable items remain → FAIL
+SAFE MODE:
+If uncertain whether an item is structural or anchor-like, preserve it.
 
 OUTPUT:
-Return only the empty room image.`.trim();
+Return only the processed image.`.trim();
+    }
+
+      return `REALENHANCE — STAGE 1B: STRUCTURED RETAIN DECLUTTER (INTERIOR)
+
+TASK:
+Remove clutter, decor, wall art, small non-core items, secondary seating, and partial furniture fragments while preserving primary anchor furniture and all structural elements.
+
+PRIMARY OBJECTIVE:
+Produce a clean, stage-ready base that preserves layout anchors.
+Do NOT create an empty room. Do NOT perform large floor reconstruction.
+
+────────────────────────────────
+STRUCTURAL LOCKS — NON-NEGOTIABLE
+────────────────────────────────
+
+Do NOT add, remove, move, resize, or reshape any structural element:
+- walls, ceilings, floors, baseboards
+- windows, doors, frames, openings
+- built-ins, cabinetry, counters, islands, vanities
+- fixed lighting, HVAC, vents, plumbing fixtures
+- curtain rails, blind systems, window treatment hardware
+
+Do NOT change camera position, framing, perspective, or field of view.
+Do NOT reinterpret room geometry.
+
+────────────────────────────────
+ROOM ANCHOR PRESERVATION — REQUIRED
+────────────────────────────────
+
+Living room:
+- KEEP primary sofa
+- KEEP primary TV unit / entertainment anchor
+- REMOVE secondary seating and non-core extras
+
+Bedroom:
+- KEEP bed
+- KEEP bedside tables
+- REMOVE loose dressers unless clearly built-in
+
+Dining:
+- KEEP dining table and chairs
+- REMOVE non-core sideboards unless clearly built-in
+
+Kitchen:
+- KEEP cabinetry, island, integrated appliances
+- REMOVE portable loose items and non-core accessories
+
+Office:
+- KEEP desk and primary chair
+- REMOVE non-core freestanding shelving unless clearly built-in
+
+If room type is uncertain:
+- preserve the largest primary functional anchors
+- remove secondary/non-core movable items conservatively
+
+────────────────────────────────
+REMOVAL TARGETS — REQUIRED
+────────────────────────────────
+
+REMOVE:
+- clutter and personal items
+- loose decor and wall art
+- small movable furniture
+- secondary seating
+- partial furniture fragments at frame edges
+- non-core movable objects and accessories
+
+KEEP:
+- primary anchors per room type
+- all built-ins and fixed fixtures
+- structural and service elements
+
+────────────────────────────────
+QUALITY & SAFETY RULES
+────────────────────────────────
+
+Do not wipe the room.
+Do not attempt empty-room generation.
+Avoid large inpainted floor/wall reconstruction.
+Preserve natural continuity around retained anchors.
+If uncertain whether an item is anchor/fixed, preserve it.
+
+OUTPUT:
+Return only the processed image.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
@@ -995,18 +871,17 @@ function buildStage2InteriorPromptNZStyle(
     ? "multiple_living"
     : normalizedRoom;
   const sourceStage = opts?.sourceStage || "1A";
-  const forceRefreshMode = MULTI_ROOM_TYPES.has(canonicalRoomType);
   const roomTypeLockBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
     ? MULTI_ROOM_LOCK
     : SINGLE_ROOM_LOCK;
   
   // Determine staging mode based on source stage
-  const isFullStaging = sourceStage === "1B-stage-ready" && !forceRefreshMode; // Room was fully decluttered → stage empty room
-  const isRefreshStaging = !isFullStaging; // Furniture present or refresh-forced → refresh existing
+  const isFullStaging = sourceStage === "1A"; // Stage-only path: user-supplied empty baseline
+  const isRefreshStaging = !isFullStaging; // Stage1B baseline: structured-retain augmentation
   
   const taskInstruction = isFullStaging
-    ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
-    : "Refresh ALL existing furniture with modern equivalents.\nPreserve layout, architecture, and flow EXACTLY.";
+    ? "Stage this room from an empty baseline with appropriate furniture for the specified room type."
+    : "Refresh and augment the retained layout.\nPreserve anchor positions and architecture exactly while adding complementary staging elements.";
 
   const modelTemperature = isFullStaging ? 0.25 : 0.33;
   const modelTopP = isFullStaging ? 0.70 : 0.78;
@@ -1076,7 +951,7 @@ If planner hints conflict with structure → IGNORE HINTS.
 `;
   }
 
-  return `ROLE: Interior ${isFullStaging ? 'Virtual Staging' : 'Furniture Refresh'} Specialist — NZ Real Estate
+  return `ROLE: Interior ${isFullStaging ? 'Virtual Staging' : 'Refresh + Augmentation'} Specialist — NZ Real Estate
 
 TASK:
 ${taskInstruction}
@@ -1086,6 +961,35 @@ Temperature: ${modelTemperature}
 TopP: ${modelTopP}
 TopK: ${modelTopK}
 ${layoutContextBlock}
+
+────────────────────────────────
+IMMUTABLE ELEMENTS (REFRESH MODE)
+────────────────────────────────
+${isRefreshStaging
+  ? `Retained anchors from Stage 1B are immutable geometry references.
+You may restyle finishes/materials only.
+You MUST NOT translate, rotate, resize, remove, or re-layout these anchors.
+
+IMMUTABLE ANCHOR EXAMPLES:
+• Living: primary sofa, TV unit
+• Bedroom: bed, bedside tables
+• Dining: primary table and chairs
+• Kitchen: cabinetry, island, integrated appliances
+• Office: desk and main chair`
+  : `In full staging mode, fixed architecture and built-ins remain immutable.`}
+
+────────────────────────────────
+AUGMENTABLE ZONES
+────────────────────────────────
+${isRefreshStaging
+  ? `You may augment open, non-anchor zones by adding:
+• complementary decor and artwork
+• plants and soft furnishings
+• secondary furniture
+• additional primary furniture only when spatially appropriate
+
+All additions must preserve walkways, openings, and structural constraints.`
+  : `You may place complete room-appropriate staging furniture while preserving structural constraints and circulation.`}
 
 ${CAMERA_LOCK_BLOCK}
 
@@ -1457,7 +1361,7 @@ If only part of a kitchen is visible:
 ${isFullStaging ? 'FULL STAGING MODE' : 'REFRESH MODE'} — STRICT LOGIC
 ────────────────────────────────
 ${isFullStaging 
-  ? `1. The room is EMPTY (decluttered in Stage 1B).
+  ? `1. Treat input as empty baseline for room type: ${room}.
 2. Add appropriate furniture for room type: ${room}.
 3. Ensure all furniture grounds properly with shadows.
 4. Match NZ Contemporary / Scandi Minimalist style.
@@ -1474,15 +1378,15 @@ WALL ART PLACEMENT RULE:
 Framed artwork must be wall-mounted only.
 Do NOT lean artwork on furniture.
 Do NOT place framed art sitting on dressers or consoles.`
-  : `1. Identify ALL visible furniture items.
-2. Replace EACH item with a modern equivalent.
-3. Preserve: type, position, orientation, functional role.
-4. Do NOT add new furniture; empty areas remain empty.
-  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
-5. If replacement risks artifacts, keep the original item unchanged.
+  : `1. Identify retained anchors and treat them as immutable geometry references.
+2. You may restyle anchor finishes only; do NOT move/rotate/resize/remove anchors.
+3. Preserve anchor positions, room layout, and circulation flow exactly.
+4. Add complementary decor, secondary furniture, artwork, plants, and soft furnishings in augmentable zones.
+5. Additional primary furniture is allowed only when space and walkways remain correct.
+6. Never wipe the room, relayout from scratch, or reinterpret the floor plan.
 
 CONSISTENCY RULE:
-- No mixing old and new. Replace fully or not at all.`}
+- Keep architecture and anchor geometry locked while augmenting non-anchor zones.`}
 
 ────────────────────────────────
 CRITICAL OPENING CLEARANCE RULE — STRICT

@@ -162,9 +162,9 @@ export function UsageSummary({
         <p className="font-semibold mb-1">How billing works:</p>
         <ul className="space-y-0.5 ml-2">
           <li>• Enhanced only: <span className="font-medium">1 image</span></li>
-          <li>• Enhanced + Decluttered/Empty Room: <span className="font-medium">1 image</span></li>
+          <li>• Enhanced + Decluttered: <span className="font-medium">1 image</span></li>
           <li>• Enhanced + Staged: <span className="font-medium">1 image</span></li>
-          <li>• Enhanced + Empty Room + Staged: <span className="font-medium">2 images</span></li>
+          <li>• Enhanced + Decluttered + Staged: <span className="font-medium">2 images</span></li>
         </ul>
       </div>
 

@@ -688,20 +688,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sourceStage = "1A";
       reason = "exterior_scene";
     } else if (ctx.sourceStageHint === "1A" || ctx.sourceStageHint === "1B-light" || ctx.sourceStageHint === "1B-stage-ready") {
-      sourceStage = ctx.sourceStageHint;
+      sourceStage = ctx.sourceStageHint === "1B-stage-ready" ? "1B-light" : ctx.sourceStageHint;
       reason = "hint";
     } else if (ctx.baseStage === "1B") {
-      if (ctx.stage1BMode === "light") {
-        sourceStage = "1B-light";
-        reason = "stage1b_mode_light";
-      } else {
-        sourceStage = "1B-stage-ready";
-        reason = ctx.stage1BMode === "stage-ready" ? "stage1b_mode_stage_ready" : "stage1b_mode_default_stage_ready";
-      }
+      sourceStage = "1B-light";
+      reason = ctx.stage1BMode === "stage-ready" ? "stage1b_mode_structured_retain" : "stage1b_mode_light";
     }
 
-    const mode: "refresh" | "full" = sourceStage === "1B-stage-ready" && !forceRefresh ? "full" : "refresh";
-    if (forceRefresh && sourceStage === "1B-stage-ready") {
+    const mode: "refresh" | "full" = sourceStage === "1A" ? "full" : "refresh";
+    if (forceRefresh && sourceStage === "1A") {
       reason = `${reason}+force_refresh_room_type`;
     }
 
@@ -1670,7 +1665,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
-    nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Remove clutter/mess, keep furniture" : "Remove ALL furniture (empty room ready for staging)"}`);
+    nLog(`[WORKER] Mode explanation: ${declutterMode === "light" ? "Light declutter (remove clutter, preserve furniture)" : "Structured retain declutter (preserve anchors, remove secondary items)"}`);
     nLog(`[WORKER] virtualStage setting: ${payload.options.virtualStage}`);
     
     // 📊 STRUCTURED ROUTING LOG
@@ -1679,7 +1674,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       isMultiRoom: forceLightRoomTypes.has(canonicalRoomType),
       declutterMode,
       virtualStage: payload.options.virtualStage,
-      expectedStage2Mode: declutterMode === "stage-ready" && !forceLightRoomTypes.has(canonicalRoomType) ? "full" : "refresh"
+      expectedStage2Mode: payload.options.virtualStage ? "refresh" : "none"
     });
 
       const runStage1BWithValidation = async (mode: "light" | "stage-ready", attempt: number) => {
@@ -1721,7 +1716,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
         jobId: payload.jobId,
         stage1APath: path1A,
-        stage1BValidationMode: mode === "stage-ready" ? "FULL_REMOVAL" : "LIGHT_DECLUTTER",
+        stage1BValidationMode: mode === "stage-ready" ? "STRUCTURED_RETAIN" : "LIGHT_DECLUTTER",
         baseArtifacts,
       });
 
@@ -2748,13 +2743,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
-  // Fallback: if full removal (stage-ready) exhausted retries with validation risk, try light declutter then rerun Stage 2
+  // Fallback: if structured-retain (stage-ready token) exhausted retries with validation risk, try light declutter then rerun Stage 2
   const declutterModeFallback = (payload.options as any).declutterMode;
   const shouldFallbackLightDeclutter = false;
 
   if (shouldFallbackLightDeclutter) {
     try {
-      nLog(`[worker] [FALLBACK] using light declutter backstop after full-removal retries exhausted`);
+      nLog(`[worker] [FALLBACK] using light declutter backstop after structured-retain retries exhausted`);
       const lightPath1B = await runStage1B(path1A, {
         replaceSky: false,
         sceneType: sceneLabel,

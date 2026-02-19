@@ -662,7 +662,6 @@ export default function BatchProcessor() {
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
-  const [declutterMode, setDeclutterMode] = useState<"light" | "stage-ready">("stage-ready");
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
@@ -2405,20 +2404,22 @@ export default function BatchProcessor() {
                 ...(it?.meta || {}),
               };
               const existingStageMap = existing.stageUrls || existing.result?.stageUrls || existing.stageOutputs || existing.result?.stageOutputs || null;
+              const stageUrlsMap = (stageUrls || null) as Record<string, any> | null;
+              const existingStageMapObj = (existingStageMap || null) as Record<string, any> | null;
               const mergedStageUrls = (isRetryChildJob || isRegionEdit)
-                ? (existingStageMap || stageUrls || null)
-                : stageUrls
+                ? (existingStageMapObj || stageUrlsMap || null)
+                : stageUrlsMap
                   ? {
-                      ...(existingStageMap || {}),
-                      ...(stageUrls || {}),
-                      '2': stageUrls['2'] || stageUrls.stage2 || existingStageMap?.['2'] || existingStageMap?.stage2 || null,
-                      '1B': stageUrls['1B'] || stageUrls['1b'] || stageUrls.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || existingStageMap?.stage1B || null,
-                      '1A': stageUrls['1A'] || stageUrls['1'] || stageUrls.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || existingStageMap?.stage1A || null,
-                      stage2: stageUrls.stage2 || stageUrls['2'] || existingStageMap?.stage2 || existingStageMap?.['2'] || null,
-                      stage1B: stageUrls.stage1B || stageUrls['1B'] || stageUrls['1b'] || existingStageMap?.stage1B || existingStageMap?.['1B'] || existingStageMap?.['1b'] || null,
-                      stage1A: stageUrls.stage1A || stageUrls['1A'] || stageUrls['1'] || existingStageMap?.stage1A || existingStageMap?.['1A'] || existingStageMap?.['1a'] || existingStageMap?.['1'] || null,
+                      ...(existingStageMapObj || {}),
+                      ...(stageUrlsMap || {}),
+                      '2': stageUrlsMap['2'] || stageUrlsMap.stage2 || existingStageMapObj?.['2'] || existingStageMapObj?.stage2 || null,
+                      '1B': stageUrlsMap['1B'] || stageUrlsMap['1b'] || stageUrlsMap.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
+                      '1A': stageUrlsMap['1A'] || stageUrlsMap['1'] || stageUrlsMap.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
+                      stage2: stageUrlsMap.stage2 || stageUrlsMap['2'] || existingStageMapObj?.stage2 || existingStageMapObj?.['2'] || null,
+                      stage1B: stageUrlsMap.stage1B || stageUrlsMap['1B'] || stageUrlsMap['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
+                      stage1A: stageUrlsMap.stage1A || stageUrlsMap['1A'] || stageUrlsMap['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
                     }
-                  : (existingStageMap || null);
+                  : (existingStageMapObj || null);
               const mergedResultUrl = resultUrlSafe
                 || existing.resultUrl
                 || existing.result?.resultUrl
@@ -2519,6 +2520,8 @@ export default function BatchProcessor() {
 
             if (completedFinal && !processedSetRef.current.has(idx)) {
               processedSetRef.current.add(idx);
+              const queueStageUrls = (stageUrls as Record<string, any> | null) || null;
+              const queueRequestedStages = requestedStages || null;
               queueRef.current.push({
                 index: idx,
                 result: {
@@ -2526,17 +2529,17 @@ export default function BatchProcessor() {
                   originalImageUrl: originalUrl,
                   qualityEnhancedUrl: null,
                   mode: it.mode || "enhanced",
-                  stageUrls: mergedStageUrls,
+                  stageUrls: queueStageUrls,
                   imageId,
                   status,
                   resultStage,
-                  requestedStages: mergedRequestedStages,
+                  requestedStages: queueRequestedStages,
                   meta: it?.meta || {},
                 },
                 jobId: key,
                 imageId,
-                stageUrls: mergedStageUrls,
-                requestedStages: mergedRequestedStages,
+                stageUrls: queueStageUrls,
+                requestedStages: queueRequestedStages,
                 filename,
               });
             }
@@ -2919,15 +2922,15 @@ export default function BatchProcessor() {
     fd.append("allowRetouch", "true");
     fd.append("furnitureReplacement", furnitureReplacement.toString());
     fd.append("declutter", declutter.toString());
+    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
     if (declutter) {
       fd.append("declutterMode", declutterMode);
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
-    const stage1BLightSelected = declutter && declutterMode === "light";
     const stage2Only = allowStaging && !declutter;
     const stage2Variant: "2A" | "2B" | undefined = (() => {
       if (!allowStaging) return undefined;
-      if (declutter) return declutterMode === "stage-ready" ? "2B" : "2A";
+      if (declutter) return "2A";
       return "2B";
     })();
 
@@ -3169,6 +3172,7 @@ export default function BatchProcessor() {
   };
 
   const handleStartEnhance = () => {
+    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
     console.info("[ENHANCE_CLICK] start", {
       count: files.length,
       allowStaging,
@@ -4774,43 +4778,13 @@ export default function BatchProcessor() {
                     />
                     <div>
                       <span className="text-sm font-medium text-white">Remove furniture & clutter</span>
-                      <p className="text-xs text-gray-400">Create a decluttered or empty-room output</p>
+                      <p className="text-xs text-gray-400">
+                        {allowStaging
+                          ? "Structured retain declutter: keeps primary anchors, removes secondary items"
+                          : "Light declutter: removes clutter while preserving main furniture"}
+                      </p>
                     </div>
                   </label>
-
-                  {/* Declutter Mode Radio Buttons */}
-                  {declutter && (
-                    <div className="ml-8 space-y-2 mb-3">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="declutterMode"
-                          value="light"
-                          checked={declutterMode === "light"}
-                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
-                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
-                        />
-                        <div>
-                          <span className="text-sm text-white">Declutter Only (Remove Clutter)</span>
-                          <p className="text-xs text-gray-400">Keeps furniture, removes mess and clutter</p>
-                        </div>
-                      </label>
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="declutterMode"
-                          value="stage-ready"
-                          checked={declutterMode === "stage-ready"}
-                          onChange={(e) => setDeclutterMode(e.target.value as "light" | "stage-ready")}
-                          className="w-4 h-4 text-purple-600 border-gray-600 bg-gray-800 focus:ring-purple-500"
-                        />
-                        <div>
-                          <span className="text-sm text-white">Stage Ready (Empty Room)</span>
-                          <p className="text-xs text-gray-400">Removes all furniture and clutter</p>
-                        </div>
-                      </label>
-                    </div>
-                  )}
 
                   <label className="flex items-center gap-3">
                     <input
@@ -4824,7 +4798,7 @@ export default function BatchProcessor() {
                       <span className="text-sm font-medium text-white">Add virtual staging</span>
                       <p className="text-xs text-gray-400">
                         {declutter 
-                          ? "Create a staged version of the empty room" 
+                          ? "Create a staged version that augments the retained layout" 
                           : "Create a staged version with furniture and decor"}
                       </p>
                     </div>
@@ -4866,7 +4840,7 @@ export default function BatchProcessor() {
                       </button>
                       {allowStaging && !declutter && (
                         <p className="text-xs text-amber-200/90 mt-2">
-                          For best results, ensure that images requiring staging are either already empty rooms or select full furniture removal before staging.
+                          For best results in staging-only mode, upload images that are already mostly empty.
                         </p>
                       )}
                     </div>
@@ -5787,14 +5761,7 @@ export default function BatchProcessor() {
                           if (!requested && editedUrl) return "edited";
                           return requested || defaultStage;
                         })();
-                        const stage1BIsFull = (() => {
-                          const req = result?.requestedStages || result?.result?.requestedStages || {};
-                          const reqMode = String(req?.declutterMode || "").toLowerCase();
-                          const variant = String(req?.stage2Variant || "").toUpperCase();
-                          const sourceStage = String(result?.meta?.sourceStage || result?.result?.meta?.sourceStage || "").toLowerCase();
-                          return reqMode === "stage-ready" || variant === "2B" || sourceStage.includes("stage-ready");
-                        })();
-                        const stage1BLabel = stage1BIsFull ? "Empty Room" : "Decluttered";
+                        const stage1BLabel = "Decluttered";
                         const availableOutputs: { key: DisplayOutputKey; label: string; url: string | null }[] = (
                           [
                             stage2Url ? { key: "2" as DisplayOutputKey, label: "Staged", url: stage2Url } : null,

@@ -13,11 +13,11 @@ import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe s
  * 
  * Takes the enhanced output from Stage 1A and removes furniture/clutter based on mode:
  * - "light": Removes clutter/mess only, keeps all main furniture
- * - "stage-ready": Removes ALL furniture and clutter to create empty room
+ * - "stage-ready": Structured retain declutter (preserves anchors, removes secondary items)
  * 
  * Pipeline: Sharp → Stage 1A (Gemini enhance) → Stage 1B (Gemini declutter) → Stage 2 (Gemini stage)
  * 
- * The output is either a tidied room (light) or empty room (stage-ready), ready for Stage 2 staging.
+ * The output is either a light decluttered room (light) or a structured-retain base (stage-ready), ready for Stage 2.
  */
 export async function runStage1B(
   stage1APath: string,
@@ -66,7 +66,7 @@ export async function runStage1B(
 
   logIfNotFocusMode(`[stage1B] 🔵 Starting furniture & clutter removal...`);
   logIfNotFocusMode(`[stage1B] Input (Stage1A enhanced): ${stage1APath}`);
-  logIfNotFocusMode(`[stage1B] Declutter mode: ${declutterMode} (${declutterMode === "light" ? "keep furniture, remove clutter" : "remove ALL furniture"})`);
+  logIfNotFocusMode(`[stage1B] Declutter mode: ${declutterMode} (${declutterMode === "light" ? "keep furniture, remove clutter" : "preserve anchors, remove secondary items"})`);
   logIfNotFocusMode(`[stage1B] Options: sceneType=${sceneType}, roomType=${roomType}`);
   
   try {
@@ -78,9 +78,9 @@ export async function runStage1B(
       promptOverride = buildLightDeclutterPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
       logIfNotFocusMode("[stage1B] 📋 Using LIGHT (declutter-only) prompt");
     } else if (declutterMode === "stage-ready") {
-      // Stage-ready: complete furniture removal for virtual staging
+      // Stage-ready token: structured-retain declutter for virtual staging refresh
       promptOverride = buildStage1BPromptNZStyle(roomType, (sceneType === "interior" || sceneType === "exterior" ? sceneType : "interior") as any);
-      logIfNotFocusMode("[stage1B] 📋 Using STAGE-READY (full removal) prompt");
+      logIfNotFocusMode("[stage1B] 📋 Using STAGE-READY (structured retain) prompt");
     } else {
       throw new Error(`Invalid declutterMode: ${declutterMode}. Must be "light" or "stage-ready"`);
     }
@@ -90,7 +90,7 @@ export async function runStage1B(
     if (declutterMode === "stage-ready") {
       promptOverride += `
 
-WINDOW TREATMENT HARD LOCK (STAGE 1B FULL):
+WINDOW TREATMENT HARD LOCK (STAGE 1B STRUCTURED RETAIN):
 Preserve existing curtains, drapes, blinds, rods, tracks, and rails exactly as shown.
 Do not add, remove, replace, restyle, or reposition any window treatment components.
 `;
@@ -123,7 +123,7 @@ Do not add blinds.
     }
 
     // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
-    const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "full (stage-ready)";
+    const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "structured-retain (stage-ready token)";
     logIfNotFocusMode("[stage1B] Declutter mode resolved:", {
       declutter: true,
       declutterMode: declutterMode,
