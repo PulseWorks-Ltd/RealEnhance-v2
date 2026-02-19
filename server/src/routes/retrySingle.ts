@@ -507,6 +507,18 @@ export function retrySingleRouter() {
         stagingStyle,
         manualSceneOverride,
       };
+
+      // Preserve furnished gate decision for deterministic retry routing.
+      // Retry must not re-detect furnished state and drift credit/routing outcomes.
+      const parentFurnishedState =
+        (parentJob as any)?.options?.furnishedState === "furnished" || (parentJob as any)?.options?.furnishedState === "empty"
+          ? (parentJob as any).options.furnishedState
+          : (((parentJob as any)?.meta?.furnishedGate && typeof (parentJob as any).meta.furnishedGate.furnished === "boolean")
+            ? ((parentJob as any).meta.furnishedGate.furnished ? "furnished" : "empty")
+            : undefined);
+      if (parentFurnishedState === "furnished" || parentFurnishedState === "empty") {
+        options.furnishedState = parentFurnishedState;
+      }
       if (temperature !== undefined || topP !== undefined || topK !== undefined) {
         options.sampling = {
           ...(temperature !== undefined ? { temperature } : {}),

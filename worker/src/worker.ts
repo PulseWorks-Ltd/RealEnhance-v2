@@ -1635,6 +1635,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Furnished gate for Declutter + Stage path only (run once per image/job, cache via payload metadata)
   if (payload.options.declutter && payload.options.virtualStage) {
+    const isManualRetry = (payload as any).retryType === "manual_retry";
     const payloadFurnishedState: "furnished" | "empty" | undefined =
       (payload.options as any).furnishedState === "furnished" || (payload.options as any).furnishedState === "empty"
         ? (payload.options as any).furnishedState
@@ -1643,7 +1644,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let furnishedSource: "detected" | "payload" | "fallback" = "fallback";
 
     try {
-      if (sceneLabel === "interior") {
+      if (isManualRetry) {
+        if (payloadFurnishedState) {
+          furnishedState = payloadFurnishedState;
+          furnishedSource = "payload";
+        } else if ((payload as any).retryParentJobId) {
+          const parentJob = await getJob((payload as any).retryParentJobId);
+          const parentFurnishedGate = (parentJob as any)?.meta?.furnishedGate;
+          const parentFurnishedState =
+            parentFurnishedGate && typeof parentFurnishedGate.furnished === "boolean"
+              ? (parentFurnishedGate.furnished ? "furnished" : "empty")
+              : ((parentJob as any)?.options?.furnishedState === "furnished" || (parentJob as any)?.options?.furnishedState === "empty"
+                ? (parentJob as any).options.furnishedState
+                : undefined);
+          if (parentFurnishedState === "furnished" || parentFurnishedState === "empty") {
+            furnishedState = parentFurnishedState;
+            furnishedSource = "payload";
+          }
+        }
+      } else if (sceneLabel === "interior") {
         const ai = getGeminiClient();
         if (ai) {
           const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);

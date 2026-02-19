@@ -510,8 +510,10 @@ export function uploadRouter() {
       if (!opts.stage2Variant && opts.virtualStage && opts.declutterMode === "light") {
         opts.stage2Variant = "2A";
       }
-      if (!opts.stage2Variant && opts.virtualStage) {
-        opts.stage2Variant = "2B"; // safest default: empty-room staging
+      // For Declutter+Stage (stage-ready), leave variant unset when furnished state is unknown.
+      // Worker furnished gate will decide deterministically per-image.
+      if (!opts.stage2Variant && opts.virtualStage && opts.declutterMode !== "stage-ready") {
+        opts.stage2Variant = "2B"; // safest default for non-declutter-stage flows
       }
 
       // Furnished state derives from variant when missing
