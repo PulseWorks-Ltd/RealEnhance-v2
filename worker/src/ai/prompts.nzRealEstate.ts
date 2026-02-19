@@ -881,7 +881,7 @@ function buildStage2InteriorPromptNZStyle(
   
   const taskInstruction = isFullStaging
     ? "Stage this room from an empty baseline with appropriate furniture for the specified room type."
-    : "Refresh and augment the retained layout.\nPreserve anchor positions and architecture exactly while adding complementary staging elements.";
+    : "Refresh and augment the retained scene without changing anchor placement.\nPreserve anchor positions and architecture exactly while adding complementary staging elements.";
 
   const modelTemperature = isFullStaging ? 0.25 : 0.33;
   const modelTopP = isFullStaging ? 0.70 : 0.78;
@@ -968,7 +968,7 @@ IMMUTABLE ELEMENTS (REFRESH MODE)
 ${isRefreshStaging
   ? `Retained anchors from Stage 1B are immutable geometry references.
 You may restyle finishes/materials only.
-You MUST NOT translate, rotate, resize, remove, or re-layout these anchors.
+You MUST NOT translate, rotate, resize, remove, or change placement of these anchors.
 
 IMMUTABLE ANCHOR EXAMPLES:
 • Living: primary sofa, TV unit
@@ -1383,7 +1383,7 @@ Do NOT place framed art sitting on dressers or consoles.`
 3. Preserve anchor positions, room layout, and circulation flow exactly.
 4. Add complementary decor, secondary furniture, artwork, plants, and soft furnishings in augmentable zones.
 5. Additional primary furniture is allowed only when space and walkways remain correct.
-6. Never wipe the room, relayout from scratch, or reinterpret the floor plan.
+6. Never wipe the room, rebuild composition from scratch, or reinterpret the floor plan.
 
 CONSISTENCY RULE:
 - Keep architecture and anchor geometry locked while augmenting non-anchor zones.`}
