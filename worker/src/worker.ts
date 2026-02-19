@@ -3080,115 +3080,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : "local";
           setStage2AttemptValidation(path2, validatorBlockedBy, getUnifiedValidatorReasons(unifiedValidation));
         }
-        if (blockingFail && validationAttempt < validationMaxAttempts) {
-          nLog(`[worker] Stage 2 HARD FAIL detected (attempt ${validationAttempt}); retrying Stage 2 with last known good baseline. Reasons: ${stage2LocalReasons.join('; ')}`);
-          const retryStatus = await getJob(payload.jobId);
-          if (isTerminalStatus(retryStatus?.status) || await isJobFailedFinal(payload.jobId)) {
-            nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
-            return;
-          }
-          await scheduleStage2Retry("stage2_validation_hard_fail");
-          // Regenerate Stage 2 from last known good baseline (Stage1B if available, else Stage1A)
-          nLog("[STAGE2_ROUTING_DECISION]", {
-            jobId: payload.jobId,
-            path: "validation_retry",
-            baseStage: stage2BaseStage,
-            hasStage1BLineage: stage2BaseStage === "1B",
-            stage1BMode: stage2SourceStage === "1B-light" ? "light" : stage2SourceStage === "1B-stage-ready" ? "stage-ready" : null,
-            roomType: payload.options.roomType,
-            sourceStage: stage2SourceStage,
-            finalMode: stage2PromptMode,
-            reason: "validation_hard_fail_retry",
-          });
-          nLog("[STAGE2_BASE_PROOF]", {
-            jobId: payload.jobId,
-            path: "validation_retry",
-            stage1APath: path1A,
-            stage1BPath: lineage1B,
-            chosenBasePath: stage2InputResolved,
-            chosenBaseStage: stage2BaseStage,
-            stage1BRequested,
-          });
-          if (lineage1B && stage2InputResolved === path1A) {
-            nLog("[STAGE2_INVARIANT_VIOLATION]", {
-              jobId: payload.jobId,
-              path: "validation_retry",
-              stage1A: path1A,
-              stage1B: lineage1B,
-              chosen: stage2InputResolved,
-              chosenBaseStage: stage2BaseStage,
-              stage1BRequested,
-            });
-          }
-          const stage2OutcomeRetry = await runStage2(stage2InputResolved, stage2BaseStage, {
-            roomType: (
-              !payload.options.roomType ||
-              ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
-            )
-              ? String(detectedRoom || "living_room")
-              : payload.options.roomType,
-            sceneType: sceneLabel as any,
-            profile,
-            angleHint,
-            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
-            stagingStyle: stagingStyleNorm,
-            sourceStage: stage2SourceStage,
-            jobId: payload.jobId,
-            validationConfig: { localMode: localValidatorMode },
-            stage1APath: stage2ValidationBaseline,
-            curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
-            onStrictRetry: ({ reasons }) => {
-              void (async () => {
-                if (stage2Active) {
-                  if (!(await ensureStage2AttemptOwner("stage2_retry_strict_retry"))) return;
-                }
-                try {
-                  const msg = reasons && reasons.length
-                    ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-                    : "Validation failed. Retrying with stricter settings...";
-                  updateJob(payload.jobId, {
-                    message: msg,
-                    meta: {
-                      ...(sceneLabel ? { ...sceneMeta } : {}),
-                      strictRetry: true,
-                      strictRetryReasons: reasons || []
-                    }
-                  });
-                } catch {}
-              })();
-            },
-            onAttemptSuperseded: (nextAttemptId) => {
-              stage2AttemptId = nextAttemptId;
-            }
-          });
 
-          if (typeof stage2OutcomeRetry === "string") {
-            path2 = stage2OutcomeRetry;
-            stage2CandidatePath = path2;
-            commitStageOutput("2", stage2OutcomeRetry);
-            stage2AttemptsUsed = Math.max(stage2AttemptsUsed, validationAttempt + 1);
-          } else {
-            path2 = stage2OutcomeRetry.outputPath;
-            stage2CandidatePath = path2;
-            commitStageOutput("2", stage2OutcomeRetry.outputPath);
-            recordStage2AttemptsFromResult(stage2InputResolved, stage2OutcomeRetry.attempts);
-            stage2AttemptsUsed = stage2OutcomeRetry.attempts;
-            stage2MaxAttempts = stage2OutcomeRetry.maxAttempts;
-            stage2ValidationRisk = stage2OutcomeRetry.validationRisk;
-            stage2LocalReasons = stage2OutcomeRetry.localReasons || [];
-            stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED && stage2ValidationRisk;
-          }
-
-          continue; // retry validation with new Stage2 output
-        }
-
-        if (blockingFail && validationAttempt >= validationMaxAttempts) {
+        if (blockingFail) {
           const reason = stage2LocalReasons.length ? stage2LocalReasons.join("; ") : "Stage 2 blocked by structural validation";
           stage2Blocked = true;
           stage2BlockedReason = reason;
-          nLog(`[worker] Stage 2 HARD FAIL after retries exhausted. Reason: ${reason}`);
-          const fallbackStage = path1B ? "1B" : "1A";
-          const fallbackPath = path1B ? path1B : path1A;
+          nLog(`[worker] Stage 2 HARD FAIL after internal retries exhausted. Reason: ${reason}`);
           // ═══ FINAL STATUS GUARD ═══
           const latestJob = await getJob(payload.jobId);
           if (isTerminalStatus(latestJob?.status)) {
@@ -3200,23 +3097,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return;
           }
 
-          await clearStage2RetryPending("stage2_retries_exhausted_clear_pending");
-          if (!(await canCompleteStage2(true, "stage2_retries_exhausted_complete"))) return;
-          logStage2RetrySummary(null);
-          await completePartialJob({
-            jobId: payload.jobId,
-            triggerStage: "2",
-            finalStage: fallbackStage,
-            finalPath: fallbackPath,
-            pub1AUrl,
-            pub1BUrl,
-            sceneMeta: { ...sceneMeta, unifiedValidation, stage2LocalReasons },
-            userMessage: fallbackStage === "1B"
-              ? "We decluttered your image but could not safely stage it."
-              : "We enhanced your image but could not safely stage it.",
-            reason: "stage2_retries_exhausted",
-            stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
-          });
+          await safeWriteJobStatus(
+            payload.jobId,
+            {
+              status: "failed",
+              errorMessage: reason,
+              meta: {
+                ...(sceneLabel ? { ...sceneMeta } : {}),
+                unifiedValidation,
+                stage2LocalReasons,
+                blockedBy: unifiedValidation.blockSource,
+                blockedStage: "stage2",
+              },
+            },
+            "stage2_validation_failed_terminal"
+          );
           return;
         }
       }
@@ -3228,10 +3123,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Stack:`, validationError?.stack);
       break; // fail-open
     }
-  }
-
-  if (payload.options.virtualStage) {
-    await clearStage2RetryPending("stage2_validation_complete");
   }
 
   // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====

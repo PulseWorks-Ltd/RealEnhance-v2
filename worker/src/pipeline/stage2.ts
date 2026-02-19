@@ -11,14 +11,11 @@ import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
-import { randomUUID } from "crypto";
 import type { StagingRegion } from "../ai/region-detector";
 import { safeToBuffer, safeMetadata } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrappers
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
-import { shouldRetryStage, markStageFailed, logRetryState, isJobFailedFinal } from "../validators/stageRetryManager";
 import { getJob, updateJob } from "../utils/persist";
-import { isTerminalStatus } from "../utils/statusUtils";
 import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
@@ -91,28 +88,18 @@ export async function runStage2(
   let validationRisk = false;
   let retryCount = 0;
 
-  const scheduleStage2Retry = async (reason: string) => {
-    const currentJob = await getJob(jobId);
-    const currentAttemptId = (currentJob as any)?.stage2AttemptId as string | undefined;
-    const nextAttemptId = randomUUID();
-    await updateJob(jobId, { stage2AttemptId: nextAttemptId, retryPendingStage2: true });
-    console.log("[STAGE2_RETRY_SCHEDULED]", {
-      jobId,
-      reason,
-      fromAttemptId: currentAttemptId,
-      toAttemptId: nextAttemptId,
+  const clampSampling = (sampling: { temperature: number; topP: number; topK: number }) => ({
+    temperature: Math.max(0.05, sampling.temperature),
+    topP: Math.max(0.3, sampling.topP),
+    topK: Math.max(10, Math.floor(sampling.topK)),
+  });
+
+  const nextAdaptiveSampling = (sampling: { temperature: number; topP: number; topK: number }) =>
+    clampSampling({
+      temperature: sampling.temperature * 0.9,
+      topP: sampling.topP * 0.9,
+      topK: sampling.topK * 0.9,
     });
-    console.log("[STAGE2_ATTEMPT_SUPERSEDED]", {
-      jobId,
-      reason,
-      fromAttemptId: currentAttemptId,
-      toAttemptId: nextAttemptId,
-    });
-    if (opts.onAttemptSuperseded) {
-      opts.onAttemptSuperseded(nextAttemptId);
-    }
-    return nextAttemptId;
-  };
 
   // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
   // If stage1APath not provided, fallback to basePath with warning
@@ -240,12 +227,21 @@ export async function runStage2(
   // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
   const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
   const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw) ? Math.max(0, Math.floor(geminiMaxRetriesRaw)) : null;
-  const maxAttempts = geminiMaxRetries !== null
+  const configuredAttempts = geminiMaxRetries !== null
     ? Math.max(1, geminiMaxRetries + 1)
     : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
+  const maxInternalAttemptsRaw = Number(process.env.STAGE2_INTERNAL_MAX_ATTEMPTS || 3);
+  const maxInternalAttempts = Number.isFinite(maxInternalAttemptsRaw)
+    ? Math.min(4, Math.max(1, Math.floor(maxInternalAttemptsRaw)))
+    : 3;
+  const maxAttempts = Math.min(configuredAttempts, maxInternalAttempts);
   const regenEnabled = maxAttempts > 1;
   console.log(`[STAGE2_REGEN_MODE] job=${opts.jobId || "unknown"} enabled=${regenEnabled} maxAttempts=${maxAttempts}`);
   let currentTightenLevel: TightenLevel = 0;
+  let adaptiveSamplingOverride: { temperature: number; topP: number; topK: number } | null = null;
+
+  // This change removes duplicate Stage 2 validation retry channels and consolidates retry strategy
+  // into internal adaptive loop for clarity, cost control, and deterministic behaviour.
 
   const buildStage2OutputPath = (attemptIndex: number) => {
     const suffix = attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`;
@@ -392,6 +388,7 @@ Do not add blinds, rods, tracks, or new window coverings.
       if (!ai) throw new Error("getGeminiClient returned null/undefined");
       const apiStartTime = Date.now();
       let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
+      let effectiveSamplingForAttempt: { temperature: number; topP: number; topK: number } | null = null;
       if (isNZStyleEnabled()) {
         const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
         const refreshSampling = { temperature: 0.30, topP: 0.73, topK: 31 };
@@ -409,18 +406,28 @@ Do not add blinds, rods, tracks, or new window coverings.
             topP: baseSampling.topP,
             topK: baseSampling.topK,
           });
-          generationConfig = { ...(generationConfig || {}), ...tightenedConfig };
-          focusLog("PIPELINE_VERBOSE", `[stage2] Applied tightened generation config: temp=${tightenedConfig.temperature.toFixed(2)}, topP=${tightenedConfig.topP}, topK=${tightenedConfig.topK}`);
+          effectiveSamplingForAttempt = clampSampling({
+            temperature: tightenedConfig.temperature,
+            topP: tightenedConfig.topP,
+            topK: tightenedConfig.topK,
+          });
+          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
+          focusLog("PIPELINE_VERBOSE", `[stage2] Applied tightened generation config: temp=${effectiveSamplingForAttempt.temperature.toFixed(2)}, topP=${effectiveSamplingForAttempt.topP}, topK=${effectiveSamplingForAttempt.topK}`);
         } else {
           // Legacy behavior
           if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
-          generationConfig = { ...(generationConfig || {}), temperature, topP: baseSampling.topP, topK: baseSampling.topK };
+          effectiveSamplingForAttempt = clampSampling({
+            temperature,
+            topP: Number(baseSampling.topP ?? 0.70),
+            topK: Number(baseSampling.topK ?? 30),
+          });
+          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
         }
 
-        // Required fixed retry sampling for Stage 2
-        if (attempt > 0) {
-          generationConfig = { ...(generationConfig || {}), temperature: 0.26, topP: 0.68, topK: 26 };
-          focusLog("PIPELINE_VERBOSE", `[stage2] Applied fixed retry sampling: temp=0.26, topP=0.68, topK=26`);
+        if (adaptiveSamplingOverride) {
+          effectiveSamplingForAttempt = clampSampling(adaptiveSamplingOverride);
+          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
+          console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 1} temperature=${effectiveSamplingForAttempt.temperature.toFixed(3)} topP=${effectiveSamplingForAttempt.topP.toFixed(3)} topK=${effectiveSamplingForAttempt.topK}`);
         }
       }
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
@@ -506,46 +513,29 @@ Do not add blinds, rods, tracks, or new window coverings.
               console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
             });
 
-            // Use retry manager to decide if we should retry (only when local mode is block)
-            if (allowRetries) {
-              const currentJob = await getJob(jobId);
-              if (isTerminalStatus(currentJob?.status) || await isJobFailedFinal(jobId)) {
-                console.warn("[RETRY_BLOCKED_TERMINAL]", { jobId, stage: "stage2" });
-                attemptsUsed = attempt + 1;
-                break;
+            if (allowRetries && attempt + 1 < maxAttempts) {
+              const currentSampling = clampSampling({
+                temperature: Number(generationConfig?.temperature ?? 0.25),
+                topP: Number(generationConfig?.topP ?? 0.70),
+                topK: Number(generationConfig?.topK ?? 30),
+              });
+              adaptiveSamplingOverride = nextAdaptiveSampling(currentSampling);
+              currentTightenLevel = getTightenLevelFromAttempt(attempt + 1);
+              needsRetry = true;
+              retryCount++;
+              console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 2} temperature=${adaptiveSamplingOverride.temperature.toFixed(3)} topP=${adaptiveSamplingOverride.topP.toFixed(3)} topK=${adaptiveSamplingOverride.topK}`);
+              if (opts.onStrictRetry) {
+                opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
               }
-              const retryDecision = await shouldRetryStage(jobId, "stage2", validationResult);
-
-              if (retryDecision.shouldRetry) {
-                await scheduleStage2Retry("stage2_validation_risk");
-                currentTightenLevel = retryDecision.tightenLevel;
-                needsRetry = true;
-                retryCount++;
-                console.log(`[stage2] ${retryDecision.reason}`);
-
-                if (opts.onStrictRetry) {
-                  opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
-                }
-
-                if (retryDecision.isFinalAttempt) {
-                  console.warn(`[stage2] ⚠️ This is the FINAL retry attempt`);
-                }
-                continue;
-              } else {
-                // Max retries reached
-                if (retryDecision.reason.includes("Max attempts")) {
-                  markStageFailed(jobId, "stage2", validationResult.triggers);
-                  const retryCountLabel = geminiMaxRetries !== null ? geminiMaxRetries : stageAwareConfig.maxRetryAttempts;
-                  console.error(`[stage2] ❌ FAILED_FINAL: Stage 2 failed after ${retryCountLabel} retries`);
-                }
-                attemptsUsed = attempt + 1;
-                break;
-              }
-            } else {
-              console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
-              attemptsUsed = attempt + 1;
-              break;
+              continue;
             }
+            if (!allowRetries) {
+              console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
+            } else {
+              console.log(`[STAGE2_INTERNAL_RETRY_EXHAUSTED] attempts=${attempt + 1} maxAttempts=${maxAttempts}`);
+            }
+            attemptsUsed = attempt + 1;
+            break;
           } else {
             console.log(`[stage2] ✅ Stage-aware validation passed (risk=false)`);
             attemptsUsed = attempt + 1;
@@ -580,14 +570,23 @@ Do not add blinds, rods, tracks, or new window coverings.
           localReasons = ["opencv_structural_error"];
         }
 
-        if (validatorFailed && allowRetries && attempt === 0) {
-          await scheduleStage2Retry("stage2_legacy_validation_risk");
+        if (validatorFailed && allowRetries && attempt + 1 < maxAttempts) {
+          const currentSampling = clampSampling({
+            temperature: Number(generationConfig?.temperature ?? 0.25),
+            topP: Number(generationConfig?.topP ?? 0.70),
+            topK: Number(generationConfig?.topK ?? 30),
+          });
+          adaptiveSamplingOverride = nextAdaptiveSampling(currentSampling);
           needsRetry = true;
           retryCount++;
-          console.log(`[stage2] Validator requested retry (single retry)`);
+          console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 2} temperature=${adaptiveSamplingOverride.temperature.toFixed(3)} topP=${adaptiveSamplingOverride.topP.toFixed(3)} topK=${adaptiveSamplingOverride.topK}`);
           continue;
         } else if (validatorFailed && !allowRetries) {
           console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
+          attemptsUsed = attempt + 1;
+          break;
+        } else if (validatorFailed) {
+          console.log(`[STAGE2_INTERNAL_RETRY_EXHAUSTED] attempts=${attempt + 1} maxAttempts=${maxAttempts}`);
           attemptsUsed = attempt + 1;
           break;
         } else {
