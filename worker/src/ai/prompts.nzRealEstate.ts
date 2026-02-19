@@ -1055,117 +1055,6 @@ ${isRefreshStaging
 All additions must preserve walkways, openings, and structural constraints.`
   : `You may place complete room-appropriate staging furniture while preserving structural constraints and circulation.`}
 
-${isRefreshStaging
-  ? `
-────────────────────────────────
-STAGE 2 REFRESH — REPLACE & AUGMENT MODE
-────────────────────────────────
-
-Retained furniture from Stage 1B defines layout scaffolding only.
-It does NOT define final styling.
-
-CRITICAL PRIORITY ORDER:
-1. Preserve layout geometry
-2. Preserve zone structure
-3. Replace and upgrade furniture
-4. Add complementary staging
-5. Apply cohesive style
-
-If styling conflicts with layout geometry, layout geometry ALWAYS wins.
-
-────────────────────────────────
-LAYOUT GEOMETRY LOCK — NON-NEGOTIABLE
-────────────────────────────────
-
-You MUST preserve:
-• room orientation
-• dominant focal wall direction
-• primary seating/sleeping/dining zone position
-• spatial relationship between visible zones
-• walking paths and door clearances
-• relative distance between major anchors
-
-You MUST NOT:
-• move a zone to a different wall
-• rotate the main seating axis
-• expand or shrink a zone footprint
-• collapse two zones into one
-• create new functional zones
-• delete a visible functional zone
-• reinterpret circulation paths
-
-Furniture objects may change.
-Zone geometry may not.
-
-────────────────────────────────
-ANCHOR REPLACEMENT — CONTROLLED SWAP
-────────────────────────────────
-
-Primary anchors MAY be replaced with stylistically appropriate equivalents.
-
-Replacement must:
-• occupy approximately the same footprint
-• maintain same orientation
-• preserve functional role
-• preserve relative spacing to other anchors
-• preserve clearance to walls and openings
-
-You MUST NOT:
-• remove an anchor without replacing it
-• change anchor category
-• resize anchor to manipulate layout
-• shift anchor position to improve composition
-
-Anchors define geometry — not aesthetic.
-
-────────────────────────────────
-SECONDARY FURNITURE FLEXIBILITY
-────────────────────────────────
-
-Secondary furniture is flexible within existing zone boundaries.
-You may increase/reduce accent pieces and decor density when the zone footprint remains intact.
-Do not overcrowd, do not cross zone boundaries, and keep walkways clear.
-
-────────────────────────────────
-OPEN-PLAN ZONE PRESERVATION RULES
-────────────────────────────────
-
-If multiple zones are visible (for example living + dining + kitchen):
-• Preserve dominant zone geometry exactly
-• Preserve secondary zone placement and function
-• Do NOT rebalance or shift boundaries between zones
-• Do NOT merge zones or introduce new zones
-
-Upgrade composition quality without redesigning the floor plan.
-
-────────────────────────────────
-COMPOSITION CONSISTENCY REINFORCEMENT
-────────────────────────────────
-
-Do NOT “improve layout”, “optimize arrangement”, “reposition for better flow”,
-“rearrange seating”, “rebalance zones”, or “enhance symmetry” by moving anchors.
-
-You may improve styling, not structure.
-
-────────────────────────────────
-STYLE APPLICATION REQUIREMENT
-────────────────────────────────
-
-All replaced and added furniture must:
-• match selected staging style
-• be cohesive in material and tone
-• avoid mixing old and new aesthetics
-• appear professionally staged
-• maintain realistic scale
-
-Avoid hybrid styling.
-
-OBJECTIVE SUMMARY:
-Treat retained layout as fixed scaffolding.
-Rebuild furniture composition on that scaffolding without altering geometry,
-orientation, or zone structure.`
-  : ""}
-
 ${CAMERA_LOCK_BLOCK}
 
 ────────────────────────────────
@@ -1708,6 +1597,119 @@ Do NOT add new wall-mounted furniture or fixtures, including:
 • wall cabinets
 
 Only use floor-standing furniture for added staging items.
+
+${isRefreshStaging
+  ? `
+────────────────────────────────
+STAGE 2 REFRESH — REPLACE & AUGMENT MODE
+────────────────────────────────
+
+This section supersedes any earlier refresh wording about preserving existing movable furniture or restyle-only behavior.
+
+Retained furniture from Stage 1B defines layout scaffolding only.
+It does NOT define final styling.
+
+CRITICAL PRIORITY ORDER:
+1. Preserve layout geometry
+2. Preserve zone structure
+3. Replace and upgrade furniture
+4. Add complementary staging
+5. Apply cohesive style
+
+If styling conflicts with layout geometry, layout geometry ALWAYS wins.
+
+────────────────────────────────
+LAYOUT GEOMETRY LOCK — NON-NEGOTIABLE
+────────────────────────────────
+
+You MUST preserve:
+• room orientation
+• dominant focal wall direction
+• primary seating/sleeping/dining zone position
+• spatial relationship between visible zones
+• walking paths and door clearances
+• relative distance between major anchors
+
+You MUST NOT:
+• move a zone to a different wall
+• rotate the main seating axis
+• expand or shrink a zone footprint
+• collapse two zones into one
+• create new functional zones
+• delete a visible functional zone
+• reinterpret circulation paths
+
+Furniture objects may change.
+Zone geometry may not.
+
+────────────────────────────────
+ANCHOR REPLACEMENT — CONTROLLED SWAP
+────────────────────────────────
+
+Primary anchors MAY be replaced with stylistically appropriate equivalents.
+
+Replacement must:
+• occupy approximately the same footprint
+• maintain same orientation
+• preserve functional role
+• preserve relative spacing to other anchors
+• preserve clearance to walls and openings
+
+You MUST NOT:
+• remove an anchor without replacing it
+• change anchor category
+• resize anchor to manipulate layout
+• shift anchor position to improve composition
+
+Anchors define geometry — not aesthetic.
+
+────────────────────────────────
+SECONDARY FURNITURE FLEXIBILITY
+────────────────────────────────
+
+Secondary furniture is flexible within existing zone boundaries.
+You may increase/reduce accent pieces and decor density when the zone footprint remains intact.
+Do not overcrowd, do not cross zone boundaries, and keep walkways clear.
+
+────────────────────────────────
+OPEN-PLAN ZONE PRESERVATION RULES
+────────────────────────────────
+
+If multiple zones are visible (for example living + dining + kitchen):
+• Preserve dominant zone geometry exactly
+• Preserve secondary zone placement and function
+• Do NOT rebalance or shift boundaries between zones
+• Do NOT merge zones or introduce new zones
+
+Upgrade composition quality without redesigning the floor plan.
+
+────────────────────────────────
+COMPOSITION CONSISTENCY REINFORCEMENT
+────────────────────────────────
+
+Do NOT “improve layout”, “optimize arrangement”, “reposition for better flow”,
+“rearrange seating”, “rebalance zones”, or “enhance symmetry” by moving anchors.
+
+You may improve styling, not structure.
+
+────────────────────────────────
+STYLE APPLICATION REQUIREMENT
+────────────────────────────────
+
+All replaced and added furniture must:
+• match selected staging style
+• be cohesive in material and tone
+• avoid mixing old and new aesthetics
+• appear professionally staged
+• maintain realistic scale
+
+Avoid hybrid styling.
+
+OBJECTIVE SUMMARY:
+Treat retained layout as fixed scaffolding.
+Rebuild furniture composition on that scaffolding without altering geometry,
+orientation, or zone structure.`
+  : ""}
 
 ────────────────────────────────
 STYLE PROFILE
