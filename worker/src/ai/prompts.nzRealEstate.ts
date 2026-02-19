@@ -478,86 +478,132 @@ Return only the processed image.`.trim();
 
       return `REALENHANCE — STAGE 1B: STRUCTURED RETAIN DECLUTTER (INTERIOR)
 
-TASK:
-Remove clutter, decor, wall art, small non-core items, secondary seating, and partial furniture fragments while preserving primary anchor furniture and all structural elements.
+    TASK:
+    Remove clutter, decor, wall art, small non-core items, excess seating, and edge fragments while preserving primary anchors and all structural elements.
 
-PRIMARY OBJECTIVE:
-Produce a clean, stage-ready base that preserves layout anchors.
-Do NOT create an empty room. Do NOT perform large floor reconstruction.
+    PRIMARY OBJECTIVE:
+    Produce a simplified, stage-ready base with breathing room for Stage 2.
+    Do NOT create an empty room. Do NOT perform large floor reconstruction.
 
-────────────────────────────────
-STRUCTURAL LOCKS — NON-NEGOTIABLE
-────────────────────────────────
+    ────────────────────────────────
+    STRUCTURAL LOCKS — NON-NEGOTIABLE
+    ────────────────────────────────
 
-Do NOT add, remove, move, resize, or reshape any structural element:
-- walls, ceilings, floors, baseboards
-- windows, doors, frames, openings
-- built-ins, cabinetry, counters, islands, vanities
-- fixed lighting, HVAC, vents, plumbing fixtures
-- curtain rails, blind systems, window treatment hardware
+    Do NOT add, remove, move, resize, or reshape any structural element:
+    - walls, ceilings, floors, baseboards
+    - windows, doors, frames, openings
+    - built-ins, cabinetry, counters, islands, vanities
+    - fixed lighting, HVAC, vents, plumbing fixtures
+    - curtain rails, blind systems, window treatment hardware
 
-Do NOT change camera position, framing, perspective, or field of view.
-Do NOT reinterpret room geometry.
+    Do NOT change camera position, framing, perspective, or field of view.
+    Do NOT reinterpret room geometry.
 
-────────────────────────────────
-ROOM ANCHOR PRESERVATION — REQUIRED
-────────────────────────────────
+    ────────────────────────────────
+    ANCHOR GEOMETRY LOCK — REQUIRED
+    ────────────────────────────────
 
-Living room:
-- KEEP primary sofa
-- KEEP primary TV unit / entertainment anchor
-- REMOVE secondary seating and non-core extras
+    For preserved anchors, geometry is locked.
+    Do NOT move anchors.
+    Do NOT resize anchors.
+    Do NOT rotate anchors.
+    Do NOT change anchor perspective.
+    Only prune excess movable items around anchors.
 
-Bedroom:
-- KEEP bed
-- KEEP bedside tables
-- REMOVE loose dressers unless clearly built-in
+    ────────────────────────────────
+    ROOM ANCHOR PRESERVATION — DETERMINISTIC
+    ────────────────────────────────
 
-Dining:
-- KEEP dining table and chairs
-- REMOVE non-core sideboards unless clearly built-in
+    Living room (deterministic seating pruning):
+    - If more than two large seating items are present, preserve the largest primary seating piece.
+    - Preserve at most ONE complementary seating piece.
+    - Prefer preserving seating that faces the TV or main focal anchor.
+    - Remove isolated recliners unless clearly central to the layout.
+    - If seating exceeds either of these caps, remove excess seating:
+      • 1 sofa + 1 armchair maximum
+      • OR 2 sofas maximum
+    - Keep primary TV unit / entertainment anchor.
 
-Kitchen:
-- KEEP cabinetry, island, integrated appliances
-- REMOVE portable loose items and non-core accessories
+    Bedroom:
+    - KEEP bed
+    - KEEP bedside tables
+    - REMOVE loose dressers unless clearly built-in
 
-Office:
-- KEEP desk and primary chair
-- REMOVE non-core freestanding shelving unless clearly built-in
+    Dining:
+    - KEEP dining table and chairs when dining is the dominant zone
+    - REMOVE non-core sideboards unless clearly built-in
 
-If room type is uncertain:
-- preserve the largest primary functional anchors
-- remove secondary/non-core movable items conservatively
+    Kitchen:
+    - KEEP cabinetry, island, integrated appliances
+    - REMOVE portable loose items and non-core accessories
 
-────────────────────────────────
-REMOVAL TARGETS — REQUIRED
-────────────────────────────────
+    Office:
+    - KEEP desk and primary chair
+    - REMOVE non-core freestanding shelving unless clearly built-in
 
-REMOVE:
-- clutter and personal items
-- loose decor and wall art
-- small movable furniture
-- secondary seating
-- partial furniture fragments at frame edges
-- non-core movable objects and accessories
+    If room type is uncertain:
+    - preserve the largest primary functional anchors
+    - remove secondary/non-core movable items conservatively
 
-KEEP:
-- primary anchors per room type
-- all built-ins and fixed fixtures
-- structural and service elements
+    ────────────────────────────────
+    MULTI-ZONE HANDLING — DOMINANT ZONE ONLY
+    ────────────────────────────────
 
-────────────────────────────────
-QUALITY & SAFETY RULES
-────────────────────────────────
+    If multiple functional zones are visible (for example living + dining), determine the dominant zone using this order:
+    1) Largest visible floor area
+    2) Closest zone to camera
+    3) Primary focal anchor (TV or sofa)
 
-Do not wipe the room.
-Do not attempt empty-room generation.
-Avoid large inpainted floor/wall reconstruction.
-Preserve natural continuity around retained anchors.
-If uncertain whether an item is anchor/fixed, preserve it.
+    Preserve anchors for the dominant zone only.
+    Remove secondary-zone loose furniture unless clearly integrated or built-in.
 
-OUTPUT:
-Return only the processed image.`.trim();
+    In living-dominant rooms:
+    - remove dining tables and dining seating unless the room is clearly open-plan with balanced scale between zones.
+
+    Do not keep dual anchor sets from different zones unless they are clearly one balanced open-plan composition.
+
+    ────────────────────────────────
+    REMOVAL TARGETS — REQUIRED
+    ────────────────────────────────
+
+    REMOVE:
+    - clutter and personal items
+    - loose decor and wall art
+    - small movable furniture
+    - excess secondary seating
+    - non-core movable objects and accessories
+
+    PARTIAL EDGE FRAGMENT RULE — CRITICAL:
+    If furniture is partially cropped at an image edge and not clearly central to layout, remove it entirely.
+    Do NOT preserve fragments.
+    Do NOT leave partial armrests, partial sofa arms, or partial chair backs.
+    Cleanly reconstruct the area behind removed fragments while preserving structural continuity.
+
+    KEEP:
+    - primary anchors per dominant room zone
+    - all built-ins and fixed fixtures
+    - structural and service elements
+
+    ────────────────────────────────
+    SIMPLIFICATION BIAS — REQUIRED
+    ────────────────────────────────
+
+    When uncertain between preserving and removing, favor simplification.
+    It is better to slightly under-preserve than over-preserve.
+    Stage 1B should create clear breathing room for Stage 2 augmentation.
+
+    ────────────────────────────────
+    QUALITY & SAFETY RULES
+    ────────────────────────────────
+
+    Do not wipe the room.
+    Do not attempt empty-room generation.
+    Avoid large inpainted floor/wall reconstruction.
+    Preserve natural continuity around retained anchors.
+    If uncertain whether an item is structural or built-in, preserve it.
+
+    OUTPUT:
+    Return only the processed image.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
