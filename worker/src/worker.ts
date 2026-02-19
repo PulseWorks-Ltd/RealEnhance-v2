@@ -2750,12 +2750,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Fallback: if full removal (stage-ready) exhausted retries with validation risk, try light declutter then rerun Stage 2
   const declutterModeFallback = (payload.options as any).declutterMode;
-  const shouldFallbackLightDeclutter =
-    payload.options.virtualStage &&
-    stage2ValidationRisk &&
-    stage2AttemptsUsed >= stage2MaxAttempts &&
-    declutterModeFallback === "stage-ready" &&
-    VALIDATORS_ARE_BLOCKING;  // Only fallback when validators are actually blocking images
+  const shouldFallbackLightDeclutter = false;
 
   if (shouldFallbackLightDeclutter) {
     try {
@@ -2922,59 +2917,68 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Publish Stage 2 after validation (deferred); keep placeholder for URL
   let pub2Url: string | undefined = undefined;
 
-  // ===== UNIFIED STRUCTURAL VALIDATION (WITH RETRIES) =====
-  // Run unified validation pipeline for Stage 2; on hardFail+blocking, retry Stage 2 generation using last known good baseline
+  // ===== STAGE 2 UNIFIED STRUCTURAL RETRY CONTROLLER =====
   let unifiedValidation: UnifiedValidationResult | undefined = undefined;
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
-  let validationAttempt = 0;
-  const validationMaxAttempts = Math.max(1, stage2MaxAttempts || 1);
+  const MAX_STAGE2_RETRIES = Math.max(1, stage2MaxAttempts || 1);
 
-  while (path2 && payload.options.virtualStage && !stage2Blocked) {
-    try {
+  const hasStage2GeminiSemanticHardFail = (result?: UnifiedValidationResult): boolean => {
+    if (!result || !payload.options.virtualStage) return false;
+    const category = String((result.raw?.geminiSemantic?.details as any)?.category || "").toLowerCase();
+    if (category !== "structure" && category !== "opening_blocked") return false;
+    return result.reasons.some((reason) => reason.startsWith("Gemini "));
+  };
+
+  let retryTemperature = 0.55;
+  let retryTopP = 0.85;
+  let retryTopK = 40;
+
+  if (payload.options.virtualStage) {
+    for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
         console.log(`[timeout] stage=2_validation_loop exceeded_ms=${Date.now() - t2} jobId=${payload.jobId}`);
-        const fallbackStage = path1B ? "1B" : "1A";
-        const fallbackPath = path1B ? path1B : path1A;
-        // ═══ FINAL STATUS GUARD ═══
-        const latestJob = await getJob(payload.jobId);
-        if (isTerminalStatus(latestJob?.status)) {
-          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 timeout fallback`, {
-            jobId: payload.jobId,
-            stage: "2",
-            status: latestJob?.status
-          });
-          return;
-        }
-
-        await clearStage2RetryPending("stage2_runtime_exceeded_clear_pending");
-        if (!(await canCompleteStage2(true, "stage2_runtime_exceeded_complete"))) return;
-        logStage2RetrySummary(null);
-        await clearStage2RetryPending("stage2_gemini_exhausted_clear_pending");
-        if (!(await canCompleteStage2(true, "stage2_gemini_exhausted_complete"))) return;
-        await completePartialJob({
-          jobId: payload.jobId,
-          triggerStage: "2",
-          finalStage: fallbackStage,
-          finalPath: fallbackPath,
-          pub1AUrl,
-          pub1BUrl,
-          sceneMeta,
-          userMessage: fallbackStage === "1B"
-            ? "We decluttered your image but could not safely stage it."
-            : "We enhanced your image but could not safely stage it.",
-          reason: "stage2_runtime_exceeded",
-          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
-        });
+        stage2Blocked = true;
+        stage2BlockedReason = "stage2_runtime_exceeded";
+        await safeWriteJobStatus(
+          payload.jobId,
+          {
+            status: "failed",
+            errorMessage: "stage2_runtime_exceeded",
+            reason: "stage2_runtime_exceeded",
+          },
+          "stage2_runtime_exceeded_terminal"
+        );
         return;
       }
-      validationAttempt += 1;
+
+      if (attempt > 1) {
+        const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
+        const retryStage2Path = await enhanceWithGemini(stage2InputResolved, {
+          ...payload.options,
+          stage: "2",
+          temperature: retryTemperature,
+          topP: retryTopP,
+          topK: retryTopK,
+          jobId: payload.jobId,
+          roomType: payload.options.roomType,
+          sceneType: sceneLabel,
+          modelReason: `stage2 unified retry ${attempt - 1}`,
+          outputPath: retryOutputPath,
+        });
+        recordStage2AttemptOutput(attempt - 1, retryStage2Path);
+        stage2CandidatePath = retryStage2Path;
+        path2 = retryStage2Path;
+        commitStageOutput("2", retryStage2Path);
+      }
+
+      stage2AttemptsUsed = Math.max(stage2AttemptsUsed, attempt);
+      stage2LocalReasons = [];
+      stage2NeedsConfirm = false;
+
       const validationStartTime = Date.now();
+      const validationStage: "1A" | "1B" | "2" = "2";
+      const validationBasePath = stage2ValidationBaseline;
 
-      const validationStage: "1A" | "1B" | "2" = payload.options.virtualStage ? "2" :
-                     (payload.options.declutter ? "1B" : "1A");
-      const validationBasePath = validationStage === "2" ? stage2ValidationBaseline : path1A;
-
-      // ✅ FIX: Log validation baseline paths for Stage 2 lineage verification
       nLog(`[STAGE2_VALIDATION_BASELINE]`, {
         jobId: payload.jobId,
         stage2InputPath: stage2InputResolved.substring(stage2InputResolved.length - 40),
@@ -2984,14 +2988,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path1BExists: !!path1B,
       });
 
-      nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${validationAttempt}/${validationMaxAttempts}) ═══════════`);
+      nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${attempt}/${MAX_STAGE2_RETRIES}) ═══════════`);
 
       effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
 
-      const baseArtifacts = stageLineage.baseArtifacts;
-
-      // ═══ Phase H: Stage output consistency check ═══
       const stage2OutputCheck = checkStageOutput(path2, "2", payload.jobId);
       if (!stage2OutputCheck.readable) {
         nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
@@ -3010,9 +3011,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         stage1APath: validationBasePath,
-        sourceStage: validationStage === "2" ? stage2SourceStage : undefined,
-        validationMode: validationStage === "2" ? stage2ValidationMode : undefined,
-        baseArtifacts,
+        sourceStage: stage2SourceStage,
+        validationMode: stage2ValidationMode,
+        baseArtifacts: stageLineage.baseArtifacts,
       });
 
       const validationElapsed = Date.now() - validationStartTime;
@@ -3051,533 +3052,154 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
       });
 
-      if (unifiedValidation) {
-        const rawResults = unifiedValidation.raw ? Object.values(unifiedValidation.raw) : [];
-        const anyFailed = rawResults.some((r) => r && r.passed === false);
-        const localNotes = (unifiedValidation.reasons && unifiedValidation.reasons.length)
-          ? unifiedValidation.reasons
-          : (unifiedValidation.warnings && unifiedValidation.warnings.length)
-            ? unifiedValidation.warnings
-            : [];
-        // reset reasons per attempt
-        if (validationAttempt === 1) {
-          stage2LocalReasons = [];
-        }
-        if (anyFailed || localNotes.length) {
-          if (GEMINI_CONFIRMATION_ENABLED) {
-            stage2NeedsConfirm = true;
+      const rawResults = unifiedValidation.raw ? Object.values(unifiedValidation.raw) : [];
+      const anyFailed = rawResults.some((r) => r && r.passed === false);
+      const localNotes = (unifiedValidation.reasons && unifiedValidation.reasons.length)
+        ? unifiedValidation.reasons
+        : (unifiedValidation.warnings && unifiedValidation.warnings.length)
+          ? unifiedValidation.warnings
+          : [];
+      if (anyFailed || localNotes.length) {
+        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED;
+        stage2LocalReasons.push(...localNotes);
+      }
+
+      if (path2 && SHARP_SEMANTIC_ENABLED) {
+        try {
+          nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) mode=${sharpFinalValidatorMode} ═══════════`);
+          const semanticResult = await runSemanticStructureValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: path2,
+            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            mode: "log",
+          });
+          if (semanticResult && !semanticResult.passed) {
+            stage2LocalReasons.push(
+              `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`
+            );
           }
-          stage2LocalReasons.push(...localNotes);
+        } catch (semanticError: any) {
+          nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
         }
+      } else if (path2 && !SHARP_SEMANTIC_ENABLED) {
+        nLog(`[worker] Sharp semantic validator disabled (SHARP_FINAL_VALIDATOR not set)`);
+      }
 
-        const blockingFail = unifiedValidation.hardFail && (
-          (unifiedValidation.blockSource === "gemini" && geminiBlockingEnabled) ||
-          (unifiedValidation.blockSource === "local" && VALIDATION_BLOCKING_ENABLED)
-        );
-        if (blockingFail) {
-          const validatorBlockedBy = unifiedValidation.blockSource === "gemini"
-            ? "gemini"
-            : "local";
-          setStage2AttemptValidation(path2, validatorBlockedBy, getUnifiedValidatorReasons(unifiedValidation));
+      if (path2) {
+        try {
+          nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
+          const maskedEdgeResult = await runMaskedEdgeValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: path2,
+            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            mode: "log",
+            jobId: payload.jobId,
+          });
+
+          if (maskedEdgeResult) {
+            const maskedDriftPct = maskedEdgeResult.maskedEdgeDrift * 100;
+            const maskedEdgeFailed =
+              maskedEdgeResult.createdOpenings > 0 ||
+              maskedEdgeResult.closedOpenings > 0 ||
+              maskedEdgeResult.maskedEdgeDrift > 0.18;
+            if (maskedEdgeFailed) {
+              stage2LocalReasons.push(
+                `masked_edge_failed: drift ${maskedDriftPct.toFixed(2)}%, openings +${maskedEdgeResult.createdOpenings}/-${maskedEdgeResult.closedOpenings}`
+              );
+            }
+          }
+
+          nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
+        } catch (maskedEdgeError: any) {
+          nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
+          nLog(`[worker] Stack:`, maskedEdgeError?.stack);
         }
+      }
 
-        if (blockingFail) {
-          const reason = stage2LocalReasons.length ? stage2LocalReasons.join("; ") : "Stage 2 blocked by structural validation";
+      const stage2LocalStatus = stage2LocalReasons.length ? "needs_confirm" : "pass";
+      nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
+
+      let lastGeminiConfirm: any = null;
+      if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath) {
+        nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
+        const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
+        const gatedEvidence = shouldInjectEvidence(unifiedValidation?.evidence)
+          ? unifiedValidation?.evidence
+          : undefined;
+        const injectionStatus = gatedEvidence ? "injected" : "suppressed";
+        nLog(`[VALIDATION_EVIDENCE_GATE] stage=2 injected=${!!gatedEvidence} reason=${injectionStatus}`);
+
+        lastGeminiConfirm = await confirmWithGeminiStructure({
+          baselinePathOrUrl: path1A,
+          candidatePathOrUrl: stage2CandidatePath,
+          stage: "stage2",
+          roomType: payload.options.roomType,
+          sceneType: sceneLabel as any,
+          jobId: payload.jobId,
+          localReasons: stage2LocalReasons,
+          sourceStage: stage2SourceStage,
+          validationMode: stage2ValidationMode,
+          evidence: gatedEvidence,
+          riskLevel: unifiedValidation?.riskLevel,
+        });
+        nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
+      }
+
+      const unifiedHardFail = unifiedValidation.hardFail === true;
+      const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
+      const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
+      const structuralFailDetected = unifiedHardFail || geminiSemanticHardFail || confirmHardFail;
+
+      if (structuralFailDetected) {
+        const blockedBy = confirmHardFail ? "gemini" : (unifiedValidation.blockSource || "gemini");
+        const failReasons = [
+          ...(unifiedValidation.reasons || []),
+          ...(lastGeminiConfirm?.reasons || []),
+        ];
+        setStage2AttemptValidation(path2, blockedBy, failReasons);
+
+        if (attempt >= MAX_STAGE2_RETRIES) {
           stage2Blocked = true;
-          stage2BlockedReason = reason;
-          nLog(`[worker] Stage 2 HARD FAIL after internal retries exhausted. Reason: ${reason}`);
-          // ═══ FINAL STATUS GUARD ═══
-          const latestJob = await getJob(payload.jobId);
-          if (isTerminalStatus(latestJob?.status)) {
-            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 validation-exhausted fallback`, {
-              jobId: payload.jobId,
-              stage: "2",
-              status: latestJob?.status
-            });
-            return;
-          }
-
+          stage2BlockedReason = "stage2_structural_exhausted";
+          nLog(`[STAGE2_UNIFIED_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES}`);
           await safeWriteJobStatus(
             payload.jobId,
             {
               status: "failed",
-              errorMessage: reason,
+              errorMessage: "stage2_structural_exhausted",
+              reason: "stage2_structural_exhausted",
               meta: {
                 ...(sceneLabel ? { ...sceneMeta } : {}),
                 unifiedValidation,
                 stage2LocalReasons,
-                blockedBy: unifiedValidation.blockSource,
+                geminiConfirm: lastGeminiConfirm,
+                blockedBy,
                 blockedStage: "stage2",
+                attemptCount: attempt,
               },
             },
-            "stage2_validation_failed_terminal"
+            "stage2_unified_exhausted"
           );
           return;
         }
+
+        retryTemperature = Math.max(0.05, retryTemperature * 0.9);
+        retryTopP = Math.max(0.3, retryTopP * 0.9);
+        retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
+        nLog(`[STAGE2_UNIFIED_RETRY] attempt=${attempt + 1} structuralFail=true temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+        continue;
       }
 
-      // Exit validation loop if no blocking hard fail
-      break;
-    } catch (validationError: any) {
-      nLog(`[worker] Unified validation error (non-fatal):`, validationError);
-      nLog(`[worker] Stack:`, validationError?.stack);
-      break; // fail-open
-    }
-  }
-
-  // ===== SEMANTIC STRUCTURAL VALIDATION (Stage-2 ONLY) =====
-  // Run semantic structure validator ONLY after Stage-2 virtual staging
-  // This validator detects window/door count changes, wall drift, and opening modifications
-  // MODE: Controlled by SHARP_FINAL_VALIDATOR env var ("log" or "block")
-  if (path2 && payload.options.virtualStage && SHARP_SEMANTIC_ENABLED) {
-    try {
-      nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) mode=${sharpFinalValidatorMode} ═══════════`);
-
-      const semanticResult = await runSemanticStructureValidator({
-        originalImagePath: path1A,  // Pre-staging baseline
-        enhancedImagePath: path2,   // Final staged output
-        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: sharpFinalValidatorMode as any,
-      });
-
-      if (semanticResult && !semanticResult.passed) {
-        const semanticReason = `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`;
-        
-        if (sharpFinalValidatorMode === "block") {
-          // BLOCKING MODE: Fail the job if semantic validation fails
-          nLog(`[worker] ❌ Semantic validation FAILED (blocking mode) - falling back to Stage 1B or 1A`);
-          const fallbackStage = path1B ? "1B" : "1A";
-          const fallbackPath = path1B ? path1B : path1A;
-          
-          await completePartialJob({
-            jobId: payload.jobId,
-            triggerStage: "2",
-            finalStage: fallbackStage,
-            finalPath: fallbackPath,
-            pub1AUrl,
-            pub1BUrl,
-            sceneMeta: { ...sceneMeta, semanticValidationBlocked: true },
-            userMessage: fallbackStage === "1B"
-              ? "We decluttered your image but could not safely stage it due to structural changes."
-              : "We enhanced your image but could not safely stage it due to structural changes.",
-            reason: "semantic_validation_failed",
-            stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
-          });
-          return;
-        } else {
-          // LOG MODE: Record failure but continue
-          if (GEMINI_CONFIRMATION_ENABLED) {
-            stage2NeedsConfirm = true;
-          }
-          stage2LocalReasons.push(semanticReason);
-        }
-      }
-
-      nLog(`[worker] Semantic validation completed (mode=${sharpFinalValidatorMode})`);
-    } catch (semanticError: any) {
-      // Semantic validation errors should never crash the job
-      nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
-      nLog(`[worker] Stack:`, semanticError?.stack);
-      // Continue processing - fail-open behavior
-    }
-  } else if (path2 && payload.options.virtualStage && !SHARP_SEMANTIC_ENABLED) {
-    nLog(`[worker] Sharp semantic validator disabled (SHARP_FINAL_VALIDATOR not set)`);
-  }
-
-  // ===== MASKED EDGE GEOMETRY VALIDATOR (Stage-2 ONLY) =====
-  // Run masked edge validator ONLY after Stage-2 virtual staging
-  // This validator focuses on architectural lines only (walls, doors, windows)
-  // Ignores furniture, curtains, plants, and other non-structural elements
-  // MODE: LOG-ONLY (non-blocking)
-  if (path2 && payload.options.virtualStage) {
-    try {
-      nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
-
-      const maskedEdgeResult = await runMaskedEdgeValidator({
-        originalImagePath: path1A,  // Pre-staging baseline
-        enhancedImagePath: path2,   // Final staged output
-        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: "log",
-        jobId: payload.jobId,
-      });
-
-      if (maskedEdgeResult) {
-        const maskedDriftPct = maskedEdgeResult.maskedEdgeDrift * 100;
-        const maskedEdgeFailed =
-          maskedEdgeResult.createdOpenings > 0 ||
-          maskedEdgeResult.closedOpenings > 0 ||
-          maskedEdgeResult.maskedEdgeDrift > 0.18;
-
-        if (maskedEdgeFailed) {
-          if (GEMINI_CONFIRMATION_ENABLED) {
-            stage2NeedsConfirm = true;
-          }
-          stage2LocalReasons.push(
-            `masked_edge_failed: drift ${maskedDriftPct.toFixed(2)}%, openings +${maskedEdgeResult.createdOpenings}/-${maskedEdgeResult.closedOpenings}`
-          );
-        }
-      }
-
-      nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
-    } catch (maskedEdgeError: any) {
-      // Masked edge validation errors should never crash the job
-      nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
-      nLog(`[worker] Stack:`, maskedEdgeError?.stack);
-      // Continue processing - fail-open behavior
-    }
-  }
-
-  if (payload.options.virtualStage) {
-    const stage2LocalStatus = stage2NeedsConfirm ? "needs_confirm" : "pass";
-    nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
-
-    // Gemini confirmation gate for Stage 2
-    // Includes retry loop: if Gemini blocks, re-run Stage 2 with reduced sampling params
-    if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath && stage2NeedsConfirm) {
-      nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
-      const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-      // ✅ FIX: Gemini confirmation must ALWAYS use Stage 1A as baseline (not Stage 1B)
-      const baselineForConfirm = path1A;
-      let geminiRetries = 0;
-      const geminiMaxRetries = GEMINI_CONFIRM_MAX_RETRIES;
-      let geminiRetryTemp: number | undefined;
-      let geminiRetryTopP: number | undefined;
-      let geminiRetryTopK: number | undefined;
-      let lastGeminiConfirm: any = null;
-      let geminiRetryPassed = false;
-
-      // Gate evidence injection based on threshold
-      const gatedEvidence = shouldInjectEvidence(unifiedValidation?.evidence)
-        ? unifiedValidation?.evidence
-        : undefined;
-      const injectionStatus = gatedEvidence ? "injected" : "suppressed";
-      nLog(`[VALIDATION_EVIDENCE_GATE] stage=2 injected=${!!gatedEvidence} reason=${injectionStatus}`);
-
-      // Initial Gemini confirmation check
-      let confirm = await confirmWithGeminiStructure({
-        baselinePathOrUrl: baselineForConfirm,
-        candidatePathOrUrl: stage2CandidatePath,
-        stage: "stage2",
-        roomType: payload.options.roomType,
-        sceneType: sceneLabel as any,
-        jobId: payload.jobId,
-        localReasons: stage2LocalReasons,
-        sourceStage: stage2SourceStage,
-        validationMode: stage2ValidationMode,
-        evidence: gatedEvidence,
-        riskLevel: unifiedValidation?.riskLevel,
-      });
-      nLog(`[GEMINI_CONFIRM] stage=2 status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
-      lastGeminiConfirm = confirm;
-      if (confirm.confirmedFail) {
-        setStage2AttemptValidation(stage2CandidatePath, "gemini", confirm.reasons);
-      }
-
-      // Retry loop: if Gemini blocks and blocking is enabled, re-run Stage 2 with reduced params
-      while (confirm.confirmedFail && geminiBlockingEnabled && geminiRetries < geminiMaxRetries) {
-        geminiRetries++;
-        // Initialise from existing sampling on first retry, then reduce by 10% per retry (multiplicative)
-        if (geminiRetries === 1) {
-          // Use base Stage 2 sampling defaults as starting point
-          geminiRetryTemp = 0.55;
-          geminiRetryTopP = 0.85;
-          geminiRetryTopK = 40;
-        }
-        geminiRetryTemp = Math.max(0.05, (geminiRetryTemp ?? 0.55) * 0.9);
-        geminiRetryTopP = Math.max(0.3, (geminiRetryTopP ?? 0.85) * 0.9);
-        geminiRetryTopK = Math.max(10, Math.round((geminiRetryTopK ?? 40) * 0.9));
-
-        const retryReasons = confirm.reasons.join("; ") || "Gemini confirmation block";
-        nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries}/${geminiMaxRetries} reason=gemini_block temp=${geminiRetryTemp.toFixed(3)} topP=${geminiRetryTopP.toFixed(3)} topK=${geminiRetryTopK}`);
-        const retryStatus = await getJob(payload.jobId);
-        if (isTerminalStatus(retryStatus?.status) || await isJobFailedFinal(payload.jobId)) {
-          nLog("[RETRY_BLOCKED_TERMINAL]", { jobId: payload.jobId, stage: "2" });
-          return;
-        }
-        await safeWriteJobStatus(
-          payload.jobId,
-          {
-            status: "processing",
-            message: `Stage 2 blocked by Gemini. Retrying with stricter settings (attempt ${geminiRetries + 1}/${geminiMaxRetries + 1})...`,
-            meta: {
-              ...sceneMeta,
-              stage2LocalReasons,
-              geminiRetry: true,
-              geminiRetryAttempt: geminiRetries,
-              geminiRetryMaxAttempts: geminiMaxRetries,
-              retryReason: "gemini_block",
-              blockedBy: "gemini",
-              blockedStage: "stage2",
-            },
-          },
-          "stage2_gemini_retry"
-        );
-
-        try {
-          // Re-run Stage 2 (enhanceWithGemini) with reduced sampling parameters
-          const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${geminiRetries}`, ".webp");
-          const retryStage2Path = await enhanceWithGemini(stage2InputResolved, {
-            ...payload.options,
-            stage: "2",
-            temperature: geminiRetryTemp,
-            topP: geminiRetryTopP,
-            topK: geminiRetryTopK,
-            jobId: payload.jobId,
-            roomType: payload.options.roomType,
-            sceneType: sceneLabel,
-            modelReason: `stage2 gemini_block retry ${geminiRetries}`,
-            outputPath: retryOutputPath,
-          });
-          recordStage2AttemptOutput(geminiRetries, retryStage2Path);
-          nLog(`[RETRY_OUTPUT] stage=2 attempt=${geminiRetries} path=${retryStage2Path}`);
-          nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} re-ran Stage 2: ${retryStage2Path}`);
-
-          // Re-run full validation pipeline on the retried Stage 2 output
-          try {
-            stage2CandidatePath = retryStage2Path;
-            path2 = retryStage2Path;
-            commitStageOutput("2", retryStage2Path);
-
-            const validationModeRetry = effectiveValidationMode || (VALIDATION_BLOCKING_ENABLED ? "enforce" : "log");
-            const baseArtifactsRetry = stageLineage.baseArtifacts;
-
-            nLog(`[VALIDATOR_INPUT] stage=2 attempt=${geminiRetries} using=${retryStage2Path}`);
-
-            // ═══ Phase H: Stage output consistency check ═══
-            const retryOutputCheck = checkStageOutput(retryStage2Path, "2", payload.jobId);
-            if (!retryOutputCheck.readable) {
-              nLog(`[worker] Stage output missing/unreadable before retry validation — skipping retry`, { jobId: payload.jobId, stage: "2", path: retryStage2Path });
-              break; // skip this retry iteration, don't mark failed since retries can continue
-            }
-
-            const unifiedRetry = await runUnifiedValidation({
-              originalPath: stage2ValidationBaseline,
-              enhancedPath: retryStage2Path,
-              stage: "2",
-              sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-              roomType: payload.options.roomType,
-              mode: validationModeRetry,
-              geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
-              jobId: payload.jobId,
-              stagingStyle: payload.options.stagingStyle || "nz_standard",
-              stage1APath: stage2ValidationBaseline,
-              sourceStage: stage2SourceStage,
-              validationMode: stage2ValidationMode,
-              baseArtifacts: baseArtifactsRetry,
-            });
-
-            stage2LocalReasons = [];
-            stage2NeedsConfirm = false;
-            if (unifiedRetry) {
-              const rawResultsRetry = unifiedRetry.raw ? Object.values(unifiedRetry.raw) : [];
-              const anyFailedRetry = rawResultsRetry.some((r) => r && r.passed === false);
-              const localNotesRetry = (unifiedRetry.reasons && unifiedRetry.reasons.length)
-                ? unifiedRetry.reasons
-                : (unifiedRetry.warnings && unifiedRetry.warnings.length)
-                  ? unifiedRetry.warnings
-                  : [];
-
-              if (anyFailedRetry || localNotesRetry.length) {
-                if (GEMINI_CONFIRMATION_ENABLED) {
-                  stage2NeedsConfirm = true;
-                }
-                stage2LocalReasons.push(...localNotesRetry);
-              }
-
-              const validationRiskRetry = (unifiedRetry as any)?.validationRisk;
-              if (typeof validationRiskRetry !== "undefined") {
-                stage2ValidationRisk = validationRiskRetry;
-                stage2NeedsConfirm = stage2NeedsConfirm || (GEMINI_CONFIRMATION_ENABLED && !!stage2ValidationRisk);
-              }
-
-              const retryBlockingFail = unifiedRetry.hardFail && (
-                (unifiedRetry.blockSource === "gemini" && geminiBlockingEnabled) ||
-                (unifiedRetry.blockSource === "local" && VALIDATION_BLOCKING_ENABLED)
-              );
-              if (retryBlockingFail) {
-                stage2NeedsConfirm = true;
-                if (unifiedRetry.reasons?.length) {
-                  stage2LocalReasons.push(...unifiedRetry.reasons);
-                }
-              }
-            }
-
-            // Semantic validator on retried output (log-only)
-            try {
-              const semanticRetry = await runSemanticStructureValidator({
-                originalImagePath: path1A,
-                enhancedImagePath: retryStage2Path,
-                scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-                mode: "log",
-              });
-              if (semanticRetry && !semanticRetry.passed) {
-                if (GEMINI_CONFIRMATION_ENABLED) {
-                  stage2NeedsConfirm = true;
-                }
-                stage2LocalReasons.push(
-                  `semantic_validator_failed: windows ${semanticRetry.windows.before}→${semanticRetry.windows.after}, doors ${semanticRetry.doors.before}→${semanticRetry.doors.after}, wall_drift ${(semanticRetry.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticRetry.openings.created}/-${semanticRetry.openings.closed}`
-                );
-              }
-            } catch (semanticRetryError: any) {
-              nLog(`[worker] Semantic validation error (non-fatal) on retry:`, semanticRetryError);
-            }
-
-            // Masked edge validator on retried output (log-only)
-            try {
-              const maskedRetry = await runMaskedEdgeValidator({
-                originalImagePath: path1A,
-                enhancedImagePath: retryStage2Path,
-                scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-                mode: "log",
-                jobId: payload.jobId,
-              });
-
-              if (maskedRetry) {
-                const maskedDriftPctRetry = maskedRetry.maskedEdgeDrift * 100;
-                const maskedEdgeFailedRetry =
-                  maskedRetry.createdOpenings > 0 ||
-                  maskedRetry.closedOpenings > 0 ||
-                  maskedRetry.maskedEdgeDrift > 0.18;
-
-                if (maskedEdgeFailedRetry) {
-                  if (GEMINI_CONFIRMATION_ENABLED) {
-                    stage2NeedsConfirm = true;
-                  }
-                  stage2LocalReasons.push(
-                    `masked_edge_failed: drift ${maskedDriftPctRetry.toFixed(2)}%, openings +${maskedRetry.createdOpenings}/-${maskedRetry.closedOpenings}`
-                  );
-                }
-              }
-            } catch (maskedRetryError: any) {
-              nLog(`[worker] Masked edge validation error (non-fatal) on retry:`, maskedRetryError);
-            }
-          } catch (validationRetryError: any) {
-            nLog(`[worker] Unified validation retry error (non-fatal):`, validationRetryError);
-          }
-
-          // Re-validate with Gemini Confirmation
-          confirm = await confirmWithGeminiStructure({
-            baselinePathOrUrl: baselineForConfirm,
-            candidatePathOrUrl: retryStage2Path,
-            stage: "stage2",
-            roomType: payload.options.roomType,
-            sceneType: sceneLabel as any,
-            jobId: payload.jobId,
-            localReasons: stage2LocalReasons,
-            sourceStage: stage2SourceStage,
-            validationMode: stage2ValidationMode,
-            evidence: unifiedValidation?.evidence,
-            riskLevel: unifiedValidation?.riskLevel,
-          });
-          nLog(`[GEMINI_CONFIRM] stage=2 retry=${geminiRetries} status=${confirm.status} confirmedFail=${confirm.confirmedFail} reasons=${JSON.stringify(confirm.reasons)}`);
-          lastGeminiConfirm = confirm;
-          if (confirm.confirmedFail) {
-            setStage2AttemptValidation(retryStage2Path, "gemini", confirm.reasons);
-          }
-
-          if (!confirm.confirmedFail) {
-            // ═══ FINAL STATUS GUARD ═══
-            const latestJob = await getJob(payload.jobId);
-            if (isTerminalStatus(latestJob?.status)) {
-              nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 Gemini retry publish`, {
-                jobId: payload.jobId,
-                stage: "2",
-                attempt: geminiRetries,
-                status: latestJob?.status
-              });
-              return;
-            }
-
-            // Retry passed — adopt the retried output and continue pipeline
-            stage2CandidatePath = retryStage2Path;
-            path2 = retryStage2Path;
-            commitStageOutput("2", retryStage2Path);
-            geminiRetryPassed = true;
-            nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
-            break;
-          }
-        } catch (retryErr: any) {
-          nLog(`[GEMINI_RETRY] stage=2 attempt=${geminiRetries} error: ${retryErr?.message || retryErr}`);
-          // Continue to next retry or exhaust
-        }
-      }
-
-      if (lastGeminiConfirm?.confirmedFail && geminiBlockingEnabled && !geminiRetryPassed) {
-        // ═══ FINAL STATUS GUARD ═══
-        const latestJob = await getJob(payload.jobId);
-        if (isTerminalStatus(latestJob?.status)) {
-          nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 2 fallback publish`, {
-            jobId: payload.jobId,
-            stage: "2",
-            attempt: geminiRetries,
-            status: latestJob?.status
-          });
-          return;
-        }
-
-        // All retries exhausted — hard fail but publish last known good image (Stage 1B or 1A)
-        stage2Blocked = true;
-        stage2BlockedReason = lastGeminiConfirm.reasons.join("; ") || "Stage2 blocked by Gemini confirmation";
-        const fallbackStage = (path1B && stage2BaseStage === "1B") ? "1B" : "1A";
-        const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
-        let fallbackUrl = fallbackStage === "1B" ? pub1BUrl : pub1AUrl;
-
-        nLog(`[VALIDATE_FINAL] stage=2 decision=block blockedBy=gemini_confirm override=false retries_exhausted=true (publishing Stage ${fallbackStage} as fallback)`);
-        nLog(`[GEMINI_RETRY] stage=2 EXHAUSTED after ${geminiRetries} retries — falling back to Stage ${fallbackStage}`);
-
-        // Publish fallback if not already published
-        if (!fallbackUrl) {
-          try {
-            const pubFallback = await publishWithOptionalBlackEdgeGuard(fallbackPath, `fallback-${fallbackStage}`);
-            fallbackUrl = pubFallback.url;
-          } catch (pubErr) {
-            nLog(`[GEMINI_RETRY] Failed to publish Stage ${fallbackStage} fallback: ${pubErr}`);
-          }
-        }
-
-        await completePartialJob({
-          jobId: payload.jobId,
-          triggerStage: "2",
-          finalStage: fallbackStage,
-          finalPath: fallbackPath,
-          pub1AUrl: fallbackStage === "1A" ? (fallbackUrl || pub1AUrl) : pub1AUrl,
-          pub1BUrl: fallbackStage === "1B" ? (fallbackUrl || pub1BUrl) : pub1BUrl,
-          sceneMeta: {
-            ...sceneMeta,
-            stage2LocalReasons,
-            geminiConfirm: lastGeminiConfirm,
-            blockedBy: "gemini",
-            blockedStage: "stage2",
-            attemptCount: geminiRetries + 1,
-            retryReason: "gemini_block",
-            fallbackStage,
-            fallbackUrl: fallbackUrl || null,
-          },
-          userMessage: fallbackStage === "1B"
-            ? "We decluttered your image but could not safely stage it."
-            : "We enhanced your image but could not safely stage it.",
-          reason: "stage2_gemini_exhausted",
-          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
-        });
-        return;
-      }
-
+      nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
       updateJob(payload.jobId, {
         meta: {
           ...sceneMeta,
           stage2LocalReasons,
-          geminiConfirm: { ...lastGeminiConfirm, override: !lastGeminiConfirm.confirmedFail },
-          ...(geminiRetries > 0 ? {
-            blockedBy: "gemini",
-            blockedStage: "stage2",
-            attemptCount: geminiRetries + 1,
-            retryReason: "gemini_block",
-          } : {}),
+          geminiConfirm: lastGeminiConfirm,
         }
       });
-      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=${lastGeminiConfirm.confirmedFail && geminiBlockingEnabled ? "gemini_confirm" : "none"} override=${lastGeminiConfirm.confirmedFail ? !geminiBlockingEnabled : true} retries=${geminiRetries}`);
-    } else {
-      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none override=${!stage2NeedsConfirm}`);
+      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none retries=${attempt - 1}`);
+      break;
     }
   }
 
