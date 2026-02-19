@@ -268,6 +268,17 @@ export type Stage1BValidationMode =
   | "LIGHT_DECLUTTER"
   | "FULL_REMOVAL";
 
+function isBuiltInDowngradeAllowed(input: {
+  violationType: GeminiSemanticVerdict["violationType"];
+  builtInDetected: boolean;
+  structuralAnchorCount: number;
+  confidence: number;
+}): boolean {
+  if (input.violationType !== "built_in_moved") return false;
+  if (!input.builtInDetected) return false;
+  return input.structuralAnchorCount < 2 || input.confidence < BUILTIN_HARDFAIL_CONFIDENCE;
+}
+
 export function buildFinalFixtureConfirmPrompt(input: {
   sceneType?: "interior" | "exterior";
   localFindings?: string[];
@@ -1627,6 +1638,12 @@ export async function runGeminiSemanticValidator(opts: {
       : 0;
     const builtInLowConfidence = builtInDetected && parsed.confidence < BUILTIN_HARDFAIL_CONFIDENCE;
     const violationType = parsed.violationType || "other";
+    const builtInDowngradeAllowed = isBuiltInDowngradeAllowed({
+      violationType,
+      builtInDetected,
+      structuralAnchorCount,
+      confidence: parsed.confidence,
+    });
 
     const reasonText = (parsed.reasons || []).join(" ").toLowerCase();
     const alwaysHardFail = violationType === "opening_change" ||
@@ -1660,14 +1677,23 @@ export async function runGeminiSemanticValidator(opts: {
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
       const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
-      hardFail = alwaysHardFail || builtInHardFail;
+      hardFail = opts.stage === "2" ? true : (alwaysHardFail || builtInHardFail);
     }
     else if (category === "opening_blocked") hardFail = parsed.hardFail;
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
-    if (lowConfidence) hardFail = false;
-    if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
-    if (builtInLowConfidence) hardFail = false;
+    if (opts.stage === "2" && category === "structure") {
+      if (builtInDowngradeAllowed) {
+        hardFail = false;
+      } else {
+        hardFail = true;
+        console.log("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
+      }
+    } else {
+      if (lowConfidence) hardFail = false;
+      if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
+      if (builtInLowConfidence) hardFail = false;
+    }
 
     const verdict: GeminiSemanticVerdict = {
       hardFail,
