@@ -129,7 +129,8 @@ export function buildPrompt(opts: PromptOptions): string {
     "",
     "NEVER CREATE FALSE ARCHITECTURE (CRITICAL - ZERO TOLERANCE): DO NOT invent or create new windows, doors, or openings that do not exist in the original image. Do not add window frames, door frames, or architectural openings to blank walls. Only the openings present in the original photograph may appear in the enhanced version. Creating false architectural elements is a critical violation.",
     "",
-    "COUNTERS & ISLANDS: Kitchen/bathroom counters, islands, and peninsulas are FIXED STRUCTURES. Do not extend, enlarge, reshape, modify materials, or add overhangs/extensions to accommodate furniture. If stools/chairs don't fit at existing counter, omit them.",
+    "COUNTERS & ISLANDS: Kitchen/bathroom counters, islands, and peninsulas are FIXED STRUCTURES. Do not extend, enlarge, reshape, modify materials, or add overhangs/extensions to accommodate furniture.",
+    "BAR STOOLS (STAGE 2 EMPTY-ROOM): Do NOT add bar stools. Only keep or replace bar stools if they were already present. Never introduce new bar stools.",
     "OPENINGS PROTECTION (HARD): Windows/frames/glass/handles must remain ≥95% visible (HARD requirement). 70-<95% = SOFT guidance (nudge placement). <70% = non-compliant. Wall-mounted items must not overlap openings. Floor furniture before windows allowed only if frames remain clearly visible and operable.",
     "EGRESS (HARD): Maintain ≥80 cm clear walkway at hinged doors (HARD requirement). 70-<80 cm = SOFT guidance (nudge placement). Do not block door swing. Wardrobe/slider doors may be visually closer if they remain operable (no collision).",
     "",
@@ -913,8 +914,17 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     "",
     "Bar stools:",
     "Do NOT add bar stools in Stage 2 empty-room staging.",
-    "Only keep or replace bar stools if they are already present in the original image (refresh staging).",
+    "Only keep or replace bar stools if they were already present in the original image (refresh staging).",
     "Never introduce new bar stools.",
+    "",
+    "DUAL-ZONE KITCHEN/DINING — DOMINANT ZONE ONLY:",
+    "In combined kitchen-dining rooms, identify the primary dining zone based on:",
+    "- Pendant lighting clusters",
+    "- Large window grouping",
+    "- Clear wall backing",
+    "- Distance from main appliance corridor",
+    "Place the dining table only in the dominant dining zone.",
+    "Never place a dining table in the primary kitchen circulation path.",
     "",
     "Curtains and drapes in kitchens — STRICT RULE:",
     "Do NOT add curtains, drapes, or fabric window coverings to kitchen windows in Stage 2 staging.",
@@ -1078,7 +1088,9 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     "",
     "CASEGOODS PLACEMENT — WALL VISIBILITY RULE",
     "",
-    "Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.",
+    "Large storage furniture (dressers, tallboys, chests) may ONLY be placed against clearly visible, continuous, uninterrupted solid wall surfaces.",
+    "Do NOT assume a wall exists where it is partially occluded, shadowed, cropped, behind glazing, or visually ambiguous.",
+    "If the full backing wall cannot be clearly seen, do NOT place large casegoods there.",
     "",
     "Applies to:",
     "• chests of drawers",
@@ -1094,6 +1106,15 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     "• where the wall behind the item cannot be clearly seen",
     "",
     "If a suitable blank wall is not clearly visible, do not add the item.",
+    "",
+    "BED / HEADBOARD STRUCTURAL RULE",
+    "A bed with a headboard MUST be placed fully against a clearly visible, continuous solid wall.",
+    "No window, door, glazing panel, or opening may be behind any portion of the headboard.",
+    "If no compliant wall exists:",
+    "- Use a smaller realistic bed size that fits.",
+    "- OR use a low-profile platform bed without headboard.",
+    "- OR reposition to a compliant wall.",
+    "Never place a headboard overlapping a window or opening.",
     "",
     "WALL-MOUNTED ADDITIONS — PROHIBITED",
     "",
@@ -1311,12 +1332,12 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     }
   } else {
     // INTERIOR
-    const bedroomWindowArtRule = [
-      "🚫 BEDROOM WINDOW ART PROHIBITION:",
-      "If a bed is placed in front of a window, DO NOT install wall art above the bed.",
-      "DO NOT split, shrink, remove, or cover any window to create wall space for art above the bed.",
-      "Windows must remain fully intact, unobstructed, and visible in their original size and position.",
-      "Wall art may only be placed on solid wall surfaces, never over or in place of windows.",
+    const bedroomHeadboardRule = [
+      "🚫 BED / HEADBOARD STRUCTURAL RULE:",
+      "A bed with a headboard MUST be placed fully against a clearly visible, continuous solid wall.",
+      "No window, door, glazing panel, or opening may be behind any portion of the headboard.",
+      "If no compliant wall exists: use a smaller realistic bed size, OR use a low-profile platform bed without headboard, OR reposition to a compliant wall.",
+      "Never place a headboard overlapping a window or opening.",
       "",
     ];
 
@@ -1327,7 +1348,7 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
         : roomType.toLowerCase() === "bedroom"
         ? [
             "Bedroom: quality bedding, nightstands/lamps, minimal clutter; soft cohesive palette.",
-            ...bedroomWindowArtRule,
+            ...bedroomHeadboardRule,
           ].join("\n")
         : (roomType.toLowerCase() === "living room" || roomType.toLowerCase() === "lounge")
         ? "Living: conversational seating, coffee table, plant/books; balanced layout."
