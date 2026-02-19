@@ -927,7 +927,7 @@ function buildStage2InteriorPromptNZStyle(
   
   const taskInstruction = isFullStaging
     ? "Stage this room from an empty baseline with appropriate furniture for the specified room type."
-    : "Refresh and augment the retained scene without changing anchor placement.\nPreserve anchor positions and architecture exactly while adding complementary staging elements.";
+    : "Refresh and restage from retained layout anchors.\nYou may replace existing movable furniture with style-matched equivalents while preserving anchor positions/proportions and fixed architecture, then add complementary staging elements.";
 
   const modelTemperature = isFullStaging ? 0.25 : 0.33;
   const modelTopP = isFullStaging ? 0.70 : 0.78;
@@ -1012,9 +1012,27 @@ ${layoutContextBlock}
 IMMUTABLE ELEMENTS (REFRESH MODE)
 ────────────────────────────────
 ${isRefreshStaging
-  ? `Retained anchors from Stage 1B are immutable geometry references.
-You may restyle finishes/materials only.
-You MUST NOT translate, rotate, resize, remove, or change placement of these anchors.
+  ? `ANCHOR GEOMETRY LOCK (REFRESH MODE):
+Do NOT change anchor placement.
+Do NOT translate, rotate, or resize anchors.
+Do NOT reinterpret layout or focal-wall logic.
+Maintain original walking paths and spatial relationships.
+
+ANCHOR OBJECT REPLACEMENT CONTRACT:
+You MAY replace retained movable anchor furniture with stylistically appropriate equivalents.
+Replacement must:
+• occupy the same footprint
+• maintain the same orientation
+• maintain the same functional role
+• preserve circulation clearances
+
+Do NOT:
+• remove an anchor without replacing it with an equivalent functional piece
+• introduce layout shift
+• change scale to alter composition
+• replace with an incompatible furniture category
+
+Use anchors as scaffolding for restaging: rebuild furniture/decor on the same layout while keeping architecture and circulation unchanged.
 
 IMMUTABLE ANCHOR EXAMPLES:
 • Living: primary sofa, TV unit
@@ -1036,6 +1054,117 @@ ${isRefreshStaging
 
 All additions must preserve walkways, openings, and structural constraints.`
   : `You may place complete room-appropriate staging furniture while preserving structural constraints and circulation.`}
+
+${isRefreshStaging
+  ? `
+────────────────────────────────
+STAGE 2 REFRESH — REPLACE & AUGMENT MODE
+────────────────────────────────
+
+Retained furniture from Stage 1B defines layout scaffolding only.
+It does NOT define final styling.
+
+CRITICAL PRIORITY ORDER:
+1. Preserve layout geometry
+2. Preserve zone structure
+3. Replace and upgrade furniture
+4. Add complementary staging
+5. Apply cohesive style
+
+If styling conflicts with layout geometry, layout geometry ALWAYS wins.
+
+────────────────────────────────
+LAYOUT GEOMETRY LOCK — NON-NEGOTIABLE
+────────────────────────────────
+
+You MUST preserve:
+• room orientation
+• dominant focal wall direction
+• primary seating/sleeping/dining zone position
+• spatial relationship between visible zones
+• walking paths and door clearances
+• relative distance between major anchors
+
+You MUST NOT:
+• move a zone to a different wall
+• rotate the main seating axis
+• expand or shrink a zone footprint
+• collapse two zones into one
+• create new functional zones
+• delete a visible functional zone
+• reinterpret circulation paths
+
+Furniture objects may change.
+Zone geometry may not.
+
+────────────────────────────────
+ANCHOR REPLACEMENT — CONTROLLED SWAP
+────────────────────────────────
+
+Primary anchors MAY be replaced with stylistically appropriate equivalents.
+
+Replacement must:
+• occupy approximately the same footprint
+• maintain same orientation
+• preserve functional role
+• preserve relative spacing to other anchors
+• preserve clearance to walls and openings
+
+You MUST NOT:
+• remove an anchor without replacing it
+• change anchor category
+• resize anchor to manipulate layout
+• shift anchor position to improve composition
+
+Anchors define geometry — not aesthetic.
+
+────────────────────────────────
+SECONDARY FURNITURE FLEXIBILITY
+────────────────────────────────
+
+Secondary furniture is flexible within existing zone boundaries.
+You may increase/reduce accent pieces and decor density when the zone footprint remains intact.
+Do not overcrowd, do not cross zone boundaries, and keep walkways clear.
+
+────────────────────────────────
+OPEN-PLAN ZONE PRESERVATION RULES
+────────────────────────────────
+
+If multiple zones are visible (for example living + dining + kitchen):
+• Preserve dominant zone geometry exactly
+• Preserve secondary zone placement and function
+• Do NOT rebalance or shift boundaries between zones
+• Do NOT merge zones or introduce new zones
+
+Upgrade composition quality without redesigning the floor plan.
+
+────────────────────────────────
+COMPOSITION CONSISTENCY REINFORCEMENT
+────────────────────────────────
+
+Do NOT “improve layout”, “optimize arrangement”, “reposition for better flow”,
+“rearrange seating”, “rebalance zones”, or “enhance symmetry” by moving anchors.
+
+You may improve styling, not structure.
+
+────────────────────────────────
+STYLE APPLICATION REQUIREMENT
+────────────────────────────────
+
+All replaced and added furniture must:
+• match selected staging style
+• be cohesive in material and tone
+• avoid mixing old and new aesthetics
+• appear professionally staged
+• maintain realistic scale
+
+Avoid hybrid styling.
+
+OBJECTIVE SUMMARY:
+Treat retained layout as fixed scaffolding.
+Rebuild furniture composition on that scaffolding without altering geometry,
+orientation, or zone structure.`
+  : ""}
 
 ${CAMERA_LOCK_BLOCK}
 
@@ -1424,15 +1553,15 @@ WALL ART PLACEMENT RULE:
 Framed artwork must be wall-mounted only.
 Do NOT lean artwork on furniture.
 Do NOT place framed art sitting on dressers or consoles.`
-  : `1. Identify retained anchors and treat them as immutable geometry references.
-2. You may restyle anchor finishes only; do NOT move/rotate/resize/remove anchors.
-3. Preserve anchor positions, room layout, and circulation flow exactly.
+  : `1. Identify retained anchors and lock their geometry/placement relationships.
+2. Replace retained movable anchor furniture with style-matched equivalents in the same footprint, orientation, and functional role.
+3. Preserve room layout, circulation flow, focal-wall logic, and architectural geometry exactly.
 4. Add complementary decor, secondary furniture, artwork, plants, and soft furnishings in augmentable zones.
 5. Additional primary furniture is allowed only when space and walkways remain correct.
 6. Never wipe the room, rebuild composition from scratch, or reinterpret the floor plan.
 
 CONSISTENCY RULE:
-- Keep architecture and anchor geometry locked while augmenting non-anchor zones.`}
+- Keep architecture and layout-anchor geometry locked while replacing/augmenting movable furniture.`}
 
 ────────────────────────────────
 CRITICAL OPENING CLEARANCE RULE — STRICT
