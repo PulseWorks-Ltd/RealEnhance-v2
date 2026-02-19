@@ -3444,6 +3444,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
+  // Recover Stage 2 publication if output exists and validation passed but URL wasn't persisted.
+  // This prevents "complete" jobs from missing selectable/downloadable staged output in the UI.
+  if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath && !pub2Url) {
+    try {
+      const stage2OutputCheck = checkStageOutput(stage2CandidatePath, "2", payload.jobId);
+      if (stage2OutputCheck.readable) {
+        nLog("[STAGE2_RECOVERY] Stage 2 candidate exists but URL missing — attempting recovery publish", {
+          jobId: payload.jobId,
+          stage2CandidatePath: stage2CandidatePath.substring(Math.max(0, stage2CandidatePath.length - 80)),
+        });
+        const recoveredPub2 = await publishWithOptionalBlackEdgeGuard(stage2CandidatePath, "2-recovery");
+        if (recoveredPub2?.url) {
+          pub2Url = recoveredPub2.url;
+          stage2Success = true;
+          stage2PublishSuccess = true;
+          stage2PublishedUrl = recoveredPub2.url;
+          attachStage2PublishedUrl(stage2CandidatePath, recoveredPub2.url);
+          await safeWriteJobStatus(
+            payload.jobId,
+            { stage: "2", stageUrls: { "2": recoveredPub2.url }, imageUrl: recoveredPub2.url },
+            "stage2_recovery_publish"
+          );
+          nLog("[STAGE2_RECOVERY] Stage 2 URL recovered", { jobId: payload.jobId, stage2Url: recoveredPub2.url });
+        }
+      }
+    } catch (recoverErr) {
+      nLog("[STAGE2_RECOVERY] Recovery publish failed (non-blocking)", {
+        jobId: payload.jobId,
+        error: (recoverErr as any)?.message || String(recoverErr),
+      });
+    }
+  }
+
   // Decide final base path for versioning + final publish.
   // Preference order:
   //   1) Stage 2 (if virtualStage requested AND not blocked)
@@ -3531,7 +3564,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } else {
     try {
       nLog(`\n[WORKER] ═══════════ Publishing final enhanced image ═══════════\n`);
-      publishedFinal = await publishWithOptionalBlackEdgeGuard(path2, "final");
+      publishedFinal = await publishWithOptionalBlackEdgeGuard(finalBasePath, "final");
       pubFinalUrl = publishedFinal?.url;
       if (!pubFinalUrl) {
         throw new Error('publishImage returned no URL');
