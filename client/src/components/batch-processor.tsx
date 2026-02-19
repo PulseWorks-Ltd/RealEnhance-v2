@@ -157,7 +157,6 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
   const validation = data?.validation || data?.result?.validation || data?.meta?.unifiedValidation || {};
   const blockedStage = (validation as any)?.blockedStage || data?.blockedStage || data?.result?.blockedStage || data?.meta?.blockedStage || null;
   const fallbackStage = (validation as any)?.fallbackStage ?? data?.fallbackStage ?? data?.result?.fallbackStage ?? data?.meta?.fallbackStage ?? null;
-  const hardFail = !!((validation as any)?.hardFail || data?.hardFail || data?.result?.hardFail);
 
   const stageMap =
     data?.stageUrls ||
@@ -192,7 +191,7 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     return { url: null, stage: null };
   };
 
-  const isFailed = status === "failed" || hardFail;
+  const isFailed = status === "failed";
   if (isFailed) return pickFallback();
   if (blockedStage) {
     const fb = pickFallback();
@@ -2273,7 +2272,6 @@ export default function BatchProcessor() {
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
-          else if (hardFail) uiStatus = 'error';
 
           // Completion requires explicit completed status AND target stage reached
           let completionSource: string = "none";
@@ -5772,7 +5770,7 @@ export default function BatchProcessor() {
                         const safeStage = resolveSafeStageUrl(result);
                         
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
-                        const disallowStage2 = (status === "failed") || !!blockedStage || hardFail;
+                        const disallowStage2 = (status === "failed") || !!blockedStage;
                         const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
                         const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
