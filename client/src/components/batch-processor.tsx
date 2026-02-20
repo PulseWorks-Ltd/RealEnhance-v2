@@ -137,7 +137,13 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     if (typeof value !== "string") return null;
     const normalized = value.trim();
     if (!normalized) return null;
-    if (normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("blob:") || normalized.startsWith("data:image/")) {
+    if (
+      normalized.startsWith("http://") ||
+      normalized.startsWith("https://") ||
+      normalized.startsWith("blob:") ||
+      normalized.startsWith("data:image/") ||
+      normalized.startsWith("/")
+    ) {
       return normalized;
     }
     return null;
@@ -227,7 +233,13 @@ function toDisplayUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   if (!normalized) return null;
-  if (normalized.startsWith("http://") || normalized.startsWith("https://") || normalized.startsWith("blob:") || normalized.startsWith("data:image/")) {
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("blob:") ||
+    normalized.startsWith("data:image/") ||
+    normalized.startsWith("/")
+  ) {
     return normalized;
   }
   return null;
