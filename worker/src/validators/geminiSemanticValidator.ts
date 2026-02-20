@@ -474,6 +474,130 @@ Do NOT judge structure using:
 • contact marks
 `;
 
+const STAGE1B_STRUCTURED_RETAIN_SUBTRACTIVE_ENVELOPE_LOCK_BLOCK = `
+─────────────────────────────
+STAGE 1B CORE PRINCIPLE — SUBTRACTIVE ONLY
+─────────────────────────────
+Stage 1B structured retain is strictly subtractive.
+
+It may remove clutter and secondary furniture.
+
+It must NEVER:
+• regenerate the room
+• alter architectural geometry
+• change camera position
+• change room proportions
+• replace walls
+• replace windows
+• alter envelope scale
+
+If the room envelope appears materially different, this is structural failure.
+
+─────────────────────────────
+GLOBAL ENVELOPE LOCK — CRITICAL
+─────────────────────────────
+The architectural shell must remain visually identical between BEFORE and AFTER.
+
+The following must match:
+• wall positions and angles
+• corner locations
+• ceiling height and geometry
+• floor boundaries and depth perspective
+• window-to-wall ratio
+• door-to-wall ratio
+• room depth perception
+• camera position and field of view
+
+If AFTER appears to depict different room geometry, wall spacing,
+window proportion, or camera viewpoint:
+→ category: structure
+→ violationType: wall_change OR camera_shift
+→ hardFail: true
+
+Even if openings still exist, geometry must match BEFORE.
+
+─────────────────────────────
+ZERO-TOLERANCE GEOMETRY RULE
+─────────────────────────────
+For Stage 1B structured retain, material envelope drift is structural drift.
+
+Low structural similarity is sufficient to escalate structural investigation.
+If visual envelope similarity is low, err toward structural violation.
+`;
+
+const STAGE1B_STRUCTURED_RETAIN_OPENING_CAMERA_LOCK_BLOCK = `
+─────────────────────────────
+OPENINGS LOCK
+─────────────────────────────
+Windows and doors must:
+• exist in identical positions
+• maintain identical proportions
+• maintain identical relative wall placement
+
+Even if not removed, if proportion relative to wall changes,
+this is structural drift.
+
+─────────────────────────────
+CAMERA LOCK
+─────────────────────────────
+Camera viewpoint must remain consistent.
+
+The following indicate camera shift:
+• vanishing point change
+• room appears wider or narrower
+• perspective depth changes
+• window framing differs significantly
+• wall convergence differs
+
+Minor micro-straightening is acceptable.
+Material viewpoint shift is not.
+`;
+
+const STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_STRICT_BLOCK = `
+─────────────────────────────
+ALLOWED DIFFERENCES (ONLY)
+─────────────────────────────
+Only the following are allowed:
+• removal of clutter
+• removal of wall art
+• removal of secondary movable furniture
+• removal of decor
+• minor surface exposure from object removal
+
+Declutter must not alter geometry.
+`;
+
+const STAGE1B_STRUCTURED_RETAIN_FAILURE_CONDITIONS_BLOCK = `
+─────────────────────────────
+FAILURE CONDITIONS (ANY = HARD FAIL)
+─────────────────────────────
+• architectural envelope appears different
+• wall boundary shifts
+• room proportions differ
+• window-to-wall ratio differs
+• ceiling geometry differs
+• camera perspective shifts materially
+• structural edges do not align
+
+Return:
+category: structure
+hardFail: true
+`;
+
+const STAGE1B_STRUCTURED_RETAIN_NUMERIC_SIGNAL_ENFORCEMENT_BLOCK = `
+─────────────────────────────
+NUMERIC SIGNAL INTERPRETATION — STAGE 1B
+─────────────────────────────
+Low structural IoU OR
+low edge alignment OR
+low spatial similarity
+
+→ increases likelihood of structural drift.
+
+Do NOT downgrade these to advisory in Stage 1B structured retain.
+Investigate visually and fail if geometry differs.
+`;
+
 const STAGE1B_OPENING_HALLUCINATION_RULE_BLOCK = `
 ─────────────────────────────
 NEW OPENING HALLUCINATION RULE (HARD FAIL)
@@ -785,6 +909,14 @@ ${STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_BLOCK}
 
 ${STAGE1B_STRUCTURED_RETAIN_STRUCTURAL_SIGNAL_RULE_BLOCK}
 
+${STAGE1B_STRUCTURED_RETAIN_SUBTRACTIVE_ENVELOPE_LOCK_BLOCK}
+
+${STAGE1B_STRUCTURED_RETAIN_OPENING_CAMERA_LOCK_BLOCK}
+
+${STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_STRICT_BLOCK}
+
+${STAGE1B_STRUCTURED_RETAIN_FAILURE_CONDITIONS_BLOCK}
+
 ${STAGE1B_OPENING_HALLUCINATION_RULE_BLOCK}
 
 ${STAGE1B_PARTIAL_FRAME_COMPLETION_RULE_BLOCK}
@@ -802,28 +934,6 @@ Priority order:
 6. Furniture and decor
 
 Higher priority always overrides lower.
-
-─────────────────────────────
-PERSPECTIVE & VISIBILITY TOLERANCE — OPENINGS
-─────────────────────────────
-Do not classify a window or opening as structurally modified if the
-difference is caused by:
-• Perspective correction
-• Vertical line straightening
-• Minor camera geometry normalization
-• Small crop or framing shift
-• Slightly increased or decreased visible window area
-
-These are considered camera or lens corrections, not architectural changes.
-
-Only flag a structural violation if the window or opening itself has been:
-✗ Moved to a new wall position
-✗ Removed entirely
-✗ Newly created
-✗ Shape changed
-✗ Proportionally resized relative to wall structure
-
-A change in how much of the window is visible is NOT a structural modification.
 
 ─────────────────────────────
 ANCHOR RELOCATION RULE
@@ -965,18 +1075,7 @@ Any violation → structure hardFail true
 
 ${STAGE1B_STRUCTURED_RETAIN_FURNITURE_RULE_BLOCK}
 
-─────────────────────────────
-NUMERIC DRIFT ADVISORY
-─────────────────────────────
-SSIM failure alone is NOT structural.
-Edge IoU failure alone is NOT structural.
-Angle deviation alone is NOT structural.
-
-These signals are advisory unless accompanied by:
-• opening count change
-• anchor removal/addition
-• built-in joinery change
-• window/door relocation
+${STAGE1B_STRUCTURED_RETAIN_NUMERIC_SIGNAL_ENFORCEMENT_BLOCK}
 
 ─────────────────────────────
 CATEGORIES
