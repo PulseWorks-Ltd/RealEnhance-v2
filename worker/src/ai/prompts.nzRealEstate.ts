@@ -546,6 +546,35 @@ YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were 
 
     NON-NEGOTIABLE LOCKS — DO NOT ADD OR CREATE ANYTHING:
 
+  ────────────────────────────────
+  NEWLY REVEALED AREA RULE — STRUCTURAL CONTINUATION ONLY
+  ────────────────────────────────
+
+  If wall, ceiling, or floor areas become visible due to furniture removal:
+
+  • ONLY extend already-visible wall, ceiling, or floor surfaces
+  • Match exact texture, material, color, and lighting
+  • Preserve original geometry precisely
+
+  You must NEVER:
+
+  • Create or extend doorways
+  • Create or extend windows
+  • Add arches, alcoves, niches, or openings
+  • Complete partially visible frames
+  • Infer recessed spaces as openings
+  • Extend shadow lines into structural features
+
+  If uncertain whether a region is an opening or solid wall:
+
+  → Default to solid wall continuation.
+  → Never assume an opening exists.
+
+  If a doorway or window was not clearly visible in the input image,
+  it must NOT appear in the output image.
+
+  Structural hallucination is a failure condition.
+
 You must NOT add, create, or invent ANY structural features:
 - Do NOT create new windows, doors, openings, arches, or alcoves
 - Do NOT add built-in features, fixtures, or joinery that don't already exist
