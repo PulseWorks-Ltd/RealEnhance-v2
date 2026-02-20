@@ -16,6 +16,8 @@ export interface FurnitureItem {
 
 export interface FurnitureAnalysis {
   hasFurniture: boolean;
+  detectedAnchors: string[];
+  confidence: number;
   roomType: 'living_room' | 'bedroom' | 'dining_room' | 'office' | 'kitchen' | 'bathroom' | 'other';
   furnitureItems: FurnitureItem[];
   layoutDescription: string;
@@ -23,140 +25,71 @@ export interface FurnitureAnalysis {
   suggestions: string[];
 }
 
+export const CORE_ANCHOR_CLASSES = [
+  "bed",
+  "sofa",
+  "dining_table",
+  "desk",
+  "coffee_table",
+  "freestanding_wardrobe",
+  "large_freestanding_cabinet",
+] as const;
+
+const CORE_ANCHOR_SET = new Set<string>(CORE_ANCHOR_CLASSES);
+
+export function getAnchorClassSet(analysis: FurnitureAnalysis | null | undefined): Set<string> {
+  if (!analysis) return new Set<string>();
+  const rawAnchors = Array.isArray((analysis as any).detectedAnchors)
+    ? (analysis as any).detectedAnchors
+    : [];
+  return new Set(
+    rawAnchors
+      .map((anchor: unknown) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
+      .filter((anchor: string) => CORE_ANCHOR_SET.has(anchor))
+  );
+}
+
 /**
  * Analyzes an image to detect existing furniture and assess replacement opportunities
  */
 export async function detectFurniture(ai: GoogleGenAI, imageBase64: string): Promise<FurnitureAnalysis | null> {
   const system = `
-🔍 ULTRA-AGGRESSIVE FURNITURE DETECTION MODE
-Analyze this interior image and identify EVERY SINGLE furniture, decor, and clutter item. Be exhaustive and thorough - missing items is not acceptable.
+You are determining whether this room contains LARGE MOVABLE FURNITURE ANCHORS.
 
-Return JSON with this exact structure:
+A room is considered FURNISHED only if at least one clearly visible anchor exists from this list:
+- bed
+- sofa
+- dining_table
+- coffee_table
+- desk
+- freestanding_wardrobe
+- large_freestanding_cabinet
+
+Ignore all of the following when deciding furnished status:
+- curtains
+- blinds
+- wall art
+- ceiling fixtures
+- HVAC units
+- built-in cabinetry/counters/islands/vanities
+- soft decor
+- rugs alone
+
+If only curtains, blinds, rugs, or built-in cabinetry are visible, return hasFurniture=false.
+Curtains or wall decor alone do NOT count.
+
+Return JSON only with this exact structure:
 {
   "hasFurniture": boolean,
-  "roomType": "living_room"|"bedroom"|"dining_room"|"office"|"kitchen"|"bathroom"|"other",
-  "furnitureItems": [
-    {
-      "type": "sofa"|"chair"|"table"|"bed"|"dresser"|"bookshelf"|"tv_stand"|"coffee_table"|"dining_table"|"nightstand"|"wardrobe"|"desk"|"side_table"|"console_table"|"display_unit"|"wall_art"|"decorative_object"|"plant"|"soft_furnishing"|"counter_clutter"|"window_sill_item"|"surface_clutter"|"other",
-      "condition": "good"|"worn"|"outdated"|"poor"|"clutter",
-      "location": {
-        "bbox": [x, y, width, height],
-        "description": "descriptive location"
-      },
-      "style": "style description",
-      "replaceable": boolean,
-      "size": "small"|"medium"|"large"
-    }
-  ],
-  "layoutDescription": "brief description of furniture arrangement",
-  "replacementOpportunity": "high"|"medium"|"low"|"none",
-  "suggestions": ["suggestion1", "suggestion2"]
+  "detectedAnchors": string[],
+  "confidence": number
 }
 
-🎯 COMPREHENSIVE DETECTION GUIDELINES:
-
-PRIMARY FURNITURE (ALWAYS detect - no exceptions):
-- Major seating: sofas, chairs, armchairs, recliners, dining chairs, benches
-- Tables: coffee tables, dining tables, side tables, console tables, desks, end tables
-- Storage: dressers, wardrobes, bookcases, display units, TV stands, shelving units, cabinets
-- Beds: all bed types, bed frames, headboards
-- Nightstands and bedside tables
-
-SECONDARY FURNITURE & DECOR (CRITICAL - must detect EVERY item):
-- Display units, entertainment centers, sideboards, buffets, hutches
-- Side tables, console tables, plant stands, accent tables
-- Wall art: paintings, framed prints, decorative plates, wall hangings, mirrors, wall shelves
-- Decorative objects: vases, sculptures, figurines, decorative bowls, candles, ornaments
-- Plants: potted plants, planters, artificial plants, hanging plants
-- Soft furnishings: throw pillows, throws, blankets, rugs, curtains, cushions
-
-CLUTTER ITEMS (CRITICAL - detect ALL clutter):
-- Counter clutter: items on kitchen counters, bottles, small appliances, random objects
-- Window sill items: plants, decorations, books, personal items, trinkets
-- Surface clutter: items on coffee tables, dining tables, shelves, desks
-- Personal items: photos, papers, magazines, books, random objects
-
-🔥 ABSOLUTE REPLACEABILITY RULES:
-ALL furniture and décor MUST be marked replaceable=true. No exceptions based on quality or style.
-
-Mark as replaceable=true for (NO EXCEPTIONS):
-  ✓ ALL furniture - every single piece regardless of quality, style, or condition
-  ✓ ALL sofas, chairs, tables, beds, dressers, storage units - everything
-  ✓ ALL wall art and decorative items - no exceptions for "nice" or "modern" pieces
-  ✓ ALL clutter (counter/window sill/surface items)
-  ✓ ALL display units, entertainment centers, bookshelves, consoles
-  ✓ ALL soft furnishings - throw blankets, decorative pillows (all patterns, all colors)
-  ✓ ALL plants in any planters
-  ✓ ALL decorative objects - vases, sculptures, figurines
-  ✓ Modern, traditional, vintage, rustic - ALL styles must be replaced
-  ✓ Good condition, worn, new - ALL conditions must be replaced
-
-Mark as replaceable=false ONLY for:
-  ✗ Built-in architectural elements (cabinets, counters, permanent fixtures)
-  ✗ Items that are structurally part of the room (walls, windows, doors)
-
-🎯 DETECTION EXAMPLES:
-- Bedroom: bed, headboard, nightstands, lamps, wall art, throw pillows, rug, dresser, chair
-- Living room: sofa, armchairs, coffee table, side tables, TV stand, wall art, plants, throw pillows, rug, lamps, display units
-- Detect EACH couch in a sectional separately
-- Detect EACH piece of wall art separately
-- Don't miss small items like decorative objects on shelves
-
-🚨 COMMONLY MISSED ITEMS - DO NOT SKIP THESE:
-
-WALL ART (detect EVERY piece separately):
-  • Framed prints, paintings, photos on walls
-  • Decorative plates, wall hangings, posters
-  • Multiple frames grouped together = detect EACH one individually
-  • Small art pieces in corners or above furniture
-  • Example: If you see 3 framed prints on one wall, list 3 separate wall_art items
-
-ACCENT CHAIRS & SEATING:
-  • ANY chair not at a dining table (reading chairs, desk chairs, bedroom chairs)
-  • Wicker chairs, wooden chairs, upholstered accent chairs
-  • Chairs in corners, by windows, or beside beds
-  • Example: Wooden chair with wicker seat in bedroom corner = detect as "chair"
-
-WINDOW SILL ITEMS:
-  • Plants, decorative items, books on window ledges
-  • Trinkets, vases, personal items on sills
-  • Even small items count - detect them all
-  • Example: Small plant on window sill = detect as "window_sill_item"
-
-COUNTER & SURFACE CLUTTER:
-  • Kitchen counters: bottles, appliances, utensil holders, random items
-  • Dresser tops: personal items, decorative objects, clutter
-  • Shelf surfaces: books, decorations, miscellaneous objects
-  • Example: Bottles and items on kitchen counter = detect as "counter_clutter"
-
-STORAGE & DISPLAY UNITS:
-  • Dressers with items on top
-  • Bookshelves, display cabinets, entertainment centers
-  • Storage units that could be replaced with modern alternatives
-  • Sideboards, buffets, hutches
-  • Example: Dresser in bedroom = detect as "dresser", items on top = separate "surface_clutter"
-
-🔍 EDGE/PARTIAL OBJECTS (CRITICAL - DO NOT IGNORE THESE):
-  • Furniture partially visible at frame edges/corners IS STILL FURNITURE
-  • Objects cut off by image boundary are REPLACEABLE unless clearly structural (walls, windows)
-  • Partial visibility does NOT make an item built-in or permanent
-  • Common edge objects: console tables, chairs, sofas, storage units at frame edges
-  • Example: Table with monitor visible at right edge = detect as "console_table" or "side_table"
-  • Example: Chair partially visible at corner = detect as "chair"
-  • Example: Sofa corner at frame edge = detect as "sofa"
-  • ⚠️ NEVER assume edge objects are built-in fixtures - they are movable furniture
-
-⚠️ CRITICAL RULES:
-1. If you see ANY furniture, mark hasFurniture=true
-2. Default to "medium" or "high" replacementOpportunity unless room is truly empty
-3. Be thorough - missing items creates incomplete replacements
-4. When uncertain about replaceability, choose TRUE
-5. NEVER group items - detect each piece of wall art, each chair, each decorative item SEPARATELY
-6. Small items count - don't dismiss window sill items, counter clutter, or small décor
-
-Empty or near-empty rooms (no furniture visible) should return hasFurniture=false.
-
-ONLY JSON. No extra text.`;
+Rules:
+- detectedAnchors must only contain canonical values from the allowed anchor list above.
+- confidence must be between 0 and 1.
+- If no valid anchor is clearly visible, set detectedAnchors to [] and hasFurniture=false.
+`;
 
   try {
     const resp = await ai.models.generateContent({
@@ -185,7 +118,31 @@ ONLY JSON. No extra text.`;
     console.log("[FURNITURE DETECTOR] Extracted JSON:", JSON.stringify(jsonStr));
     
     try {
-      const analysis = JSON.parse(jsonStr) as FurnitureAnalysis;
+      const parsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
+        detectedAnchors?: unknown;
+        confidence?: unknown;
+      };
+
+      const normalizedAnchors = Array.isArray(parsed.detectedAnchors)
+        ? parsed.detectedAnchors
+          .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
+          .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
+        : [];
+
+      const normalizedConfidence = typeof parsed.confidence === "number"
+        ? Math.max(0, Math.min(1, parsed.confidence))
+        : 0;
+
+      const analysis: FurnitureAnalysis = {
+        hasFurniture: Boolean(parsed.hasFurniture),
+        detectedAnchors: normalizedAnchors,
+        confidence: normalizedConfidence,
+        roomType: (parsed.roomType as FurnitureAnalysis["roomType"]) || "other",
+        furnitureItems: Array.isArray(parsed.furnitureItems) ? parsed.furnitureItems as FurnitureItem[] : [],
+        layoutDescription: typeof parsed.layoutDescription === "string" ? parsed.layoutDescription : "",
+        replacementOpportunity: (parsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
+        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map((s) => String(s)) : [],
+      };
       
       // Validate the response structure
       if (typeof analysis.hasFurniture !== 'boolean') {
@@ -193,7 +150,7 @@ ONLY JSON. No extra text.`;
         return null;
       }
       
-      console.log(`[FURNITURE DETECTOR] Detected ${analysis.furnitureItems?.length || 0} furniture items, replacement opportunity: ${analysis.replacementOpportunity}`);
+      console.log(`[FURNITURE DETECTOR] hasFurniture=${analysis.hasFurniture} anchors=${JSON.stringify(analysis.detectedAnchors)} confidence=${analysis.confidence}`);
       
       return analysis;
     } catch (e) {
@@ -213,7 +170,28 @@ ONLY JSON. No extra text.`;
       if (jsonEnd > 0) {
         jsonStr = jsonStr.substring(0, jsonEnd + 1);
         console.log("[FURNITURE DETECTOR] Trimmed JSON:", JSON.stringify(jsonStr));
-        return JSON.parse(jsonStr) as FurnitureAnalysis;
+        const trimmedParsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
+          detectedAnchors?: unknown;
+          confidence?: unknown;
+        };
+        const normalizedAnchors = Array.isArray(trimmedParsed.detectedAnchors)
+          ? trimmedParsed.detectedAnchors
+            .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
+            .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
+          : [];
+        const normalizedConfidence = typeof trimmedParsed.confidence === "number"
+          ? Math.max(0, Math.min(1, trimmedParsed.confidence))
+          : 0;
+        return {
+          hasFurniture: Boolean(trimmedParsed.hasFurniture),
+          detectedAnchors: normalizedAnchors,
+          confidence: normalizedConfidence,
+          roomType: (trimmedParsed.roomType as FurnitureAnalysis["roomType"]) || "other",
+          furnitureItems: Array.isArray(trimmedParsed.furnitureItems) ? trimmedParsed.furnitureItems as FurnitureItem[] : [],
+          layoutDescription: typeof trimmedParsed.layoutDescription === "string" ? trimmedParsed.layoutDescription : "",
+          replacementOpportunity: (trimmedParsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
+          suggestions: Array.isArray(trimmedParsed.suggestions) ? trimmedParsed.suggestions.map((s) => String(s)) : [],
+        };
       }
       throw e;
     }

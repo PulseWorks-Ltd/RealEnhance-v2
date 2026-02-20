@@ -521,6 +521,18 @@ Preserve surface textures and shadows.`.trim();
 
       return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
 
+    ROOM TYPE CONTEXT:
+    This room is classified as: ${roomType || "unknown"}.
+
+    Only preserve a dominant anchor that is appropriate for this room type.
+
+    If no appropriate anchor is visible in the input image:
+    → Do NOT create one.
+    → Leave the room empty.
+
+    Stage1B must be strictly subtractive.
+    You are forbidden from adding any new furniture object not present in the input image.
+
 TASK:
 Remove all movable furniture EXCEPT for the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
 

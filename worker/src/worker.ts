@@ -22,7 +22,8 @@ import { preprocessToCanonical } from "./pipeline/preprocess";
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
-import { detectFurniture } from "./ai/furnitureDetector";
+import { detectFurniture, getAnchorClassSet } from "./ai/furnitureDetector";
+import { isRoomEmpty } from "./vision/isRoomEmpty";
 
 import {
   updateJob,
@@ -1633,8 +1634,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
   const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
 
-  // Furnished gate for Declutter + Stage path only (run once per image/job, cache via payload metadata)
-  if (payload.options.declutter && payload.options.virtualStage) {
+  // Hybrid furnished routing for declutter flows:
+  // 1) deterministic empty prefilter
+  // 2) Gemini furnished detector only when non-empty and Stage 2 is requested
+  if (payload.options.declutter) {
+    const hasVirtualStage = payload.options.virtualStage;
     const isManualRetry = (payload as any).retryType === "manual_retry";
     const payloadFurnishedState: "furnished" | "empty" | undefined =
       (payload.options as any).furnishedState === "furnished" || (payload.options as any).furnishedState === "empty"
@@ -1644,7 +1648,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let furnishedSource: "detected" | "payload" | "fallback" = "fallback";
 
     try {
-      if (isManualRetry) {
+      const stage1ABuffer = await fs.promises.readFile(path1A);
+      const emptyPrefilter = await isRoomEmpty(stage1ABuffer);
+      nLog("[EMPTY_CHECK]", {
+        jobId: payload.jobId,
+        empty: emptyPrefilter,
+      });
+
+      if (emptyPrefilter) {
+        furnishedState = "empty";
+        furnishedSource = "detected";
+      }
+    } catch (emptyErr: any) {
+      nLog("[WORKER] Empty prefilter failed; continuing with fallback furnished routing", {
+        jobId: payload.jobId,
+        error: emptyErr?.message || String(emptyErr),
+      });
+    }
+
+    try {
+      if (!furnishedState && isManualRetry) {
         if (payloadFurnishedState) {
           furnishedState = payloadFurnishedState;
           furnishedSource = "payload";
@@ -1662,13 +1685,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             furnishedSource = "payload";
           }
         }
-      } else if (sceneLabel === "interior") {
+      } else if (!furnishedState && hasVirtualStage && sceneLabel === "interior") {
         const ai = getGeminiClient();
         if (ai) {
           const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
           if (furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean") {
             furnishedState = furnishedAnalysis.hasFurniture ? "furnished" : "empty";
             furnishedSource = "detected";
+            nLog("[FURNISHED_GEMINI]", {
+              jobId: payload.jobId,
+              hasFurniture: furnishedAnalysis.hasFurniture,
+              anchors: furnishedAnalysis.detectedAnchors || [],
+              confidence: furnishedAnalysis.confidence ?? 0,
+            });
           }
         }
       }
@@ -1690,16 +1719,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     const furnished = furnishedState === "furnished";
-    logger.info("Declutter+Stage furnished gate result", { furnished });
-    nLog("[WORKER] Declutter+Stage furnished gate result", {
+    logger.info("Declutter furnished gate result", { furnished, hasVirtualStage });
+    nLog("[WORKER] Declutter furnished gate result", {
       jobId: payload.jobId,
       furnished,
       source: furnishedSource,
+      hasVirtualStage,
     });
 
     (payload.options as any).furnishedState = furnishedState;
-    (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
-    (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
+    if (hasVirtualStage) {
+      (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
+      (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
+    }
 
     try {
       await updateJob(payload.jobId, {
@@ -1710,6 +1742,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             furnished,
             source: furnishedSource,
             stage1BPlanned: furnished,
+            hasVirtualStage,
           },
         },
       });
@@ -1721,12 +1754,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     if (!furnished) {
-      // Empty-room path for Declutter+Stage: skip Stage 1B and run Stage 2 Full from 1A.
+      // Empty-room path: skip Stage 1B. If Stage 2 is enabled, route to Stage 2 full from 1A.
       payload.options.declutter = false;
       (payload.options as any).declutterMode = null;
       declutterMode = null;
-      nLog("[WORKER] Declutter+Stage furnished gate: empty room detected, skipping Stage 1B and routing Stage 2 as full", {
+      nLog("[WORKER] Declutter furnished gate: empty room detected, skipping Stage 1B", {
         jobId: payload.jobId,
+      });
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: hasVirtualStage ? "1A->2(full)" : "1A(final)",
+        reason: "empty_room",
+      });
+    } else {
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: hasVirtualStage ? "1A->1B->2(refresh)" : "1A->1B(final)",
+        reason: "furnished_room",
       });
     }
   }
@@ -2455,6 +2499,45 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
+  }
+
+  if (payload.options.virtualStage && payload.options.declutter && path1B && sceneLabel === "interior") {
+    try {
+      const ai = getGeminiClient();
+      if (ai) {
+        const beforeAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
+        const afterAnalysis = await detectFurniture(ai as any, toBase64(path1B).data);
+        const beforeAnchors = getAnchorClassSet(beforeAnalysis);
+        const afterAnchors = getAnchorClassSet(afterAnalysis);
+        const newAnchors = Array.from(afterAnchors).filter((anchor) => !beforeAnchors.has(anchor));
+
+        nLog("[STAGE1B_ANCHOR_DELTA]", {
+          jobId: payload.jobId,
+          before: Array.from(beforeAnchors),
+          after: Array.from(afterAnchors),
+          newAnchors,
+        });
+
+        if (newAnchors.length > 0) {
+          payload.options.virtualStage = false;
+          payload.options.declutter = false;
+          (payload.options as any).declutterMode = null;
+          (payload.options as any).stage2SkipReason = "stage1b_new_anchor_detected";
+
+          nLog("[ROUTING_DECISION]", {
+            jobId: payload.jobId,
+            path: "1A(final)",
+            reason: "stage1b_new_anchor_detected",
+            newAnchors,
+          });
+        }
+      }
+    } catch (anchorDeltaErr: any) {
+      nLog("[WORKER] Stage1B anchor delta safeguard failed (non-blocking)", {
+        jobId: payload.jobId,
+        error: anchorDeltaErr?.message || String(anchorDeltaErr),
+      });
+    }
   }
 
   // STAGE 2 (optional virtual staging via Gemini)
