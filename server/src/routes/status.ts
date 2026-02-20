@@ -181,7 +181,7 @@ export function statusRouter() {
           // Legacy keys retained for backward compatibility
           '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
           '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
-          '2': stageUrlsRaw?.['2'] ?? null,
+          '2': stageUrlsRaw?.['2'] ?? stageUrlsRaw?.['stage2'] ?? null,
         };
 
         const requestedStages =
@@ -621,7 +621,7 @@ export function statusRouter() {
         stage2: stageUrlsRaw?.['stage2'] ?? stageUrlsRaw?.['2'] ?? null,
         '1A': stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
         '1B': stageUrlsRaw?.['1B'] ?? stageUrlsRaw?.['1b'] ?? null,
-        '2': stageUrlsRaw?.['2'] ?? null,
+        '2': stageUrlsRaw?.['2'] ?? stageUrlsRaw?.['stage2'] ?? null,
       };
       const imageId: string | null =
         payload?.imageId || local.imageId || null;

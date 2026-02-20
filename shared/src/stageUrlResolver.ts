@@ -81,6 +81,10 @@ export function mergeStageUrls(existing: StageUrlMap, patch: StageUrlMap): Recor
   const incoming = (patch || {}) as Record<string, unknown>;
 
   const writeValue = (key: string, value: string | null) => {
+    const existingValue = asNonEmptyString(current[key]);
+    if (value === null && existingValue) {
+      return;
+    }
     current[key] = value;
   };
 

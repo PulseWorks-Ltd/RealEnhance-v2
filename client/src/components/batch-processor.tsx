@@ -165,8 +165,8 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     data?.result?.stageOutputs ||
     null;
 
-  const stage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(data?.stage2Url) || toDisplayUrl(data?.result?.stage2Url) || null;
-  const stage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.[1]) || null;
+  const stage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(data?.stage2Url) || toDisplayUrl(data?.result?.stage2Url) || null;
+  const stage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || toDisplayUrl(stageMap?.[1]) || null;
   const stage1A = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || null;
 
   const explicitResult =
