@@ -474,6 +474,40 @@ Do NOT judge structure using:
 • contact marks
 `;
 
+const STAGE1B_OPENING_HALLUCINATION_RULE_BLOCK = `
+─────────────────────────────
+NEW OPENING HALLUCINATION RULE (HARD FAIL)
+─────────────────────────────
+If any doorway, window, pass-through, or opening appears in AFTER
+that was NOT clearly visible in BEFORE, this is structural hallucination.
+
+→ category: structure
+→ violationType: opening_change
+→ hardFail: true
+
+This includes newly invented openings in wall regions that were previously
+plain wall or ambiguous due to reconstruction.
+`;
+
+const STAGE1B_PARTIAL_FRAME_COMPLETION_RULE_BLOCK = `
+─────────────────────────────
+PARTIAL FRAME COMPLETION RULE (HARD FAIL)
+─────────────────────────────
+Do NOT allow inferred completion of partially visible openings.
+
+Hard fail if AFTER shows completed or extended opening geometry that is not
+clearly supported by BEFORE, including:
+• completed door frames from partial edges
+• extended jambs
+• inferred lintels/headers
+• completed recess depth or alcove geometry
+
+If frame geometry is completed beyond visible evidence:
+→ category: structure
+→ violationType: opening_change
+→ hardFail: true
+`;
+
 const STAGE1B_STRUCTURED_RETAIN_FURNITURE_RULE_BLOCK = `
 ─────────────────────────────
 FURNITURE RULE — STRUCTURED RETAIN
@@ -540,6 +574,10 @@ Only flag a structural violation if the window or opening itself has been:
 ✗ Proportionally resized relative to wall structure
 
 A change in how much of the window is visible is NOT a structural modification.
+
+${STAGE1B_OPENING_HALLUCINATION_RULE_BLOCK}
+
+${STAGE1B_PARTIAL_FRAME_COMPLETION_RULE_BLOCK}
 
 ─────────────────────────────
 ANCHOR RELOCATION RULE
@@ -746,6 +784,10 @@ ${STAGE1B_STRUCTURED_RETAIN_CONTEXT_BLOCK}
 ${STAGE1B_STRUCTURED_RETAIN_ALLOWED_DIFFERENCES_BLOCK}
 
 ${STAGE1B_STRUCTURED_RETAIN_STRUCTURAL_SIGNAL_RULE_BLOCK}
+
+${STAGE1B_OPENING_HALLUCINATION_RULE_BLOCK}
+
+${STAGE1B_PARTIAL_FRAME_COMPLETION_RULE_BLOCK}
 
 ─────────────────────────────
 STRUCTURAL PRIORITY HIERARCHY
@@ -1013,6 +1055,8 @@ You are a Structural Integrity & Staging Compliance Auditor for New Zealand real
   IMMUTABLE ANCHOR RULE (REFRESH MODE)
   In refresh mode, retained anchors are immutable geometry references.
   They may be restyled, but must not be translated, rotated, resized, removed, or relaid out.
+  They must not be replaced with new geometry of different proportions,
+  silhouette envelope, footprint, or edge boundaries.
 
   AUGMENTABLE ZONES RULE (REFRESH MODE)
   New furniture/decor additions are allowed in non-anchor open zones when they preserve walkways and structural constraints.
@@ -1065,6 +1109,8 @@ FAIL if any of the following occur:
 • A wall is added, removed, extended, or shortened
 • A doorway is sealed, filled, narrowed, widened, or repositioned
 • A window is removed, resized, relocated, or newly created
+• A doorway/window/opening appears in AFTER that was not clearly visible in BEFORE
+• A wall boundary is subtly extended, shifted, or expanded even without full wall removal
 • Structural edges shift significantly
 • A room boundary changes
 
@@ -1095,6 +1141,30 @@ FAIL if:
 If the opening still exists but is partially hidden by angle or perspective, verify carefully before failing.
 
 If clearly sealed or removed → hardFail true.
+
+NEW OPENING HALLUCINATION CHECK (CRITICAL)
+
+If a new doorway/window/opening appears in AFTER that was not clearly visible in BEFORE:
+
+→ category: structure
+→ violationType: opening_change
+→ hardFail: true
+
+Do not classify this as style_only.
+
+PARTIAL FRAME COMPLETION CHECK (CRITICAL)
+
+Hard fail if AFTER completes or extends opening/frame geometry not clearly visible in BEFORE, including:
+
+• completed door/window frames from partial edges
+• extended jambs or inferred recess boundaries
+• inferred frame completion beyond visible evidence
+
+If this occurs:
+
+→ category: structure
+→ violationType: opening_change
+→ hardFail: true
 
 3️⃣ BUILT-IN / STRUCTURAL ANCHORS
 
