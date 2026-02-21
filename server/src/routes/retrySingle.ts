@@ -258,6 +258,23 @@ export function retrySingleRouter() {
       const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
       const useStageSource = !!sourceUrlRaw;
 
+      // Deterministic manual retry policy: this endpoint only permits Stage-2-only retries.
+      if (requestedStage !== "2") {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_requires_stage2",
+          message: "Manual retry must target requestedStage=2",
+        });
+      }
+
+      if (!useStageSource) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_requires_stage_source",
+          message: "Manual retry requires a Stage 1B source URL for deterministic Stage2Only routing",
+        });
+      }
+
       // ✅ PATCH 2: Idempotency guard (30-second window)
       if (parentJobId) {
         const retryKey = `retry:${sessUser.id}:${parentJobId}:${Math.floor(Date.now() / 30000)}`;
@@ -357,6 +374,23 @@ export function retrySingleRouter() {
           selectedSourceUrl = baseline.selectedSourceUrl || undefined;
           retryFromStage = baseline.retryFromStage || undefined;
           stage2OnlyDisabled = baseline.stage2OnlyDisabled;
+
+          if (requestedStage === "2") {
+            const hasStage1BBaseline =
+              !!selectedSourceStage &&
+              (selectedSourceStage === "1B" ||
+                selectedSourceStage === "1B-light" ||
+                selectedSourceStage === "1B-stage-ready" ||
+                selectedSourceStage.toLowerCase().startsWith("1b"));
+
+            if (stage2OnlyDisabled || !selectedSourceUrl || !hasStage1BBaseline) {
+              return res.status(409).json({
+                success: false,
+                error: "manual_retry_stage2only_required",
+                message: "Manual retry requires Stage2Only payload with a valid Stage 1B baseline",
+              });
+            }
+          }
           
           // ✅ FIX: Set stage1BWasRequested=true when resolved baseline is Stage 1B
           // This ensures worker doesn't fall back to 1A when 1B is the intended baseline
@@ -551,6 +585,17 @@ export function retrySingleRouter() {
               stage1BMode: stage2OnlyStage1BMode,
             }
           : undefined;
+
+      if (
+        requestedStage === "2" &&
+        (!stage2OnlyMode?.enabled || !stage2OnlyMode.base1BUrl)
+      ) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_stage2only_payload_invalid",
+          message: "Manual retry payload is missing required Stage2Only fields",
+        });
+      }
 
       if (retryFromStage) {
         console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!stage2OnlyMode}`);

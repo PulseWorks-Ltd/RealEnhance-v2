@@ -822,10 +822,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     await updateJob(payload.jobId, { retryPendingStage2: false });
     return true;
   };
+  const isManualRetry = (payload as any).retryType === "manual_retry";
+
+  if (isManualRetry) {
+    const hasDeterministicStage2OnlyPayload =
+      stage2Requested &&
+      payload.stage2OnlyMode?.enabled &&
+      !!payload.stage2OnlyMode?.base1BUrl;
+    if (!hasDeterministicStage2OnlyPayload) {
+      nLog("[STAGE2_ONLY_PAYLOAD_INVALID]", {
+        jobId: payload.jobId,
+        retryType: (payload as any).retryType,
+        stage2Requested,
+        stage2OnlyEnabled: !!payload.stage2OnlyMode?.enabled,
+        hasBase1BUrl: !!payload.stage2OnlyMode?.base1BUrl,
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "stage2_retry_failed: invalid_manual_retry_payload" },
+        "stage2_retry_failed_invalid_payload"
+      );
+      return;
+    }
+  }
+
   if (!stage2Requested && payload.stage2OnlyMode?.enabled) {
     nLog(`[worker] Stage-2-only retry requested but stage2 was not requested; skipping stage2-only mode.`);
   }
-  if (stage2Requested && payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
+  if (isManualRetry && stage2Requested && payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
 
@@ -854,6 +878,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2OnlyValidationBaseline = basePath;
         }
       }
+      nLog(`[STAGE2_BASELINE] using=${stage2OnlyValidationBaseline === basePath ? "Stage1B" : "Stage1A"}`);
 
       // Run Stage-2 only (using 1B as base)
       stage2SummaryEligible = true;
@@ -1069,7 +1094,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       timings.totalMs = Date.now() - t0;
 
       await clearStage2RetryPending("stage2_only_complete_clear_pending");
-      if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) return;
+      if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) {
+        await safeWriteJobStatus(
+          payload.jobId,
+          { status: "failed", errorMessage: "stage2_retry_failed: completion_guard_blocked_or_validation_failed" },
+          "stage2_retry_failed_completion_blocked"
+        );
+        return;
+      }
       if (await checkStage2AlreadyFinal(payload.jobId, "stage2_only")) return;
 
       // Completion guard
@@ -1136,8 +1168,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     } catch (err: any) {
       nLog(`[worker] ❌ Stage-2-only retry failed: ${err?.message || err}`);
-      nLog(`[worker] Falling back to full pipeline retry`);
-      // Continue to full pipeline below
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `stage2_retry_failed: ${err?.message || "unknown_error"}` },
+        "stage2_retry_failed"
+      );
+      return;
     }
   }
 
