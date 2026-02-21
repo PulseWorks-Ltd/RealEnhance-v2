@@ -861,24 +861,7 @@ Return only the empty room image.`.trim();
 
     If an area becomes empty after decluttering, leave it empty and realistic.
 
-    DECLUTTER OBJECT CLASS RULES — LIGHT MODE (EXTERIOR)
-
-    Remove loose, portable, personal-use items that are not furniture and not built-in.
-
-    ALWAYS REMOVE when visible:
-    - garden tools and loose maintenance equipment
-    - loose hoses and extension cords on ground
-    - rubbish, bags, packaging, and discarded items
-    - children’s toys, ride-ons, balls, and play clutter
-    - scooters, bikes, skateboards, and sports gear
-    - portable heaters, fans, and loose devices
-    - movable clutter on decks, patios, paths, and driveways
-
-    REMOVE SMALL SURFACE CLUTTER:
-    - small loose items on outdoor tables/benches
-    - random containers and scattered accessories
-    - loose personal items and visual clutter hotspots
-    - small decorative pot plants causing visual clutter (only if clearly minor and portable)
+    NON-NEGOTIABLE STRUCTURAL COMPONENTS
 
     EXTERIOR FIXED UTILITY PRESERVATION — HARD RULE
 
@@ -905,6 +888,25 @@ Return only the empty room image.`.trim();
     Do NOT remove or modify the fixed wall-mounted fixture.
 
     The building must remain functionally complete after decluttering.
+
+    DECLUTTER OBJECT CLASS RULES — LIGHT MODE (EXTERIOR)
+
+    Remove loose, portable, personal-use items that are not furniture and not built-in.
+
+    ALWAYS REMOVE when visible:
+    - garden tools and loose maintenance equipment
+    - loose hoses and extension cords on ground
+    - rubbish, bags, packaging, and discarded items
+    - children’s toys, ride-ons, balls, and play clutter
+    - scooters, bikes, skateboards, and sports gear
+    - portable heaters, fans, and loose devices
+    - movable clutter on decks, patios, paths, and driveways
+
+    REMOVE SMALL SURFACE CLUTTER:
+    - small loose items on outdoor tables/benches
+    - random containers and scattered accessories
+    - loose personal items and visual clutter hotspots
+    - small decorative pot plants causing visual clutter (only if clearly minor and portable)
 
     TIDY BUT DO NOT REMOVE:
     - outdoor dining suites (align chairs neatly around table)
