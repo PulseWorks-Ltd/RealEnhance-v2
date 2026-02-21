@@ -40,7 +40,27 @@ export async function safeWriteJobStatus(
     ...patchValidatorMeta,
     evidenceGatingVariant,
   };
-  await updateJob(jobId, { ...patch, validatorMeta: mergedValidatorMeta });
+  const existingStageUrls = (current as any)?.stageUrls;
+  const incomingStageUrls = patch?.stageUrls;
+  const shouldMergeStageUrls =
+    incomingStageUrls &&
+    typeof incomingStageUrls === "object" &&
+    !Array.isArray(incomingStageUrls);
+
+  const mergedPatch = {
+    ...patch,
+    ...(shouldMergeStageUrls
+      ? {
+          stageUrls: {
+            ...(existingStageUrls && typeof existingStageUrls === "object" ? existingStageUrls : {}),
+            ...incomingStageUrls,
+          },
+        }
+      : {}),
+    validatorMeta: mergedValidatorMeta,
+  };
+
+  await updateJob(jobId, mergedPatch);
   console.info("[STATUS_WRITE_OK]", { jobId, newStatus: patch?.status, reason });
   return true;
 }

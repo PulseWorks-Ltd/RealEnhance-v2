@@ -171,7 +171,12 @@ export function statusRouter() {
           null;
 
         const stageUrlsRaw: Record<string, string> | null =
-          (rv && rv.stageUrls) || local.stageUrls || null;
+          ((local.stageUrls || rv?.stageUrls)
+            ? {
+                ...((local.stageUrls || {}) as Record<string, string>),
+                ...((rv?.stageUrls || {}) as Record<string, string>),
+              }
+            : null);
 
         // Normalize stageUrls into a predictable shape so clients can rely on keys
         const stageUrls: Record<string, string | null> = {
@@ -613,7 +618,12 @@ export function statusRouter() {
       const maskUrl: string | null =
         (rv && rv.maskUrl) || local.maskUrl || null;
       const stageUrlsRaw: Record<string, string> | null =
-        (rv && rv.stageUrls) || local.stageUrls || null;
+        ((local.stageUrls || rv?.stageUrls)
+          ? {
+              ...((local.stageUrls || {}) as Record<string, string>),
+              ...((rv?.stageUrls || {}) as Record<string, string>),
+            }
+          : null);
 
       const stageUrls: Record<string, string | null> = {
         stage1A: stageUrlsRaw?.['stage1A'] ?? stageUrlsRaw?.['1A'] ?? stageUrlsRaw?.['1'] ?? null,
