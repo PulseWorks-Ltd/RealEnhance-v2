@@ -1219,6 +1219,27 @@ category: structure
 violationType: opening_change OR wall_change OR layout_change
 hardFail: true
 
+EXTERIOR UTILITY FIXTURE CHECK — CRITICAL
+
+If the BEFORE image contains any of the following:
+
+• Exterior power outlet
+• Exterior plumbing tap
+• Gas outlet
+• Meter box
+• Wall-mounted service box
+• Exterior conduit entry point
+
+These must remain present in the AFTER image.
+
+Removal, relocation, resizing, or wall patching over these fixtures
+is a structural violation.
+
+If removed:
+category: structure
+violationType: wall_change
+hardFail: true
+
 2️⃣ OPENINGS & FUNCTIONAL ACCESS (CRITICAL)
 
 All doors, windows, and pass-through openings must:

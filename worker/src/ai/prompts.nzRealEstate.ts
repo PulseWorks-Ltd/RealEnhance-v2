@@ -813,6 +813,32 @@ Return only the empty room image.`.trim();
     - loose personal items and visual clutter hotspots
     - small decorative pot plants causing visual clutter (only if clearly minor and portable)
 
+    EXTERIOR FIXED UTILITY PRESERVATION — HARD RULE
+
+    When removing:
+    • Loose cables
+    • Extension leads
+    • Hose pipes
+    • Temporary attachments
+
+    You must preserve any permanent utility fixture they connect to.
+
+    Permanent fixtures include:
+    • Exterior waterproof power sockets
+    • Exterior plumbing taps
+    • Gas outlets
+    • Wall-mounted service boxes
+    • Meter boxes
+    • Exterior conduit entry points
+
+    These fixtures are part of the building and must NOT be removed,
+    covered, relocated, or patched over.
+
+    Only remove the loose item (hose, cable, extension lead).
+    Do NOT remove or modify the fixed wall-mounted fixture.
+
+    The building must remain functionally complete after decluttering.
+
     TIDY BUT DO NOT REMOVE:
     - outdoor dining suites (align chairs neatly around table)
     - outdoor lounge seating (align cushions neatly)
