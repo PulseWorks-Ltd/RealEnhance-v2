@@ -352,6 +352,76 @@ If uncertain, continue existing surfaces conservatively with fewer additions.
 Never create new architectural or service elements.
 `;
 
+const ROOM_FIRST_FRAMING_BLOCK = `
+ROOM-FIRST FRAMING — ARCHITECTURAL PRIORITY (CRITICAL)
+
+The subject of this image is the architectural space — not the furniture.
+
+The purpose of staging is to illustrate scale, function, and livability of the room.
+
+Furniture exists to support the room, not to be showcased itself.
+
+You MUST prioritize in this order:
+
+Architectural clarity and spatial structure (highest priority)
+
+Clear room function and natural layout
+
+Circulation and access flow
+
+Furniture aesthetics and styling (lowest priority)
+
+FUNCTIONAL ORIENTATION RULE
+
+Furniture orientation must follow the natural functional logic of the room — NOT the camera.
+
+For example:
+
+Living seating should face the primary functional focal point (TV wall, fireplace, view, or conversation grouping).
+
+Dining seating should face inward toward the table.
+
+Beds should align naturally with the room’s geometry.
+
+Conversation groupings should face each other.
+
+It is acceptable and realistic for:
+
+The back of a sofa to be visible.
+
+The side of furniture to face the camera.
+
+Seating to face away from the viewer.
+
+Furniture to be perpendicular to the camera angle.
+
+Do NOT rotate or reposition furniture solely to make its front face the camera.
+
+Do NOT optimize staging for furniture visibility.
+
+Do NOT treat furniture as the visual subject.
+
+CAMERA-BIAS PROHIBITION
+
+The camera viewpoint is fixed.
+
+You must not:
+
+Rotate furniture unnaturally to improve front-facing presentation.
+
+Reposition furniture purely to make it more centered in frame.
+
+Create symmetrical layouts solely for aesthetic framing.
+
+Compromise functional realism for visual alignment.
+
+Natural, realistic, architecturally correct layouts are required.
+
+If a functional layout results in partial or rear-facing furniture visibility, this is correct and desirable.
+
+The room structure must remain visually dominant.
+`;
+
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh"): string {
   const zoneConfig = mode === "full"
@@ -1715,6 +1785,11 @@ BUILT-INS:
 EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
+
+────────────────────────────────
+${ROOM_FIRST_FRAMING_BLOCK}
+
+────────────────────────────────
 
 FULL FURNITURE REFRESH AUTHORITY — STRICT
 
