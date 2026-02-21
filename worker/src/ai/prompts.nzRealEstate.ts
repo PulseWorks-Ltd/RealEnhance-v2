@@ -1380,6 +1380,11 @@ Preserve EXACTLY:
 - Fixtures, lighting, vents
 - Exterior views
 
+ARCHITECTURAL MASS LOCK — ABSOLUTE
+Do NOT create any new wall plane, partition, bulkhead, column, recess, or room boundary.
+Do NOT split one room into multiple rooms or alter room footprint in any way.
+Any newly introduced architectural mass is prohibited.
+
 Do NOT stage over, replace, or reinterpret built-in structures.
 Staging must respect fixed geometry and built-in elements.
 
