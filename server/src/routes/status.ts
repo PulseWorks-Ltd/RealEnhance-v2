@@ -203,9 +203,20 @@ export function statusRouter() {
         const requestedStage2 = typeof requestedStages?.stage2 === "boolean"
           ? requestedStages.stage2
           : (requestedStages?.stage2 === "true");
-        const sceneLabel = String(local?.meta?.scene?.label || (payload as any)?.options?.sceneType || "").toLowerCase();
+        const sceneLabel = String(
+          local?.meta?.scene?.label ||
+          local?.meta?.sceneType ||
+          local?.sceneType ||
+          (payload as any)?.options?.sceneType ||
+          ""
+        ).toLowerCase();
+        const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
+        const stage2SkipReason = String(local?.meta?.stage2SkipReason || "").toLowerCase();
+        const stage2SkippedByDesign = local?.meta?.stage2Skipped === true
+          || stage2SkipReason === "exterior_scene"
+          || stage2SkipReason === "outdoor_staging_disabled";
         const stagingAllowed = local?.meta?.allowStaging !== false;
-        const stage2Expected = requestedStage2 === true && sceneLabel !== "exterior" && stagingAllowed;
+        const stage2Expected = requestedStage2 === true && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
         const bestAvailableStage: { stage: string | null; url: string | null } = (() => {
           // For scenarios where Stage 2 is not expected (exterior or staging disabled), use best available
           if (!stage2Expected) {
@@ -363,7 +374,7 @@ export function statusRouter() {
           pipelineStatus = "failed";
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
         }
-        const isInformationalExteriorNote = requestedStage2 === true && !stage2Expected && !stage2Present;
+        const isInformationalExteriorNote = requestedStage2 === true && isExteriorScene && !stage2Present;
         const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
         if (isStuck) {
           pipelineStatus = "failed";
@@ -669,9 +680,20 @@ export function statusRouter() {
         ? requestedStages.stage2
         : (requestedStages?.stage2 === "true");
       const declutterRequested = requestedStages?.stage1b || (payload as any)?.options?.declutter;
-      const sceneLabel = String(local?.meta?.scene?.label || (payload as any)?.options?.sceneType || "").toLowerCase();
+      const sceneLabel = String(
+        local?.meta?.scene?.label ||
+        local?.meta?.sceneType ||
+        local?.sceneType ||
+        (payload as any)?.options?.sceneType ||
+        ""
+      ).toLowerCase();
+      const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
+      const stage2SkipReason = String(local?.meta?.stage2SkipReason || "").toLowerCase();
+      const stage2SkippedByDesign = local?.meta?.stage2Skipped === true
+        || stage2SkipReason === "exterior_scene"
+        || stage2SkipReason === "outdoor_staging_disabled";
       const stagingAllowed = local?.meta?.allowStaging !== false;
-      const stage2Expected = requestedStage2 === true && sceneLabel !== "exterior" && stagingAllowed;
+      const stage2Expected = requestedStage2 === true && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
       
       // ✅ FIX 1: Stage-based completion detection (single-job endpoint)
       const allRequestedStagesPresent = (() => {
@@ -711,7 +733,7 @@ export function statusRouter() {
         stateOut = "failed";
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
       }
-      if (requestedStage2 === true && !stage2Expected && !stage2Present) {
+      if (requestedStage2 === true && isExteriorScene && !stage2Present) {
         warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");
       }
 

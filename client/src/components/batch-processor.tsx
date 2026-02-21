@@ -5602,12 +5602,20 @@ export default function BatchProcessor() {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
-                        const sceneLabel = String(result?.meta?.scene?.label || result?.result?.meta?.scene?.label || "").toLowerCase();
+                        const sceneLabel = String(
+                          result?.meta?.scene?.label ||
+                          result?.result?.meta?.scene?.label ||
+                          result?.meta?.sceneType ||
+                          result?.result?.meta?.sceneType ||
+                          ""
+                        ).toLowerCase();
+                        const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
                         const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
                         const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                         const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false) || !!(result as any)?.options?.declutter;
                         const stagingAllowed = result?.meta?.allowStaging !== false && result?.result?.meta?.allowStaging !== false && allowStaging;
-                        const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+                        const stage2SkippedByDesign = result?.meta?.stage2Skipped === true || result?.result?.meta?.stage2Skipped === true;
+                        const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
                         const isEditComplete = editCompletedImages.has(i)
