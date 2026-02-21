@@ -744,6 +744,23 @@ export default function BatchProcessor() {
     }));
   }, []);
 
+  const markRetryFailed = useCallback((index: number, errorMessage: string) => {
+    clearRetryFlags(index);
+    setResults(prev => prev.map((r, i) => {
+      if (i !== index) return r;
+      return {
+        ...r,
+        status: "failed",
+        uiStatus: "error",
+        error: errorMessage,
+        currentStage: null,
+        retryInFlight: undefined,
+        retryStage: undefined,
+        statusLastModified: Date.now(),
+      };
+    }));
+  }, [clearRetryFlags]);
+
   // Retry timeout safety (5 minutes max for full pipeline jobs)
   const RETRY_TIMEOUT_MS = 300_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -3366,28 +3383,26 @@ export default function BatchProcessor() {
       // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
       const requiresStage1BRebuild = forceStage2Retry && stage1BWasRequested && !hasStage1BBaseline;
 
-      // Guard: when user intent is Stage 2 retry, never downgrade to 1A-only due to sparse stage metadata.
-      const effectiveStagesToRun = requiresStage1BRebuild
-        ? (["1B"] as StageKey[])
-        : forceStage2Retry
-        ? (["2"] as StageKey[])
-        : baseline.stagesToRun;
-      const effectiveAllowStaging = forceStage2Retry ? true : baseline.allowStaging;
-      const effectiveSourceUrl = (forceStage2Retry || requiresStage1BRebuild)
-        ? (
-            baseline.sourceUrl ||
-            stageMap?.['1A'] ||
-            stageMap?.['1a'] ||
-            stageMap?.['1'] ||
-            stageMap?.stage1A ||
-            res?.resultUrl ||
-            res?.result?.resultUrl ||
-            null
-          )
-        : baseline.sourceUrl;
-      const effectiveSourceStageLabel = (forceStage2Retry || requiresStage1BRebuild)
-        ? (effectiveSourceUrl ? "stage1a" : "original")
-        : baseline.sourceStageLabel;
+      const stage1BBaseline =
+        stageMap?.['1B'] ||
+        stageMap?.['1b'] ||
+        stageMap?.stage1B ||
+        null;
+
+      if (!stage1BBaseline) {
+        toast({
+          title: "Retry unavailable",
+          description: "This image has no Stage 1B baseline. Stage-only retry currently requires a completed staging baseline.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Retry-single backend is deterministic Stage-2-only from Stage 1B baseline.
+      const effectiveStagesToRun = ["2"] as StageKey[];
+      const effectiveAllowStaging = true;
+      const effectiveSourceUrl = stage1BBaseline;
+      const effectiveSourceStageLabel = "stage1b";
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
@@ -3703,7 +3718,7 @@ export default function BatchProcessor() {
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
-      if (retryStage) fd.append("requestedStage", retryStage);
+      fd.append("requestedStage", "2");
 
       try {
         // AUDIT FIX: added timeout to prevent hung retry requests
@@ -3729,7 +3744,7 @@ export default function BatchProcessor() {
           }
           const err = await response.json().catch(() => ({}));
           if (err?.error === "image_not_found" || err?.code === "image_not_found") {
-            clearRetryFlags(imageIndex);
+            markRetryFailed(imageIndex, "The source image is no longer available to retry.");
             toast({
               title: "Image unavailable",
               description: "The source image is no longer available to retry. Please re-upload and try again.",
@@ -3739,7 +3754,7 @@ export default function BatchProcessor() {
             return;
           }
           if (err?.error === "forbidden_source") {
-            clearRetryFlags(imageIndex);
+            markRetryFailed(imageIndex, "Retry source is no longer valid.");
             toast({
               title: "Pick a current output",
               description: "Please refresh the page and choose a current output before retrying.",
@@ -3747,8 +3762,18 @@ export default function BatchProcessor() {
             });
             return;
           }
+          if (err?.error === "manual_retry_requires_stage2" || err?.error === "manual_retry_stage2only_required" || err?.error === "manual_retry_stage2only_payload_invalid") {
+            markRetryFailed(imageIndex, err?.message || "Retry requires Stage 2 with a valid Stage 1B baseline.");
+            toast({
+              title: "Retry requires staging baseline",
+              description: err?.message || "Retry now supports Stage 2 only with a valid Stage 1B source.",
+              variant: "destructive"
+            });
+            return;
+          }
           // Handle retry-specific compliance failures
           if (err.code === "RETRY_COMPLIANCE_FAILED") {
+            markRetryFailed(imageIndex, "Retry blocked by compliance validation.");
             const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
             toast({
               title: "Cannot generate different result",
@@ -3975,16 +4000,7 @@ export default function BatchProcessor() {
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry failed. Unable to enhance image.");
 
-                setResults(prev => prev.map((r, idx) => idx === imageIndex ? {
-                  ...r,
-                  status: "failed",
-                  uiStatus: "error",
-                  error: job.error || "The retry job failed to process.",
-                  currentStage: null,
-                  retryInFlight: undefined,
-                  retryStage: undefined,
-                } : r));
-                clearRetryFlags(imageIndex);
+                markRetryFailed(imageIndex, job.error || "The retry job failed to process.");
 
                 const errMsg = job.error || "The retry job failed to process.";
                 if (job.error === "image_not_found") {
@@ -4029,7 +4045,7 @@ export default function BatchProcessor() {
           retryTimeoutRef.current = null;
         }
 
-        clearRetryFlags(imageIndex);
+        markRetryFailed(imageIndex, error instanceof Error ? error.message : "Unknown error");
 
         toast({
           title: "Retry failed",
