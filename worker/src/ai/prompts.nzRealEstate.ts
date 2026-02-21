@@ -1178,7 +1178,7 @@ function buildStage2InteriorPromptNZStyle(
   
   const taskInstruction = isFullStaging
     ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
-    : "Refresh ALL existing furniture with modern equivalents.\nPreserve layout, architecture, and flow EXACTLY.";
+    : "Refresh with full furniture authority across the entire visible room.\nPreserve architecture, built-ins, fixed fixtures, and geometry EXACTLY.";
 
   const modelTemperature = isFullStaging ? 0.25 : 0.33;
   const modelTopP = isFullStaging ? 0.70 : 0.78;
@@ -1491,25 +1491,6 @@ materially, and color-accurate to the input image.
 You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
 or cover these elements — even partially.
 
-REFRESH MODE FURNITURE PRESERVATION — HARD LIMIT
-
-Refresh mode is not a full restage.
-
-You must NOT remove all existing furniture and repaint the room with new items.
-
-Only the following is allowed:
-• Restyling existing anchor furniture
-• Minor decor augmentation in open zones
-• Replacing clearly defined soft furnishings (e.g., cushions, small decor)
-
-You may NOT:
-• Delete all furniture and rebuild layout
-• Replace multiple large furniture items unless explicitly instructed
-• Treat refresh as full staging
-
-If substantial furniture replacement is required,
-this is FULL STAGING mode, not refresh mode.
-
 FIXED ARCHITECTURE:
 • Walls, ceilings, trims, cornices, skirting boards, baseboards
 • Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
@@ -1558,6 +1539,33 @@ BUILT-INS:
 EXTERIOR VIEW THROUGH WINDOWS:
 • Do NOT change the outside scene
 • Do NOT upgrade weather, sky, landscape, or buildings
+
+FULL FURNITURE REFRESH AUTHORITY — STRICT
+
+In Stage 2 Refresh mode, you have full authority to repaint, replace, restyle, or completely redesign ALL visible furniture items in the input image.
+
+You may:
+
+Replace every existing furniture item with a cohesive modern equivalent
+
+Reconfigure styling across all items for visual consistency
+
+Remove outdated furniture entirely and substitute improved alternatives
+
+Add new furniture where appropriate to achieve balanced, professional staging
+
+You are NOT required to preserve the original furniture’s type, size, position, orientation, or style.
+
+However:
+
+Architectural structure is frozen.
+
+Do NOT alter walls, windows, doors, ceiling height, layout, geometry, perspective, built-ins, or fixed fixtures.
+
+Furniture changes must not modify or reinterpret architectural boundaries.
+
+Furniture authority is comprehensive.
+Architectural authority is zero.
 
 ────────────────────────────────
 PRIMARY OBJECTIVE — USER INTENT FIRST
@@ -1672,10 +1680,10 @@ Do NOT lean artwork on furniture.
 Do NOT place framed art sitting on dressers or consoles.`
   : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
-3. Preserve: type, position, orientation, functional role.
-4. Do NOT add new furniture; empty areas remain empty.
-  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
-5. If replacement risks artifacts, keep the original item unchanged.
+3. Replace, repaint, restyle, remove, or redesign furniture comprehensively for a cohesive result.
+4. Add new furniture where appropriate to achieve balanced, professional staging.
+5. Furniture type, size, position, orientation, and style do not need to match the original.
+6. Keep all architecture, built-ins, fixed fixtures, geometry, and perspective unchanged.
 
 CONSISTENCY RULE:
 - No mixing old and new. Replace fully or not at all.`}
