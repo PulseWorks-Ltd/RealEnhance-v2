@@ -1148,7 +1148,7 @@ However, Stage 1B structured-retain declutter has already occurred prior to this
 
 Therefore, differences caused by Stage 1B must be treated as pre-approved and NON-STRUCTURAL.
 
-The following must NEVER be classified as structural violations:
+These differences alone must NEVER be classified as structural violations:
 
 • Removal of secondary furniture
 • Removal of clutter
