@@ -756,6 +756,34 @@ Anchor selection must follow this strict order:
 
 Dominance takes precedence over visibility.
 
+ARCHITECTURAL BOUNDARY PROTECTION — NON-NEGOTIABLE
+
+When removing furniture, preserve architectural boundary integrity.
+
+Do NOT remove any furniture item if it:
+
+Touches or overlaps a visible window frame
+
+Touches or overlaps a sliding door frame
+
+Touches or overlaps floor-to-ceiling glass
+
+Obscures a wall-to-window vertical seam
+
+Obscures a door frame vertical seam
+
+Obscures a visible exterior-view transition
+
+Covers a visible wall corner where surface continuation is uncertain
+
+If removal would require inferring what exists behind a window, sliding door, glass panel, or structural seam with less than high certainty, do NOT remove that furniture item.
+
+Preserve the item and treat it as structurally adjacent.
+
+Never fabricate, extend, or reconstruct glass, windows, or door geometry without clear visible evidence.
+
+Architectural boundaries take precedence over decluttering completeness.
+
 A zone is a visually distinct functional area (e.g., lounge area, dining area) separated by layout, furniture grouping, or spatial orientation.
 
 Dominant functional anchors by room type:
