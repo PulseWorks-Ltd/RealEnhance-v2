@@ -836,6 +836,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
       }
 
+      // Stage 2 validation baseline must match main pipeline behavior: compare against Stage 1A output
+      let stage2OnlyValidationBaseline = basePath;
+      if ((payload.stage2OnlyMode as any)?.base1AUrl) {
+        try {
+          stage2OnlyValidationBaseline = await downloadToTemp((payload.stage2OnlyMode as any).base1AUrl, `${payload.jobId}-stage1A`);
+          if (!VALIDATION_FOCUS_MODE) {
+            nLog(`[worker] Downloaded Stage-1A validation baseline to: ${stage2OnlyValidationBaseline}`);
+          }
+        } catch (baselineErr: any) {
+          nLog(`[worker] Failed to download Stage-1A validation baseline (fallback=Stage-1B): ${baselineErr?.message || baselineErr}`);
+          stage2OnlyValidationBaseline = basePath;
+        }
+      }
+
       // Run Stage-2 only (using 1B as base)
       stage2SummaryEligible = true;
       const stage2OnlyMeta = (payload.stage2OnlyMode as any) || {};
@@ -915,9 +929,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
 
       // Run validators on Stage-2 output
-      // Baseline: use Stage 1B (basePath) — Stage 1A not available in stage2-only mode
+      // Baseline: use Stage 1A when available to match normal pipeline validation behavior
       const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
-      const validationBaseline = basePath; // Stage 1B is best available baseline
+      const validationBaseline = stage2OnlyValidationBaseline;
 
       // ═══ Unified Validation (primary validator) ═══
       let unifiedRetryValidation: UnifiedValidationResult | undefined;
@@ -976,7 +990,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (geminiSemanticValidatorMode !== null) {
         try {
           const ai = getGeminiClient();
-          const baseRef = toBase64(basePath);
+          const baseRef = toBase64(validationBaseline);
           const enhanced = toBase64(path2);
           const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
             validationMode: stage2OnlyValidationMode,

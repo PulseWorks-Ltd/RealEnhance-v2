@@ -542,6 +542,11 @@ export function retrySingleRouter() {
           ? {
               enabled: true,
               base1BUrl: selectedSourceUrl,
+              base1AUrl:
+                (parentMeta?.stageUrls && (parentMeta.stageUrls as any)["1A"]) ||
+                ((parentJob as any)?.stageUrls && ((parentJob as any).stageUrls as any)["1A"]) ||
+                ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
+                undefined,
               sourceStage: stage2OnlySourceStage,
               stage1BMode: stage2OnlyStage1BMode,
             }
