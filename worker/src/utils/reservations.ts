@@ -1,10 +1,11 @@
-import { consumeBundleImages } from "@realenhance/shared/usage/imageBundles.js";
+import { consumeBundleImages, getTotalBundleRemaining } from "@realenhance/shared/usage/imageBundles.js";
 import { withTransaction } from "../db/index.js";
 
 export async function finalizeReservationFromWorker(params: {
   jobId: string;
   stage12Success: boolean;
   stage2Success: boolean;
+  actualCharge?: number;
 }): Promise<void> {
   await withTransaction(async (client) => {
     const res = await client.query(`SELECT * FROM job_reservations WHERE job_id = $1 FOR UPDATE`, [params.jobId]);
@@ -20,6 +21,97 @@ export async function finalizeReservationFromWorker(params: {
 
     const acctRes = await client.query(`SELECT * FROM agency_accounts WHERE agency_id = $1 FOR UPDATE`, [jr.agency_id]);
     const acct = acctRes.rows[0];
+
+    let deltaAddonConsume = 0;
+    let deltaAddonRefund = 0;
+
+    // Reconcile reservation to actual charge when provided.
+    // Positive delta: reserve additional usage.
+    // Negative delta: refund excess reservation.
+    if (typeof params.actualCharge === "number" && Number.isFinite(params.actualCharge)) {
+      const reservedImages = Math.max(0, Number(jr.reserved_images || 0));
+      const actualImages = Math.max(0, Number(params.actualCharge));
+      const delta = actualImages - reservedImages;
+
+      if (delta !== 0) {
+        const includedRemaining = Math.max(0, Number(usage.included_limit || 0) - Number(usage.included_used || 0));
+        const addonRemaining = Math.max(0, Number(await getTotalBundleRemaining(jr.agency_id, jr.yyyymm)));
+
+        if (delta > 0) {
+          let need = delta;
+          const takeAddon = Math.min(need, addonRemaining);
+          need -= takeAddon;
+          const takeIncluded = Math.min(need, includedRemaining);
+          need -= takeIncluded;
+
+          if (need > 0) {
+            throw new Error(`reservation_delta_insufficient_balance: needed=${delta} available=${takeAddon + takeIncluded}`);
+          }
+
+          await client.query(
+            `UPDATE agency_month_usage
+               SET included_used = included_used + $1,
+                   addon_used = addon_used + $2,
+                   updated_at = NOW()
+             WHERE agency_id = $3 AND yyyymm = $4`,
+            [takeIncluded, takeAddon, jr.agency_id, jr.yyyymm]
+          );
+          await client.query(
+            `UPDATE agency_accounts
+               SET addon_images_balance = addon_images_balance - $1,
+                   updated_at = NOW()
+             WHERE agency_id = $2`,
+            [takeAddon, jr.agency_id]
+          );
+
+          deltaAddonConsume += takeAddon;
+
+          await client.query(
+            `UPDATE job_reservations
+               SET reserved_images = reserved_images + $1,
+                   reserved_from_included = reserved_from_included + $2,
+                   reserved_from_addon = reserved_from_addon + $3,
+                   updated_at = NOW()
+             WHERE job_id = $4`,
+            [delta, takeIncluded, takeAddon, params.jobId]
+          );
+        } else {
+          const refundTotal = Math.abs(delta);
+          const refundableAddon = Math.min(refundTotal, Math.max(0, Number(jr.reserved_from_addon || 0)));
+          const refundableIncluded = Math.min(refundTotal - refundableAddon, Math.max(0, Number(jr.reserved_from_included || 0)));
+
+          if (refundableIncluded > 0 || refundableAddon > 0) {
+            await client.query(
+              `UPDATE agency_month_usage
+                 SET included_used = included_used - $1,
+                     addon_used = addon_used - $2,
+                     updated_at = NOW()
+               WHERE agency_id = $3 AND yyyymm = $4`,
+              [refundableIncluded, refundableAddon, jr.agency_id, jr.yyyymm]
+            );
+            await client.query(
+              `UPDATE agency_accounts
+                 SET addon_images_balance = addon_images_balance + $1,
+                     updated_at = NOW()
+               WHERE agency_id = $2`,
+              [refundableAddon, jr.agency_id]
+            );
+
+            deltaAddonRefund += refundableAddon;
+
+            await client.query(
+              `UPDATE job_reservations
+                 SET reserved_images = reserved_images - $1,
+                     reserved_from_included = reserved_from_included - $2,
+                     reserved_from_addon = reserved_from_addon - $3,
+                     updated_at = NOW()
+               WHERE job_id = $4`,
+              [refundTotal, refundableIncluded, refundableAddon, params.jobId]
+            );
+          }
+        }
+      }
+    }
 
     let refundIncluded = 0;
     let refundAddon = 0;
@@ -82,7 +174,7 @@ export async function finalizeReservationFromWorker(params: {
     }
 
     // Consume add-on bundles (FIFO) to keep Redis bundle balance in sync
-    const addonToConsume = (consumeStage12 ? jr.stage12_from_addon : 0) + (consumeStage2 ? jr.stage2_from_addon : 0);
+    const addonToConsume = Math.max(0, (consumeStage12 ? jr.stage12_from_addon : 0) + (consumeStage2 ? jr.stage2_from_addon : 0) + deltaAddonConsume - deltaAddonRefund);
     if (addonToConsume > 0) {
       await consumeBundleImages(jr.agency_id, addonToConsume, jr.yyyymm);
     }

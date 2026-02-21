@@ -1150,10 +1150,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
+        const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
+        const billingStage2Url = pub2Url || null;
+        const billingStage1AUrl = stage2OnlyBaseStage === "1A"
+          ? (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null)
+          : (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null);
+        const billingStage1ASuccess = !!billingStage1AUrl || !!billingStage1BUrl;
+        const billingStage1BSuccess = !!billingStage1BUrl;
+        const billingStage2Success = !!billingStage2Url;
+        const actualCharge = !billingStage1ASuccess
+          ? 0
+          : (sceneLabel === "exterior"
+            ? 1
+            : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+
         await finalizeReservationFromWorker({
           jobId: payload.jobId,
           stage12Success: true,
           stage2Success: true,
+          actualCharge,
         });
         nLog(`[BILLING] Finalized reservation for stage2-only retry: ${payload.jobId}`);
       } catch (billingErr) {
@@ -1710,115 +1725,106 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
   const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
 
-  // Hybrid furnished routing for declutter flows:
-  // 1) deterministic empty prefilter
-  // 2) Gemini furnished detector only when non-empty and Stage 2 is requested
-  if (payload.options.declutter) {
-    const hasVirtualStage = payload.options.virtualStage;
-    const isManualRetry = (payload as any).retryType === "manual_retry";
-    const payloadFurnishedState: "furnished" | "empty" | undefined =
-      (payload.options as any).furnishedState === "furnished" || (payload.options as any).furnishedState === "empty"
-        ? (payload.options as any).furnishedState
-        : undefined;
-    let furnishedState: "furnished" | "empty" | undefined;
-    let furnishedSource: "detected" | "payload" | "fallback" = "fallback";
+  // Furnished gate routing after Stage 1A
+  // For stage2Only + interior, this gate must run regardless of declutter flag.
+  // Order: local empty prefilter -> (if not empty) Gemini furnished confirmation.
+  const hasVirtualStage = payload.options.virtualStage;
+  const isInteriorScene = sceneLabel === "interior";
+  const isStage2Only = hasVirtualStage && (payload.options as any).stage2Only === true;
+  const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene && (isStage2Only || payload.options.declutter);
+  if (shouldResolveFurnishedGate) {
+    let stage1BRan = false;
+    let furnished = true;
+    let furnishedSource: "local_empty" | "gemini_confirmed" | "gemini_override" | "gemini_fail_closed" = "gemini_fail_closed";
+    let escalated = false;
 
     try {
       const stage1ABuffer = await fs.promises.readFile(path1A);
-      const emptyPrefilter = await isRoomEmpty(stage1ABuffer);
-      nLog("[EMPTY_CHECK]", {
+      const localEmpty = await isRoomEmpty(stage1ABuffer);
+      nLog("[FURNISHED_GATE_LOCAL]", {
         jobId: payload.jobId,
-        empty: emptyPrefilter,
+        localEmpty,
+        isStage2Only,
       });
 
-      if (emptyPrefilter) {
-        furnishedState = "empty";
-        furnishedSource = "detected";
-      }
-    } catch (emptyErr: any) {
-      nLog("[WORKER] Empty prefilter failed; continuing with fallback furnished routing", {
-        jobId: payload.jobId,
-        error: emptyErr?.message || String(emptyErr),
-      });
-    }
-
-    try {
-      if (!furnishedState && isManualRetry) {
-        if (payloadFurnishedState) {
-          furnishedState = payloadFurnishedState;
-          furnishedSource = "payload";
-        } else if ((payload as any).retryParentJobId) {
-          const parentJob = await getJob((payload as any).retryParentJobId);
-          const parentFurnishedGate = (parentJob as any)?.meta?.furnishedGate;
-          const parentFurnishedState =
-            parentFurnishedGate && typeof parentFurnishedGate.furnished === "boolean"
-              ? (parentFurnishedGate.furnished ? "furnished" : "empty")
-              : ((parentJob as any)?.options?.furnishedState === "furnished" || (parentJob as any)?.options?.furnishedState === "empty"
-                ? (parentJob as any).options.furnishedState
-                : undefined);
-          if (parentFurnishedState === "furnished" || parentFurnishedState === "empty") {
-            furnishedState = parentFurnishedState;
-            furnishedSource = "payload";
-          }
-        }
-      } else if (!furnishedState && hasVirtualStage && sceneLabel === "interior") {
-        const ai = getGeminiClient();
-        if (ai) {
+      if (localEmpty) {
+        furnished = false;
+        furnishedSource = "local_empty";
+      } else {
+        escalated = true;
+        try {
+          const ai = getGeminiClient();
           const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
-          if (furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean") {
-            furnishedState = furnishedAnalysis.hasFurniture ? "furnished" : "empty";
-            furnishedSource = "detected";
-            nLog("[FURNISHED_GEMINI]", {
-              jobId: payload.jobId,
-              hasFurniture: furnishedAnalysis.hasFurniture,
-              anchors: furnishedAnalysis.detectedAnchors || [],
-              confidence: furnishedAnalysis.confidence ?? 0,
-            });
-          }
+          const geminiHasFurniture = !!(furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean" && furnishedAnalysis.hasFurniture);
+          furnished = geminiHasFurniture;
+          furnishedSource = geminiHasFurniture ? "gemini_confirmed" : "gemini_override";
+          nLog("[FURNISHED_GATE_GEMINI]", {
+            jobId: payload.jobId,
+            hasFurniture: geminiHasFurniture,
+            anchors: furnishedAnalysis?.detectedAnchors || [],
+            confidence: furnishedAnalysis?.confidence ?? 0,
+          });
+        } catch (geminiErr: any) {
+          // Fail-closed policy for stage2Only safety: if Gemini cannot confirm, treat as furnished.
+          furnished = true;
+          furnishedSource = "gemini_fail_closed";
+          nLog("[FURNISHED_GATE_GEMINI_FAIL_CLOSED]", {
+            jobId: payload.jobId,
+            error: geminiErr?.message || String(geminiErr),
+          });
         }
       }
-    } catch (furnishedErr: any) {
-      nLog("[WORKER] Furnished gate detection failed; using fallback state", {
+    } catch (localErr: any) {
+      // If local detector fails, treat as non-empty and require 1B for safety.
+      furnished = true;
+      furnishedSource = "gemini_fail_closed";
+      escalated = false;
+      nLog("[FURNISHED_GATE_LOCAL_FAIL_CLOSED]", {
         jobId: payload.jobId,
-        error: furnishedErr?.message || String(furnishedErr),
+        error: localErr?.message || String(localErr),
       });
     }
 
-    if (!furnishedState && payloadFurnishedState) {
-      furnishedState = payloadFurnishedState;
-      furnishedSource = "payload";
-    }
+    stage1BRan = furnished;
+    (payload.options as any).furnishedState = furnished ? "furnished" : "empty";
+    (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
+    (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
 
-    if (!furnishedState) {
-      furnishedState = "furnished";
-      furnishedSource = "fallback";
-    }
-
-    const furnished = furnishedState === "furnished";
-    logger.info("Declutter furnished gate result", { furnished, hasVirtualStage });
-    nLog("[WORKER] Declutter furnished gate result", {
-      jobId: payload.jobId,
-      furnished,
-      source: furnishedSource,
-      hasVirtualStage,
-    });
-
-    (payload.options as any).furnishedState = furnishedState;
-    if (hasVirtualStage) {
-      (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
-      (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
+    if (stage1BRan) {
+      payload.options.declutter = true;
+      if (!(payload.options as any).declutterMode) {
+        (payload.options as any).declutterMode = "stage-ready";
+      }
+      declutterMode = ((payload.options as any).declutterMode === "light" ? "light" : "stage-ready");
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->1B->2(refresh)",
+        reason: furnishedSource,
+      });
+    } else {
+      payload.options.declutter = false;
+      (payload.options as any).declutterMode = null;
+      declutterMode = null;
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->2(full)",
+        reason: furnishedSource,
+      });
     }
 
     try {
       await updateJob(payload.jobId, {
         meta: {
           ...(sceneLabel ? { ...sceneMeta } : {}),
+          furnishedGateResolved: true,
           furnishedGate: {
             enabled: true,
             furnished,
             source: furnishedSource,
-            stage1BPlanned: furnished,
+            escalated,
+            stage1BRan,
             hasVirtualStage,
+            isStage2Only,
           },
         },
       });
@@ -1826,27 +1832,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[WORKER] Furnished gate metadata update failed (non-blocking)", {
         jobId: payload.jobId,
         error: metaErr?.message || String(metaErr),
-      });
-    }
-
-    if (!furnished) {
-      // Empty-room path: skip Stage 1B. If Stage 2 is enabled, route to Stage 2 full from 1A.
-      payload.options.declutter = false;
-      (payload.options as any).declutterMode = null;
-      declutterMode = null;
-      nLog("[WORKER] Declutter furnished gate: empty room detected, skipping Stage 1B", {
-        jobId: payload.jobId,
-      });
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: hasVirtualStage ? "1A->2(full)" : "1A(final)",
-        reason: "empty_room",
-      });
-    } else {
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: hasVirtualStage ? "1A->1B->2(refresh)" : "1A->1B(final)",
-        reason: "furnished_room",
       });
     }
   }
@@ -2764,6 +2749,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   const exteriorNoStaging = sceneLabel === "exterior" && !allowStaging;
   const stage2Active = payload.options.virtualStage && !stage2Blocked && !exteriorNoStaging;
+  if (stage2Active && payload.options.stage2Only === true) {
+    const currentJob = await getJob(payload.jobId);
+    const furnishedGateResolved = !!(currentJob as any)?.meta?.furnishedGateResolved;
+    if (!furnishedGateResolved) {
+      throw new Error("Stage 2 invoked without furnished gate resolution");
+    }
+  }
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
@@ -4343,11 +4335,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // ===== RESERVATION FINALIZATION =====
   // Finalize reservation based on actual stage completion
+  const billingStage1ASuccess = !!(pub1AUrl || pub1BUrl);
+  const billingStage1BSuccess = (finalStageLabel === "1B" || finalStageLabel === "2")
+    ? !!pub1BUrl
+    : false;
+  const billingStage2Success = committedFinalStageLabel === "2" ? !!committedStage2Url : false;
+  const actualCharge = !billingStage1ASuccess
+    ? 0
+    : (sceneLabel === "exterior"
+      ? 1
+      : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+
   try {
     await finalizeReservationFromWorker({
       jobId: payload.jobId,
       stage12Success,
       stage2Success,
+      actualCharge,
     });
     nLog(`[BILLING] Finalized reservation for ${payload.jobId}: stage12=${stage12Success}, stage2=${stage2Success}`);
   } catch (billingErr) {
@@ -4359,11 +4363,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ BILLING FINALIZATION: Compute final charge based on final output
   // This runs AFTER job is marked complete to ensure idempotent charging
   try {
-    const billingStage1ASuccess = !!(pub1AUrl || pub1BUrl);
-    const billingStage1BSuccess = (finalStageLabel === "1B" || finalStageLabel === "2")
-      ? !!pub1BUrl
-      : false;
-    const billingStage2Success = committedFinalStageLabel === "2" ? !!committedStage2Url : false;
     await finalizeImageChargeFromWorker({
       jobId: payload.jobId,
       stage1ASuccess: billingStage1ASuccess,

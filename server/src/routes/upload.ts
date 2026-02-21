@@ -492,34 +492,34 @@ export function uploadRouter() {
       // Align declutter boolean with authoritative mode to avoid null skips downstream
       opts.declutter = declutterMode !== null;
 
-      // Stage2-only always uses refresh-mode metadata (no empty-room/full staging intent)
+      // Stage2-only must remain worker-driven: do not pre-lock furnished/refresh decisions.
       if (opts.stage2Only === true) {
-        opts.stagingPreference = "refresh";
-        if (!opts.stage2Variant) opts.stage2Variant = "2A";
-        if (!opts.furnishedState) opts.furnishedState = "furnished";
+        opts.stagingPreference = "auto";
+        opts.furnishedState = "unknown";
+        opts.stage2Variant = undefined;
       }
 
-      // Derive Stage 2 variant defaults if still unset
-      if (!opts.stage2Variant && opts.virtualStage) {
+      // Derive Stage 2 variant defaults if still unset (except stage2Only, which is worker-resolved)
+      if (!opts.stage2Variant && opts.virtualStage && opts.stage2Only !== true) {
         if (opts.stagingPreference === "refresh") {
           opts.stage2Variant = "2A";
         } else if (opts.stagingPreference === "full") {
           opts.stage2Variant = "2B";
         }
       }
-      if (!opts.stage2Variant && opts.virtualStage && opts.declutterMode === "light") {
+      if (!opts.stage2Variant && opts.virtualStage && opts.stage2Only !== true && opts.declutterMode === "light") {
         opts.stage2Variant = "2A";
       }
       // For Declutter+Stage (stage-ready), leave variant unset when furnished state is unknown.
       // Worker furnished gate will decide deterministically per-image.
-      if (!opts.stage2Variant && opts.virtualStage && opts.declutterMode !== "stage-ready") {
+      if (!opts.stage2Variant && opts.virtualStage && opts.stage2Only !== true && opts.declutterMode !== "stage-ready") {
         opts.stage2Variant = "2B"; // safest default for non-declutter-stage flows
       }
 
-      // Furnished state derives from variant when missing
-      if (!opts.furnishedState && opts.stage2Variant === "2A") {
+      // Furnished state derives from variant when missing (except stage2Only, which remains unknown)
+      if (!opts.furnishedState && opts.stage2Only !== true && opts.stage2Variant === "2A") {
         opts.furnishedState = "furnished";
-      } else if (!opts.furnishedState && opts.stage2Variant === "2B") {
+      } else if (!opts.furnishedState && opts.stage2Only !== true && opts.stage2Variant === "2B") {
         opts.furnishedState = "empty";
       }
 
