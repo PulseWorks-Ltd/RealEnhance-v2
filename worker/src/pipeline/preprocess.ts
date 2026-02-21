@@ -160,6 +160,14 @@ async function detectCropRectWithOpenCv(
     mask = new cv.Mat();
     cv.threshold(gray, mask, blackThreshold, 255, cv.THRESH_BINARY);
 
+    // Harden contour detection against thin anti-aliased wedges/fringes.
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
+    cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+    if (kernel && typeof kernel.delete === "function") {
+      kernel.delete();
+    }
+
     contours = new cv.MatVector();
     hierarchy = new cv.Mat();
     cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -180,10 +188,22 @@ async function detectCropRectWithOpenCv(
 
     if (!bestRect) return null;
 
-    const left = Math.max(0, Math.floor(bestRect.x || 0));
-    const top = Math.max(0, Math.floor(bestRect.y || 0));
-    const width = Math.max(1, Math.floor(bestRect.width || 0));
-    const height = Math.max(1, Math.floor(bestRect.height || 0));
+    let left = Math.max(0, Math.floor(bestRect.x || 0));
+    let top = Math.max(0, Math.floor(bestRect.y || 0));
+    let width = Math.max(1, Math.floor(bestRect.width || 0));
+    let height = Math.max(1, Math.floor(bestRect.height || 0));
+
+    const inwardPadRaw = Number(process.env.PREPROCESS_INWARD_PAD ?? 2);
+    const inwardPad = Number.isFinite(inwardPadRaw)
+      ? Math.max(0, Math.min(8, Math.floor(inwardPadRaw)))
+      : 2;
+
+    if (inwardPad > 0 && width > inwardPad * 2 + 2 && height > inwardPad * 2 + 2) {
+      left += inwardPad;
+      top += inwardPad;
+      width -= inwardPad * 2;
+      height -= inwardPad * 2;
+    }
 
     return { left, top, width, height };
   } catch {

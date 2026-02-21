@@ -84,7 +84,7 @@ import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCriti
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
-import { applyFinalBlackEdgeGuard } from "./utils/finalBlackEdgeGuard";
+import { applyFinalBlackEdgeGuard, assertNoDarkBorder } from "./utils/finalBlackEdgeGuard";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const logger = console;
@@ -98,6 +98,11 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
       nLog(`[BLACK_EDGE_GUARD] stage=${stageLabel} action=skipped reason=${guard.reason}`);
     }
   }
+
+  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
+  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
+  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
+  await assertNoDarkBorder(localPath, borderPx, threshold, maxDarkRatio);
   return publishImage(localPath);
 }
 

@@ -210,3 +210,55 @@ export async function applyFinalBlackEdgeGuard(imagePath: string): Promise<{ cha
     return { changed: false, reason: "guard_error" };
   }
 }
+
+export async function assertNoDarkBorder(
+  imagePath: string,
+  borderPx = 3,
+  threshold = 5,
+  maxDarkRatio = 0.02
+): Promise<void> {
+  const raw = await sharp(imagePath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = raw.info.width || 0;
+  const height = raw.info.height || 0;
+  const channels = raw.info.channels || 4;
+  if (!width || !height) return;
+
+  const bpx = Math.max(1, Math.min(borderPx, Math.floor(Math.min(width, height) / 2)));
+  const darkThreshold = clamp(Math.round(threshold), 0, 255);
+  const allowedRatio = Math.max(0, Math.min(1, maxDarkRatio));
+
+  let darkCount = 0;
+  let borderCount = 0;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const onBorder = x < bpx || y < bpx || x >= width - bpx || y >= height - bpx;
+      if (!onBorder) continue;
+
+      borderCount++;
+
+      const i = (y * width + x) * channels;
+      const r = raw.data[i];
+      const g = raw.data[i + 1];
+      const b = raw.data[i + 2];
+      if (r < darkThreshold && g < darkThreshold && b < darkThreshold) {
+        darkCount++;
+      }
+    }
+  }
+
+  const ratio = borderCount > 0 ? darkCount / borderCount : 0;
+  if (ratio > allowedRatio) {
+    const err: any = new Error("BLACK_BORDER_DETECTED");
+    err.code = "BLACK_BORDER_DETECTED";
+    err.darkRatio = ratio;
+    err.maxDarkRatio = allowedRatio;
+    err.borderPx = bpx;
+    err.threshold = darkThreshold;
+    throw err;
+  }
+}
