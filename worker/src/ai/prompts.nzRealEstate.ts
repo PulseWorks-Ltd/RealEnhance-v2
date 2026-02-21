@@ -63,7 +63,8 @@ Never exceed two staged zones.
 `;
 
 // 🔧 ZONE-SPECIFIC CONFIGS (inject into base block)
-const ZONE_CONFIGS: Record<string, string> = {
+// Refresh-mode configs may include conservative downgrade behavior when separation is weak.
+const ZONE_CONFIGS_REFRESH: Record<string, string> = {
   multiple_living: `
 ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
 Examples: lounge + dining, dining + study nook, lounge + reading area.
@@ -120,6 +121,155 @@ If one zone is not clearly visible or definable:
 → do NOT force a second zone
 `,
 };
+
+// Full-mode configs must not include soft downgrade instructions.
+const ZONE_CONFIGS_FULL: Record<string, string> = {
+  multiple_living: `
+ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
+Examples: lounge + dining, dining + study nook, lounge + reading area.
+
+If a kitchen is not clearly visible:
+→ do NOT add kitchen staging elements
+→ do NOT add cabinetry, counters, or appliances
+
+If a dining area is not clearly visible:
+→ do NOT create one.
+`,
+
+  kitchen_dining: `
+ZONE EXPECTATIONS (KITCHEN + DINING):
+The two primary zones are: kitchen zone and dining zone.
+
+Kitchen zone must contain visible counters, cabinetry, or appliance fixtures.
+Dining zone must be a separate area suitable for dining furniture.
+
+If a kitchen is NOT clearly visible with cabinetry:
+→ do NOT add kitchen elements
+→ stage as a single dining zone only
+`,
+
+  kitchen_living: `
+ZONE EXPECTATIONS (KITCHEN + LIVING):
+The two primary zones are: kitchen zone and living/lounge zone.
+
+Kitchen zone must contain visible counters, cabinetry, or appliance fixtures.
+Living zone must be a separate area suitable for lounge seating.
+
+If a kitchen is NOT clearly visible with cabinetry:
+→ do NOT add kitchen elements
+→ stage as a single living room only
+`,
+
+  living_dining: `
+ZONE EXPECTATIONS (LIVING + DINING):
+The two primary zones are: living/lounge zone and dining zone.
+
+Living zone: lounge seating, coffee table, living area layout.
+Dining zone: dining table and chairs, dining area layout.
+`,
+};
+
+const HARDENED_MULTI_ZONE_FULL_BLOCK = `
+MULTI-ZONE FULL STAGING — STRICT ENFORCEMENT
+
+If the selected room type is a multi-room type (e.g., kitchen_dining, kitchen_living, living_dining):
+
+You MUST stage BOTH selected functional zones.
+
+You are constructing the room from empty.
+
+You are NOT refreshing.
+
+You are defining the spatial layout.
+
+1️⃣ Mandatory Anchor Per Zone (Non-Negotiable)
+
+Each selected zone MUST include a defining primary anchor:
+
+Kitchen zone → cabinetry context + island or counter seating context
+
+Dining zone → full dining table with chairs
+
+Living zone → sofa or sectional seating
+
+Decor-only representation is NOT sufficient.
+
+Accessories alone do NOT count as a zone.
+
+If a dining zone is selected, a dining table with seating MUST exist.
+
+2️⃣ No Dominance Collapse
+
+You must NOT:
+
+Stage only the visually dominant zone.
+
+Reduce the secondary zone to minimal accessories.
+
+Collapse dining into kitchen.
+
+Collapse dining into living.
+
+Collapse living into kitchen.
+
+Both zones must be clearly readable and functionally usable.
+
+3️⃣ Explicit Zone Separation
+
+Zones must:
+
+Be spatially distinguishable.
+
+Have separate functional footprints.
+
+Not overlap anchor footprints.
+
+Not bleed furniture across zone boundaries.
+
+Furniture from one zone must not intrude into another zone’s core anchor space.
+
+4️⃣ Proportional Space Allocation
+
+Allocate floor area proportionally to:
+
+Visible open floor space
+
+Logical circulation paths
+
+Architectural boundaries
+
+Do NOT allocate 90% of the space to one zone unless physically constrained by the room geometry.
+
+5️⃣ Circulation Preservation
+
+Maintain:
+
+Clear walkway between zones
+
+Clear access to doors
+
+Clear access to openings
+
+No furniture blocking functional flow between zones
+
+6️⃣ No Third Zone
+
+If two zones are selected:
+
+Stage exactly those two.
+
+Do NOT introduce bedroom, office, or other zone types.
+
+7️⃣ If Geometry Is Truly Insufficient
+
+If the room physically cannot accommodate both zones:
+
+You must still instantiate both anchors.
+
+Scale proportionally.
+
+Do NOT eliminate a selected zone.
+`;
 
 const MULTI_ROOM_TYPES = new Set([
   "multiple_living",
@@ -203,8 +353,10 @@ Never create new architectural or service elements.
 `;
 
 // 🏗️ Build multi-zone block by injecting zone config into base
-function buildMultiZoneConstraintBlock(roomType: string): string {
-  const zoneConfig = ZONE_CONFIGS[roomType] || "";
+function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh"): string {
+  const zoneConfig = mode === "full"
+    ? (ZONE_CONFIGS_FULL[roomType] || "")
+    : (ZONE_CONFIGS_REFRESH[roomType] || "");
   return BASE_MULTI_ZONE_BLOCK + zoneConfig + `
 ────────────────────────────────
 `;
@@ -1169,14 +1321,33 @@ function buildStage2InteriorPromptNZStyle(
     ? "multiple_living"
     : normalizedRoom;
   const sourceStage = opts?.sourceStage || "1A";
-  const forceRefreshMode = MULTI_ROOM_TYPES.has(canonicalRoomType);
   const roomTypeLockBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
     ? MULTI_ROOM_LOCK
     : SINGLE_ROOM_LOCK;
   
   // Determine staging mode based on source stage
-  const isFullStaging = sourceStage === "1B-stage-ready" && !forceRefreshMode; // Room was fully decluttered → stage empty room
-  const isRefreshStaging = !isFullStaging; // Furniture present or refresh-forced → refresh existing
+  const isFullStaging = sourceStage === "1A";
+  const isRefreshStaging = !isFullStaging;
+
+  const multiZoneConstraintBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
+    ? buildMultiZoneConstraintBlock(canonicalRoomType, isFullStaging ? "full" : "refresh")
+    : "";
+
+  const multiRoomScopeLock = MULTI_ROOM_TYPES.has(canonicalRoomType)
+    ? (isFullStaging
+      ? `Selected mode is multi-room (${room}).
+Stage exactly BOTH selected room-function zones.
+Do NOT downgrade either selected zone to accessories-only.
+Do NOT leave either selected zone unstaged.
+Do NOT stage any non-selected room-function zones.`
+      : `Selected mode is multi-room (${room}).
+Stage ONLY zones that match the selected multi-room definition.
+Do NOT stage any other apparent room-function zones.
+If an allowed zone is weak/ambiguous, leave it unstaged rather than inventing it.`)
+    : `Selected mode is single-room (${room}).
+Stage ONLY this room type.
+Do NOT stage secondary room functions in adjacent/ambiguous areas.
+Non-target areas may remain intentionally empty.`;
   
   const taskInstruction = isFullStaging
     ? "Stage this EMPTY room with appropriate furniture for the specified room type.\nThe room has been decluttered - add NEW furniture suitable for staging."
@@ -1611,26 +1782,13 @@ ${roomTypeLockBlock}
 
 ${ROOM_FUNCTION_PRESERVATION_LOCK}
 
-${(() => {
-  // 🔄 Inject multi-zone block for ALL multi-room types
-  return MULTI_ROOM_TYPES.has(canonicalRoomType)
-    ? buildMultiZoneConstraintBlock(canonicalRoomType)
-    : "";
-})()}
+${multiZoneConstraintBlock}
 
 ────────────────────────────────
 ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
 ────────────────────────────────
 
-${MULTI_ROOM_TYPES.has(canonicalRoomType)
-  ? `Selected mode is multi-room (${room}).
-Stage ONLY zones that match the selected multi-room definition.
-Do NOT stage any other apparent room-function zones.
-If an allowed zone is weak/ambiguous, leave it unstaged rather than inventing it.`
-  : `Selected mode is single-room (${room}).
-Stage ONLY this room type.
-Do NOT stage secondary room functions in adjacent/ambiguous areas.
-Non-target areas may remain intentionally empty.`}
+${multiRoomScopeLock}
 
 ────────────────────────────────
 KITCHEN ZONE FURNITURE RESTRICTIONS
@@ -1679,7 +1837,9 @@ Maintain clearance but maximize realistic size.
 WALL ART PLACEMENT RULE:
 Framed artwork must be wall-mounted only.
 Do NOT lean artwork on furniture.
-Do NOT place framed art sitting on dressers or consoles.`
+Do NOT place framed art sitting on dressers or consoles.
+
+${MULTI_ROOM_TYPES.has(canonicalRoomType) ? HARDENED_MULTI_ZONE_FULL_BLOCK : ""}`
   : `1. Identify ALL visible furniture items.
 2. Replace EACH item with a modern equivalent.
 3. Replace, repaint, restyle, remove, or redesign furniture comprehensively for a cohesive result.
