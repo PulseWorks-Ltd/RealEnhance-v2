@@ -1140,6 +1140,166 @@ function buildPrompt(
     const stagingIntentRule = isFullStaging
       ? "- FULL STAGING MODE: Empty room must now contain appropriate furniture for the room type.\n  Missing furniture in empty areas is FAILURE. Inappropriate furniture type is FAILURE."
       : "- REFRESH STAGING MODE: Preserved anchors may remain and be restyled.\n  New complementary furniture/decor additions are allowed in augmentable zones.\n  Do NOT treat expected additions as structural drift.";
+    const refreshHistoryContext = `STAGE HISTORY CONTEXT — DECLUTTER AWARE INTERPRETATION
+
+The BEFORE image represents the original Stage 1A baseline.
+
+However, Stage 1B structured-retain declutter has already occurred prior to this refresh stage.
+
+Therefore, differences caused by Stage 1B must be treated as pre-approved and NON-STRUCTURAL.
+
+The following must NEVER be classified as structural violations:
+
+• Removal of secondary furniture
+• Removal of clutter
+• Removal of decor
+• Removal of wall art
+• Removal of rugs
+• Removal of surface-level objects
+• Removal of island countertop items
+• Removal of movable seating
+
+Structural violations must be determined only by architectural envelope or built-in base geometry.`;
+    const refreshStructuralCategorySeparation = `STRUCTURAL CATEGORY SEPARATION — REFRESH MODE
+
+Distinguish clearly between:
+
+1️⃣ STRUCTURAL ENVELOPE (HARD STRUCTURE)
+
+Walls (position, thickness, geometry)
+
+Ceiling height and shape
+
+Floor boundaries and depth
+
+Door frames and window frames
+
+Bulkheads, beams, columns
+
+Permanent recesses
+
+Any modification to these is structural.
+
+2️⃣ BUILT-IN ANCHORS — BASE GEOMETRY ONLY
+
+Kitchen islands (BASE footprint only)
+
+Fixed cabinetry
+
+Built-in wardrobes
+
+Fixed vanities
+
+Fireplaces
+
+Staircases
+
+For built-in anchors:
+Only base footprint, dimensions, silhouette envelope, and position are structural.
+
+Surface-level contents are NOT structural:
+
+Countertop decor
+
+Items sitting on islands
+
+Bar stools
+
+Small appliances
+
+Styling accessories
+
+3️⃣ FREESTANDING FURNITURE — NEVER STRUCTURAL
+
+The following are always non-structural in refresh mode:
+
+Beds
+
+Sofas
+
+Chairs
+
+Tables
+
+Dressers
+
+Nightstands
+
+Stools
+
+Movable shelving
+
+Rugs
+
+Removal, replacement, resizing, or repositioning of freestanding furniture
+must NEVER trigger structural classification.`;
+    const refreshBuiltInSection = `3️⃣ BUILT-IN / STRUCTURAL ANCHORS
+
+These are considered structural anchors:
+
+Kitchen islands (fixed cabinetry)
+
+Built-in wardrobes
+
+Fixed vanities
+
+Fixed joinery
+
+Fireplaces
+
+Staircases
+
+HVAC built-ins
+
+Permanent cabinetry
+
+KITCHEN ISLAND STRUCTURAL RULE — BASE GEOMETRY LOCK
+
+The island BASE structure is architectural.
+
+Structural violation occurs ONLY if:
+• Island base footprint changes
+• Island base dimensions change
+• Island base position shifts
+• Island base silhouette envelope changes
+• Island base is removed entirely
+
+The following are NOT structural:
+• Removal of items placed on island
+• Countertop styling changes
+• Addition or removal of stools
+• Replacement of surface decor
+• Small appliance removal
+
+Only island BASE geometry is structural.
+
+FAIL if:
+
+• Built-in cabinetry base geometry is extended, reduced, or relocated
+• A fixed vanity or wardrobe base geometry changes form
+• A fireplace base geometry is altered or removed
+• A staircase base geometry is altered or removed`;
+    const refreshMaterialSection = `4️⃣ MATERIAL & SURFACE PRESERVATION
+
+Material preservation applies ONLY to:
+
+Fixed architectural surfaces
+
+Structural flooring materials
+
+Built-in cabinetry finishes
+
+FAIL if:
+
+• Structural flooring material changes
+• Fixed wall or ceiling finishes are altered to conceal structural edits
+• Built-in cabinetry finishes are altered to conceal anchor geometry edits
+
+Removal of rugs is NOT structural.
+Removal of movable coverings is NOT structural.
+Countertop object removal is NOT structural.
+
+Lighting brightness or white balance changes are acceptable.`;
 
     return `ROLE
 
@@ -1169,6 +1329,8 @@ AFTER image (Stage 2 staged result)
 
 Your responsibility is to determine whether the AFTER image preserves the architectural structure while applying valid staging.
 
+${isFullStaging ? "" : `${refreshHistoryContext}\n\n`}
+
 DECISION PRIORITY (STRICT ORDER)
 
 Always evaluate in this order:
@@ -1184,6 +1346,8 @@ Material Preservation
 Staging Logic & Furniture Placement
 
 If any rule in sections 1–4 fails → this is a structural violation.
+
+${isFullStaging ? "" : `${refreshStructuralCategorySeparation}\n\n`}
 
 1️⃣ STRUCTURAL INTEGRITY (CRITICAL)
 
@@ -1286,7 +1450,7 @@ If this occurs:
 → violationType: opening_change
 → hardFail: true
 
-3️⃣ BUILT-IN / STRUCTURAL ANCHORS
+${isFullStaging ? `3️⃣ BUILT-IN / STRUCTURAL ANCHORS
 
 These are considered structural anchors:
 
@@ -1315,9 +1479,9 @@ FAIL if:
 
 Bar stools or decor do NOT justify island resizing.
 
-If island geometry changes → structural violation.
+If island geometry changes → structural violation.` : refreshBuiltInSection}
 
-4️⃣ MATERIAL & SURFACE PRESERVATION
+${isFullStaging ? `4️⃣ MATERIAL & SURFACE PRESERVATION
 
 Surfaces must preserve material identity:
 
@@ -1336,7 +1500,7 @@ FAIL if:
 • Cabinet material shifts without refresh mode
 • Textures are altered to conceal structural edits
 
-Lighting brightness or white balance changes are acceptable.
+Lighting brightness or white balance changes are acceptable.` : refreshMaterialSection}
 
 5️⃣ STAGING LOGIC (NON-STRUCTURAL)
 
