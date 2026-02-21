@@ -717,6 +717,29 @@ Remove ALL movable furniture, decor, rugs, plants, clutter, and personal items E
 
 • Preserve exactly ONE functionally dominant furniture piece per clearly defined room zone.
 
+PARTIAL ANCHOR PRESERVATION — CRITICAL
+
+If a primary anchor furniture item is visible in the BEFORE image,
+even if:
+
+• partially cropped by the frame
+• partially obscured by clutter
+• only one section of a sectional is visible
+• positioned at the edge of the image
+• visually dominant but not fully in view
+
+It must be retained in the AFTER image.
+
+Do NOT remove a partially visible anchor and replace it with new furniture.
+Do NOT invent substitute anchor furniture.
+Do NOT recompose the room by deleting the dominant anchor.
+Anchor removal for aesthetic improvement is prohibited.
+
+If multiple anchor pieces are visible, retain the most visually dominant anchor
+based on size, floor contact area, and visual weight.
+
+Structured-retain declutter removes clutter — not anchor furniture.
+
 A zone is a visually distinct functional area (e.g., lounge area, dining area) separated by layout, furniture grouping, or spatial orientation.
 
 Dominant functional anchors by room type:
@@ -1423,6 +1446,25 @@ materially, and color-accurate to the input image.
 
 You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
 or cover these elements — even partially.
+
+REFRESH MODE FURNITURE PRESERVATION — HARD LIMIT
+
+Refresh mode is not a full restage.
+
+You must NOT remove all existing furniture and repaint the room with new items.
+
+Only the following is allowed:
+• Restyling existing anchor furniture
+• Minor decor augmentation in open zones
+• Replacing clearly defined soft furnishings (e.g., cushions, small decor)
+
+You may NOT:
+• Delete all furniture and rebuild layout
+• Replace multiple large furniture items unless explicitly instructed
+• Treat refresh as full staging
+
+If substantial furniture replacement is required,
+this is FULL STAGING mode, not refresh mode.
 
 FIXED ARCHITECTURE:
 • Walls, ceilings, trims, cornices, skirting boards, baseboards
