@@ -740,6 +740,22 @@ based on size, floor contact area, and visual weight.
 
 Structured-retain declutter removes clutter — not anchor furniture.
 
+ANCHOR SELECTION PRIORITY — STRICT HIERARCHY
+
+Anchor selection must follow this strict order:
+
+1. Determine dominance primarily by physical scale, floor contact area, visual mass, and functional importance within the room.
+
+2. If a clearly dominant large-scale anchor exists, it must be retained — even if partially cropped or positioned at the image edge.
+
+3. A smaller fully visible item must NOT outrank a larger partially visible dominant anchor.
+
+4. Visibility clarity alone does NOT override dominance.
+
+5. Central positioning is a last-resort tie-breaker only when scale and dominance are genuinely equal.
+
+Dominance takes precedence over visibility.
+
 A zone is a visually distinct functional area (e.g., lounge area, dining area) separated by layout, furniture grouping, or spatial orientation.
 
 Dominant functional anchors by room type:
