@@ -830,17 +830,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isManualRetry = (payload as any).retryType === "manual_retry";
 
   if (isManualRetry) {
+    const stage2OnlyBaseStage = ((payload.stage2OnlyMode as any)?.baseStage === "1A") ? "1A" : "1B";
+    const hasValidRetryBaseline = stage2OnlyBaseStage === "1A"
+      ? (!!(payload.stage2OnlyMode as any)?.base1AUrl && !(payload as any).retryStage1BWasRequested)
+      : !!payload.stage2OnlyMode?.base1BUrl;
     const hasDeterministicStage2OnlyPayload =
       stage2Requested &&
       payload.stage2OnlyMode?.enabled &&
-      !!payload.stage2OnlyMode?.base1BUrl;
+      hasValidRetryBaseline;
     if (!hasDeterministicStage2OnlyPayload) {
       nLog("[STAGE2_ONLY_PAYLOAD_INVALID]", {
         jobId: payload.jobId,
         retryType: (payload as any).retryType,
         stage2Requested,
         stage2OnlyEnabled: !!payload.stage2OnlyMode?.enabled,
+        baseStage: stage2OnlyBaseStage,
         hasBase1BUrl: !!payload.stage2OnlyMode?.base1BUrl,
+        hasBase1AUrl: !!(payload.stage2OnlyMode as any)?.base1AUrl,
+        retryStage1BWasRequested: !!(payload as any).retryStage1BWasRequested,
       });
       await safeWriteJobStatus(
         payload.jobId,
@@ -854,9 +861,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (!stage2Requested && payload.stage2OnlyMode?.enabled) {
     nLog(`[worker] Stage-2-only retry requested but stage2 was not requested; skipping stage2-only mode.`);
   }
-  if (isManualRetry && stage2Requested && payload.stage2OnlyMode?.enabled && payload.stage2OnlyMode?.base1BUrl) {
+  const stage2OnlyBaseStage = ((payload.stage2OnlyMode as any)?.baseStage === "1A") ? "1A" : "1B";
+  const stage2OnlyBaseSourceUrl = stage2OnlyBaseStage === "1A"
+    ? ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined)
+    : (payload.stage2OnlyMode?.base1BUrl as string | undefined);
+  if (isManualRetry && stage2Requested && payload.stage2OnlyMode?.enabled && !!stage2OnlyBaseSourceUrl) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
-    nLog(`[worker] Reusing validated Stage-1B output: ${payload.stage2OnlyMode.base1BUrl}`);
+    nLog(`[worker] Reusing validated Stage-${stage2OnlyBaseStage} output: ${stage2OnlyBaseSourceUrl}`);
 
     try {
       await ensureStage2AttemptId();
@@ -864,15 +875,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const t0 = Date.now();
       const t2 = Date.now();
 
-      // Download Stage-1B base image
-      const basePath = await downloadToTemp(payload.stage2OnlyMode.base1BUrl, `${payload.jobId}-stage1B`);
+      // Download deterministic Stage-1A or Stage-1B base image
+      const basePath = await downloadToTemp(stage2OnlyBaseSourceUrl, `${payload.jobId}-stage${stage2OnlyBaseStage}`);
       if (!VALIDATION_FOCUS_MODE) {
-        nLog(`[worker] Downloaded Stage-1B base to: ${basePath}`);
+        nLog(`[worker] Downloaded Stage-${stage2OnlyBaseStage} base to: ${basePath}`);
       }
 
       // Stage 2 validation baseline must match main pipeline behavior: compare against Stage 1A output
       let stage2OnlyValidationBaseline = basePath;
-      if ((payload.stage2OnlyMode as any)?.base1AUrl) {
+      if (stage2OnlyBaseStage === "1B" && (payload.stage2OnlyMode as any)?.base1AUrl) {
         try {
           stage2OnlyValidationBaseline = await downloadToTemp((payload.stage2OnlyMode as any).base1AUrl, `${payload.jobId}-stage1A`);
           if (!VALIDATION_FOCUS_MODE) {
@@ -891,7 +902,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage2OnlyRouting = resolveStage2Routing({
         roomType: payload.options.roomType,
         isExteriorScene: payload.options.sceneType === "exterior",
-        baseStage: "1B",
+        baseStage: stage2OnlyBaseStage,
         stage1BMode: stage2OnlyMeta.stage1BMode || undefined,
         sourceStageHint: stage2OnlyMeta.sourceStage || undefined,
       });
@@ -913,8 +924,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[STAGE2_ROUTING_DECISION]", {
         jobId: payload.jobId,
         path: "stage2_only",
-        baseStage: "1B",
-        hasStage1BLineage: true,
+        baseStage: stage2OnlyBaseStage,
+        hasStage1BLineage: stage2OnlyBaseStage === "1B",
         stage1BMode: stage2OnlyMeta.stage1BMode || null,
         roomType: payload.options.roomType,
         canonicalRoomType: stage2OnlyRouting.canonicalRoomType,
@@ -926,11 +937,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[STAGE2_BASE_PROOF]", {
         jobId: payload.jobId,
         path: "stage2_only",
-        stage1APath: stageLineage.stage1A.output,
-        stage1BPath: basePath,
+        stage1APath: stage2OnlyBaseStage === "1A" ? basePath : stageLineage.stage1A.output,
+        stage1BPath: stage2OnlyBaseStage === "1B" ? basePath : null,
         chosenBasePath: basePath,
-        chosenBaseStage: "1B",
-        stage1BRequested: !!payload.options.declutter || !!payload.stage2OnlyMode?.enabled,
+        chosenBaseStage: stage2OnlyBaseStage,
+        stage1BRequested: stage2OnlyBaseStage === "1B",
       });
       if (basePath && stageLineage.stage1A.output && basePath === stageLineage.stage1A.output) {
         nLog("[STAGE2_INVARIANT_VIOLATION]", {
@@ -939,10 +950,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage1A: stageLineage.stage1A.output,
           stage1B: basePath,
           chosen: basePath,
-          chosenBaseStage: "1B",
+          chosenBaseStage: stage2OnlyBaseStage,
         });
       }
-      const stage2Result = await runStage2(basePath, "1B", {
+      const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
         sceneType: payload.options.sceneType as any,
@@ -1075,7 +1086,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         // ═══ Structural Geometry Check (post-publish, log-only) ═══
         // Only run if we now have a published Stage 1B URL available
-        const base1BPublishedUrl = payload.stage2OnlyMode.base1BUrl;
+        const base1BPublishedUrl = stage2OnlyBaseStage === "1B" ? payload.stage2OnlyMode.base1BUrl : null;
         if (base1BPublishedUrl) {
           try {
             await runStructuralCheck(base1BPublishedUrl, pub2Url, { stage: "stage2", jobId: payload.jobId });
@@ -1126,8 +1137,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "complete",
         resultUrl: pub2Url,
         stageUrls: {
-          "1A": null,
-          "1B": payload.stage2OnlyMode.base1BUrl,
+          "1A": stage2OnlyBaseStage === "1A" ? ((payload.stage2OnlyMode as any)?.base1AUrl || null) : ((payload.stage2OnlyMode as any)?.base1AUrl || null),
+          "1B": stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode.base1BUrl || null) : null,
           "2": pub2Url
         },
         meta: {
@@ -1151,9 +1162,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // ✅ BILLING FINALIZATION: Compute final charge based on published outputs
       try {
-        const billingStage1BUrl = payload.stage2OnlyMode?.base1BUrl || null;
+        const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
         const billingStage2Url = pub2Url || null;
-        const billingStage1ASuccess = !!billingStage1BUrl;
+        const billingStage1AUrl = stage2OnlyBaseStage === "1A"
+          ? (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null)
+          : (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null);
+        const billingStage1ASuccess = !!billingStage1AUrl || !!billingStage1BUrl;
         const billingStage1BSuccess = !!billingStage1BUrl;
         const billingStage2Success = !!billingStage2Url;
         await finalizeImageChargeFromWorker({

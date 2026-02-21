@@ -3375,6 +3375,7 @@ export default function BatchProcessor() {
       const forceStage2Retry = requestedStage2 && (blockedStage === "2" || statusRaw === "failed" || viewingStage !== "2");
       const retryContextStage: StageKey | null = forceStage2Retry ? "2" : viewingStage;
       const hasStage1BBaseline = !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
+      const hasStage1ABaseline = !!(stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A);
       
       // Compute baseline and stages using the new context-aware logic
       const baseline = computeRetryBaseline(retryContextStage, stageMap);
@@ -3382,17 +3383,26 @@ export default function BatchProcessor() {
       // Backend contract: if Stage 1B was part of the requested pipeline, Stage 2 retry requires Stage 1B baseline.
       // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
       const requiresStage1BRebuild = forceStage2Retry && stage1BWasRequested && !hasStage1BBaseline;
+      const canUseStage1AForStage2Retry = forceStage2Retry && !stage1BWasRequested && hasStage1ABaseline;
 
       const stage1BBaseline =
         stageMap?.['1B'] ||
         stageMap?.['1b'] ||
         stageMap?.stage1B ||
         null;
+      const stage1ABaseline =
+        stageMap?.['1A'] ||
+        stageMap?.['1a'] ||
+        stageMap?.['1'] ||
+        stageMap?.stage1A ||
+        null;
 
-      if (!stage1BBaseline) {
+      if (!stage1BBaseline && !canUseStage1AForStage2Retry) {
         toast({
           title: "Retry unavailable",
-          description: "This image has no Stage 1B baseline. Stage-only retry currently requires a completed staging baseline.",
+          description: stage1BWasRequested
+            ? "This image has no Stage 1B baseline. Stage-only retry for declutter-required rooms needs a completed Stage 1B baseline."
+            : "This image has no valid Stage 1A/1B baseline available for stage-only retry.",
           variant: "destructive",
         });
         return;
@@ -3401,8 +3411,8 @@ export default function BatchProcessor() {
       // Retry-single backend is deterministic Stage-2-only from Stage 1B baseline.
       const effectiveStagesToRun = ["2"] as StageKey[];
       const effectiveAllowStaging = true;
-      const effectiveSourceUrl = stage1BBaseline;
-      const effectiveSourceStageLabel = "stage1b";
+      const effectiveSourceUrl = stage1BBaseline || stage1ABaseline;
+      const effectiveSourceStageLabel = stage1BBaseline ? "stage1b" : "stage1a";
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
@@ -3410,8 +3420,10 @@ export default function BatchProcessor() {
         retryContextStage,
         forceStage2Retry,
         requiresStage1BRebuild,
+        canUseStage1AForStage2Retry,
         stage1BWasRequested,
         hasStage1BBaseline,
+        hasStage1ABaseline,
         requestedStage2,
         blockedStage,
         baselineStage: baseline.baselineStage,
@@ -3718,6 +3730,7 @@ export default function BatchProcessor() {
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
+      fd.append("stage1BWasRequested", String(stage1BWasRequested));
       fd.append("requestedStage", "2");
 
       try {
@@ -3763,10 +3776,10 @@ export default function BatchProcessor() {
             return;
           }
           if (err?.error === "manual_retry_requires_stage2" || err?.error === "manual_retry_stage2only_required" || err?.error === "manual_retry_stage2only_payload_invalid") {
-            markRetryFailed(imageIndex, err?.message || "Retry requires Stage 2 with a valid Stage 1B baseline.");
+            markRetryFailed(imageIndex, err?.message || "Retry requires Stage 2 with a valid baseline policy.");
             toast({
               title: "Retry requires staging baseline",
-              description: err?.message || "Retry now supports Stage 2 only with a valid Stage 1B source.",
+              description: err?.message || "Retry supports Stage 2 only with Stage 1B baseline, or Stage 1A when decluttering was not required.",
               variant: "destructive"
             });
             return;

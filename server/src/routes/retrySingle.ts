@@ -271,7 +271,7 @@ export function retrySingleRouter() {
         return res.status(409).json({
           success: false,
           error: "manual_retry_requires_stage_source",
-          message: "Manual retry requires a Stage 1B source URL for deterministic Stage2Only routing",
+          message: "Manual retry requires a valid stage baseline source URL for deterministic Stage2Only routing",
         });
       }
 
@@ -382,12 +382,16 @@ export function retrySingleRouter() {
                 selectedSourceStage === "1B-light" ||
                 selectedSourceStage === "1B-stage-ready" ||
                 selectedSourceStage.toLowerCase().startsWith("1b"));
+            const hasStage1ABaseline =
+              !!selectedSourceStage &&
+              (selectedSourceStage === "1A" || selectedSourceStage.toLowerCase().startsWith("1a"));
+            const canUseStage1AForStage2 = !stage1BWasRequested && hasStage1ABaseline;
 
-            if (stage2OnlyDisabled || !selectedSourceUrl || !hasStage1BBaseline) {
+            if (!selectedSourceUrl || (!hasStage1BBaseline && !canUseStage1AForStage2)) {
               return res.status(409).json({
                 success: false,
                 error: "manual_retry_stage2only_required",
-                message: "Manual retry requires Stage2Only payload with a valid Stage 1B baseline",
+                message: "Manual retry requires Stage2Only payload with a valid Stage 1B baseline, or Stage 1A only when decluttering was not required",
               });
             }
           }
@@ -571,29 +575,38 @@ export function retrySingleRouter() {
           : stage2OnlyStage1BMode === "light"
             ? "1B-light"
             : "1B-stage-ready";
+      const stage2OnlyBaseStage: "1A" | "1B" = stage2OnlySourceStage === "1A" ? "1A" : "1B";
+      const stage1AFromParent =
+        (parentMeta?.stageUrls && (parentMeta.stageUrls as any)["1A"]) ||
+        ((parentJob as any)?.stageUrls && ((parentJob as any).stageUrls as any)["1A"]) ||
+        ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
+        undefined;
       const stage2OnlyMode =
-        requestedStage === '2' && !stage2OnlyDisabled && selectedSourceUrl
+        requestedStage === '2' && selectedSourceUrl
           ? {
               enabled: true,
-              base1BUrl: selectedSourceUrl,
-              base1AUrl:
-                (parentMeta?.stageUrls && (parentMeta.stageUrls as any)["1A"]) ||
-                ((parentJob as any)?.stageUrls && ((parentJob as any).stageUrls as any)["1A"]) ||
-                ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
-                undefined,
+              baseStage: stage2OnlyBaseStage,
+              base1BUrl: stage2OnlyBaseStage === "1B" ? selectedSourceUrl : undefined,
+              base1AUrl: stage2OnlyBaseStage === "1A" ? selectedSourceUrl : stage1AFromParent,
               sourceStage: stage2OnlySourceStage,
               stage1BMode: stage2OnlyStage1BMode,
             }
           : undefined;
 
+      const hasValidStage2OnlyPayload = !!stage2OnlyMode?.enabled && (
+        stage2OnlyMode.baseStage === "1A"
+          ? (!!stage2OnlyMode.base1AUrl && !stage1BWasRequested)
+          : !!stage2OnlyMode.base1BUrl
+      );
+
       if (
         requestedStage === "2" &&
-        (!stage2OnlyMode?.enabled || !stage2OnlyMode.base1BUrl)
+        !hasValidStage2OnlyPayload
       ) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_stage2only_payload_invalid",
-          message: "Manual retry payload is missing required Stage2Only fields",
+          message: "Manual retry payload is missing required Stage2Only fields or violates declutter baseline policy",
         });
       }
 

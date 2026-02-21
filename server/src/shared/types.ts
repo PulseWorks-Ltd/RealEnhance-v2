@@ -208,7 +208,9 @@ export interface EnhanceJobPayload {
   };
   stage2OnlyMode?: {                 // Smart Stage-2 retry mode
     enabled: boolean;
-    base1BUrl: string;
+    baseStage?: "1A" | "1B";
+    base1BUrl?: string;
+    base1AUrl?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };

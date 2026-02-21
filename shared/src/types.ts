@@ -149,7 +149,9 @@ export interface EnhanceJobPayload {
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {
     enabled: boolean;
-    base1BUrl: string;  // URL of Stage-1B output to reuse
+    baseStage?: "1A" | "1B";
+    base1BUrl?: string;  // URL of Stage-1B output to reuse
+    base1AUrl?: string;  // URL of Stage-1A output to reuse when declutter baseline is not required
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
