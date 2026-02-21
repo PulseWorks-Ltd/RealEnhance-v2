@@ -708,7 +708,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       reason = ctx.stage1BMode === "stage-ready" ? "stage1b_mode_structured_retain" : "stage1b_mode_light";
     }
 
-    const mode: "refresh" | "full" = sourceStage === "1A" ? "full" : "refresh";
+    const mode: "refresh" | "full" = ctx.isExteriorScene
+      ? "refresh"
+      : (sourceStage === "1A" ? "full" : "refresh");
     if (forceRefresh && sourceStage === "1A") {
       reason = `${reason}+force_refresh_room_type`;
     }
@@ -720,6 +722,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       mode,
       reason,
     };
+  };
+
+  const logMultiZoneFullMode = (ctx: {
+    path: "main" | "stage2_only" | "light_declutter_backstop";
+    canonicalRoomType: string;
+    sourceStage: "1A" | "1B-light" | "1B-stage-ready";
+    enforced: boolean;
+  }) => {
+    if (STAGE2_FORCE_REFRESH_ROOM_TYPES.has(ctx.canonicalRoomType) && ctx.sourceStage === "1A") {
+      nLog("[MULTI_ZONE_FULL_MODE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        path: ctx.path,
+        roomType: ctx.canonicalRoomType,
+        sourceStage: ctx.sourceStage,
+        enforced: ctx.enforced,
+      });
+    }
   };
 
   const getStage2Context = async () => {
@@ -907,6 +927,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStageHint: stage2OnlyMeta.sourceStage || undefined,
       });
       const stage2OnlyValidationMode = getStage2ValidationModeFromPromptMode(stage2OnlyRouting.mode);
+      logMultiZoneFullMode({
+        path: "stage2_only",
+        canonicalRoomType: stage2OnlyRouting.canonicalRoomType,
+        sourceStage: stage2OnlyRouting.sourceStage,
+        enforced: true,
+      });
       nLog("[STAGE2_VALIDATOR_MODE]", {
         jobId: payload.jobId,
         path: "stage2_only",
@@ -961,6 +987,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         profile: undefined,
         stagingRegion: undefined,
         sourceStage: stage2OnlyRouting.sourceStage,
+        promptMode: stage2OnlyRouting.mode,
         jobId: payload.jobId,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
@@ -1163,6 +1190,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           : (sceneLabel === "exterior"
             ? 1
             : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+
+        nLog("[BILLING_CHARGE_TELEMETRY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          stage1ASuccess: billingStage1ASuccess,
+          stage1BSuccess: billingStage1BSuccess,
+          stage2Success: billingStage2Success,
+          finalCharge: actualCharge,
+          path: "stage2_only_retry",
+        });
 
         await finalizeReservationFromWorker({
           jobId: payload.jobId,
@@ -1737,6 +1774,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let furnished = true;
     let furnishedSource: "local_empty" | "gemini_confirmed" | "gemini_override" | "gemini_fail_closed" = "gemini_fail_closed";
     let escalated = false;
+    let localResult: "empty" | "not_empty" | "error" = "error";
+    let geminiResult: "skipped_local_empty" | "furnished" | "not_furnished" | "fail_closed" = "fail_closed";
 
     try {
       const stage1ABuffer = await fs.promises.readFile(path1A);
@@ -1748,9 +1787,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       if (localEmpty) {
+        localResult = "empty";
         furnished = false;
         furnishedSource = "local_empty";
+        geminiResult = "skipped_local_empty";
       } else {
+        localResult = "not_empty";
         escalated = true;
         try {
           const ai = getGeminiClient();
@@ -1758,6 +1800,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const geminiHasFurniture = !!(furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean" && furnishedAnalysis.hasFurniture);
           furnished = geminiHasFurniture;
           furnishedSource = geminiHasFurniture ? "gemini_confirmed" : "gemini_override";
+          geminiResult = geminiHasFurniture ? "furnished" : "not_furnished";
           nLog("[FURNISHED_GATE_GEMINI]", {
             jobId: payload.jobId,
             hasFurniture: geminiHasFurniture,
@@ -1768,6 +1811,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // Fail-closed policy for stage2Only safety: if Gemini cannot confirm, treat as furnished.
           furnished = true;
           furnishedSource = "gemini_fail_closed";
+          geminiResult = "fail_closed";
           nLog("[FURNISHED_GATE_GEMINI_FAIL_CLOSED]", {
             jobId: payload.jobId,
             error: geminiErr?.message || String(geminiErr),
@@ -1779,6 +1823,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       furnished = true;
       furnishedSource = "gemini_fail_closed";
       escalated = false;
+      localResult = "error";
+      geminiResult = "fail_closed";
       nLog("[FURNISHED_GATE_LOCAL_FAIL_CLOSED]", {
         jobId: payload.jobId,
         error: localErr?.message || String(localErr),
@@ -1834,6 +1880,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         error: metaErr?.message || String(metaErr),
       });
     }
+
+    nLog("[FURNISHED_GATE_TELEMETRY]", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      localResult,
+      geminiEscalated: escalated,
+      geminiResult,
+      stage1BRan,
+      furnished,
+      source: furnishedSource,
+      isStage2Only,
+    });
   }
   
   if (payload.options.declutter && payload.options.virtualStage && forceLightRoomTypes.has(canonicalRoomType)) {
@@ -2865,6 +2923,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2ValidationBaseline = path1A;
   const stage2PromptMode = stage2Routing.mode;
   const stage2ValidationMode = getStage2ValidationModeFromPromptMode(stage2PromptMode);
+  logMultiZoneFullMode({
+    path: "main",
+    canonicalRoomType: canonicalRoomTypeForStage2,
+    sourceStage: stage2SourceStage,
+    enforced: true,
+  });
   nLog(`[STAGE2_PROMPT_MODE] ${stage2PromptMode} sourceStage=${stage2SourceStage}`);
   nLog("[STAGE2_VALIDATOR_MODE]", {
     jobId: payload.jobId,
@@ -2989,6 +3053,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
             sourceStage: stage2SourceStage,
+            promptMode: stage2PromptMode,
             jobId: payload.jobId,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
@@ -3132,6 +3197,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         baseStage: "1B",
         stage1BMode: "light",
       });
+      logMultiZoneFullMode({
+        path: "light_declutter_backstop",
+        canonicalRoomType: fallbackRouting.canonicalRoomType,
+        sourceStage: fallbackRouting.sourceStage,
+        enforced: true,
+      });
       nLog("[STAGE2_ROUTING_DECISION]", {
         jobId: payload.jobId,
         path: "light_declutter_backstop",
@@ -3183,6 +3254,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
         stagingStyle: stagingStyleFallback,
         sourceStage: fallbackRouting.sourceStage,
+        promptMode: fallbackRouting.mode,
         jobId: payload.jobId,
         validationConfig: { localMode: localValidatorMode },
         stage1APath: stage2ValidationBaseline,
@@ -4345,6 +4417,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     : (sceneLabel === "exterior"
       ? 1
       : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+
+  nLog("[BILLING_CHARGE_TELEMETRY]", {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage1ASuccess: billingStage1ASuccess,
+    stage1BSuccess: billingStage1BSuccess,
+    stage2Success: billingStage2Success,
+    finalCharge: actualCharge,
+    path: "main_pipeline",
+  });
 
   try {
     await finalizeReservationFromWorker({

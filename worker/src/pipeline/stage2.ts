@@ -46,6 +46,7 @@ export async function runStage2(
     stagingRegion?: StagingRegion | null;
     stagingStyle?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    promptMode: "full" | "refresh";
     curtainRailLikely?: boolean;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
@@ -156,7 +157,13 @@ export async function runStage2(
   let layoutContext: LayoutContextResult | null = null;
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
-  const isFullStaging = opts.sourceStage === "1A" && !forceRefreshMode;
+  const resolvedPromptMode: "full" | "refresh" = opts.promptMode
+    ? opts.promptMode
+    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+  if (!opts.promptMode) {
+    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ promptMode missing; using fallback inference from sourceStage (legacy caller)`);
+  }
+  const isFullStaging = resolvedPromptMode === "full";
   const isRefreshStaging = !isFullStaging;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
   
@@ -308,6 +315,7 @@ export async function runStage2(
       : buildStage2PromptNZStyle(normalizedRoomType, scene, { 
           stagingStyle: stagingStyleNorm, 
           sourceStage: opts.sourceStage,
+          mode: resolvedPromptMode,
           layoutContext: layoutContext || undefined 
         });
     // Build a high-priority staging style directive (system-like block)

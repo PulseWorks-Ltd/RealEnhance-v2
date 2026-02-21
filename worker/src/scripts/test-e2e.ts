@@ -132,7 +132,8 @@ async function main(): Promise<void> {
   const stage2Output = await runStage2(stage1Output, "1A", { 
     roomType: "living room",
     sceneType: "interior",
-    profile: createTestProfile()
+    profile: createTestProfile(),
+    promptMode: "full"
   });
   console.log("Stage 2 complete:", stage2Output);
 

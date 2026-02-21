@@ -1292,6 +1292,7 @@ export function buildStage2PromptNZStyle(
   opts?: { 
     stagingStyle?: string | null; 
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    mode?: "full" | "refresh";
     layoutContext?: import("./layoutPlanner").LayoutContextResult;
   }
 ): string {
@@ -1309,6 +1310,7 @@ function buildStage2InteriorPromptNZStyle(
   opts?: { 
     stagingStyle?: string | null; 
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    mode?: "full" | "refresh";
     layoutContext?: import("./layoutPlanner").LayoutContextResult;
   }
 ): string {
@@ -1321,12 +1323,13 @@ function buildStage2InteriorPromptNZStyle(
     ? "multiple_living"
     : normalizedRoom;
   const sourceStage = opts?.sourceStage || "1A";
+  const explicitMode = opts?.mode;
   const roomTypeLockBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
     ? MULTI_ROOM_LOCK
     : SINGLE_ROOM_LOCK;
   
-  // Determine staging mode based on source stage
-  const isFullStaging = sourceStage === "1A";
+  // Determine staging mode from explicit mode when provided, else fallback to source stage
+  const isFullStaging = explicitMode ? explicitMode === "full" : sourceStage === "1A";
   const isRefreshStaging = !isFullStaging;
 
   const multiZoneConstraintBlock = MULTI_ROOM_TYPES.has(canonicalRoomType)
