@@ -18,11 +18,25 @@ export interface FurnitureAnalysis {
   hasFurniture: boolean;
   detectedAnchors: string[];
   confidence: number;
+  hasMovableSeating: boolean;
+  hasCounterClutter: boolean;
+  hasSurfaceClutter: boolean;
+  hasLoosePortableItems: boolean;
+  isStageReady: boolean;
   roomType: 'living_room' | 'bedroom' | 'dining_room' | 'office' | 'kitchen' | 'bathroom' | 'other';
   furnitureItems: FurnitureItem[];
   layoutDescription: string;
   replacementOpportunity: 'high' | 'medium' | 'low' | 'none';
   suggestions: string[];
+}
+
+export type FurnishedGateDecisionType = "furnished_refresh" | "empty_full_stage" | "needs_declutter_light";
+
+export interface FurnishedGateDecision {
+  decision: FurnishedGateDecisionType;
+  reason: string;
+  confidence: number;
+  anchors: string[];
 }
 
 export const CORE_ANCHOR_CLASSES = [
@@ -36,6 +50,106 @@ export const CORE_ANCHOR_CLASSES = [
 ] as const;
 
 const CORE_ANCHOR_SET = new Set<string>(CORE_ANCHOR_CLASSES);
+
+function toBool(value: unknown): boolean {
+  return value === true;
+}
+
+function toRoomType(rawRoomType: unknown): string {
+  return String(rawRoomType || "")
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .trim();
+}
+
+export function resolveFurnishedGateDecision(params: {
+  analysis: FurnitureAnalysis | null;
+  localEmpty: boolean;
+  roomType?: string;
+  minConfidence?: number;
+}): FurnishedGateDecision {
+  const minConfidence = typeof params.minConfidence === "number" ? params.minConfidence : 0.65;
+  const normalizedRoomType = toRoomType(params.roomType);
+  const isKitchenLike = normalizedRoomType === "kitchen" || normalizedRoomType.startsWith("kitchen_");
+
+  if (params.localEmpty) {
+    return {
+      decision: "empty_full_stage",
+      reason: "local_empty_prefilter",
+      confidence: 1,
+      anchors: [],
+    };
+  }
+
+  if (!params.analysis) {
+    return {
+      decision: "needs_declutter_light",
+      reason: "detector_null_fail_safe",
+      confidence: 0,
+      anchors: [],
+    };
+  }
+
+  const anchors = Array.isArray(params.analysis.detectedAnchors)
+    ? params.analysis.detectedAnchors
+      .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
+      .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
+    : [];
+
+  const confidence = typeof params.analysis.confidence === "number"
+    ? Math.max(0, Math.min(1, params.analysis.confidence))
+    : 0;
+
+  const hasCounterClutter = toBool(params.analysis.hasCounterClutter);
+  const hasSurfaceClutter = toBool(params.analysis.hasSurfaceClutter);
+  const hasLoosePortableItems = toBool(params.analysis.hasLoosePortableItems);
+  const hasMovableSeating = toBool(params.analysis.hasMovableSeating);
+  const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems;
+  const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
+
+  if (confidence < minConfidence) {
+    return {
+      decision: "needs_declutter_light",
+      reason: "low_confidence_fail_safe",
+      confidence,
+      anchors,
+    };
+  }
+
+  if (anchors.length > 0 || params.analysis.hasFurniture) {
+    return {
+      decision: "furnished_refresh",
+      reason: "anchor_or_furniture_detected",
+      confidence,
+      anchors,
+    };
+  }
+
+  if ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals) {
+    return {
+      decision: "needs_declutter_light",
+      reason: isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter",
+      confidence,
+      anchors,
+    };
+  }
+
+  if (params.analysis.isStageReady === true) {
+    return {
+      decision: "empty_full_stage",
+      reason: "stage_ready_no_signals",
+      confidence,
+      anchors,
+    };
+  }
+
+  return {
+    decision: "empty_full_stage",
+    reason: "default_empty_no_signals",
+    confidence,
+    anchors,
+  };
+}
 
 export function getAnchorClassSet(analysis: FurnitureAnalysis | null | undefined): Set<string> {
   if (!analysis) return new Set<string>();
@@ -82,12 +196,22 @@ Return JSON only with this exact structure:
 {
   "hasFurniture": boolean,
   "detectedAnchors": string[],
-  "confidence": number
+  "confidence": number,
+  "hasMovableSeating": boolean,
+  "hasCounterClutter": boolean,
+  "hasSurfaceClutter": boolean,
+  "hasLoosePortableItems": boolean,
+  "isStageReady": boolean
 }
 
 Rules:
 - detectedAnchors must only contain canonical values from the allowed anchor list above.
 - confidence must be between 0 and 1.
+- hasMovableSeating=true if movable stools/chairs/seating are clearly visible.
+- hasCounterClutter=true if clutter is clearly visible on kitchen counters/island.
+- hasSurfaceClutter=true if clutter is visible on tables/benches/other surfaces.
+- hasLoosePortableItems=true for visible loose bags/boxes/portable objects.
+- isStageReady=true only when room appears clean and ready for direct staging.
 - If no valid anchor is clearly visible, set detectedAnchors to [] and hasFurniture=false.
 `;
 
@@ -137,6 +261,11 @@ Rules:
         hasFurniture: Boolean(parsed.hasFurniture),
         detectedAnchors: normalizedAnchors,
         confidence: normalizedConfidence,
+        hasMovableSeating: toBool((parsed as any).hasMovableSeating),
+        hasCounterClutter: toBool((parsed as any).hasCounterClutter),
+        hasSurfaceClutter: toBool((parsed as any).hasSurfaceClutter),
+        hasLoosePortableItems: toBool((parsed as any).hasLoosePortableItems),
+        isStageReady: toBool((parsed as any).isStageReady),
         roomType: (parsed.roomType as FurnitureAnalysis["roomType"]) || "other",
         furnitureItems: Array.isArray(parsed.furnitureItems) ? parsed.furnitureItems as FurnitureItem[] : [],
         layoutDescription: typeof parsed.layoutDescription === "string" ? parsed.layoutDescription : "",
@@ -186,6 +315,11 @@ Rules:
           hasFurniture: Boolean(trimmedParsed.hasFurniture),
           detectedAnchors: normalizedAnchors,
           confidence: normalizedConfidence,
+          hasMovableSeating: toBool((trimmedParsed as any).hasMovableSeating),
+          hasCounterClutter: toBool((trimmedParsed as any).hasCounterClutter),
+          hasSurfaceClutter: toBool((trimmedParsed as any).hasSurfaceClutter),
+          hasLoosePortableItems: toBool((trimmedParsed as any).hasLoosePortableItems),
+          isStageReady: toBool((trimmedParsed as any).isStageReady),
           roomType: (trimmedParsed.roomType as FurnitureAnalysis["roomType"]) || "other",
           furnitureItems: Array.isArray(trimmedParsed.furnitureItems) ? trimmedParsed.furnitureItems as FurnitureItem[] : [],
           layoutDescription: typeof trimmedParsed.layoutDescription === "string" ? trimmedParsed.layoutDescription : "",

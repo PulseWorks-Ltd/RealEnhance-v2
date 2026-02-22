@@ -10,6 +10,7 @@
     "prestart": "pnpm run build",
     "start": "NODE_ENV=production node dist/worker/src/worker.js",
     "test:guard:multizone": "tsx src/scripts/assert-multizone-full-mode.ts",
+    "test:furnished-gate": "tsx src/scripts/test-furnished-gate.ts",
     "test:publish": "tsx src/scripts/test-publish.ts"
   },
   "dependencies": {

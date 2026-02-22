@@ -22,7 +22,7 @@ import { preprocessToCanonical } from "./pipeline/preprocess";
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
-import { detectFurniture, getAnchorClassSet } from "./ai/furnitureDetector";
+import { detectFurniture, getAnchorClassSet, resolveFurnishedGateDecision } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
 import {
@@ -1768,14 +1768,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const hasVirtualStage = payload.options.virtualStage;
   const isInteriorScene = sceneLabel === "interior";
   const isStage2Only = hasVirtualStage && (payload.options as any).stage2Only === true;
-  const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene && (isStage2Only || payload.options.declutter);
+  const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene;
   if (shouldResolveFurnishedGate) {
     let stage1BRan = false;
     let furnished = true;
-    let furnishedSource: "local_empty" | "gemini_confirmed" | "gemini_override" | "gemini_fail_closed" = "gemini_fail_closed";
+    let gateDecision: "furnished_refresh" | "empty_full_stage" | "needs_declutter_light" = "needs_declutter_light";
+    let gateReason = "fail_safe_default";
+    let furnishedSource: "local_empty" | "gemini_confirmed" | "gemini_override" | "gemini_fail_closed" | "needs_declutter_light" = "gemini_fail_closed";
     let escalated = false;
     let localResult: "empty" | "not_empty" | "error" = "error";
-    let geminiResult: "skipped_local_empty" | "furnished" | "not_furnished" | "fail_closed" = "fail_closed";
+    let geminiResult: "skipped_local_empty" | "furnished" | "not_furnished" | "needs_declutter_light" | "fail_closed" = "fail_closed";
 
     try {
       const stage1ABuffer = await fs.promises.readFile(path1A);
@@ -1789,6 +1791,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (localEmpty) {
         localResult = "empty";
         furnished = false;
+        gateDecision = "empty_full_stage";
+        gateReason = "local_empty_prefilter";
         furnishedSource = "local_empty";
         geminiResult = "skipped_local_empty";
       } else {
@@ -1797,30 +1801,57 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         try {
           const ai = getGeminiClient();
           const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
-          const geminiHasFurniture = !!(furnishedAnalysis && typeof furnishedAnalysis.hasFurniture === "boolean" && furnishedAnalysis.hasFurniture);
-          furnished = geminiHasFurniture;
-          furnishedSource = geminiHasFurniture ? "gemini_confirmed" : "gemini_override";
-          geminiResult = geminiHasFurniture ? "furnished" : "not_furnished";
+          const gate = resolveFurnishedGateDecision({
+            analysis: furnishedAnalysis,
+            localEmpty: false,
+            roomType: canonicalRoomType,
+          });
+          gateDecision = gate.decision;
+          gateReason = gate.reason;
+          furnished = gate.decision === "furnished_refresh";
+          furnishedSource = gate.decision === "furnished_refresh"
+            ? "gemini_confirmed"
+            : gate.decision === "empty_full_stage"
+              ? "gemini_override"
+              : "needs_declutter_light";
+          geminiResult = gate.decision === "furnished_refresh"
+            ? "furnished"
+            : gate.decision === "empty_full_stage"
+              ? "not_furnished"
+              : "needs_declutter_light";
           nLog("[FURNISHED_GATE_GEMINI]", {
             jobId: payload.jobId,
-            hasFurniture: geminiHasFurniture,
+            hasFurniture: furnishedAnalysis?.hasFurniture ?? false,
             anchors: furnishedAnalysis?.detectedAnchors || [],
             confidence: furnishedAnalysis?.confidence ?? 0,
+            hasMovableSeating: furnishedAnalysis?.hasMovableSeating ?? false,
+            hasCounterClutter: furnishedAnalysis?.hasCounterClutter ?? false,
+            hasSurfaceClutter: furnishedAnalysis?.hasSurfaceClutter ?? false,
+            hasLoosePortableItems: furnishedAnalysis?.hasLoosePortableItems ?? false,
+            isStageReady: furnishedAnalysis?.isStageReady ?? false,
+            gateDecision,
+            gateReason,
           });
         } catch (geminiErr: any) {
-          // Fail-closed policy for stage2Only safety: if Gemini cannot confirm, treat as furnished.
-          furnished = true;
+          // Fail-safe declutter policy: if Gemini detection fails, run light declutter before staging.
+          furnished = false;
+          gateDecision = "needs_declutter_light";
+          gateReason = "gemini_detector_error_fail_safe_light_declutter";
           furnishedSource = "gemini_fail_closed";
           geminiResult = "fail_closed";
           nLog("[FURNISHED_GATE_GEMINI_FAIL_CLOSED]", {
             jobId: payload.jobId,
             error: geminiErr?.message || String(geminiErr),
+            gateDecision,
+            gateReason,
           });
         }
       }
     } catch (localErr: any) {
-      // If local detector fails, treat as non-empty and require 1B for safety.
-      furnished = true;
+      // If local prefilter fails, default to light declutter for safety.
+      furnished = false;
+      gateDecision = "needs_declutter_light";
+      gateReason = "local_prefilter_error_fail_safe_light_declutter";
       furnishedSource = "gemini_fail_closed";
       escalated = false;
       localResult = "error";
@@ -1828,15 +1859,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[FURNISHED_GATE_LOCAL_FAIL_CLOSED]", {
         jobId: payload.jobId,
         error: localErr?.message || String(localErr),
+        gateDecision,
+        gateReason,
       });
     }
 
-    stage1BRan = furnished;
-    (payload.options as any).furnishedState = furnished ? "furnished" : "empty";
-    (payload.options as any).stagingPreference = furnished ? "refresh" : "full";
-    (payload.options as any).stage2Variant = furnished ? "2A" : "2B";
+    stage1BRan = gateDecision !== "empty_full_stage";
+    (payload.options as any).furnishedState = gateDecision === "furnished_refresh"
+      ? "furnished"
+      : gateDecision === "empty_full_stage"
+        ? "empty"
+        : "needs_declutter";
+    (payload.options as any).stagingPreference = gateDecision === "empty_full_stage" ? "full" : "refresh";
+    (payload.options as any).stage2Variant = gateDecision === "empty_full_stage" ? "2B" : "2A";
 
-    if (stage1BRan) {
+    if (gateDecision === "furnished_refresh") {
       payload.options.declutter = true;
       if (!(payload.options as any).declutterMode) {
         (payload.options as any).declutterMode = "stage-ready";
@@ -1845,7 +1882,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[ROUTING_DECISION]", {
         jobId: payload.jobId,
         path: "1A->1B->2(refresh)",
-        reason: furnishedSource,
+        reason: `${furnishedSource}:${gateReason}`,
+      });
+    } else if (gateDecision === "needs_declutter_light") {
+      payload.options.declutter = true;
+      (payload.options as any).declutterMode = "light";
+      declutterMode = "light";
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->1B(light)->2(refresh)",
+        reason: `${furnishedSource}:${gateReason}`,
       });
     } else {
       payload.options.declutter = false;
@@ -1854,7 +1900,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[ROUTING_DECISION]", {
         jobId: payload.jobId,
         path: "1A->2(full)",
-        reason: furnishedSource,
+        reason: `${furnishedSource}:${gateReason}`,
       });
     }
 
@@ -1871,6 +1917,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1BRan,
             hasVirtualStage,
             isStage2Only,
+            gateDecision,
+            gateReason,
           },
         },
       });
@@ -1890,6 +1938,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage1BRan,
       furnished,
       source: furnishedSource,
+      gateDecision,
+      gateReason,
       isStage2Only,
     });
   }
