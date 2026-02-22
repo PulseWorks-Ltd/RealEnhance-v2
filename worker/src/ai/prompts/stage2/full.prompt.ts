@@ -38,6 +38,24 @@ If any staging action conflicts with structure:
 → Preserve structure.
 `;
 
+const STRUCTURAL_IDENTITY_LOCK_BLOCK = `
+────────────────────────────────
+STRUCTURAL IDENTITY LOCK — ZERO ADDITIONS
+────────────────────────────────
+You must NOT add, remove, replace, resize, restyle, or reposition any of the following:
+• Ceiling-mounted lighting fixtures (pendants, downlights, fans, surface mounts)
+• Plumbing fixtures (faucets, taps, mixers, sink hardware)
+• Fixed appliances
+• Wall-mounted HVAC units
+• Curtain rails, rods, tracks, blind housings
+Existing fixture count, type, and position must remain identical.
+Do NOT introduce new functional zones beyond the user-selected room type.
+If the selected room type is "kitchen + living", do NOT add dining.
+If the selected room type is "living", do NOT add office or dining.
+Stage only the explicitly selected room type(s).
+Do not expand room function.
+`;
+
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
   const room = roomType || "room";
 
@@ -50,6 +68,8 @@ Synthesize a complete, realistic layout from scratch for the selected room type.
 ${STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_HARDENING_LAYER_V2}
+
+${STRUCTURAL_IDENTITY_LOCK_BLOCK}
 
 ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
