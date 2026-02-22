@@ -343,6 +343,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
 
   let requestedStages: any | undefined;
+  let preflightCancelIntent = false;
+  let preflightCancelSource: "job_record" | "redis" | "job_record+redis" | null = null;
 
   let stagingStyleNorm: string | undefined;
 
@@ -368,6 +370,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     requestedStages = merged.requestedStages;
 
+    const liveStatus = String((liveJob as any)?.status || "").toLowerCase();
+    const hasJobCancelIntent =
+      liveStatus === "cancelling" ||
+      liveStatus === "cancelled" ||
+      (liveJob as any)?.cancelRequested === true ||
+      String((liveJob as any)?.errorMessage || "").toLowerCase() === "cancel_requested";
+    if (hasJobCancelIntent) {
+      preflightCancelIntent = true;
+      preflightCancelSource = "job_record";
+    }
+
     const missingFields: string[] = [];
     if (!savedMeta?.userId && !existingMeta?.userId) missingFields.push("userId");
     if (!savedMeta?.imageId && !existingMeta?.imageId) missingFields.push("imageId");
@@ -386,6 +399,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (!requestedStages) {
     requestedStages = buildRequestedStages();
+  }
+
+  let hasRedisCancelFlag = false;
+  try {
+    hasRedisCancelFlag = await isCancelled(payload.jobId);
+  } catch {
+    hasRedisCancelFlag = false;
+  }
+  if (hasRedisCancelFlag) {
+    preflightCancelIntent = true;
+    preflightCancelSource = preflightCancelSource === "job_record" ? "job_record+redis" : "redis";
+  }
+  if (preflightCancelIntent) {
+    nLog("[CANCEL_PREFLIGHT_EXIT]", {
+      jobId: payload.jobId,
+      source: preflightCancelSource,
+    });
+    await safeWriteJobStatus(
+      payload.jobId,
+      { status: "cancelled", errorMessage: "cancelled" },
+      "cancel_preflight"
+    );
+    return;
   }
 
   const stopIfCancelled = async (reason: string): Promise<boolean> => {
