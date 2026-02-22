@@ -388,6 +388,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     requestedStages = buildRequestedStages();
   }
 
+  const stopIfCancelled = async (reason: string): Promise<boolean> => {
+    if (!(await isCancelled(payload.jobId))) return false;
+    nLog("[CANCEL_CHECKPOINT_HIT]", { jobId: payload.jobId, reason });
+    await safeWriteJobStatus(
+      payload.jobId,
+      { status: "cancelled", errorMessage: "cancelled" },
+      `cancel_${reason}`
+    );
+    return true;
+  };
+
   let stage12Success = false;
   let stage2Success = false;
   let stage2PublishSuccess = false;
@@ -891,6 +902,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     try {
       await ensureStage2AttemptId();
+      if (await stopIfCancelled("stage2_only_start")) return;
       const timings: Record<string, number> = {};
       const t0 = Date.now();
       const t2 = Date.now();
@@ -915,6 +927,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
       nLog(`[STAGE2_BASELINE] using=${stage2OnlyValidationBaseline === basePath ? "Stage1B" : "Stage1A"}`);
+      if (await stopIfCancelled("stage2_only_pre_stage2")) return;
 
       // Run Stage-2 only (using 1B as base)
       stage2SummaryEligible = true;
@@ -995,6 +1008,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
       });
       const path2 = stage2Result.outputPath;
+      if (await stopIfCancelled("stage2_only_post_stage2")) return;
       recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
       const stage2ValidationPassed = stage2Result.validationRisk !== true;
 
@@ -1106,6 +1120,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Publish Stage-2 result
       if (!(await ensureStage2AttemptOwner("stage2_only_publish"))) return;
+      if (await stopIfCancelled("stage2_only_pre_publish")) return;
       const pub2 = await publishWithOptionalBlackEdgeGuard(path2, "stage2-only");
       const pub2Url = pub2.url;
       if (pub2Url) {
@@ -2062,6 +2077,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BDeclutterResult = undefined;
 
     while (true) {
+      if (await stopIfCancelled("stage1b_retry_loop")) return;
       if (Date.now() - t1B > MAX_STAGE_RUNTIME_MS) {
         console.log(`[timeout] stage=1B exceeded_ms=${Date.now() - t1B} jobId=${payload.jobId}`);
         // ═══ FINAL STATUS GUARD ═══
@@ -2095,6 +2111,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       logIfNotFocusMode(`[stage1B] Attempt ${stage1BAttempts}/${useLightFallback ? 1 : maxAttempts} mode=${currentMode}`);
       try {
         const { output, verdict, needsConfirm, advisoryReasons, localIssues } = await runStage1BWithValidation(currentMode, stage1BAttempts);
+        if (await stopIfCancelled("stage1b_post_attempt")) return;
         if (output === path1A) {
           nLog("[STAGE1B_OUTPUT_MATCHES_1A]", {
             jobId: payload.jobId,
@@ -2369,6 +2386,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
         break;
       } catch (err: any) {
+        if (await stopIfCancelled("stage1b_attempt_error")) return;
         lastError = err?.message || String(err);
         logIfNotFocusMode(`[stage1B] attempt ${stage1BAttempts} failed: ${lastError}`);
         const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
@@ -3412,6 +3430,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (payload.options.virtualStage) {
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
+      if (await stopIfCancelled("stage2_validation_loop")) return;
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
         console.log(`[timeout] stage=2_validation_loop exceeded_ms=${Date.now() - t2} jobId=${payload.jobId}`);
         stage2Blocked = true;
@@ -3429,6 +3448,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (attempt > 1) {
+        if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         const retryStage2Path = await enhanceWithGemini(stage2InputResolved, {
           ...payload.options,
@@ -3494,6 +3514,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       const validationElapsed = Date.now() - validationStartTime;
+      if (await stopIfCancelled("stage2_post_validation")) return;
       nLog(`[worker] Unified validation completed in ${validationElapsed}ms`);
       nLog(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
 
