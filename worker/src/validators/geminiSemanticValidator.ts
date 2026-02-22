@@ -434,6 +434,214 @@ Output schema (unchanged):
 Scene: ${(input.sceneType || "interior").toUpperCase()}`;
 }
 
+const STAGE1B_HARDENED_STRUCTURAL_PROMPT = `🔐 STAGE 1B — STRUCTURAL ENVELOPE LOCK VALIDATOR
+You are a Stage 1B Structural Integrity Auditor for NZ real estate imagery.
+
+Compare BEFORE and AFTER images.
+
+Return JSON only.
+
+
+─────────────────────────────
+STAGE 1B CONTEXT
+─────────────────────────────
+BEFORE = original furnished room.
+AFTER = decluttered output.
+
+Stage 1B is STRICTLY SUBTRACTIVE.
+
+Only clutter and movable furniture may be removed.
+
+The architectural shell MUST remain visually identical.
+
+
+─────────────────────────────
+STRUCTURE DEFINITION (ONLY WHAT MATTERS)
+─────────────────────────────
+Structure consists of:
+
+• walls and wall positions
+• wall angles and corner locations
+• ceilings and ceiling height
+• floors and floor boundaries
+• windows and doors (openings)
+• built-in cabinetry and architectural millwork
+• plumbing fixtures
+• fixed lighting
+• HVAC units and vents
+• camera viewpoint and perspective
+
+
+─────────────────────────────
+ZERO-TOLERANCE ENVELOPE LOCK
+─────────────────────────────
+The architectural envelope must appear visually identical.
+
+Hard fail if ANY of the following differ:
+
+• room width or depth appears changed
+• wall lengths appear altered
+• corner positions shift
+• ceiling geometry differs
+• floor boundary or depth perspective differs
+• window-to-wall ratio differs
+• door-to-wall ratio differs
+• visible wall spacing differs
+• camera viewpoint shifts
+• vanishing lines differ
+• field of view differs
+• room appears wider or narrower
+• perspective compression differs
+
+If envelope similarity appears less than ~95% visually identical:
+→ hardFail true
+
+
+─────────────────────────────
+OPENINGS LOCK (STRICT)
+─────────────────────────────
+All windows and doors must:
+
+• exist in identical positions
+• maintain identical proportions
+• maintain identical framing
+• maintain identical visible scale relative to wall
+
+Hard fail if:
+
+• any opening is resized
+• any opening is repositioned
+• framing thickness changes
+• new opening appears
+• opening geometry is extended or completed beyond visible evidence
+
+
+─────────────────────────────
+ABSOLUTE ZERO-TOUCH ELEMENTS
+─────────────────────────────
+The following MUST NOT be altered in any way:
+
+• walls, ceilings, floors, baseboards
+• windows and doors (including frames)
+• built-in cabinetry
+• kitchen islands and counters
+• plumbing fixtures
+• fixed lighting
+• HVAC units
+• curtain rails, rods, tracks, blind housings
+• exterior view through windows
+
+Addition OR removal OR resizing → hardFail true
+
+
+─────────────────────────────
+CAMERA LOCK (DETERMINISTIC)
+─────────────────────────────
+Camera must remain fixed.
+
+Hard fail if:
+
+• vanishing point shifts
+• perspective depth changes
+• relative wall angles change
+• framing crops differently
+• field of view widens or narrows
+
+
+─────────────────────────────
+NUMERIC SIGNAL ENFORCEMENT
+─────────────────────────────
+If structural IoU, edge alignment, or spatial similarity appear reduced,
+err toward hardFail true.
+
+Do NOT downgrade based on confidence.
+
+
+─────────────────────────────
+OUTPUT
+─────────────────────────────
+If ANY structural drift detected:
+
+{
+  "hardFail": true,
+  "category": "structure",
+  "violationType": "wall_change" | "opening_change" | "camera_shift",
+  "reasons": [string],
+  "confidence": number
+}
+
+If structure appears identical:
+
+{
+  "hardFail": false,
+  "category": "structure",
+  "violationType": "other",
+  "reasons": [],
+  "confidence": number
+}`;
+
+export async function validateStage1BStructure(beforeImage: string, afterImage: string): Promise<GeminiSemanticVerdict> {
+  const ai = getGeminiClient();
+  const before = toBase64(beforeImage).data;
+  const after = toBase64(afterImage).data;
+  const model = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
+
+  const contents = [
+    { role: "user", parts: [{ text: STAGE1B_HARDENED_STRUCTURAL_PROMPT }] },
+    {
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "image/webp", data: before } },
+        { inlineData: { mimeType: "image/webp", data: after } },
+      ],
+    },
+  ];
+
+  try {
+    const response = await (ai as any).models.generateContent({
+      model,
+      contents,
+      generationConfig: {
+        temperature: 0,
+        topP: 0.1,
+        maxOutputTokens: 384,
+      },
+    } as any);
+
+    const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
+    const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
+    const parsed = parseGeminiSemanticText(text);
+    const category = parsed.category === "structure" ? "structure" : "unknown";
+    const hardFail = parsed.hardFail === true && category === "structure";
+
+    return {
+      hardFail,
+      category,
+      reasons: parsed.reasons || [],
+      confidence: Number.isFinite(parsed.confidence) ? parsed.confidence : 0,
+      violationType: hardFail
+        ? ((parsed.violationType === "wall_change" || parsed.violationType === "opening_change" || parsed.violationType === "camera_shift")
+          ? parsed.violationType
+          : "wall_change")
+        : "other",
+      builtInDetected: false,
+      structuralAnchorCount: 0,
+      rawText: text,
+    };
+  } catch (err: any) {
+    return {
+      hardFail: true,
+      category: "structure",
+      reasons: [`stage1b_structure_validator_error: ${err?.message || String(err)}`],
+      confidence: 0,
+      violationType: "other",
+      builtInDetected: false,
+      structuralAnchorCount: 0,
+      rawText: err?.message || String(err),
+    };
+  }
+}
+
 const STAGE1B_LIGHT_DECLUTTER_CONTEXT_BLOCK = `
 ─────────────────────────────
 STAGE CONTEXT — LIGHT DECLUTTER

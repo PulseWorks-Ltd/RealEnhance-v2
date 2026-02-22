@@ -51,6 +51,7 @@ import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard"
 import { checkStageOutput } from "./utils/stageOutputGuard";
 import { runStructuralCheck } from "./validators/structureValidatorClient";
 import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
+import { validateStage1BStructure } from "./validators/geminiSemanticValidator";
 import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
@@ -64,6 +65,7 @@ const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
 const STAGE1B_DECLUTTER_EFFECTIVENESS_ENABLED = String(process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_ENABLED ?? "true").toLowerCase() !== "false";
+const STAGE1B_FURNITURE_BLOCKING_ENABLED = String(process.env.STAGE1B_FURNITURE_BLOCKING_ENABLED ?? "false").toLowerCase() === "true";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import {
@@ -2070,14 +2072,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         throw new Error("missing_stage_output");
       }
 
+      const structureVerdict = await validateStage1BStructure(path1A, output);
+      if (structureVerdict.hardFail) {
+        const structureReason = structureVerdict.reasons?.length
+          ? structureVerdict.reasons.join("; ")
+          : "stage1b_structure_drift";
+        nLog("[STAGE1B_STRUCTURE_HARDFAIL]", {
+          jobId: payload.jobId,
+          attempt: attemptIndex,
+          confidence: structureVerdict.confidence,
+          violationType: structureVerdict.violationType,
+          reasons: structureVerdict.reasons,
+        });
+        throw new Error(`stage1b_structure_hardfail:${structureReason}`);
+      }
+
       const verdict = await runUnifiedValidation({
         originalPath: path1A,
         enhancedPath: output,
         stage: "1B",
         sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
         roomType: payload.options.roomType,
-        mode: VALIDATION_BLOCKING_ENABLED ? "enforce" : "log",
-        geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
+        mode: "log",
+        geminiPolicy: "on_local_fail",
         jobId: payload.jobId,
         stage1APath: path1A,
         stage1BValidationMode: mode === "stage-ready" ? "STRUCTURED_RETAIN" : "LIGHT_DECLUTTER",
@@ -2092,13 +2109,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ? verdict.warnings
           : [];
       const localIssues = anyFailed || advisoryReasons.length > 0 || verdict.hardFail;
-      const needsConfirm = GEMINI_CONFIRMATION_ENABLED ? localIssues : false;
+      const needsConfirm = false;
       if (localIssues) {
         const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "Stage 1B structural validation flagged issues";
         logIfNotFocusMode(`[stage1B][attempt=${attempt}] validation advisory: ${msg}`);
       }
 
-      return { output, verdict, needsConfirm, advisoryReasons, localIssues };
+      return { output, verdict, needsConfirm, advisoryReasons, localIssues: false };
     };
 
     let stage1BAttempts = 0;
@@ -2109,6 +2126,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stage1BLocalReasons: string[] = [];
     let stage1BLocalIssues = false;
     let stage1BLastVerdict: UnifiedValidationResult | undefined;
+    let stage1BStructureFailCount = 0;
     stage1BDeclutterReasons = [];
     stage1BDeclutterResult = undefined;
 
@@ -2242,7 +2260,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           return;
         }
-        if (localIssues && VALIDATION_BLOCKING_ENABLED) {
+        if (localIssues && STAGE1B_FURNITURE_BLOCKING_ENABLED) {
           const msg = advisoryReasons.length ? advisoryReasons.join("; ") : "stage1B validation blocked";
           logIfNotFocusMode(`[stage1B] local block failure: ${msg}`);
           const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
@@ -2338,7 +2356,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             blockReasons: declutterResult.blockReasons,
           });
 
-          if (declutterResult.blocked && VALIDATION_BLOCKING_ENABLED) {
+          if (declutterResult.blocked && STAGE1B_FURNITURE_BLOCKING_ENABLED) {
             const declutterReason = declutterResult.blockReasons.join("; ") || "stage1B declutter effectiveness blocked";
             const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
             logIfNotFocusMode(`[stage1B] declutter effectiveness block failure: ${declutterReason}`);
@@ -2424,6 +2442,58 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (err: any) {
         if (await stopIfCancelled("stage1b_attempt_error")) return;
         lastError = err?.message || String(err);
+        const isStructureHardFail = (lastError || "").startsWith("stage1b_structure_hardfail:");
+        if (isStructureHardFail) {
+          stage1BStructureFailCount += 1;
+          if (stage1BStructureFailCount < 2) {
+            nLog("[RETRY_STATUS_WRITE]", {
+              jobId: payload.jobId,
+              stage: "1B",
+              reason: "structure_hardfail",
+              attempt: stage1BAttempts + 1,
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "processing",
+                retryingStage: "1B",
+                retryAttempt: stage1BAttempts + 1,
+                message: "Retrying Stage 1B after structural drift detection (attempt 2/2)...",
+                retryMeta: buildRetryMeta(payload.jobId, {
+                  attempt: stage1BAttempts + 1,
+                  reason: "stage1b_structure_hardfail",
+                  stage: "1B",
+                }),
+              },
+              "stage1b_structure_retry"
+            );
+            continue;
+          }
+
+          const latestJob = await getJob(payload.jobId);
+          if (isTerminalStatus(latestJob?.status)) {
+            nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B structure-exhausted fallback`, {
+              jobId: payload.jobId,
+              stage: "1B",
+              status: latestJob?.status
+            });
+            return;
+          }
+
+          await completePartialJob({
+            jobId: payload.jobId,
+            triggerStage: "1B",
+            finalStage: "1A",
+            finalPath: path1A,
+            pub1AUrl,
+            pub1BUrl,
+            sceneMeta: { ...sceneMeta, stage1BAttempts, stage1BLocalReasons, structureHardFail: true },
+            userMessage: "We enhanced your image but could not safely declutter it.",
+            reason: "stage1b_structure_hardfail_exhausted",
+            stageOutputs: { "1A": path1A },
+          });
+          return;
+        }
         logIfNotFocusMode(`[stage1B] attempt ${stage1BAttempts} failed: ${lastError}`);
         const exhausted = useLightFallback || stage1BAttempts >= maxAttempts;
         if (exhausted && !useLightFallback && declutterMode === "stage-ready") {
