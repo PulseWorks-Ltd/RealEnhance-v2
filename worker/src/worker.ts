@@ -2711,9 +2711,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               return;
             }
 
-            // Retry passed — adopt the retried output and continue pipeline
-            path1B = retryPath1B;
-            commitStageOutput("1B", retryPath1B);
+            // Retry passed — stage1BGeminiConfirmationEnabled is disabled;
+            // do not mutate adopted Stage1B output here.
             geminiRetryPassed = true;
             nLog(`[GEMINI_RETRY] stage=1B attempt=${geminiRetries} PASSED ✅ — continuing pipeline`);
             break;
