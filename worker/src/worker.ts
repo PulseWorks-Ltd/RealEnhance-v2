@@ -90,6 +90,15 @@ type Stage1BClutterHeuristicResult = {
   level: "low" | "medium" | "high";
 };
 
+type Stage1BWallDeltaResult = {
+  hardFail: boolean;
+  violationType?: "wall_plane_expansion";
+  baselineArea: number;
+  candidateArea: number;
+  deltaRatio: number;
+  newWallRatio: number;
+};
+
 function getStage1BGeminiConfig(attempt: number) {
   const baseTemp = 33;
   const baseTopP = 0.70;
@@ -143,6 +152,364 @@ async function estimateClutterHeuristic(imagePath: string): Promise<Stage1BClutt
     roundedScore >= 0.60 ? "high" : roundedScore >= 0.35 ? "medium" : "low";
 
   return { score: roundedScore, level };
+}
+
+function computeLaplacianMap(luma: Float32Array, width: number, height: number): Float32Array {
+  const out = new Float32Array(width * height);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      const center = luma[index];
+      const left = luma[index - 1];
+      const right = luma[index + 1];
+      const up = luma[index - width];
+      const down = luma[index + width];
+      out[index] = Math.abs(4 * center - left - right - up - down);
+    }
+  }
+  return out;
+}
+
+function runKMeansLab(
+  lab: Float32Array,
+  width: number,
+  height: number,
+  clusterCount: number,
+  maxIterations = 8
+): Uint8Array {
+  const pixelCount = width * height;
+  const labels = new Uint8Array(pixelCount);
+  const centers = new Float32Array(clusterCount * 3);
+
+  for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex += 1) {
+    const sampleIndex = Math.min(
+      pixelCount - 1,
+      Math.floor(((clusterIndex + 1) / (clusterCount + 1)) * pixelCount)
+    );
+    const pixelOffset = sampleIndex * 3;
+    const centerOffset = clusterIndex * 3;
+    centers[centerOffset] = lab[pixelOffset];
+    centers[centerOffset + 1] = lab[pixelOffset + 1];
+    centers[centerOffset + 2] = lab[pixelOffset + 2];
+  }
+
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    const sums = new Float64Array(clusterCount * 3);
+    const counts = new Uint32Array(clusterCount);
+
+    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+      const pixelOffset = pixelIndex * 3;
+      const l = lab[pixelOffset];
+      const a = lab[pixelOffset + 1];
+      const b = lab[pixelOffset + 2];
+
+      let bestCluster = 0;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex += 1) {
+        const centerOffset = clusterIndex * 3;
+        const dl = l - centers[centerOffset];
+        const da = a - centers[centerOffset + 1];
+        const db = b - centers[centerOffset + 2];
+        const distance = dl * dl + da * da + db * db;
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestCluster = clusterIndex;
+        }
+      }
+
+      labels[pixelIndex] = bestCluster;
+      counts[bestCluster] += 1;
+      const sumOffset = bestCluster * 3;
+      sums[sumOffset] += l;
+      sums[sumOffset + 1] += a;
+      sums[sumOffset + 2] += b;
+    }
+
+    for (let clusterIndex = 0; clusterIndex < clusterCount; clusterIndex += 1) {
+      const count = counts[clusterIndex];
+      if (count === 0) {
+        continue;
+      }
+      const centerOffset = clusterIndex * 3;
+      const sumOffset = clusterIndex * 3;
+      centers[centerOffset] = sums[sumOffset] / count;
+      centers[centerOffset + 1] = sums[sumOffset + 1] / count;
+      centers[centerOffset + 2] = sums[sumOffset + 2] / count;
+    }
+  }
+
+  return labels;
+}
+
+function countMask(mask: Uint8Array): number {
+  let count = 0;
+  for (let index = 0; index < mask.length; index += 1) {
+    if (mask[index]) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function filterMaskComponents(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  minAreaRatio: number,
+  requireVerticalDominance: boolean
+): Uint8Array {
+  const filtered = new Uint8Array(mask.length);
+  const visited = new Uint8Array(mask.length);
+  const minArea = Math.max(1, Math.floor(width * height * minAreaRatio));
+
+  for (let startIndex = 0; startIndex < mask.length; startIndex += 1) {
+    if (!mask[startIndex] || visited[startIndex]) {
+      continue;
+    }
+
+    const queue: number[] = [startIndex];
+    const component: number[] = [];
+    visited[startIndex] = 1;
+    let minX = width;
+    let maxX = 0;
+    let minY = height;
+    let maxY = 0;
+
+    while (queue.length > 0) {
+      const index = queue.pop()!;
+      component.push(index);
+      const x = index % width;
+      const y = Math.floor(index / width);
+
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+
+      const left = x > 0 ? index - 1 : -1;
+      const right = x + 1 < width ? index + 1 : -1;
+      const up = y > 0 ? index - width : -1;
+      const down = y + 1 < height ? index + width : -1;
+
+      if (left >= 0 && mask[left] && !visited[left]) {
+        visited[left] = 1;
+        queue.push(left);
+      }
+      if (right >= 0 && mask[right] && !visited[right]) {
+        visited[right] = 1;
+        queue.push(right);
+      }
+      if (up >= 0 && mask[up] && !visited[up]) {
+        visited[up] = 1;
+        queue.push(up);
+      }
+      if (down >= 0 && mask[down] && !visited[down]) {
+        visited[down] = 1;
+        queue.push(down);
+      }
+    }
+
+    const componentArea = component.length;
+    const componentWidth = Math.max(1, maxX - minX + 1);
+    const componentHeight = Math.max(1, maxY - minY + 1);
+    const verticalDominance = componentHeight / componentWidth;
+    const keep =
+      componentArea >= minArea &&
+      (!requireVerticalDominance || verticalDominance > 1.05);
+
+    if (keep) {
+      for (const index of component) {
+        filtered[index] = 1;
+      }
+    }
+  }
+
+  return filtered;
+}
+
+function buildWallMaskFromLab(
+  lab: Float32Array,
+  luma: Float32Array,
+  width: number,
+  height: number,
+  clusterCount = 5
+): Uint8Array {
+  const labels = runKMeansLab(lab, width, height, clusterCount);
+  const laplacian = computeLaplacianMap(luma, width, height);
+  const pixelCount = width * height;
+
+  const stats = new Array(clusterCount).fill(0).map(() => ({
+    area: 0,
+    sumLap: 0,
+    sumLapSq: 0,
+    minX: width,
+    maxX: 0,
+    minY: height,
+    maxY: 0,
+  }));
+
+  let globalLapSum = 0;
+  let globalLapSq = 0;
+
+  for (let index = 0; index < pixelCount; index += 1) {
+    const cluster = labels[index];
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const lap = laplacian[index];
+
+    const stat = stats[cluster];
+    stat.area += 1;
+    stat.sumLap += lap;
+    stat.sumLapSq += lap * lap;
+    if (x < stat.minX) stat.minX = x;
+    if (x > stat.maxX) stat.maxX = x;
+    if (y < stat.minY) stat.minY = y;
+    if (y > stat.maxY) stat.maxY = y;
+
+    globalLapSum += lap;
+    globalLapSq += lap * lap;
+  }
+
+  const globalLapMean = globalLapSum / Math.max(1, pixelCount);
+  const globalLapVariance =
+    globalLapSq / Math.max(1, pixelCount) - globalLapMean * globalLapMean;
+  const maxClusterLapVariance = Math.max(120, globalLapVariance * 0.65);
+
+  const eligibleClusters = new Set<number>();
+  for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+    const stat = stats[cluster];
+    if (stat.area <= 0) {
+      continue;
+    }
+
+    const areaRatio = stat.area / pixelCount;
+    if (areaRatio <= 0.15) {
+      continue;
+    }
+
+    const meanLap = stat.sumLap / stat.area;
+    const varianceLap = stat.sumLapSq / stat.area - meanLap * meanLap;
+    const bboxWidth = Math.max(1, stat.maxX - stat.minX + 1);
+    const bboxHeight = Math.max(1, stat.maxY - stat.minY + 1);
+    const verticalDominance = bboxHeight / bboxWidth;
+
+    if (varianceLap <= maxClusterLapVariance && verticalDominance > 1.05) {
+      eligibleClusters.add(cluster);
+    }
+  }
+
+  const rawMask = new Uint8Array(pixelCount);
+  for (let index = 0; index < pixelCount; index += 1) {
+    if (eligibleClusters.has(labels[index])) {
+      rawMask[index] = 1;
+    }
+  }
+
+  return filterMaskComponents(rawMask, width, height, 0.01, true);
+}
+
+async function loadLabFeatureMap(
+  imagePath: string,
+  width: number,
+  height: number
+): Promise<{ lab: Float32Array; luma: Float32Array; width: number; height: number }> {
+  const { data, info } = await sharp(imagePath)
+    .rotate()
+    .resize(width, height, { fit: "fill" })
+    .removeAlpha()
+    .toColorspace("lab")
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const channels = info.channels || 3;
+  const pixelCount = info.width * info.height;
+  const lab = new Float32Array(pixelCount * 3);
+  const luma = new Float32Array(pixelCount);
+
+  for (let index = 0; index < pixelCount; index += 1) {
+    const srcOffset = index * channels;
+    const dstOffset = index * 3;
+    const l = data[srcOffset] ?? 0;
+    const a = data[srcOffset + 1] ?? 0;
+    const b = data[srcOffset + 2] ?? 0;
+    lab[dstOffset] = l;
+    lab[dstOffset + 1] = a;
+    lab[dstOffset + 2] = b;
+    luma[index] = l;
+  }
+
+  return { lab, luma, width: info.width, height: info.height };
+}
+
+async function detectWallPlaneExpansion(
+  baselinePath: string,
+  candidatePath: string
+): Promise<Stage1BWallDeltaResult> {
+  const baselineMeta = await sharp(baselinePath).metadata();
+  const baselineWidth = baselineMeta.width || 0;
+  const baselineHeight = baselineMeta.height || 0;
+  if (!baselineWidth || !baselineHeight) {
+    return {
+      hardFail: false,
+      baselineArea: 0,
+      candidateArea: 0,
+      deltaRatio: 0,
+      newWallRatio: 0,
+    };
+  }
+
+  const maxDimension = 640;
+  const scale = Math.min(1, maxDimension / Math.max(baselineWidth, baselineHeight));
+  const analysisWidth = Math.max(96, Math.round(baselineWidth * scale));
+  const analysisHeight = Math.max(96, Math.round(baselineHeight * scale));
+
+  const baseline = await loadLabFeatureMap(baselinePath, analysisWidth, analysisHeight);
+  const candidate = await loadLabFeatureMap(candidatePath, analysisWidth, analysisHeight);
+
+  const baselineMask = buildWallMaskFromLab(
+    baseline.lab,
+    baseline.luma,
+    baseline.width,
+    baseline.height,
+    5
+  );
+  const candidateMask = buildWallMaskFromLab(
+    candidate.lab,
+    candidate.luma,
+    candidate.width,
+    candidate.height,
+    5
+  );
+
+  const baselineArea = countMask(baselineMask);
+  const candidateArea = countMask(candidateMask);
+
+  const newWallMask = new Uint8Array(candidateMask.length);
+  for (let index = 0; index < candidateMask.length; index += 1) {
+    newWallMask[index] = candidateMask[index] && !baselineMask[index] ? 1 : 0;
+  }
+
+  const filteredNewWallMask = filterMaskComponents(
+    newWallMask,
+    analysisWidth,
+    analysisHeight,
+    0.002,
+    false
+  );
+  const newWallArea = countMask(filteredNewWallMask);
+  const baselineSafeArea = Math.max(1, baselineArea);
+  const deltaRatio = (candidateArea - baselineArea) / baselineSafeArea;
+  const newWallRatio = newWallArea / baselineSafeArea;
+  const hardFail = newWallRatio > 0.03;
+
+  return {
+    hardFail,
+    violationType: hardFail ? "wall_plane_expansion" : undefined,
+    baselineArea,
+    candidateArea,
+    deltaRatio,
+    newWallRatio,
+  };
 }
 
 async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: string) {
@@ -2165,7 +2532,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
       );
 
-      if (structureResult.hardFail) {
+      const wallDelta = await detectWallPlaneExpansion(path1A, candidate);
+      nLog(
+        `[STAGE1B_WALL_DELTA] baselineArea=${wallDelta.baselineArea} candidateArea=${wallDelta.candidateArea} deltaRatio=${wallDelta.deltaRatio.toFixed(4)} newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`
+      );
+
+      const effectiveHardFail = structureResult.hardFail || wallDelta.hardFail;
+      const effectiveViolationType = wallDelta.hardFail
+        ? wallDelta.violationType
+        : structureResult.violationType;
+      const effectiveReasons = [
+        ...((Array.isArray(structureResult.reasons) ? structureResult.reasons : []) as string[]),
+        ...(wallDelta.hardFail
+          ? [
+              `wall_plane_expansion:newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`,
+              `wall_plane_expansion:deltaRatio=${wallDelta.deltaRatio.toFixed(4)}`,
+            ]
+          : []),
+      ];
+
+      if (wallDelta.hardFail) {
+        nLog(`[STAGE1B_STRUCTURE_RESULT] hardFail=true violationType=wall_plane_expansion`);
+      }
+
+      if (effectiveHardFail) {
         attempt += 1;
         if (attempt >= maxAttempts) {
           nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
@@ -2190,8 +2580,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               ...sceneMeta,
               stage1BAttempts: attempt,
               structureHardFail: true,
-              structureViolationType: structureResult.violationType,
-              structureReasons: structureResult.reasons,
+              structureViolationType: effectiveViolationType,
+              structureReasons: effectiveReasons,
             },
             userMessage: "We enhanced your image but could not safely declutter it.",
             reason: "stage1b_structure_hardfail_exhausted",

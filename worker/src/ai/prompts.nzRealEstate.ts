@@ -804,6 +804,21 @@ Return ONLY the enhanced image.`.trim();
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
   // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.
+  const STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT = `
+🔐 Architectural Immutability Constraint
+CRITICAL STRUCTURAL RULES:
+
+- You must NOT modify walls, ceilings, floors, or architectural planes.
+- You must NOT extend, shrink, reshape, or repaint walls.
+- You must NOT create new wall surfaces.
+- You must NOT fill gaps with wall material.
+- You must NOT alter room proportions.
+- You must NOT change camera position, perspective, or field of view.
+- You must NOT add furniture or enlarge anchor furniture.
+- You may only REMOVE clutter or small movable items.
+- If unsure, leave the area unchanged.
+`;
+
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return `You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
@@ -877,6 +892,8 @@ DO NOT TOUCH:
 - Windows, doors, frames
 - Trees, shrubs, landscaping, and garden beds
 - Exterior views and background scenery
+
+${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 
 Preserve surface textures and shadows.`.trim();
     }
@@ -1187,6 +1204,8 @@ QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
 When reconstructing walls, prefer clean blank wall over adding any wall hardware.
 
+${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
+
 OUTPUT:
 Return only the empty room image.`.trim();
   }
@@ -1353,6 +1372,8 @@ Return only the empty room image.`.trim();
     ABSOLUTE PROHIBITIONS:
     No staging, no redesign, no recolor, no geometry change.
 
+    ${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
+
     OUTPUT:
     Return only processed image.`.trim();
     }
@@ -1490,6 +1511,8 @@ This is presentation tidying only — not staging or redesign.
 
 ABSOLUTE PROHIBITIONS:
 No staging, no redesign, no recolor, no geometry change.
+
+${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 
 OUTPUT:
 Return only processed image.`.trim();

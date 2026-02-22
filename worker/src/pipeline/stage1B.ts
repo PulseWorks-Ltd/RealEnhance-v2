@@ -122,6 +122,26 @@ Do not add blinds.
 `;
     }
 
+  promptOverride += `
+
+CRITICAL CAMERA AND STRUCTURE RULES:
+
+- You must preserve the EXACT original camera position, angle, framing, and field of view.
+- Do NOT crop, zoom, rotate, shift perspective, or alter lens characteristics.
+- The output must align pixel-for-pixel with the original viewpoint.
+
+- You must NOT modify walls, ceilings, floors, doors, windows, or architectural planes.
+- You must NOT extend, shrink, reshape, repaint, or create new wall surfaces.
+- You must NOT fill in unseen areas beyond the original image boundaries.
+- You must NOT alter room proportions.
+
+- You must NOT add furniture.
+- You must NOT enlarge or reshape anchor furniture.
+- You may ONLY remove clutter or small movable objects.
+
+If there is any ambiguity, leave the area unchanged.
+`;
+
     // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
     const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "structured-retain (stage-ready token)";
     logIfNotFocusMode("[stage1B] Declutter mode resolved:", {
