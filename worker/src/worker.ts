@@ -1790,6 +1790,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const t1B = Date.now();
   timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
   let path1B: string | undefined = undefined;
+  let stage1BValidatedForCommit = false;
   let stage1BStructuralSafe = true;
   let stage1BDeclutterReasons: string[] = [];
   let stage1BDeclutterResult: Stage1BDeclutterEffectivenessResult | undefined;
@@ -2175,6 +2176,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           throw new Error("Stage 1B output matched Stage 1A");
         }
         path1B = output;
+        stage1BValidatedForCommit = true;
         stage1BStructuralSafe = !localIssues;
         stage1BNeedsConfirm = needsConfirm;
         stage1BLocalReasons = advisoryReasons;
@@ -2570,7 +2572,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     // Commit Stage 1B output after successful completion
-    if (path1B) {
+    if (path1B && stage1BValidatedForCommit) {
       commitStageOutput("1B", path1B);
       // Record the actual mode used for Stage 1B (for Stage 2 routing)
       const finalMode = useLightFallback ? "light" : declutterMode;
@@ -2620,7 +2622,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Record Stage 1B publish if it exists and is different from 1A
   // pub1BUrl already declared above; removed duplicate
-  if (path1B && path1B !== path1A) {
+  if (path1B && stage1BValidatedForCommit && path1B !== path1A) {
     // ═══ FINAL STATUS GUARD ═══
     const latestJob = await getJob(payload.jobId);
     if (isTerminalStatus(latestJob?.status)) {
@@ -2642,49 +2644,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
     } catch (e) {
       nLog('[worker] failed to publish 1B', e);
-    }
-  }
-
-  // ═══════════ Post-1B Structural Validation (LOG-ONLY) ═══════════
-
-  if (path1B && pub1AUrl && pub1BUrl) {
-    try {
-      nLog(`[worker] ═══════════ Running Post-1B Structural Validators ═══════════`);
-
-      // Geometry validator (requires published URLs)
-      const geo = await runStructuralCheck(pub1AUrl, pub1BUrl, { stage: "stage1B", jobId: payload.jobId });
-
-      const sem = await runSemanticStructureValidator({
-        originalImagePath: path1A,
-        enhancedImagePath: path1B,
-        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: "log",
-      });
-
-      const mask = await runMaskedEdgeValidator({
-        originalImagePath: path1A,
-        enhancedImagePath: path1B,
-        scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        mode: "log",
-        jobId: payload.jobId,
-      });
-
-      // ✅ Aggregate structural safety decision
-      stage1BStructuralSafe =
-        geo?.isSuspicious !== true &&
-        sem?.passed === true &&
-        mask?.createdOpenings === 0 &&
-        mask?.closedOpenings === 0;
-
-      nLog(
-        `[worker] Post-1B Structural Safety: ${
-          stage1BStructuralSafe ? "SAFE ✅" : "UNSAFE ❌"
-        }`
-      );
-
-    } catch (err) {
-      nLog(`[worker] Post-1B validation error (fail-open):`, err);
-      stage1BStructuralSafe = false;
     }
   }
 
