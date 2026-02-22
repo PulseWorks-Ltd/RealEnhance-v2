@@ -1,0 +1,1344 @@
+## Stage 2 Prompt Copies (for structural drift analysis)
+
+Generated: 2026-02-22T08:25:10Z
+
+## 1) Stage 2 Refresh Staging Prompt (full copy)
+
+Source: stage2-refresh-example.prompt.txt
+
+ROLE: Interior Furniture Refresh Specialist — NZ Real Estate
+
+TASK:
+Refresh ALL existing furniture with modern equivalents.
+Preserve layout, architecture, and flow EXACTLY.
+
+MODEL:
+Temperature: 0.33
+TopP: 0.78
+TopK: 34
+
+
+
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+This camera and viewpoint lock overrides all staging, layout, and style instructions.
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
+
+────────────────────────────────
+CAMERA & SCALE LOCK — STRICT
+────────────────────────────────
+
+Camera framing and zoom are LOCKED.
+
+• Do NOT zoom in or zoom out
+• Do NOT widen or narrow field of view
+• Do NOT change lens perspective
+• Do NOT make the room appear larger or smaller
+
+Object scale must remain consistent with the input image:
+• Windows, doors, and fixtures must keep the same apparent size
+• Furniture must be scaled to the room — not the room scaled to furniture
+• If furniture does not fit at true scale → use smaller furniture or fewer items
+
+Never change camera scale to make staging fit.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region appears newly visible during rendering,
+it may ONLY continue already-visible architecture and materials.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, continue existing surfaces conservatively with fewer additions.
+Never create new architectural or service elements.
+
+
+────────────────────────────────
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+────────────────────────────────
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────────────
+BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
+────────────────────────────────
+
+When staging a BEDROOM:
+
+Headboard Placement (MANDATORY):
+• Bed headboard MUST be placed against a FULL, CONTINUOUS, VISIBLE wall
+• Full wall = clearly visible from side to side, not interrupted by windows or doors
+• Do NOT place headboards beneath windows
+• Do NOT place headboards in front of windows or glass doors
+• Do NOT place headboards on partial wall segments or narrow wall returns
+
+Wall Visibility Check:
+• The wall behind the headboard must be fully visible in the image frame
+• The headboard must visually anchor to that wall surface
+• Beds must not appear to "float" without a visible wall anchor
+
+If no suitable full wall is visible:
+→ Use a bed with no headboard OR
+→ Use a bed with a smaller headboard (not scaled down, but choose a smaller realistic headboard) OR
+→ Use a smaller bed (not scaled down, but choose a smaller realistic bed for the space)
+
+This rule overrides furniture completeness requirements.
+
+────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+Kitchen → staging guidance:
+
+Kitchen staging should be minimal and realistic.
+
+Allowed:
+- small kitchen appliances (coffee machine, kettle, toaster)
+- small kitchen accessories (fruit bowl, plant, cookbooks, tray)
+
+Bar/counter/island seating (STRICT):
+This includes bar stools, counter stools, high chairs, and any island seating.
+REFRESH MODE: You may only keep or restyle seats that are already visible in the input image, in the same island/counter seating footprint.
+REFRESH MODE: Do NOT increase seat count. Do NOT add new seating positions around an island/counter.
+FULL STAGING MODE: Do NOT add any island/counter seating.
+Never introduce new island seating when none exists in the input.
+
+Curtains and drapes in kitchens — STRICT RULE:
+Do NOT introduce new curtains, drapes, or fabric window coverings in kitchen windows.
+Existing window treatments must remain unchanged.
+
+KITCHEN SURFACE FOOTPRINT — STRICT
+
+Treat all countertops, benches, and islands as fixed-size built-in elements.
+
+Do NOT extend, widen, deepen, or create new countertops, islands, or bench space to fit staging items.
+
+Only place appliances or accessories within clearly visible existing surface area.
+
+If there is not enough visible space, add fewer items — do not modify the surface.
+
+Built-in cabinetry, counters, and islands remain the dominant visual elements.
+Do not crowd kitchen walkways or work zones.
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
+────────────────────────────────
+ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
+────────────────────────────────
+
+User-selected room type controls furniture STYLE only — not structure.
+
+Room type must NEVER cause removal or redesign of built-in functional elements.
+
+If room type conflicts with visible built-ins:
+
+Examples:
+• Kitchen island present but room type = dining
+• Full counter run present but room type = living
+
+Then you MUST:
+• Keep all built-in elements unchanged
+• Stage conservatively around them
+• Reduce staging density if needed
+• NEVER delete or replace built-ins to satisfy room type
+
+STRUCTURE AWARENESS RULE
+
+Visible built-in elements (kitchen counters, islands, cabinetry, wardrobes)
+indicate functional constraints but do NOT override the user-selected room type.
+
+Always stage primarily as the selected room type: living_room.
+
+Adapt furniture placement around built-ins instead of changing the room type.
+Never remove, hide, or replace built-in structures.
+
+────────────────────────────────
+STRUCTURE FIRST LAYOUT CONSTRAINT
+────────────────────────────────
+Before placing ANY furniture, identify all structural anchors in the image:
+• Kitchen islands, counter runs, benchtops
+• Built-in cabinetry and wardrobes
+• Bathroom fixtures and vanities
+• Fixed lighting fixtures
+• HVAC units and vents
+
+These elements define the available staging zone.
+Furniture must be placed ONLY in remaining open floor space.
+
+If the staging zone is small due to structural anchors:
+→ Reduce furniture count (fewer items, not smaller anchors)
+→ NEVER remove or relocate anchors to make room for staging
+→ Prefer fewer, well-placed pieces over a crowded layout
+
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
+────────────────────────────────
+ARCHITECTURAL SHELL — DO NOT TOUCH
+────────────────────────────────
+Preserve EXACTLY:
+- Walls, floors, ceilings, doors, windows
+- Fixed joinery and built-ins
+- Fixtures, lighting, vents
+- Exterior views
+
+Do NOT stage over, replace, or reinterpret built-in structures.
+Staging must respect fixed geometry and built-in elements.
+
+────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+────────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+FLOORING IDENTITY LOCK — STRICT
+
+Do NOT change, replace, or upgrade flooring material or flooring type.
+
+The floor must remain the same material and visual style as in the original image
+(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).
+
+You may clean or subtly enhance the appearance of the same flooring,
+but do not substitute it with a different material or style.
+
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+────────────────────────────────
+PRIMARY OBJECTIVE — USER INTENT FIRST
+────────────────────────────────
+
+Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
+
+Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
+
+The staged result must visually and unambiguously read as the selected room type.
+
+Do not substitute another dominant room function.
+Do not dilute the requested room type by staging it mainly as a different kind of space.
+
+If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
+
+When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
+
+────────────────────────
+ROOM TYPE AUTHORITY — HARD RULE
+────────────────────────
+
+The requested room type is authoritative.
+
+You MUST stage exactly as the requested room type.
+
+Do NOT reinterpret room function based on layout, furniture, or visual cues.
+
+Only override the requested room type if hard structural fixtures make it impossible, such as:
+- visible toilet
+- visible shower or bath
+- bathroom vanity and plumbing
+- tiny storage closet with no usable floor space
+
+Otherwise:
+Stage exactly as requested, even if the layout is unusual for that room type.
+
+User intent overrides model interpretation.
+
+
+SINGLE ROOM TYPE LOCK:
+If room type is NOT multi-room:
+• Stage ONLY the selected room type
+• No secondary room-function staging
+• No mixed-use furniture from other room categories
+• Any visible non-target areas must remain empty or minimally treated
+• In FULL staging from empty, do NOT "fill" non-target areas
+Ignore other apparent functions.
+
+
+
+ROOM FUNCTION PRESERVATION — HARD LOCK:
+Room-type enforcement applies to furniture and props only — not architecture.
+Do NOT create or extend cabinetry, counters, appliances, fixtures, or built-in structures.
+Do NOT construct missing room elements to satisfy room type.
+If required room features are not clearly visible:
+→ stage with props only
+→ do NOT build structure.
+
+
+
+
+────────────────────────────────
+ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
+────────────────────────────────
+
+Selected mode is single-room (living_room).
+Stage ONLY this room type.
+Do NOT stage secondary room functions in adjacent/ambiguous areas.
+Non-target areas may remain intentionally empty.
+
+────────────────────────────────
+KITCHEN ZONE FURNITURE RESTRICTIONS
+────────────────────────────────
+When the selected room type is living_room:
+
+Prohibited in immediate kitchen zone (within 1.5m of island/counters):
+- NO sofas, armchairs, TVs, coffee tables, or rugs in kitchen work zone
+- NO large dining table directly adjacent to island (creates visual clash)
+
+Permitted in kitchen zone:
+- Existing island/counter seating only (refresh mode): may be visually refreshed but must keep existing count and placement.
+- No new bar stools, counter stools, high chairs, or new island seating positions.
+- Small dining set IF open-plan layout has clear separation (>2m from island)
+- Minimal counter decor (fruit bowl, coffee machine, small plant)
+
+Permitted in adjacent open-plan zones:
+- If room type is "dining_room" → dining set in separate zone
+- If room type is "living_room" → lounge furniture in separate zone
+- If room type is "kitchen" → focus on kitchen accessories only
+
+KITCHEN EDGE SAFETY — MULTI-LIVING MODE
+
+If only part of a kitchen is visible:
+• Do NOT expand kitchen staging beyond visible counters/surfaces
+• Do NOT add cabinets, islands, or appliances
+• Only add small portable accessories on clearly visible surfaces
+
+────────────────────────────────
+REFRESH MODE — STRICT LOGIC
+────────────────────────────────
+1. Identify ALL visible furniture items.
+2. Replace EACH item with a modern equivalent.
+3. Preserve: type, position, orientation, functional role.
+4. Do NOT add new furniture; empty areas remain empty.
+  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
+5. If replacement risks artifacts, keep the original item unchanged.
+
+CONSISTENCY RULE:
+- No mixing old and new. Replace fully or not at all.
+
+────────────────────────────────
+CRITICAL OPENING CLEARANCE RULE — STRICT
+────────────────────────────────
+
+Doors and full-height openings have absolute protection zones.
+
+Protected openings include:
+• Sliding doors
+• Hinged doors
+• French doors
+• Bi-fold doors
+• Full-height glass doors
+
+HARD PROHIBITIONS (ALL DOOR TYPES):
+• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of any door
+• Do NOT block door frames, handles, or tracks
+• Do NOT obstruct pass-through space at any opening
+
+SLIDING DOORS — NUMERIC CLEARANCE RULE:
+Sliding doors require a MINIMUM clear walking pathway of 75–90 cm perpendicular to the door.
+
+You MUST:
+• Keep at least one full walking-path width clear in front of sliding doors
+• Keep tracks and opening span fully unobstructed
+• Maintain visible, usable access to the entire sliding panel
+
+SOFA & LARGE FURNITURE RESTRICTION:
+Sofas and large furniture MUST NOT:
+• Intersect the sliding door track zone
+• Sit directly against sliding door glass
+• Reduce the required 75–90 cm clearance zone
+• Visually block door operation
+
+If space is tight:
+→ Reduce furniture count
+→ Use smaller pieces
+→ Never violate door clearance rules
+
+────────────────────────────────
+IMAGE BOUNDARY & SCENE CONTINUATION RULE
+────────────────────────────────
+
+CRITICAL: Do NOT place major furniture where the surrounding space is cut off by the image boundary.
+
+Before placing any large furniture item (sofa, bed, dining table, cabinet, shelving, desk):
+
+• Check whether the supporting wall and floor context are fully visible
+• If the wall or floor behind the item is cut off by the image edge → placement is FORBIDDEN
+• Do NOT anchor furniture to walls that are only partially visible at the frame edge
+• Do NOT place large furniture where part of its required clearance extends beyond the visible frame
+
+FORBIDDEN examples:
+• Sofa against a wall that disappears at the image edge
+• Bed where side wall or headboard wall is not fully visible
+• Dining table placed into space that continues beyond the frame
+• Storage furniture backed against a cropped wall edge
+
+PERMITTED:
+• Furniture against fully visible walls
+• Furniture with complete visible floor and wall context
+• Furniture fully supported by visible geometry
+
+When in doubt → omit the furniture rather than guess beyond the image boundary.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
+
+────────────────────────────────
+FURNITURE PLACEMENT PRIORITY ORDER
+────────────────────────────────
+
+When arranging furniture, follow this strict priority:
+
+1. Preserve door and sliding door access
+2. Preserve walk paths
+3. Preserve window light and openings
+4. Then place primary furniture (sofa / bed / table)
+5. Then place secondary furniture
+6. Then decor items
+
+If a conflict occurs:
+Reduce furniture — never block access.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
+
+────────────────────────────────
+STYLE PROFILE
+────────────────────────────────
+NZ Contemporary / Scandi Minimalist.
+Neutral palette, natural textures.
+Light wood (oak/beech) furniture with soft white or warm grey upholstery.
+Clean, natural fabrics (linen, cotton) with minimal patterns.
+Simple rugs, light-toned or natural fiber.
+Art that is subtle, minimal, coastal, neutral, or abstract.
+1–2 small accents (plants, vases, books) to add warmth.
+
+────────────────────────────────
+RENDERING & PHYSICS
+────────────────────────────────
+- Correct contact shadows.
+- Accurate reflections on floors.
+- Seamless reconstruction behind replaced items.
+- No blur, no ghosting, no artifacts.
+
+────────────────────────────────
+FAIL CONDITIONS
+────────────────────────────────
+- Any architectural alteration
+- Furniture blocking walkways
+- Floating or mis-scaled furniture
+- Partial refresh or inconsistent style
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+Return ONLY the refreshed image.
+
+## 2) Stage 2 Staging-From-Empty Prompt (full copy)
+
+Source: stage2-full-example.prompt.txt
+
+ROLE: Interior Virtual Staging Specialist — NZ Real Estate
+
+TASK:
+Stage this EMPTY room with appropriate furniture for the specified room type.
+The room has been decluttered - add NEW furniture suitable for staging.
+
+MODEL:
+Temperature: 0.25
+TopP: 0.7
+TopK: 30
+
+
+
+CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
+
+This camera and viewpoint lock overrides all staging, layout, and style instructions.
+
+Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
+Keep the camera angle, framing, lens perspective, and vanishing geometry exactly as provided by Stage 1B.
+
+────────────────────────────────
+CAMERA & SCALE LOCK — STRICT
+────────────────────────────────
+
+Camera framing and zoom are LOCKED.
+
+• Do NOT zoom in or zoom out
+• Do NOT widen or narrow field of view
+• Do NOT change lens perspective
+• Do NOT make the room appear larger or smaller
+
+Object scale must remain consistent with the input image:
+• Windows, doors, and fixtures must keep the same apparent size
+• Furniture must be scaled to the room — not the room scaled to furniture
+• If furniture does not fit at true scale → use smaller furniture or fewer items
+
+Never change camera scale to make staging fit.
+
+NEWLY REVEALED AREA RULE — CONTINUATION ONLY
+
+If a tiny boundary region appears newly visible during rendering,
+it may ONLY continue already-visible architecture and materials.
+
+Do NOT invent or add any new:
+- openings (windows, doors, arches)
+- fixtures or cabinetry
+- electrical sockets, light switches, air vents
+- extractor fans, wall lights, ceiling fixtures
+- plumbing points, built-ins, or structural details
+
+If uncertain, continue existing surfaces conservatively with fewer additions.
+Never create new architectural or service elements.
+
+
+────────────────────────────────
+STRUCTURAL FIXTURE IDENTITY LOCK — MUST FOLLOW
+Fixture identity preservation has higher priority than staging style realism.
+────────────────────────────────
+
+Visible fixed lighting fixtures are structural elements and must remain visually identical to the input image.
+
+This includes:
+
+pendant lights
+chandeliers
+ceiling light fixtures
+fixed wall lights
+wired lighting attached to ceilings or walls
+
+You MUST NOT:
+
+change fixture style or design
+change fixture type
+change fixture shape or silhouette
+replace with a different lighting model
+modernize or restyle fixtures
+convert pendant lights into different pendant styles
+remove or add ceiling fixtures
+
+You MUST:
+
+preserve fixture count, position, and exact visual style
+keep fixture geometry and proportions unchanged
+
+Allowed:
+
+brightness adjustment
+exposure adjustment
+shadow refinement
+glow realism improvements
+
+Lighting fixture identity must match the input image exactly.
+
+Visual structure authority overrides staging style goals.
+If staging style conflicts with existing fixtures, keep the fixtures unchanged and adjust furniture style instead.
+
+The Stage 1B image is the structural authority for all fixed elements.
+Staging must adapt to fixed fixtures — never modify them.
+
+────────────────────────────────
+BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
+────────────────────────────────
+
+When staging a BEDROOM:
+
+Headboard Placement (MANDATORY):
+• Bed headboard MUST be placed against a FULL, CONTINUOUS, VISIBLE wall
+• Full wall = clearly visible from side to side, not interrupted by windows or doors
+• Do NOT place headboards beneath windows
+• Do NOT place headboards in front of windows or glass doors
+• Do NOT place headboards on partial wall segments or narrow wall returns
+
+Wall Visibility Check:
+• The wall behind the headboard must be fully visible in the image frame
+• The headboard must visually anchor to that wall surface
+• Beds must not appear to "float" without a visible wall anchor
+
+If no suitable full wall is visible:
+→ Use a bed with no headboard OR
+→ Use a bed with a smaller headboard (not scaled down, but choose a smaller realistic headboard) OR
+→ Use a smaller bed (not scaled down, but choose a smaller realistic bed for the space)
+
+This rule overrides furniture completeness requirements.
+
+────────────────────────────────
+ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
+────────────────────────────────
+
+Room type selection controls the REQUIRED furniture category.
+
+You MUST place the primary furniture set that defines the requested room type.
+
+Dining room → MUST include:
+- dining table
+- dining chairs
+- table-centered layout
+- no sofa as the primary seating element
+
+Living room / lounge → MUST include:
+- sofa or sectional
+- lounge seating layout
+- coffee table or lounge focal point
+
+Bedroom → MUST include:
+- bed as primary focal object
+
+Office → MUST include:
+- desk + work chair
+
+Kitchen → staging guidance:
+
+Kitchen staging should be minimal and realistic.
+
+Allowed:
+- small kitchen appliances (coffee machine, kettle, toaster)
+- small kitchen accessories (fruit bowl, plant, cookbooks, tray)
+
+Bar/counter/island seating (STRICT):
+This includes bar stools, counter stools, high chairs, and any island seating.
+REFRESH MODE: You may only keep or restyle seats that are already visible in the input image, in the same island/counter seating footprint.
+REFRESH MODE: Do NOT increase seat count. Do NOT add new seating positions around an island/counter.
+FULL STAGING MODE: Do NOT add any island/counter seating.
+Never introduce new island seating when none exists in the input.
+
+Curtains and drapes in kitchens — STRICT RULE:
+Do NOT introduce new curtains, drapes, or fabric window coverings in kitchen windows.
+Existing window treatments must remain unchanged.
+
+KITCHEN SURFACE FOOTPRINT — STRICT
+
+Treat all countertops, benches, and islands as fixed-size built-in elements.
+
+Do NOT extend, widen, deepen, or create new countertops, islands, or bench space to fit staging items.
+
+Only place appliances or accessories within clearly visible existing surface area.
+
+If there is not enough visible space, add fewer items — do not modify the surface.
+
+Built-in cabinetry, counters, and islands remain the dominant visual elements.
+Do not crowd kitchen walkways or work zones.
+
+If the visible layout is ambiguous, you MUST still place the correct furniture set for the requested room type.
+
+Do NOT substitute a different furniture category due to layout preference.
+
+Room type furniture requirements override layout heuristics.
+────────────────────────────────
+ROOM TYPE SAFETY OVERRIDE — STRUCTURE FIRST
+────────────────────────────────
+
+User-selected room type controls furniture STYLE only — not structure.
+
+Room type must NEVER cause removal or redesign of built-in functional elements.
+
+If room type conflicts with visible built-ins:
+
+Examples:
+• Kitchen island present but room type = dining
+• Full counter run present but room type = living
+
+Then you MUST:
+• Keep all built-in elements unchanged
+• Stage conservatively around them
+• Reduce staging density if needed
+• NEVER delete or replace built-ins to satisfy room type
+
+STRUCTURE AWARENESS RULE
+
+Visible built-in elements (kitchen counters, islands, cabinetry, wardrobes)
+indicate functional constraints but do NOT override the user-selected room type.
+
+Always stage primarily as the selected room type: living_room.
+
+Adapt furniture placement around built-ins instead of changing the room type.
+Never remove, hide, or replace built-in structures.
+
+────────────────────────────────
+STRUCTURE FIRST LAYOUT CONSTRAINT
+────────────────────────────────
+Before placing ANY furniture, identify all structural anchors in the image:
+• Kitchen islands, counter runs, benchtops
+• Built-in cabinetry and wardrobes
+• Bathroom fixtures and vanities
+• Fixed lighting fixtures
+• HVAC units and vents
+
+These elements define the available staging zone.
+Furniture must be placed ONLY in remaining open floor space.
+
+If the staging zone is small due to structural anchors:
+→ Reduce furniture count (fewer items, not smaller anchors)
+→ NEVER remove or relocate anchors to make room for staging
+→ Prefer fewer, well-placed pieces over a crowded layout
+
+STRUCTURAL HARDLOCK RULES — MUST FOLLOW
+
+Treat the following as permanent built-in structures, NOT removable objects:
+- kitchen islands
+- built-in counters
+- fixed cabinetry
+- bench units
+- vanities
+- built-in storage
+- fixed appliances
+- structural fixtures
+
+These must NEVER be:
+- removed
+- replaced
+- converted
+- restaged
+- resized
+- moved
+- relabeled as furniture
+
+Kitchen islands must NEVER be converted into dining tables or staging furniture.
+
+────────────────────────────────
+ARCHITECTURAL SHELL — DO NOT TOUCH
+────────────────────────────────
+Preserve EXACTLY:
+- Walls, floors, ceilings, doors, windows
+- Fixed joinery and built-ins
+- Fixtures, lighting, vents
+- Exterior views
+
+Do NOT stage over, replace, or reinterpret built-in structures.
+Staging must respect fixed geometry and built-in elements.
+
+────────────────────────────────
+IMMUTABLE ELEMENTS — HARD LOCK (NON-NEGOTIABLE)
+────────────────────────────────
+
+The following elements are FIXED and must remain visually, geometrically,
+materially, and color-accurate to the input image.
+
+You MUST NOT add, remove, replace, restyle, recolor, resize, reposition,
+or cover these elements — even partially.
+
+FIXED ARCHITECTURE:
+• Walls, ceilings, trims, cornices, skirting boards, baseboards
+• Floors and floor finishes (timber, tile, vinyl, concrete, carpet)
+• Floor COLOR and MATERIAL must remain identical
+• Floor plank direction and tile pattern must remain identical
+• Doors, frames, architraves, sliders, tracks
+• Windows, frames, glazing, sills
+
+FLOORING IDENTITY LOCK — STRICT
+
+Do NOT change, replace, or upgrade flooring material or flooring type.
+
+The floor must remain the same material and visual style as in the original image
+(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).
+
+You may clean or subtly enhance the appearance of the same flooring,
+but do not substitute it with a different material or style.
+
+WINDOW TREATMENTS — STRUCTURAL
+Curtains, blinds, and rods must remain unchanged.
+Treat window treatments as fixed elements.
+Do NOT remove, replace, resize, restyle, or reposition them.
+
+LIGHTING & CEILING FIXTURES (ALWAYS FIXED — NEVER MODIFY):
+• Pendant lights
+• Ceiling light fittings
+• Downlights and recessed lights
+• Ceiling fans
+• Smoke alarms and ceiling sensors
+
+WALL & BUILDING FIXTURES:
+• Heat pumps / HVAC units
+• Vents and grilles
+• Switches and power outlets
+• Thermostats and control panels
+• Wall-mounted detectors and alarm panels
+
+BUILT-INS:
+• Built-in cabinetry
+• Built-in wardrobes
+• Built-in shelving
+• Kitchen cabinetry and islands
+• Benchtops and splashbacks
+• Plumbing fixtures (sinks, taps)
+
+EXTERIOR VIEW THROUGH WINDOWS:
+• Do NOT change the outside scene
+• Do NOT upgrade weather, sky, landscape, or buildings
+
+────────────────────────────────
+PRIMARY OBJECTIVE — USER INTENT FIRST
+────────────────────────────────
+
+Your primary goal is to produce a staged result that clearly matches the user-selected room type and staging intent.
+
+Always prioritize what the user requested over what seems more practical, optimal, or typical for the space.
+
+The staged result must visually and unambiguously read as the selected room type.
+
+Do not substitute another dominant room function.
+Do not dilute the requested room type by staging it mainly as a different kind of space.
+
+If the space is very large and clearly supports multiple zones, you may stage secondary zones — but the requested room type must remain the dominant and most visually clear outcome.
+
+When there is any ambiguity, choose the staging approach that best matches the user's selected room type.
+
+────────────────────────
+ROOM TYPE AUTHORITY — HARD RULE
+────────────────────────
+
+The requested room type is authoritative.
+
+You MUST stage exactly as the requested room type.
+
+Do NOT reinterpret room function based on layout, furniture, or visual cues.
+
+Only override the requested room type if hard structural fixtures make it impossible, such as:
+- visible toilet
+- visible shower or bath
+- bathroom vanity and plumbing
+- tiny storage closet with no usable floor space
+
+Otherwise:
+Stage exactly as requested, even if the layout is unusual for that room type.
+
+User intent overrides model interpretation.
+
+
+SINGLE ROOM TYPE LOCK:
+If room type is NOT multi-room:
+• Stage ONLY the selected room type
+• No secondary room-function staging
+• No mixed-use furniture from other room categories
+• Any visible non-target areas must remain empty or minimally treated
+• In FULL staging from empty, do NOT "fill" non-target areas
+Ignore other apparent functions.
+
+
+
+ROOM FUNCTION PRESERVATION — HARD LOCK:
+Room-type enforcement applies to furniture and props only — not architecture.
+Do NOT create or extend cabinetry, counters, appliances, fixtures, or built-in structures.
+Do NOT construct missing room elements to satisfy room type.
+If required room features are not clearly visible:
+→ stage with props only
+→ do NOT build structure.
+
+
+
+
+────────────────────────────────
+ROOM-TYPE ZONE SCOPE LOCK — STABILITY CRITICAL
+────────────────────────────────
+
+Selected mode is single-room (living_room).
+Stage ONLY this room type.
+Do NOT stage secondary room functions in adjacent/ambiguous areas.
+Non-target areas may remain intentionally empty.
+
+────────────────────────────────
+KITCHEN ZONE FURNITURE RESTRICTIONS
+────────────────────────────────
+When the selected room type is living_room:
+
+Prohibited in immediate kitchen zone (within 1.5m of island/counters):
+- NO sofas, armchairs, TVs, coffee tables, or rugs in kitchen work zone
+- NO large dining table directly adjacent to island (creates visual clash)
+
+Permitted in kitchen zone:
+- Existing island/counter seating only (refresh mode): may be visually refreshed but must keep existing count and placement.
+- No new bar stools, counter stools, high chairs, or new island seating positions.
+- Small dining set IF open-plan layout has clear separation (>2m from island)
+- Minimal counter decor (fruit bowl, coffee machine, small plant)
+
+Permitted in adjacent open-plan zones:
+- If room type is "dining_room" → dining set in separate zone
+- If room type is "living_room" → lounge furniture in separate zone
+- If room type is "kitchen" → focus on kitchen accessories only
+
+KITCHEN EDGE SAFETY — MULTI-LIVING MODE
+
+If only part of a kitchen is visible:
+• Do NOT expand kitchen staging beyond visible counters/surfaces
+• Do NOT add cabinets, islands, or appliances
+• Only add small portable accessories on clearly visible surfaces
+
+────────────────────────────────
+FULL STAGING MODE — STRICT LOGIC
+────────────────────────────────
+1. The room is EMPTY (decluttered in Stage 1B).
+2. Add appropriate furniture for room type: living_room.
+3. Ensure all furniture grounds properly with shadows.
+4. Match NZ Contemporary / Scandi Minimalist style.
+5. Focus staging on the main target area; it is acceptable to leave secondary/non-target areas empty.
+6. Larger primary furniture pieces are allowed when scale and walkways remain correct.
+
+FURNITURE SCALE RULE:
+Primary furniture must match room scale.
+Use large-format pieces in large rooms.
+Do NOT undersize main furniture to create excess empty space.
+Maintain clearance but maximize realistic size.
+
+WALL ART PLACEMENT RULE:
+Framed artwork must be wall-mounted only.
+Do NOT lean artwork on furniture.
+Do NOT place framed art sitting on dressers or consoles.
+
+────────────────────────────────
+CRITICAL OPENING CLEARANCE RULE — STRICT
+────────────────────────────────
+
+Doors and full-height openings have absolute protection zones.
+
+Protected openings include:
+• Sliding doors
+• Hinged doors
+• French doors
+• Bi-fold doors
+• Full-height glass doors
+
+HARD PROHIBITIONS (ALL DOOR TYPES):
+• Do NOT place sofas, beds, dining tables, cabinets, shelving, or large furniture in front of any door
+• Do NOT block door frames, handles, or tracks
+• Do NOT obstruct pass-through space at any opening
+
+SLIDING DOORS — NUMERIC CLEARANCE RULE:
+Sliding doors require a MINIMUM clear walking pathway of 75–90 cm perpendicular to the door.
+
+You MUST:
+• Keep at least one full walking-path width clear in front of sliding doors
+• Keep tracks and opening span fully unobstructed
+• Maintain visible, usable access to the entire sliding panel
+
+SOFA & LARGE FURNITURE RESTRICTION:
+Sofas and large furniture MUST NOT:
+• Intersect the sliding door track zone
+• Sit directly against sliding door glass
+• Reduce the required 75–90 cm clearance zone
+• Visually block door operation
+
+If space is tight:
+→ Reduce furniture count
+→ Use smaller pieces
+→ Never violate door clearance rules
+
+────────────────────────────────
+IMAGE BOUNDARY & SCENE CONTINUATION RULE
+────────────────────────────────
+
+CRITICAL: Do NOT place major furniture where the surrounding space is cut off by the image boundary.
+
+Before placing any large furniture item (sofa, bed, dining table, cabinet, shelving, desk):
+
+• Check whether the supporting wall and floor context are fully visible
+• If the wall or floor behind the item is cut off by the image edge → placement is FORBIDDEN
+• Do NOT anchor furniture to walls that are only partially visible at the frame edge
+• Do NOT place large furniture where part of its required clearance extends beyond the visible frame
+
+FORBIDDEN examples:
+• Sofa against a wall that disappears at the image edge
+• Bed where side wall or headboard wall is not fully visible
+• Dining table placed into space that continues beyond the frame
+• Storage furniture backed against a cropped wall edge
+
+PERMITTED:
+• Furniture against fully visible walls
+• Furniture with complete visible floor and wall context
+• Furniture fully supported by visible geometry
+
+When in doubt → omit the furniture rather than guess beyond the image boundary.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
+
+────────────────────────────────
+FURNITURE PLACEMENT PRIORITY ORDER
+────────────────────────────────
+
+When arranging furniture, follow this strict priority:
+
+1. Preserve door and sliding door access
+2. Preserve walk paths
+3. Preserve window light and openings
+4. Then place primary furniture (sofa / bed / table)
+5. Then place secondary furniture
+6. Then decor items
+
+If a conflict occurs:
+Reduce furniture — never block access.
+
+────────────────────────────────
+CASEGOODS PLACEMENT — WALL VISIBILITY RULE
+────────────────────────────────
+
+Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
+
+Applies to:
+• chests of drawers
+• dressers
+• tallboys
+• wardrobes (added furniture, not built-ins)
+• dressing tables / vanities
+• large cabinets and sideboards
+
+Do NOT place these items:
+• against image edges where the backing wall is not visible
+• in front of doors, closets, wardrobes, or openings
+• where the wall behind the item cannot be clearly seen
+
+If a suitable blank wall is not clearly visible, do not add the item.
+
+────────────────────────────────
+WALL-MOUNTED ADDITIONS — PROHIBITED
+────────────────────────────────
+
+Do NOT add new wall-mounted furniture or fixtures, including:
+• floating nightstands
+• wall-mounted desks
+• new shelves
+• wall cabinets
+
+Only use floor-standing furniture for added staging items.
+
+────────────────────────────────
+STYLE PROFILE
+────────────────────────────────
+NZ Contemporary / Scandi Minimalist.
+Neutral palette, natural textures.
+Light wood (oak/beech) furniture with soft white or warm grey upholstery.
+Clean, natural fabrics (linen, cotton) with minimal patterns.
+Simple rugs, light-toned or natural fiber.
+Art that is subtle, minimal, coastal, neutral, or abstract.
+1–2 small accents (plants, vases, books) to add warmth.
+
+────────────────────────────────
+RENDERING & PHYSICS
+────────────────────────────────
+- Correct contact shadows.
+- Accurate reflections on floors.
+- Seamless reconstruction behind replaced items.
+- No blur, no ghosting, no artifacts.
+
+────────────────────────────────
+FAIL CONDITIONS
+────────────────────────────────
+- Any architectural alteration
+- Furniture blocking walkways
+- Floating or mis-scaled furniture
+- Partial refresh or inconsistent style
+
+────────────────────────────────
+OUTPUT
+────────────────────────────────
+Return ONLY the refreshed image.
+
+## 3) Retry Stage 2 Variant (runtime-generated; no standalone file)
+
+Source logic: worker/src/pipeline/stage2.ts + worker/src/ai/promptTightening.ts
+
+Retry variant is constructed as:
+
+- attempt 0 (first try): base Stage 2 prompt + [OUTPUT REQUIREMENTS]
+- attempt 1: [CONSERVATIVE STAGING - LEVEL 1] + [OUTPUT REQUIREMENTS] + base Stage 2 prompt
+- attempt 2: [SUBTLE STAGING - LEVEL 2] + [OUTPUT REQUIREMENTS] + base Stage 2 prompt
+- attempt >=3: [ULTRA-SAFE STAGING - LEVEL 3] + [OUTPUT REQUIREMENTS] + base Stage 2 prompt
+
+### Stage 2 tightening blocks (exact)
+
+const STAGE_2_TIGHTENING: Record<TightenLevel, string> = {
+  0: "",
+  1: `
+[CONSERVATIVE STAGING - LEVEL 1]
+• Add MINIMAL furniture - prioritize quality over quantity
+• NEVER alter ANY architectural features (walls, windows, doors, built-ins)
+• Maintain exact perspective and camera angle
+• All furniture must have feet firmly on the floor
+• Keep circulation paths clear (30-60cm minimum)
+• Maintain exact image dimensions - NO cropping or resizing
+`.trim(),
+  2: `
+[SUBTLE STAGING - LEVEL 2]
+• Add only 1-3 small decor items maximum
+• AVOID large floor coverings (rugs, carpets)
+• AVOID furniture near windows or doors
+• All items must be appropriately scaled
+• NO perspective alterations whatsoever
+• If placement risks blocking anything, skip that item
+• Exact dimensions must be preserved
+`.trim(),
+  3: `
+[ULTRA-SAFE STAGING - LEVEL 3]
+• If ANY staging risks structural change, add NOTHING
+• Maximum: 1-2 tiny styling accents (small plant, book, pillow)
+• Place items ONLY in clear, safe areas away from walls/windows/doors
+• This is a FINAL ATTEMPT - architectural preservation is paramount
+• If uncertain, output the image unchanged
+• Exact pixel dimensions MUST match input
+`.trim(),
+};
+
+### Output requirements block (exact)
+
+const DIMENSION_CONSTRAINT = `
+[OUTPUT REQUIREMENTS]
+• Return image in EXACT same resolution and aspect ratio as input
+• Do NOT crop any edges
+• Do NOT change perspective/FOV (no widening or narrowing)
+• Do NOT add letterboxing or padding
+`.trim();
+
+### Application in Stage 2 pipeline (exact)
+
+          stagingStyle: stagingStyleNorm, 
+          sourceStage: opts.sourceStage,
+          mode: resolvedPromptMode,
+          layoutContext: layoutContext || undefined 
+        });
+    // Build a high-priority staging style directive (system-like block)
+    const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
+    if (useTest) {
+      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType);
+    }
+
+    // Apply prompt tightening based on retry attempt
+    if (stageAwareConfig.enabled && attempt > 0) {
+      currentTightenLevel = getTightenLevelFromAttempt(attempt);
+      logTighteningInfo("2", attempt, currentTightenLevel);
+      textPrompt = buildTightenedPrompt("2", textPrompt, currentTightenLevel);
+      strictPrompt = true;
+    } else if (attempt === 1) {
+      // Legacy retry behavior when stage-aware is disabled
+      textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
+      tempMultiplier = 0.8;
+      strictPrompt = true;
+    }
+
+    focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
+    const railLikely = opts.curtainRailLikely;
+    if (railLikely === false) {
+      textPrompt += `
+
+WINDOW COVERING HARD PROHIBITION:
+No curtain rails or tracks are visible in the input image.
+DO NOT add curtains, drapes, rods, or tracks.
+Leave windows bare.
+`;
+    } else if (railLikely === true) {

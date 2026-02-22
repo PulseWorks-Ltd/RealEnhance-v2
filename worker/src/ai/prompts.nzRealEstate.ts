@@ -422,6 +422,146 @@ If a functional layout results in partial or rear-facing furniture visibility, t
 The room structure must remain visually dominant.
 `;
 
+const GEOMETRIC_ENVELOPE_LOCK_BLOCK = `
+────────────────────────────────
+GEOMETRIC ENVELOPE LOCK — ABSOLUTE (NON-NEGOTIABLE)
+────────────────────────────────
+
+Treat the input image as a FIXED 3D architectural shell.
+
+The room’s spatial volume, wall planes, ceiling height, floor boundaries,
+door openings, window openings, and all structural endpoints are
+physically locked and immutable.
+
+You are staging INSIDE a rigid architectural container.
+
+You are NOT allowed to:
+
+• Extend any wall beyond its visible endpoints
+• Shorten any wall
+• Add, remove, shift, or seal any doorway
+• Add, remove, shift, or seal any window
+• Widen or narrow any opening
+• Change room depth, width, or ceiling height
+• Straighten asymmetrical geometry
+• “Fix” irregular architecture
+• Expand the visible room footprint
+• Add new wall planes, partitions, recesses, alcoves, bulkheads, or columns
+• Infer hidden structural elements behind curtains, shadows, or furniture
+• Continue geometry beyond what is visibly confirmed
+
+The architectural envelope must remain pixel-aligned with the input image.
+
+If a boundary is partially occluded or ambiguous:
+→ Preserve it exactly as visible.
+→ Do NOT reinterpret it.
+→ Do NOT complete it.
+→ Do NOT simplify it.
+
+You may only modify movable furniture and decor within this locked envelope.
+
+The structure is frozen.
+The volume is frozen.
+The openings are frozen.
+
+Furniture must adapt to the room.
+The room must NEVER adapt to the furniture.
+`;
+
+const OPENING_CONTINUITY_LOCK_BLOCK = `
+────────────────────────────────
+OPENING CONTINUITY LOCK — CRITICAL
+────────────────────────────────
+
+Every doorway, sliding door, window, and glazed opening visible in the input image
+must remain:
+
+• Present
+• Uncovered
+• Unsealed
+• Same width
+• Same height
+• Same position
+• Same apparent depth
+
+Do NOT:
+
+• Cover part of an opening with new wall surface
+• Extend walls across glass
+• Close one panel of double doors
+• Convert openings into solid walls
+• Add framing around openings
+• Reinterpret shadowed areas as walls
+
+If an opening is partially obscured:
+→ Preserve its visible geometry exactly.
+→ Do NOT complete or modify it.
+
+Loss or alteration of any opening is a hard failure.
+`;
+
+const ROOM_VOLUME_CONSERVATION_BLOCK = `
+────────────────────────────────
+ROOM VOLUME CONSERVATION — HARD RULE
+────────────────────────────────
+
+The perceived spatial size of the room must remain unchanged.
+
+Do NOT:
+
+• Make the room appear larger
+• Make the room appear smaller
+• Increase apparent depth
+• Decrease apparent depth
+• Extend counters or islands
+• Lengthen walls
+• Shift wall intersections
+
+Furniture scale must adjust to the visible space.
+Never adjust the space to accommodate furniture.
+
+If furniture does not fit naturally:
+→ Reduce quantity.
+→ Use fewer pieces.
+→ Do NOT modify room geometry.
+`;
+
+const HIERARCHY_OF_AUTHORITY_BLOCK = `
+────────────────────────────────
+HIERARCHY OF AUTHORITY — STRICT ORDER
+────────────────────────────────
+
+1️⃣ Architectural envelope (absolute authority)
+2️⃣ Openings and structural continuity
+3️⃣ Built-ins and fixed fixtures
+4️⃣ Circulation paths and door access
+5️⃣ User-selected room type
+6️⃣ Furniture placement
+7️⃣ Styling and aesthetics
+
+If any conflict occurs:
+Higher level wins.
+Always reduce furniture — never alter structure.
+`;
+
+const ANTI_OPTIMIZATION_SAFETY_RULE_BLOCK = `
+────────────────────────────────
+ANTI-OPTIMIZATION SAFETY RULE
+────────────────────────────────
+
+You are NOT permitted to improve, simplify, regularize,
+or spatially optimize architectural structure.
+
+Even if a wall appears slightly misaligned,
+even if symmetry would look better,
+even if an opening seems awkward —
+
+Preserve it exactly.
+
+Staging is additive within structure.
+It is never corrective of structure.
+`;
+
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh"): string {
   const zoneConfig = mode === "full"
@@ -1503,6 +1643,17 @@ MODEL:
 Temperature: ${modelTemperature}
 TopP: ${modelTopP}
 TopK: ${modelTopK}
+
+${GEOMETRIC_ENVELOPE_LOCK_BLOCK}
+
+${OPENING_CONTINUITY_LOCK_BLOCK}
+
+${ROOM_VOLUME_CONSERVATION_BLOCK}
+
+${HIERARCHY_OF_AUTHORITY_BLOCK}
+
+${ANTI_OPTIMIZATION_SAFETY_RULE_BLOCK}
+
 ${layoutContextBlock}
 
 ${CAMERA_LOCK_BLOCK}
@@ -1816,7 +1967,7 @@ Do NOT alter walls, windows, doors, ceiling height, layout, geometry, perspectiv
 Furniture changes must not modify or reinterpret architectural boundaries.
 
 Furniture authority is comprehensive.
-Architectural authority is zero.
+Architectural boundaries are immutable and define the allowable staging space.
 
 ────────────────────────────────
 PRIMARY OBJECTIVE — USER INTENT FIRST
@@ -2040,39 +2191,6 @@ When arranging furniture, follow this strict priority:
 
 If a conflict occurs:
 Reduce furniture — never block access.
-
-────────────────────────────────
-CASEGOODS PLACEMENT — WALL VISIBILITY RULE
-────────────────────────────────
-
-Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
-
-Applies to:
-• chests of drawers
-• dressers
-• tallboys
-• wardrobes (added furniture, not built-ins)
-• dressing tables / vanities
-• large cabinets and sideboards
-
-Do NOT place these items:
-• against image edges where the backing wall is not visible
-• in front of doors, closets, wardrobes, or openings
-• where the wall behind the item cannot be clearly seen
-
-If a suitable blank wall is not clearly visible, do not add the item.
-
-────────────────────────────────
-WALL-MOUNTED ADDITIONS — PROHIBITED
-────────────────────────────────
-
-Do NOT add new wall-mounted furniture or fixtures, including:
-• floating nightstands
-• wall-mounted desks
-• new shelves
-• wall cabinets
-
-Only use floor-standing furniture for added staging items.
 
 ────────────────────────────────
 STYLE PROFILE
