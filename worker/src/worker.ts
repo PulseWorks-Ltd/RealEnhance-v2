@@ -2464,7 +2464,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     // Gemini confirmation layer for Stage1B (only when local mode requires confirm)
     // Includes retry loop: if Gemini blocks, re-run Stage 1B with reduced sampling params
-    if (GEMINI_CONFIRMATION_ENABLED && stage1BNeedsConfirm && path1B) {
+    const stage1BGeminiConfirmationEnabled = false;
+    if (stage1BGeminiConfirmationEnabled && GEMINI_CONFIRMATION_ENABLED && stage1BNeedsConfirm && path1B) {
       const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
       let geminiRetries = 0;
       const geminiMaxRetries = GEMINI_CONFIRM_MAX_RETRIES;

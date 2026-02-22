@@ -714,6 +714,13 @@ clear structural/built-in alteration is also present.
 
 Missing secondary movable items should not trigger structural failure.
 
+If remaining furniture is boundary-adjacent (window frame, sliding door,
+visible seam, or partially occluded by a structural boundary), classify as
+furniture_change advisory when structure is intact.
+
+Do not hard-fail boundary-adjacent preserved items unless there is clear
+opening, wall, or camera structural violation.
+
 Only built-in or structural element removal may trigger hardFail true.
 `;
 
@@ -2176,6 +2183,18 @@ export async function runGeminiSemanticValidator(opts: {
     });
 
     const reasonText = (parsed.reasons || []).join(" ").toLowerCase();
+    const boundaryAdjacentFurnitureCue = [
+      "window frame",
+      "sliding door",
+      "visible seam",
+      "door frame seam",
+      "wall seam",
+      "boundary",
+      "occluded",
+      "partially occluded",
+      "frame edge",
+      "glass panel edge",
+    ].some((token) => reasonText.includes(token));
     const alwaysHardFail = violationType === "opening_change" ||
       violationType === "wall_change" ||
       violationType === "camera_shift" ||
@@ -2203,6 +2222,13 @@ export async function runGeminiSemanticValidator(opts: {
         "wall deleted",
       ].some((token) => reasonText.includes(token));
 
+    const structuredRetainFurnitureDowngrade =
+      opts.stage === "1B" &&
+      opts.stage1BValidationMode === "STRUCTURED_RETAIN" &&
+      boundaryAdjacentFurnitureCue &&
+      (category === "furniture_change" || (category === "structure" && (violationType === "layout_only" || violationType === "other"))) &&
+      !alwaysHardFail;
+
     let hardFail = parsed.hardFail;
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
@@ -2223,6 +2249,7 @@ export async function runGeminiSemanticValidator(opts: {
       if (lowConfidence) hardFail = false;
       if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
       if (builtInLowConfidence) hardFail = false;
+      if (structuredRetainFurnitureDowngrade) hardFail = false;
     }
 
     const verdict: GeminiSemanticVerdict = {

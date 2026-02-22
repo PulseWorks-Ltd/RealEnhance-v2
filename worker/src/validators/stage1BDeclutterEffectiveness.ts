@@ -41,9 +41,9 @@ export function getStage1BDeclutterThresholdsFromEnv(): Stage1BDeclutterThreshol
     minConfidence: numEnv("STAGE1B_DECLUTTER_CONFIDENCE_MIN", 0.8),
     percentBaselineMin: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_PERCENT_BASELINE_MIN", 5))),
     percentAfterMin: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_PERCENT_AFTER_MIN", 3))),
-    maxRemainingPercent: Math.max(0, numEnv("STAGE1B_DECLUTTER_MAX_REMAINING_PERCENT", 20)),
-    absoluteAfterBlock: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_ABSOLUTE_AFTER_BLOCK", 6))),
-    surfaceAfterBlock: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_SURFACE_AFTER_BLOCK", 3))),
+    maxRemainingPercent: Math.max(0, numEnv("STAGE1B_DECLUTTER_MAX_REMAINING_PERCENT", 35)),
+    absoluteAfterBlock: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_ABSOLUTE_AFTER_BLOCK", 10))),
+    surfaceAfterBlock: Math.max(0, Math.floor(numEnv("STAGE1B_DECLUTTER_SURFACE_AFTER_BLOCK", 5))),
   };
 }
 

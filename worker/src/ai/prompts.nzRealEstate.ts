@@ -1118,33 +1118,31 @@ Anchor selection must follow this strict order:
 
 Dominance takes precedence over visibility.
 
-ARCHITECTURAL BOUNDARY PROTECTION — NON-NEGOTIABLE
+ARCHITECTURAL BOUNDARY PROTECTION — STRUCTURAL SAFETY RULE
 
-When removing furniture, preserve architectural boundary integrity.
+When removing furniture, protect architectural boundaries.
 
-Do NOT remove any furniture item if it:
+You may remove furniture that touches architectural elements ONLY IF:
+• The boundary geometry is clearly visible
+• The seam direction is unambiguous
+• Surface continuation is visually obvious
 
-Touches or overlaps a visible window frame
+If removal would require uncertain inference of:
+• Window frame geometry
+• Sliding door tracks
+• Glass panel edges
+• Wall corner continuation
+• Door frame seams
 
-Touches or overlaps a sliding door frame
+→ Preserve the furniture item.
 
-Touches or overlaps floor-to-ceiling glass
+Preserved boundary-adjacent items must:
+• Be minimal
+• Not introduce new structural geometry
+• Not alter opening shapes
+• Not exceed one dominant anchor per zone
 
-Obscures a wall-to-window vertical seam
-
-Obscures a door frame vertical seam
-
-Obscures a visible exterior-view transition
-
-Covers a visible wall corner where surface continuation is uncertain
-
-If removal would require inferring what exists behind a window, sliding door, glass panel, or structural seam with less than high certainty, do NOT remove that furniture item.
-
-Preserve the item and treat it as structurally adjacent.
-
-Never fabricate, extend, or reconstruct glass, windows, or door geometry without clear visible evidence.
-
-Architectural boundaries take precedence over decluttering completeness.
+Architectural integrity takes precedence over decluttering completeness.
 
 A zone is a visually distinct functional area (e.g., lounge area, dining area) separated by layout, furniture grouping, or spatial orientation.
 
@@ -1181,12 +1179,13 @@ Do NOT preserve multiple similar furniture pieces.
 Do NOT preserve secondary seating.
 Do NOT preserve decorative or auxiliary furniture.
 
+Boundary-adjacent preserved items that remain for structural safety
+do NOT count as additional anchors,
+provided they are not dominant furniture pieces.
+
 QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
 When reconstructing walls, prefer clean blank wall over adding any wall hardware.
-
-SAFETY FAIL RULES:
-Any movable items remain → FAIL
 
 OUTPUT:
 Return only the empty room image.`.trim();
