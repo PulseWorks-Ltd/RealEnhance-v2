@@ -1383,6 +1383,50 @@ category: structure
 violationType: opening_change OR wall_change OR layout_change
 hardFail: true
 
+${isFullStaging ? `GEOMETRIC PLANE STABILITY CHECK (CRITICAL)
+
+All structural planes must preserve geometric alignment and boundary envelope.
+
+This includes:
+
+• Wall plane angle and alignment
+• Ceiling-to-wall seam position
+• Floor-to-wall junction alignment
+• Corner intersection geometry
+• Structural edge boundaries
+
+Hard fail if:
+
+• A wall plane visibly shifts angle or alignment
+• Corner geometry softens or realigns
+• Ceiling-wall seam migrates
+• Structural edges relocate even if the wall still exists
+• Plane boundary envelope expands or contracts
+
+If detected:
+
+category: structure
+violationType: layout_change
+hardFail: true
+
+OPEN-PLAN ENCLOSURE CHECK (CRITICAL)
+
+In FULL staging mode, open-plan layouts must remain open-plan.
+
+Hard fail if:
+
+• A built-in extension creates a new visual partition
+• An island extension narrows circulation into a corridor
+• Furniture or cabinetry creates a pseudo-wall
+• Previously open functional zones become enclosed
+
+If detected:
+
+category: structure
+violationType: layout_change
+hardFail: true
+` : ""}
+
 EXTERIOR UTILITY FIXTURE CHECK — CRITICAL
 
 If the BEFORE image contains any of the following:
@@ -1450,6 +1494,27 @@ If this occurs:
 → violationType: opening_change
 → hardFail: true
 
+${isFullStaging ? `OCCLUSION PRESERVATION CHECK (CRITICAL)
+
+Structural visibility must remain consistent with BEFORE.
+
+If a structural surface was partially obscured (e.g., by curtains, blinds, or soft furnishings),
+AFTER must not:
+
+• Remove occluding elements to reveal new wall area
+• Reveal previously unseen structural boundaries
+• Reveal new opening geometry
+• Extend visible wall envelope beyond what was visible in BEFORE
+
+Hard fail if newly visible wall or opening geometry appears that was not clearly visible in BEFORE.
+
+If detected:
+
+category: structure
+violationType: layout_change
+hardFail: true
+` : ""}
+
 ${isFullStaging ? `3️⃣ BUILT-IN / STRUCTURAL ANCHORS
 
 These are considered structural anchors:
@@ -1479,7 +1544,35 @@ FAIL if:
 
 Bar stools or decor do NOT justify island resizing.
 
-If island geometry changes → structural violation.` : refreshBuiltInSection}
+If island geometry changes → structural violation.
+
+BUILT-IN FOOTPRINT & SILHOUETTE LOCK (CRITICAL)
+
+Built-in anchors must preserve their exact footprint and silhouette envelope.
+
+This includes:
+
+• Edge boundary alignment
+• Countertop length
+• Cabinet depth
+• Island footprint dimensions
+• Joinery termination points
+
+Hard fail if:
+
+• A kitchen island footprint expands or contracts
+• Counter length increases or decreases
+• Cabinet edges extend into new floor area
+• Built-in geometry encloses open-plan space
+• Silhouette envelope changes even if material appears similar
+
+This includes subtle expansion or perspective-adjusted enlargement.
+
+If detected:
+
+category: structure
+violationType: anchor_change
+hardFail: true` : refreshBuiltInSection}
 
 ${isFullStaging ? `4️⃣ MATERIAL & SURFACE PRESERVATION
 
