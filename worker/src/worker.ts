@@ -1471,6 +1471,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (await stopIfCancelled("stage2_only_post_stage2")) return;
       recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
       const stage2ValidationPassed = stage2Result.validationRisk !== true;
+      let stage2OnlyBlockedReason: string | null = null;
+      let stage2OnlyFallbackStage: "1A" | "1B" = stage2OnlyBaseStage;
 
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
@@ -1532,9 +1534,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══ Structural Geometry Check — only if published URLs exist ═══
       // (Don't introduce new publish steps; use URLs available post-publish below)
 
+      if (!stage2ValidationPassed) {
+        const usedAttempts = Number.isFinite((stage2Result as any)?.attempts)
+          ? Math.max(1, Math.floor((stage2Result as any).attempts))
+          : 1;
+        const maxAttempts = Number.isFinite((stage2Result as any)?.maxAttempts)
+          ? Math.max(1, Math.floor((stage2Result as any).maxAttempts))
+          : usedAttempts;
+        stage2OnlyBlockedReason = `stage2_structural_exhausted after ${usedAttempts}/${maxAttempts} attempts`;
+        nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} fallback=${stage2OnlyFallbackStage}`);
+        nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
+      }
+
       // AUDIT FIX: Compliance gate before publish in stage2-only path
       // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
-      if (geminiSemanticValidatorMode !== null) {
+      if (!stage2OnlyBlockedReason && geminiSemanticValidatorMode !== null) {
         try {
           const ai = getGeminiClient();
           const baseRef = toBase64(validationBaseline);
@@ -1557,10 +1571,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               tier,
               reason: reasonText,
               mode: geminiSemanticValidatorMode,
-              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "retry-not-supported/log-only" : "log-only",
+              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "fallback" : "log-only",
             });
             if (shouldBlock && geminiSemanticValidatorMode === "block") {
-              nLog(`[worker] ⚠️  Compliance blocking detected (stage2-only) confidence=${confidence.toFixed(2)} tier=${tier} mode=block - NOT failing directly, allowing publish path to continue: ${reasonText}`);
+              stage2OnlyBlockedReason = `stage2_compliance_exhausted after ${Math.max(1, Number((stage2Result as any)?.attempts || 1))} attempts: ${reasonText}`;
+              nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${Math.max(1, Number((stage2Result as any)?.attempts || 1))} fallback=${stage2OnlyFallbackStage}`);
+              nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
             } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
               nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${reasonText}`);
             } else {
@@ -1572,8 +1588,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } catch (compErr: any) {
           nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
         }
-      } else {
+      } else if (geminiSemanticValidatorMode === null) {
         nLog(`[worker] Compliance check skipped (stage2-only) - geminiSemanticValidatorMode=disabled`);
+      }
+
+      if (stage2OnlyBlockedReason) {
+        const fallbackPath = basePath;
+        await clearStage2RetryPending("stage2_only_fallback_clear_pending");
+        await completePartialJob({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: stage2OnlyFallbackStage,
+          finalPath: fallbackPath,
+          pub1AUrl: (payload.stage2OnlyMode as any)?.base1AUrl || undefined,
+          pub1BUrl: payload.stage2OnlyMode?.base1BUrl || undefined,
+          sceneMeta: {
+            timings,
+            scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
+            stage2OnlyRetry: true,
+          },
+          userMessage: stage2OnlyFallbackStage === "1B"
+            ? "We preserved your Stage 1B result because Stage 2 could not be validated safely."
+            : "We preserved your Stage 1A result because Stage 2 could not be validated safely.",
+          reason: stage2OnlyBlockedReason,
+          stageOutputs: {
+            "1A": ((payload.stage2OnlyMode as any)?.base1APath || stageLineage.stage1A.output || basePath),
+            ...(stage2OnlyFallbackStage === "1B" ? { "1B": fallbackPath } : {}),
+          },
+        });
+        return;
       }
 
       // Publish Stage-2 result
@@ -3528,34 +3571,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         setStage2AttemptValidation(path2, blockedBy, failReasons);
 
         if (attempt >= MAX_STAGE2_RETRIES) {
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1B;
+          const fallbackPath = fallback1B || path1A;
+          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
           stage2Blocked = true;
-          stage2BlockedReason = "stage2_structural_exhausted";
-          nLog(`[STAGE2_UNIFIED_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES}`);
-          await safeWriteJobStatus(
-            payload.jobId,
-            {
-              status: "failed",
-              errorMessage: "stage2_structural_exhausted",
-              reason: "stage2_structural_exhausted",
-              meta: {
-                ...(sceneLabel ? { ...sceneMeta } : {}),
-                unifiedValidation,
-                stage2LocalReasons,
-                geminiConfirm: lastGeminiConfirm,
-                blockedBy,
-                blockedStage: "stage2",
-                attemptCount: attempt,
-              },
-            },
-            "stage2_unified_exhausted"
-          );
-          return;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `stage2_structural_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
+          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structure retries=${attempt - 1}`);
+          break;
         }
 
         retryTemperature = Math.max(0.05, retryTemperature * 0.9);
         retryTopP = Math.max(0.3, retryTopP * 0.9);
         retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
-        nLog(`[STAGE2_UNIFIED_RETRY] attempt=${attempt + 1} structuralFail=true temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
         continue;
       }
 
@@ -3636,29 +3673,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
                   ? stageLineage.stage1B.output
                   : path1B;
-
-                if (!fallback1B) {
-                  stage2Blocked = true;
-                  stage2BlockedReason = "missing_stage1b_baseline_for_compliance_fallback";
-                  await safeWriteJobStatus(
-                    payload.jobId,
-                    {
-                      status: "failed",
-                      errorMessage: "missing_stage1b_baseline_for_compliance_fallback",
-                      reason: "missing_baseline",
-                    },
-                    "stage2_compliance_missing_baseline"
-                  );
-                  return;
-                }
+                const fallbackPath = fallback1B || path1A;
+                const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
 
                 stage2Blocked = true;
-                stage2FallbackStage = "1B";
+                stage2FallbackStage = fallbackStage;
                 stage2BlockedReason = `stage2_compliance_exhausted after ${MAX_STAGE2_RETRIES} attempts: ${reasonText}`;
-                fallbackUsed = "stage2_compliance_fallback_1b";
-                path2 = fallback1B;
-                stage2CandidatePath = fallback1B;
-                nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=1B`);
+                fallbackUsed = fallbackStage === "1B" ? "stage2_compliance_fallback_1b" : "stage2_compliance_fallback_1a";
+                path2 = fallbackPath;
+                stage2CandidatePath = fallbackPath;
+                nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+                nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
                 nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=compliance retries=${attempt - 1}`);
                 break;
               }
@@ -4204,7 +4229,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(stage1BDeclutterResult ? { stage1BDeclutterResult } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
-    ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage } : {}),
+    ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage, partial: true } : {}),
     ...(stage2AdvertisedButMissing ? { stage2AdvertisedButMissing: true } : {}),
   };
 
