@@ -871,6 +871,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
   let stage2LocalReasons: string[] = [];
+  let compliance: any = undefined;
   const stage2AttemptOutputs: Array<{
     attempt: number;
     localPath: string;
@@ -1543,26 +1544,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           if (s2oCompliance && s2oCompliance.ok === false) {
             const confidence = s2oCompliance.confidence ?? 0.6;
-            const shouldBlock = confidence >= COMPLIANCE_BLOCK_THRESHOLD;
+            const tier = Number.isFinite((s2oCompliance as any).tier)
+              ? Math.max(1, Math.min(3, Math.floor((s2oCompliance as any).tier)))
+              : 1;
+            const reasonText = String((s2oCompliance as any).reason || (s2oCompliance.reasons || ["Compliance failed"]).join("; "));
+            const shouldBlock = (s2oCompliance as any).blocking === true || confidence >= COMPLIANCE_BLOCK_THRESHOLD;
             nLog("[COMPLIANCE_GATE_DECISION]", {
               jobId: payload.jobId,
               path: "stage2_only",
               ok: false,
               confidence,
+              tier,
+              reason: reasonText,
               mode: geminiSemanticValidatorMode,
-              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "block" : "log-only",
+              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "retry-not-supported/log-only" : "log-only",
             });
             if (shouldBlock && geminiSemanticValidatorMode === "block") {
-              const msg = `Structural violations: ${(s2oCompliance.reasons || ["Compliance failed"]).join("; ")}`;
-              const err = new Error(`Compliance failed (stage2-only) confidence=${confidence.toFixed(2)}: ${msg}`);
-              (err as any).code = "COMPLIANCE_VALIDATION_FAILED";
-              (err as any).violations = s2oCompliance.reasons || [];
-              (err as any).confidence = confidence;
-              nLog(`[worker] ❌ BLOCKING stage2-only job ${payload.jobId} PRE-PUBLISH: ${msg}`);
-              throw err;
+              nLog(`[worker] ⚠️  Compliance blocking detected (stage2-only) confidence=${confidence.toFixed(2)} tier=${tier} mode=block - NOT failing directly, allowing publish path to continue: ${reasonText}`);
             } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
-              const msg = `Structural violations: ${(s2oCompliance.reasons || ["Compliance failed"]).join("; ")}`;
-              nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${msg}`);
+              nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${reasonText}`);
             } else {
               nLog(`[worker] ⚠️  Compliance soft-fail (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
             }
@@ -1570,7 +1570,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
           }
         } catch (compErr: any) {
-          if (compErr?.code === "COMPLIANCE_VALIDATION_FAILED") throw compErr;
           nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
         }
       } else {
@@ -3287,6 +3286,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let unifiedValidation: UnifiedValidationResult | undefined = undefined;
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
   const MAX_STAGE2_RETRIES = Math.max(1, stage2MaxAttempts || 1);
+  const tVal = Date.now();
 
   const hasStage2GeminiSemanticHardFail = (result?: UnifiedValidationResult): boolean => {
     if (!result || !payload.options.virtualStage) return false;
@@ -3559,6 +3559,139 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         continue;
       }
 
+      // Compliance gate is part of Stage 2 retry flow.
+      // A blocking compliance verdict triggers retry; it does not fail the job directly.
+      if (geminiSemanticValidatorMode !== null) {
+        try {
+          const ai = getGeminiClient();
+          const base1A = toBase64(path1A);
+          const baseFinal = toBase64(path2);
+          compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
+            validationMode: stage2ValidationMode,
+          });
+
+          if (compliance && compliance.ok === false) {
+            const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
+            const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
+            const confidence = compliance.confidence ?? 0.6;
+            const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
+            const hasAnchorEvidence = !!anchorChecks && (
+              anchorChecks.islandChanged ||
+              anchorChecks.cabinetryChanged ||
+              anchorChecks.hvacChanged ||
+              anchorChecks.lightingChanged
+            );
+            const structuralViolation = !!compliance.structuralViolation;
+            const placementViolation = !!compliance.placementViolation;
+            const tier = Number.isFinite(compliance.tier)
+              ? Math.max(1, Math.min(3, Math.floor(compliance.tier)))
+              : 1;
+            const reasonText = String(
+              compliance.reason
+              || (Array.isArray(compliance.reasons) ? compliance.reasons.join("; ") : "Compliance check failed")
+            );
+            const legacyBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
+            const complianceBlocking = compliance.blocking === true || legacyBlock;
+
+            nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
+              jobId: payload.jobId,
+              complianceOk: compliance.ok,
+              complianceConfidence: compliance.confidence,
+              complianceTier: tier,
+              complianceReason: reasonText,
+              complianceReasons: compliance.reasons?.length ?? 0,
+              hasAnchorEvidence,
+              anchorFlags: anchorChecks ?? null,
+              maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
+              lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
+              dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
+              riskLevel: unifiedValidation?.riskLevel ?? null,
+              stage2Input: stage2InputResolved ?? null,
+              stage1AUrl: pub1AUrl ?? null,
+              stage1BUrl: pub1BUrl ?? null,
+              finalStage2Url: null,
+            });
+
+            nLog("[COMPLIANCE_GATE_DECISION]", {
+              jobId: payload.jobId,
+              ok: compliance.ok,
+              confidence,
+              tier,
+              reason: reasonText,
+              hasAnchorEvidence,
+              structuralViolation,
+              placementViolation,
+              highThreshold: HIGH_CONF,
+              medThreshold: MED_CONF,
+              mode: geminiSemanticValidatorMode,
+              action: (complianceBlocking && geminiSemanticValidatorMode === "block") ? "retry" : "log-only",
+            });
+
+            if (complianceBlocking && geminiSemanticValidatorMode === "block") {
+              const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
+              nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
+              setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);
+
+              if (attempt >= MAX_STAGE2_RETRIES) {
+                const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+                  ? stageLineage.stage1B.output
+                  : path1B;
+
+                if (!fallback1B) {
+                  stage2Blocked = true;
+                  stage2BlockedReason = "missing_stage1b_baseline_for_compliance_fallback";
+                  await safeWriteJobStatus(
+                    payload.jobId,
+                    {
+                      status: "failed",
+                      errorMessage: "missing_stage1b_baseline_for_compliance_fallback",
+                      reason: "missing_baseline",
+                    },
+                    "stage2_compliance_missing_baseline"
+                  );
+                  return;
+                }
+
+                stage2Blocked = true;
+                stage2FallbackStage = "1B";
+                stage2BlockedReason = `stage2_compliance_exhausted after ${MAX_STAGE2_RETRIES} attempts: ${reasonText}`;
+                fallbackUsed = "stage2_compliance_fallback_1b";
+                path2 = fallback1B;
+                stage2CandidatePath = fallback1B;
+                nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=1B`);
+                nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=compliance retries=${attempt - 1}`);
+                break;
+              }
+
+              retryTemperature = Math.max(0.05, retryTemperature * 0.9);
+              retryTopP = Math.max(0.3, retryTopP * 0.9);
+              retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
+              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+              continue;
+            }
+
+            if (complianceBlocking && geminiSemanticValidatorMode === "log") {
+              nLog(`[worker] ⚠️  Compliance failure detected (confidence ${confidence.toFixed(2)}) mode=log - ALLOWING job to proceed: ${reasonText}`);
+            } else {
+              nLog("[COMPLIANCE_SOFT_FAIL]", {
+                jobId: payload.jobId,
+                confidence,
+                tier,
+                reason: reasonText,
+                reasons: compliance.reasons,
+                threshold: MED_CONF,
+                highThreshold: HIGH_CONF,
+              });
+              nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
+            }
+          }
+        } catch (e: any) {
+          nLog("[worker] compliance check skipped or error:", e?.message || e);
+        }
+      } else {
+        nLog(`[worker] Compliance check skipped - geminiSemanticValidatorMode=disabled`);
+      }
+
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
       updateJob(payload.jobId, {
         meta: {
@@ -3572,96 +3705,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
-  // AUDIT FIX: Compliance gate moved BEFORE publish — only publish if compliance passes
-  // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
-  let compliance: any = undefined;
-  const tVal = Date.now();
-  if (geminiSemanticValidatorMode !== null) {
-    try {
-      const ai = getGeminiClient();
-      const base1A = toBase64(path1A);
-      const baseFinal = toBase64(path2);
-      compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
-        validationMode: stage2ValidationMode,
-      });
-      if (compliance && compliance.ok === false) {
-        const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
-        const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
-        const confidence = compliance.confidence ?? 0.6;
-        const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
-        const hasAnchorEvidence = !!anchorChecks && (
-          anchorChecks.islandChanged ||
-          anchorChecks.cabinetryChanged ||
-          anchorChecks.hvacChanged ||
-          anchorChecks.lightingChanged
-        );
-        const structuralViolation = !!compliance.structuralViolation;
-        const placementViolation = !!compliance.placementViolation;
-        const lastViolationMsg = `Structural violations detected: ${(compliance.reasons || ["Compliance check failed"]).join("; ")}`;
-        const shouldBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
-
-        nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
-          jobId: payload.jobId,
-          complianceOk: compliance.ok,
-          complianceConfidence: compliance.confidence,
-          complianceReasons: compliance.reasons?.length ?? 0,
-          hasAnchorEvidence,
-          anchorFlags: anchorChecks ?? null,
-          maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
-          lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
-          dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
-          riskLevel: unifiedValidation?.riskLevel ?? null,
-          stage2Input: stage2InputResolved ?? null,
-          stage1AUrl: pub1AUrl ?? null,
-          stage1BUrl: pub1BUrl ?? null,
-          finalStage2Url: null, // Not yet published (compliance runs pre-publish)
-        });
-
-        nLog("[COMPLIANCE_GATE_DECISION]", {
-          jobId: payload.jobId,
-          ok: compliance.ok,
-          confidence,
-          hasAnchorEvidence,
-          structuralViolation,
-          placementViolation,
-          highThreshold: HIGH_CONF,
-          medThreshold: MED_CONF,
-          mode: geminiSemanticValidatorMode,
-          action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "block" : "log-only",
-        });
-
-        if (shouldBlock && geminiSemanticValidatorMode === "block") {
-          const complianceError = new Error(`Gemini semantic validation failed with confidence ${confidence.toFixed(2)}: ${lastViolationMsg}`);
-          (complianceError as any).code = "COMPLIANCE_VALIDATION_FAILED";
-          (complianceError as any).violations = compliance.reasons || [];
-          (complianceError as any).confidence = confidence;
-          nLog(`[worker] ❌ BLOCKING JOB ${payload.jobId}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)})`);
-          nLog(`[worker] Job blocked PRE-PUBLISH - structural integrity cannot be guaranteed`);
-          throw complianceError;
-        } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
-          nLog(`[worker] ⚠️  Compliance failure detected (confidence ${confidence.toFixed(2)}) mode=log - ALLOWING job to proceed: ${lastViolationMsg}`);
-        } else {
-          nLog("[COMPLIANCE_SOFT_FAIL]", {
-            jobId: payload.jobId,
-            confidence,
-            reasons: compliance.reasons,
-            threshold: MED_CONF,
-            highThreshold: HIGH_CONF,
-          });
-          nLog(`[worker] ⚠️  Compliance concerns (confidence ${confidence.toFixed(2)} < ${MED_CONF} threshold) - allowing job to proceed`);
-        }
-      }
-    } catch (e: any) {
-      if (e?.code === "COMPLIANCE_VALIDATION_FAILED") {
-        throw e;
-      }
-      nLog("[worker] compliance check skipped or error:", e?.message || e);
-    }
-  } else {
-    nLog(`[worker] Compliance check skipped - geminiSemanticValidatorMode=disabled`);
-  }
   timings.validateMs = Date.now() - tVal;
-  nLog(`[AUDIT FIX] Compliance passed — proceeding to publish Stage 2 image`);
+  nLog(`[AUDIT FIX] Compliance evaluated in retry flow — proceeding to publish Stage 2 image or fallback`);
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {

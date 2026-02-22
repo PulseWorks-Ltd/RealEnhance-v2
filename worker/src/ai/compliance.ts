@@ -4,10 +4,23 @@ import type { Stage2ValidationMode } from "../validators/stage2ValidationMode";
 export type ComplianceVerdict = {
   ok: boolean;
   confidence: number;
+  blocking: boolean;
+  tier: number;
+  reason: string;
   structuralViolation?: boolean;
   placementViolation?: boolean;
   reasons: string[];
 };
+
+function clampTier(value: number): number {
+  return Math.max(1, Math.min(3, Math.floor(value)));
+}
+
+function resolveTier(confidence: number): number {
+  if (confidence >= 0.95) return 3;
+  if (confidence >= 0.85) return 2;
+  return 1;
+}
 
 async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
   const resp = await (ai as any).models.generateContent({
@@ -85,13 +98,34 @@ export async function checkCompliance(
   ].join("\n");
   const s = await ask(ai, originalB64, editedB64, structuralPrompt);
   if (!s) {
-    const result = { ok: false, confidence: 0.3, structuralViolation: true, placementViolation: false, reasons: ["Compliance parser failed"] };
+    const reasons = ["Compliance parser failed"];
+    const confidence = 0.3;
+    const result = {
+      ok: false,
+      confidence,
+      blocking: true,
+      tier: resolveTier(confidence),
+      reason: reasons.join("; "),
+      structuralViolation: true,
+      placementViolation: false,
+      reasons,
+    };
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
   const sConfidence = typeof s.confidence === 'number' ? s.confidence : 0.6;
   if (s.ok === false) {
-    const result = { ok: false, confidence: sConfidence, structuralViolation: true, placementViolation: false, reasons: s.reasons || ["Structural change detected"] };
+    const reasons = s.reasons || ["Structural change detected"];
+    const result = {
+      ok: false,
+      confidence: sConfidence,
+      blocking: true,
+      tier: resolveTier(sConfidence),
+      reason: reasons.join("; "),
+      structuralViolation: true,
+      placementViolation: false,
+      reasons,
+    };
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
@@ -126,18 +160,48 @@ export async function checkCompliance(
   ].join("\n");
   const p = await ask(ai, originalB64, editedB64, placementPrompt);
   if (!p) {
-    const result = { ok: false, confidence: 0.3, structuralViolation: false, placementViolation: true, reasons: ["Compliance parser failed (placement)"] };
+    const reasons = ["Compliance parser failed (placement)"];
+    const confidence = 0.3;
+    const result = {
+      ok: false,
+      confidence,
+      blocking: true,
+      tier: resolveTier(confidence),
+      reason: reasons.join("; "),
+      structuralViolation: false,
+      placementViolation: true,
+      reasons,
+    };
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
   const pConfidence = typeof p.confidence === 'number' ? p.confidence : 0.6;
   if (p.ok === false) {
-    const result = { ok: false, confidence: pConfidence, structuralViolation: false, placementViolation: true, reasons: p.reasons || ["Unrealistic/blocked placement"] };
+    const reasons = p.reasons || ["Unrealistic/blocked placement"];
+    const result = {
+      ok: false,
+      confidence: pConfidence,
+      blocking: true,
+      tier: resolveTier(pConfidence),
+      reason: reasons.join("; "),
+      structuralViolation: false,
+      placementViolation: true,
+      reasons,
+    };
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
 
-  const result = { ok: true, confidence: 0.0, structuralViolation: false, placementViolation: false, reasons: [] };
+  const result = {
+    ok: true,
+    confidence: 0.0,
+    blocking: false,
+    tier: clampTier(1),
+    reason: "",
+    structuralViolation: false,
+    placementViolation: false,
+    reasons: [],
+  };
   console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
   return result;
 }
