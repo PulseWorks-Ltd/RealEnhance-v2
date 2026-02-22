@@ -296,6 +296,25 @@ Compare BEFORE (Stage 1A baseline/original-enhanced image) vs AFTER (Stage 2 can
 
 CRITICAL STRUCTURAL OPENING VERIFICATION
 
+OCCLUSION & REVEAL PROTECTION (CRITICAL)
+
+Structural visibility must remain consistent with BEFORE.
+
+If a structural surface was partially obscured (e.g., by curtains, blinds, or soft furnishings),
+AFTER must not:
+
+• Remove occluding elements to reveal new wall area
+• Reveal previously unseen structural boundaries
+• Reveal new opening geometry
+• Extend visible wall envelope beyond what was visible in BEFORE
+
+Hard fail if newly visible structural surfaces appear that were not clearly visible in BEFORE.
+
+If detected:
+→ category = structure
+→ violationType = layout_only
+→ hardFail = true
+
 You MUST verify that every doorway and window visible in BEFORE
 still exists in AFTER.
 
@@ -322,11 +341,59 @@ Focus ONLY on these fixed/built-in checks:
 • pendant lights
 • downlights
 • fixed ceiling fixtures
+
+CEILING FIXTURE STRUCTURAL ENFORCEMENT (CRITICAL)
+
+Ceiling-mounted fixtures are structural elements.
+
+Adding, removing, relocating, resizing, or changing the count of:
+
+• pendant lights
+• downlights
+• fixed ceiling fixtures
+
+is structural.
+
+Hard fail if any of the above changes are detected.
+
+If detected:
+→ category = structure
+→ violationType = built_in_moved
+→ hardFail = true
+
 • vents and grilles
 • HVAC / heat pump units
 • thermostats and control panels
 • switch plates and outlet plates
 • doorway openings added or removed
+
+BUILT-IN GEOMETRIC ENVELOPE LOCK (CRITICAL)
+
+Built-in elements must preserve their exact geometric footprint and silhouette envelope.
+
+This includes:
+
+• Edge boundary alignment
+• Countertop length
+• Cabinet depth
+• Cabinet termination points
+• Island footprint dimensions
+• Spatial alignment relative to walls
+
+Hard fail if:
+
+• A kitchen island footprint expands or contracts
+• A cabinet run extends into new floor area
+• Counter length increases or decreases
+• Built-in geometry encloses previously open space
+• Silhouette envelope changes even if material appears similar
+
+Subtle perspective-adjusted enlargement counts as built-in movement.
+
+If detected:
+→ category = structure
+→ violationType = built_in_moved
+→ hardFail = true
 
 IGNORE (out of scope):
 • general wall surface color differences
