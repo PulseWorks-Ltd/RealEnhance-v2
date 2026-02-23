@@ -61,8 +61,6 @@ ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_IDENTITY_LOCK_REFRESH}
 
-${FURNITURE_ADDITION_CONSTRAINTS_REFRESH}
-
 REFRESH LOGIC — MANDATORY
 - Preserve anchor geometry and anchor scale.
 - Preserve room density balance and circulation.
@@ -80,6 +78,8 @@ REFRESH-SPECIFIC RULES
 - Keep opening continuity (no blocked/sealed openings).
 - Maintain realistic furniture grounding and shadows.
 - Avoid over-staging; refine existing composition.
+
+${FURNITURE_ADDITION_CONSTRAINTS_REFRESH}
 
 STYLE PROFILE
 NZ Contemporary / Scandi Minimalist.

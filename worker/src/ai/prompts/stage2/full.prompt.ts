@@ -59,6 +59,20 @@ Stage only the explicitly selected room type(s).
 Do not expand room function.
 `;
 
+const FURNITURE_ADDITION_CONSTRAINTS_FULL = `
+FURNITURE ADDITION CONSTRAINTS — STRICT
+
+- Do NOT add bar stools, chairs, or seating to kitchen islands unless seating already exists in the input image.
+- You may refine, repaint, or replace existing stools.
+- You may NOT invent new seating zones.
+- Respect appliance clearance (dishwasher, oven, drawers must remain usable).
+
+SPATIAL LOGIC CONSTRAINTS — STRICT
+
+Never place furniture in front of appliances, cabinet doors, or walking paths.
+Keep all appliance and cabinet access fully usable.
+`.trim();
+
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
   const room = roomType || "room";
 
@@ -95,6 +109,8 @@ FULL-SPECIFIC RULES
 - Keep built-ins/fixed fixtures unchanged and unobstructed.
 - Use realistic furniture footprints and contact shadows.
 - Prefer coherent full composition over sparse accessory-only staging.
+
+${FURNITURE_ADDITION_CONSTRAINTS_FULL}
 
 STYLE PROFILE
 NZ Contemporary / Scandi Minimalist.
