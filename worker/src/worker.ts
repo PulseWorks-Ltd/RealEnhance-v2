@@ -3879,6 +3879,64 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return result.reasons.some((reason) => reason.startsWith("Gemini "));
   };
 
+  const hasPrimaryStructuralViolation = (result?: UnifiedValidationResult): boolean => {
+    if (!result) return false;
+    const geminiDetails = (result.raw?.geminiSemantic?.details as any) || {};
+    const violationType = String(geminiDetails.violationType || "").toLowerCase();
+    const category = String(geminiDetails.category || "").toLowerCase();
+    const confidence = Number(geminiDetails.confidence ?? 0);
+    const builtInDetected = geminiDetails.builtInDetected === true;
+    const structuralAnchorCount = Number(geminiDetails.structuralAnchorCount ?? 0);
+
+    const roomTypeLower = String(payload.options.roomType || "").toLowerCase();
+    const kitchenContext = roomTypeLower.includes("kitchen");
+
+    const evidence = result.evidence;
+    const windowsDelta = evidence
+      ? Math.abs((evidence.openings.windowsAfter ?? 0) - (evidence.openings.windowsBefore ?? 0))
+      : 0;
+    const doorsDelta = evidence
+      ? Math.abs((evidence.openings.doorsAfter ?? 0) - (evidence.openings.doorsBefore ?? 0))
+      : 0;
+    const hasOpeningChange =
+      violationType === "opening_change" ||
+      category === "opening_blocked" ||
+      windowsDelta > 0 ||
+      doorsDelta > 0;
+
+    const reasonText = [
+      ...(result.reasons || []),
+      ...(Array.isArray(geminiDetails.reasons) ? geminiDetails.reasons.map(String) : []),
+    ].join(" ").toLowerCase();
+
+    const hasWallGeometryDrift =
+      violationType === "wall_change" ||
+      ["wall removed", "wall added", "wall plane", "wall geometry", "load-bearing"].some((token) => reasonText.includes(token));
+
+    const hasCameraShift =
+      violationType === "camera_shift" ||
+      ["camera shift", "camera angle", "viewpoint shift", "perspective shift", "field of view", "fov"].some((token) => reasonText.includes(token));
+
+    const hasEnvelopeDeformation =
+      ["room envelope", "envelope geometry", "room volume changed", "room width", "room depth", "architectural footprint", "ceiling plane"].some((token) => reasonText.includes(token));
+
+    const hasConfirmedBuiltInRelocation =
+      (violationType === "built_in_moved" || builtInDetected) &&
+      structuralAnchorCount >= 2 &&
+      confidence >= 0.85;
+
+    const hasKitchenIslandPrimary = kitchenContext && evidence?.anchorChecks?.islandChanged === true;
+
+    return (
+      hasOpeningChange ||
+      hasWallGeometryDrift ||
+      hasCameraShift ||
+      hasEnvelopeDeformation ||
+      hasConfirmedBuiltInRelocation ||
+      hasKitchenIslandPrimary
+    );
+  };
+
   let retryTemperature = 0.55;
   let retryTopP = 0.85;
   let retryTopK = 40;
@@ -4157,7 +4215,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
       const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
-      const structuralFailDetected = unifiedHardFail || geminiSemanticHardFail || confirmHardFail;
+      const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(unifiedValidation);
+      const structuralFailDetected = primaryStructuralViolationDetected && (unifiedHardFail || geminiSemanticHardFail || confirmHardFail);
 
       if (structuralFailDetected) {
         const blockedBy = confirmHardFail ? "gemini" : (unifiedValidation.blockSource || "gemini");
@@ -4291,12 +4350,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
             const confidence = compliance.confidence ?? 0.6;
             const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
+              const roomTypeLower = String(payload.options.roomType || "").toLowerCase();
+              const kitchenContext = roomTypeLower.includes("kitchen");
+              const islandAnchorStructural = kitchenContext && !!anchorChecks?.islandChanged;
             const hasAnchorEvidence = !!anchorChecks && (
-              anchorChecks.islandChanged ||
+                islandAnchorStructural ||
               anchorChecks.cabinetryChanged ||
               anchorChecks.hvacChanged ||
               anchorChecks.lightingChanged
             );
+              const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(unifiedValidation);
             const structuralViolation = !!compliance.structuralViolation;
             const placementViolation = !!compliance.placementViolation;
             const tier = Number.isFinite(compliance.tier)
@@ -4308,6 +4371,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             );
             const legacyBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
             const complianceBlocking = compliance.blocking === true || legacyBlock;
+            const complianceRetryEligible = primaryStructuralViolationDetected;
 
             nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
               jobId: payload.jobId,
@@ -4335,15 +4399,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               tier,
               reason: reasonText,
               hasAnchorEvidence,
+              primaryStructuralViolationDetected,
               structuralViolation,
               placementViolation,
               highThreshold: HIGH_CONF,
               medThreshold: MED_CONF,
               mode: geminiSemanticValidatorMode,
-              action: (complianceBlocking && geminiSemanticValidatorMode === "block") ? "retry" : "log-only",
+              action: (complianceBlocking && complianceRetryEligible && geminiSemanticValidatorMode === "block") ? "retry" : "log-only",
             });
 
-            if (complianceBlocking && geminiSemanticValidatorMode === "block") {
+            if (!complianceRetryEligible && complianceBlocking) {
+              stage2Blocked = false;
+              nLog("[STAGE2_COMPLIANCE_SKIP_RETRY] secondary_only_signals=true action=allow_pass");
+            }
+
+            if (complianceBlocking && complianceRetryEligible && geminiSemanticValidatorMode === "block") {
               const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
               nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
               setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);

@@ -9,6 +9,7 @@
 export interface ValidationEvidence {
   jobId: string;
   stage: "1B" | "2";
+  roomType?: string;
 
   /** Perceptual diff (SSIM) */
   ssim: number;
@@ -65,6 +66,10 @@ export interface RiskClassification {
   triggers: string[];
 }
 
+function isKitchenContext(roomType?: string): boolean {
+  return roomType?.toLowerCase().includes("kitchen") ?? false;
+}
+
 /**
  * Deterministic Risk Classifier — NO AI, pure code.
  *
@@ -83,6 +88,9 @@ export interface RiskClassification {
  */
 export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   const triggers: string[] = [];
+  const kitchenContext = isKitchenContext(evidence.roomType);
+  const islandAnchorStructural = evidence.anchorChecks.islandChanged && kitchenContext;
+  const islandAnchorAdvisory = evidence.anchorChecks.islandChanged && !kitchenContext;
 
   // ─── HIGH RISK checks ───
   const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
@@ -90,7 +98,7 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
 
   const onlyHvacAnchor =
     evidence.anchorChecks.hvacChanged &&
-    !evidence.anchorChecks.islandChanged &&
+    !islandAnchorStructural &&
     !evidence.anchorChecks.cabinetryChanged &&
     !evidence.anchorChecks.lightingChanged;
 
@@ -113,12 +121,15 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   if (doorsDelta !== 0) {
     triggers.push(`HIGH: doors changed ${evidence.openings.doorsBefore}→${evidence.openings.doorsAfter}`);
   }
-  const anchorEvidencePresent = evidence.anchorChecks.islandChanged ||
+  const anchorEvidencePresent = islandAnchorStructural ||
     evidence.anchorChecks.hvacChanged ||
     evidence.anchorChecks.cabinetryChanged ||
     evidence.anchorChecks.lightingChanged;
-  if (evidence.anchorChecks.islandChanged) {
+  if (islandAnchorStructural) {
     triggers.push("HIGH: kitchen island anchor changed");
+  }
+  if (islandAnchorAdvisory) {
+    triggers.push("MEDIUM: island anchor signal in non-kitchen context (advisory)");
   }
   if (evidence.anchorChecks.hvacChanged) {
     if (isolatedHvacSignal) {
@@ -193,8 +204,10 @@ export function shouldRetry(
   modelCategory: string,
   riskLevel: RiskLevel
 ): { retry: boolean; reason: string } {
+  const kitchenContext = isKitchenContext(evidence.roomType);
+  const islandAnchorStructural = evidence.anchorChecks.islandChanged && kitchenContext;
   // Anchor-based retries
-  const anchorChanged = evidence.anchorChecks.islandChanged ||
+  const anchorChanged = islandAnchorStructural ||
     evidence.anchorChecks.hvacChanged ||
     evidence.anchorChecks.cabinetryChanged ||
     evidence.anchorChecks.lightingChanged;
@@ -232,10 +245,11 @@ export function shouldRetry(
 /**
  * Create empty evidence packet for initialization
  */
-export function createEmptyEvidence(jobId: string, stage: "1B" | "2"): ValidationEvidence {
+export function createEmptyEvidence(jobId: string, stage: "1B" | "2", roomType?: string): ValidationEvidence {
   return {
     jobId,
     stage,
+    roomType,
     ssim: 1.0,
     ssimThreshold: stage === "1B" ? 0.9 : 0.97,
     ssimPassed: true,
@@ -266,7 +280,13 @@ export function createEmptyEvidence(jobId: string, stage: "1B" | "2"): Validatio
 export function shouldInjectEvidence(e: ValidationEvidence): boolean {
   if (!e) return false;
 
-  if (e.anchorChecks && Object.values(e.anchorChecks).some((v) => v === true)) {
+  const kitchenContext = isKitchenContext(e.roomType);
+  const anchorChecksForInjection = {
+    ...e.anchorChecks,
+    islandChanged: kitchenContext ? e.anchorChecks.islandChanged : false,
+  };
+
+  if (anchorChecksForInjection && Object.values(anchorChecksForInjection).some((v) => v === true)) {
     return true;
   }
 

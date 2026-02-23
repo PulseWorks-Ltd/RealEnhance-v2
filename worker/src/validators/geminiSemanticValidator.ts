@@ -23,6 +23,10 @@ function debugLog(...args: any[]) {
   }
 }
 
+function isKitchenContext(roomType?: string): boolean {
+  return roomType?.toLowerCase().includes("kitchen") ?? false;
+}
+
 // AUDIT FIX: Validator thresholds consolidated and documented
 // MIN_CONFIDENCE: Below this, never hard-fail (low confidence = uncertain → allow through)
 const MIN_CONFIDENCE = 0.75;
@@ -62,7 +66,7 @@ function collectEvidenceKeys(evidence: ValidationEvidence): string[] {
 function gateEvidenceForGemini(stage: "1B" | "2", evidence: ValidationEvidence, jobId?: string): ValidationEvidence {
   if (!isEvidenceGatingEnabledForJob(jobId)) return evidence;
 
-  const gated = createEmptyEvidence(evidence.jobId, evidence.stage);
+  const gated = createEmptyEvidence(evidence.jobId, evidence.stage, evidence.roomType);
 
   const windowsDelta = evidence.openings.windowsAfter - evidence.openings.windowsBefore;
   const doorsDelta = evidence.openings.doorsAfter - evidence.openings.doorsBefore;
@@ -159,9 +163,12 @@ function buildAdjudicatorPrompt(
 
   const windowsDelta = gatedEvidence.openings.windowsAfter - gatedEvidence.openings.windowsBefore;
   const doorsDelta = gatedEvidence.openings.doorsAfter - gatedEvidence.openings.doorsBefore;
+  const kitchenContext = isKitchenContext(gatedEvidence.roomType);
+  const islandAnchorActive = gatedEvidence.anchorChecks.islandChanged && kitchenContext;
+  const islandAnchorAdvisoryOnly = gatedEvidence.anchorChecks.islandChanged && !kitchenContext;
 
   const anchorFlags = [
-    gatedEvidence.anchorChecks.islandChanged ? "ISLAND_CHANGED" : null,
+    islandAnchorActive ? "ISLAND_CHANGED" : null,
     gatedEvidence.anchorChecks.hvacChanged ? "HVAC_CHANGED" : null,
     gatedEvidence.anchorChecks.cabinetryChanged ? "CABINETRY_CHANGED" : null,
     gatedEvidence.anchorChecks.lightingChanged ? "LIGHTING_CHANGED" : null,
@@ -235,7 +242,7 @@ These signals are advisory unless accompanied by:
 ────────────────────────────────
 
 Numeric drift alone is NOT structural failure.
-Anchor change IS structural failure.
+Anchor change is structural only when corroborated by primary architectural evidence.
 `;
 
   const hasAnchorViolation = anchorFlags.length > 0;
@@ -250,14 +257,22 @@ ${hasOpeningDelta ? `⚠️ OPENING COUNT CHANGED — Computer vision detected w
    If you disagree (e.g., furniture occluding view), explain in reasons.` : ""}
 ${hasAnchorViolation ? `⚠️ ANCHOR REGION FLAGS ACTIVE: ${anchorFlags.join(", ")}
    Structural function anchors were detected as changed by computer vision.
-   You MUST verify these. If you agree anchors changed: category=structure, hardFail=true.
+  You MUST verify these. If you agree anchors changed with primary architectural impact: category=structure, hardFail=true.
    If you disagree (false positive), explain why in reasons.` : ""}
+
+${islandAnchorAdvisoryOnly ? `⚠️ ISLAND ANCHOR SIGNAL IN NON-KITCHEN CONTEXT
+  roomType=${gatedEvidence.roomType || "unknown"}
+  Treat ISLAND_CHANGED as advisory only in non-kitchen contexts.
+  Do NOT hard-fail solely from this signal.` : ""}
 
 Do NOT downgrade to style_only or furniture_change when anchor/opening flags are active
 unless you have HIGH CONFIDENCE (>0.90) that the flag is a false positive.
 
 Do not assign high-confidence structural violation scores to desks, shelving,
 or freestanding storage furniture.
+
+Removal or addition of freestanding furniture, wall art, decor, shelving,
+desks, bedside tables, or bedding does NOT constitute structural change.
 ` : "";
 
   debugInfo("[VALIDATION_EVIDENCE] injected", {
@@ -406,6 +421,85 @@ function hasStage2FullPrimaryStructuralIdentityViolation(input: {
   return structuralTokens.some((token) => input.reasonText.includes(token));
 }
 
+function hasStage2PrimaryStructuralViolation(input: {
+  violationType: GeminiViolationType;
+  reasonText: string;
+  windowsDelta: number;
+  doorsDelta: number;
+  stage2FullPrimaryStructuralIdentityViolation: boolean;
+  builtInDetected: boolean;
+  structuralAnchorCount: number;
+  confidence: number;
+}): {
+  primaryStructuralViolationDetected: boolean;
+  hasOpeningChange: boolean;
+  hasWallGeometryDrift: boolean;
+  hasCameraShift: boolean;
+  hasEnvelopeDeformation: boolean;
+  hasConfirmedBuiltInRelocation: boolean;
+} {
+  const hasOpeningChange =
+    input.violationType === "opening_change" ||
+    input.windowsDelta !== 0 ||
+    input.doorsDelta !== 0;
+
+  const hasWallGeometryDrift =
+    input.violationType === "wall_change" ||
+    [
+      "wall removed",
+      "wall added",
+      "wall deletion",
+      "wall addition",
+      "wall plane",
+      "wall geometry",
+      "load-bearing",
+    ].some((token) => input.reasonText.includes(token));
+
+  const hasCameraShift =
+    input.violationType === "camera_shift" ||
+    [
+      "camera shift",
+      "camera angle",
+      "viewpoint shift",
+      "perspective shift",
+      "field of view",
+      "fov",
+    ].some((token) => input.reasonText.includes(token));
+
+  const hasEnvelopeDeformation =
+    input.stage2FullPrimaryStructuralIdentityViolation ||
+    [
+      "room envelope",
+      "envelope geometry",
+      "room volume changed",
+      "room width",
+      "room depth",
+      "ceiling plane",
+      "architectural footprint",
+    ].some((token) => input.reasonText.includes(token));
+
+  const hasConfirmedBuiltInRelocation =
+    (input.violationType === "built_in_moved" || input.builtInDetected) &&
+    input.structuralAnchorCount >= 2 &&
+    input.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
+
+  const primaryStructuralViolationDetected =
+    hasOpeningChange ||
+    hasWallGeometryDrift ||
+    hasCameraShift ||
+    hasEnvelopeDeformation ||
+    hasConfirmedBuiltInRelocation;
+
+  return {
+    primaryStructuralViolationDetected,
+    hasOpeningChange,
+    hasWallGeometryDrift,
+    hasCameraShift,
+    hasEnvelopeDeformation,
+    hasConfirmedBuiltInRelocation,
+  };
+}
+
 export function buildFinalFixtureConfirmPrompt(input: {
   sceneType?: "interior" | "exterior";
   localFindings?: string[];
@@ -468,6 +562,12 @@ Keep stricter interpretation of SSIM and anchor/opening consistency together wit
 You are the final-pass adjudicator for fixed fixtures and built-in identity consistency.
 
 Compare BEFORE (Stage 1A baseline/original-enhanced image) vs AFTER (Stage 2 candidate image).
+
+Hard rule:
+Removal or addition of freestanding furniture, wall art, decor, shelving, desks,
+bedside tables, or bedding does NOT constitute structural change.
+Only walls, openings (doors/windows), camera position, room envelope,
+and permanently built-in fixtures are structural.
 
 CRITICAL STRUCTURAL OPENING VERIFICATION
 
@@ -2120,32 +2220,67 @@ export async function runGeminiSemanticValidator(opts: {
       });
     }
 
+    const windowsDelta = opts.evidence
+      ? (opts.evidence.openings.windowsAfter - opts.evidence.openings.windowsBefore)
+      : 0;
+    const doorsDelta = opts.evidence
+      ? (opts.evidence.openings.doorsAfter - opts.evidence.openings.doorsBefore)
+      : 0;
+
+    const {
+      primaryStructuralViolationDetected,
+      hasOpeningChange,
+      hasWallGeometryDrift,
+      hasCameraShift,
+      hasEnvelopeDeformation,
+      hasConfirmedBuiltInRelocation,
+    } = hasStage2PrimaryStructuralViolation({
+      violationType,
+      reasonText,
+      windowsDelta,
+      doorsDelta,
+      stage2FullPrimaryStructuralIdentityViolation,
+      builtInDetected,
+      structuralAnchorCount,
+      confidence: parsed.confidence,
+    });
+
+    const hasSecondarySignals =
+      category === "structure" ||
+      violationType === "fixture_change" ||
+      violationType === "ceiling_fixture_change" ||
+      violationType === "plumbing_change" ||
+      violationType === "faucet_change" ||
+      reasonText.includes("island_changed") ||
+      reasonText.includes("desk") ||
+      reasonText.includes("shelving") ||
+      reasonText.includes("wall art") ||
+      reasonText.includes("decor") ||
+      reasonText.includes("bedside") ||
+      reasonText.includes("bedding") ||
+      reasonText.includes("ssim") ||
+      reasonText.includes("masked_edge") ||
+      reasonText.includes("wall_drift");
+    const onlySecondarySignalsPresent = !primaryStructuralViolationDetected && hasSecondarySignals;
+
     let hardFail = parsed.hardFail;
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
       const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
-      hardFail = opts.stage === "2" ? true : (alwaysHardFail || builtInHardFail);
+      hardFail = opts.stage === "2"
+        ? primaryStructuralViolationDetected
+        : (alwaysHardFail || builtInHardFail);
     }
     else if (category === "opening_blocked") hardFail = parsed.hardFail;
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
     if (opts.stage === "2" && category === "structure") {
       const geometricViolation =
-        violationType === "wall_change" ||
-        violationType === "camera_shift" ||
-        violationType === "opening_change" ||
-        stage2FullPrimaryStructuralIdentityViolation;
-      const builtInViolation = violationType === "built_in_moved" || builtInDetected;
-      const builtInStrongEvidence =
-        builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
-      const isRefreshFixtureViolation =
-        opts.validationMode === "REFRESH_OR_DIRECT" &&
-        (
-          violationType === "fixture_change" ||
-          violationType === "ceiling_fixture_change" ||
-          violationType === "plumbing_change" ||
-          violationType === "faucet_change"
-        );
+        hasWallGeometryDrift ||
+        hasCameraShift ||
+        hasOpeningChange ||
+        hasEnvelopeDeformation;
+      const builtInStrongEvidence = hasConfirmedBuiltInRelocation;
       if (opts.validationMode === "FULL_STAGE_ONLY") {
         if (geometricViolation) {
           hardFail = true;
@@ -2153,18 +2288,21 @@ export async function runGeminiSemanticValidator(opts: {
         } else if (builtInStrongEvidence) {
           hardFail = true;
           debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_anchor_lock=true violationType=${violationType}`);
+        } else if (onlySecondarySignalsPresent) {
+          hardFail = false;
+          debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_only_advisory=true");
         } else {
           hardFail = false;
         }
       } else {
-        if (isRefreshFixtureViolation) {
-          hardFail = true;
-          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
-        } else if (geometricViolation) {
+        if (geometricViolation) {
           hardFail = true;
           debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
         } else if (builtInStrongEvidence) {
           hardFail = true;
+        } else if (onlySecondarySignalsPresent) {
+          hardFail = false;
+          debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT secondary_only_advisory=true");
         } else if (builtInDowngradeAllowed || lowConfidence || builtInLowConfidence) {
           hardFail = false;
         } else {

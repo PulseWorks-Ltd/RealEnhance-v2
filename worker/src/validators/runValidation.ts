@@ -262,7 +262,8 @@ export async function runUnifiedValidation(
   // Initialize evidence packet
   const evidence = createEmptyEvidence(
     jobId || "unknown",
-    (stage === "1B" || stage === "2") ? stage : "1B"
+    (stage === "1B" || stage === "2") ? stage : "1B",
+    roomType
   );
 
   if (stage === "1B" || stage === "2") {
