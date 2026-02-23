@@ -851,6 +851,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let preflightCancelIntent = false;
   let preflightCancelSource: "job_record" | "redis" | "job_record+redis" | null = null;
 
+  type RoutingSnapshot = {
+    authority: "localEmptyBypass" | "gemini";
+    localEmpty: boolean;
+    geminiHasFurniture: boolean | null;
+    geminiConfidence: number | null;
+    declutterMode: "light" | "stage-ready" | null;
+    stage1BRequired: boolean;
+  };
+  let frozenRoutingSnapshot: RoutingSnapshot | null = null;
+  let detectionAttempted = false;
+
   let stagingStyleNorm: string | undefined;
 
   try {
@@ -860,6 +871,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ]);
 
     const existingMeta = (liveJob as any)?.metadata as JobOwnershipMetadata | undefined;
+    const existingRoutingSnapshot = (liveJob as any)?.meta?.routingSnapshot || (liveJob as any)?.metadata?.routingSnapshot;
+    if (existingRoutingSnapshot && typeof existingRoutingSnapshot === "object") {
+      frozenRoutingSnapshot = existingRoutingSnapshot as RoutingSnapshot;
+    }
     const merged: JobOwnershipMetadata = {
       userId: savedMeta?.userId || existingMeta?.userId || payload.userId,
       imageId: savedMeta?.imageId || existingMeta?.imageId || payload.imageId,
@@ -2663,193 +2678,138 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isStage2Only = hasVirtualStage && (payload.options as any).stage2Only === true;
   const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene;
   if (shouldResolveFurnishedGate) {
-    let stage1BRan = false;
-    let furnished = true;
-    let gateDecision: "furnished_refresh" | "empty_full_stage" | "needs_declutter_light" = "needs_declutter_light";
-    let gateReason = "fail_safe_default";
-    let furnishedSource: "local_empty" | "gemini_confirmed" | "gemini_override" | "gemini_fail_closed" | "needs_declutter_light" = "gemini_fail_closed";
-    let escalated = false;
-    let localResult: "empty" | "not_empty" | "error" = "error";
-    let geminiResult: "skipped_local_empty" | "furnished" | "not_furnished" | "needs_declutter_light" | "fail_closed" = "fail_closed";
+    let routingSnapshot = frozenRoutingSnapshot;
 
-    try {
+    if (routingSnapshot) {
+      if (frozenRoutingSnapshot && detectionAttempted) {
+        throw new Error("Detection attempted after routing snapshot was frozen");
+      }
+      nLog("[ROUTING] Using frozen routing snapshot", {
+        jobId: payload.jobId,
+      });
+      nLog("[ROUTING] Reusing frozen routing snapshot");
+    } else {
+      detectionAttempted = true;
+      if (frozenRoutingSnapshot && detectionAttempted) {
+        throw new Error("Detection attempted after routing snapshot was frozen");
+      }
+
       const stage1ABuffer = await fs.promises.readFile(path1A);
       const localEmpty = await isRoomEmpty(stage1ABuffer);
-      nLog("[FURNISHED_GATE_LOCAL]", {
-        jobId: payload.jobId,
-        localEmpty,
-        isStage2Only,
-      });
 
       if (localEmpty) {
-        localResult = "empty";
-        furnished = false;
-        gateDecision = "empty_full_stage";
-        gateReason = "local_empty_prefilter";
-        furnishedSource = "local_empty";
-        geminiResult = "skipped_local_empty";
+        routingSnapshot = {
+          authority: "localEmptyBypass",
+          localEmpty: true,
+          geminiHasFurniture: null,
+          geminiConfidence: null,
+          declutterMode: null,
+          stage1BRequired: false,
+        };
+        nLog("[ROUTING] authority=localEmptyBypass | stage1BRequired=false");
       } else {
-        localResult = "not_empty";
-        escalated = true;
-        try {
-          const ai = getGeminiClient();
-          const furnishedAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
-          const gate = resolveFurnishedGateDecision({
-            analysis: furnishedAnalysis,
-            localEmpty: false,
-            roomType: canonicalRoomType,
-          });
-          gateDecision = gate.decision;
-          gateReason = gate.reason;
-          furnished = gate.decision === "furnished_refresh";
-          furnishedSource = gate.decision === "furnished_refresh"
-            ? "gemini_confirmed"
-            : gate.decision === "empty_full_stage"
-              ? "gemini_override"
-              : "needs_declutter_light";
-          geminiResult = gate.decision === "furnished_refresh"
-            ? "furnished"
-            : gate.decision === "empty_full_stage"
-              ? "not_furnished"
-              : "needs_declutter_light";
-          nLog("[FURNISHED_GATE_GEMINI]", {
-            jobId: payload.jobId,
-            hasFurniture: furnishedAnalysis?.hasFurniture ?? false,
-            anchors: furnishedAnalysis?.detectedAnchors || [],
-            confidence: furnishedAnalysis?.confidence ?? 0,
-            hasMovableSeating: furnishedAnalysis?.hasMovableSeating ?? false,
-            hasCounterClutter: furnishedAnalysis?.hasCounterClutter ?? false,
-            hasSurfaceClutter: furnishedAnalysis?.hasSurfaceClutter ?? false,
-            hasLoosePortableItems: furnishedAnalysis?.hasLoosePortableItems ?? false,
-            isStageReady: furnishedAnalysis?.isStageReady ?? false,
-            gateDecision,
-            gateReason,
-          });
-        } catch (geminiErr: any) {
-          // Fail-safe declutter policy: if Gemini detection fails, run light declutter before staging.
-          furnished = false;
-          gateDecision = "needs_declutter_light";
-          gateReason = "gemini_detector_error_fail_safe_light_declutter";
-          furnishedSource = "gemini_fail_closed";
-          geminiResult = "fail_closed";
-          nLog("[FURNISHED_GATE_GEMINI_FAIL_CLOSED]", {
-            jobId: payload.jobId,
-            error: geminiErr?.message || String(geminiErr),
-            gateDecision,
-            gateReason,
-          });
-        }
+        const ai = getGeminiClient();
+        const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
+        const gateDecision = resolveFurnishedGateDecision({
+          analysis: geminiAnalysis,
+          localEmpty: false,
+          roomType: canonicalRoomType,
+        });
+
+        const resolvedDeclutterMode: "light" | "stage-ready" | null = gateDecision.decision === "needs_declutter_light"
+          ? "light"
+          : gateDecision.decision === "furnished_refresh"
+            ? "stage-ready"
+            : null;
+
+        routingSnapshot = {
+          authority: "gemini",
+          localEmpty: false,
+          geminiHasFurniture: geminiAnalysis ? geminiAnalysis.hasFurniture === true : false,
+          geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
+          declutterMode: resolvedDeclutterMode,
+          stage1BRequired: resolvedDeclutterMode !== null,
+        };
+
+        nLog(
+          `[ROUTING] authority=gemini | localEmpty=false | hasFurniture=${routingSnapshot.geminiHasFurniture === true} | confidence=${routingSnapshot.geminiConfidence === null ? "null" : routingSnapshot.geminiConfidence.toFixed(2)} | stage1BRequired=${routingSnapshot.stage1BRequired}`
+        );
       }
-    } catch (localErr: any) {
-      // If local prefilter fails, default to light declutter for safety.
-      furnished = false;
-      gateDecision = "needs_declutter_light";
-      gateReason = "local_prefilter_error_fail_safe_light_declutter";
-      furnishedSource = "gemini_fail_closed";
-      escalated = false;
-      localResult = "error";
-      geminiResult = "fail_closed";
-      nLog("[FURNISHED_GATE_LOCAL_FAIL_CLOSED]", {
-        jobId: payload.jobId,
-        error: localErr?.message || String(localErr),
-        gateDecision,
-        gateReason,
-      });
-    }
 
-    stage1BRan = gateDecision !== "empty_full_stage";
-    (payload.options as any).furnishedState = gateDecision === "furnished_refresh"
-      ? "furnished"
-      : gateDecision === "empty_full_stage"
-        ? "empty"
-        : "needs_declutter";
-    (payload.options as any).stagingPreference = gateDecision === "empty_full_stage" ? "full" : "refresh";
-    (payload.options as any).stage2Variant = gateDecision === "empty_full_stage" ? "2B" : "2A";
-
-    if (gateDecision === "furnished_refresh") {
-      payload.options.declutter = true;
-      if (!(payload.options as any).declutterMode) {
-        (payload.options as any).declutterMode = "stage-ready";
-      }
-      declutterMode = ((payload.options as any).declutterMode === "light" ? "light" : "stage-ready");
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: "1A->1B->2(refresh)",
-        reason: `${furnishedSource}:${gateReason}`,
-      });
-    } else if (gateDecision === "needs_declutter_light") {
-      payload.options.declutter = true;
-      (payload.options as any).declutterMode = "light";
-      declutterMode = "light";
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: "1A->1B(light)->2(refresh)",
-        reason: `${furnishedSource}:${gateReason}`,
-      });
-    } else {
-      payload.options.declutter = false;
-      (payload.options as any).declutterMode = null;
-      declutterMode = null;
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: "1A->2(full)",
-        reason: `${furnishedSource}:${gateReason}`,
-      });
-    }
-
-    try {
       await updateJob(payload.jobId, {
         meta: {
           ...(sceneLabel ? { ...sceneMeta } : {}),
           furnishedGateResolved: true,
           furnishedGate: {
             enabled: true,
-            furnished,
-            source: furnishedSource,
-            escalated,
-            stage1BRan,
+            furnished: routingSnapshot.geminiHasFurniture === true,
+            source: routingSnapshot.authority,
+            escalated: routingSnapshot.authority === "gemini",
+            stage1BRan: routingSnapshot.stage1BRequired,
             hasVirtualStage,
             isStage2Only,
-            gateDecision,
-            gateReason,
+            gateDecision: routingSnapshot.declutterMode === "stage-ready"
+              ? "furnished_refresh"
+              : routingSnapshot.declutterMode === "light"
+                ? "needs_declutter_light"
+                : "empty_full_stage",
+            gateReason: routingSnapshot.authority,
           },
+          routingSnapshot,
         },
       });
-    } catch (metaErr: any) {
-      nLog("[WORKER] Furnished gate metadata update failed (non-blocking)", {
-        jobId: payload.jobId,
-        error: metaErr?.message || String(metaErr),
-      });
+
+      frozenRoutingSnapshot = routingSnapshot;
     }
 
-    nLog("[FURNISHED_GATE_TELEMETRY]", {
-      jobId: payload.jobId,
-      imageId: payload.imageId,
-      localResult,
-      geminiEscalated: escalated,
-      geminiResult,
-      stage1BRan,
-      furnished,
-      source: furnishedSource,
-      gateDecision,
-      gateReason,
-      isStage2Only,
-    });
+    if (routingSnapshot.declutterMode === "stage-ready") {
+      payload.options.declutter = true;
+      (payload.options as any).declutterMode = "stage-ready";
+      declutterMode = "stage-ready";
+      (payload.options as any).furnishedState = "furnished";
+      (payload.options as any).stagingPreference = "refresh";
+      (payload.options as any).stage2Variant = "2A";
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->1B->2(refresh)",
+        reason: routingSnapshot.authority,
+      });
+    } else if (routingSnapshot.declutterMode === "light") {
+      payload.options.declutter = true;
+      (payload.options as any).declutterMode = "light";
+      declutterMode = "light";
+      (payload.options as any).furnishedState = "needs_declutter";
+      (payload.options as any).stagingPreference = "refresh";
+      (payload.options as any).stage2Variant = "2A";
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->1B(light)->2(refresh)",
+        reason: routingSnapshot.authority,
+      });
+    } else {
+      payload.options.declutter = false;
+      (payload.options as any).declutterMode = null;
+      declutterMode = null;
+      (payload.options as any).furnishedState = "empty";
+      (payload.options as any).stagingPreference = "full";
+      (payload.options as any).stage2Variant = "2B";
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: "1A->2(full)",
+        reason: routingSnapshot.authority,
+      });
+    }
   }
-  
-  if (payload.options.declutter && payload.options.virtualStage && forceLightRoomTypes.has(canonicalRoomType)) {
-    declutterMode = "light"; // Override to light for multi-room types
-    nLog(`[WORKER] 🔄 Multi-room type detected: ${canonicalRoomType} - forcing declutterMode=light for refresh staging`);
-  } else if (!declutterMode && payload.options.declutter) {
-    declutterMode = payload.options.virtualStage ? "stage-ready" : "light";
-    nLog(`[WORKER] ⚠️ declutterMode missing in payload — derived from flags: ${declutterMode} (declutter=${payload.options.declutter}, virtualStage=${payload.options.virtualStage})`);
-  }
+
+  const stage1BRequired = shouldResolveFurnishedGate
+    ? frozenRoutingSnapshot?.stage1BRequired === true
+    : !!declutterMode;
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
   nLog(`[WORKER] Stage 1B virtualStage: ${payload.options.virtualStage}`);
 
-  if (!declutterMode) {
+  if (!stage1BRequired) {
     nLog(`[WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping`);
   } else {
     // ✅ VALIDATE MODE
