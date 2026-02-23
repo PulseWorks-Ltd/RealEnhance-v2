@@ -32,6 +32,20 @@ Exterior taps may remain unchanged, but do NOT reconstruct removed hoses or loos
 Any violation of these rules is a structural error.
 `.trim();
 
+const FURNITURE_ADDITION_CONSTRAINTS_REFRESH = `
+FURNITURE ADDITION CONSTRAINTS — STRICT
+
+- Do NOT add bar stools, chairs, or seating to kitchen islands unless seating already exists in the original image.
+- You may refine, repaint, or replace existing stools.
+- You may NOT invent new seating zones.
+- Respect appliance clearance (dishwasher, oven, drawers must remain usable).
+
+SPATIAL LOGIC CONSTRAINTS — STRICT
+
+Never place furniture in front of appliances, cabinet doors, or walking paths.
+Keep all appliance and cabinet access fully usable.
+`.trim();
+
 export function buildStage2RefreshPromptNZ(roomType: string): string {
   const room = roomType || "room";
 
@@ -46,6 +60,8 @@ ${STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK}
 ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_IDENTITY_LOCK_REFRESH}
+
+${FURNITURE_ADDITION_CONSTRAINTS_REFRESH}
 
 REFRESH LOGIC — MANDATORY
 - Preserve anchor geometry and anchor scale.
