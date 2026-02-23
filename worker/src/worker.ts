@@ -64,6 +64,11 @@ import { isJobFailedFinal } from "./validators/stageRetryManager";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
+const SIGN_ALL_STAGE_OUTPUTS_ENABLED = process.env.SIGN_ALL_STAGE_OUTPUTS === "1";
+const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
+  1,
+  Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
+);
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
@@ -84,6 +89,38 @@ import { applyFinalBlackEdgeGuard, assertNoDarkBorder } from "./utils/finalBlack
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const logger = console;
+
+function logStructured(event: string, payload: Record<string, any>) {
+  try {
+    console.log(JSON.stringify({ event, ...payload }));
+  } catch (err) {
+    nLog("[STRUCTURED_LOG_ERROR]", {
+      event,
+      error: (err as any)?.message || String(err),
+    });
+  }
+}
+
+async function signS3Object(params: { bucket: string; key: string; expiresIn: number }): Promise<string> {
+  const rawRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  const region = rawRegion.match(/([a-z]{2}-[a-z0-9-]+-\d)/i)?.[1]?.toLowerCase() ?? rawRegion.toLowerCase();
+  const importer: any = new Function("p", "return import(p)");
+  const s3Mod: any = await importer("@aws-sdk/client-s3");
+  const presignMod: any = await importer("@aws-sdk/s3-request-presigner");
+  const { S3Client, GetObjectCommand } = s3Mod;
+  const { getSignedUrl } = presignMod;
+  const clientConfig: any = { region };
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    clientConfig.credentials = {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+  }
+  const s3 = new S3Client(clientConfig);
+  return getSignedUrl(s3, new GetObjectCommand({ Bucket: params.bucket, Key: params.key }), {
+    expiresIn: params.expiresIn,
+  });
+}
 
 type Stage1BClutterHeuristicResult = {
   score: number;
@@ -876,9 +913,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     attempt: number;
     localPath: string;
     publishedUrl?: string;
+    signedUrl?: string;
+    imageKey?: string;
     blockedBy?: string | null;
     reasons?: string[] | null;
   }> = [];
+  const stageOutputSigningCache = new Map<string, { signedUrl: string | null; imageKey: string | null; publishedUrl: string | null }>();
+  const jobAttemptLog = {
+    jobId: payload.jobId,
+    roomType: payload.options.roomType || null,
+    stageLogs: {
+      "1B": [] as Array<{
+        attempt: number;
+        signedUrl: string | null;
+        imageKey: string | null;
+        publishedUrl: string | null;
+        validation: {
+          local: Record<string, any>;
+          gemini: Record<string, any>;
+          confirm: Record<string, any> | null;
+          final: Record<string, any>;
+        };
+      }>,
+      "2": [] as Array<{
+        attempt: number;
+        signedUrl: string | null;
+        imageKey: string | null;
+        publishedUrl: string | null;
+        validation: {
+          local: Record<string, any>;
+          gemini: Record<string, any>;
+          confirm: Record<string, any> | null;
+          final: Record<string, any>;
+        };
+      }>,
+    },
+  };
+  let jobAttemptSummaryEmitted = false;
   let stage2SummaryLogged = false;
   let stage2SummaryEligible = false;
   const localValidatorMode = getLocalValidatorMode();
@@ -980,6 +1051,181 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   };
 
+  const ensureAttemptLogEntry = (stage: "1B" | "2", attempt: number) => {
+    let entry = jobAttemptLog.stageLogs[stage].find((item) => item.attempt === attempt);
+    if (!entry) {
+      entry = {
+        attempt,
+        signedUrl: null,
+        imageKey: null,
+        publishedUrl: null,
+        validation: {
+          local: {},
+          gemini: {},
+          confirm: null,
+          final: {},
+        },
+      };
+      jobAttemptLog.stageLogs[stage].push(entry);
+      jobAttemptLog.stageLogs[stage].sort((a, b) => a.attempt - b.attempt);
+    }
+    return entry;
+  };
+
+  const mergeAttemptValidation = (
+    stage: "1B" | "2",
+    attempt: number,
+    patch: {
+      local?: Record<string, any>;
+      gemini?: Record<string, any>;
+      confirm?: Record<string, any> | null;
+      final?: Record<string, any>;
+    }
+  ) => {
+    const entry = ensureAttemptLogEntry(stage, attempt);
+    if (patch.local) {
+      entry.validation.local = { ...entry.validation.local, ...patch.local };
+    }
+    if (patch.gemini) {
+      entry.validation.gemini = { ...entry.validation.gemini, ...patch.gemini };
+    }
+    if (patch.confirm !== undefined) {
+      entry.validation.confirm = patch.confirm;
+    }
+    if (patch.final) {
+      entry.validation.final = { ...entry.validation.final, ...patch.final };
+    }
+  };
+
+  const annotateAttemptSignedUrl = (
+    stage: "1B" | "2",
+    attempt: number,
+    signed: { signedUrl: string | null; imageKey: string | null; publishedUrl: string | null }
+  ) => {
+    const entry = ensureAttemptLogEntry(stage, attempt);
+    entry.signedUrl = signed.signedUrl;
+    entry.imageKey = signed.imageKey;
+    entry.publishedUrl = signed.publishedUrl;
+  };
+
+  const captureSignedStageOutput = async (
+    stage: "1B" | "2",
+    attempt: number,
+    localPath: string,
+  ): Promise<{ signedUrl: string | null; imageKey: string | null; publishedUrl: string | null }> => {
+    if (!SIGN_ALL_STAGE_OUTPUTS_ENABLED) {
+      return { signedUrl: null, imageKey: null, publishedUrl: null };
+    }
+
+    if (stageOutputSigningCache.has(localPath)) {
+      const cached = stageOutputSigningCache.get(localPath)!;
+      annotateAttemptSignedUrl(stage, attempt, cached);
+      logStructured("STAGE_OUTPUT_SIGNED", {
+        jobId: payload.jobId,
+        stage,
+        attempt,
+        imageKey: cached.imageKey,
+        signedUrl: cached.signedUrl,
+      });
+      return cached;
+    }
+
+    const published = await publishImage(localPath);
+    const imageKey = published.key || null;
+    let signedUrl: string | null = null;
+
+    if (published.kind === "s3" && imageKey && process.env.S3_BUCKET) {
+      signedUrl = await signS3Object({
+        bucket: process.env.S3_BUCKET,
+        key: imageKey,
+        expiresIn: STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS,
+      });
+    }
+
+    const snapshot = {
+      signedUrl,
+      imageKey,
+      publishedUrl: published.url || null,
+    };
+    stageOutputSigningCache.set(localPath, snapshot);
+    annotateAttemptSignedUrl(stage, attempt, snapshot);
+
+    const stage2Match = stage === "2"
+      ? stage2AttemptOutputs.find((entry) => entry.localPath === localPath)
+      : null;
+    if (stage2Match) {
+      stage2Match.signedUrl = signedUrl || undefined;
+      stage2Match.imageKey = imageKey || undefined;
+      stage2Match.publishedUrl = stage2Match.publishedUrl || published.url;
+    }
+
+    logStructured("STAGE_OUTPUT_SIGNED", {
+      jobId: payload.jobId,
+      stage,
+      attempt,
+      imageKey,
+      signedUrl,
+    });
+
+    return snapshot;
+  };
+
+  const emitJobAttemptSummary = (finalStatus: "SUCCESS" | "EXHAUSTED" | "BLOCKED") => {
+    if (jobAttemptSummaryEmitted) return;
+    jobAttemptSummaryEmitted = true;
+
+    logStructured("JOB_ATTEMPT_SUMMARY", {
+      ...jobAttemptLog,
+      finalStatus,
+    });
+
+    const lines: string[] = [];
+    lines.push("==============================");
+    lines.push("IMAGE JOB SUMMARY");
+    lines.push("==============================");
+    lines.push(`Image: ${payload.jobId}`);
+    lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
+    lines.push("");
+
+    const renderStage = (stageLabel: "1B" | "2") => {
+      lines.push(`Stage ${stageLabel}:`);
+      const attempts = [...jobAttemptLog.stageLogs[stageLabel]].sort((a, b) => a.attempt - b.attempt);
+      if (!attempts.length) {
+        lines.push("  (no attempts)");
+        lines.push("");
+        return;
+      }
+      for (const attemptEntry of attempts) {
+        lines.push(`  Attempt ${attemptEntry.attempt}:`);
+        lines.push(`    URL: ${attemptEntry.signedUrl || "N/A"}`);
+        const result = String(attemptEntry.validation.final?.result || "UNKNOWN").toUpperCase();
+        lines.push(`    Result: ${result}`);
+        const reason = attemptEntry.validation.final?.reason || attemptEntry.validation.gemini?.violationType;
+        if (reason) {
+          const confidence = attemptEntry.validation.gemini?.confidence;
+          lines.push(
+            `    Reason: ${reason}${typeof confidence === "number" ? ` (confidence ${confidence})` : ""}`
+          );
+        }
+        lines.push("");
+      }
+    };
+
+    renderStage("1B");
+    renderStage("2");
+    lines.push(`Final Status: ${finalStatus}`);
+    lines.push("==============================");
+
+    for (const line of lines) {
+      nLog(line);
+    }
+  };
+
+  const completePartialJobWithSummary = async (params: Parameters<typeof completePartialJob>[0]) => {
+    emitJobAttemptSummary("EXHAUSTED");
+    await completePartialJob(params);
+  };
+
   const stage2BlockedByPriority = (blockedBy?: string | null): number => {
     if (blockedBy === "gemini") return 3;
     if (blockedBy === "consensus") return 2;
@@ -1027,6 +1273,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         attempt: entry.attempt,
         label,
         url: entry.publishedUrl ?? null,
+        signedUrl: entry.signedUrl ?? null,
+        imageKey: entry.imageKey ?? null,
         blockedBy: entry.blockedBy ?? null,
         reasons: entry.reasons ?? null,
       };
@@ -1470,9 +1718,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const path2 = stage2Result.outputPath;
       if (await stopIfCancelled("stage2_only_post_stage2")) return;
       recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
+      const stage2OnlyAttemptsUsed = Math.max(1, Number(stage2Result.attempts || 1));
+      for (let attemptIndex = 0; attemptIndex < stage2OnlyAttemptsUsed; attemptIndex++) {
+        const attemptNo = attemptIndex + 1;
+        const attemptPath = attemptIndex === stage2OnlyAttemptsUsed - 1
+          ? path2
+          : siblingOutPath(basePath, attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`, ".webp");
+        try {
+          const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+          annotateAttemptSignedUrl("2", attemptNo, signed);
+        } catch (signErr) {
+          nLog("[STAGE_OUTPUT_SIGNED] stage=2 stage2-only sign failed", {
+            jobId: payload.jobId,
+            attempt: attemptNo,
+            error: (signErr as any)?.message || String(signErr),
+          });
+        }
+      }
       const stage2ValidationPassed = stage2Result.validationRisk !== true;
       let stage2OnlyBlockedReason: string | null = null;
       let stage2OnlyFallbackStage: "1A" | "1B" = stage2OnlyBaseStage;
+      const stage2OnlyAttemptNo = stage2OnlyAttemptsUsed;
 
       timings.stage2Ms = Date.now() - t2;
       nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
@@ -1511,6 +1777,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           validationMode: stage2OnlyValidationMode,
         });
         nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
+        const stage2OnlyGeminiRaw = (unifiedRetryValidation.raw?.geminiSemantic as any)?.details || {};
+        mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+          local: {
+            passed: unifiedRetryValidation.passed,
+            hardFail: unifiedRetryValidation.hardFail,
+            score: unifiedRetryValidation.score,
+            reasons: unifiedRetryValidation.reasons,
+            warnings: unifiedRetryValidation.warnings,
+          },
+          gemini: {
+            category: stage2OnlyGeminiRaw.category || "unknown",
+            violationType: stage2OnlyGeminiRaw.violationType || "other",
+            hardFail: stage2OnlyGeminiRaw.hardFail === true,
+            confidence: Number.isFinite(stage2OnlyGeminiRaw.confidence) ? stage2OnlyGeminiRaw.confidence : 0,
+            builtInDetected: stage2OnlyGeminiRaw.builtInDetected ?? false,
+            structuralAnchorCount: stage2OnlyGeminiRaw.structuralAnchorCount ?? 0,
+            builtInLowConfidence: stage2OnlyGeminiRaw.builtInLowConfidence ?? false,
+            builtInDowngradeAllowed: stage2OnlyGeminiRaw.builtInDowngradeAllowed ?? false,
+          },
+          confirm: null,
+        });
       } catch (unifiedErr: any) {
         nLog(`[worker] Unified validation error (stage2-only, non-fatal):`, unifiedErr?.message || unifiedErr);
       }
@@ -1544,6 +1831,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2OnlyBlockedReason = `stage2_structural_exhausted after ${usedAttempts}/${maxAttempts} attempts`;
         nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} fallback=${stage2OnlyFallbackStage}`);
         nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
+        mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "structure",
+            retryTriggered: false,
+            retriesExhausted: true,
+            reason: stage2OnlyBlockedReason,
+          },
+        });
       }
 
       // AUDIT FIX: Compliance gate before publish in stage2-only path
@@ -1577,6 +1874,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               stage2OnlyBlockedReason = `stage2_compliance_exhausted after ${Math.max(1, Number((stage2Result as any)?.attempts || 1))} attempts: ${reasonText}`;
               nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${Math.max(1, Number((stage2Result as any)?.attempts || 1))} fallback=${stage2OnlyFallbackStage}`);
               nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
+              mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+                final: {
+                  result: "FAILED",
+                  finalHard: true,
+                  finalCategory: "compliance",
+                  retryTriggered: false,
+                  retriesExhausted: true,
+                  reason: stage2OnlyBlockedReason,
+                },
+              });
             } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
               nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${reasonText}`);
             } else {
@@ -1595,7 +1902,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (stage2OnlyBlockedReason) {
         const fallbackPath = basePath;
         await clearStage2RetryPending("stage2_only_fallback_clear_pending");
-        await completePartialJob({
+        await completePartialJobWithSummary({
           jobId: payload.jobId,
           triggerStage: "2",
           finalStage: stage2OnlyFallbackStage,
@@ -1642,6 +1949,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage2Success = true;
       stage2PublishSuccess = !!pub2Url;
       stage2PublishedUrl = pub2Url;
+      mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+        final: {
+          result: "PASSED",
+          finalHard: false,
+          finalCategory: "accept",
+          retryTriggered: false,
+          retriesExhausted: false,
+        },
+      });
       
       // Track memory after Stage 2
       updatePeakMemory(payload.jobId);
@@ -1690,6 +2006,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
         }
       }, "stage2_only_complete");
+
+      emitJobAttemptSummary("SUCCESS");
 
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
@@ -2526,7 +2844,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           return;
         }
 
-        await completePartialJob({
+        await completePartialJobWithSummary({
           jobId: payload.jobId,
           triggerStage: "1B",
           finalStage: "1A",
@@ -2569,6 +2887,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         throw new Error("missing_stage_output");
       }
 
+      const stage1BAttemptNo = attempt + 1;
+      const stage1BSigned = await captureSignedStageOutput("1B", stage1BAttemptNo, candidate);
+
       const structureResult = await validateStage1BStructure(path1A, candidate);
       nLog(
         `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
@@ -2597,7 +2918,46 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[STAGE1B_STRUCTURE_RESULT] hardFail=true violationType=wall_plane_expansion`);
       }
 
+      mergeAttemptValidation("1B", stage1BAttemptNo, {
+        local: {
+          hardFail: effectiveHardFail,
+          violationType: effectiveViolationType || null,
+          reasons: effectiveReasons,
+          wallDelta: {
+            baselineArea: wallDelta.baselineArea,
+            candidateArea: wallDelta.candidateArea,
+            deltaRatio: wallDelta.deltaRatio,
+            newWallRatio: wallDelta.newWallRatio,
+            hardFail: wallDelta.hardFail,
+          },
+        },
+        gemini: {
+          category: structureResult.category,
+          violationType: structureResult.violationType || null,
+          hardFail: structureResult.hardFail === true,
+          confidence: structureResult.confidence,
+          builtInDetected: structureResult.builtInDetected ?? false,
+          structuralAnchorCount: structureResult.structuralAnchorCount ?? 0,
+          builtInLowConfidence: false,
+          builtInDowngradeAllowed: false,
+        },
+        confirm: null,
+      });
+
+      annotateAttemptSignedUrl("1B", stage1BAttemptNo, stage1BSigned);
+
       if (effectiveHardFail) {
+        mergeAttemptValidation("1B", stage1BAttemptNo, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "structure",
+            retryTriggered: attempt + 1 < maxAttempts,
+            retriesExhausted: attempt + 1 >= maxAttempts,
+            reason: effectiveViolationType || "structure_hard_fail",
+          },
+        });
+
         attempt += 1;
         if (attempt >= maxAttempts) {
           nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
@@ -2611,7 +2971,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return;
           }
 
-          await completePartialJob({
+          await completePartialJobWithSummary({
             jobId: payload.jobId,
             triggerStage: "1B",
             finalStage: "1A",
@@ -2637,12 +2997,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       path1B = candidate;
       stage1BValidatedForCommit = true;
       stage1BStructuralSafe = true;
+      mergeAttemptValidation("1B", stage1BAttemptNo, {
+        final: {
+          result: "PASSED",
+          finalHard: false,
+          finalCategory: "accept",
+          retryTriggered: false,
+          retriesExhausted: false,
+        },
+      });
       break;
     }
 
     if (!path1B || !stage1BValidatedForCommit) {
       nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
-      await completePartialJob({
+      await completePartialJobWithSummary({
         jobId: payload.jobId,
         triggerStage: "1B",
         finalStage: "1A",
@@ -3104,6 +3473,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
+        const generatedAttempts = Math.max(1, Number(stage2Outcome.attempts || 1));
+        for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
+          const attemptNo = attemptIndex + 1;
+          const attemptPath = siblingOutPath(
+            stage2InputResolved,
+            attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
+            ".webp"
+          );
+          try {
+            const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+            annotateAttemptSignedUrl("2", attemptNo, signed);
+          } catch (signErr) {
+            nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
+              jobId: payload.jobId,
+              attempt: attemptNo,
+              error: (signErr as any)?.message || String(signErr),
+            });
+          }
+        }
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -3132,7 +3520,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     await clearStage2RetryPending("stage2_error_clear_pending");
     if (!(await canCompleteStage2(true, "stage2_error_complete"))) return;
     logStage2RetrySummary(null);
-    await completePartialJob({
+    await completePartialJobWithSummary({
       jobId: payload.jobId,
       triggerStage: "2",
       finalStage: fallbackStage,
@@ -3273,6 +3661,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
+        const generatedAttempts = Math.max(1, Number(stage2Outcome.attempts || 1));
+        for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
+          const attemptNo = attemptIndex + 1;
+          const attemptPath = siblingOutPath(
+            stage2InputResolved,
+            attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
+            ".webp"
+          );
+          try {
+            const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+            annotateAttemptSignedUrl("2", attemptNo, signed);
+          } catch (signErr) {
+            nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
+              jobId: payload.jobId,
+              attempt: attemptNo,
+              error: (signErr as any)?.message || String(signErr),
+            });
+          }
+        }
         stage2AttemptsUsed = stage2Outcome.attempts;
         stage2MaxAttempts = stage2Outcome.maxAttempts;
         stage2ValidationRisk = stage2Outcome.validationRisk;
@@ -3410,6 +3817,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
         return;
       }
+
+      const stage2AttemptSigned = await captureSignedStageOutput("2", attempt, path2);
+      annotateAttemptSignedUrl("2", attempt, stage2AttemptSigned);
 
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
@@ -3557,6 +3967,48 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
       }
 
+      const geminiRaw = (unifiedValidation.raw?.geminiSemantic as any)?.details || {};
+      mergeAttemptValidation("2", attempt, {
+        local: {
+          passed: unifiedValidation.passed,
+          hardFail: unifiedValidation.hardFail,
+          score: unifiedValidation.score,
+          reasons: unifiedValidation.reasons,
+          warnings: unifiedValidation.warnings,
+          wallPercent: unifiedValidation.evidence?.drift?.wallPercent,
+          maskedEdgePercent: unifiedValidation.evidence?.drift?.maskedEdgePercent,
+          angleDegrees: unifiedValidation.evidence?.drift?.angleDegrees,
+          openingsChanged: (() => {
+            const e = unifiedValidation.evidence;
+            if (!e) return false;
+            return e.openings.windowsBefore !== e.openings.windowsAfter || e.openings.doorsBefore !== e.openings.doorsAfter;
+          })(),
+          anchorsChanged: (() => {
+            const a = unifiedValidation.evidence?.anchorChecks;
+            if (!a) return false;
+            return !!(a.islandChanged || a.hvacChanged || a.cabinetryChanged || a.lightingChanged);
+          })(),
+        },
+        gemini: {
+          category: geminiRaw.category || "unknown",
+          violationType: geminiRaw.violationType || "other",
+          hardFail: geminiRaw.hardFail === true,
+          confidence: Number.isFinite(geminiRaw.confidence) ? geminiRaw.confidence : 0,
+          builtInDetected: geminiRaw.builtInDetected ?? false,
+          structuralAnchorCount: geminiRaw.structuralAnchorCount ?? 0,
+          builtInLowConfidence: geminiRaw.builtInLowConfidence ?? false,
+          builtInDowngradeAllowed: geminiRaw.builtInDowngradeAllowed ?? false,
+        },
+        confirm: lastGeminiConfirm
+          ? {
+              confirmedFail: lastGeminiConfirm.confirmedFail === true,
+              confirmedViolationsCount: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons.length : 0,
+              confirmedViolationTypes: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons : [],
+              confirmedConfidence: typeof lastGeminiConfirm.confidence === "number" ? lastGeminiConfirm.confidence : 0,
+            }
+          : null,
+      });
+
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
       const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
@@ -3569,6 +4021,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...(lastGeminiConfirm?.reasons || []),
         ];
         setStage2AttemptValidation(path2, blockedBy, failReasons);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: blockedBy || "structure",
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            reason: failReasons[0] || blockedBy || "structure",
+          },
+        });
 
         // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
         if (
@@ -3713,6 +4175,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
               nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
               setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);
+              mergeAttemptValidation("2", attempt, {
+                final: {
+                  result: "FAILED",
+                  finalHard: true,
+                  finalCategory: "compliance",
+                  retryTriggered: attempt < MAX_STAGE2_RETRIES,
+                  retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+                  reason: reasonText,
+                },
+              });
 
               if (attempt >= MAX_STAGE2_RETRIES) {
                 const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
@@ -3763,6 +4235,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
+      mergeAttemptValidation("2", attempt, {
+        final: {
+          result: "PASSED",
+          finalHard: false,
+          finalCategory: "accept",
+          retryTriggered: false,
+          retriesExhausted: false,
+        },
+      });
       updateJob(payload.jobId, {
         meta: {
           ...sceneMeta,
@@ -4569,6 +5050,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const finalWarningCount = unifiedValidation?.warnings?.length || 0;
   nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${unifiedValidation?.hardFail ?? false} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);
+  emitJobAttemptSummary(stage2Blocked ? "EXHAUSTED" : "SUCCESS");
 
   // Record enhanced image for "Previously Enhanced Images" history
   // FAIL-SAFE: Non-blocking - if this fails, job still completes successfully
@@ -4771,6 +5253,8 @@ nLog('  AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? '✅ SET' :
 nLog('  S3_PUBLIC_BASEURL:', process.env.S3_PUBLIC_BASEURL || 'NOT SET (will use S3 direct URLs)');
 const s3Enabled = !!(process.env.S3_BUCKET && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY);
 nLog('  📊 Status:', s3Enabled ? '✅ ENABLED - Images will upload to S3' : '❌ DISABLED - Will use data URLs');
+nLog('  SIGN_ALL_STAGE_OUTPUTS:', process.env.SIGN_ALL_STAGE_OUTPUTS === '1' ? '1 (enabled)' : `${process.env.SIGN_ALL_STAGE_OUTPUTS || '0'} (disabled)`);
+nLog('  STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS:', String(STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS));
 nLog('╚════════════════════════════════════════════════════════════════╝');
 nLog('\n'); // Force flush
 
