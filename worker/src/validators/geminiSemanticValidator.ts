@@ -348,65 +348,58 @@ function normalizeStage2FullStructuralViolationType(input: {
   const builtInTokens = [
     "built-in",
     "built in",
-    "cabinet",
-    "island",
-    "fixture",
-    "plumbing",
+    "kitchen island",
+    "island footprint",
+    "island length",
+    "hvac",
+    "heat pump",
+    "vent grille",
+    "plumbing fixture",
     "faucet",
     "tap",
-    "pendant",
+    "pendant light",
     "downlight",
     "ceiling fan",
-    "curtain",
-    "drape",
-    "rail",
-    "track",
-    "blind housing",
   ];
   if (builtInTokens.some((token) => reasonText.includes(token))) return "built_in_moved";
 
   return "other";
 }
 
-function hasStage2FullStructuralIdentityViolation(input: {
+function hasStage2FullPrimaryStructuralIdentityViolation(input: {
   category: GeminiSemanticVerdict["category"];
   violationType: GeminiViolationType;
   reasonText: string;
 }): boolean {
-  if (input.category === "structure") return true;
   if (
     input.violationType === "opening_change" ||
     input.violationType === "wall_change" ||
-    input.violationType === "camera_shift" ||
-    input.violationType === "built_in_moved"
+    input.violationType === "camera_shift"
   ) {
     return true;
   }
 
   const structuralTokens = [
-    "added ceiling fixture",
-    "removed ceiling fixture",
-    "pendant",
-    "downlight",
-    "ceiling fan",
-    "added plumbing fixture",
-    "removed plumbing fixture",
-    "faucet",
-    "tap",
-    "curtain removal",
-    "drape removal",
-    "curtain system addition",
-    "curtain rail",
     "opening added",
     "opening removed",
     "opening resized",
     "opening sealed",
-    "built-in moved",
-    "built-in resized",
+    "window removed",
+    "window added",
+    "door removed",
+    "door added",
     "camera shift",
     "viewpoint shift",
+    "camera angle",
+    "perspective shift",
     "envelope geometry drift",
     "wall drift",
+    "wall added",
+    "wall removed",
+    "room volume changed",
+    "room width",
+    "room depth",
+    "architectural footprint",
     "functional zone expansion",
   ];
 
@@ -448,7 +441,13 @@ Only return NON-COMPLIANT if:
 - Structural cabinetry was deleted (not just visually modified).
 
 For FULL_STAGE_ONLY:
-Low SSIM alone is NOT evidence of structural change in full staging mode.`
+Low SSIM alone is NOT evidence of structural change in full staging mode.
+
+PRIMARY VS SECONDARY ENFORCEMENT (FULL_STAGE_ONLY):
+- PRIMARY (must hard-fail when clearly changed): walls, windows/doors/openings, camera viewpoint, room envelope/volume.
+- SECONDARY (advisory unless strongly corroborated): pendant lights, HVAC, kitchen island, plumbing fixtures.
+
+Do NOT set hardFail=true for secondary fixture-only changes unless confidence is very high and evidence indicates a true non-movable structural identity violation.`
     : `IMPORTANT CONTEXT:
 
 This transformation represents REFRESH STAGING.
@@ -2108,12 +2107,12 @@ export async function runGeminiSemanticValidator(opts: {
       !alwaysHardFail;
 
     const isStage2Full = opts.stage === "2" && opts.validationMode === "FULL_STAGE_ONLY";
-    const stage2FullStructuralIdentityViolation = isStage2Full && hasStage2FullStructuralIdentityViolation({
+    const stage2FullPrimaryStructuralIdentityViolation = isStage2Full && hasStage2FullPrimaryStructuralIdentityViolation({
       category,
       violationType,
       reasonText,
     });
-    if (stage2FullStructuralIdentityViolation) {
+    if (stage2FullPrimaryStructuralIdentityViolation) {
       category = "structure";
       violationType = normalizeStage2FullStructuralViolationType({
         rawViolationType: violationType || "other",
@@ -2131,6 +2130,14 @@ export async function runGeminiSemanticValidator(opts: {
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
     if (opts.stage === "2" && category === "structure") {
+      const geometricViolation =
+        violationType === "wall_change" ||
+        violationType === "camera_shift" ||
+        violationType === "opening_change" ||
+        stage2FullPrimaryStructuralIdentityViolation;
+      const builtInViolation = violationType === "built_in_moved" || builtInDetected;
+      const builtInStrongEvidence =
+        builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
       const isRefreshFixtureViolation =
         opts.validationMode === "REFRESH_OR_DIRECT" &&
         (
@@ -2139,15 +2146,30 @@ export async function runGeminiSemanticValidator(opts: {
           violationType === "plumbing_change" ||
           violationType === "faucet_change"
         );
-      if (isRefreshFixtureViolation) {
-        // Fixture/plumbing violations in Refresh mode are never downgraded
-        hardFail = true;
-        debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
-      } else if (builtInDowngradeAllowed) {
-        hardFail = false;
+      if (opts.validationMode === "FULL_STAGE_ONLY") {
+        if (geometricViolation) {
+          hardFail = true;
+          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY primary_geometry_lock=true violationType=${violationType}`);
+        } else if (builtInStrongEvidence) {
+          hardFail = true;
+          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_anchor_lock=true violationType=${violationType}`);
+        } else {
+          hardFail = false;
+        }
       } else {
-        hardFail = true;
-        debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
+        if (isRefreshFixtureViolation) {
+          hardFail = true;
+          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
+        } else if (geometricViolation) {
+          hardFail = true;
+          debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
+        } else if (builtInStrongEvidence) {
+          hardFail = true;
+        } else if (builtInDowngradeAllowed || lowConfidence || builtInLowConfidence) {
+          hardFail = false;
+        } else {
+          hardFail = false;
+        }
       }
     } else {
       // Stage 1B geometric lock — wall/camera/opening violations are never downgraded
@@ -2170,7 +2192,7 @@ export async function runGeminiSemanticValidator(opts: {
       }
     }
 
-    if (stage2FullStructuralIdentityViolation) {
+    if (stage2FullPrimaryStructuralIdentityViolation) {
       category = "structure";
       hardFail = true;
       if (violationType === "layout_only") {
