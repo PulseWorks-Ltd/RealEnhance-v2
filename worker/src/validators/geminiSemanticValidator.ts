@@ -416,11 +416,53 @@ function hasStage2FullStructuralIdentityViolation(input: {
 export function buildFinalFixtureConfirmPrompt(input: {
   sceneType?: "interior" | "exterior";
   localFindings?: string[];
+  validationMode?: Stage2ValidationMode;
 } = {}): string {
   const findings = (input.localFindings || []).filter(Boolean);
   const findingsBlock = findings.length
     ? findings.map((f) => `- ${f}`).join("\n")
     : "- none";
+
+  const mode = input.validationMode || "REFRESH_OR_DIRECT";
+  const modeContextBlock = mode === "FULL_STAGE_ONLY"
+    ? `IMPORTANT CONTEXT:
+
+This transformation represents FULL VIRTUAL STAGING of an originally empty room.
+
+In this mode:
+- Furniture additions are expected.
+- Furniture may partially occlude windows and doors.
+- Pixel similarity (SSIM) may drop significantly due to new furniture.
+- Anchor detections (e.g., island_changed) may fire due to added furniture.
+
+You MUST NOT treat the following as structural violations by themselves:
+- Furniture occlusion of openings
+- Decor changes
+- Freestanding object additions
+- Lighting or texture drift
+
+Only return NON-COMPLIANT if:
+- A wall was removed or added.
+- A permanent structural opening (door/window) was removed.
+- The architectural footprint changed.
+- Structural cabinetry was deleted (not just visually modified).
+
+For FULL_STAGE_ONLY:
+Low SSIM alone is NOT evidence of structural change in full staging mode.`
+    : `IMPORTANT CONTEXT:
+
+This transformation represents REFRESH STAGING.
+Structural layout and architectural features must remain unchanged.
+
+In this mode:
+- Furniture should remain anchored.
+- Openings must remain visible and unaltered.
+- Structural elements must not change.
+
+If local signals indicate opening removal or anchor relocation, evaluate strictly.
+
+For REFRESH mode:
+Keep stricter interpretation of SSIM and anchor/opening consistency together with visual verification.`;
 
   return `ROLE — Final Fixture & Built-In Identity Auditor
 
@@ -538,19 +580,24 @@ IGNORE (out of scope):
 • lighting tone differences
 
 FINAL LOCAL VALIDATOR FINDINGS — MUST ADJUDICATE
-The following automated validators detected potential violations.
-You MUST explicitly CONFIRM or REJECT each listed finding in your reasons output.
+The following automated validator signals are advisory heuristics and may include false positives.
+Treat them as hints to verify visually, not confirmed violations.
+
+Advisory structural signals detected by local heuristics (may include false positives):
+- opening visibility delta
+- anchor detection (e.g., island_changed)
+- SSIM drift
+
+${modeContextBlock}
 
 ${findingsBlock}
 
-Hard adjudication rule:
-If findings indicate openings delta ≠ 0,
+Adjudication rule:
+If findings suggest openings delta ≠ 0,
 doorway removed/added, opening sealed,
 anchor moved, or built-in changed,
-you must return category=structure or opening_blocked
-with hardFail=true,
-unless you provide a high-confidence, image-based
-false-positive explanation in reasons.
+visually verify first, then classify based on image evidence.
+Do not treat heuristic signals as facts without visual confirmation.
 
 Return JSON only.
 

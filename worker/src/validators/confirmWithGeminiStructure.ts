@@ -2,6 +2,7 @@ import { buildFinalFixtureConfirmPrompt, runGeminiSemanticValidator } from "./ge
 import { getGeminiValidatorMode, isGeminiBlockingEnabled } from "./validationModes";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
+import { nLog } from "../logger";
 
 type StageKey = "stage1b" | "stage2";
 
@@ -74,8 +75,17 @@ export async function confirmWithGeminiStructure(params: {
       ? buildFinalFixtureConfirmPrompt({
           sceneType: params.sceneType,
           localFindings: finalFindings,
+          validationMode: params.validationMode,
         })
       : undefined;
+
+    nLog("[VALIDATOR_PROMPT_MODE]", {
+      mode: params.validationMode || null,
+      localSignalCount: finalFindings.length,
+      ssimValue: typeof params.evidence?.ssim === "number"
+        ? Number(params.evidence.ssim.toFixed(4))
+        : null,
+    });
 
     const verdict = await runGeminiSemanticValidator({
       basePath: params.baselinePathOrUrl,
