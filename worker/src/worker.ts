@@ -14,7 +14,7 @@ import { randomUUID } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
-import { runStage2 } from "./pipeline/stage2";
+import { runStage2, runStage2GenerationAttempt } from "./pipeline/stage2";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
@@ -39,7 +39,7 @@ import { recordEnhancedImageRedis } from "@realenhance/shared";
 import { resolveStageUrl, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
-import { getGeminiClient, enhanceWithGemini } from "./ai/gemini";
+import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
@@ -1759,6 +1759,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           chosenBaseStage: stage2OnlyBaseStage,
         });
       }
+      nLog("[STAGE2_PROMPT_SOURCE]", {
+        source: "pipeline",
+        retryType: "initial",
+      });
       const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "nz_standard",
         roomType: payload.options.roomType,
@@ -3554,6 +3558,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
           })
         : (stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A);
+      if (payload.options.virtualStage && !stage2Blocked) {
+        nLog("[STAGE2_PROMPT_SOURCE]", {
+          source: "pipeline",
+          retryType: "initial",
+        });
+      }
       
       // FIX 4: Wrap Stage 2 execution with timeout
       let stage2TimeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -3731,6 +3741,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return raw && typeof raw === "string" ? raw.trim() : undefined;
       })();
 
+      nLog("[STAGE2_PROMPT_SOURCE]", {
+        source: "pipeline",
+        retryType: "light_declutter_backstop",
+      });
       const stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
         roomType: (
           !payload.options.roomType ||
@@ -3891,17 +3905,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (attempt > 1) {
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
-        const retryStage2Path = await enhanceWithGemini(stage2InputResolved, {
-          ...payload.options,
-          stage: "2",
-          temperature: retryTemperature,
-          topP: retryTopP,
-          topK: retryTopK,
-          jobId: payload.jobId,
+        nLog("[STAGE2_PROMPT_SOURCE]", {
+          source: "pipeline",
+          retryType: "validator_forced_retry",
+        });
+        const retryStage2Path = await runStage2GenerationAttempt(stage2InputResolved, {
           roomType: payload.options.roomType,
-          sceneType: sceneLabel,
-          modelReason: `stage2 unified retry ${attempt - 1}`,
+          sceneType: sceneLabel as any,
+          profile,
+          referenceImagePath: undefined,
+          stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+          stagingStyle: payload.options.stagingStyle || "nz_standard",
+          sourceStage: stage2SourceStage,
+          promptMode: stage2PromptMode,
+          curtainRailLikely: jobContext.curtainRailLikely,
+          jobId: payload.jobId,
           outputPath: retryOutputPath,
+          generationConfig: {
+            temperature: retryTemperature,
+            topP: retryTopP,
+            topK: retryTopK,
+          },
+          modelReason: `stage2 unified retry ${attempt - 1}`,
         });
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;

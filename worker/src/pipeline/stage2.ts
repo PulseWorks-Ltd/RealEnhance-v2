@@ -34,6 +34,163 @@ export type Stage2Result = {
   localReasons: string[];
 };
 
+export async function runStage2GenerationAttempt(
+  basePath: string,
+  opts: {
+    roomType: string;
+    sceneType?: "interior" | "exterior";
+    profile?: StagingProfile;
+    referenceImagePath?: string;
+    stagingRegion?: StagingRegion | null;
+    stagingStyle?: string;
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    promptMode?: "full" | "refresh";
+    curtainRailLikely?: boolean | "unknown";
+    jobId: string;
+    outputPath: string;
+    generationConfig?: Record<string, any>;
+    tightenLevel?: TightenLevel;
+    legacyStrictPrompt?: boolean;
+    layoutContext?: LayoutContextResult | null;
+    modelReason?: string;
+  }
+): Promise<string> {
+  const normalizedRoomType = (opts.roomType || "")
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .trim();
+  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
+    ? "multiple_living"
+    : normalizedRoomType;
+
+  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
+  const resolvedPromptMode: "full" | "refresh" = opts.promptMode
+    ? opts.promptMode
+    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+
+  let inputForStage2 = basePath;
+  if (opts.stagingRegion) {
+    try {
+      const meta = await sharp(basePath).metadata();
+      const W = meta.width || 0;
+      const H = meta.height || 0;
+      const r = opts.stagingRegion;
+      const x = Math.max(0, Math.min(Math.floor(r.x), Math.max(0, W - 1)));
+      const y = Math.max(0, Math.min(Math.floor(r.y), Math.max(0, H - 1)));
+      const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
+      const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
+      const overlay = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.35 } } }).toBuffer();
+      const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
+      const guided = await sharp(basePath)
+        .composite([
+          { input: overlay, left: 0, top: 0 },
+          { input: regionPatch, left: x, top: y }
+        ])
+        .toFormat("png")
+        .toBuffer();
+      const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
+      await sharp(guided).toFile(guidedPath);
+      inputForStage2 = guidedPath;
+    } catch (e) {
+      focusLog("TEMP_FILE", "[stage2] Failed to build guided staging input; proceeding with original base image", e);
+    }
+  }
+
+  const scene = opts.sceneType || "interior";
+  const { data, mime } = toBase64(inputForStage2);
+  const useTest = process.env.USE_TEST_PROMPTS === "1";
+  const stagingStyleRaw: any = opts.stagingStyle;
+  const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === "string"
+    ? stagingStyleRaw.trim()
+    : "none";
+
+  let textPrompt = useTest
+    ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
+    : buildStage2PromptNZStyle(normalizedRoomType, scene, {
+        stagingStyle: stagingStyleNorm,
+        sourceStage: opts.sourceStage,
+        mode: resolvedPromptMode,
+        layoutContext: opts.layoutContext || undefined,
+      });
+
+  if (opts.tightenLevel && opts.tightenLevel > 0) {
+    textPrompt = buildTightenedPrompt("2", textPrompt, opts.tightenLevel);
+  } else if (opts.legacyStrictPrompt) {
+    textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
+  }
+
+  const railLikely = opts.curtainRailLikely;
+  if (railLikely === false) {
+    textPrompt += `
+
+WINDOW COVERING HARD PROHIBITION:
+No curtain rails or tracks are visible in the input image.
+DO NOT add curtains, drapes, rods, or tracks.
+Leave windows bare.
+`;
+  } else if (railLikely === true) {
+    textPrompt += `
+
+WINDOW COVERING PRESERVATION:
+Curtain rails/tracks are present.
+Keep existing curtains and rails/tracks unchanged.
+Do not add blinds.
+`;
+  } else if (railLikely === "unknown") {
+    textPrompt += `
+
+WINDOW COVERING PRESERVATION:
+If curtain rails/tracks and curtains are present, keep them unchanged.
+Do not add blinds, rods, tracks, or new window coverings.
+`;
+  }
+
+  const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
+  const requestParts: any[] = [];
+  requestParts.push({ inlineData: { mimeType: mime, data } });
+  if (opts.referenceImagePath) {
+    const ref = toBase64(opts.referenceImagePath);
+    requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
+  }
+  if (styleDirective) requestParts.push({ text: styleDirective });
+  requestParts.push({ text: textPrompt });
+
+  let generationConfig: any = opts.generationConfig || undefined;
+  if (opts.profile?.seed !== undefined) {
+    generationConfig = { ...(generationConfig || {}), seed: opts.profile.seed };
+  }
+
+  const ai = getGeminiClient();
+  const { resp } = await runWithPrimaryThenFallback({
+    stageLabel: "2",
+    ai: ai as any,
+    baseRequest: {
+      contents: requestParts,
+      generationConfig,
+    } as any,
+    context: "stage2",
+    meta: {
+      stage: "2",
+      jobId: opts.jobId,
+      filename: path.basename(inputForStage2 || ""),
+      roomType: opts.roomType,
+      reason: opts.modelReason
+        || (opts.roomType ? `${opts.roomType} → stage2` : "stage2"),
+      selectedModel: MODEL_CONFIG.stage2.primary,
+      fallbackModel: MODEL_CONFIG.stage2.fallback,
+    },
+  });
+
+  const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+  const img = responseParts.find((p) => p.inlineData);
+  if (!img?.inlineData?.data) {
+    throw new Error("No image data in Gemini response");
+  }
+  writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${img.inlineData.data}`);
+  return opts.outputPath;
+}
+
 export async function runStage2(
   basePath: string,
   baseStage: "1A" | "1B",
