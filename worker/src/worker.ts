@@ -2662,6 +2662,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   
   // ✅ STRICT PAYLOAD MODE — derive declutterMode if missing but declutter requested (safety net)
   let declutterMode: "light" | "stage-ready" | null = (payload.options as any).declutterMode || null;
+
+  // Capture user's original declutter intent BEFORE any gate override may mutate payload.options.declutter.
+  // This is used to distinguish user-requested Stage1B from gate-triggered-only Stage1B.
+  const originalUserDeclutter = !!payload.options.declutter;
   
   // ✅ PER-IMAGE ROUTING: Override for multi-room types (must have virtualStage enabled)
   const roomType = payload.options.roomType;
@@ -2716,6 +2720,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             analysis: geminiAnalysis,
             localEmpty: false,
             roomType: canonicalRoomType,
+            userSelectedDeclutter: originalUserDeclutter,
           });
 
           const resolvedDeclutterMode: "light" | "stage-ready" | null = gateDecision.decision === "needs_declutter_light"
@@ -2776,6 +2781,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     if (routingSnapshot.declutterMode === "stage-ready") {
+      nLog("[ROUTING_OVERRIDE] Furniture detected — auto-enabling Stage1B regardless of user declutter selection", {
+        jobId: payload.jobId,
+        originalUserDeclutter,
+        hasFurniture: routingSnapshot.geminiHasFurniture,
+      });
       payload.options.declutter = true;
       (payload.options as any).declutterMode = "stage-ready";
       declutterMode = "stage-ready";
@@ -2788,17 +2798,38 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         reason: routingSnapshot.authority,
       });
     } else if (routingSnapshot.declutterMode === "light") {
-      payload.options.declutter = true;
-      (payload.options as any).declutterMode = "light";
-      declutterMode = "light";
-      (payload.options as any).furnishedState = "needs_declutter";
-      (payload.options as any).stagingPreference = "refresh";
-      (payload.options as any).stage2Variant = "2A";
-      nLog("[ROUTING_DECISION]", {
-        jobId: payload.jobId,
-        path: "1A->1B(light)->2(refresh)",
-        reason: routingSnapshot.authority,
-      });
+      if (!originalUserDeclutter && routingSnapshot.geminiHasFurniture === false) {
+        // User did NOT select declutter and Gemini confirms no true furniture present.
+        // Clutter-only signals must NOT auto-escalate Stage1B — treat as empty-room path.
+        nLog("[ROUTING_RECOMMENDATION] Light declutter recommended but user did not select declutter — skipping Stage1B override", {
+          jobId: payload.jobId,
+          roomType: canonicalRoomType,
+          authority: routingSnapshot.authority,
+        });
+        payload.options.declutter = false;
+        (payload.options as any).declutterMode = null;
+        declutterMode = null;
+        (payload.options as any).furnishedState = "empty";
+        (payload.options as any).stagingPreference = "full";
+        (payload.options as any).stage2Variant = "2B";
+      } else {
+        // User explicitly selected declutter OR Gemini detected furniture — proceed with light declutter.
+        payload.options.declutter = true;
+        (payload.options as any).declutterMode = "light";
+        declutterMode = "light";
+        // Stage 2 variant depends on whether furniture remains post-declutter.
+        // Clutter-only rooms are empty after light cleanup → use full empty-room stage (2B).
+        // Rooms with furniture after declutter still need refresh mode (2A).
+        const postDeclutterHasFurniture = routingSnapshot.geminiHasFurniture === true;
+        (payload.options as any).furnishedState = postDeclutterHasFurniture ? "needs_declutter" : "empty";
+        (payload.options as any).stagingPreference = postDeclutterHasFurniture ? "refresh" : "full";
+        (payload.options as any).stage2Variant = postDeclutterHasFurniture ? "2A" : "2B";
+        nLog("[ROUTING_DECISION]", {
+          jobId: payload.jobId,
+          path: postDeclutterHasFurniture ? "1A->1B(light)->2(refresh)" : "1A->1B(light)->2(full)",
+          reason: routingSnapshot.authority,
+        });
+      }
     } else {
       payload.options.declutter = false;
       (payload.options as any).declutterMode = null;
@@ -5108,11 +5139,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Usage tracking must never block job completion
     nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
   }
+  // Stage1B is billing-effective only when user explicitly selected declutter OR Gemini confirmed furniture.
+  // Gate-triggered light-declutter on clutter-only empty rooms runs the stage but does not escalate billing.
+  const billingEffectiveStage1B =
+    billingStage1BSuccess &&
+    (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
+
   const actualCharge = !billingStage1ASuccess
     ? 0
     : (sceneLabel === "exterior"
       ? 1
-      : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+      : (billingEffectiveStage1B && billingStage2Success ? 2 : 1));
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,
@@ -5122,6 +5159,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage2Success: billingStage2Success,
     finalCharge: actualCharge,
     path: "main_pipeline",
+    stage1BUserSelected: originalUserDeclutter,
+    geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+    billingEffectiveStage1B,
   });
 
   try {
@@ -5147,6 +5187,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage1BSuccess: billingStage1BSuccess,
       stage2Success: billingStage2Success,
       sceneType: sceneLabel || "interior",
+      stage1BUserSelected: originalUserDeclutter,
+      geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
     });
   } catch (chargeErr) {
     // Billing errors must not crash the worker

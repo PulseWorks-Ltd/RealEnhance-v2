@@ -38,6 +38,10 @@ export async function finalizeImageChargeFromWorker(params: {
   stage1BSuccess: boolean;
   stage2Success: boolean;
   sceneType: string;
+  /** Whether the user explicitly selected declutter/Stage1B before submission */
+  stage1BUserSelected?: boolean;
+  /** Whether Gemini confirmed hasFurniture=true during the routing gate */
+  geminiHasFurniture?: boolean;
 }): Promise<void> {
   try {
     const stageFlags: StageFlags = {
@@ -45,6 +49,8 @@ export async function finalizeImageChargeFromWorker(params: {
       stage1B: params.stage1BSuccess,
       stage2: params.stage2Success,
       sceneType: params.sceneType,
+      stage1BUserSelected: params.stage1BUserSelected,
+      geminiHasFurniture: params.geminiHasFurniture,
     };
 
     const result = await finalizeImageCharge({

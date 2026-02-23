@@ -67,6 +67,11 @@ export function resolveFurnishedGateDecision(params: {
   localEmpty: boolean;
   roomType?: string;
   minConfidence?: number;
+  /** Whether the user explicitly selected declutter/Stage1B before submission.
+   * When false (default), clutter-only signals will NOT auto-escalate to Stage1B.
+   * Only true furniture (hasFurniture === true) may auto-trigger Stage1B.
+   */
+  userSelectedDeclutter?: boolean;
 }): FurnishedGateDecision {
   const minConfidence = typeof params.minConfidence === "number" ? params.minConfidence : 0.65;
   const normalizedRoomType = toRoomType(params.roomType);
@@ -125,7 +130,9 @@ export function resolveFurnishedGateDecision(params: {
     };
   }
 
-  if ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals) {
+  // Strict intent: clutter-only signals only trigger light declutter when user explicitly requested it.
+  // True furniture (hasFurniture=true, anchors detected) always escalates above — clutter without furniture does not.
+  if (params.userSelectedDeclutter !== false && ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals)) {
     return {
       decision: "needs_declutter_light",
       reason: isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter",

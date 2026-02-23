@@ -10,6 +10,14 @@ export interface StageFlags {
   stage1B: boolean;
   stage2: boolean;
   sceneType: string; // "interior" | "exterior"
+  /** Whether the user explicitly selected declutter/Stage1B before submission.
+   * Optional for backward compatibility — existing callers that omit it retain prior behaviour.
+   */
+  stage1BUserSelected?: boolean;
+  /** Whether Gemini confirmed hasFurniture=true during the routing gate.
+   * Optional for backward compatibility.
+   */
+  geminiHasFurniture?: boolean;
 }
 
 /**
@@ -27,10 +35,22 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
     return { amount: 0, reason: "stage1A_failed" };
   }
 
+  // Stage1B counts toward 2-credit billing only when the user explicitly selected declutter
+  // OR when Gemini confirmed true furniture (auto-escalation for furnished rooms).
+  // Gate-triggered light-declutter on clutter-only empty rooms does NOT escalate billing.
+  // When both optional fields are absent (legacy callers), fall back to raw stage1B flag.
+  const effectiveStage1B =
+    flags.stage1B &&
+    (
+      flags.stage1BUserSelected === undefined && flags.geminiHasFurniture === undefined
+        ? true // legacy path: no intent info, trust stage execution as before
+        : (flags.stage1BUserSelected === true || flags.geminiHasFurniture === true)
+    );
+
   // Compute raw charge from stage outcomes first
   let amount = 1;
   let reason = "interior_partial_pipeline";
-  if (flags.stage1B && flags.stage2) {
+  if (effectiveStage1B && flags.stage2) {
     amount = 2;
     reason = "interior_full_pipeline";
   }
