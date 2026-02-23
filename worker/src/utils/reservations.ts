@@ -12,6 +12,19 @@ export async function finalizeReservationFromWorker(params: {
     if (res.rowCount === 0) return;
     const jr = res.rows[0];
 
+    // Idempotency guard: if reservation is already in a terminal state, skip all accounting.
+    // 'consumed'  → all stages were committed; a late crash-recovery refund must not claw them back.
+    // 'released'  → all stages were already refunded; a second failure call must not double-refund.
+    // 'partially_released' is intentionally allowed through so a stage2-only retry can re-consume
+    // the previously-refunded stage2 portion.
+    const rs = String(jr.reservation_status || "");
+    if (rs === "consumed" || rs === "released") {
+      console.log(
+        `[RESERVATION] Already finalized (${rs}) for job ${params.jobId} — skipping duplicate call`
+      );
+      return;
+    }
+
     const usageRes = await client.query(
       `SELECT * FROM agency_month_usage WHERE agency_id = $1 AND yyyymm = $2 FOR UPDATE`,
       [jr.agency_id, jr.yyyymm]

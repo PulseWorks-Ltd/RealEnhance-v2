@@ -5085,24 +5085,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ===== POST-COMPLETION OPERATIONS (BEST-EFFORT, NON-BLOCKING) =====
   // These run AFTER marking the job complete to ensure the user sees results even if these fail
 
-  // ===== USAGE TRACKING =====
-  // Record a single bundled usage event following pricing rules
-  try {
-    const agencyId = (payload as any).agencyId || null;
-    const imagesUsed = payload.options.declutter && payload.options.virtualStage ? 2 : 1;
-    await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
-  } catch (usageErr) {
-    // Usage tracking must never block job completion
-    nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
-  }
-
   // ===== RESERVATION FINALIZATION =====
   // Finalize reservation based on actual stage completion
+  // IMPORTANT: These signals must be derived from published output URLs (execution reality),
+  // NOT from routing intent flags (declutterMode, routingSnapshot.stage1BRequired, etc.).
   const billingStage1ASuccess = !!(pub1AUrl || pub1BUrl);
   const billingStage1BSuccess = (finalStageLabel === "1B" || finalStageLabel === "2")
     ? !!pub1BUrl
     : false;
   const billingStage2Success = committedFinalStageLabel === "2" ? !!committedStage2Url : false;
+
+  // ===== USAGE TRACKING =====
+  // Record a single bundled usage event following execution reality (not intent flags).
+  // imagesUsed is derived from actual stage completion signals computed above.
+  try {
+    const agencyId = (payload as any).agencyId || null;
+    // 2 credits only when BOTH stage1B AND stage2 actually published outputs.
+    // 1 credit for any other successful run (stage1A-only, stage1A+1B, stage1A+stage2-only).
+    const imagesUsed = (billingStage1BSuccess && billingStage2Success) ? 2 : 1;
+    await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
+  } catch (usageErr) {
+    // Usage tracking must never block job completion
+    nLog("[USAGE] Failed to record usage (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
   const actualCharge = !billingStage1ASuccess
     ? 0
     : (sceneLabel === "exterior"
