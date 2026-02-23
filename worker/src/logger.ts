@@ -14,12 +14,16 @@
 
 import { VALIDATOR_FOCUS } from "./config";
 
+function isValidatorLogsFocusEnabled(): boolean {
+  return process.env.VALIDATOR_LOGS_FOCUS === "1";
+}
+
 export function isValidationFocusMode(): boolean {
   return process.env.VALIDATOR_FOCUS_MODE === "on";
 }
 
 export function logIfNotFocusMode(...args: any[]) {
-  if (!isValidationFocusMode()) {
+  if (!isValidationFocusMode() && !isValidatorLogsFocusEnabled()) {
     console.log(...args);
   }
 }
@@ -33,7 +37,7 @@ export function logIfNotFocusMode(...args: any[]) {
  * @param args Log arguments
  */
 export function vLog(...args: any[]) {
-  if (VALIDATOR_FOCUS) {
+  if (VALIDATOR_FOCUS && !isValidatorLogsFocusEnabled()) {
     console.log(...args);
   }
 }
@@ -49,7 +53,7 @@ export function vLog(...args: any[]) {
  * @param args Log arguments
  */
 export function nLog(...args: any[]) {
-  if (!VALIDATOR_FOCUS) {
+  if (!VALIDATOR_FOCUS && !isValidatorLogsFocusEnabled()) {
     console.log(...args);
   }
 }

@@ -9,6 +9,19 @@ import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
 
 const logger = console;
+const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+
+function debugInfo(...args: any[]) {
+  if (!VALIDATOR_LOGS_FOCUS) {
+    logger.info(...args);
+  }
+}
+
+function debugLog(...args: any[]) {
+  if (!VALIDATOR_LOGS_FOCUS) {
+    console.log(...args);
+  }
+}
 
 // AUDIT FIX: Validator thresholds consolidated and documented
 // MIN_CONFIDENCE: Below this, never hard-fail (low confidence = uncertain → allow through)
@@ -119,7 +132,7 @@ function buildAdjudicatorPrompt(
   const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);
   const gatedEvidence = gateEvidenceForGemini(evidence.stage, evidence, jobId);
   if (VALIDATION_FOCUS_MODE) {
-    logger.info("[EVIDENCE_GATING_VARIANT]", {
+    debugInfo("[EVIDENCE_GATING_VARIANT]", {
       jobId,
       variant,
       stage: evidence.stage,
@@ -127,7 +140,7 @@ function buildAdjudicatorPrompt(
     if (gatingEnabled) {
       const keysBefore = collectEvidenceKeys(evidence).length;
       const keysAfter = collectEvidenceKeys(gatedEvidence).length;
-      logger.info("[EVIDENCE_GATING_ACTIVE]", {
+      debugInfo("[EVIDENCE_GATING_ACTIVE]", {
         jobId,
         stage: evidence.stage,
         keys_before: keysBefore,
@@ -137,7 +150,7 @@ function buildAdjudicatorPrompt(
   }
 
   if (!shouldInjectEvidence(gatedEvidence)) {
-    logger.info("[VALIDATION_EVIDENCE] skipped_below_threshold", {
+    debugInfo("[VALIDATION_EVIDENCE] skipped_below_threshold", {
       stage: gatedEvidence.stage,
       jobId: gatedEvidence.jobId,
     });
@@ -247,7 +260,7 @@ Do not assign high-confidence structural violation scores to desks, shelving,
 or freestanding storage furniture.
 ` : "";
 
-  logger.info("[VALIDATION_EVIDENCE] injected", {
+  debugInfo("[VALIDATION_EVIDENCE] injected", {
     stage: gatedEvidence.stage,
     jobId: gatedEvidence.jobId,
   });
@@ -1946,11 +1959,11 @@ export async function runGeminiSemanticValidator(opts: {
 
   // Build base prompt, then inject evidence signals
   if (opts.stage === "1B") {
-    logger.info("Stage1B validator mode", { mode: opts.stage1BValidationMode || "LIGHT_DECLUTTER" });
+    debugInfo("Stage1B validator mode", { mode: opts.stage1BValidationMode || "LIGHT_DECLUTTER" });
   }
   const basePrompt = opts.promptOverride || buildPrompt(opts.stage, opts.sceneType, opts.sourceStage, opts.validationMode, opts.stage1BValidationMode);
   if (opts.stage === "2" && opts.validationMode) {
-    logger.info("Stage2 validator mode", { validationMode: opts.validationMode });
+    debugInfo("Stage2 validator mode", { validationMode: opts.validationMode });
   }
   const prompt = buildAdjudicatorPrompt(basePrompt, opts.evidence, opts.riskLevel);
 
@@ -2082,12 +2095,12 @@ export async function runGeminiSemanticValidator(opts: {
       if (isRefreshFixtureViolation) {
         // Fixture/plumbing violations in Refresh mode are never downgraded
         hardFail = true;
-        console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
+        debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
       } else if (builtInDowngradeAllowed) {
         hardFail = false;
       } else {
         hardFail = true;
-        console.log("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
+        debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
       }
     } else {
       // Stage 1B geometric lock — wall/camera/opening violations are never downgraded
@@ -2097,7 +2110,7 @@ export async function runGeminiSemanticValidator(opts: {
         violationType === "opening_change";
       if (geometricViolation) {
         hardFail = true;
-        console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage1b_geometric_lock=true violationType=${violationType}`);
+        debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage1b_geometric_lock=true violationType=${violationType}`);
       } else {
         // D1: low confidence → allow through
         if (lowConfidence) hardFail = false;
@@ -2119,7 +2132,7 @@ export async function runGeminiSemanticValidator(opts: {
           reasonText,
         });
       }
-      console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY retry_on_structure_drift=true violationType=${violationType}`);
+      debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY retry_on_structure_drift=true violationType=${violationType}`);
     }
 
     const verdict: GeminiSemanticVerdict = {
@@ -2134,7 +2147,7 @@ export async function runGeminiSemanticValidator(opts: {
     };
 
     const ms = Date.now() - start;
-    console.log(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
+    debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
     return verdict;
   } catch (err: any) {
     console.warn("[gemini-semantic] error (fail-open):", err?.message || err);

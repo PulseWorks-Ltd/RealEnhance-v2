@@ -69,6 +69,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
   1,
   Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
 );
+const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
@@ -90,14 +91,41 @@ import { applyFinalBlackEdgeGuard, assertNoDarkBorder } from "./utils/finalBlack
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const logger = console;
 
+function shouldLog(eventType?: string): boolean {
+  if (!VALIDATOR_LOGS_FOCUS) return true;
+
+  const allowedEvents = new Set([
+    "SYSTEM_START",
+    "SYSTEM_ERROR",
+    "UNHANDLED_EXCEPTION",
+    "AWS_S3_FAILURE",
+    "MODEL_FAILURE",
+    "FATAL_RETRY_EXHAUSTION",
+    "STAGE_OUTPUT_SIGNED",
+    "VALIDATION_RESULT",
+    "STAGE_RETRY",
+    "JOB_ATTEMPT_SUMMARY",
+  ]);
+
+  return eventType ? allowedEvents.has(eventType) : false;
+}
+
+function logEvent(eventType: string, payload: Record<string, any> = {}) {
+  if (!shouldLog(eventType)) return;
+  console.log(JSON.stringify({ event: eventType, ...payload }));
+}
+
 function logStructured(event: string, payload: Record<string, any>) {
   try {
-    console.log(JSON.stringify({ event, ...payload }));
+    logEvent(event, payload);
   } catch (err) {
-    nLog("[STRUCTURED_LOG_ERROR]", {
-      event,
-      error: (err as any)?.message || String(err),
-    });
+    if (!VALIDATOR_LOGS_FOCUS) {
+      nLog("[STRUCTURED_LOG_ERROR]", {
+        event,
+        error: (err as any)?.message || String(err),
+      });
+    }
+    console.error("[SYSTEM_ERROR] structured log failure", err);
   }
 }
 
@@ -610,7 +638,9 @@ async function checkStage2AlreadyFinal(jobId: string, attemptedBy: string): Prom
           : attemptedBy === "stage2_only"
             ? "stage1B"
             : "partial";
-      console.log(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
+      if (!VALIDATOR_LOGS_FOCUS) {
+        console.log(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
+      }
       return true;
     }
   } catch {}
@@ -691,6 +721,11 @@ async function completePartialJob(params: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 process.on('uncaughtException', (error, origin) => {
+  logEvent("UNHANDLED_EXCEPTION", {
+    kind: "uncaughtException",
+    message: error?.message || String(error),
+    origin,
+  });
   console.error('[FATAL] Uncaught Exception:', {
     error: error.message,
     stack: error.stack,
@@ -704,6 +739,10 @@ process.on('uncaughtException', (error, origin) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
+  logEvent("UNHANDLED_EXCEPTION", {
+    kind: "unhandledRejection",
+    reason: String((reason as any)?.message || reason),
+  });
   console.error('[FATAL] Unhandled Promise Rejection:', {
     reason,
     promise
@@ -716,7 +755,7 @@ process.on('unhandledRejection', (reason, promise) => {
 let _workerRef: import('bullmq').Worker | null = null;
 
 async function gracefulShutdown(signal: string) {
-  console.log(`[WORKER] ${signal} received, graceful shutdown...`);
+  logEvent("SYSTEM_START", { phase: "shutdown", signal });
   const FORCE_EXIT_MS = 10_000;
   const forceTimer = setTimeout(() => {
     console.error(`[WORKER] Forced exit after ${FORCE_EXIT_MS}ms`);
@@ -728,9 +767,13 @@ async function gracefulShutdown(signal: string) {
   try {
     if (_workerRef) {
       await _workerRef.close();
-      console.log('[WORKER] BullMQ worker closed cleanly');
+      logEvent("SYSTEM_START", { phase: "shutdown_complete" });
     }
   } catch (err) {
+    logEvent("SYSTEM_ERROR", {
+      phase: "shutdown",
+      error: (err as any)?.message || String(err),
+    });
     console.error('[WORKER] Error closing worker:', err);
   }
   process.exit(0);
@@ -771,7 +814,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   startMemoryTracking(payload.jobId);
 
   if (isValidationFocusMode()) {
-    console.log("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
+    if (!VALIDATOR_LOGS_FOCUS) {
+      console.log("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
+    }
   }
 
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
@@ -1798,6 +1843,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           },
           confirm: null,
         });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt: stage2OnlyAttemptNo,
+          localPass: unifiedRetryValidation.passed === true,
+          geminiPass: ((stage2OnlyGeminiRaw.hardFail === true) ? false : true),
+          confirmPass: null,
+          finalPass: stage2ValidationPassed,
+          violationType: stage2OnlyGeminiRaw.violationType || null,
+          retriesRemaining: 0,
+        });
       } catch (unifiedErr: any) {
         nLog(`[worker] Unified validation error (stage2-only, non-fatal):`, unifiedErr?.message || unifiedErr);
       }
@@ -2192,15 +2248,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══════════════════════════════════════════════════════════════════════════
       const clientPred = clientScenePrediction;
       const skyReplacementAllowed = finalSkyModeResult.mode === "strong";
-      console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
-        `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
-        `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
-        `skyReplacementAllowed=${skyReplacementAllowed} ` +
-        `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
-        `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
-        `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
-        `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
-        `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
+      if (!VALIDATOR_LOGS_FOCUS) {
+        console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
+          `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
+          `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
+          `skyReplacementAllowed=${skyReplacementAllowed} ` +
+          `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
+          `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
+          `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
+          `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
+          `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
+      }
     }
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
@@ -2833,7 +2891,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     while (attempt < maxAttempts) {
       if (await stopIfCancelled("stage1b_retry_loop")) return;
       if (Date.now() - t1B > MAX_STAGE_RUNTIME_MS) {
-        console.log(`[timeout] stage=1B exceeded_ms=${Date.now() - t1B} jobId=${payload.jobId}`);
+        logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "1B", kind: "timeout", elapsedMs: Date.now() - t1B });
         const latestJob = await getJob(payload.jobId);
         if (isTerminalStatus(latestJob?.status)) {
           nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B timeout fallback`, {
@@ -2945,6 +3003,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       annotateAttemptSignedUrl("1B", stage1BAttemptNo, stage1BSigned);
+      logEvent("VALIDATION_RESULT", {
+        jobId: payload.jobId,
+        stage: "1B",
+        attempt: stage1BAttemptNo,
+        localPass: !effectiveHardFail,
+        geminiPass: structureResult.hardFail !== true,
+        confirmPass: null,
+        finalPass: !effectiveHardFail,
+        violationType: effectiveViolationType || null,
+        retriesRemaining: Math.max(0, maxAttempts - stage1BAttemptNo),
+      });
 
       if (effectiveHardFail) {
         mergeAttemptValidation("1B", stage1BAttemptNo, {
@@ -2961,6 +3030,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         attempt += 1;
         if (attempt >= maxAttempts) {
           nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "1B",
+            attempts: attempt,
+            reason: effectiveViolationType || "structure_hard_fail",
+          });
           const latestJob = await getJob(payload.jobId);
           if (isTerminalStatus(latestJob?.status)) {
             nLog(`[FINAL_STATUS_GUARD] Skipping late Stage 1B structure-exhausted fallback`, {
@@ -2991,6 +3066,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
           return;
         }
+        logEvent("STAGE_RETRY", {
+          jobId: payload.jobId,
+          stage: "1B",
+          retry: attempt,
+          retriesRemaining: Math.max(0, maxAttempts - attempt),
+          reason: effectiveViolationType || "structure_hard_fail",
+        });
         continue;
       }
 
@@ -3363,7 +3445,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // Surface incoming stagingStyle before calling Stage 2
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
-      console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
+      if (!VALIDATOR_LOGS_FOCUS) {
+        console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
+      }
       stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
       // FIX 4: Add Stage 2 timeout with Promise.race
@@ -3447,7 +3531,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (timeoutError: any) {
         if (timeoutError?.message === 'STAGE2_TIMEOUT') {
           stage2TimedOut = true;
-          console.log(`[timeout] stage=2 exceeded_ms=${STAGE2_TIMEOUT_MS} jobId=${payload.jobId}`);
+          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2", kind: "timeout", elapsedMs: STAGE2_TIMEOUT_MS });
           nLog(`[worker] ⏱️ Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms, falling back to Stage ${stage2BaseStage}`);
           stage2Blocked = true;
           stage2FallbackStage = stage2BaseStage;
@@ -3753,7 +3837,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       if (await stopIfCancelled("stage2_validation_loop")) return;
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
-        console.log(`[timeout] stage=2_validation_loop exceeded_ms=${Date.now() - t2} jobId=${payload.jobId}`);
+        logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: Date.now() - t2 });
         stage2Blocked = true;
         stage2BlockedReason = "stage2_runtime_exceeded";
         await safeWriteJobStatus(
@@ -4031,6 +4115,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             reason: failReasons[0] || blockedBy || "structure",
           },
         });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          localPass: unifiedValidation.passed === true,
+          geminiPass: !(geminiSemanticHardFail || confirmHardFail),
+          confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
+          finalPass: false,
+          violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+        });
 
         // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
         if (
@@ -4070,7 +4165,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               new GetObjectCommand({ Bucket: bucket, Key: debugKey }),
               { expiresIn: 60 * 60 * 24 }
             );
-            console.log("DEBUG Stage2 Full Failed Attempt URL:", signedUrl);
+            if (!VALIDATOR_LOGS_FOCUS) {
+              console.log("DEBUG Stage2 Full Failed Attempt URL:", signedUrl);
+            }
           } catch (debugErr) {
             console.warn("DEBUG_SAVE_FAILED_STAGE2_FULL failed:", debugErr);
           }
@@ -4091,6 +4188,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
           nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempts: attempt,
+            blockedBy: "structure",
+            reason: stage2BlockedReason,
+          });
           nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
           nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structure retries=${attempt - 1}`);
           break;
@@ -4100,6 +4204,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         retryTopP = Math.max(0.3, retryTopP * 0.9);
         retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
         nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+        logEvent("STAGE_RETRY", {
+          jobId: payload.jobId,
+          stage: "2",
+          retry: attempt + 1,
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          reason: failReasons[0] || "structure",
+        });
         continue;
       }
 
@@ -4185,6 +4296,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   reason: reasonText,
                 },
               });
+              logEvent("VALIDATION_RESULT", {
+                jobId: payload.jobId,
+                stage: "2",
+                attempt,
+                localPass: unifiedValidation.passed === true,
+                geminiPass: false,
+                confirmPass: null,
+                finalPass: false,
+                violationType: "compliance",
+                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              });
 
               if (attempt >= MAX_STAGE2_RETRIES) {
                 const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
@@ -4200,6 +4322,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 path2 = fallbackPath;
                 stage2CandidatePath = fallbackPath;
                 nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+                logEvent("FATAL_RETRY_EXHAUSTION", {
+                  jobId: payload.jobId,
+                  stage: "2",
+                  attempts: attempt,
+                  blockedBy: "compliance",
+                  reason: stage2BlockedReason,
+                });
                 nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
                 nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=compliance retries=${attempt - 1}`);
                 break;
@@ -4209,6 +4338,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               retryTopP = Math.max(0.3, retryTopP * 0.9);
               retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
               nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+              logEvent("STAGE_RETRY", {
+                jobId: payload.jobId,
+                stage: "2",
+                retry: attempt + 1,
+                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+                reason: reasonText,
+              });
               continue;
             }
 
@@ -4243,6 +4379,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           retryTriggered: false,
           retriesExhausted: false,
         },
+      });
+      logEvent("VALIDATION_RESULT", {
+        jobId: payload.jobId,
+        stage: "2",
+        attempt,
+        localPass: unifiedValidation.passed === true,
+        geminiPass: true,
+        confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
+        finalPass: true,
+        violationType: null,
+        retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
       });
       updateJob(payload.jobId, {
         meta: {
@@ -5234,6 +5381,13 @@ const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "red
 
 // DEPLOYMENT VERIFICATION
 const BUILD_VERSION = "2025-11-07_16:00_S3_VERBOSE_LOGS";
+logEvent("SYSTEM_START", {
+  build: BUILD_VERSION,
+  queue: JOB_QUEUE_NAME,
+  validatorLogsFocus: VALIDATOR_LOGS_FOCUS ? "1" : "0",
+  signAllStageOutputs: SIGN_ALL_STAGE_OUTPUTS_ENABLED ? "1" : "0",
+  signedUrlTtlSeconds: STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS,
+});
 nLog('╔════════════════════════════════════════════════════════════════╗');
 nLog('║                   WORKER STARTING                              ║');
 nLog('╚════════════════════════════════════════════════════════════════╝');
@@ -5495,12 +5649,15 @@ _workerRef = worker;
     // @ts-ignore
     await worker.waitUntilReady?.();
     nLog("[worker] ready and listening");
+    logEvent("SYSTEM_START", { phase: "ready" });
   } catch (e) {
+    logEvent("SYSTEM_ERROR", { phase: "ready", error: (e as any)?.message || String(e) });
     nLog("[worker] failed to initialize", e);
   }
 })();
 
 worker.on("error", (err) => {
+  logEvent("SYSTEM_ERROR", { phase: "worker_event", error: (err as any)?.message || String(err) });
   nLog(`[worker] ERROR event:`, err);
 });
 
