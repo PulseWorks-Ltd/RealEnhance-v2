@@ -340,6 +340,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.705.0
         version: 3.937.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.705.0
+        version: 3.965.0
     devDependencies:
       '@types/form-data':
         specifier: ^2.5.0
