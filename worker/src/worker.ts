@@ -162,6 +162,7 @@ type Stage1BWallDeltaResult = {
   candidateArea: number;
   deltaRatio: number;
   newWallRatio: number;
+  planeExpansionRatio: number;
 };
 
 function getStage1BGeminiConfig(attempt: number) {
@@ -520,6 +521,7 @@ async function detectWallPlaneExpansion(
       candidateArea: 0,
       deltaRatio: 0,
       newWallRatio: 0,
+      planeExpansionRatio: 0,
     };
   }
 
@@ -574,6 +576,7 @@ async function detectWallPlaneExpansion(
     candidateArea,
     deltaRatio,
     newWallRatio,
+    planeExpansionRatio: newWallRatio,
   };
 }
 
@@ -2998,12 +3001,58 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         `[STAGE1B_WALL_DELTA] baselineArea=${wallDelta.baselineArea} candidateArea=${wallDelta.candidateArea} deltaRatio=${wallDelta.deltaRatio.toFixed(4)} newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`
       );
 
-      const effectiveHardFail = structureResult.hardFail || wallDelta.hardFail;
+      // Deterministic opening preservation guard (Stage 1B only)
+      const beforeOpeningCount = structureResult?.beforeOpeningCount;
+      const afterOpeningCount = structureResult?.afterOpeningCount;
+
+      const openingRemovalDetected =
+        typeof beforeOpeningCount === "number" &&
+        typeof afterOpeningCount === "number" &&
+        afterOpeningCount < beforeOpeningCount;
+
+      if (openingRemovalDetected) {
+        nLog("[STAGE1B_OPENING_REMOVAL_DETECTED]", {
+          beforeOpeningCount,
+          afterOpeningCount,
+        });
+      }
+
+      // Subtractive mode safety: new large flat wall patches are suspicious
+      const suspiciousWallExpansion =
+        !!wallDelta?.planeExpansionRatio &&
+        wallDelta.planeExpansionRatio > 0.15; // keep threshold conservative
+
+      if (suspiciousWallExpansion) {
+        nLog("[STAGE1B_SUSPICIOUS_WALL_EXPANSION]", {
+          ratio: wallDelta.planeExpansionRatio,
+        });
+      }
+
+      const effectiveHardFail =
+        structureResult.hardFail ||
+        wallDelta.hardFail ||
+        openingRemovalDetected ||
+        suspiciousWallExpansion;
       const effectiveViolationType = wallDelta.hardFail
         ? wallDelta.violationType
+        : openingRemovalDetected
+          ? "opening_change"
+          : suspiciousWallExpansion
+            ? "wall_plane_expansion"
         : structureResult.violationType;
       const effectiveReasons = [
         ...((Array.isArray(structureResult.reasons) ? structureResult.reasons : []) as string[]),
+        ...(openingRemovalDetected
+          ? [
+              `opening_count_removed:before=${beforeOpeningCount}`,
+              `opening_count_removed:after=${afterOpeningCount}`,
+            ]
+          : []),
+        ...(suspiciousWallExpansion
+          ? [
+              `suspicious_wall_expansion:planeExpansionRatio=${wallDelta.planeExpansionRatio.toFixed(4)}`,
+            ]
+          : []),
         ...(wallDelta.hardFail
           ? [
               `wall_plane_expansion:newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`,

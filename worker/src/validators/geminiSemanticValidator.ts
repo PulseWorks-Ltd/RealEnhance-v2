@@ -291,6 +291,8 @@ export type GeminiSemanticVerdict = {
   violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "fixture_change" | "ceiling_fixture_change" | "plumbing_change" | "faucet_change" | "layout_only" | "other";
   builtInDetected?: boolean;
   structuralAnchorCount?: number;
+  beforeOpeningCount?: number;
+  afterOpeningCount?: number;
   rawText?: string;
 };
 
@@ -752,6 +754,23 @@ Structure consists of:
 • camera viewpoint and perspective
 
 
+OPENING PRESERVATION — ABSOLUTE RULE:
+
+If any doorway, doorframe, door recess, archway, or window visible in BEFORE is missing, sealed, flattened, painted over, or converted into solid wall in AFTER, this is a structural identity violation.
+
+This includes:
+- Doors painted into wall texture
+- Door frames removed
+- Door recesses filled
+- Negative space replaced with flat wall surface
+- Archways removed or flattened
+
+These are structural failures.
+If detected, return hardFail=true immediately.
+
+Removal of freestanding objects near doors does NOT permit alteration of the door itself.
+
+
 ─────────────────────────────
 ZERO-TOLERANCE ENVELOPE LOCK
 ─────────────────────────────
@@ -860,6 +879,34 @@ If structure appears identical:
   "confidence": number
 }`;
 
+function extractOpeningCountsFromStage1BText(text: string): { beforeOpeningCount?: number; afterOpeningCount?: number } {
+  if (!text) return {};
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  const target = jsonMatch ? jsonMatch[0] : text;
+
+  try {
+    const parsed = JSON.parse(target);
+    const beforeCandidate =
+      parsed.beforeOpeningCount ??
+      parsed.openingsBefore ??
+      parsed.beforeOpenings ??
+      parsed.before_opening_count;
+    const afterCandidate =
+      parsed.afterOpeningCount ??
+      parsed.openingsAfter ??
+      parsed.afterOpenings ??
+      parsed.after_opening_count;
+
+    const beforeOpeningCount = typeof beforeCandidate === "number" ? beforeCandidate : undefined;
+    const afterOpeningCount = typeof afterCandidate === "number" ? afterCandidate : undefined;
+
+    return { beforeOpeningCount, afterOpeningCount };
+  } catch {
+    return {};
+  }
+}
+
 export async function validateStage1BStructure(beforeImage: string, afterImage: string): Promise<GeminiSemanticVerdict> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
@@ -891,6 +938,7 @@ export async function validateStage1BStructure(beforeImage: string, afterImage: 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
     const parsed = parseGeminiSemanticText(text);
+    const openingCounts = extractOpeningCountsFromStage1BText(text);
     const category = parsed.category === "structure" ? "structure" : "unknown";
     const hardFail = parsed.hardFail === true && category === "structure";
 
@@ -906,6 +954,8 @@ export async function validateStage1BStructure(beforeImage: string, afterImage: 
         : "other",
       builtInDetected: false,
       structuralAnchorCount: 0,
+      beforeOpeningCount: openingCounts.beforeOpeningCount,
+      afterOpeningCount: openingCounts.afterOpeningCount,
       rawText: text,
     };
   } catch (err: any) {
