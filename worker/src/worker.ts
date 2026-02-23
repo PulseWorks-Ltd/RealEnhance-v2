@@ -3570,6 +3570,51 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         ];
         setStage2AttemptValidation(path2, blockedBy, failReasons);
 
+        // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
+        if (
+          stage2ValidationMode === "FULL_STAGE_ONLY" &&
+          unifiedValidation.hardFail === true &&
+          process.env.DEBUG_SAVE_FAILED_STAGE2_FULL === "1"
+        ) {
+          try {
+            const debugKey = `debug/stage2-full-failed/${payload.jobId}-${attempt}.png`;
+            const afterImageBuffer = await fs.promises.readFile(path2);
+            const bucket = process.env.S3_BUCKET!;
+            const rawRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+            const region = rawRegion.match(/([a-z]{2}-[a-z0-9-]+-\d)/i)?.[1]?.toLowerCase() ?? rawRegion.toLowerCase();
+            const importer: any = new Function("p", "return import(p)");
+            const s3Mod: any = await importer("@aws-sdk/client-s3");
+            const presignMod: any = await importer("@aws-sdk/s3-request-presigner");
+            const { S3Client, PutObjectCommand, GetObjectCommand } = s3Mod;
+            const { getSignedUrl } = presignMod;
+            const clientConfig: any = { region };
+            if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+              clientConfig.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+              };
+            }
+            const s3Debug = new S3Client(clientConfig);
+            await s3Debug.send(
+              new PutObjectCommand({
+                Bucket: bucket,
+                Key: debugKey,
+                Body: afterImageBuffer,
+                ContentType: "image/png",
+              })
+            );
+            const signedUrl = await getSignedUrl(
+              s3Debug,
+              new GetObjectCommand({ Bucket: bucket, Key: debugKey }),
+              { expiresIn: 60 * 60 * 24 }
+            );
+            console.log("DEBUG Stage2 Full Failed Attempt URL:", signedUrl);
+          } catch (debugErr) {
+            console.warn("DEBUG_SAVE_FAILED_STAGE2_FULL failed:", debugErr);
+          }
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         if (attempt >= MAX_STAGE2_RETRIES) {
           const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
             ? stageLineage.stage1B.output
