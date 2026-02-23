@@ -2090,10 +2090,24 @@ export async function runGeminiSemanticValidator(opts: {
         console.log("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 cat=structure forcedHardFail=true");
       }
     } else {
-      if (lowConfidence) hardFail = false;
-      if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
-      if (builtInLowConfidence) hardFail = false;
-      if (structuredRetainFurnitureDowngrade) hardFail = false;
+      // Stage 1B geometric lock — wall/camera/opening violations are never downgraded
+      const geometricViolation =
+        violationType === "wall_change" ||
+        violationType === "camera_shift" ||
+        violationType === "opening_change";
+      if (geometricViolation) {
+        hardFail = true;
+        console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage1b_geometric_lock=true violationType=${violationType}`);
+      } else {
+        // D1: low confidence → allow through
+        if (lowConfidence) hardFail = false;
+        // D2: built-in ambiguity (too few anchors) → allow through
+        if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
+        // D3: built-in low confidence → allow through
+        if (builtInLowConfidence) hardFail = false;
+        // D4: boundary-adjacent furniture (Structured Retain only) → allow through
+        if (structuredRetainFurnitureDowngrade) hardFail = false;
+      }
     }
 
     if (stage2FullStructuralIdentityViolation) {

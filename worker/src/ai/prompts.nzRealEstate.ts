@@ -820,6 +820,21 @@ CRITICAL STRUCTURAL RULES:
 - You must NOT add furniture or enlarge anchor furniture.
 - You may only REMOVE clutter or small movable items.
 - If unsure, leave the area unchanged.
+
+GEOMETRIC ZERO-TOLERANCE RULE:
+
+The following are ALWAYS structural failures and must never occur:
+
+• Any shift in camera position, angle, framing, or perspective
+• Any wall extension, shrinkage, reshaping, repainting, or continuation
+• Any door, window, or opening modification
+• Any change to ceiling plane geometry
+• Any alteration of room proportions
+
+Surface reconstruction is allowed only where furniture was removed,
+and must strictly match surrounding visible structure.
+
+If uncertain, preserve original geometry exactly.
 `;
 
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
@@ -917,6 +932,8 @@ Preserve surface textures and shadows.`.trim();
 
 TASK:
 Remove all movable furniture EXCEPT for the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
+
+${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 
     PRIMARY OBJECTIVE:
     Create a near-empty architectural shell while preserving exactly one functional anchor per zone.
@@ -1207,8 +1224,6 @@ QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
 When reconstructing walls, prefer clean blank wall over adding any wall hardware.
 
-${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
-
 OUTPUT:
 Return only the empty room image.`.trim();
   }
@@ -1387,6 +1402,8 @@ TASK:
 Remove small, loose, and personal clutter ONLY to depersonalize the space.
 Preserve all architecture and major furniture.
 
+${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
+
 PRIMARY OBJECTIVE — LISTING-READY PRESENTATION
 
 Your goal is to make the room look clean, tidy, and presentation-ready for a real estate listing photo,
@@ -1514,8 +1531,6 @@ This is presentation tidying only — not staging or redesign.
 
 ABSOLUTE PROHIBITIONS:
 No staging, no redesign, no recolor, no geometry change.
-
-${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 
 OUTPUT:
 Return only processed image.`.trim();
