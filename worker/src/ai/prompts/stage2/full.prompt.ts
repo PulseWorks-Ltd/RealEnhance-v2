@@ -49,6 +49,9 @@ You must NOT add, remove, replace, resize, restyle, or reposition any of the fol
 • Wall-mounted HVAC units
 • Curtain rails, rods, tracks, blind housings
 Existing fixture count, type, and position must remain identical.
+If staging includes a dining table, do NOT add a new pendant or ceiling light above it unless a pendant already exists in that position in the input image.
+If curtains or drapes are visible in the input image, they must remain present.
+Do NOT remove window fabric coverings during staging.
 Do NOT introduce new functional zones beyond the user-selected room type.
 If the selected room type is "kitchen + living", do NOT add dining.
 If the selected room type is "living", do NOT add office or dining.
