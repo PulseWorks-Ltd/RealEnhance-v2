@@ -860,7 +860,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BRequired: boolean;
   };
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
-  let detectionAttempted = false;
 
   let stagingStyleNorm: string | undefined;
 
@@ -2681,16 +2680,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let routingSnapshot = frozenRoutingSnapshot;
 
     if (routingSnapshot) {
-      if (frozenRoutingSnapshot && detectionAttempted) {
-        throw new Error("Detection attempted after routing snapshot was frozen");
-      }
       nLog("[ROUTING] Using frozen routing snapshot", {
         jobId: payload.jobId,
       });
       nLog("[ROUTING] Reusing frozen routing snapshot");
     } else {
-      detectionAttempted = true;
-      if (frozenRoutingSnapshot && detectionAttempted) {
+      const latestBeforeDetect = await getJob(payload.jobId);
+      const latestFrozenSnapshot = ((latestBeforeDetect as any)?.meta?.routingSnapshot
+        || (latestBeforeDetect as any)?.metadata?.routingSnapshot
+        || frozenRoutingSnapshot) as RoutingSnapshot | null;
+      const detectionAttempted = true;
+      if (latestFrozenSnapshot && detectionAttempted) {
         throw new Error("Detection attempted after routing snapshot was frozen");
       }
 
@@ -2736,28 +2736,38 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         );
       }
 
-      await updateJob(payload.jobId, {
-        meta: {
-          ...(sceneLabel ? { ...sceneMeta } : {}),
-          furnishedGateResolved: true,
-          furnishedGate: {
-            enabled: true,
-            furnished: routingSnapshot.geminiHasFurniture === true,
-            source: routingSnapshot.authority,
-            escalated: routingSnapshot.authority === "gemini",
-            stage1BRan: routingSnapshot.stage1BRequired,
-            hasVirtualStage,
-            isStage2Only,
-            gateDecision: routingSnapshot.declutterMode === "stage-ready"
-              ? "furnished_refresh"
-              : routingSnapshot.declutterMode === "light"
-                ? "needs_declutter_light"
-                : "empty_full_stage",
-            gateReason: routingSnapshot.authority,
+      const existingDurableMeta = await getJobMetadata(payload.jobId);
+      const durableMetaWithSnapshot = {
+        ...(existingDurableMeta || {}),
+        routingSnapshot,
+      } as JobOwnershipMetadata & { routingSnapshot: RoutingSnapshot };
+
+      await Promise.all([
+        updateJob(payload.jobId, {
+          metadata: durableMetaWithSnapshot,
+          meta: {
+            ...(sceneLabel ? { ...sceneMeta } : {}),
+            furnishedGateResolved: true,
+            furnishedGate: {
+              enabled: true,
+              furnished: routingSnapshot.geminiHasFurniture === true,
+              source: routingSnapshot.authority,
+              escalated: routingSnapshot.authority === "gemini",
+              stage1BRan: routingSnapshot.stage1BRequired,
+              hasVirtualStage,
+              isStage2Only,
+              gateDecision: routingSnapshot.declutterMode === "stage-ready"
+                ? "furnished_refresh"
+                : routingSnapshot.declutterMode === "light"
+                  ? "needs_declutter_light"
+                  : "empty_full_stage",
+              gateReason: routingSnapshot.authority,
+            },
+            routingSnapshot,
           },
-          routingSnapshot,
-        },
-      });
+        }),
+        saveJobMetadata(durableMetaWithSnapshot, JOB_META_TTL_PROCESSING_SECONDS),
+      ]);
 
       frozenRoutingSnapshot = routingSnapshot;
     }
@@ -2801,9 +2811,41 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   }
 
-  const stage1BRequired = shouldResolveFurnishedGate
-    ? frozenRoutingSnapshot?.stage1BRequired === true
-    : !!declutterMode;
+  if (!frozenRoutingSnapshot) {
+    const inferredDeclutterMode: "light" | "stage-ready" | null =
+      declutterMode === "light" || declutterMode === "stage-ready"
+        ? declutterMode
+        : null;
+    const inferredSnapshot: RoutingSnapshot = {
+      authority: "localEmptyBypass",
+      localEmpty: false,
+      geminiHasFurniture: null,
+      geminiConfidence: null,
+      declutterMode: inferredDeclutterMode,
+      stage1BRequired: inferredDeclutterMode !== null,
+    };
+
+    const existingDurableMeta = await getJobMetadata(payload.jobId);
+    const durableMetaWithSnapshot = {
+      ...(existingDurableMeta || {}),
+      routingSnapshot: inferredSnapshot,
+    } as JobOwnershipMetadata & { routingSnapshot: RoutingSnapshot };
+
+    await Promise.all([
+      updateJob(payload.jobId, {
+        metadata: durableMetaWithSnapshot,
+        meta: {
+          ...(sceneLabel ? { ...sceneMeta } : {}),
+          routingSnapshot: inferredSnapshot,
+        },
+      }),
+      saveJobMetadata(durableMetaWithSnapshot, JOB_META_TTL_PROCESSING_SECONDS),
+    ]);
+
+    frozenRoutingSnapshot = inferredSnapshot;
+  }
+
+  const stage1BRequired = frozenRoutingSnapshot.stage1BRequired === true;
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
