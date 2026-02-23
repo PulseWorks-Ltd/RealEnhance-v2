@@ -21,6 +21,37 @@ or structural IoU / edge alignment appears reduced,
 → violationType: wall_change OR camera_shift
 `;
 
+  const STRUCTURAL_ENFORCEMENT_RULE = `
+STRUCTURAL ENFORCEMENT — RETRY-ON-DRIFT (MANDATORY)
+
+If ANY structural identity violation is detected, you must return:
+→ hardFail: true
+→ category: structure
+
+Never downgrade structural findings to warning.
+Never downgrade to style_only, furniture_change, or layout_only.
+Never suppress structural violations based on confidence.
+
+Structural hard-fail conditions include:
+• Added ceiling fixtures (pendants, fans, downlights)
+• Removed ceiling fixtures
+• Added plumbing fixtures (faucets, taps)
+• Removed plumbing fixtures
+• Curtain/drape removal
+• Curtain system addition
+• Opening added, removed, resized, or sealed
+• Built-in moved or resized
+• Camera shift
+• Envelope geometry drift
+• Functional zone expansion beyond selected room type
+
+Violation type mapping (required):
+• opening changes → opening_change
+• camera drift/viewpoint change → camera_shift
+• wall/envelope drift → wall_change
+• lighting/plumbing/curtain system or built-in identity changes → built_in_moved OR other
+`;
+
   return `ROLE
 You are a Structural Integrity & Full-Staging Compliance Auditor for NZ real estate staging.
 
@@ -32,6 +63,7 @@ DECISION RULES
 1) Architecture immutable: walls/openings/doors/windows/ceiling/floor/built-ins must be unchanged.
 2) Camera immutable: no viewpoint/fov/crop/perspective shift.
 ${GEOMETRIC_ENVELOPE_RULE}
+${STRUCTURAL_ENFORCEMENT_RULE}
 3) Full-stage expectation: room should be meaningfully staged for requested type.
 4) Openings/access must remain functional and clear.
 5) Built-in anchors must preserve exact footprint and silhouette.

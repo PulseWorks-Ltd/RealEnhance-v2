@@ -270,8 +270,10 @@ export type Stage1BValidationMode =
   | "LIGHT_DECLUTTER"
   | "STRUCTURED_RETAIN";
 
+type GeminiViolationType = NonNullable<GeminiSemanticVerdict["violationType"]>;
+
 function isBuiltInDowngradeAllowed(input: {
-  violationType: GeminiSemanticVerdict["violationType"];
+  violationType: GeminiViolationType;
   builtInDetected: boolean;
   structuralAnchorCount: number;
   confidence: number;
@@ -279,6 +281,123 @@ function isBuiltInDowngradeAllowed(input: {
   if (input.violationType !== "built_in_moved") return false;
   if (!input.builtInDetected) return false;
   return input.structuralAnchorCount < 2 || input.confidence < BUILTIN_HARDFAIL_CONFIDENCE;
+}
+
+function normalizeStage2FullStructuralViolationType(input: {
+  rawViolationType: GeminiViolationType;
+  reasonText: string;
+}): GeminiViolationType {
+  const reasonText = input.reasonText;
+  const rawViolationType = input.rawViolationType || "other";
+
+  if (rawViolationType === "opening_change") return "opening_change";
+  if (rawViolationType === "camera_shift") return "camera_shift";
+  if (rawViolationType === "wall_change") return "wall_change";
+  if (rawViolationType === "built_in_moved") return "built_in_moved";
+
+  const openingTokens = [
+    "opening",
+    "window",
+    "door",
+    "sealed",
+    "blocked doorway",
+    "resized",
+    "added opening",
+    "removed opening",
+  ];
+  if (openingTokens.some((token) => reasonText.includes(token))) return "opening_change";
+
+  const cameraTokens = [
+    "camera shift",
+    "viewpoint",
+    "fov",
+    "field of view",
+    "perspective",
+    "vanishing",
+    "crop",
+    "framing shift",
+  ];
+  if (cameraTokens.some((token) => reasonText.includes(token))) return "camera_shift";
+
+  const wallTokens = [
+    "wall drift",
+    "envelope",
+    "geometry drift",
+    "wall",
+    "corner",
+    "ceiling plane",
+    "room width",
+    "room depth",
+    "functional zone expansion",
+  ];
+  if (wallTokens.some((token) => reasonText.includes(token))) return "wall_change";
+
+  const builtInTokens = [
+    "built-in",
+    "built in",
+    "cabinet",
+    "island",
+    "fixture",
+    "plumbing",
+    "faucet",
+    "tap",
+    "pendant",
+    "downlight",
+    "ceiling fan",
+    "curtain",
+    "drape",
+    "rail",
+    "track",
+    "blind housing",
+  ];
+  if (builtInTokens.some((token) => reasonText.includes(token))) return "built_in_moved";
+
+  return "other";
+}
+
+function hasStage2FullStructuralIdentityViolation(input: {
+  category: GeminiSemanticVerdict["category"];
+  violationType: GeminiViolationType;
+  reasonText: string;
+}): boolean {
+  if (input.category === "structure") return true;
+  if (
+    input.violationType === "opening_change" ||
+    input.violationType === "wall_change" ||
+    input.violationType === "camera_shift" ||
+    input.violationType === "built_in_moved"
+  ) {
+    return true;
+  }
+
+  const structuralTokens = [
+    "added ceiling fixture",
+    "removed ceiling fixture",
+    "pendant",
+    "downlight",
+    "ceiling fan",
+    "added plumbing fixture",
+    "removed plumbing fixture",
+    "faucet",
+    "tap",
+    "curtain removal",
+    "drape removal",
+    "curtain system addition",
+    "curtain rail",
+    "opening added",
+    "opening removed",
+    "opening resized",
+    "opening sealed",
+    "built-in moved",
+    "built-in resized",
+    "camera shift",
+    "viewpoint shift",
+    "envelope geometry drift",
+    "wall drift",
+    "functional zone expansion",
+  ];
+
+  return structuralTokens.some((token) => input.reasonText.includes(token));
 }
 
 export function buildFinalFixtureConfirmPrompt(input: {
@@ -1863,13 +1982,13 @@ export async function runGeminiSemanticValidator(opts: {
     parsed.rawText = text;
 
     const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
-    const category = parsed.category as GeminiSemanticVerdict["category"];
+    let category = parsed.category as GeminiSemanticVerdict["category"];
     const builtInDetected = parsed.builtInDetected === true;
     const structuralAnchorCount = typeof parsed.structuralAnchorCount === "number"
       ? parsed.structuralAnchorCount
       : 0;
     const builtInLowConfidence = builtInDetected && parsed.confidence < BUILTIN_HARDFAIL_CONFIDENCE;
-    const violationType = parsed.violationType || "other";
+    let violationType: GeminiViolationType = parsed.violationType || "other";
     const builtInDowngradeAllowed = isBuiltInDowngradeAllowed({
       violationType,
       builtInDetected,
@@ -1924,6 +2043,20 @@ export async function runGeminiSemanticValidator(opts: {
       (category === "furniture_change" || (category === "structure" && (violationType === "layout_only" || violationType === "other"))) &&
       !alwaysHardFail;
 
+    const isStage2Full = opts.stage === "2" && opts.validationMode === "FULL_STAGE_ONLY";
+    const stage2FullStructuralIdentityViolation = isStage2Full && hasStage2FullStructuralIdentityViolation({
+      category,
+      violationType,
+      reasonText,
+    });
+    if (stage2FullStructuralIdentityViolation) {
+      category = "structure";
+      violationType = normalizeStage2FullStructuralViolationType({
+        rawViolationType: violationType || "other",
+        reasonText,
+      });
+    }
+
     let hardFail = parsed.hardFail;
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
@@ -1945,6 +2078,18 @@ export async function runGeminiSemanticValidator(opts: {
       if (builtInDetected && structuralAnchorCount < 2) hardFail = false;
       if (builtInLowConfidence) hardFail = false;
       if (structuredRetainFurnitureDowngrade) hardFail = false;
+    }
+
+    if (stage2FullStructuralIdentityViolation) {
+      category = "structure";
+      hardFail = true;
+      if (violationType === "layout_only") {
+        violationType = normalizeStage2FullStructuralViolationType({
+          rawViolationType: violationType || "other",
+          reasonText,
+        });
+      }
+      console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY retry_on_structure_drift=true violationType=${violationType}`);
     }
 
     const verdict: GeminiSemanticVerdict = {
