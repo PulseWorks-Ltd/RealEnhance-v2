@@ -38,9 +38,19 @@ interface BatchUploadRequest {
 
 /**
  * POST /api/batch/submit
- * Splits batch into individual jobs and returns batchId for tracking
+ * DISABLED — no credit gate, no reservation enforcement.
+ * Use POST /api/upload for all batch submissions.
  */
-router.post('/submit', async (req, res) => {
+router.post('/submit', async (_req, res) => {
+  return res.status(410).json({
+    error: 'DEPRECATED_ENDPOINT',
+    message: 'Batch submit endpoint disabled. Use /api/upload.',
+  });
+});
+
+// Dead code preserved below for reference — do not re-activate without adding
+// full credit gate + reserveAllowance enforcement matching /api/upload.
+router.post('/submit-disabled-ref', async (req, res) => {
   try {
     const sessUser = (req.session as any)?.user;
     if (!sessUser?.id) {
