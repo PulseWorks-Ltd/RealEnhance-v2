@@ -260,7 +260,7 @@ export type GeminiSemanticVerdict = {
   category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
   reasons: string[];
   confidence: number;
-  violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "layout_only" | "other";
+  violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "fixture_change" | "ceiling_fixture_change" | "plumbing_change" | "faucet_change" | "layout_only" | "other";
   builtInDetected?: boolean;
   structuralAnchorCount?: number;
   rawText?: string;
@@ -1904,6 +1904,10 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
       violationType === "wall_change" ||
       violationType === "camera_shift" ||
       violationType === "built_in_moved" ||
+      violationType === "fixture_change" ||
+      violationType === "ceiling_fixture_change" ||
+      violationType === "plumbing_change" ||
+      violationType === "faucet_change" ||
       violationType === "layout_only" ||
       violationType === "other"
     ) ? (violationType as GeminiSemanticVerdict["violationType"]) : "other";
@@ -2067,7 +2071,19 @@ export async function runGeminiSemanticValidator(opts: {
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
     if (opts.stage === "2" && category === "structure") {
-      if (builtInDowngradeAllowed) {
+      const isRefreshFixtureViolation =
+        opts.validationMode === "REFRESH_OR_DIRECT" &&
+        (
+          violationType === "fixture_change" ||
+          violationType === "ceiling_fixture_change" ||
+          violationType === "plumbing_change" ||
+          violationType === "faucet_change"
+        );
+      if (isRefreshFixtureViolation) {
+        // Fixture/plumbing violations in Refresh mode are never downgraded
+        hardFail = true;
+        console.log(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=REFRESH_OR_DIRECT fixture_lock=true violationType=${violationType}`);
+      } else if (builtInDowngradeAllowed) {
         hardFail = false;
       } else {
         hardFail = true;
