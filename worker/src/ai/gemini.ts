@@ -109,8 +109,8 @@ import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, 
 import { focusLog } from "../utils/logFocus";
 
 export const STAGE1B_FULL_SAMPLING = Object.freeze({
-  temperature: 0.12,
-  topP: 0.45,
+  temperature: 0.09,
+  topP: 0.36,
   topK: 20,
 });
 
