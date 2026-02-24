@@ -60,17 +60,9 @@ Do not expand room function.
 `;
 
 const FURNITURE_ADDITION_CONSTRAINTS_FULL = `
-FURNITURE ADDITION CONSTRAINTS — STRICT
+FURNITURE ADDITION CONSTRAINTS
 
-- Do NOT add bar stools, chairs, or seating to kitchen islands unless seating already exists in the input image.
-- You may refine, repaint, or replace existing stools.
-- You may NOT invent new seating zones.
-- Respect appliance clearance (dishwasher, oven, drawers must remain usable).
-
-SPATIAL LOGIC CONSTRAINTS — STRICT
-
-Never place furniture in front of appliances, cabinet doors, or walking paths.
-Keep all appliance and cabinet access fully usable.
+Do NOT add any seating of any type (bar stools, chairs, benches) to or around kitchen islands.
 `.trim();
 
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
