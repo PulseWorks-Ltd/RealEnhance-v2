@@ -59,7 +59,8 @@ import {
   type UnifiedValidationResult
 } from "./validators/runValidation";
 import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
-import { shouldRetry as evidenceShouldRetry } from "./validators/validationEvidence";
+import { shouldRetry as evidenceShouldRetry, type ValidationEvidence } from "./validators/validationEvidence";
+import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
 import { isJobFailedFinal } from "./validators/stageRetryManager";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
@@ -2991,14 +2992,80 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage1BAttemptNo = attempt + 1;
       const stage1BSigned = await captureSignedStageOutput("1B", stage1BAttemptNo, candidate);
 
-      const structureResult = await validateStage1BStructure(path1A, candidate);
-      nLog(
-        `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
-      );
-
       const wallDelta = await detectWallPlaneExpansion(path1A, candidate);
       nLog(
         `[STAGE1B_WALL_DELTA] baselineArea=${wallDelta.baselineArea} candidateArea=${wallDelta.candidateArea} deltaRatio=${wallDelta.deltaRatio.toFixed(4)} newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`
+      );
+
+      const stage1BSemanticSignals = await runSemanticStructureValidator({
+        originalImagePath: path1A,
+        enhancedImagePath: candidate,
+        scene: sceneLabel === "exterior" ? "exterior" : "interior",
+        mode: "log",
+      });
+
+      const stage1BOpeningsBefore =
+        (stage1BSemanticSignals?.windows?.before ?? 0) +
+        (stage1BSemanticSignals?.doors?.before ?? 0);
+      const stage1BOpeningsAfter =
+        (stage1BSemanticSignals?.windows?.after ?? 0) +
+        (stage1BSemanticSignals?.doors?.after ?? 0);
+      const openingCountDelta = stage1BOpeningsAfter - stage1BOpeningsBefore;
+      const openingRemovalDetectedForEvidence = openingCountDelta < 0;
+
+      // Subtractive mode safety: new large flat wall patches are suspicious
+      const suspiciousWallExpansion =
+        !!wallDelta?.planeExpansionRatio &&
+        wallDelta.planeExpansionRatio > 0.15; // keep threshold conservative
+
+      const stage1BStructuralEvidence: ValidationEvidence = {
+        jobId: payload.jobId,
+        stage: "1B",
+        roomType: payload.options.roomType,
+        ssim: 1,
+        ssimThreshold: 0,
+        ssimPassed: true,
+        openings: {
+          windowsBefore: stage1BSemanticSignals?.windows?.before ?? 0,
+          windowsAfter: stage1BSemanticSignals?.windows?.after ?? 0,
+          doorsBefore: stage1BSemanticSignals?.doors?.before ?? 0,
+          doorsAfter: stage1BSemanticSignals?.doors?.after ?? 0,
+        },
+        drift: {
+          wallPercent: (stage1BSemanticSignals?.walls?.driftRatio ?? 0) * 100,
+          maskedEdgePercent: 0,
+          angleDegrees: 0,
+        },
+        anchorChecks: {
+          islandChanged: false,
+          hvacChanged: false,
+          cabinetryChanged: false,
+          lightingChanged: false,
+        },
+        geometryProfile: "SOFT",
+        localFlags: [
+          ...(openingRemovalDetectedForEvidence ? ["opening_removal_detected"] : []),
+          ...(suspiciousWallExpansion ? ["suspicious_wall_expansion"] : []),
+        ],
+        unifiedScore: 1,
+        unifiedPassed: true,
+      };
+
+      const stage1BEvidenceInjected =
+        isEvidenceGatingEnabledForJob(payload.jobId) &&
+        (openingRemovalDetectedForEvidence || suspiciousWallExpansion || openingCountDelta !== 0);
+
+      nLog("[STAGE1B_EVIDENCE_INJECTION]", {
+        jobId: payload.jobId,
+        injected: stage1BEvidenceInjected,
+        openingRemovalDetected: openingRemovalDetectedForEvidence,
+        suspiciousWallExpansion,
+        openingCountDelta,
+      });
+
+      const structureResult = await validateStage1BStructure(path1A, candidate, stage1BStructuralEvidence);
+      nLog(
+        `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
       );
 
       // Deterministic opening preservation guard (Stage 1B only)
@@ -3016,11 +3083,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           afterOpeningCount,
         });
       }
-
-      // Subtractive mode safety: new large flat wall patches are suspicious
-      const suspiciousWallExpansion =
-        !!wallDelta?.planeExpansionRatio &&
-        wallDelta.planeExpansionRatio > 0.15; // keep threshold conservative
 
       if (suspiciousWallExpansion) {
         nLog("[STAGE1B_SUSPICIOUS_WALL_EXPANSION]", {

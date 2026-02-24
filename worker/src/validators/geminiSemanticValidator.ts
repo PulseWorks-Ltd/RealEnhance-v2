@@ -907,14 +907,49 @@ function extractOpeningCountsFromStage1BText(text: string): { beforeOpeningCount
   }
 }
 
-export async function validateStage1BStructure(beforeImage: string, afterImage: string): Promise<GeminiSemanticVerdict> {
+export async function validateStage1BStructure(
+  beforeImage: string,
+  afterImage: string,
+  evidence?: ValidationEvidence
+): Promise<GeminiSemanticVerdict> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
   const after = toBase64(afterImage).data;
   const model = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
+  const jobId = evidence?.jobId;
+  const variant = getEvidenceGatingVariant(jobId);
+  const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);
+
+  const windowsDelta = evidence
+    ? (evidence.openings.windowsAfter - evidence.openings.windowsBefore)
+    : 0;
+  const doorsDelta = evidence
+    ? (evidence.openings.doorsAfter - evidence.openings.doorsBefore)
+    : 0;
+  const openingCountDelta = windowsDelta + doorsDelta;
+  const openingRemovalDetected = openingCountDelta < 0;
+  const suspiciousWallExpansion = evidence?.localFlags.includes("suspicious_wall_expansion") === true;
+  const shouldInjectStage1BSignals =
+    gatingEnabled &&
+    !!evidence &&
+    (openingRemovalDetected || suspiciousWallExpansion || openingCountDelta !== 0);
+
+  const stage1BPrompt = shouldInjectStage1BSignals
+    ? `${STAGE1B_HARDENED_STRUCTURAL_PROMPT}
+
+LOCAL STRUCTURAL ANALYSIS SIGNALS (High Confidence):
+
+- Opening removal suspected: ${openingRemovalDetected}
+- Suspicious wall plane expansion detected: ${suspiciousWallExpansion}
+- Opening count delta: ${openingCountDelta}
+
+These are local computer-vision signals and may include false positives.
+You must independently verify structural integrity.
+Do NOT assume violation unless visually confirmed.`
+    : STAGE1B_HARDENED_STRUCTURAL_PROMPT;
 
   const contents = [
-    { role: "user", parts: [{ text: STAGE1B_HARDENED_STRUCTURAL_PROMPT }] },
+    { role: "user", parts: [{ text: stage1BPrompt }] },
     {
       role: "user",
       parts: [
@@ -923,6 +958,18 @@ export async function validateStage1BStructure(beforeImage: string, afterImage: 
       ],
     },
   ];
+
+  if (VALIDATION_FOCUS_MODE) {
+    debugInfo("[EVIDENCE_GATING_VARIANT]", {
+      jobId: jobId || "unknown",
+      variant,
+      stage: "1B",
+      injected: shouldInjectStage1BSignals,
+      openingRemovalDetected,
+      suspiciousWallExpansion,
+      openingCountDelta,
+    });
+  }
 
   try {
     const response = await (ai as any).models.generateContent({
