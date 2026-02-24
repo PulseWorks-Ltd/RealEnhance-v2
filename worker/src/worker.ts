@@ -598,6 +598,41 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
   return publishImage(localPath);
 }
 
+async function detectBlackBorder(imageBuffer: Buffer): Promise<boolean> {
+  const tempPath = `/tmp/stage1a-black-border-${randomUUID()}.webp`;
+  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
+  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
+  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
+
+  try {
+    await fs.promises.writeFile(tempPath, imageBuffer);
+    await assertNoDarkBorder(tempPath, borderPx, threshold, maxDarkRatio);
+    return false;
+  } catch (error: any) {
+    if (error?.code === "BLACK_BORDER_DETECTED") {
+      return true;
+    }
+    throw error;
+  } finally {
+    try {
+      await fs.promises.unlink(tempPath);
+    } catch {}
+  }
+}
+
+async function markJobFailed(jobId: string, reason: string): Promise<void> {
+  await safeWriteJobStatus(
+    jobId,
+    {
+      status: "failed",
+      errorMessage: reason,
+      currentStage: "1A",
+      stage: "1A",
+    },
+    "stage1a_fatal_black_border"
+  );
+}
+
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
   if (!mask || !mask.width || !mask.height || !mask.data) {
     return { horizontalLinesNearTop: 0, windowTopEdgeDensity: 0 };
@@ -2478,7 +2513,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } catch (e) {
       nLog('[WORKER] Failed to compute structural mask:', e);
     }
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.message === "BLACK_BORDER_STAGE1A_FATAL") {
+      nLog("[STAGE1A_FATAL_BLACK_BORDER]");
+      await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A");
+      return;
+    }
     nLog('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
     canonicalPath = origPath; // fallback
     jobContext.canonicalPath = canonicalPath;
@@ -2574,6 +2614,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     baseArtifactsCache: jobContext.baseArtifactsCache,
     jobSampling: jobContext.jobSampling,
   });
+
+  const stage1ABuffer = await fs.promises.readFile(path1A);
+  if (await detectBlackBorder(stage1ABuffer)) {
+    nLog("[STAGE1A_FATAL_BLACK_BORDER]");
+    await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A");
+    return;
+  }
 
   try {
     const mask = jobContext.structuralMask;

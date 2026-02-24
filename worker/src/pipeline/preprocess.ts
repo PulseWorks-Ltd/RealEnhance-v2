@@ -3,13 +3,67 @@ import { promises as fs } from "fs";
 import { randomUUID } from "crypto";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
+import { assertNoDarkBorder } from "../utils/finalBlackEdgeGuard";
 
 type CropRect = { left: number; top: number; width: number; height: number };
 
-const NON_DARK_BBOX_THRESHOLD = 10;
 const PREPROCESS_DEBUG = process.env.PREPROCESS_DEBUG === "1" || process.env.DEBUG_PREPROCESS === "1";
 let preprocessInvalidCropRectCount = 0;
 let preprocessSkippedCropCount = 0;
+
+function computeMaxInscribedRect(
+  width: number,
+  height: number,
+  angleDeg: number
+) {
+  const angle = Math.abs(angleDeg) * (Math.PI / 180);
+
+  const sin = Math.abs(Math.sin(angle));
+  const cos = Math.abs(Math.cos(angle));
+
+  const newWidth = width * cos + height * sin;
+  const newHeight = width * sin + height * cos;
+
+  const innerWidth =
+    (width * height) /
+    (width * sin + height * cos);
+
+  const innerHeight =
+    (width * height) /
+    (width * cos + height * sin);
+
+  const cropWidth = Math.min(innerWidth, newWidth);
+  const cropHeight = Math.min(innerHeight, newHeight);
+
+  return {
+    left: Math.floor((newWidth - cropWidth) / 2),
+    top: Math.floor((newHeight - cropHeight) / 2),
+    width: Math.floor(cropWidth),
+    height: Math.floor(cropHeight),
+  };
+}
+
+async function detectBlackBorder(imageBuffer: Buffer): Promise<boolean> {
+  const tempPath = `/tmp/preprocess-black-border-${randomUUID()}.webp`;
+  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
+  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
+  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
+
+  try {
+    await fs.writeFile(tempPath, imageBuffer);
+    await assertNoDarkBorder(tempPath, borderPx, threshold, maxDarkRatio);
+    return false;
+  } catch (error: any) {
+    if (error?.code === "BLACK_BORDER_DETECTED") {
+      return true;
+    }
+    throw error;
+  } finally {
+    try {
+      await fs.unlink(tempPath);
+    } catch {}
+  }
+}
 
 function parseByteThreshold(raw: string | undefined, fallback: number): number {
   const parsed = Number(raw);
@@ -99,87 +153,6 @@ function sanitizeCropRect(rect: CropRect, imageW: number, imageH: number): CropR
   return { left, top, width, height };
 }
 
-async function detectNonDarkBoundingRect(
-  img: sharp.Sharp,
-  threshold = NON_DARK_BBOX_THRESHOLD
-): Promise<{ rect: CropRect | null; width: number; height: number }> {
-  const gray = await img
-    .clone()
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const width = gray.info.width || 0;
-  const height = gray.info.height || 0;
-  if (!width || !height) return { rect: null, width, height };
-
-  const t = Math.max(0, Math.min(255, Math.round(threshold)));
-  const data = gray.data;
-
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const v = data[y * width + x];
-      if (v > t) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  if (maxX < minX || maxY < minY) return { rect: null, width, height };
-
-  return {
-    rect: {
-      left: minX,
-      top: minY,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-    },
-    width,
-    height,
-  };
-}
-
-async function cropToNonDarkBoundingBox(
-  img: sharp.Sharp,
-  threshold = NON_DARK_BBOX_THRESHOLD
-): Promise<{ image: sharp.Sharp; changed: boolean; rect: CropRect | null }> {
-  const detection = await detectNonDarkBoundingRect(img, threshold);
-  const beforeW = detection.width;
-  const beforeH = detection.height;
-  if (!beforeW || !beforeH) {
-    return { image: img, changed: false, rect: null };
-  }
-
-  const rect = detection.rect;
-  if (!rect || rect.width <= 1 || rect.height <= 1) {
-    return { image: img, changed: false, rect: null };
-  }
-
-  if (rect.left === 0 && rect.top === 0 && rect.width === beforeW && rect.height === beforeH) {
-    return { image: img, changed: false, rect };
-  }
-
-  const clamped = sanitizeCropRect(rect, beforeW, beforeH);
-  if (!clamped) {
-    recordInvalidCropRectMetric("non_dark_bbox", beforeW, beforeH, rect);
-    return { image: img, changed: false, rect: null };
-  }
-
-  return {
-    image: img.extract(clamped),
-    changed: true,
-    rect: clamped,
-  };
-}
-
 async function rotateAndCropSafe(
   image: sharp.Sharp,
   angleDeg: number,
@@ -208,12 +181,45 @@ async function rotateAndCropSafe(
   }
 
   try {
+    const originalMeta = await image.metadata();
+    const originalWidth = originalMeta.width || 0;
+    const originalHeight = originalMeta.height || 0;
+    if (!originalWidth || !originalHeight) {
+      return {
+        image,
+        applied: false,
+        straightenAngle: 0,
+        cropRect: null,
+        reason: "missing_dimensions",
+      };
+    }
+
     const rotated = image
       .ensureAlpha()
       .rotate(-angleDeg, { background: { r: 0, g: 0, b: 0 } });
 
-    const cropped = await cropToNonDarkBoundingBox(rotated, NON_DARK_BBOX_THRESHOLD);
-    if (!cropped.rect) {
+    const rotatedMeta = await rotated.metadata();
+    const rotatedWidth = rotatedMeta.width || 0;
+    const rotatedHeight = rotatedMeta.height || 0;
+    if (!rotatedWidth || !rotatedHeight) {
+      return {
+        image,
+        applied: false,
+        straightenAngle: 0,
+        cropRect: null,
+        reason: "missing_rotated_dimensions",
+      };
+    }
+
+    const rawCropRect = computeMaxInscribedRect(
+      originalWidth,
+      originalHeight,
+      angleDeg
+    );
+
+    const cropRect = sanitizeCropRect(rawCropRect, rotatedWidth, rotatedHeight);
+    if (!cropRect) {
+      recordInvalidCropRectMetric("edge", rotatedWidth, rotatedHeight, rawCropRect);
       return {
         image,
         applied: false,
@@ -223,14 +229,54 @@ async function rotateAndCropSafe(
       };
     }
 
+    let cropped = rotated.extract(cropRect);
+    let buffer = await cropped.toBuffer();
+
+    const hasBlackBorder = await detectBlackBorder(buffer);
+
+    if (hasBlackBorder) {
+      const inset = 4;
+
+      const tightenedRaw = {
+        left: cropRect.left + inset,
+        top: cropRect.top + inset,
+        width: cropRect.width - inset * 2,
+        height: cropRect.height - inset * 2,
+      };
+      const tightened = sanitizeCropRect(tightenedRaw, rotatedWidth, rotatedHeight);
+      if (!tightened) {
+        throw new Error("BLACK_BORDER_STAGE1A_FATAL");
+      }
+
+      cropped = rotated.extract(tightened);
+      buffer = await cropped.toBuffer();
+
+      const stillBlack = await detectBlackBorder(buffer);
+
+      if (stillBlack) {
+        throw new Error("BLACK_BORDER_STAGE1A_FATAL");
+      }
+
+      return {
+        image: sharp(buffer),
+        applied: true,
+        straightenAngle: -angleDeg,
+        cropRect: tightened,
+        reason: "rotated_and_cropped",
+      };
+    }
+
     return {
-      image: cropped.image,
+      image: sharp(buffer),
       applied: true,
       straightenAngle: -angleDeg,
-      cropRect: cropped.rect,
-      reason: cropped.changed ? "rotated_and_cropped" : "rotated_no_crop_change",
+      cropRect,
+      reason: "rotated_and_cropped",
     };
-  } catch {
+  } catch (error: any) {
+    if (error?.message === "BLACK_BORDER_STAGE1A_FATAL") {
+      throw error;
+    }
     return {
       image,
       applied: false,
@@ -655,13 +701,6 @@ export async function preprocessToCanonical(
   const rotatedMeta = await img.metadata();
   console.log(`[stage0] ROTATE size=after ${rotatedMeta.width || 0}x${rotatedMeta.height || 0}`);
 
-  // Mandatory deterministic crop to non-dark content bounds after rotation/orientation.
-  // This invariant prevents rotated images from progressing with black wedges.
-  const postRotateCrop = await cropToNonDarkBoundingBox(img, NON_DARK_BBOX_THRESHOLD);
-  if (postRotateCrop.changed) {
-    img = postRotateCrop.image;
-  }
-
   // Deterministic pre-Stage1A geometric straightening (global roll only)
   // Keeps correction conservative to avoid over-cropping and structural drift.
   const straightenEnabled = process.env.PREPROCESS_GEOMETRIC_STRAIGHTEN !== "0";
@@ -708,9 +747,6 @@ export async function preprocessToCanonical(
     }
   }
 
-  // Stage 0 post-straighten border crop to remove black wedges introduced by rotation.
-  // Applied to image preprocessing only, before Stage 1A/1B/2.
-  img = await autoCropPostStraighten(img);
   img = img.removeAlpha();
 
   // For interiors, normalize brightness/saturation if too dark
