@@ -306,26 +306,11 @@ Choose the two visually dominant zones only.
 const ROOM_FUNCTION_PRESERVATION_LOCK = `
 ROOM FUNCTION PRESERVATION — HARD LOCK:
 Room-type enforcement applies to furniture and props only — not architecture.
-Do NOT create or extend cabinetry, counters, appliances, fixtures, or built-in structures.
+Do NOT create, extend, reshape, or reinterpret cabinetry, counters, appliances, fixtures, or built-in structures.
 
-KITCHEN ISLAND SEATING CONSTRAINT
-
-Kitchen islands and counters are built-in architectural elements.
-
-If bar stools, counter stools, or island seating are NOT present in the original image,
-you must NOT add them.
-
-Do not introduce new seating attached to islands.
-Do not increase seating capacity.
-Do not convert a non-seating island into a seating island.
-
-If stools are already present in the input,
-you may restyle or repaint them,
-but their count and placement must remain unchanged.
-
-Do NOT construct missing room elements to satisfy room type.
+Do NOT construct missing architectural elements to satisfy room type.
 If required room features are not clearly visible:
-→ stage with props only
+→ stage with freestanding props only.
 → do NOT build structure.
 `;
 
