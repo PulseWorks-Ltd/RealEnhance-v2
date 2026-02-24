@@ -8,6 +8,8 @@ type CropRect = { left: number; top: number; width: number; height: number };
 
 const NON_DARK_BBOX_THRESHOLD = 10;
 const PREPROCESS_DEBUG = process.env.PREPROCESS_DEBUG === "1" || process.env.DEBUG_PREPROCESS === "1";
+let preprocessInvalidCropRectCount = 0;
+let preprocessSkippedCropCount = 0;
 
 function parseByteThreshold(raw: string | undefined, fallback: number): number {
   const parsed = Number(raw);
@@ -41,6 +43,19 @@ function logCropStats(method: "alpha" | "opencv" | "trim" | "edge", beforeW: num
       `[preprocess] auto-crop warning: removed ${removedPct.toFixed(2)}% area (>15%)`
     );
   }
+}
+
+function recordInvalidCropRectMetric(
+  method: "non_dark_bbox" | "alpha" | "opencv" | "edge",
+  imageW: number,
+  imageH: number,
+  rect: CropRect,
+): void {
+  preprocessInvalidCropRectCount += 1;
+  preprocessSkippedCropCount += 1;
+  console.warn(
+    `[METRIC] preprocess_crop_guard event=invalid_rect method=${method} image=${imageW}x${imageH} rect=${rect.left},${rect.top},${rect.width},${rect.height} preprocess_invalid_crop_rect_count=${preprocessInvalidCropRectCount} preprocess_skipped_crop_count=${preprocessSkippedCropCount}`
+  );
 }
 
 function sanitizeCropRect(rect: CropRect, imageW: number, imageH: number): CropRect | null {
@@ -154,6 +169,7 @@ async function cropToNonDarkBoundingBox(
 
   const clamped = sanitizeCropRect(rect, beforeW, beforeH);
   if (!clamped) {
+    recordInvalidCropRectMetric("non_dark_bbox", beforeW, beforeH, rect);
     return { image: img, changed: false, rect: null };
   }
 
@@ -472,6 +488,7 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
     ) {
       const clamped = sanitizeCropRect(rect, beforeW, beforeH);
       if (!clamped) {
+        recordInvalidCropRectMetric("alpha", beforeW, beforeH, rect);
         console.warn(`[stage0] CROP rect=invalid method=alpha`);
       } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=alpha`);
@@ -499,6 +516,7 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
     ) {
       const clamped = sanitizeCropRect(rect, beforeW, beforeH);
       if (!clamped) {
+        recordInvalidCropRectMetric("opencv", beforeW, beforeH, rect);
         console.warn(`[stage0] CROP rect=invalid method=opencv`);
       } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=opencv`);
@@ -551,6 +569,7 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
     ) {
       const clamped = sanitizeCropRect(rect, beforeW, beforeH);
       if (!clamped) {
+        recordInvalidCropRectMetric("edge", beforeW, beforeH, rect);
         console.warn(`[stage0] CROP rect=invalid method=edge`);
       } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=edge`);
