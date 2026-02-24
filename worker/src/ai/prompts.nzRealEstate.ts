@@ -1183,6 +1183,18 @@ ARCHITECTURAL BOUNDARY PROTECTION — STRUCTURAL SAFETY RULE
 
 When removing furniture, protect architectural boundaries.
 
+DOOR & OPENING POSITION RULE — NON-NEGOTIABLE
+
+Doors, sliding doors, and hinged openings must remain in the exact same position and angle as the input.
+
+Do NOT open or close doors.
+Do NOT change door swing angle.
+Do NOT reposition sliding doors.
+Do NOT reveal or conceal architectural elements by changing door state.
+
+If a door is partially open in the input, it must remain partially open in the output.
+If a door is closed in the input, it must remain closed in the output.
+
 You may remove furniture that touches architectural elements ONLY IF:
 • The boundary geometry is clearly visible
 • The seam direction is unambiguous
