@@ -183,10 +183,6 @@ function isSoftGeometryScene(meta: {
   return score >= 2;
 }
 
-function isKitchenRoom(roomType?: string): boolean {
-  return roomType?.toLowerCase().includes("kitchen") ?? false;
-}
-
 /**
  * Run unified structural validation across multiple validators
  *
@@ -262,6 +258,7 @@ export async function runUnifiedValidation(
   // ===== PERCEPTUAL DIFF (SSIM) GATE — FIRST STEP =====
   let perceptualFailed = false;
   let forceGemini = false;
+  let stage2IslandHardFail = false;
 
   // Initialize evidence packet
   const evidence = createEmptyEvidence(
@@ -716,39 +713,87 @@ export async function runUnifiedValidation(
         details: anchorResult,
       };
 
-      // Deterministic Stage2 kitchen-island hard-anchor enforcement.
-      // Applies only for interior kitchens when island is confidently detected in BEFORE image.
-      if (stage === "2" && sceneType === "interior" && isKitchenRoom(roomType)) {
+      // Deterministic Stage2 kitchen-island enforcement.
+      // Applies only for interior kitchen-related contexts when island is confidently detected in BEFORE image.
+      const isKitchenContext =
+        roomType === "kitchen" ||
+        roomType === "kitchen_dining" ||
+        roomType === "kitchen_living" ||
+        roomType === "living_dining";
+
+      if (stage === "2" && sceneType === "interior" && isKitchenContext) {
         const islandDetectedBefore = anchorResult.details?.islandDetectedBefore === true;
         const islandDetectedConfidenceBefore = Number(anchorResult.details?.islandDetectedConfidenceBefore ?? 0);
-        const areaDeltaRatio = Number(anchorResult.details?.islandAreaDeltaRatio ?? anchorResult.details?.islandRectMassDelta ?? 0);
-        const islandMaskedEdgeDrift = Number(anchorResult.details?.islandMaskedEdgeDrift ?? anchorResult.details?.islandEdgeClusterDrift ?? 0);
+        const areaDelta = Number(anchorResult.details?.islandAreaDeltaRatio ?? anchorResult.details?.islandRectMassDelta ?? 0);
+        const drift = Number(anchorResult.details?.islandMaskedEdgeDrift ?? anchorResult.details?.islandEdgeClusterDrift ?? 0);
 
         const confidenceGatePass = islandDetectedBefore && islandDetectedConfidenceBefore >= 0.9;
-        const geometryViolation = areaDeltaRatio > 0.05 || islandMaskedEdgeDrift > 0.12;
 
-        if (confidenceGatePass && geometryViolation) {
-          const enforcementReason = `island_anchor_enforced category=structure violationType=built_in_moved areaDeltaRatio=${areaDeltaRatio.toFixed(3)} islandMaskedEdgeDrift=${islandMaskedEdgeDrift.toFixed(3)}`;
+        let islandBand: "noise" | "review" | "hard_fail" = "noise";
+        if (areaDelta > 0.15) {
+          islandBand = "hard_fail";
+        } else if (areaDelta >= 0.08 || drift >= 0.12) {
+          islandBand = "review";
+        } else if (areaDelta < 0.08 && drift < 0.12) {
+          islandBand = "noise";
+        }
+
+        const reviewReasonText = "The kitchen island is a built-in architectural element. Any increase in footprint, depth, overhang, or cabinet mass may constitute structural modification. Confirm whether this change represents functional geometry expansion rather than visual variation.";
+
+        if (confidenceGatePass && islandBand === "review") {
+          const reviewReason = `island_anchor_review category=structure violationType=built_in_review areaDelta=${areaDelta.toFixed(3)} drift=${drift.toFixed(3)} reason=\"${reviewReasonText}\"`;
+          reasons.push(reviewReason);
+          warnings.push(reviewReason);
+          evidence.localFlags.push(`anchor:island_anchor_review`);
+          evidence.localFlags.push(`anchor:island_violation_type:built_in_review`);
+          evidence.localFlags.push(`anchor:island_review_reason:${reviewReasonText}`);
+          forceGemini = true;
+        }
+
+        if (confidenceGatePass && islandBand === "hard_fail") {
+          const enforcementReason = `island_anchor_enforced category=structure violationType=built_in_moved areaDeltaRatio=${areaDelta.toFixed(3)} islandMaskedEdgeDrift=${drift.toFixed(3)}`;
           reasons.push(enforcementReason);
           evidence.localFlags.push(`anchor:island_anchor_enforced`);
           evidence.localFlags.push(`anchor:island_violation_type:built_in_moved`);
           results.anchors.passed = false;
           results.anchors.score = 0.0;
           results.anchors.message = enforcementReason;
+          stage2IslandHardFail = true;
 
           nLog(`[ISLAND_ANCHOR_ENFORCED]`, {
             stage,
             sceneType,
             roomType: roomType || "unknown",
+            islandBand,
             category: "structure",
             violationType: "built_in_moved",
             islandDetectedBefore,
             islandDetectedConfidenceBefore,
-            areaDeltaRatio,
-            islandMaskedEdgeDrift,
+            areaDelta,
+            drift,
+            areaDeltaRatio: areaDelta,
+            islandMaskedEdgeDrift: drift,
             thresholdAreaDeltaRatio: 0.05,
             thresholdIslandMaskedEdgeDrift: 0.12,
             enforced: true,
+          });
+        } else if (confidenceGatePass) {
+          nLog(`[ISLAND_ANCHOR_ENFORCED]`, {
+            stage,
+            sceneType,
+            roomType: roomType || "unknown",
+            islandBand,
+            category: "structure",
+            violationType: islandBand === "review" ? "built_in_review" : "none",
+            islandDetectedBefore,
+            islandDetectedConfidenceBefore,
+            areaDelta,
+            drift,
+            areaDeltaRatio: areaDelta,
+            islandMaskedEdgeDrift: drift,
+            thresholdAreaDeltaRatio: 0.05,
+            thresholdIslandMaskedEdgeDrift: 0.12,
+            enforced: false,
           });
         }
       }
@@ -1065,7 +1110,7 @@ export async function runUnifiedValidation(
 
   // ===== STAGE2 SEMANTIC OVERRIDE GATE =====
   // Allow Gemini semantic PASS to downgrade local failures when structural evidence is clean.
-  if (blockSource === "local" && stage === "2") {
+  if (blockSource === "local" && stage === "2" && !stage2IslandHardFail) {
     const semanticKnown = typeof results.geminiSemantic?.passed === "boolean";
     const semanticPass = semanticKnown && results.geminiSemantic?.passed === true;
 
