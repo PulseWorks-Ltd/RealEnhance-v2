@@ -109,9 +109,15 @@ import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, 
 import { focusLog } from "../utils/logFocus";
 
 export const STAGE1B_FULL_SAMPLING = Object.freeze({
-  temperature: 0.15,
-  topP: 0.60,
-  topK: 30,
+  temperature: 0.12,
+  topP: 0.45,
+  topK: 20,
+});
+
+export const STAGE1B_FULL_RETRY_SAMPLING = Object.freeze({
+  temperature: 0.05,
+  topP: 0.30,
+  topK: 10,
 });
 
 let singleton: GoogleGenAI | null = null;
@@ -225,6 +231,9 @@ export async function enhanceWithGemini(
         modelReasonText.includes("declutter:stage-ready") ||
         (typeof promptOverride === "string" && /full furniture removal|stage 1b\s*—\s*full furniture removal/i.test(promptOverride))
       );
+    const stage1BAttemptMatch = outputPath?.match(/-1B-retry(\d+)/);
+    const stage1BAttempt = stage1BAttemptMatch ? Number(stage1BAttemptMatch[1]) : 0;
+    const isStage1BRetryAttempt = stage === "1B" && stage1BAttempt > 0;
 
     // Build prompt and image parts
     // Map config-based declutter intensity to env for prompt builder (kept sync)
@@ -337,9 +346,9 @@ export async function enhanceWithGemini(
     const usingTest = process.env.USE_TEST_PROMPTS === "1";
     const sampling = isStage1BFullDeclutter
       ? {
-          temperature: STAGE1B_FULL_SAMPLING.temperature,
-          topP: STAGE1B_FULL_SAMPLING.topP,
-          topK: STAGE1B_FULL_SAMPLING.topK,
+          temperature: isStage1BRetryAttempt ? STAGE1B_FULL_RETRY_SAMPLING.temperature : STAGE1B_FULL_SAMPLING.temperature,
+          topP: isStage1BRetryAttempt ? STAGE1B_FULL_RETRY_SAMPLING.topP : STAGE1B_FULL_SAMPLING.topP,
+          topK: isStage1BRetryAttempt ? STAGE1B_FULL_RETRY_SAMPLING.topK : STAGE1B_FULL_SAMPLING.topK,
         }
       : usingTest
         ? { temperature: undefined as any, topP: undefined as any, topK: undefined as any }
@@ -350,7 +359,7 @@ export async function enhanceWithGemini(
           };
     const sourceNotes: string[] = [];
     if (isStage1BFullDeclutter) {
-      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} (stage1b_full_locked)`);
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} (${isStage1BRetryAttempt ? 'stage1b_full_retry_locked' : 'stage1b_full_locked'})`);
     } else if (!usingTest) {
       if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
       if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
@@ -361,8 +370,7 @@ export async function enhanceWithGemini(
 
     if (stage === "1B") {
       const promptHash = createHash("sha256").update(prompt).digest("hex").slice(0, 12);
-      const attemptMatch = outputPath?.match(/-1B-retry(\d+)/);
-      const attempt = attemptMatch ? Number(attemptMatch[1]) : 0;
+      const attempt = stage1BAttempt;
       const modeFromReason = modelReasonText.includes("declutter:light")
         ? "light"
         : (modelReasonText.includes("declutter:stage-ready") ? "stage-ready" : "unknown");
