@@ -118,3 +118,4 @@ Neutral palette, natural textures, listing-safe realism.
 
 ${STAGE2_OUTPUT_FORMAT_BLOCK}`.trim();
 }
+ 
