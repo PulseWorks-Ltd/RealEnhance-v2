@@ -3077,10 +3077,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         typeof afterOpeningCount === "number" &&
         afterOpeningCount < beforeOpeningCount;
 
-      if (openingRemovalDetected) {
+      const openingChangeSignificant = structureResult?.openingChangeSignificant !== false;
+      const openingMinorDriftTolerated =
+        (structureResult?.openingToleranceReason === "opening_minor_drift") ||
+        (!openingChangeSignificant && (structureResult?.violationType === "opening_change" || openingRemovalDetected));
+
+      const openingRemovalHardFail = openingRemovalDetected && openingChangeSignificant;
+
+      if (openingRemovalHardFail) {
         nLog("[STAGE1B_OPENING_REMOVAL_DETECTED]", {
           beforeOpeningCount,
           afterOpeningCount,
+        });
+      }
+
+      if (openingMinorDriftTolerated) {
+        nLog("[STAGE1B_OPENING_TOLERATED_DRIFT]", {
+          beforeOpeningCount,
+          afterOpeningCount,
+          openingDriftMetrics: structureResult?.openingDriftMetrics || null,
+          reason: "opening_minor_drift",
         });
       }
 
@@ -3093,21 +3109,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const effectiveHardFail =
         structureResult.hardFail ||
         wallDelta.hardFail ||
-        openingRemovalDetected ||
+        openingRemovalHardFail ||
         suspiciousWallExpansion;
       const effectiveViolationType = wallDelta.hardFail
         ? wallDelta.violationType
-        : openingRemovalDetected
+        : openingRemovalHardFail
           ? "opening_change"
+          : openingMinorDriftTolerated
+            ? "opening_minor_drift"
           : suspiciousWallExpansion
             ? "wall_plane_expansion"
         : structureResult.violationType;
       const effectiveReasons = [
         ...((Array.isArray(structureResult.reasons) ? structureResult.reasons : []) as string[]),
-        ...(openingRemovalDetected
+        ...(openingRemovalHardFail
           ? [
               `opening_count_removed:before=${beforeOpeningCount}`,
               `opening_count_removed:after=${afterOpeningCount}`,
+            ]
+          : []),
+        ...(openingMinorDriftTolerated
+          ? [
+              "opening_minor_drift",
             ]
           : []),
         ...(suspiciousWallExpansion

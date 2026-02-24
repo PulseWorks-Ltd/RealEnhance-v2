@@ -7,6 +7,7 @@ import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
+import { detectWindowsLocal, type BBox } from "./local-windows";
 
 const logger = console;
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
@@ -293,6 +294,15 @@ export type GeminiSemanticVerdict = {
   structuralAnchorCount?: number;
   beforeOpeningCount?: number;
   afterOpeningCount?: number;
+  openingChangeSignificant?: boolean;
+  openingToleranceReason?: "opening_minor_drift";
+  openingDriftMetrics?: {
+    countChanged: boolean;
+    maxAreaDeltaRatio: number;
+    maxCentroidShiftRatio: number;
+    maxAspectRatioDeltaRatio: number;
+    stateChanged: boolean;
+  };
   rawText?: string;
 };
 
@@ -301,6 +311,130 @@ export type Stage1BValidationMode =
   | "STRUCTURED_RETAIN";
 
 type GeminiViolationType = NonNullable<GeminiSemanticVerdict["violationType"]>;
+
+type OpeningSignificanceResult = {
+  significant: boolean;
+  countChanged: boolean;
+  maxAreaDeltaRatio: number;
+  maxCentroidShiftRatio: number;
+  maxAspectRatioDeltaRatio: number;
+};
+
+const OPENING_AREA_DELTA_THRESHOLD = 0.08;
+const OPENING_CENTROID_SHIFT_THRESHOLD = 0.03;
+const OPENING_ASPECT_RATIO_DELTA_THRESHOLD = 0.05;
+
+function bboxToMetrics(bbox: BBox) {
+  const [x, y, width, height] = bbox;
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const area = safeWidth * safeHeight;
+  const cx = x + safeWidth / 2;
+  const cy = y + safeHeight / 2;
+  const aspect = safeWidth / safeHeight;
+  return { area, cx, cy, aspect };
+}
+
+function hasOpeningStateChangeSignal(reasons: string[]): boolean {
+  const reasonText = reasons.join(" ").toLowerCase();
+  return [
+    "opening sealed",
+    "sealed opening",
+    "blocked opening",
+    "opening blocked",
+    "window removed",
+    "door removed",
+    "removed opening",
+    "new opening",
+    "opening added",
+    "closed opening",
+  ].some((token) => reasonText.includes(token));
+}
+
+export function isOpeningChangeSignificant(
+  beforeBBoxes: BBox[],
+  afterBBoxes: BBox[],
+  imageWidth: number,
+  imageHeight: number
+): OpeningSignificanceResult {
+  const countChanged = beforeBBoxes.length !== afterBBoxes.length;
+  if (countChanged) {
+    return {
+      significant: true,
+      countChanged,
+      maxAreaDeltaRatio: 1,
+      maxCentroidShiftRatio: 1,
+      maxAspectRatioDeltaRatio: 1,
+    };
+  }
+
+  if (beforeBBoxes.length === 0 || !imageWidth || !imageHeight) {
+    return {
+      significant: false,
+      countChanged: false,
+      maxAreaDeltaRatio: 0,
+      maxCentroidShiftRatio: 0,
+      maxAspectRatioDeltaRatio: 0,
+    };
+  }
+
+  const norm = Math.max(1, Math.max(imageWidth, imageHeight));
+  const used = new Set<number>();
+  let maxAreaDeltaRatio = 0;
+  let maxCentroidShiftRatio = 0;
+  let maxAspectRatioDeltaRatio = 0;
+
+  for (const before of beforeBBoxes) {
+    const beforeM = bboxToMetrics(before);
+    let bestIndex = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let idx = 0; idx < afterBBoxes.length; idx += 1) {
+      if (used.has(idx)) continue;
+      const afterM = bboxToMetrics(afterBBoxes[idx]);
+      const dx = afterM.cx - beforeM.cx;
+      const dy = afterM.cy - beforeM.cy;
+      const distance = Math.hypot(dx, dy);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = idx;
+      }
+    }
+
+    if (bestIndex < 0) {
+      return {
+        significant: true,
+        countChanged: true,
+        maxAreaDeltaRatio: 1,
+        maxCentroidShiftRatio: 1,
+        maxAspectRatioDeltaRatio: 1,
+      };
+    }
+
+    used.add(bestIndex);
+    const afterM = bboxToMetrics(afterBBoxes[bestIndex]);
+    const areaDeltaRatio = Math.abs(afterM.area - beforeM.area) / Math.max(1, beforeM.area);
+    const centroidShiftRatio = Math.hypot(afterM.cx - beforeM.cx, afterM.cy - beforeM.cy) / norm;
+    const aspectDeltaRatio = Math.abs(afterM.aspect - beforeM.aspect) / Math.max(0.01, Math.abs(beforeM.aspect));
+
+    if (areaDeltaRatio > maxAreaDeltaRatio) maxAreaDeltaRatio = areaDeltaRatio;
+    if (centroidShiftRatio > maxCentroidShiftRatio) maxCentroidShiftRatio = centroidShiftRatio;
+    if (aspectDeltaRatio > maxAspectRatioDeltaRatio) maxAspectRatioDeltaRatio = aspectDeltaRatio;
+  }
+
+  const significant =
+    maxAreaDeltaRatio > OPENING_AREA_DELTA_THRESHOLD ||
+    maxCentroidShiftRatio > OPENING_CENTROID_SHIFT_THRESHOLD ||
+    maxAspectRatioDeltaRatio > OPENING_ASPECT_RATIO_DELTA_THRESHOLD;
+
+  return {
+    significant,
+    countChanged: false,
+    maxAreaDeltaRatio,
+    maxCentroidShiftRatio,
+    maxAspectRatioDeltaRatio,
+  };
+}
 
 function isBuiltInDowngradeAllowed(input: {
   violationType: GeminiViolationType;
@@ -987,7 +1121,75 @@ Do NOT assume violation unless visually confirmed.`
     const parsed = parseGeminiSemanticText(text);
     const openingCounts = extractOpeningCountsFromStage1BText(text);
     const category = parsed.category === "structure" ? "structure" : "unknown";
-    const hardFail = parsed.hardFail === true && category === "structure";
+    const baseHardFail = parsed.hardFail === true && category === "structure";
+    const parsedViolationType =
+      parsed.violationType === "wall_change" || parsed.violationType === "opening_change" || parsed.violationType === "camera_shift"
+        ? parsed.violationType
+        : "wall_change";
+
+    let openingChangeSignificant = true;
+    let openingToleranceReason: "opening_minor_drift" | undefined;
+    let openingDriftMetrics: GeminiSemanticVerdict["openingDriftMetrics"];
+
+    if (parsedViolationType === "opening_change") {
+      try {
+        const [beforeDetections, afterDetections] = await Promise.all([
+          detectWindowsLocal(beforeImage),
+          detectWindowsLocal(afterImage),
+        ]);
+
+        const significance = isOpeningChangeSignificant(
+          beforeDetections.windows.map((window) => window.bbox),
+          afterDetections.windows.map((window) => window.bbox),
+          beforeDetections.width,
+          beforeDetections.height
+        );
+
+        const windowsDelta = evidence
+          ? (evidence.openings.windowsAfter - evidence.openings.windowsBefore)
+          : 0;
+        const doorsDelta = evidence
+          ? (evidence.openings.doorsAfter - evidence.openings.doorsBefore)
+          : 0;
+        const countChanged = windowsDelta !== 0 || doorsDelta !== 0 || significance.countChanged;
+        const stateChanged = hasOpeningStateChangeSignal(parsed.reasons || []);
+
+        openingChangeSignificant =
+          countChanged ||
+          stateChanged ||
+          significance.significant;
+
+        openingDriftMetrics = {
+          countChanged,
+          maxAreaDeltaRatio: significance.maxAreaDeltaRatio,
+          maxCentroidShiftRatio: significance.maxCentroidShiftRatio,
+          maxAspectRatioDeltaRatio: significance.maxAspectRatioDeltaRatio,
+          stateChanged,
+        };
+
+        if (!openingChangeSignificant) {
+          openingToleranceReason = "opening_minor_drift";
+          console.log("[STAGE1B_OPENING_TOLERATED_DRIFT]", {
+            maxAreaDeltaRatio: Number(significance.maxAreaDeltaRatio.toFixed(4)),
+            maxCentroidShiftRatio: Number(significance.maxCentroidShiftRatio.toFixed(4)),
+            maxAspectRatioDeltaRatio: Number(significance.maxAspectRatioDeltaRatio.toFixed(4)),
+            thresholds: {
+              areaDeltaRatio: OPENING_AREA_DELTA_THRESHOLD,
+              centroidShiftRatio: OPENING_CENTROID_SHIFT_THRESHOLD,
+              aspectRatioDeltaRatio: OPENING_ASPECT_RATIO_DELTA_THRESHOLD,
+            },
+            countChanged,
+            stateChanged,
+          });
+        }
+      } catch (openingAssessErr) {
+        console.warn("[stage1b_structure_validator] opening significance assessment failed; defaulting to significant", openingAssessErr);
+      }
+    }
+
+    const hardFail =
+      baseHardFail &&
+      (parsedViolationType !== "opening_change" || openingChangeSignificant);
 
     return {
       hardFail,
@@ -995,14 +1197,15 @@ Do NOT assume violation unless visually confirmed.`
       reasons: parsed.reasons || [],
       confidence: Number.isFinite(parsed.confidence) ? parsed.confidence : 0,
       violationType: hardFail
-        ? ((parsed.violationType === "wall_change" || parsed.violationType === "opening_change" || parsed.violationType === "camera_shift")
-          ? parsed.violationType
-          : "wall_change")
+        ? parsedViolationType
         : "other",
       builtInDetected: false,
       structuralAnchorCount: 0,
       beforeOpeningCount: openingCounts.beforeOpeningCount,
       afterOpeningCount: openingCounts.afterOpeningCount,
+      openingChangeSignificant,
+      openingToleranceReason,
+      openingDriftMetrics,
       rawText: text,
     };
   } catch (err: any) {
