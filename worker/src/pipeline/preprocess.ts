@@ -43,10 +43,51 @@ function logCropStats(method: "alpha" | "opencv" | "trim" | "edge", beforeW: num
   }
 }
 
+function sanitizeCropRect(rect: CropRect, imageW: number, imageH: number): CropRect | null {
+  if (!Number.isFinite(imageW) || !Number.isFinite(imageH)) return null;
+  if (imageW <= 0 || imageH <= 0) return null;
+
+  if (
+    !Number.isFinite(rect.left) ||
+    !Number.isFinite(rect.top) ||
+    !Number.isFinite(rect.width) ||
+    !Number.isFinite(rect.height)
+  ) {
+    return null;
+  }
+
+  const rawLeft = Math.floor(rect.left);
+  const rawTop = Math.floor(rect.top);
+  if (rawLeft >= imageW || rawTop >= imageH) return null;
+
+  const left = Math.max(0, rawLeft);
+  const top = Math.max(0, rawTop);
+
+  const remainingW = imageW - left;
+  const remainingH = imageH - top;
+  if (remainingW <= 0 || remainingH <= 0) return null;
+
+  let requestedW = Math.floor(rect.width);
+  let requestedH = Math.floor(rect.height);
+  if (requestedW <= 0 || requestedH <= 0) return null;
+
+  if (rawLeft + requestedW > imageW && requestedW > 1) {
+    requestedW -= 1;
+  }
+  if (rawTop + requestedH > imageH && requestedH > 1) {
+    requestedH -= 1;
+  }
+
+  const width = Math.max(1, Math.min(remainingW, requestedW));
+  const height = Math.max(1, Math.min(remainingH, requestedH));
+
+  return { left, top, width, height };
+}
+
 async function detectNonDarkBoundingRect(
   img: sharp.Sharp,
   threshold = NON_DARK_BBOX_THRESHOLD
-): Promise<CropRect | null> {
+): Promise<{ rect: CropRect | null; width: number; height: number }> {
   const gray = await img
     .clone()
     .greyscale()
@@ -55,7 +96,7 @@ async function detectNonDarkBoundingRect(
 
   const width = gray.info.width || 0;
   const height = gray.info.height || 0;
-  if (!width || !height) return null;
+  if (!width || !height) return { rect: null, width, height };
 
   const t = Math.max(0, Math.min(255, Math.round(threshold)));
   const data = gray.data;
@@ -77,13 +118,17 @@ async function detectNonDarkBoundingRect(
     }
   }
 
-  if (maxX < minX || maxY < minY) return null;
+  if (maxX < minX || maxY < minY) return { rect: null, width, height };
 
   return {
-    left: minX,
-    top: minY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
+    rect: {
+      left: minX,
+      top: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    },
+    width,
+    height,
   };
 }
 
@@ -91,14 +136,14 @@ async function cropToNonDarkBoundingBox(
   img: sharp.Sharp,
   threshold = NON_DARK_BBOX_THRESHOLD
 ): Promise<{ image: sharp.Sharp; changed: boolean; rect: CropRect | null }> {
-  const meta = await img.metadata();
-  const beforeW = meta.width || 0;
-  const beforeH = meta.height || 0;
+  const detection = await detectNonDarkBoundingRect(img, threshold);
+  const beforeW = detection.width;
+  const beforeH = detection.height;
   if (!beforeW || !beforeH) {
     return { image: img, changed: false, rect: null };
   }
 
-  const rect = await detectNonDarkBoundingRect(img, threshold);
+  const rect = detection.rect;
   if (!rect || rect.width <= 1 || rect.height <= 1) {
     return { image: img, changed: false, rect: null };
   }
@@ -107,12 +152,10 @@ async function cropToNonDarkBoundingBox(
     return { image: img, changed: false, rect };
   }
 
-  const clamped: CropRect = {
-    left: Math.max(0, Math.min(beforeW - 1, rect.left)),
-    top: Math.max(0, Math.min(beforeH - 1, rect.top)),
-    width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
-    height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
-  };
+  const clamped = sanitizeCropRect(rect, beforeW, beforeH);
+  if (!clamped) {
+    return { image: img, changed: false, rect: null };
+  }
 
   return {
     image: img.extract(clamped),
@@ -404,9 +447,12 @@ async function detectCropRectFromAlpha(
 }
 
 async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
-  const meta = await img.metadata();
-  const beforeW = meta.width || 0;
-  const beforeH = meta.height || 0;
+  const probe = await img
+    .clone()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const beforeW = probe.info.width || 0;
+  const beforeH = probe.info.height || 0;
   if (!beforeW || !beforeH) return img;
 
   const thresholds = getStage0CropThresholds();
@@ -424,16 +470,15 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
       rect.height > 1 &&
       (rect.left > 0 || rect.top > 0 || rect.width < beforeW || rect.height < beforeH)
     ) {
-      const clamped: CropRect = {
-        left: Math.max(0, Math.min(beforeW - 1, rect.left)),
-        top: Math.max(0, Math.min(beforeH - 1, rect.top)),
-        width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
-        height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
-      };
+      const clamped = sanitizeCropRect(rect, beforeW, beforeH);
+      if (!clamped) {
+        console.warn(`[stage0] CROP rect=invalid method=alpha`);
+      } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=alpha`);
       console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
       logCropStats("alpha", beforeW, beforeH, clamped);
       return img.extract(clamped);
+      }
     }
   } catch {
     // Fail-open to OpenCV + trim fallback paths.
@@ -452,16 +497,15 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
       rect.height > 1 &&
       (rect.left > 0 || rect.top > 0 || rect.width < beforeW || rect.height < beforeH)
     ) {
-      const clamped: CropRect = {
-        left: Math.max(0, Math.min(beforeW - 1, rect.left)),
-        top: Math.max(0, Math.min(beforeH - 1, rect.top)),
-        width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
-        height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
-      };
+      const clamped = sanitizeCropRect(rect, beforeW, beforeH);
+      if (!clamped) {
+        console.warn(`[stage0] CROP rect=invalid method=opencv`);
+      } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=opencv`);
       console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
       logCropStats("opencv", beforeW, beforeH, clamped);
       return img.extract(clamped);
+      }
     }
   } catch {
     // Fail-open to fallback below
@@ -505,16 +549,15 @@ async function autoCropPostStraighten(img: sharp.Sharp): Promise<sharp.Sharp> {
       rect.height > 1 &&
       (rect.left > 0 || rect.top > 0 || rect.width < beforeW || rect.height < beforeH)
     ) {
-      const clamped: CropRect = {
-        left: Math.max(0, Math.min(beforeW - 1, rect.left)),
-        top: Math.max(0, Math.min(beforeH - 1, rect.top)),
-        width: Math.max(1, Math.min(beforeW - rect.left, rect.width)),
-        height: Math.max(1, Math.min(beforeH - rect.top, rect.height)),
-      };
+      const clamped = sanitizeCropRect(rect, beforeW, beforeH);
+      if (!clamped) {
+        console.warn(`[stage0] CROP rect=invalid method=edge`);
+      } else {
       console.log(`[stage0] CROP rect=${clamped.left},${clamped.top},${clamped.width},${clamped.height} method=edge`);
       console.log(`[stage0] POST-CROP size=${clamped.width}x${clamped.height}`);
       logCropStats("edge", beforeW, beforeH, clamped);
       return img.extract(clamped);
+      }
     }
   } catch {
     // fail-open
