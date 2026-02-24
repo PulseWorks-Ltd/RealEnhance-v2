@@ -1110,47 +1110,26 @@ Preserve outdoor items and landscaping visible through windows.
 
 STRICT SUBTRACTIVE POLICY — STAGE 1B
 
-You are performing DECLUTTER ONLY.
+Stage 1B is DECLUTTER ONLY.
 
-You MUST:
+This stage may REMOVE items.
+This stage may CLEAN or STRAIGHTEN existing items.
+This stage may NOT introduce anything new.
 
-Remove clutter.
+Rules:
 
-Tidy existing items.
+• No new furniture may appear.
+• No new components may be attached to existing furniture.
+• No furniture geometry may change.
+• No built-in or structural elements may be altered.
 
-Clean surfaces.
+If an object was not present in the input image,
+it must not appear in the output.
 
-Straighten bedding.
+Any furniture that remains must preserve its original
+shape, scale, position, and structure exactly.
 
-Preserve all original furniture.
-
-You MUST NOT:
-
-Add new furniture.
-
-Add headboards.
-
-Add bed frames.
-
-Add cabinetry.
-
-Add shelving.
-
-Add decorative wall panels.
-
-Upgrade or replace furniture.
-
-Modify furniture geometry.
-
-Expand or shrink furniture dimensions.
-
-Introduce new structural-looking elements attached to walls.
-
-If a bed does not have a headboard in the original image, you must NOT generate one.
-
-All original furniture shape, structure, and physical form must remain identical to the input image.
-
-Stage 1B is strictly subtractive — never additive.
+Stage 1B is strictly subtractive.
 
 TASK:
 Remove all movable furniture EXCEPT for the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
