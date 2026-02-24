@@ -7,6 +7,16 @@ This file contains full text blocks generated from current runtime prompt builde
 
 STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
 
+────────────────────────────────
+RULE PRIORITY ORDER (HIGHEST → LOWEST)
+────────────────────────────────
+
+1. Architectural geometry and openings must remain visually identical.
+2. If furniture removal risks altering geometry, openings, boundary seams, or perspective → preserve the furniture.
+3. Removal of non-anchor movable furniture is required only when it can be done without structural risk.
+4. Creating an empty room is secondary to preserving architectural integrity.
+5. Anchor selection applies only after structural safety is satisfied.
+
     ROOM TYPE CONTEXT:
     This room is classified as: living_room.
 
@@ -20,25 +30,27 @@ STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
     You are forbidden from adding any new furniture object not present in the input image.
 
 TASK:
-Remove all movable furniture EXCEPT for the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
+Remove all movable furniture that can be removed WITHOUT risking architectural or opening alteration, while preserving the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
 
     PRIMARY OBJECTIVE:
-    Create a near-empty architectural shell while preserving exactly one functional anchor per zone.
+  Create a minimal architectural shell where structurally safe.
     Preserve architecture, built-ins, fixtures, and window treatments exactly.
 
 ────────────────────────────────
-CAMERA & PERSPECTIVE LOCK — STRICT
+STRUCTURAL & CAMERA LOCK — ABSOLUTE
 ────────────────────────────────
 
-Camera and lens characteristics are LOCKED.
+The following must remain visually identical:
+• Camera position, angle, height, and lens perspective
+• Wall positions, floor boundaries, ceiling geometry
+• Window and door openings (including partial visibility)
+• Built-in architectural elements
 
-• Do NOT change camera position, angle, or height
-• Do NOT change zoom or field of view
-• Do NOT change lens perspective or distortion
-• Do NOT shift viewpoint or framing
+Surface reconstruction is permitted ONLY behind removed furniture
+and must exactly match surrounding visible structure.
 
-Room geometry and perspective lines must match the input exactly.
-Furniture removal must NOT change apparent room size or depth.
+If reconstruction would require uncertain inference of openings,
+preserve the furniture instead.
 
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 
@@ -199,7 +211,7 @@ Preserve outdoor items and landscaping visible through windows.
 
 TARGETS FOR REMOVAL (ERASE ALL NON-DOMINANT MOVABLE ITEMS)
 
-Remove ALL movable furniture, decor, rugs, plants, clutter, and personal items EXCEPT:
+Remove movable furniture, decor, rugs, plants, clutter, and personal items only where structural boundaries remain unambiguous:
 
 • Preserve exactly ONE functionally dominant furniture piece per clearly defined room zone.
 
@@ -260,6 +272,9 @@ If removal would require uncertain inference of:
 
 → Preserve the furniture item.
 
+When this rule conflicts with the goal of making the room empty,
+preserving architecture takes precedence.
+
 Preserved boundary-adjacent items must:
 • Be minimal
 • Not introduce new structural geometry
@@ -310,6 +325,9 @@ provided they are not dominant furniture pieces.
 QUALITY RULES:
 Rebuild floors, skirting, walls, lighting artifacts naturally with matching texture and sharpness.
 When reconstructing walls, prefer clean blank wall over adding any wall hardware.
+
+If constraints conflict, prioritize preserving the original image geometry exactly.
+Never reinterpret, simplify, or regenerate the room layout to resolve ambiguity.
 
 
 🔐 Architectural Immutability Constraint
