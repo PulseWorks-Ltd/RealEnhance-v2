@@ -183,6 +183,10 @@ function isSoftGeometryScene(meta: {
   return score >= 2;
 }
 
+function isKitchenRoom(roomType?: string): boolean {
+  return roomType?.toLowerCase().includes("kitchen") ?? false;
+}
+
 /**
  * Run unified structural validation across multiple validators
  *
@@ -711,6 +715,43 @@ export async function runUnifiedValidation(
         message: evidence.localFlags.filter(f => f.startsWith("anchor:")).join(", ") || "All anchors intact",
         details: anchorResult,
       };
+
+      // Deterministic Stage2 kitchen-island hard-anchor enforcement.
+      // Applies only for interior kitchens when island is confidently detected in BEFORE image.
+      if (stage === "2" && sceneType === "interior" && isKitchenRoom(roomType)) {
+        const islandDetectedBefore = anchorResult.details?.islandDetectedBefore === true;
+        const islandDetectedConfidenceBefore = Number(anchorResult.details?.islandDetectedConfidenceBefore ?? 0);
+        const areaDeltaRatio = Number(anchorResult.details?.islandAreaDeltaRatio ?? anchorResult.details?.islandRectMassDelta ?? 0);
+        const islandMaskedEdgeDrift = Number(anchorResult.details?.islandMaskedEdgeDrift ?? anchorResult.details?.islandEdgeClusterDrift ?? 0);
+
+        const confidenceGatePass = islandDetectedBefore && islandDetectedConfidenceBefore >= 0.9;
+        const geometryViolation = areaDeltaRatio > 0.05 || islandMaskedEdgeDrift > 0.12;
+
+        if (confidenceGatePass && geometryViolation) {
+          const enforcementReason = `island_anchor_enforced category=structure violationType=built_in_moved areaDeltaRatio=${areaDeltaRatio.toFixed(3)} islandMaskedEdgeDrift=${islandMaskedEdgeDrift.toFixed(3)}`;
+          reasons.push(enforcementReason);
+          evidence.localFlags.push(`anchor:island_anchor_enforced`);
+          evidence.localFlags.push(`anchor:island_violation_type:built_in_moved`);
+          results.anchors.passed = false;
+          results.anchors.score = 0.0;
+          results.anchors.message = enforcementReason;
+
+          nLog(`[ISLAND_ANCHOR_ENFORCED]`, {
+            stage,
+            sceneType,
+            roomType: roomType || "unknown",
+            category: "structure",
+            violationType: "built_in_moved",
+            islandDetectedBefore,
+            islandDetectedConfidenceBefore,
+            areaDeltaRatio,
+            islandMaskedEdgeDrift,
+            thresholdAreaDeltaRatio: 0.05,
+            thresholdIslandMaskedEdgeDrift: 0.12,
+            enforced: true,
+          });
+        }
+      }
 
       nLog(`[unified-validator] Anchors: island=${anchorResult.islandChanged} hvac=${anchorResult.hvacChanged} cabinetry=${anchorResult.cabinetryChanged} lighting=${anchorResult.lightingChanged}`);
     } catch (err) {

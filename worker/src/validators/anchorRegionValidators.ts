@@ -28,6 +28,10 @@ export interface AnchorCheckResult {
     islandEdgeClusterDrift: number;
     islandRectMassDelta: number;
     islandMidToneDelta: number;
+    islandDetectedBefore: boolean;
+    islandDetectedConfidenceBefore: number;
+    islandAreaDeltaRatio: number;
+    islandMaskedEdgeDrift: number;
     hvacRegionDrift: number;
     cabinetLineDrift: number;
     lightingPositionDrift: number;
@@ -268,7 +272,17 @@ const ISLAND_RECT_MASS_DELTA_THRESHOLD = 0.20;
 async function detectIslandChange(
   originalData: Buffer, enhancedData: Buffer,
   width: number, height: number
-): Promise<{ changed: boolean; shift: number; edgeDrift: number; rectMassDelta: number; midToneDelta: number }> {
+): Promise<{
+  changed: boolean;
+  shift: number;
+  edgeDrift: number;
+  rectMassDelta: number;
+  midToneDelta: number;
+  detectedBefore: boolean;
+  confidenceBefore: number;
+  areaDeltaRatio: number;
+  maskedEdgeDrift: number;
+}> {
   // Lower 40% of image, center 60%
   const regionTop = Math.floor(height * 0.6);
   const regionBottom = height;
@@ -346,17 +360,50 @@ async function detectIslandChange(
   const islandPresentOrig = darkMassOrig || midToneMassOrig || edgeClusterOrig || rectMassOrig;
   const islandPresentEnh = darkMassEnh || midToneMassEnh || edgeClusterEnh || rectMassEnh;
 
+  const origSignalCount = [darkMassOrig, midToneMassOrig, edgeClusterOrig, rectMassOrig].filter(Boolean).length;
+  const confidenceBefore = origSignalCount / 4;
+
   // If neither image has a significant dark mass, no island
   if (!islandPresentOrig && !islandPresentEnh) {
-    return { changed: false, shift: 0, edgeDrift: 0, rectMassDelta: 0, midToneDelta: 0 };
+    return {
+      changed: false,
+      shift: 0,
+      edgeDrift: 0,
+      rectMassDelta: 0,
+      midToneDelta: 0,
+      detectedBefore: false,
+      confidenceBefore,
+      areaDeltaRatio: 0,
+      maskedEdgeDrift: 0,
+    };
   }
 
   // If one image has island and other doesn't → changed
   if (islandPresentOrig && !islandPresentEnh) {
-    return { changed: true, shift: 1.0, edgeDrift: 1.0, rectMassDelta: 1.0, midToneDelta: 1.0 };
+    return {
+      changed: true,
+      shift: 1.0,
+      edgeDrift: 1.0,
+      rectMassDelta: 1.0,
+      midToneDelta: 1.0,
+      detectedBefore: islandPresentOrig,
+      confidenceBefore,
+      areaDeltaRatio: 1.0,
+      maskedEdgeDrift: 1.0,
+    };
   }
   if (islandPresentEnh && !islandPresentOrig) {
-    return { changed: true, shift: 1.0, edgeDrift: 1.0, rectMassDelta: 1.0, midToneDelta: 1.0 };
+    return {
+      changed: true,
+      shift: 1.0,
+      edgeDrift: 1.0,
+      rectMassDelta: 1.0,
+      midToneDelta: 1.0,
+      detectedBefore: islandPresentOrig,
+      confidenceBefore,
+      areaDeltaRatio: 1.0,
+      maskedEdgeDrift: 1.0,
+    };
   }
 
   // Both have mass — compare centroids
@@ -386,6 +433,10 @@ async function detectIslandChange(
     edgeDrift,
     rectMassDelta,
     midToneDelta,
+    detectedBefore: islandPresentOrig,
+    confidenceBefore,
+    areaDeltaRatio: rectMassDelta,
+    maskedEdgeDrift: edgeDrift,
   };
 }
 
@@ -670,6 +721,10 @@ export async function runAnchorRegionValidators(params: {
         islandEdgeClusterDrift: island.edgeDrift,
         islandRectMassDelta: island.rectMassDelta,
         islandMidToneDelta: island.midToneDelta,
+        islandDetectedBefore: island.detectedBefore,
+        islandDetectedConfidenceBefore: island.confidenceBefore,
+        islandAreaDeltaRatio: island.areaDeltaRatio,
+        islandMaskedEdgeDrift: island.maskedEdgeDrift,
         hvacRegionDrift: hvac.drift,
         cabinetLineDrift: cabinetry.drift,
         lightingPositionDrift: lighting.drift,
@@ -690,6 +745,10 @@ export async function runAnchorRegionValidators(params: {
         islandEdgeClusterDrift: 0,
         islandRectMassDelta: 0,
         islandMidToneDelta: 0,
+        islandDetectedBefore: false,
+        islandDetectedConfidenceBefore: 0,
+        islandAreaDeltaRatio: 0,
+        islandMaskedEdgeDrift: 0,
         hvacRegionDrift: 0,
         cabinetLineDrift: 0,
         lightingPositionDrift: 0,
