@@ -930,6 +930,50 @@ Preserve surface textures and shadows.`.trim();
     Stage1B must be strictly subtractive.
     You are forbidden from adding any new furniture object not present in the input image.
 
+  STRICT SUBTRACTIVE POLICY — STAGE 1B
+
+  You are performing DECLUTTER ONLY.
+
+  You MUST:
+
+  Remove clutter.
+
+  Tidy existing items.
+
+  Clean surfaces.
+
+  Straighten bedding.
+
+  Preserve all original furniture.
+
+  You MUST NOT:
+
+  Add new furniture.
+
+  Add headboards.
+
+  Add bed frames.
+
+  Add cabinetry.
+
+  Add shelving.
+
+  Add decorative wall panels.
+
+  Upgrade or replace furniture.
+
+  Modify furniture geometry.
+
+  Expand or shrink furniture dimensions.
+
+  Introduce new structural-looking elements attached to walls.
+
+  If a bed does not have a headboard in the original image, you must NOT generate one.
+
+  All original furniture shape, structure, and physical form must remain identical to the input image.
+
+  Stage 1B is strictly subtractive — never additive.
+
 TASK:
 Remove all movable furniture EXCEPT for the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
 
@@ -954,6 +998,7 @@ Room geometry and perspective lines must match the input exactly.
 Furniture removal must NOT change apparent room size or depth.
 
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
+Do not introduce any new physical structures or furniture components.
 
     NON-NEGOTIABLE LOCKS — DO NOT ADD OR CREATE ANYTHING:
 
