@@ -192,6 +192,97 @@ type CompositeLocalEvaluation = {
   openingsChanged: boolean;
 };
 
+type StructuralTopologyCheckResult = {
+  result: "PASS" | "FAIL";
+  explanation: string;
+  rawText: string;
+};
+
+async function runStructuralTopologyCheck(opts: {
+  stage1APath: string;
+  stage2Path: string;
+  model: string;
+}): Promise<StructuralTopologyCheckResult> {
+  const prompt = `You are performing a structural topology verification.
+
+Compare the ORIGINAL image (Stage 1A) and the STAGED image (Stage 2).
+
+You must ignore furniture, decor, lighting, styling, rugs, and props.
+
+If furniture overlaps walls, assume the wall behind remains unchanged unless there is clear visible architectural alteration.
+
+Evaluate ONLY architectural structure that is visible in both images.
+
+Check for clear, unambiguous structural changes:
+
+1. Recess depth preservation  
+   - Has a recessed wall been flattened or pushed back?
+
+2. Column or return wall projection  
+   - Has a projecting column or wall return disappeared or been made flush?
+
+3. Plane adjacency relationships  
+   - Has a wall plane extended into previously open space?
+
+4. Built-in spatial integrity  
+   - Has a kitchen island shifted relative to floor tile grid, ceiling fixtures, or surrounding walls?
+
+5. Corner topology  
+   - Have inside or outside corners changed position or depth?
+
+Only return FAIL if architectural change is clearly visible and cannot be explained by furniture placement.
+
+Do NOT fail if:
+- Furniture sits near a corner
+- Furniture partially obscures a recess
+- Decor visually bridges a wall edge
+- Minor perspective compression occurs
+
+If uncertain, return PASS.
+
+Return ONLY:
+PASS or FAIL
+plus one short explanation sentence.`;
+
+  const ai = getGeminiClient();
+  const before = toBase64(opts.stage1APath).data;
+  const after = toBase64(opts.stage2Path).data;
+
+  const response = await (ai as any).models.generateContent({
+    model: opts.model,
+    contents: [
+      { role: "user", parts: [{ text: prompt }] },
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "image/webp", data: before } },
+          { inlineData: { mimeType: "image/webp", data: after } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.2,
+      topP: 0.5,
+      maxOutputTokens: 512,
+    },
+  } as any);
+
+  const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
+  const rawText = textParts.map((p: any) => p?.text || "").join(" ").trim();
+  const normalized = rawText.replace(/\s+/g, " ").trim();
+  const firstToken = (normalized.match(/^\s*(PASS|FAIL)\b/i)?.[1] || "PASS").toUpperCase();
+  const result: "PASS" | "FAIL" = firstToken === "FAIL" ? "FAIL" : "PASS";
+  const explanation = normalized
+    .replace(/^\s*(PASS|FAIL)\s*[:\-]?\s*/i, "")
+    .trim() || (result === "PASS" ? "No clear structural topology change detected." : "Structural topology change detected.");
+
+  return {
+    result,
+    explanation,
+    rawText,
+  };
+}
+
 function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): CompositeLocalEvaluation {
   if (metrics.structuralDeviationDeg <= 30) {
     return {
@@ -4406,6 +4497,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let stage2SemanticResult: Awaited<ReturnType<typeof runSemanticStructureValidator>> | null = null;
       let stage2MaskedEdgeResult: Awaited<ReturnType<typeof runMaskedEdgeValidator>> | null = null;
       let compositeLocalEvaluation: CompositeLocalEvaluation | null = null;
+      let compositeStructuralDeviationDeg = 0;
+      let compositeSemanticWallDriftPct = 0;
+      let compositeSemanticOpeningsDeltaTotal = 0;
+      let compositeMaskedDriftPct = 0;
+      let compositeMaskedOpeningsDeltaTotal = 0;
       const shouldRunCompositeLocalValidator =
         payload.options.virtualStage === true &&
         validationStage === "2" &&
@@ -4467,32 +4563,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (shouldRunCompositeLocalValidator) {
-        const structuralDeviationDeg = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
-        const semanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
-        const semanticOpeningsDeltaTotal =
+        compositeStructuralDeviationDeg = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
+        compositeSemanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
+        compositeSemanticOpeningsDeltaTotal =
           Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) +
           Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) +
           (stage2SemanticResult?.openings?.created ?? 0) +
           (stage2SemanticResult?.openings?.closed ?? 0);
-        const maskedDriftPct = Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
-        const maskedOpeningsDeltaTotal =
+        compositeMaskedDriftPct = Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
+        compositeMaskedOpeningsDeltaTotal =
           (stage2MaskedEdgeResult?.createdOpenings ?? 0) +
           (stage2MaskedEdgeResult?.closedOpenings ?? 0);
 
         const compositeMetrics: CompositeLocalMetrics = {
-          structuralDeviationDeg,
-          maskedDriftPct,
-          semanticWallDriftPct,
-          semanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal,
+          structuralDeviationDeg: compositeStructuralDeviationDeg,
+          maskedDriftPct: compositeMaskedDriftPct,
+          semanticWallDriftPct: compositeSemanticWallDriftPct,
+          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
+          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
         };
         compositeLocalEvaluation = evaluateCompositeLocalValidator(compositeMetrics);
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
             `composite_local_failed: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged} metrics=` +
-            `angle=${structuralDeviationDeg.toFixed(2)}deg,masked=${maskedDriftPct.toFixed(2)}%,` +
-            `wall=${semanticWallDriftPct.toFixed(2)}%,semanticOpenings=${semanticOpeningsDeltaTotal},maskedOpenings=${maskedOpeningsDeltaTotal}`;
+            `angle=${compositeStructuralDeviationDeg.toFixed(2)}deg,masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
+            `wall=${compositeSemanticWallDriftPct.toFixed(2)}%,semanticOpenings=${compositeSemanticOpeningsDeltaTotal},maskedOpenings=${compositeMaskedOpeningsDeltaTotal}`;
           stage2LocalReasons.push(compositeReason);
         }
 
@@ -4502,11 +4598,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attempt,
           mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
           failed: compositeLocalEvaluation.failed,
-          structuralDeviationDeg,
-          maskedDriftPct,
-          semanticWallDriftPct,
-          semanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal,
+          structuralDeviationDeg: compositeStructuralDeviationDeg,
+          maskedDriftPct: compositeMaskedDriftPct,
+          semanticWallDriftPct: compositeSemanticWallDriftPct,
+          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
+          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
           maskedHigh: compositeLocalEvaluation.maskedHigh,
           semanticHigh: compositeLocalEvaluation.semanticHigh,
           openingsChanged: compositeLocalEvaluation.openingsChanged,
@@ -4557,11 +4653,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attempt,
           mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
           reason: compositeBlockError.message,
-          structuralDeviationDeg,
-          maskedDriftPct,
-          semanticWallDriftPct,
-          semanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal,
+          structuralDeviationDeg: compositeStructuralDeviationDeg,
+          maskedDriftPct: compositeMaskedDriftPct,
+          semanticWallDriftPct: compositeSemanticWallDriftPct,
+          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
+          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
           maskedHigh: compositeLocalEvaluation.maskedHigh,
           semanticHigh: compositeLocalEvaluation.semanticHigh,
           openingsChanged: compositeLocalEvaluation.openingsChanged,
@@ -4627,6 +4723,90 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reason: failReasons[0] || "composite_local",
         });
         continue;
+      }
+
+      if (validationStage === "2" && shouldRunCompositeLocalValidator && compositeLocalEvaluation?.failed === false) {
+        const topologyThresholdExceeded =
+          compositeSemanticWallDriftPct > 10 ||
+          compositeSemanticOpeningsDeltaTotal > 0 ||
+          compositeMaskedDriftPct > 2;
+
+        if (!topologyThresholdExceeded) {
+          nLog("[topology-validator] skipped (thresholds not exceeded)");
+          nLog("[topology-validator] skipped");
+        } else if (!path1A) {
+          nLog("[topology-validator] skipped (stage1A missing)");
+          nLog("[topology-validator] skipped");
+        } else {
+          const topologyModel = String(unifiedValidation?.modelUsed || process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash");
+          let topologyResult: StructuralTopologyCheckResult;
+          try {
+            topologyResult = await runStructuralTopologyCheck({
+              stage1APath: path1A,
+              stage2Path: path2,
+              model: topologyModel,
+            });
+          } catch (topologyError: any) {
+            topologyResult = {
+              result: "PASS",
+              explanation: `validator_error: ${topologyError?.message || String(topologyError)}`,
+              rawText: topologyError?.message || String(topologyError),
+            };
+          }
+
+          nLog("[topology-validator]", {
+            triggered: true,
+            result: topologyResult.result,
+            explanation: topologyResult.explanation,
+            jobId: payload.jobId,
+            stage: "2",
+            attempt,
+          });
+
+          if (topologyResult.result === "FAIL") {
+            if (attempt < MAX_STAGE2_RETRIES) {
+              nLog("[topology-validator] FAIL → scheduling retry");
+              retryTemperature = Math.max(0.05, retryTemperature * 0.9);
+              retryTopP = Math.max(0.3, retryTopP * 0.9);
+              retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
+              logEvent("STAGE_RETRY", {
+                jobId: payload.jobId,
+                stage: "2",
+                retry: attempt + 1,
+                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+                reason: "topology_violation_detected",
+              });
+              continue;
+            }
+
+            nLog("[topology-validator] FAIL → retries exhausted");
+            stage2LocalReasons.push("topology_violation_detected");
+            setStage2AttemptValidation(path2, "topology_violation_detected", [
+              "topology_violation_detected",
+              topologyResult.explanation,
+            ]);
+            mergeAttemptValidation("2", attempt, {
+              final: {
+                result: "FAILED",
+                finalHard: true,
+                finalCategory: "topology_violation_detected",
+                retryTriggered: false,
+                retriesExhausted: true,
+                reason: "topology_violation_detected",
+              },
+            });
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "failed",
+                errorMessage: "topology_violation_detected",
+                reason: "topology_violation_detected",
+              },
+              "topology_validator_terminal"
+            );
+            return;
+          }
+        }
       }
 
       if (stage2GeminiPolicy !== "never") {
