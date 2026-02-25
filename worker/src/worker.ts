@@ -59,7 +59,7 @@ import {
   type UnifiedValidationResult
 } from "./validators/runValidation";
 import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
-import { shouldRetry as evidenceShouldRetry, type ValidationEvidence } from "./validators/validationEvidence";
+import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
 import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
 import { isJobFailedFinal } from "./validators/stageRetryManager";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
@@ -71,6 +71,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
   Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
@@ -3102,6 +3103,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         isEvidenceGatingEnabledForJob(payload.jobId) &&
         (openingRemovalDetectedForEvidence || suspiciousWallExpansion || openingCountDelta !== 0);
 
+      const stage1BRiskClassification = classifyRisk(stage1BStructuralEvidence);
+
+      if (VALIDATOR_AUDIT_ENABLED) {
+        const auditEscalationReasons: string[] = [];
+        if (openingRemovalDetectedForEvidence) auditEscalationReasons.push("opening_removal_detected");
+        if (suspiciousWallExpansion) auditEscalationReasons.push("suspicious_wall_expansion");
+        if (openingCountDelta !== 0) auditEscalationReasons.push(`opening_count_delta=${openingCountDelta}`);
+        console.log(`[VALIDATOR AUDIT]\nJob: ${payload.jobId}\nImage: ${payload.imageId || "unknown"}\nStage: 1B\nAttempt: ${stage1BAttemptNo}\n\nLocal validator metrics:\nWallDeltaRatio: ${wallDelta.deltaRatio.toFixed(4)}\nNewWallRatio: ${wallDelta.newWallRatio.toFixed(4)}\nPlaneExpansionRatio: ${wallDelta.planeExpansionRatio.toFixed(4)}\nWindowsBefore: ${stage1BStructuralEvidence.openings.windowsBefore}\nWindowsAfter: ${stage1BStructuralEvidence.openings.windowsAfter}\nDoorsBefore: ${stage1BStructuralEvidence.openings.doorsBefore}\nDoorsAfter: ${stage1BStructuralEvidence.openings.doorsAfter}\nOpeningCountDelta: ${openingCountDelta}\nWallDriftPct: ${stage1BStructuralEvidence.drift.wallPercent.toFixed(2)}\n\nSeverity: ${stage1BRiskClassification.level}\nHardFail: ${wallDelta.hardFail}\n\nEscalated to Gemini: YES\nReason: stage1b_structural_validation + ${auditEscalationReasons.length ? auditEscalationReasons.join(", ") : "policy_always"}`);
+      }
+
       nLog("[STAGE1B_EVIDENCE_INJECTION]", {
         jobId: payload.jobId,
         injected: stage1BEvidenceInjected,
@@ -3114,6 +3125,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(
         `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
       );
+
+      if (VALIDATOR_AUDIT_ENABLED) {
+        console.log(`[VALIDATOR AUDIT]\nJob: ${payload.jobId}\nImage: ${payload.imageId || "unknown"}\nStage: 1B\nAttempt: ${stage1BAttemptNo}\n\nGemini response:\nCategory: ${structureResult.category || "unknown"}\nViolationType: ${structureResult.violationType || "other"}\nConfidence: ${Number.isFinite(structureResult.confidence) ? structureResult.confidence : 0}\nHardFail: ${structureResult.hardFail}\nReasons: ${JSON.stringify(Array.isArray(structureResult.reasons) ? structureResult.reasons : [])}`);
+      }
 
       // Deterministic opening preservation guard (Stage 1B only)
       const beforeOpeningCount = structureResult?.beforeOpeningCount;
@@ -3195,6 +3210,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (wallDelta.hardFail) {
         nLog(`[STAGE1B_STRUCTURE_RESULT] hardFail=true violationType=wall_plane_expansion`);
+      }
+
+      if (VALIDATOR_AUDIT_ENABLED) {
+        const finalDecision = effectiveHardFail ? "BLOCK" : "PASS";
+        const finalReason = effectiveViolationType || "none";
+        console.log(`[VALIDATOR AUDIT]\nJob: ${payload.jobId}\nImage: ${payload.imageId || "unknown"}\nStage: 1B\nAttempt: ${stage1BAttemptNo}\n\nFinal decision: ${finalDecision}\nFinal reason: ${finalReason}\nEffectiveHardFail: ${effectiveHardFail}`);
       }
 
       mergeAttemptValidation("1B", stage1BAttemptNo, {

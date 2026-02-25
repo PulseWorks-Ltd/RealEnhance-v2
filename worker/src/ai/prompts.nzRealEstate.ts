@@ -1635,11 +1635,54 @@ If any hint conflicts with visible architecture, preserve architecture.
 `.trim()
     : "";
 
+  const surfaceEligibilityFilterBlock = `🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
+────────────────────────────────
+
+Before placing any new furniture, perform this eligibility check.
+
+WALL ELIGIBILITY (CASEGOODS & LARGE FURNITURE)
+
+Large vertical furniture (dressers, tallboys, cabinets, shelving units,
+bookcases, wardrobes, display units) may ONLY be placed against walls
+that meet ALL of the following:
+
+• Wall is fully visible from floor to ceiling
+• Wall is continuous and not cropped by the frame edge
+• No visible door frame, hinge, handle, track, or hardware
+• No partial return wall suggesting an adjoining opening
+• No corner termination where the adjacent wall is not fully visible
+
+A wall is NOT eligible if:
+
+• It is partially cropped by the camera frame
+• It ends in a corner where the adjoining wall is not fully shown
+• It suggests a recessed opening or possible closet location
+• Any portion of door hardware or framing is visible nearby
+
+If uncertain whether a wall is fully safe:
+→ Do NOT place large furniture on that wall.
+
+Only use clearly visible, continuous, unobstructed walls.`;
+
   if (resolvedMode === "full") {
-    return buildStage2FullPromptNZ(canonicalRoomType, layoutContextBlock);
+    const fullPrompt = buildStage2FullPromptNZ(canonicalRoomType, layoutContextBlock);
+    if (fullPrompt.includes("FULL-SPECIFIC RULES")) {
+      return fullPrompt.replace(
+        "FULL-SPECIFIC RULES",
+        `${surfaceEligibilityFilterBlock}\n\nFULL-SPECIFIC RULES`
+      );
+    }
+    return `${fullPrompt}\n\n${surfaceEligibilityFilterBlock}`;
   }
 
-  return buildStage2RefreshPromptNZ(canonicalRoomType);
+  const refreshPrompt = buildStage2RefreshPromptNZ(canonicalRoomType);
+  if (refreshPrompt.includes("REFRESH-SPECIFIC RULES")) {
+    return refreshPrompt.replace(
+      "REFRESH-SPECIFIC RULES",
+      `${surfaceEligibilityFilterBlock}\n\nREFRESH-SPECIFIC RULES`
+    );
+  }
+  return `${refreshPrompt}\n\n${surfaceEligibilityFilterBlock}`;
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {

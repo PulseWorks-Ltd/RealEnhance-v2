@@ -11,6 +11,7 @@ import { detectWindowsLocal, type BBox } from "./local-windows";
 
 const logger = console;
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 
 function debugInfo(...args: any[]) {
   if (!VALIDATOR_LOGS_FOCUS) {
@@ -1093,6 +1094,29 @@ Do NOT assume violation unless visually confirmed.`
     },
   ];
 
+  if (VALIDATOR_AUDIT_ENABLED) {
+    const requestAuditPayload = {
+      model,
+      generationConfig: {
+        temperature: 0,
+        topP: 0.1,
+        maxOutputTokens: 384,
+      },
+      contents: [
+        { role: "user", parts: [{ text: stage1BPrompt }] },
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: "image/webp", byteLength: before.length } },
+            { inlineData: { mimeType: "image/webp", byteLength: after.length } },
+          ],
+        },
+      ],
+    };
+
+    console.log(`[VALIDATOR AUDIT][GEMINI_STAGE1B_REQUEST] job=${jobId || "unknown"} payload=${JSON.stringify(requestAuditPayload)}`);
+  }
+
   if (VALIDATION_FOCUS_MODE) {
     debugInfo("[EVIDENCE_GATING_VARIANT]", {
       jobId: jobId || "unknown",
@@ -1118,6 +1142,11 @@ Do NOT assume violation unless visually confirmed.`
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
+
+    if (VALIDATOR_AUDIT_ENABLED) {
+      console.log(`[VALIDATOR AUDIT][GEMINI_STAGE1B_RESPONSE_RAW] job=${jobId || "unknown"} raw=${text}`);
+    }
+
     const parsed = parseGeminiSemanticText(text);
     const openingCounts = extractOpeningCountsFromStage1BText(text);
     const category = parsed.category === "structure" ? "structure" : "unknown";
@@ -1191,6 +1220,12 @@ Do NOT assume violation unless visually confirmed.`
       baseHardFail &&
       (parsedViolationType !== "opening_change" || openingChangeSignificant);
 
+    if (VALIDATOR_AUDIT_ENABLED) {
+      console.log(
+        `[VALIDATOR AUDIT][GEMINI_STAGE1B_DECISION] job=${jobId || "unknown"} category=${category} violationType=${hardFail ? parsedViolationType : "other"} confidence=${Number.isFinite(parsed.confidence) ? parsed.confidence : 0} hardFail=${hardFail} finalDecision=${hardFail ? "BLOCK" : "PASS"}`
+      );
+    }
+
     return {
       hardFail,
       category,
@@ -1209,6 +1244,9 @@ Do NOT assume violation unless visually confirmed.`
       rawText: text,
     };
   } catch (err: any) {
+    if (VALIDATOR_AUDIT_ENABLED) {
+      console.log(`[VALIDATOR AUDIT][GEMINI_STAGE1B_ERROR] job=${jobId || "unknown"} message=${err?.message || String(err)} finalDecision=BLOCK`);
+    }
     return {
       hardFail: true,
       category: "structure",
