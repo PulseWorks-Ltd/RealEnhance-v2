@@ -98,6 +98,48 @@ The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
 ────────────────────────────────
+GEOMETRY & PLACEMENT FREEZE — REFRESH MODE
+────────────────────────────────
+
+Refresh mode does NOT change layout.
+
+You MUST preserve for every visible furniture item:
+
+• Exact floor position
+• Exact orientation (angle relative to walls)
+• Exact footprint and floor contact area
+• Exact clearance distances to doors and walkways
+• Exact wall anchoring relationship
+• Exact relative distance to nearby objects
+
+You are ONLY allowed to change:
+
+• Material
+• Fabric
+• Color
+• Finish
+• Cushion style
+• Leg style
+• Minor silhouette refinements within the same footprint
+
+You MUST NOT:
+
+• Move furniture
+• Slide furniture
+• Rotate furniture
+• Resize footprint
+• Re-anchor furniture to a different wall
+• Shift items away from or toward doors
+• Swap sides of an island
+• Re-center objects
+
+If replacement requires movement to “fit”:
+→ Keep the original item instead.
+
+Refresh is cosmetic replacement only.
+Layout geometry is frozen.
+
+────────────────────────────────
 🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
 ────────────────────────────────
 
@@ -488,7 +530,6 @@ Sofas and large furniture MUST NOT:
 
 If space is tight:
 → Reduce furniture count
-→ Use smaller pieces
 → Never violate door clearance rules
 
 ────────────────────────────────
@@ -554,7 +595,7 @@ Only use floor-standing furniture for added staging items.
 REFRESH MODE — STRICT LOGIC
 ────────────────────────────────
 1. Identify ALL visible furniture items.
-2. Replace EACH item with a modern equivalent, only if replacement fully complies with structural locks, surface eligibility, clearance, and boundary rules.
+2. Replace EACH item with a modern equivalent without altering position, orientation, footprint, or spatial relationships.
 3. Preserve: type, position, orientation, functional role.
 4. Do NOT add new furniture; empty areas remain empty.
   This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
