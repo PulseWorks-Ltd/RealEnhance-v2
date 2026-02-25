@@ -98,6 +98,36 @@ The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
 ────────────────────────────────
+🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
+────────────────────────────────
+
+Before placing any new furniture, perform this eligibility check.
+
+1. WALL ELIGIBILITY (CASEGOODS & LARGE FURNITURE)
+
+Large vertical furniture (dressers, tallboys, cabinets, shelving units,
+bookcases, wardrobes, display units) may ONLY be placed against walls
+that meet ALL of the following:
+
+• Wall is fully visible from floor to ceiling
+• Wall is continuous and not cropped by the frame edge
+• No visible door frame, hinge, handle, track, or hardware
+• No partial return wall suggesting an adjoining opening
+• No corner termination where the adjacent wall is not fully visible
+
+A wall is NOT eligible if:
+
+• It is partially cropped by the camera frame
+• It ends in a corner where the adjoining wall is not fully shown
+• It suggests a recessed opening or possible closet location
+• Any portion of door hardware or framing is visible nearby
+
+If uncertain whether a wall is fully safe:
+→ Do NOT place large furniture on that wall.
+
+Only use clearly visible, continuous, unobstructed walls.
+
+────────────────────────────────
 BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
 ────────────────────────────────
 
@@ -424,19 +454,6 @@ If only part of a kitchen is visible:
 • Only add small portable accessories on clearly visible surfaces
 
 ────────────────────────────────
-REFRESH MODE — STRICT LOGIC
-────────────────────────────────
-1. Identify ALL visible furniture items.
-2. Replace EACH item with a modern equivalent.
-3. Preserve: type, position, orientation, functional role.
-4. Do NOT add new furniture; empty areas remain empty.
-  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
-5. If replacement risks artifacts, keep the original item unchanged.
-
-CONSISTENCY RULE:
-- No mixing old and new. Replace fully or not at all.
-
-────────────────────────────────
 CRITICAL OPENING CLEARANCE RULE — STRICT
 ────────────────────────────────
 
@@ -534,6 +551,19 @@ Do NOT add new wall-mounted furniture or fixtures, including:
 Only use floor-standing furniture for added staging items.
 
 ────────────────────────────────
+REFRESH MODE — STRICT LOGIC
+────────────────────────────────
+1. Identify ALL visible furniture items.
+2. Replace EACH item with a modern equivalent, only if replacement fully complies with structural locks, surface eligibility, clearance, and boundary rules.
+3. Preserve: type, position, orientation, functional role.
+4. Do NOT add new furniture; empty areas remain empty.
+  This explicitly includes no new island/counter seating (bar stools, counter stools, high chairs).
+5. If replacement risks artifacts, keep the original item unchanged.
+
+CONSISTENCY RULE:
+- No mixing old and new. Replace fully or not at all.
+
+────────────────────────────────
 FURNITURE PLACEMENT PRIORITY ORDER
 ────────────────────────────────
 
@@ -548,39 +578,6 @@ When arranging furniture, follow this strict priority:
 
 If a conflict occurs:
 Reduce furniture — never block access.
-
-────────────────────────────────
-CASEGOODS PLACEMENT — WALL VISIBILITY RULE
-────────────────────────────────
-
-Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
-
-Applies to:
-• chests of drawers
-• dressers
-• tallboys
-• wardrobes (added furniture, not built-ins)
-• dressing tables / vanities
-• large cabinets and sideboards
-
-Do NOT place these items:
-• against image edges where the backing wall is not visible
-• in front of doors, closets, wardrobes, or openings
-• where the wall behind the item cannot be clearly seen
-
-If a suitable blank wall is not clearly visible, do not add the item.
-
-────────────────────────────────
-WALL-MOUNTED ADDITIONS — PROHIBITED
-────────────────────────────────
-
-Do NOT add new wall-mounted furniture or fixtures, including:
-• floating nightstands
-• wall-mounted desks
-• new shelves
-• wall cabinets
-
-Only use floor-standing furniture for added staging items.
 
 ────────────────────────────────
 STYLE PROFILE
