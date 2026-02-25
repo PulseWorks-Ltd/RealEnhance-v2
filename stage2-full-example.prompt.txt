@@ -98,59 +98,6 @@ The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
 ────────────────────────────────
-🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
-────────────────────────────────
-
-Before placing any new furniture, perform this eligibility check.
-
-1. WALL ELIGIBILITY (CASEGOODS & LARGE FURNITURE)
-
-Large vertical furniture (dressers, tallboys, cabinets, shelving units,
-bookcases, wardrobes, display units) may ONLY be placed against walls
-that meet ALL of the following:
-
-• Wall is fully visible from floor to ceiling
-• Wall is continuous and not cropped by the frame edge
-• No visible door frame, hinge, handle, track, or hardware
-• No partial return wall suggesting an adjoining opening
-• No corner termination where the adjacent wall is not fully visible
-
-A wall is NOT eligible if:
-
-• It is partially cropped by the camera frame
-• It ends in a corner where the adjoining wall is not fully shown
-• It suggests a recessed opening or possible closet location
-• Any portion of door hardware or framing is visible nearby
-
-If uncertain whether a wall is fully safe:
-→ Do NOT place large furniture on that wall.
-
-Only use clearly visible, continuous, unobstructed walls.
-
-────────────────────────────────
-
-2. KITCHEN ISLAND SIDE ELIGIBILITY (BAR STOOLS / SEATING)
-
-Bar stools or counter seating may ONLY be placed on:
-
-• The outer-facing side of an island
-• The side facing open living/dining space
-• A side that is clearly not part of the kitchen work zone
-
-Bar stools MUST NOT be placed on:
-
-• The sink side
-• The cooktop/oven side
-• The dishwasher side
-• The refrigerator side
-• Any side containing appliances or work surfaces
-• Inside the primary kitchen work triangle
-• In narrow circulation zones between cabinets
-
-If the image does not clearly show an appropriate outer-facing side:
-→ Do NOT add bar stools.
-
-────────────────────────────────
 BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
 ────────────────────────────────
 
