@@ -187,45 +187,31 @@ type CompositeLocalMetrics = {
 
 type CompositeLocalEvaluation = {
   failed: boolean;
-  tier: "none" | "catastrophic_geometry" | "compounded_instability";
-  reasons: string[];
+  instabilityCount: number;
 };
 
 function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): CompositeLocalEvaluation {
-  const catastrophicSignals: string[] = [];
-  if (metrics.structuralDeviationDeg >= 2.5) catastrophicSignals.push("structuralDeviationDeg>=2.5");
-  if (metrics.maskedDriftPct >= 35) catastrophicSignals.push("maskedDriftPct>=35");
-  if (metrics.semanticWallDriftPct >= 25) catastrophicSignals.push("semanticWallDriftPct>=25");
-  if (metrics.semanticOpeningsDeltaTotal >= 2) catastrophicSignals.push("semanticOpeningsDeltaTotal>=2");
-  if (metrics.maskedOpeningsDeltaTotal >= 2) catastrophicSignals.push("maskedOpeningsDeltaTotal>=2");
-
-  if (catastrophicSignals.length > 0) {
+  if (metrics.structuralDeviationDeg <= 35) {
     return {
-      failed: true,
-      tier: "catastrophic_geometry",
-      reasons: catastrophicSignals,
+      failed: false,
+      instabilityCount: 0,
     };
   }
 
-  const instabilitySignals: string[] = [];
-  if (metrics.structuralDeviationDeg >= 1.2) instabilitySignals.push("structuralDeviationDeg>=1.2");
-  if (metrics.maskedDriftPct >= 18) instabilitySignals.push("maskedDriftPct>=18");
-  if (metrics.semanticWallDriftPct >= 12) instabilitySignals.push("semanticWallDriftPct>=12");
-  if (metrics.semanticOpeningsDeltaTotal >= 1) instabilitySignals.push("semanticOpeningsDeltaTotal>=1");
-  if (metrics.maskedOpeningsDeltaTotal >= 1) instabilitySignals.push("maskedOpeningsDeltaTotal>=1");
+  const maskedHigh = metrics.maskedDriftPct > 75;
+  const semanticHigh = metrics.semanticWallDriftPct > 45;
+  const openingsChanged =
+    metrics.semanticOpeningsDeltaTotal !== 0 ||
+    metrics.maskedOpeningsDeltaTotal !== 0;
 
-  if (instabilitySignals.length >= 2) {
-    return {
-      failed: true,
-      tier: "compounded_instability",
-      reasons: instabilitySignals,
-    };
-  }
+  const instabilityCount =
+    (maskedHigh ? 1 : 0) +
+    (semanticHigh ? 1 : 0) +
+    (openingsChanged ? 1 : 0);
 
   return {
-    failed: false,
-    tier: "none",
-    reasons: [],
+    failed: metrics.structuralDeviationDeg > 35 && instabilityCount >= 2,
+    instabilityCount,
   };
 }
 
@@ -4495,7 +4481,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
-            `composite_local_failed: tier=${compositeLocalEvaluation.tier} metrics=` +
+            `composite_local_failed: instabilityCount=${compositeLocalEvaluation.instabilityCount} metrics=` +
             `angle=${structuralDeviationDeg.toFixed(2)}deg,masked=${maskedDriftPct.toFixed(2)}%,` +
             `wall=${semanticWallDriftPct.toFixed(2)}%,semanticOpenings=${semanticOpeningsDeltaTotal},maskedOpenings=${maskedOpeningsDeltaTotal}`;
           stage2LocalReasons.push(compositeReason);
@@ -4507,9 +4493,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attempt,
           mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
           failed: compositeLocalEvaluation.failed,
-          tier: compositeLocalEvaluation.tier,
-          thresholdReasons: compositeLocalEvaluation.reasons,
-          metrics: compositeMetrics,
+          structuralDeviationDeg,
+          maskedDriftPct,
+          semanticWallDriftPct,
+          semanticOpeningsDeltaTotal,
+          maskedOpeningsDeltaTotal,
+          instabilityCount: compositeLocalEvaluation.instabilityCount,
           action: compositeLocalEvaluation.failed
             ? (COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" ? "retry" : "log-only")
             : "none",
@@ -4527,7 +4516,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         let compositeBlockError: Error;
         try {
           throw new Error(
-            `Composite local validator blocked stage2 (${compositeLocalEvaluation.tier}): ${compositeLocalEvaluation.reasons.join(", ")}`
+            `Composite local validator blocked stage2: instabilityCount=${compositeLocalEvaluation.instabilityCount}`
           );
         } catch (err: any) {
           compositeBlockError = err;
@@ -4709,7 +4698,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : (unifiedValidation.blockSource || "gemini");
         const compositeReasons = compositeLocalEvaluation?.failed
           ? [
-              `Composite local validator ${compositeLocalEvaluation.tier}: ${compositeLocalEvaluation.reasons.join(", ")}`,
+              `Composite local validator failed: instabilityCount=${compositeLocalEvaluation.instabilityCount}`,
               `Composite metrics: angle=${Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0).toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
             ]
           : [];
