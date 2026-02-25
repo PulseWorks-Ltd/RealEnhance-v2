@@ -4341,9 +4341,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   };
 
-  let retryTemperature = 0.55;
-  let retryTopP = 0.85;
-  let retryTopK = 40;
+  const stage2OuterRetryProfiles = [
+    { temperature: 0.25, topP: 0.70, topK: 30 },
+    { temperature: 0.20, topP: 0.65, topK: 25 },
+    { temperature: 0.17, topP: 0.60, topK: 20 },
+  ] as const;
+
+  const getStage2OuterRetrySampling = (attemptNumber: number) => {
+    const profileIndex = Math.min(Math.max(0, attemptNumber - 1), stage2OuterRetryProfiles.length - 1);
+    return stage2OuterRetryProfiles[profileIndex];
+  };
 
   if (payload.options.virtualStage) {
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
@@ -4365,6 +4372,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (attempt > 1) {
+        const currentRetrySampling = getStage2OuterRetrySampling(attempt);
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         nLog("[STAGE2_PROMPT_SOURCE]", {
@@ -4384,9 +4392,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           outputPath: retryOutputPath,
           generationConfig: {
-            temperature: retryTemperature,
-            topP: retryTopP,
-            topK: retryTopK,
+            temperature: currentRetrySampling.temperature,
+            topP: currentRetrySampling.topP,
+            topK: currentRetrySampling.topK,
           },
           modelReason: `stage2 unified retry ${attempt - 1}`,
         });
@@ -4711,10 +4719,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           break;
         }
 
-        retryTemperature = Math.max(0.05, retryTemperature * 0.9);
-        retryTopP = Math.max(0.3, retryTopP * 0.9);
-        retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
-        nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -4765,10 +4771,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           if (topologyResult.result === "FAIL") {
             if (attempt < MAX_STAGE2_RETRIES) {
-              nLog("[topology-validator] FAIL → scheduling retry");
-              retryTemperature = Math.max(0.05, retryTemperature * 0.9);
-              retryTopP = Math.max(0.3, retryTopP * 0.9);
-              retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
+              const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+              nLog(`[topology-validator] FAIL → scheduling retry attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
                 stage: "2",
@@ -5020,10 +5024,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           break;
         }
 
-        retryTemperature = Math.max(0.05, retryTemperature * 0.9);
-        retryTopP = Math.max(0.3, retryTopP * 0.9);
-        retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -5165,10 +5167,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 break;
               }
 
-              retryTemperature = Math.max(0.05, retryTemperature * 0.9);
-              retryTopP = Math.max(0.3, retryTopP * 0.9);
-              retryTopK = Math.max(10, Math.floor(retryTopK * 0.9));
-              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${retryTemperature.toFixed(3)} topP=${retryTopP.toFixed(3)} topK=${retryTopK}`);
+              const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
                 stage: "2",
