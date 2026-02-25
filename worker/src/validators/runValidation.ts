@@ -146,6 +146,7 @@ export interface UnifiedValidationParams {
    */
   stage1APath?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+  topologyResult?: "PASS" | "FAIL";
   validationMode?: Stage2ValidationMode;
   stage1BValidationMode?: Stage1BValidationMode;
   baseArtifacts?: import("./baseArtifacts").BaseArtifacts;
@@ -269,6 +270,10 @@ export async function runUnifiedValidation(
     (stage === "1B" || stage === "2") ? stage : "1B",
     roomType
   );
+
+  if (params.topologyResult) {
+    (evidence as any).topologyResult = params.topologyResult;
+  }
 
   if (stage === "1B" || stage === "2") {
     try {

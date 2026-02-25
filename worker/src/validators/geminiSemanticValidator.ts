@@ -2587,6 +2587,28 @@ export async function runGeminiSemanticValidator(opts: {
     const doorsDelta = opts.evidence
       ? (opts.evidence.openings.doorsAfter - opts.evidence.openings.doorsBefore)
       : 0;
+    const structuralDeviationDeg = Number(opts.evidence?.drift?.angleDegrees ?? 0);
+    const semanticOpeningsDeltaTotal = Math.abs(windowsDelta) + Math.abs(doorsDelta);
+    const semanticWallDriftPct = Number(opts.evidence?.drift?.wallPercent ?? 0);
+    const topologyResultRaw = (opts.evidence as any)?.topologyResult;
+    const topologyResult = typeof topologyResultRaw === "string"
+      ? topologyResultRaw.toUpperCase()
+      : topologyResultRaw;
+    const topologyPass = topologyResult === "PASS" || topologyResult === true;
+
+    if (opts.validationMode === "FULL_STAGE_ONLY" && opts.stage === "2") {
+      debugLog("[gemini-structure-guard] topology signal", {
+        topologyResult,
+        topologyResultRaw,
+      });
+    }
+
+    const moderateDriftGuardApplies =
+      opts.validationMode === "FULL_STAGE_ONLY" &&
+      structuralDeviationDeg === 0 &&
+      semanticOpeningsDeltaTotal === 0 &&
+      topologyPass &&
+      semanticWallDriftPct < 35;
 
     const {
       primaryStructuralViolationDetected,
@@ -2644,11 +2666,31 @@ export async function runGeminiSemanticValidator(opts: {
       const builtInStrongEvidence = hasConfirmedBuiltInRelocation;
       if (opts.validationMode === "FULL_STAGE_ONLY") {
         if (geometricViolation) {
-          hardFail = true;
-          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY primary_geometry_lock=true violationType=${violationType}`);
+          if (moderateDriftGuardApplies) {
+            console.log("[gemini-structure-guard] downgraded hardFail to advisory", {
+              semanticWallDriftPct,
+              structuralDeviationDeg,
+              semanticOpeningsDeltaTotal,
+              topologyResult,
+            });
+            hardFail = false;
+          } else {
+            hardFail = true;
+            debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY primary_geometry_lock=true violationType=${violationType}`);
+          }
         } else if (builtInStrongEvidence) {
-          hardFail = true;
-          debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_anchor_lock=true violationType=${violationType}`);
+          if (moderateDriftGuardApplies) {
+            console.log("[gemini-structure-guard] downgraded hardFail to advisory", {
+              semanticWallDriftPct,
+              structuralDeviationDeg,
+              semanticOpeningsDeltaTotal,
+              topologyResult,
+            });
+            hardFail = false;
+          } else {
+            hardFail = true;
+            debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_anchor_lock=true violationType=${violationType}`);
+          }
         } else if (onlySecondarySignalsPresent) {
           hardFail = false;
           debugLog("[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_only_advisory=true");
@@ -2693,14 +2735,24 @@ export async function runGeminiSemanticValidator(opts: {
 
     if (stage2FullPrimaryStructuralIdentityViolation) {
       category = "structure";
-      hardFail = true;
-      if (violationType === "layout_only") {
-        violationType = normalizeStage2FullStructuralViolationType({
-          rawViolationType: violationType || "other",
-          reasonText,
+      if (moderateDriftGuardApplies) {
+        console.log("[gemini-structure-guard] downgraded hardFail to advisory", {
+          semanticWallDriftPct,
+          structuralDeviationDeg,
+          semanticOpeningsDeltaTotal,
+          topologyResult,
         });
+        hardFail = false;
+      } else {
+        hardFail = true;
+        if (violationType === "layout_only") {
+          violationType = normalizeStage2FullStructuralViolationType({
+            rawViolationType: violationType || "other",
+            reasonText,
+          });
+        }
+        debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY retry_on_structure_drift=true violationType=${violationType}`);
       }
-      debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY retry_on_structure_drift=true violationType=${violationType}`);
     }
 
     const verdict: GeminiSemanticVerdict = {

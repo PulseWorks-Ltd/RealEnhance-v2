@@ -4731,6 +4731,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         continue;
       }
 
+      let topologyResultForEvidence: "PASS" | "FAIL" | undefined;
       if (validationStage === "2" && shouldRunCompositeLocalValidator && compositeLocalEvaluation?.failed === false) {
         const topologyThresholdExceeded =
           compositeSemanticWallDriftPct > 10 ||
@@ -4768,6 +4769,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage: "2",
             attempt,
           });
+
+          topologyResultForEvidence = topologyResult.result;
 
           if (topologyResult.result === "FAIL") {
             if (attempt < MAX_STAGE2_RETRIES) {
@@ -4828,6 +4831,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           sourceStage: stage2SourceStage,
           validationMode: stage2ValidationMode,
           baseArtifacts: stageLineage.baseArtifacts,
+          topologyResult: topologyResultForEvidence,
         });
       }
 
