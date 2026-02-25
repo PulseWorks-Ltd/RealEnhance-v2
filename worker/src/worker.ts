@@ -4782,7 +4782,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog("[topology-validator] FAIL → retries exhausted");
             stage2LocalReasons.push("topology_violation_detected");
             setStage2AttemptValidation(path2, "topology_violation_detected", [
-              "topology_violation_detected",
+              ...stage2LocalReasons,
               topologyResult.explanation,
             ]);
             mergeAttemptValidation("2", attempt, {
