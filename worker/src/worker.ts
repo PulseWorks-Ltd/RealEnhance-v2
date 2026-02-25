@@ -187,31 +187,40 @@ type CompositeLocalMetrics = {
 
 type CompositeLocalEvaluation = {
   failed: boolean;
-  instabilityCount: number;
+  maskedHigh: boolean;
+  semanticHigh: boolean;
+  openingsChanged: boolean;
 };
 
 function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): CompositeLocalEvaluation {
-  if (metrics.structuralDeviationDeg <= 35) {
+  if (metrics.structuralDeviationDeg <= 30) {
     return {
       failed: false,
-      instabilityCount: 0,
+      maskedHigh: false,
+      semanticHigh: false,
+      openingsChanged: false,
     };
   }
 
   const maskedHigh = metrics.maskedDriftPct > 75;
-  const semanticHigh = metrics.semanticWallDriftPct > 45;
+  const semanticHigh = metrics.semanticWallDriftPct > 40;
   const openingsChanged =
     metrics.semanticOpeningsDeltaTotal !== 0 ||
     metrics.maskedOpeningsDeltaTotal !== 0;
 
-  const instabilityCount =
-    (maskedHigh ? 1 : 0) +
-    (semanticHigh ? 1 : 0) +
-    (openingsChanged ? 1 : 0);
+  const compositeLocalFail =
+    metrics.structuralDeviationDeg > 30 &&
+    (
+      (maskedHigh && openingsChanged) ||
+      (semanticHigh && openingsChanged) ||
+      (maskedHigh && semanticHigh)
+    );
 
   return {
-    failed: metrics.structuralDeviationDeg > 35 && instabilityCount >= 2,
-    instabilityCount,
+    failed: compositeLocalFail,
+    maskedHigh,
+    semanticHigh,
+    openingsChanged,
   };
 }
 
@@ -4481,7 +4490,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
-            `composite_local_failed: instabilityCount=${compositeLocalEvaluation.instabilityCount} metrics=` +
+            `composite_local_failed: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged} metrics=` +
             `angle=${structuralDeviationDeg.toFixed(2)}deg,masked=${maskedDriftPct.toFixed(2)}%,` +
             `wall=${semanticWallDriftPct.toFixed(2)}%,semanticOpenings=${semanticOpeningsDeltaTotal},maskedOpenings=${maskedOpeningsDeltaTotal}`;
           stage2LocalReasons.push(compositeReason);
@@ -4498,7 +4507,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           semanticWallDriftPct,
           semanticOpeningsDeltaTotal,
           maskedOpeningsDeltaTotal,
-          instabilityCount: compositeLocalEvaluation.instabilityCount,
+          maskedHigh: compositeLocalEvaluation.maskedHigh,
+          semanticHigh: compositeLocalEvaluation.semanticHigh,
+          openingsChanged: compositeLocalEvaluation.openingsChanged,
           action: compositeLocalEvaluation.failed
             ? (COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" ? "retry" : "log-only")
             : "none",
@@ -4513,10 +4524,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" &&
         compositeLocalEvaluation?.failed === true
       ) {
+        const structuralDeviationDeg = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
+        const semanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
+        const semanticOpeningsDeltaTotal =
+          Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) +
+          Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) +
+          (stage2SemanticResult?.openings?.created ?? 0) +
+          (stage2SemanticResult?.openings?.closed ?? 0);
+        const maskedDriftPct = Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
+        const maskedOpeningsDeltaTotal =
+          (stage2MaskedEdgeResult?.createdOpenings ?? 0) +
+          (stage2MaskedEdgeResult?.closedOpenings ?? 0);
+
         let compositeBlockError: Error;
         try {
           throw new Error(
-            `Composite local validator blocked stage2: instabilityCount=${compositeLocalEvaluation.instabilityCount}`
+            `Composite local validator blocked stage2: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`
           );
         } catch (err: any) {
           compositeBlockError = err;
@@ -4528,7 +4551,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...(unifiedValidation.reasons || []),
         ];
 
-        nLog(`[COMPOSITE_LOCAL_VALIDATOR_BLOCK] stage=2 attempt=${attempt} reason=${compositeBlockError.message}`);
+        nLog(`[COMPOSITE_LOCAL_VALIDATOR_BLOCK]`, {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
+          reason: compositeBlockError.message,
+          structuralDeviationDeg,
+          maskedDriftPct,
+          semanticWallDriftPct,
+          semanticOpeningsDeltaTotal,
+          maskedOpeningsDeltaTotal,
+          maskedHigh: compositeLocalEvaluation.maskedHigh,
+          semanticHigh: compositeLocalEvaluation.semanticHigh,
+          openingsChanged: compositeLocalEvaluation.openingsChanged,
+        });
         setStage2AttemptValidation(path2, "composite_local", failReasons);
         mergeAttemptValidation("2", attempt, {
           final: {
@@ -4698,7 +4735,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : (unifiedValidation.blockSource || "gemini");
         const compositeReasons = compositeLocalEvaluation?.failed
           ? [
-              `Composite local validator failed: instabilityCount=${compositeLocalEvaluation.instabilityCount}`,
+              `Composite local validator failed: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`,
               `Composite metrics: angle=${Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0).toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
             ]
           : [];
