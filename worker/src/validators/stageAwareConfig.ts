@@ -30,6 +30,34 @@ export interface StageAwareConfig {
   paintOverMinRoiArea: number;
 }
 
+export const STAGE1B_OPENING_DELTA_TOLERANCE = 1;
+export const STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD = 2;
+export const STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD = 0.01;
+
+export function hasStage1BStructuralSignal(params: {
+  newWallRatio: number;
+  suspiciousWallExpansion: boolean;
+  openingCountDelta: number;
+}): boolean {
+  return (
+    params.newWallRatio > STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD ||
+    params.suspiciousWallExpansion === true ||
+    Math.abs(params.openingCountDelta) >= STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD
+  );
+}
+
+export function isStage1BMinorReconstructionSignal(params: {
+  newWallRatio: number;
+  suspiciousWallExpansion: boolean;
+  openingCountDelta: number;
+}): boolean {
+  return (
+    params.newWallRatio <= STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD &&
+    params.suspiciousWallExpansion === false &&
+    Math.abs(params.openingCountDelta) <= STAGE1B_OPENING_DELTA_TOLERANCE
+  );
+}
+
 /**
  * Load stage-aware configuration from environment variables
  */

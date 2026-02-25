@@ -22,6 +22,7 @@ import { loadOrComputeStructuralMask } from "./structuralMask";
 import { getGeminiValidatorMode, getLocalValidatorMode } from "./validationModes";
 import { vLog, nLog } from "../logger";
 import { loadStageAwareConfig, ValidationSummary } from "./stageAwareConfig";
+import { STAGE1B_OPENING_DELTA_TOLERANCE } from "./stageAwareConfig";
 import { validateStructureStageAware } from "./structural/stageAwareValidator";
 import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import type { GeminiSemanticVerdict } from "./geminiSemanticValidator";
@@ -104,12 +105,14 @@ export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
 export function shouldInjectEvidence(evidence?: ValidationEvidence): boolean {
   if (!evidence) return false;
 
+  const isStage1B = evidence.stage === "1B";
+
   // Opening delta check
   const openingsDelta = evidence.openings
     ? Math.abs(evidence.openings.windowsAfter - evidence.openings.windowsBefore) +
       Math.abs(evidence.openings.doorsAfter - evidence.openings.doorsBefore)
     : 0;
-  if (openingsDelta !== 0) return true;
+  if (isStage1B ? openingsDelta > STAGE1B_OPENING_DELTA_TOLERANCE : openingsDelta !== 0) return true;
 
   // Anchor checks - any true is HIGH risk
   if (evidence.anchorChecks && Object.values(evidence.anchorChecks).some((v) => v === true)) {

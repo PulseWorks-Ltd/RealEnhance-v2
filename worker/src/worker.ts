@@ -62,6 +62,12 @@ import { getStage2ValidationModeFromPromptMode } from "./validators/stage2Valida
 import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
 import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
 import { isJobFailedFinal } from "./validators/stageRetryManager";
+import {
+  STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD,
+  STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD,
+  hasStage1BStructuralSignal,
+  isStage1BMinorReconstructionSignal,
+} from "./validators/stageAwareConfig";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
@@ -3059,12 +3065,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         (stage1BSemanticSignals?.windows?.after ?? 0) +
         (stage1BSemanticSignals?.doors?.after ?? 0);
       const openingCountDelta = stage1BOpeningsAfter - stage1BOpeningsBefore;
-      const openingRemovalDetectedForEvidence = openingCountDelta < 0;
+      const openingDeltaAbs = Math.abs(openingCountDelta);
+      const openingRemovalDetectedForEvidence =
+        openingCountDelta <= -STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD;
 
       // Subtractive mode safety: new large flat wall patches are suspicious
       const suspiciousWallExpansion =
         !!wallDelta?.planeExpansionRatio &&
         wallDelta.planeExpansionRatio > 0.15; // keep threshold conservative
+
+      const stage1BStructuralSignalPresent = hasStage1BStructuralSignal({
+        newWallRatio: wallDelta.newWallRatio,
+        suspiciousWallExpansion,
+        openingCountDelta,
+      });
+      const stage1BMinorReconstructionSignal = isStage1BMinorReconstructionSignal({
+        newWallRatio: wallDelta.newWallRatio,
+        suspiciousWallExpansion,
+        openingCountDelta,
+      });
 
       const stage1BStructuralEvidence: ValidationEvidence = {
         jobId: payload.jobId,
@@ -3093,6 +3112,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         geometryProfile: "SOFT",
         localFlags: [
           ...(openingRemovalDetectedForEvidence ? ["opening_removal_detected"] : []),
+          ...(wallDelta.newWallRatio > STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD
+            ? ["new_wall_ratio_gt_0_01"]
+            : []),
           ...(suspiciousWallExpansion ? ["suspicious_wall_expansion"] : []),
         ],
         unifiedScore: 1,
@@ -3101,7 +3123,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       const stage1BEvidenceInjected =
         isEvidenceGatingEnabledForJob(payload.jobId) &&
-        (openingRemovalDetectedForEvidence || suspiciousWallExpansion || openingCountDelta !== 0);
+        stage1BStructuralSignalPresent;
 
       const stage1BRiskClassification = classifyRisk(stage1BStructuralEvidence);
 
@@ -3109,7 +3131,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const auditEscalationReasons: string[] = [];
         if (openingRemovalDetectedForEvidence) auditEscalationReasons.push("opening_removal_detected");
         if (suspiciousWallExpansion) auditEscalationReasons.push("suspicious_wall_expansion");
-        if (openingCountDelta !== 0) auditEscalationReasons.push(`opening_count_delta=${openingCountDelta}`);
+        if (openingDeltaAbs >= STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD) {
+          auditEscalationReasons.push(`opening_count_delta=${openingCountDelta}`);
+        }
         console.log(`[VALIDATOR AUDIT]\nJob: ${payload.jobId}\nImage: ${payload.imageId || "unknown"}\nStage: 1B\nAttempt: ${stage1BAttemptNo}\n\nLocal validator metrics:\nWallDeltaRatio: ${wallDelta.deltaRatio.toFixed(4)}\nNewWallRatio: ${wallDelta.newWallRatio.toFixed(4)}\nPlaneExpansionRatio: ${wallDelta.planeExpansionRatio.toFixed(4)}\nWindowsBefore: ${stage1BStructuralEvidence.openings.windowsBefore}\nWindowsAfter: ${stage1BStructuralEvidence.openings.windowsAfter}\nDoorsBefore: ${stage1BStructuralEvidence.openings.doorsBefore}\nDoorsAfter: ${stage1BStructuralEvidence.openings.doorsAfter}\nOpeningCountDelta: ${openingCountDelta}\nWallDriftPct: ${stage1BStructuralEvidence.drift.wallPercent.toFixed(2)}\n\nSeverity: ${stage1BRiskClassification.level}\nHardFail: ${wallDelta.hardFail}\n\nEscalated to Gemini: YES\nReason: stage1b_structural_validation + ${auditEscalationReasons.length ? auditEscalationReasons.join(", ") : "policy_always"}`);
       }
 
@@ -3121,7 +3145,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         openingCountDelta,
       });
 
-      const structureResult = await validateStage1BStructure(path1A, candidate, stage1BStructuralEvidence);
+      let structureResult: Awaited<ReturnType<typeof validateStage1BStructure>>;
+      if (stage1BMinorReconstructionSignal) {
+        nLog("[STAGE1B_GEMINI_ESCALATION_SKIPPED]", {
+          reason: "minor_surface_reconstruction",
+          openingCountDelta,
+          newWallRatio: wallDelta.newWallRatio,
+          suspiciousWallExpansion,
+        });
+        structureResult = {
+          hardFail: false,
+          category: "structure",
+          reasons: ["stage1b_minor_reconstruction_warning"],
+          confidence: 0,
+          violationType: "other",
+          builtInDetected: false,
+          structuralAnchorCount: 0,
+          openingChangeSignificant: false,
+          openingToleranceReason: "opening_minor_drift",
+        };
+      } else {
+        structureResult = await validateStage1BStructure(path1A, candidate, stage1BStructuralEvidence);
+      }
       nLog(
         `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
       );
@@ -3168,17 +3213,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
 
+      const stage1BCalibratedStructuralHardFail = hasStage1BStructuralSignal({
+        newWallRatio: wallDelta.newWallRatio,
+        suspiciousWallExpansion,
+        openingCountDelta,
+      });
+
       const effectiveHardFail =
-        structureResult.hardFail ||
-        wallDelta.hardFail ||
-        openingRemovalHardFail ||
-        suspiciousWallExpansion;
+        !stage1BMinorReconstructionSignal &&
+        (structureResult.hardFail || stage1BCalibratedStructuralHardFail || openingRemovalHardFail);
       const effectiveViolationType = wallDelta.hardFail
         ? wallDelta.violationType
         : openingRemovalHardFail
           ? "opening_change"
           : openingMinorDriftTolerated
             ? "opening_minor_drift"
+          : stage1BCalibratedStructuralHardFail
+            ? (wallDelta.newWallRatio > STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD
+              ? "wall_plane_expansion"
+              : "opening_change")
           : suspiciousWallExpansion
             ? "wall_plane_expansion"
         : structureResult.violationType;
@@ -3217,6 +3270,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const finalReason = effectiveViolationType || "none";
         console.log(`[VALIDATOR AUDIT]\nJob: ${payload.jobId}\nImage: ${payload.imageId || "unknown"}\nStage: 1B\nAttempt: ${stage1BAttemptNo}\n\nFinal decision: ${finalDecision}\nFinal reason: ${finalReason}\nEffectiveHardFail: ${effectiveHardFail}`);
       }
+
+      nLog("[STAGE1B_VALIDATOR_CALIBRATION]", {
+        openingCountDelta,
+        newWallRatio: Number(wallDelta.newWallRatio.toFixed(4)),
+        suspiciousWallExpansion,
+        hardFailDecision: effectiveHardFail,
+      });
 
       mergeAttemptValidation("1B", stage1BAttemptNo, {
         local: {

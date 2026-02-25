@@ -8,6 +8,10 @@ import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
 import { detectWindowsLocal, type BBox } from "./local-windows";
+import {
+  hasStage1BStructuralSignal,
+  isStage1BMinorReconstructionSignal,
+} from "./stageAwareConfig";
 
 const logger = console;
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
@@ -854,6 +858,10 @@ Scene: ${(input.sceneType || "interior").toUpperCase()}`;
 const STAGE1B_HARDENED_STRUCTURAL_PROMPT = `🔐 STAGE 1B — STRUCTURAL ENVELOPE LOCK VALIDATOR
 You are a Stage 1B Structural Integrity Auditor for NZ real estate imagery.
 
+Minor surface reconstruction caused by furniture removal is expected and acceptable.
+Do NOT classify small wall reconstruction, edge cleanup, or occluded surface recovery as structural change.
+Only classify as structural change if doors, windows, walls, or permanent openings were clearly added, removed, or relocated.
+
 Compare BEFORE and AFTER images.
 
 Return JSON only.
@@ -1064,10 +1072,21 @@ export async function validateStage1BStructure(
   const openingCountDelta = windowsDelta + doorsDelta;
   const openingRemovalDetected = openingCountDelta < 0;
   const suspiciousWallExpansion = evidence?.localFlags.includes("suspicious_wall_expansion") === true;
+  const newWallRatioStructuralSignal = evidence?.localFlags.includes("new_wall_ratio_gt_0_01") === true;
+  const structuralSignalPresent = hasStage1BStructuralSignal({
+    newWallRatio: newWallRatioStructuralSignal ? 0.02 : 0,
+    suspiciousWallExpansion,
+    openingCountDelta,
+  });
+  const minorReconstructionSignal = isStage1BMinorReconstructionSignal({
+    newWallRatio: newWallRatioStructuralSignal ? 0.02 : 0,
+    suspiciousWallExpansion,
+    openingCountDelta,
+  });
   const shouldInjectStage1BSignals =
     gatingEnabled &&
     !!evidence &&
-    (openingRemovalDetected || suspiciousWallExpansion || openingCountDelta !== 0);
+    structuralSignalPresent;
 
   const stage1BPrompt = shouldInjectStage1BSignals
     ? `${STAGE1B_HARDENED_STRUCTURAL_PROMPT}
@@ -1216,9 +1235,13 @@ Do NOT assume violation unless visually confirmed.`
       }
     }
 
-    const hardFail =
+    let hardFail =
       baseHardFail &&
       (parsedViolationType !== "opening_change" || openingChangeSignificant);
+
+    if (minorReconstructionSignal && !structuralSignalPresent) {
+      hardFail = false;
+    }
 
     if (VALIDATOR_AUDIT_ENABLED) {
       console.log(
