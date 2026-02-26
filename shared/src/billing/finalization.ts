@@ -64,6 +64,7 @@ export async function finalizeImageCharge(params: {
 
     // Idempotent guard: check if already finalized
     if (reservation.charge_finalized) {
+      console.warn(`[DOUBLE_FINALIZATION_ATTEMPT] type=charge jobId=${params.jobId} chargeFinalized=true`);
       console.log(
         `[CREDIT_SKIPPED_ALREADY_FINALIZED] jobId=${params.jobId} ` +
         `previousCharge=${reservation.charge_amount} ` +

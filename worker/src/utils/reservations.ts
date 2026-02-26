@@ -19,6 +19,7 @@ export async function finalizeReservationFromWorker(params: {
     // the previously-refunded stage2 portion.
     const rs = String(jr.reservation_status || "");
     if (rs === "consumed" || rs === "released") {
+      console.warn(`[DOUBLE_FINALIZATION_ATTEMPT] type=reservation jobId=${params.jobId} reservationStatus=${rs}`);
       console.log(
         `[RESERVATION] Already finalized (${rs}) for job ${params.jobId} — skipping duplicate call`
       );

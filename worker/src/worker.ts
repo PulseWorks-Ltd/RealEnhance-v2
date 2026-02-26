@@ -846,8 +846,14 @@ async function completePartialJob(params: {
   userMessage: string;
   reason: string;
   stageOutputs: { "1A": string; "1B"?: string };
+  billingContext?: {
+    payload?: any;
+    sceneType?: string;
+    stage1BUserSelected?: boolean;
+    geminiHasFurniture?: boolean | null;
+  };
 }) {
-  const { jobId, triggerStage, finalStage, finalPath, pub1AUrl, pub1BUrl, sceneMeta, userMessage, reason, stageOutputs } = params;
+  const { jobId, triggerStage, finalStage, finalPath, pub1AUrl, pub1BUrl, sceneMeta, userMessage, reason, stageOutputs, billingContext } = params;
   let resultUrl = finalStage === "1A" ? pub1AUrl : pub1BUrl;
   if (!resultUrl) {
     const pub = await publishWithOptionalBlackEdgeGuard(finalPath, `partial-${finalStage}`);
@@ -902,6 +908,78 @@ async function completePartialJob(params: {
   }, `partial_complete:${reason}`);
 
   nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
+
+  const finalizedJob = await getJob(jobId);
+  const finalizedStatus = String((finalizedJob as any)?.status || "").toLowerCase();
+  const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
+  const hasUsableFinalOutput = typeof resultUrl === "string" && resultUrl.length > 0;
+  const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
+  const isEnhancementJob = (billingContext?.payload as any)?.type === "enhance";
+  const isFreeManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
+  const billingStage1ASuccess = !!(pub1AUrl || pub1BUrl || resultUrl);
+  const billingStage1BSuccess = finalStage === "1B" ? !!(pub1BUrl || resultUrl) : false;
+  const billingStage2Success = false;
+  const billingEffectiveStage1B =
+    billingStage1BSuccess &&
+    ((billingContext?.stage1BUserSelected === true) || (billingContext?.geminiHasFurniture === true));
+  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+
+  try {
+    const agencyId = (billingContext?.payload as any)?.agencyId || null;
+    const imagesUsed = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+    if (billingContext?.payload) {
+      await recordEnhanceBundleUsage(billingContext.payload, imagesUsed, agencyId);
+    }
+  } catch (usageErr) {
+    nLog("[USAGE] Failed to record usage for partial completion (non-blocking):", (usageErr as any)?.message || usageErr);
+  }
+
+  nLog("[BILLING_CHARGE_TELEMETRY]", {
+    jobId,
+    imageId: (billingContext?.payload as any)?.imageId,
+    stage1ASuccess: billingStage1ASuccess,
+    stage1BSuccess: billingStage1BSuccess,
+    stage2Success: billingStage2Success,
+    finalCharge: actualCharge,
+    path: "partial_fallback",
+    stage1BUserSelected: billingContext?.stage1BUserSelected === true,
+    geminiHasFurniture: billingContext?.geminiHasFurniture ?? null,
+    billingEffectiveStage1B,
+    billableFinalSuccess,
+    completedStatus: finalizedStatus,
+    isEnhancementJob,
+    freeRetryNoAdditionalCharge: isFreeManualRetry,
+  });
+
+  try {
+    await finalizeReservationFromWorker({
+      jobId,
+      stage12Success: true,
+      stage2Success: false,
+      actualCharge,
+    });
+    nLog(`[BILLING] Finalized reservation for partial completion ${jobId}: stage12=true, stage2=false`);
+  } catch (billingErr) {
+    nLog("[BILLING] Failed to finalize reservation for partial completion (non-blocking):", (billingErr as any)?.message || billingErr);
+  }
+
+  if (!isFreeManualRetry && isEnhancementJob) {
+    try {
+      await finalizeImageChargeFromWorker({
+        jobId,
+        stage1ASuccess: billingStage1ASuccess,
+        stage1BSuccess: billingStage1BSuccess,
+        stage2Success: billingStage2Success,
+        sceneType: billingContext?.sceneType || "interior",
+        stage1BUserSelected: billingContext?.stage1BUserSelected === true,
+        geminiHasFurniture: billingContext?.geminiHasFurniture ?? undefined,
+      });
+    } catch (chargeErr) {
+      nLog("[BILLING] Failed to finalize charge for partial completion (non-blocking):", (chargeErr as any)?.message || chargeErr);
+    }
+  } else {
+    nLog(`[BILLING] Skipping charge finalization for partial completion non-billable job type or free manual retry: ${jobId}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2184,6 +2262,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             "1A": ((payload.stage2OnlyMode as any)?.base1APath || stageLineage.stage1A.output || basePath),
             ...(stage2OnlyFallbackStage === "1B" ? { "1B": fallbackPath } : {}),
           },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
         });
         return;
       }
@@ -3164,6 +3248,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           userMessage: "We enhanced your image but could not safely declutter it.",
           reason: "stage1b_runtime_exceeded",
           stageOutputs: { "1A": path1A },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
         });
         return;
       }
@@ -3518,6 +3608,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             userMessage: "We enhanced your image but could not safely declutter it.",
             reason: "stage1b_structure_hardfail_exhausted",
             stageOutputs: { "1A": path1A },
+            billingContext: {
+              payload,
+              sceneType: sceneLabel || "interior",
+              stage1BUserSelected: originalUserDeclutter,
+              geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+            },
           });
           return;
         }
@@ -3559,6 +3655,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         userMessage: "We enhanced your image but could not safely declutter it.",
         reason: "stage1b_structure_hardfail_exhausted",
         stageOutputs: { "1A": path1A },
+        billingContext: {
+          payload,
+          sceneType: sceneLabel || "interior",
+          stage1BUserSelected: originalUserDeclutter,
+          geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+        },
       });
       return;
     }
@@ -4078,6 +4180,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         : "We enhanced your image but could not safely stage it.",
       reason: "stage2_error",
       stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+      billingContext: {
+        payload,
+        sceneType: sceneLabel || "interior",
+        stage1BUserSelected: originalUserDeclutter,
+        geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+      },
     });
     return;
   }
