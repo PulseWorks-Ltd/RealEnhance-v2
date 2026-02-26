@@ -20,6 +20,7 @@ import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFrom
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
+import { buildStructuralRetryInjection } from "./structuralRetryHelpers";
 
 const logger = console;
 
@@ -53,6 +54,11 @@ export async function runStage2GenerationAttempt(
     legacyStrictPrompt?: boolean;
     layoutContext?: LayoutContextResult | null;
     modelReason?: string;
+    structuralRetryContext?: {
+      compositeFail: boolean;
+      failureType: "CATASTROPHIC_ORIENTATION" | "STRUCTURAL_DISTORTION" | "OPENING_SUPPRESSION" | null;
+      attemptNumber: number;
+    };
   }
 ): Promise<string> {
   const normalizedRoomType = (opts.roomType || "")
@@ -118,6 +124,25 @@ export async function runStage2GenerationAttempt(
     textPrompt = buildTightenedPrompt("2", textPrompt, opts.tightenLevel);
   } else if (opts.legacyStrictPrompt) {
     textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
+  }
+
+  const structuralRetryContext = opts.structuralRetryContext;
+  const retryInjectionResult = buildStructuralRetryInjection({
+    compositeFail: structuralRetryContext?.compositeFail === true,
+    failureType: structuralRetryContext?.failureType ?? null,
+    attemptNumber: structuralRetryContext?.attemptNumber ?? 0,
+  });
+  if (retryInjectionResult) {
+    if (retryInjectionResult.retryInjection.trim().length > 0) {
+      textPrompt = textPrompt + "\n\nIMPORTANT STRUCTURAL CORRECTION REQUIRED:\n" + retryInjectionResult.retryInjection;
+    }
+
+    console.log("[RETRY_PROMPT_INJECTION]", {
+      jobId: opts.jobId,
+      attemptNumber: structuralRetryContext?.attemptNumber,
+      retryTier: retryInjectionResult.retryTier,
+      failureType: structuralRetryContext?.failureType,
+    });
   }
 
   const railLikely = opts.curtainRailLikely;

@@ -15,6 +15,7 @@ import { randomUUID } from "crypto";
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2, runStage2GenerationAttempt } from "./pipeline/stage2";
+import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
@@ -4503,6 +4504,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   if (payload.options.virtualStage) {
+    let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
+
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       if (await stopIfCancelled("stage2_validation_loop")) return;
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
@@ -4523,6 +4526,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (attempt > 1) {
         const currentRetrySampling = getStage2OuterRetrySampling(attempt);
+        const retryFailureType = pendingStage2StructuralFailureType;
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         nLog("[STAGE2_PROMPT_SOURCE]", {
@@ -4546,8 +4550,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             topP: currentRetrySampling.topP,
             topK: currentRetrySampling.topK,
           },
+          structuralRetryContext: {
+            compositeFail: retryFailureType !== null,
+            failureType: retryFailureType,
+            attemptNumber: attempt - 1,
+          },
           modelReason: `stage2 unified retry ${attempt - 1}`,
         });
+        pendingStage2StructuralFailureType = null;
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -4915,6 +4925,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
 
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        pendingStage2StructuralFailureType = classifyStructuralFailure(compositeLocalEvaluation);
         nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
