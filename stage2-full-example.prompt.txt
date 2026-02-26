@@ -121,32 +121,62 @@ You may NOT:
 
 Architectural geometry must remain identical to the original image.
 
+🔒 WINDOW GEOMETRY PROTECTION — STRICT (HIGH PRIORITY)
+
+Window frame geometry must remain pixel-identical to the original image.
+
+Do NOT:
+• Resize windows
+• Shift window position
+• Alter frame thickness
+• Soften or blur frame edges
+• Cover or crop frame edges with curtains
+• Add sheer or backing layers behind curtains that obscure frame boundaries
+• Place furniture overlapping the bottom sill line
+
+Curtain Rules:
+• Curtains must hang OUTSIDE visible frame edges
+• Curtain fabric must NOT intrude into the interior frame area
+• Maintain full visibility of:
+	- Left vertical frame edge
+	- Right vertical frame edge
+	- Top lintel
+	- Bottom sill line
+
+If correct curtain placement cannot be achieved without altering geometry:
+→ Omit curtains entirely.
+
+Architectural preservation overrides decorative styling.
+
 ────────────────────────────────
-🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
+SURFACE ELIGIBILITY — STRUCTURAL PLAUSIBILITY FILTER
 ────────────────────────────────
 
-Before placing furniture, evaluate structural plausibility.
+Before placing large vertical furniture (dressers, wardrobes, tall cabinets, shelving, headboards):
 
-Furniture should be placed against walls that are visually coherent and architecturally plausible.
+The backing wall must be:
 
-Prefer walls that are:
-• Clearly visible
-• Structurally continuous
-• Not intersecting visible openings
+• Clearly visible floor-to-ceiling within frame
+• Structurally continuous (not broken by door openings)
+• Not intersecting visible door frames or closet tracks
+• Not terminating at partial wall returns suggesting an opening
+• Not directly adjacent to visible sliding closet doors
 
-However:
+Do NOT anchor tall furniture or headboards:
 
-If the most natural layout requires placing furniture against a wall that is partially out of frame (e.g., wall behind camera), this is permitted.
+• On walls that contain door frames or closet hardware
+• On narrow wall strips beside openings
+• Across sliding closet doors
+• Against walls partially cropped by the frame
+• On walls that visually suggest an opening continuation
 
-Do NOT modify architecture to create additional wall surface.
+If a fully eligible wall does not exist:
+→ Adjust layout.
+→ Use smaller furniture.
+→ Float bed realistically without altering architecture.
 
-Never:
-• Remove doors, closets, or openings to create backing
-• Paint over openings
-• Extend walls to satisfy placement rules
-
-If no ideal wall exists:
-→ Prioritize preserving architecture over perfect wall anchoring.
+Do NOT modify architecture to create artificial backing surface.
+Architectural preservation overrides ideal furniture symmetry.
 
 ────────────────────────────────
 CASEGOODS BACKING RULE — TALL STORAGE
@@ -175,7 +205,6 @@ Preferred placement:
 • Avoid fully blocking doors
 
 Windows:
-• Partial overlap with window area is acceptable
 • Do NOT resize, move, or alter window geometry
 
 Closets and sliding doors:

@@ -1635,54 +1635,86 @@ If any hint conflicts with visible architecture, preserve architecture.
 `.trim()
     : "";
 
-  const surfaceEligibilityFilterBlock = `🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
-────────────────────────────────
+  const windowGeometryProtectionBlock = `🔒 WINDOW GEOMETRY PROTECTION — STRICT (HIGH PRIORITY)
 
-Before placing any new furniture, perform this eligibility check.
+Window frame geometry must remain pixel-identical to the original image.
 
-WALL ELIGIBILITY (CASEGOODS & LARGE FURNITURE)
+Do NOT:
+• Resize windows
+• Shift window position
+• Alter frame thickness
+• Soften or blur frame edges
+• Cover or crop frame edges with curtains
+• Add sheer or backing layers behind curtains that obscure frame boundaries
+• Place furniture overlapping the bottom sill line
 
-Large vertical furniture (dressers, tallboys, cabinets, shelving units,
-bookcases, wardrobes, display units) may ONLY be placed against walls
-that meet ALL of the following:
+Curtain Rules:
+• Curtains must hang OUTSIDE visible frame edges
+• Curtain fabric must NOT intrude into the interior frame area
+• Maintain full visibility of:
+    - Left vertical frame edge
+    - Right vertical frame edge
+    - Top lintel
+    - Bottom sill line
 
-• Wall is fully visible from floor to ceiling
-• Wall is continuous and not cropped by the frame edge
-• No visible door frame, hinge, handle, track, or hardware
-• No partial return wall suggesting an adjoining opening
-• No corner termination where the adjacent wall is not fully visible
+If correct curtain placement cannot be achieved without altering geometry:
+→ Omit curtains entirely.
 
-A wall is NOT eligible if:
+Architectural preservation overrides decorative styling.`;
 
-• It is partially cropped by the camera frame
-• It ends in a corner where the adjoining wall is not fully shown
-• It suggests a recessed opening or possible closet location
-• Any portion of door hardware or framing is visible nearby
+  const surfaceEligibilityFilterBlock = `SURFACE ELIGIBILITY — STRUCTURAL PLAUSIBILITY FILTER
 
-If uncertain whether a wall is fully safe:
-→ Do NOT place large furniture on that wall.
+Before placing large vertical furniture (dressers, wardrobes, tall cabinets, shelving, headboards):
 
-Only use clearly visible, continuous, unobstructed walls.`;
+The backing wall must be:
+
+• Clearly visible floor-to-ceiling within frame
+• Structurally continuous (not broken by door openings)
+• Not intersecting visible door frames or closet tracks
+• Not terminating at partial wall returns suggesting an opening
+• Not directly adjacent to visible sliding closet doors
+
+Do NOT anchor tall furniture or headboards:
+
+• On walls that contain door frames or closet hardware
+• On narrow wall strips beside openings
+• Across sliding closet doors
+• Against walls partially cropped by the frame
+• On walls that visually suggest an opening continuation
+
+If a fully eligible wall does not exist:
+→ Adjust layout.
+→ Use smaller furniture.
+→ Float bed realistically without altering architecture.
+
+Do NOT modify architecture to create artificial backing surface.
+Architectural preservation overrides ideal furniture symmetry.`;
+
+  const structureRulesBlock = `${windowGeometryProtectionBlock}
+
+${surfaceEligibilityFilterBlock}`;
+
+  const insertStructureRules = (prompt: string, sectionMarker: "FULL-SPECIFIC RULES" | "REFRESH-SPECIFIC RULES") => {
+    const architectureMarker = "Architectural geometry must remain identical to the original image.";
+    if (prompt.includes(architectureMarker)) {
+      return prompt.replace(
+        architectureMarker,
+        `${architectureMarker}\n\n${structureRulesBlock}`
+      );
+    }
+    if (prompt.includes(sectionMarker)) {
+      return prompt.replace(sectionMarker, `${structureRulesBlock}\n\n${sectionMarker}`);
+    }
+    return `${prompt}\n\n${structureRulesBlock}`;
+  };
 
   if (resolvedMode === "full") {
     const fullPrompt = buildStage2FullPromptNZ(canonicalRoomType, layoutContextBlock);
-    if (fullPrompt.includes("FULL-SPECIFIC RULES")) {
-      return fullPrompt.replace(
-        "FULL-SPECIFIC RULES",
-        `${surfaceEligibilityFilterBlock}\n\nFULL-SPECIFIC RULES`
-      );
-    }
-    return `${fullPrompt}\n\n${surfaceEligibilityFilterBlock}`;
+    return insertStructureRules(fullPrompt, "FULL-SPECIFIC RULES");
   }
 
   const refreshPrompt = buildStage2RefreshPromptNZ(canonicalRoomType);
-  if (refreshPrompt.includes("REFRESH-SPECIFIC RULES")) {
-    return refreshPrompt.replace(
-      "REFRESH-SPECIFIC RULES",
-      `${surfaceEligibilityFilterBlock}\n\nREFRESH-SPECIFIC RULES`
-    );
-  }
-  return `${refreshPrompt}\n\n${surfaceEligibilityFilterBlock}`;
+  return insertStructureRules(refreshPrompt, "REFRESH-SPECIFIC RULES");
 }
 
 function buildStage2ExteriorPromptNZStyle(): string {

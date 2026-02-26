@@ -126,6 +126,8 @@ export async function runStage2GenerationAttempt(
     textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
   }
 
+  console.log(`[STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=${opts.jobId}`);
+
   const structuralRetryContext = opts.structuralRetryContext;
   const retryInjectionResult = buildStructuralRetryInjection({
     compositeFail: structuralRetryContext?.compositeFail === true,
@@ -518,6 +520,8 @@ export async function runStage2(
       tempMultiplier = 0.8;
       strictPrompt = true;
     }
+
+    console.log(`[STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=${opts.jobId}`);
 
     focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
     const railLikely = opts.curtainRailLikely;
