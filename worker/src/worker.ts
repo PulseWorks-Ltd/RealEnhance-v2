@@ -178,7 +178,7 @@ type Stage1BWallDeltaResult = {
 };
 
 type CompositeLocalMetrics = {
-  structuralDeviationDeg: number;
+  structuralDeviationDeg: number | null;
   maskedDriftPct: number;
   semanticWallDriftPct: number;
   semanticOpeningsDeltaTotal: number;
@@ -190,6 +190,8 @@ type CompositeLocalEvaluation = {
   maskedHigh: boolean;
   semanticHigh: boolean;
   openingsChanged: boolean;
+  reason: string;
+  structDegMissing: boolean;
 };
 
 type StructuralTopologyCheckResult = {
@@ -284,34 +286,63 @@ plus one short explanation sentence.`;
 }
 
 function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): CompositeLocalEvaluation {
-  if (metrics.structuralDeviationDeg <= 30) {
-    return {
-      failed: false,
-      maskedHigh: false,
-      semanticHigh: false,
-      openingsChanged: false,
-    };
-  }
-
-  const maskedHigh = metrics.maskedDriftPct > 75;
-  const semanticHigh = metrics.semanticWallDriftPct > 40;
+  const maskedHigh = metrics.maskedDriftPct > 85;
+  const semanticHigh = metrics.semanticWallDriftPct > 50;
   const openingsChanged =
     metrics.semanticOpeningsDeltaTotal !== 0 ||
     metrics.maskedOpeningsDeltaTotal !== 0;
 
-  const compositeLocalFail =
-    metrics.structuralDeviationDeg > 30 &&
-    (
-      (maskedHigh && openingsChanged) ||
-      (semanticHigh && openingsChanged) ||
-      (maskedHigh && semanticHigh)
-    );
+  if (metrics.structuralDeviationDeg === null || !Number.isFinite(metrics.structuralDeviationDeg)) {
+    return {
+      failed: false,
+      maskedHigh,
+      semanticHigh,
+      openingsChanged,
+      reason: "missing_structural_deviation",
+      structDegMissing: true,
+    };
+  }
+
+  if (metrics.structuralDeviationDeg > 85) {
+    return {
+      failed: true,
+      maskedHigh,
+      semanticHigh,
+      openingsChanged,
+      reason: "catastrophic_override_structDeg_gt_85",
+      structDegMissing: false,
+    };
+  }
+
+  if (metrics.structuralDeviationDeg > 30 && (maskedHigh || semanticHigh)) {
+    return {
+      failed: true,
+      maskedHigh,
+      semanticHigh,
+      openingsChanged,
+      reason: "composite_structural_distortion",
+      structDegMissing: false,
+    };
+  }
+
+  if (openingsChanged && metrics.semanticWallDriftPct > 50) {
+    return {
+      failed: true,
+      maskedHigh,
+      semanticHigh,
+      openingsChanged,
+      reason: "functional_opening_suppression",
+      structDegMissing: false,
+    };
+  }
 
   return {
-    failed: compositeLocalFail,
+    failed: false,
     maskedHigh,
     semanticHigh,
     openingsChanged,
+    reason: "pass",
+    structDegMissing: false,
   };
 }
 
@@ -4624,7 +4655,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let stage2SemanticResult: Awaited<ReturnType<typeof runSemanticStructureValidator>> | null = null;
       let stage2MaskedEdgeResult: Awaited<ReturnType<typeof runMaskedEdgeValidator>> | null = null;
       let compositeLocalEvaluation: CompositeLocalEvaluation | null = null;
-      let compositeStructuralDeviationDeg = 0;
+      let compositeStructuralDeviationDeg: number | null = null;
       let compositeSemanticWallDriftPct = 0;
       let compositeSemanticOpeningsDeltaTotal = 0;
       let compositeMaskedDriftPct = 0;
@@ -4690,7 +4721,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (shouldRunCompositeLocalValidator) {
-        compositeStructuralDeviationDeg = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
+        const rawStructuralDeviationDeg = unifiedValidation?.evidence?.drift?.angleDegrees;
+        compositeStructuralDeviationDeg =
+          typeof rawStructuralDeviationDeg === "number" && Number.isFinite(rawStructuralDeviationDeg)
+            ? Number(rawStructuralDeviationDeg)
+            : null;
+
+        const rawStructureValidatorDeviation =
+          (unifiedValidation as any)?.raw?.structureValidator?.details?.deviationScore ??
+          (unifiedValidation as any)?.raw?.structure?.details?.deviationScore;
+        const rawLineEdgeVerticalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.verticalDeviation;
+        const rawLineEdgeHorizontalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.horizontalDeviation;
+        let structureValidatorLoggedAngle: number | null = null;
+        if (typeof rawStructureValidatorDeviation === "number" && Number.isFinite(rawStructureValidatorDeviation)) {
+          structureValidatorLoggedAngle = Number(rawStructureValidatorDeviation);
+        } else if (
+          typeof rawLineEdgeVerticalDeviation === "number" &&
+          Number.isFinite(rawLineEdgeVerticalDeviation) &&
+          typeof rawLineEdgeHorizontalDeviation === "number" &&
+          Number.isFinite(rawLineEdgeHorizontalDeviation)
+        ) {
+          structureValidatorLoggedAngle = Math.max(
+            Number(rawLineEdgeVerticalDeviation),
+            Number(rawLineEdgeHorizontalDeviation)
+          );
+        }
+
+        const structureCorrelationDelta =
+          compositeStructuralDeviationDeg !== null && structureValidatorLoggedAngle !== null
+            ? Math.abs(compositeStructuralDeviationDeg - structureValidatorLoggedAngle)
+            : null;
+
+        nLog(
+          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} structureValidatorLoggedAngle=${structureValidatorLoggedAngle === null ? "missing" : structureValidatorLoggedAngle.toFixed(3)} delta=${structureCorrelationDelta === null ? "missing" : structureCorrelationDelta.toFixed(3)}`
+        );
+
+        if (structureCorrelationDelta !== null && structureCorrelationDelta > 0.5) {
+          nLog(
+            `[STRUCTURE_CORRELATION_WARNING] jobId=${payload.jobId} attempt=${attempt} delta=${structureCorrelationDelta.toFixed(3)} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} structureValidatorLoggedAngle=${structureValidatorLoggedAngle === null ? "missing" : structureValidatorLoggedAngle.toFixed(3)}`
+          );
+        }
+
         compositeSemanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
         compositeSemanticOpeningsDeltaTotal =
           Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) +
@@ -4709,12 +4780,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
           maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
         };
+
+        nLog(
+          `[COMPOSITE_INPUT_AUDIT] jobId=${payload.jobId} attempt=${attempt} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)} semanticWallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeSemanticOpeningsDeltaTotal !== 0 || compositeMaskedOpeningsDeltaTotal !== 0}`
+        );
+
+        if (compositeStructuralDeviationDeg === null) {
+          nLog(`[COMPOSITE_ERROR] structuralDeviationDeg missing`, {
+            jobId: payload.jobId,
+            attempt,
+            stage: "2",
+          });
+        }
+
         compositeLocalEvaluation = evaluateCompositeLocalValidator(compositeMetrics);
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
-            `composite_local_failed: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged} metrics=` +
-            `angle=${compositeStructuralDeviationDeg.toFixed(2)}deg,masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
+            `composite_local_failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged} metrics=` +
+            `angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg,masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
             `wall=${compositeSemanticWallDriftPct.toFixed(2)}%,semanticOpenings=${compositeSemanticOpeningsDeltaTotal},maskedOpenings=${compositeMaskedOpeningsDeltaTotal}`;
           stage2LocalReasons.push(compositeReason);
         }
@@ -4737,6 +4821,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             ? (COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" ? "retry" : "log-only")
             : "none",
         });
+
+        nLog(
+          `[COMPOSITE_DECISION] jobId=${payload.jobId} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeLocalEvaluation.openingsChanged} decision=${compositeLocalEvaluation.failed ? "FAIL" : "PASS"} reason=${compositeLocalEvaluation.reason}`
+        );
       }
 
       const stage2LocalStatus = stage2LocalReasons.length ? "needs_confirm" : "pass";
@@ -4747,22 +4835,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" &&
         compositeLocalEvaluation?.failed === true
       ) {
-        const structuralDeviationDeg = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
-        const semanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
-        const semanticOpeningsDeltaTotal =
-          Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) +
-          Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) +
-          (stage2SemanticResult?.openings?.created ?? 0) +
-          (stage2SemanticResult?.openings?.closed ?? 0);
-        const maskedDriftPct = Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
-        const maskedOpeningsDeltaTotal =
-          (stage2MaskedEdgeResult?.createdOpenings ?? 0) +
-          (stage2MaskedEdgeResult?.closedOpenings ?? 0);
-
         let compositeBlockError: Error;
         try {
           throw new Error(
-            `Composite local validator blocked stage2: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`
+            `Composite local validator blocked stage2: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`
           );
         } catch (err: any) {
           compositeBlockError = err;
@@ -4770,7 +4846,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         const failReasons = [
           compositeBlockError.message,
-          `Composite metrics: angle=${Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0).toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
+          `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
           ...(unifiedValidation.reasons || []),
         ];
 
@@ -5042,8 +5118,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : (unifiedValidation.blockSource || "gemini");
         const compositeReasons = compositeLocalEvaluation?.failed
           ? [
-              `Composite local validator failed: maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`,
-              `Composite metrics: angle=${Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0).toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
+              `Composite local validator failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`,
+              `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
             ]
           : [];
         const failReasons = [
