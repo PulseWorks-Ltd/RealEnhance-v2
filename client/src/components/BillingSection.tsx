@@ -38,6 +38,13 @@ interface UpgradeOption {
   allowInvites: boolean;
 }
 
+interface PlanDisplayOption {
+  value: "starter" | "pro" | "agency";
+  displayName: string;
+  monthlyPriceNZD: number;
+  monthlyAllowance: number;
+}
+
 interface SubscriptionInfo {
   planTier: "starter" | "pro" | "agency";
   planDisplayName: string;
@@ -52,9 +59,36 @@ interface SubscriptionInfo {
 
 const PLAN_NAMES: Record<string, string> = {
   starter: "Starter",
-  pro: "Pro",
-  agency: "Studio",
+  pro: "Agency",
+  agency: "Agency Plus",
 };
+
+const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
+  {
+    value: "starter",
+    displayName: "Starter",
+    monthlyPriceNZD: 149,
+    monthlyAllowance: 75,
+  },
+  {
+    value: "pro",
+    displayName: "Agency",
+    monthlyPriceNZD: 249,
+    monthlyAllowance: 150,
+  },
+  {
+    value: "agency",
+    displayName: "Agency Plus",
+    monthlyPriceNZD: 449,
+    monthlyAllowance: 300,
+  },
+];
+
+function formatPlanDisplayName(planTier: "starter" | "pro" | "agency", planDisplayName?: string | null): string {
+  if (planDisplayName === "Pro") return PLAN_NAMES.pro;
+  if (planDisplayName === "Studio") return PLAN_NAMES.agency;
+  return planDisplayName || PLAN_NAMES[planTier];
+}
 
 const STATUS_CONFIG = {
   ACTIVE: { label: "Active", variant: "default" as const, color: "bg-status-success" },
@@ -78,7 +112,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const statusConfig = STATUS_CONFIG[effectiveStatus];
   const hasSubscription = !!(agency.stripeSubscriptionId || subscription?.stripeSubscriptionId);
   const manageDisabled = !canManage || (subscription ? !subscription.canManage : false);
-  const currentPlanName = subscription?.planDisplayName || PLAN_NAMES[agency.planTier];
+  const currentPlanName = formatPlanDisplayName(agency.planTier, subscription?.planDisplayName);
   const currentPeriodEnd = subscription?.currentPeriodEnd || agency.currentPeriodEnd;
   const currentBillingCountry = subscription?.billingCountry || agency.billingCountry;
   const currentBillingCurrency = subscription?.billingCurrency || agency.billingCurrency;
@@ -298,24 +332,19 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="starter">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Starter - $129 NZD/mo</span>
-                      <span className="text-xs text-muted-foreground">100 enhanced images</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="pro">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Pro - $249 NZD/mo</span>
-                      <span className="text-xs text-muted-foreground">250 enhanced images</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="agency">
-                    <div className="flex flex-col items-start">
-                      <span className="font-medium">Studio - $499 NZD/mo</span>
-                      <span className="text-xs text-muted-foreground">600 enhanced images</span>
-                    </div>
-                  </SelectItem>
+                  {PLAN_DISPLAY_OPTIONS.map((plan) => {
+                    const perImage = (plan.monthlyPriceNZD / plan.monthlyAllowance).toFixed(2);
+                    return (
+                      <SelectItem key={plan.value} value={plan.value}>
+                        <div className="flex flex-col items-start">
+                          <span className="font-medium">{plan.displayName} - ${plan.monthlyPriceNZD} NZD/mo</span>
+                          <span className="text-xs text-muted-foreground">
+                            {plan.monthlyAllowance} enhanced images (${perImage} per image)
+                          </span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -409,11 +438,14 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               <div key={option.planTier} className="border rounded-lg p-4 space-y-1">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">{option.displayName}</p>
+                    <p className="text-sm font-medium">{formatPlanDisplayName(option.planTier, option.displayName)}</p>
                     <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
                   </div>
                   <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per image
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}
                 </p>

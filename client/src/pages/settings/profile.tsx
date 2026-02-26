@@ -56,8 +56,8 @@ type PreviewResult = {
 
 const PLAN_LABELS: Record<PlanTier, string> = {
   starter: "Starter",
-  pro: "Pro",
-  agency: "Studio",
+  pro: "Agency",
+  agency: "Agency Plus",
 };
 
 const STATUS_STYLES = {
