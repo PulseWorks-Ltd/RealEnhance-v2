@@ -589,6 +589,32 @@ Do NOT add new wall-mounted furniture or fixtures, including:
 Only use floor-standing furniture for added staging items.
 
 ────────────────────────────────
+WINDOW TREATMENT PRESERVATION — STAGING RULE
+────────────────────────────────
+
+Window treatments must remain unchanged.
+
+If the input image contains:
+• Curtains
+• Drapes
+• Blinds
+• Shutters
+• Curtain rods or tracks
+
+You MUST preserve:
+• Style
+• Material
+• Color
+• Width and coverage
+• Position
+
+If the input image contains NO window treatments:
+→ Do NOT add curtains, drapes, blinds, or shutters.
+
+Window treatments are not staging elements.
+They must remain exactly as provided in the input image.
+
+────────────────────────────────
 FURNITURE PLACEMENT PRIORITY ORDER
 ────────────────────────────────
 
