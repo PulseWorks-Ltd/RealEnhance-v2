@@ -6191,6 +6191,39 @@ async function handleEditJob(payload: any) {
     stage: "edit",
   });
 
+  // Also record in enhanced_images gallery history (non-blocking)
+  if ((payload as any).agencyId && pub.url) {
+    const extractKey = (url?: string | null) => {
+      if (!url) return null;
+      try {
+        const u = new URL(url);
+        return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+      } catch {
+        return null;
+      }
+    };
+    const auditRef = generateAuditRef();
+    const traceId = generateTraceId(jobId);
+    const originalKey = extractKey(baseImageUrl || null);
+    const enhancedKey = extractKey(pub.url || null);
+    recordEnhancedImageHistory({
+      agencyId: (payload as any).agencyId,
+      userId,
+      jobId,
+      stagesCompleted: ["edit"],
+      publicUrl: pub.url,
+      thumbnailUrl: pub.url,
+      originalUrl: baseImageUrl || null,
+      originalS3Key: originalKey,
+      enhancedS3Key: enhancedKey,
+      thumbS3Key: enhancedKey,
+      auditRef,
+      traceId,
+    }).catch((err) => {
+      nLog(`[enhanced-images] Failed to record edit image: ${err}`);
+    });
+  }
+
   // 6) Record usage tracking (best-effort, non-blocking)
   try {
     const agencyId = (payload as any).agencyId || null;
@@ -6418,6 +6451,39 @@ const worker = new Worker(
             nLog("[worker-region-edit] Redis image history recorded");
           } catch (err) {
             nLog("[worker-region-edit] Failed to record image history in Redis:", (err as any)?.message || err);
+          }
+
+          // Also record in enhanced_images gallery history (non-blocking)
+          if ((regionPayload as any).agencyId && pub.url) {
+            const extractKey = (url?: string | null) => {
+              if (!url) return null;
+              try {
+                const u = new URL(url);
+                return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+              } catch {
+                return null;
+              }
+            };
+            const auditRef = generateAuditRef();
+            const traceId = generateTraceId(regionPayload.jobId);
+            const originalKey = extractKey(baseImageUrl || null);
+            const enhancedKey = extractKey(pub.url || null);
+            recordEnhancedImageHistory({
+              agencyId: (regionPayload as any).agencyId,
+              userId: regionPayload.userId,
+              jobId: regionPayload.jobId,
+              stagesCompleted: ["edit"],
+              publicUrl: pub.url,
+              thumbnailUrl: pub.url,
+              originalUrl: baseImageUrl || null,
+              originalS3Key: originalKey,
+              enhancedS3Key: enhancedKey,
+              thumbS3Key: enhancedKey,
+              auditRef,
+              traceId,
+            }).catch((err) => {
+              nLog(`[enhanced-images] Failed to record region-edit image: ${err}`);
+            });
           }
 
           // Record usage tracking (best-effort, non-blocking)

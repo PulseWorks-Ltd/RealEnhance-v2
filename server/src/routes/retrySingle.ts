@@ -706,6 +706,7 @@ export function retrySingleRouter() {
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId: (rec as any).imageId,
+        agencyId,
         remoteOriginalUrl,
         remoteOriginalKey,
         options,

@@ -1,6 +1,7 @@
 // region edit job
 export async function enqueueRegionEditJob(params: {
   userId: UserId;
+  agencyId?: string;
   imageId?: ImageId;
   mode: "add" | "remove" | "restore" | "replace";
   prompt?: string;
@@ -16,6 +17,7 @@ export async function enqueueRegionEditJob(params: {
   const payload: AnyJobPayload = {
     jobId,
     userId: params.userId,
+    agencyId: params.agencyId,
     imageId: params.imageId,
     type: "region-edit",
     mode: params.mode,
@@ -209,6 +211,7 @@ export async function enqueueEnhanceJob(params: {
 // edit job
 export async function enqueueEditJob(params: {
   userId: UserId;
+  agencyId?: string;
   imageId: ImageId;
   baseVersionId: string;
   mode: "Add" | "Remove" | "Replace" | "Restore";
@@ -225,6 +228,7 @@ export async function enqueueEditJob(params: {
   const payload: AnyJobPayload = {
     jobId,
     userId: params.userId,
+    agencyId: params.agencyId,
     imageId: params.imageId,
     type: "edit",
     baseVersionId: params.baseVersionId,

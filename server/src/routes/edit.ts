@@ -71,6 +71,7 @@ export function editRouter() {
 
     const enqueueParams = {
       userId: sessUser.id,
+      agencyId: sessUser.agencyId,
       imageId,
       baseVersionId,
       mode,
