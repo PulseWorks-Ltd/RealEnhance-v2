@@ -110,6 +110,8 @@ You MUST preserve:
 • Stair voids and stair apertures
 • Built-in wall apertures
 
+Architectural openings must remain in identical relative position to adjacent wall corners.
+
 You may NOT:
 • Move openings horizontally or vertically
 • Resize openings
