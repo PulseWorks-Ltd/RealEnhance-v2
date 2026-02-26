@@ -11,7 +11,7 @@ import { getJob } from "../services/jobs.js";
  */
 type UiStatus = "ok" | "warning" | "error";
 type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
-type NormalizedState = "queued" | "processing" | "completed" | "failed" | "unknown";
+type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "unknown";
 
 const STUCK_TERMINAL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -89,6 +89,7 @@ function normalizeQueueState(state: string | null): NormalizedState {
 
 function normalizePipelineState(raw: string | null | undefined): NormalizedState {
   const s = (raw || "").toLowerCase();
+  if (s === "awaiting_payment") return "awaiting_payment";
   if (s === "processing" || s === "active") return "processing";
   if (s === "complete" || s === "completed" || s === "done") return "completed";
   if (s === "failed" || s === "error") return "failed";
@@ -369,7 +370,7 @@ export function statusRouter() {
         const hasOutputs = !!(stage2Present || stage1BPresent || stage1APresent || resultUrl);
         const updatedAtRaw = local.updatedAt || local.updated_at || null;
         const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
-        const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued";
+        const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued" || pipelineStatus === "awaiting_payment";
         if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage && stage2Expected) {
           pipelineStatus = "failed";
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
@@ -706,7 +707,10 @@ export function statusRouter() {
         return stage1APresent;
       })();
       
-      let stateOut = normalizeQueueState(state);
+      const localStateNormalized = normalizePipelineState(local?.status);
+      let stateOut = localStateNormalized !== "unknown"
+        ? localStateNormalized
+        : normalizeQueueState(state);
       // ✅ FIX 2: Prioritize stage presence over queue state
       const queueFailed = queueStatus === "failed";
       if (queueFailed) {
@@ -737,7 +741,7 @@ export function statusRouter() {
         warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");
       }
 
-      const isProcessingLike = stateOut === "processing" || stateOut === "queued";
+      const isProcessingLike = stateOut === "processing" || stateOut === "queued" || stateOut === "awaiting_payment";
       const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
       if (isStuck) {
         stateOut = "failed";

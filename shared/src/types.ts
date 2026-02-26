@@ -60,7 +60,7 @@ export interface ImageRecord {
   updatedAt: string;
 }
 
-export type JobStatus = "queued" | "processing" | "complete" | "error" | "failed";
+export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete" | "error" | "failed";
 
 /**
  * Declutter mode controls Stage 1B behavior:

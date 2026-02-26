@@ -96,6 +96,7 @@ export interface ImageRecord {
 
 export type JobStatus =
   | "queued"
+  | "awaiting_payment"
   | "enhance"
   | "edit"
   | "region-edit"

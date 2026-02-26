@@ -2265,7 +2265,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           billingContext: {
             payload,
             sceneType: sceneLabel || "interior",
-            stage1BUserSelected: originalUserDeclutter,
+            stage1BUserSelected: !!(payload.options as any)?.declutter,
             geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
           },
         });
@@ -6437,6 +6437,13 @@ const worker = new Worker(
 
     const existingJob = await getJob(jobId);
     const existingStatus = String((existingJob as any)?.status || "").toLowerCase();
+    if (existingStatus === "awaiting_payment") {
+      nLog("[WORKER] Skipping awaiting_payment job execution", {
+        jobId,
+        status: existingStatus,
+      });
+      return;
+    }
     if (existingStatus === "failed" || existingStatus === "complete" || existingStatus === "completed") {
       nLog("[WORKER] Skipping terminal job execution", {
         jobId,

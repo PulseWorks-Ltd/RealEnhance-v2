@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import { createImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
+import { releaseAwaitingPaymentJobs } from "../services/awaitingPayment.js";
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
 import { pool, withTransaction } from "../db/index.js";
@@ -227,8 +228,22 @@ router.post(
 
             if (result.created) {
               console.log(`[STRIPE] ✅ Bundle created: ${result.bundle?.id} - ${images} images`);
+              const purchasedByUserId = session.metadata?.purchasedByUserId;
+              if (purchasedByUserId) {
+                const releaseResult = await releaseAwaitingPaymentJobs(purchasedByUserId);
+                console.log(
+                  `[STRIPE] ✅ Released awaiting_payment jobs for user ${purchasedByUserId}: released=${releaseResult.released} remaining=${releaseResult.remainingAwaiting}`
+                );
+              }
             } else if (result.reason === "duplicate") {
               console.log(`[STRIPE] ⚠️  Duplicate payment intent - bundle already exists`);
+              const purchasedByUserId = session.metadata?.purchasedByUserId;
+              if (purchasedByUserId) {
+                const releaseResult = await releaseAwaitingPaymentJobs(purchasedByUserId);
+                console.log(
+                  `[STRIPE] ✅ Released awaiting_payment jobs after duplicate bundle webhook for user ${purchasedByUserId}: released=${releaseResult.released} remaining=${releaseResult.remainingAwaiting}`
+                );
+              }
             } else {
               console.error(`[STRIPE] ❌ Failed to create bundle: ${result.reason}`);
             }

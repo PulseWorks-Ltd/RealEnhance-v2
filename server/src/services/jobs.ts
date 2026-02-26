@@ -1,50 +1,14 @@
-// region edit job
-export async function enqueueRegionEditJob(params: {
-  userId: UserId;
-  agencyId?: string;
-  imageId?: ImageId;
-  mode: "add" | "remove" | "restore" | "replace";
-  prompt?: string;
-  currentImageUrl: string;
-  baseImageUrl?: string;
-  mask: string;
-  imageIndex?: number;
-  restoreFromUrl?: string;
-}) {
-  const jobId: JobId = "job_" + crypto.randomUUID();
-  const now = new Date().toISOString();
-
-  const payload: AnyJobPayload = {
-    jobId,
-    userId: params.userId,
-    agencyId: params.agencyId,
-    imageId: params.imageId,
-    type: "region-edit",
-    mode: params.mode,
-    prompt: params.prompt,
-    currentImageUrl: params.currentImageUrl,
-    baseImageUrl: params.baseImageUrl,
-    mask: params.mask,
-    imageIndex: params.imageIndex,
-    restoreFromUrl: params.restoreFromUrl,
-    createdAt: now,
-  } as any;
-
-  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
-  return { jobId };
-}
 import * as crypto from "node:crypto";
 import { Queue } from "bullmq";
+import { createClient } from "redis";
 import type {
   AnyJobPayload,
   JobRecord,
   JobId,
   UserId,
   ImageId,
-  JobKind,            // ⬅️ import JobKind from shared types
 } from "../shared/types.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
-import { createClient } from 'redis';
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
 import { normalizeStageLabel, resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
 import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/types/jobMetadata";
@@ -52,6 +16,25 @@ import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });
 redisClient.connect().catch(() => {});
+
+function awaitingUserKey(userId: string) {
+  return `user:${userId}:jobs:awaiting_payment`;
+}
+
+async function addAwaitingPaymentIndex(userId: string, jobId: string, createdAt?: string) {
+  const score = Date.parse(createdAt || "") || Date.now();
+  await redisClient.zAdd(awaitingUserKey(userId), [{ score, value: jobId }]);
+}
+
+async function removeAwaitingPaymentIndex(userId: string, jobId: string) {
+  await redisClient.zRem(awaitingUserKey(userId), jobId);
+}
+
+function queue() {
+  return new Queue(JOB_QUEUE_NAME, {
+    connection: { url: REDIS_URL },
+  });
+}
 
 // Redis-based job record helpers
 export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
@@ -67,6 +50,15 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     updatedAt: new Date().toISOString()
   };
   await redisClient.set(key, JSON.stringify(rec));
+
+  const userId = String(rec?.userId || "").trim();
+  if (userId) {
+    if (String(rec?.status || "") === "awaiting_payment") {
+      await addAwaitingPaymentIndex(userId, jobId, rec?.createdAt || rec?.payload?.createdAt);
+    } else {
+      await removeAwaitingPaymentIndex(userId, jobId);
+    }
+  }
 }
 
 export async function getJob(jobId: string): Promise<JobRecord | undefined> {
@@ -78,19 +70,12 @@ export async function getJob(jobId: string): Promise<JobRecord | undefined> {
   return undefined;
 }
 
-function queue() {
-  return new Queue(JOB_QUEUE_NAME, {
-    connection: { url: REDIS_URL },
-  });
-}
-
-// enhance job
-export async function enqueueEnhanceJob(params: {
+function buildEnhanceArtifacts(params: {
   userId: UserId;
   imageId: ImageId;
-  agencyId?: string | null; // Optional: agency ID for usage billing
-  remoteOriginalUrl?: string; // S3 URL of original if uploaded
-  remoteOriginalKey?: string; // S3 key of original if uploaded
+  agencyId?: string | null;
+  remoteOriginalUrl?: string;
+  remoteOriginalKey?: string;
   retryInfo?: {
     retryType?: "manual_retry";
     sourceStage?: string | null;
@@ -108,9 +93,9 @@ export async function enqueueEnhanceJob(params: {
     stage2Only?: boolean;
     roomType: string;
     sceneType: string;
-    replaceSky?: boolean;  // Sky replacement toggle
-    manualSceneOverride?: boolean; // Manual scene override flag (client -> server -> worker)
-    scenePrediction?: {  // Client-side scene prediction for SKY_SAFE forcing
+    replaceSky?: boolean;
+    manualSceneOverride?: boolean;
+    scenePrediction?: {
       scene: string | null;
       confidence: number;
       reason?: string;
@@ -128,7 +113,6 @@ export async function enqueueEnhanceJob(params: {
     furnishedState?: "furnished" | "empty";
     stagingPreference?: "refresh" | "full";
   };
-  // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {
     enabled: boolean;
     baseStage?: "1A" | "1B";
@@ -168,10 +152,9 @@ export async function enqueueEnhanceJob(params: {
     userId: params.userId,
     imageId: params.imageId,
     type: "enhance",
-    agencyId: params.agencyId, // Pass agencyId to worker for billing
+    agencyId: params.agencyId,
     options: params.options,
     createdAt: now,
-    // add non-typed extension field for worker consumption
     remoteOriginalUrl: params.remoteOriginalUrl as any,
     remoteOriginalKey: params.remoteOriginalKey as any,
     retryType: params.retryInfo?.retryType,
@@ -195,18 +178,262 @@ export async function enqueueEnhanceJob(params: {
     retryParentImageId: params.retryInfo?.parentImageId,
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,
-    // ✅ Pass stage2OnlyMode to worker
     stage2OnlyMode: params.stage2OnlyMode as any,
   } as any;
+
+  return { jobId, now, jobMeta, payload };
+}
+
+// enhance job
+export async function enqueueEnhanceJob(params: {
+  userId: UserId;
+  imageId: ImageId;
+  agencyId?: string | null;
+  remoteOriginalUrl?: string;
+  remoteOriginalKey?: string;
+  retryInfo?: {
+    retryType?: "manual_retry";
+    sourceStage?: string | null;
+    sourceUrl?: string | null;
+    sourceKey?: string | null;
+    stage1BWasRequested?: boolean;
+    parentImageId?: string | null;
+    parentJobId?: string | null;
+    clientBatchId?: string | null;
+  };
+  options: {
+    declutter: boolean;
+    declutterMode?: "light" | "stage-ready";
+    virtualStage: boolean;
+    stage2Only?: boolean;
+    roomType: string;
+    sceneType: string;
+    replaceSky?: boolean;
+    manualSceneOverride?: boolean;
+    scenePrediction?: {
+      scene: string | null;
+      confidence: number;
+      reason?: string;
+      features?: Record<string, number>;
+      source?: string;
+    };
+    sampling?: {
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+    };
+    declutterIntensity?: "light" | "standard" | "heavy";
+    stagingStyle?: string;
+    stage2Variant?: "2A" | "2B";
+    furnishedState?: "furnished" | "empty";
+    stagingPreference?: "refresh" | "full";
+  };
+  stage2OnlyMode?: {
+    enabled: boolean;
+    baseStage?: "1A" | "1B";
+    base1BUrl?: string;
+    base1AUrl?: string;
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    stage1BMode?: "light" | "stage-ready";
+  };
+}, jobIdOverride?: JobId) {
+  const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
 
   await Promise.all([
     queue().add(JOB_QUEUE_NAME, payload, { jobId }),
     saveJobMetadata(jobMeta),
-    updateJob(jobId, { status: "queued", metadata: jobMeta }),
+    updateJob(jobId, {
+      id: jobId,
+      jobId,
+      type: "enhance",
+      userId: params.userId,
+      imageId: params.imageId,
+      status: "queued",
+      payload,
+      metadata: jobMeta,
+      createdAt: payload.createdAt,
+    }),
   ]);
   return { jobId };
 }
 
+export async function createAwaitingPaymentEnhanceJob(params: {
+  userId: UserId;
+  imageId: ImageId;
+  agencyId?: string | null;
+  remoteOriginalUrl?: string;
+  remoteOriginalKey?: string;
+  retryInfo?: {
+    retryType?: "manual_retry";
+    sourceStage?: string | null;
+    sourceUrl?: string | null;
+    sourceKey?: string | null;
+    stage1BWasRequested?: boolean;
+    parentImageId?: string | null;
+    parentJobId?: string | null;
+    clientBatchId?: string | null;
+  };
+  options: {
+    declutter: boolean;
+    declutterMode?: "light" | "stage-ready";
+    virtualStage: boolean;
+    stage2Only?: boolean;
+    roomType: string;
+    sceneType: string;
+    replaceSky?: boolean;
+    manualSceneOverride?: boolean;
+    scenePrediction?: {
+      scene: string | null;
+      confidence: number;
+      reason?: string;
+      features?: Record<string, number>;
+      source?: string;
+    };
+    sampling?: {
+      temperature?: number;
+      topP?: number;
+      topK?: number;
+    };
+    declutterIntensity?: "light" | "standard" | "heavy";
+    stagingStyle?: string;
+    stage2Variant?: "2A" | "2B";
+    furnishedState?: "furnished" | "empty";
+    stagingPreference?: "refresh" | "full";
+  };
+  stage2OnlyMode?: {
+    enabled: boolean;
+    baseStage?: "1A" | "1B";
+    base1BUrl?: string;
+    base1AUrl?: string;
+    sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
+    stage1BMode?: "light" | "stage-ready";
+  };
+}, jobIdOverride?: JobId) {
+  const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
+
+  await Promise.all([
+    saveJobMetadata(jobMeta),
+    updateJob(jobId, {
+      id: jobId,
+      jobId,
+      type: "enhance",
+      userId: params.userId,
+      imageId: params.imageId,
+      status: "awaiting_payment",
+      payload,
+      metadata: jobMeta,
+      createdAt: payload.createdAt,
+    }),
+  ]);
+
+  return { jobId };
+}
+
+export async function enqueueStoredEnhanceJob(jobId: string): Promise<{ enqueued: boolean }> {
+  const rec = await getJob(jobId);
+  const payload = (rec as any)?.payload;
+  if (!payload || payload.type !== "enhance") {
+    return { enqueued: false };
+  }
+
+  const q = queue();
+  const existing = await q.getJob(jobId);
+  if (!existing) {
+    await q.add(JOB_QUEUE_NAME, payload, { jobId });
+  }
+
+  await updateJob(jobId, { status: "queued" });
+  return { enqueued: true };
+}
+
+export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Array<{ jobId: string; createdAt: string; payload: any }>> {
+  const indexKey = awaitingUserKey(userId);
+
+  const indexedIds = await redisClient.zRange(indexKey, 0, -1);
+  if (indexedIds.length > 0) {
+    const keys = indexedIds.map((jobId) => `jobs:${jobId}`);
+    const values = await redisClient.mGet(keys);
+    const out: Array<{ jobId: string; createdAt: string; payload: any }> = [];
+    const staleIds: string[] = [];
+
+    for (let i = 0; i < indexedIds.length; i++) {
+      const jobId = indexedIds[i];
+      const raw = values[i];
+      if (!raw) {
+        staleIds.push(jobId);
+        continue;
+      }
+      try {
+        const rec: any = JSON.parse(raw);
+        const isAwaiting = String(rec?.status || "") === "awaiting_payment";
+        const isEnhance = String(rec?.type || rec?.payload?.type || "") === "enhance";
+        if (!isAwaiting || !isEnhance || rec?.userId !== userId) {
+          staleIds.push(jobId);
+          continue;
+        }
+        out.push({
+          jobId,
+          createdAt: String(rec?.createdAt || rec?.payload?.createdAt || ""),
+          payload: rec?.payload,
+        });
+      } catch {
+        staleIds.push(jobId);
+      }
+    }
+
+    if (staleIds.length) {
+      await redisClient.zRem(indexKey, staleIds);
+    }
+
+    return out;
+  }
+
+  // Backfill fallback for older records that predate the per-user index.
+  const out: Array<{ jobId: string; createdAt: string; payload: any }> = [];
+  let cursor = "0";
+
+  do {
+    const scanRes: any = await (redisClient as any).scan(cursor, {
+      MATCH: "jobs:*",
+      COUNT: 200,
+    });
+    cursor = String(scanRes?.cursor || "0");
+    const keys: string[] = Array.isArray(scanRes?.keys) ? scanRes.keys : [];
+
+    if (!keys.length) continue;
+
+    const values = await redisClient.mGet(keys);
+    for (let i = 0; i < keys.length; i++) {
+      const raw = values[i];
+      if (!raw) continue;
+      try {
+        const rec: any = JSON.parse(raw);
+        if (
+          rec?.userId === userId &&
+          String(rec?.status || "") === "awaiting_payment" &&
+          String(rec?.type || rec?.payload?.type || "") === "enhance"
+        ) {
+          const jobId = String(rec?.jobId || rec?.id || keys[i].replace(/^jobs:/, "")).trim();
+          if (!jobId) continue;
+          out.push({
+            jobId,
+            createdAt: String(rec?.createdAt || rec?.payload?.createdAt || ""),
+            payload: rec?.payload,
+          });
+          await addAwaitingPaymentIndex(userId, jobId, String(rec?.createdAt || rec?.payload?.createdAt || ""));
+        }
+      } catch {}
+    }
+  } while (cursor !== "0");
+
+  out.sort((a, b) => {
+    const ta = Date.parse(a.createdAt || "") || 0;
+    const tb = Date.parse(b.createdAt || "") || 0;
+    return ta - tb;
+  });
+
+  return out;
+}
 
 // edit job
 export async function enqueueEditJob(params: {
@@ -242,10 +469,42 @@ export async function enqueueEditJob(params: {
     ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
   } as any;
 
-
-
   await queue().add(JOB_QUEUE_NAME, payload, { jobId });
   return { jobId };
 }
 
-// (Legacy getJob removed; now async and Redis-based)
+// region edit job
+export async function enqueueRegionEditJob(params: {
+  userId: UserId;
+  agencyId?: string;
+  imageId?: ImageId;
+  mode: "add" | "remove" | "restore" | "replace";
+  prompt?: string;
+  currentImageUrl: string;
+  baseImageUrl?: string;
+  mask: string;
+  imageIndex?: number;
+  restoreFromUrl?: string;
+}) {
+  const jobId: JobId = "job_" + crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const payload: AnyJobPayload = {
+    jobId,
+    userId: params.userId,
+    agencyId: params.agencyId,
+    imageId: params.imageId,
+    type: "region-edit",
+    mode: params.mode,
+    prompt: params.prompt,
+    currentImageUrl: params.currentImageUrl,
+    baseImageUrl: params.baseImageUrl,
+    mask: params.mask,
+    imageIndex: params.imageIndex,
+    restoreFromUrl: params.restoreFromUrl,
+    createdAt: now,
+  } as any;
+
+  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  return { jobId };
+}

@@ -5,7 +5,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
-import { enqueueEnhanceJob } from "../services/jobs.js";
+import { createAwaitingPaymentEnhanceJob, enqueueEnhanceJob } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
@@ -14,6 +14,7 @@ import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, finalizeReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { getAvailableCredits } from "../services/awaitingPayment.js";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -285,6 +286,8 @@ export function uploadRouter() {
     let availableCredits = 0;
     let monthlyRemaining = 0;
     let addonRemaining = 0;
+    let requiresPayment = false;
+    let deficit = 0;
 
     try {
       const estimateImages = files.map((_f, i) => {
@@ -322,7 +325,7 @@ export function uploadRouter() {
       const usageSnapshot = await getUsageSnapshot(agencyId);
       monthlyRemaining = Math.max(0, Number(usageSnapshot.includedRemaining || 0));
       addonRemaining = Math.max(0, Number(usageSnapshot.addonRemaining || 0));
-      availableCredits = monthlyRemaining + addonRemaining;
+      availableCredits = await getAvailableCredits(sessUser.id);
 
       console.log(
         `[CREDIT_PREFLIGHT_ENFORCED] ` +
@@ -336,14 +339,8 @@ export function uploadRouter() {
       );
 
       if (requiredCredits > availableCredits) {
-        return res.status(402).json({
-          code: "INSUFFICIENT_CREDITS",
-          requiredCredits,
-          availableCredits,
-          monthlyRemaining,
-          addonRemaining,
-          message: "Not enough credits to enhance this batch.",
-        });
+        requiresPayment = true;
+        deficit = requiredCredits - availableCredits;
       }
     } catch (creditGateErr) {
       console.error("[CREDIT_PREFLIGHT_ENFORCED] Failed to validate credits:", creditGateErr);
@@ -559,7 +556,7 @@ export function uploadRouter() {
       );
       let usedTrial = false;
 
-      if (trialEligible) {
+      if (!requiresPayment && trialEligible) {
         try {
           const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages });
           if (trialReserve.allowed) {
@@ -583,7 +580,7 @@ export function uploadRouter() {
       }
 
       // Only reserve subscription allowance if trial did not satisfy this job
-      if (!usedTrial) {
+      if (!requiresPayment && !usedTrial) {
         try {
           const reservation = await reserveAllowance({
             jobId,
@@ -668,12 +665,12 @@ export function uploadRouter() {
 
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 
-      const { jobId: enqueuedJobId } = await enqueueEnhanceJob({
+      const jobPayload = {
         userId: sessUser.id,
         imageId,
         remoteOriginalUrl,
         remoteOriginalKey,
-        agencyId, // Pass agencyId for usage billing in worker
+        agencyId,
         options: {
           declutter: finalDeclutter,
           declutterMode: opts.declutterMode,
@@ -681,27 +678,34 @@ export function uploadRouter() {
           stage2Only: !!opts.stage2Only,
           roomType: opts.roomType,
           sceneType: opts.sceneType,
-          replaceSky: opts.replaceSky, // Pass through sky replacement preference
+          replaceSky: opts.replaceSky,
           manualSceneOverride: opts.manualSceneOverride,
-          scenePrediction: opts.scenePrediction, // Pass client-side prediction for SKY_SAFE forcing
+          scenePrediction: opts.scenePrediction,
           sampling: opts.sampling,
           declutterIntensity: opts.declutterIntensity,
           stagingStyle: opts.stagingStyle,
           stage2Variant: opts.stage2Variant,
           furnishedState: opts.furnishedState,
         },
-      }, jobId);
+      };
 
-      const idx = reservedJobs.indexOf(jobId);
-      if (idx >= 0) {
-        reservedJobs.splice(idx, 1);
-      }
-      const trialIdx = trialReservedJobs.indexOf(jobId);
-      if (trialIdx >= 0) {
-        trialReservedJobs.splice(trialIdx, 1);
-      }
+      if (requiresPayment) {
+        const { jobId: awaitingJobId } = await createAwaitingPaymentEnhanceJob(jobPayload, jobId);
+        jobs.push({ jobId: awaitingJobId, imageId });
+      } else {
+        const { jobId: enqueuedJobId } = await enqueueEnhanceJob(jobPayload, jobId);
 
-      jobs.push({ jobId: enqueuedJobId, imageId });
+        const idx = reservedJobs.indexOf(jobId);
+        if (idx >= 0) {
+          reservedJobs.splice(idx, 1);
+        }
+        const trialIdx = trialReservedJobs.indexOf(jobId);
+        if (trialIdx >= 0) {
+          trialReservedJobs.splice(trialIdx, 1);
+        }
+
+        jobs.push({ jobId: enqueuedJobId, imageId });
+      }
 
       // Track usage for analytics (non-blocking)
       recordUsageEvent({
@@ -723,6 +727,16 @@ export function uploadRouter() {
           // Do not fail the upload, just log the error
         });
       }
+    }
+
+    if (requiresPayment) {
+      return res.json({
+        requiresPayment: true,
+        deficit,
+        requiredCredits,
+        availableCredits,
+        jobs,
+      });
     }
 
     return res.json({ ok: true, jobs });
