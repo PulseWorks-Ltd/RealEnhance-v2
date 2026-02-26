@@ -125,31 +125,28 @@ Architectural geometry must remain identical to the original image.
 🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
 ────────────────────────────────
 
-Before placing any new furniture, perform this eligibility check.
+Before placing furniture, evaluate structural plausibility.
 
-1. WALL ELIGIBILITY (CASEGOODS & LARGE FURNITURE)
+Furniture should be placed against walls that are visually coherent and architecturally plausible.
 
-Large vertical furniture (dressers, tallboys, cabinets, shelving units,
-bookcases, wardrobes, display units) may ONLY be placed against walls
-that meet ALL of the following:
+Prefer walls that are:
+• Clearly visible
+• Structurally continuous
+• Not intersecting visible openings
 
-• Wall is fully visible from floor to ceiling
-• Wall is continuous and not cropped by the frame edge
-• No visible door frame, hinge, handle, track, or hardware
-• No partial return wall suggesting an adjoining opening
-• No corner termination where the adjacent wall is not fully visible
+However:
 
-A wall is NOT eligible if:
+If the most natural layout requires placing furniture against a wall that is partially out of frame (e.g., wall behind camera), this is permitted.
 
-• It is partially cropped by the camera frame
-• It ends in a corner where the adjoining wall is not fully shown
-• It suggests a recessed opening or possible closet location
-• Any portion of door hardware or framing is visible nearby
+Do NOT modify architecture to create additional wall surface.
 
-If uncertain whether a wall is fully safe:
-→ Do NOT place large furniture on that wall.
+Never:
+• Remove doors, closets, or openings to create backing
+• Paint over openings
+• Extend walls to satisfy placement rules
 
-Only use clearly visible, continuous, unobstructed walls.
+If no ideal wall exists:
+→ Prioritize preserving architecture over perfect wall anchoring.
 
 ────────────────────────────────
 CASEGOODS BACKING RULE — TALL STORAGE
@@ -167,29 +164,32 @@ If a full, continuous wall is not clearly visible:
 → Do NOT place tall storage furniture.
 
 ────────────────────────────────
-BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
+BED PLACEMENT — STRUCTURAL PRIORITY
 ────────────────────────────────
 
-When staging a BEDROOM:
+In bedrooms, include a bed as the primary focal object.
 
-Headboard Placement (MANDATORY):
-• Bed headboard MUST be placed against a FULL, CONTINUOUS, VISIBLE wall
-• Full wall = clearly visible from side to side, not interrupted by windows or doors
-• Do NOT place headboards beneath windows
-• Do NOT place headboards in front of windows or glass doors
-• Do NOT place headboards on partial wall segments or narrow wall returns
+Preferred placement:
+• Headboard against a plausible wall surface
+• Maintain realistic circulation space
+• Avoid fully blocking doors
 
-Wall Visibility Check:
-• The wall behind the headboard must be fully visible in the image frame
-• The headboard must visually anchor to that wall surface
-• Beds must not appear to "float" without a visible wall anchor
+Windows:
+• Partial overlap with window area is acceptable
+• Do NOT resize, move, or alter window geometry
 
-If no suitable full wall is visible:
-→ Use a bed with no headboard OR
-→ Use a bed with a smaller headboard (not scaled down, but choose a smaller realistic headboard) OR
-→ Use a smaller bed (not scaled down, but choose a smaller realistic bed for the space)
+Closets and sliding doors:
+• Must remain fully intact and visible
+• Do NOT remove, replace, or cover closet doors
 
-This rule overrides furniture completeness requirements.
+If no full visible wall exists:
+→ Place the bed in the most realistic orientation without altering architecture.
+→ Architectural preservation overrides ideal wall alignment.
+
+Never:
+• Modify windows to fit furniture
+• Remove closet doors to create wall
+• Repaint or fabricate new wall sections
 
 ────────────────────────────────
 ROOM TYPE → FURNITURE SET ENFORCEMENT — MUST FOLLOW
