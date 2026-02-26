@@ -98,6 +98,28 @@ The Stage 1B image is the structural authority for all fixed elements.
 Staging must adapt to fixed fixtures — never modify them.
 
 ────────────────────────────────
+🔒 ARCHITECTURAL ANCHOR LOCK — NON-NEGOTIABLE
+────────────────────────────────
+
+Architectural openings are immutable.
+
+You MUST preserve:
+• Windows (position, size, proportion)
+• Doors (position, size, swing orientation visibility)
+• Closet openings and tracks
+• Stair voids and stair apertures
+• Built-in wall apertures
+
+You may NOT:
+• Move openings horizontally or vertically
+• Resize openings
+• Cover, fill, or wall over openings
+• Extend wall surfaces to increase placement area
+• Seal stair or closet voids
+
+Architectural geometry must remain identical to the original image.
+
+────────────────────────────────
 🔒 SURFACE ELIGIBILITY FILTER — PRE-PLACEMENT GATE
 ────────────────────────────────
 
@@ -126,6 +148,21 @@ If uncertain whether a wall is fully safe:
 → Do NOT place large furniture on that wall.
 
 Only use clearly visible, continuous, unobstructed walls.
+
+────────────────────────────────
+CASEGOODS BACKING RULE — TALL STORAGE
+────────────────────────────────
+
+Tall vertical storage (dressers, wardrobes, tall cabinets, shelving)
+may ONLY be placed against fully visible, continuous walls.
+
+The backing wall must:
+• Be visible from floor to ceiling
+• Not terminate at the image edge
+• Not contain partial openings or ambiguous wall returns
+
+If a full, continuous wall is not clearly visible:
+→ Do NOT place tall storage furniture.
 
 ────────────────────────────────
 BED PLACEMENT — HEADBOARD & WALL ANCHORING RULE
@@ -536,27 +573,6 @@ PERMITTED:
 • Furniture fully supported by visible geometry
 
 When in doubt → omit the furniture rather than guess beyond the image boundary.
-
-────────────────────────────────
-CASEGOODS PLACEMENT — WALL VISIBILITY RULE
-────────────────────────────────
-
-Large storage furniture may only be added where a clearly visible, continuous blank wall is present behind the item in the original image.
-
-Applies to:
-• chests of drawers
-• dressers
-• tallboys
-• wardrobes (added furniture, not built-ins)
-• dressing tables / vanities
-• large cabinets and sideboards
-
-Do NOT place these items:
-• against image edges where the backing wall is not visible
-• in front of doors, closets, wardrobes, or openings
-• where the wall behind the item cannot be clearly seen
-
-If a suitable blank wall is not clearly visible, do not add the item.
 
 ────────────────────────────────
 WALL-MOUNTED ADDITIONS — PROHIBITED
