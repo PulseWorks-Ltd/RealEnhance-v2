@@ -2273,6 +2273,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
+        const isEnhancementJob = (payload as any).type === "enhance";
         const isFreeManualRetry = (payload as any).retryType === "manual_retry";
         const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
         const billingStage2Url = pub2Url || null;
@@ -2287,7 +2288,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const isTerminalComplete = completedStatus === "complete" || completedStatus === "completed";
         const hasUsableFinalOutput = typeof pub2Url === "string" && pub2Url.length > 0;
         const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
-        const actualCharge = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
+        const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
 
         nLog("[BILLING_CHARGE_TELEMETRY]", {
           jobId: payload.jobId,
@@ -2299,6 +2300,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           path: "stage2_only_retry",
           billableFinalSuccess,
           completedStatus,
+          isEnhancementJob,
           freeRetryNoAdditionalCharge: isFreeManualRetry,
         });
 
@@ -2314,7 +2316,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       // ✅ BILLING FINALIZATION: Compute final charge based on published outputs
-      if ((payload as any).retryType !== "manual_retry") {
+      if ((payload as any).retryType !== "manual_retry" && (payload as any).type === "enhance") {
         try {
           const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
           const billingStage2Url = pub2Url || null;
@@ -2335,7 +2337,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
         }
       } else {
-        nLog(`[BILLING] Skipping charge finalization for free manual retry: ${payload.jobId}`);
+        nLog(`[BILLING] Skipping charge finalization for non-billable job type or free manual retry: ${payload.jobId}`);
       }
 
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
@@ -5941,11 +5943,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
   const hasUsableFinalOutput = typeof committedResultUrl === "string" && committedResultUrl.length > 0;
   const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
+  const isEnhancementJob = (payload as any).type === "enhance";
   const isFreeManualRetry = (payload as any).retryType === "manual_retry";
 
   try {
     const agencyId = (payload as any).agencyId || null;
-    const imagesUsed = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
+    const imagesUsed = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
     await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
   } catch (usageErr) {
     // Usage tracking must never block job completion
@@ -5957,7 +5960,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  const actualCharge = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
+  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,
@@ -5972,6 +5975,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     billingEffectiveStage1B,
     billableFinalSuccess,
     completedStatus: finalizedStatus,
+    isEnhancementJob,
     freeRetryNoAdditionalCharge: isFreeManualRetry,
   });
 
@@ -5991,7 +5995,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // ✅ BILLING FINALIZATION: Compute final charge based on final output
   // This runs AFTER job is marked complete to ensure idempotent charging
-  if (!isFreeManualRetry) {
+  if (!isFreeManualRetry && isEnhancementJob) {
     try {
       await finalizeImageChargeFromWorker({
         jobId: payload.jobId,
@@ -6007,7 +6011,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[BILLING] Failed to finalize charge (non-blocking):", (chargeErr as any)?.message || chargeErr);
     }
   } else {
-    nLog(`[BILLING] Skipping charge finalization for free manual retry: ${payload.jobId}`);
+    nLog(`[BILLING] Skipping charge finalization for non-billable job type or free manual retry: ${payload.jobId}`);
   }
 
   // Persist finalized metadata with longer history TTL
