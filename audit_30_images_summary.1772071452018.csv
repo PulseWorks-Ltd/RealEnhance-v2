@@ -1,0 +1,12 @@
+metric,value
+totalImages,30
+completed,30
+failed,0
+charged,21
+stage1AFailures,0
+stage2Failures,1
+validatorLocalBlocks,0
+geminiBlocks,1
+evidenceOverrides,0
+imagesRequiringRetries,1
+avgAttemptsPerImage,unknown

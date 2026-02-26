@@ -651,6 +651,92 @@ export function buildFinalFixtureConfirmPrompt(input: {
     ? findings.map((f) => `- ${f}`).join("\n")
     : "- none";
 
+  const parsePercentFromFindings = (patterns: RegExp[]): number => {
+    for (const finding of findings) {
+      for (const pattern of patterns) {
+        const match = finding.match(pattern);
+        if (match?.[1]) {
+          const value = Number(match[1]);
+          if (Number.isFinite(value)) return value;
+        }
+      }
+    }
+    return 0;
+  };
+
+  const openingDriftPct = parsePercentFromFindings([
+    /opening(?:_|\s*)drift(?:_|\s*)pct\s*[:=]\s*([\d.]+)/i,
+    /opening(?:_|\s*)drift\s*([\d.]+)%/i,
+  ]);
+
+  const maskedEdgeDriftPct = parsePercentFromFindings([
+    /masked(?:_|\s*)drift(?:_|\s*)pct\s*[:=]\s*([\d.]+)/i,
+    /masked_edge_failed:\s*drift\s*([\d.]+)%/i,
+    /masked(?:_|\s*)edge(?:_|\s*)drift\s*([\d.]+)%/i,
+  ]);
+
+  const semanticWallDriftFlag = findings.some((f) =>
+    /semantic_validator_failed|wall_drift_pct\s*:|wall_drift\s*[\d.]+%/i.test(f)
+  );
+
+  const openingCountMismatch = findings.some((f) => {
+    const windowsMatch = f.match(/window_count_delta\s*:\s*(-?\d+)\s*->\s*(-?\d+)/i);
+    if (windowsMatch) return Number(windowsMatch[1]) !== Number(windowsMatch[2]);
+
+    const doorsMatch = f.match(/door_count_delta\s*:\s*(-?\d+)\s*->\s*(-?\d+)/i);
+    if (doorsMatch) return Number(doorsMatch[1]) !== Number(doorsMatch[2]);
+
+    const openingsDeltaMatch = f.match(/openings_delta_total\s*:\s*([+-]?[\d.]+)/i);
+    if (openingsDeltaMatch) return Number(openingsDeltaMatch[1]) !== 0;
+
+    const semanticOpeningsMatch = f.match(/openings\s*\+\s*(\d+)\s*\/\s*-\s*(\d+)/i);
+    if (semanticOpeningsMatch) {
+      return Number(semanticOpeningsMatch[1]) !== 0 || Number(semanticOpeningsMatch[2]) !== 0;
+    }
+
+    return false;
+  });
+
+  let structuralConcernScore = 0;
+  if (openingCountMismatch) structuralConcernScore += 2;
+  if (semanticWallDriftFlag) structuralConcernScore += 1;
+  if (openingDriftPct >= 20) structuralConcernScore += 2;
+  else if (openingDriftPct >= 8) structuralConcernScore += 1;
+  if (maskedEdgeDriftPct >= 60) structuralConcernScore += 2;
+  else if (maskedEdgeDriftPct >= 30) structuralConcernScore += 1;
+
+  let structuralConcernLevel: "Tier 1" | "Tier 2" | "Tier 3" | null = null;
+  if (structuralConcernScore >= 4) structuralConcernLevel = "Tier 3";
+  else if (structuralConcernScore >= 2) structuralConcernLevel = "Tier 2";
+  else if (
+    openingDriftPct > 0 ||
+    maskedEdgeDriftPct > 0 ||
+    semanticWallDriftFlag ||
+    openingCountMismatch
+  ) {
+    structuralConcernLevel = "Tier 1";
+  }
+
+  const structuralGuidanceBlock = structuralConcernLevel
+    ? structuralConcernLevel === "Tier 3"
+      ? `
+STRUCTURAL GUIDANCE (${structuralConcernLevel} — HIGH ADVISORY)
+- Local drift signals are strong. Perform a focused second-pass visual inspection on openings, wall envelope, and fixed built-ins.
+- Treat this as an inspection priority signal only.
+- Do NOT force hardFail from drift metrics alone; require clear visual evidence in BEFORE vs AFTER.`
+      : structuralConcernLevel === "Tier 2"
+        ? `
+STRUCTURAL GUIDANCE (${structuralConcernLevel} — MODERATE ADVISORY)
+- Local signals suggest possible structural inconsistency. Inspect openings and wall boundaries carefully before deciding.
+- Use drift as directional guidance, not proof.
+- Do NOT force hardFail from drift metrics alone; require clear visual evidence in BEFORE vs AFTER.`
+        : `
+STRUCTURAL GUIDANCE (${structuralConcernLevel} — MILD ADVISORY)
+- Minor local drift signals detected. Do a light targeted check for opening continuity and envelope consistency.
+- Keep furniture-occlusion false positives in mind.
+- Do NOT force hardFail from drift metrics alone; require clear visual evidence in BEFORE vs AFTER.`
+    : "";
+
   const mode = input.validationMode || "REFRESH_OR_DIRECT";
   const modeContextBlock = mode === "FULL_STAGE_ONLY"
     ? `IMPORTANT CONTEXT:
@@ -829,6 +915,8 @@ Advisory structural signals detected by local heuristics (may include false posi
 - SSIM drift
 
 ${modeContextBlock}
+
+${structuralGuidanceBlock}
 
 ${findingsBlock}
 

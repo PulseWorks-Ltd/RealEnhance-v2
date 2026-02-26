@@ -1,0 +1,45 @@
+{
+  "summary": {
+    "totalRoutingOverridesInLog": 3,
+    "overridesWithin30ImageBatch": 3,
+    "roomTypeCounts": {
+      "living_room": 1,
+      "kitchen_dining": 2
+    }
+  },
+  "overrides": [
+    {
+      "jobId": "job_7b742590-0d52-40f0-99ab-5749e3eeb357",
+      "imageId": "img_9d5d78f3-ce34-4b58-a9ac-1fcc021bf2a4",
+      "enhancedImageId": "RE-FHT6XU",
+      "originalUploadUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772070324860-realenhance-job_7b742590-0d52-40f0-99ab-5749e3eeb357-1772070324239-5d9o8epa8df.jpg",
+      "roomType": "living_room",
+      "originalUserDeclutter": "false",
+      "hasFurniture": "true",
+      "routingConfidence": "unknown",
+      "detectedAnchors": "\"sofa\""
+    },
+    {
+      "jobId": "job_e2990546-df29-48ae-95c9-8131205a87c0",
+      "imageId": "img_ed84bc84-0555-4b65-abc7-e24fbc2ffed0",
+      "enhancedImageId": "RE-XYB379",
+      "originalUploadUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772070784110-realenhance-job_e2990546-df29-48ae-95c9-8131205a87c0-1772070783783-gvya9ymcwlr.jpg",
+      "roomType": "kitchen_dining",
+      "originalUserDeclutter": "false",
+      "hasFurniture": "true",
+      "routingConfidence": "unknown",
+      "detectedAnchors": "\"large_freestanding_cabinet\""
+    },
+    {
+      "jobId": "job_e6b9b948-d28f-4797-9dc0-55e7886f63cc",
+      "imageId": "img_e609226c-23ff-4549-ac85-f81f8f756451",
+      "enhancedImageId": "RE-YBHAWT",
+      "originalUploadUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772070787644-realenhance-job_e6b9b948-d28f-4797-9dc0-55e7886f63cc-1772070787511-8hunjk5ww6l.jpg",
+      "roomType": "kitchen_dining",
+      "originalUserDeclutter": "false",
+      "hasFurniture": "true",
+      "routingConfidence": "unknown",
+      "detectedAnchors": "\"large_freestanding_cabinet\""
+    }
+  ]
+}
