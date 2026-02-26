@@ -548,13 +548,8 @@ export function uploadRouter() {
       }
 
       const jobId = "job_" + crypto.randomUUID();
-      const finalDeclutter = parseStrictBool(opts.declutter);
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      const furnishedStateForBilling = opts.furnishedState === "empty" ? "empty" : (opts.furnishedState === "furnished" ? "furnished" : "unknown");
-      const stage1BProjectedForReservation = finalDeclutter && (!finalVirtualStage || furnishedStateForBilling !== "empty");
-      // Pricing logic: 2 images only when both Stage 1B and Stage 2 are projected to run.
-      // For Declutter+Stage with furnishedState=empty, reserve 1 (Stage 1A + Stage 2 full).
-      const requiredImages = stage1BProjectedForReservation && finalVirtualStage ? 2 : 1;
+      const requiredImages = 1;
 
       const trialEligible = Boolean(
         trialSummary &&
@@ -668,6 +663,8 @@ export function uploadRouter() {
           String(opts.stagingStyle || 'none')
         );
       } catch {}
+
+      const finalDeclutter = parseStrictBool(opts.declutter);
 
       try { console.log(`[upload] item ${i} FINAL declutter=%s virtualStage=%s declutterMode=%s`, String(finalDeclutter), String(finalVirtualStage), String(opts.declutterMode || 'none')); } catch {}
 

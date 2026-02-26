@@ -3,7 +3,6 @@ import * as crypto from "node:crypto";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { Queue } from "bullmq";
-import { incrementRetry } from "../services/usageLedger.js";
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 
 export function retryRouter() {
@@ -20,14 +19,19 @@ export function retryRouter() {
     if (!meta) return res.status(404).json({ error: "job_metadata_not_found" });
     if (meta.userId !== sessUser.id) return res.status(403).json({ error: "forbidden" });
 
-    const retryCheck = await incrementRetry(jobId);
-    if (retryCheck.locked) {
-      return res.status(429).json({ 
-        error: "retry_limit_reached", 
-        retryCount: retryCheck.retryCount,
-        message: "You have reached the maximum allowed free retries for this image. If you want to try again, please upload it as a new image."
+    if (meta.freeRetryUsed === true) {
+      return res.status(429).json({
+        error: "free_retry_exhausted",
+        code: "FREE_RETRY_EXHAUSTED",
+        message: "The free retry has already been used for this image. Please submit a new enhancement.",
       });
     }
+
+    await saveJobMetadata({
+      ...meta,
+      freeRetryUsed: true,
+      freeRetryUsedAt: new Date().toISOString(),
+    } as any);
 
     // Clone with new jobId
     const newJobId = "job_" + crypto.randomUUID();

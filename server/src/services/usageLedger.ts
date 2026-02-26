@@ -373,7 +373,7 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
   const res = await pool.query(
     `UPDATE job_reservations
        SET edit_count = edit_count + 1,
-           amendments_locked = CASE WHEN edit_count + 1 > 3 THEN TRUE ELSE amendments_locked END,
+           amendments_locked = CASE WHEN edit_count + 1 > 2 THEN TRUE ELSE amendments_locked END,
            updated_at = NOW()
      WHERE job_id = $1
      RETURNING edit_count, amendments_locked`,
@@ -383,7 +383,7 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
   const row = res.rows[0];
   
   // ✅ EDIT CAP: Log when cap is reached
-  if (row.amendments_locked && row.edit_count > 3) {
+  if (row.amendments_locked && row.edit_count > 2) {
     console.log(`[EDIT_CAP_REACHED] jobId=${jobId} editCount=${row.edit_count}`);
   }
   

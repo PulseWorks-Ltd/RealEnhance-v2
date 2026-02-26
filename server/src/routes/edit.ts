@@ -1,8 +1,7 @@
 import { Router, Request, Response } from "express";
 import { getImageRecord } from "../services/images.js";
 import { enqueueEditJob } from "../services/jobs.js";
-import { saveJobMetadata } from "@realenhance/shared/imageStore";
-import { incrementEdit } from "../services/usageLedger.js";
+import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 
 export function editRouter() {
   const r = Router();
@@ -27,7 +26,6 @@ export function editRouter() {
       mode,
       instruction,
       mask,
-      jobId: baseJobId,
     } = req.body || {};
 
     const rec = getImageRecord(imageId);
@@ -43,16 +41,33 @@ export function editRouter() {
       return res.status(400).json({ error: "invalid_base_version" });
     }
 
-    if (baseJobId) {
-      const editCheck = await incrementEdit(baseJobId as string);
-      if (editCheck.locked) {
-        return res.status(429).json({ 
-          error: "edit_limit_reached", 
-          editCount: editCheck.editCount,
-          message: "You have reached the maximum allowed free edits for this image. If you want to edit other images, please upload them."
-        });
-      }
+    // Edit contract: two free edits per image across all edit endpoints.
+    const editCounterJobId = `edit_counter:${imageId}`;
+    const parentMeta = await getJobMetadata(editCounterJobId);
+    const currentEditCount = Math.max(0, Number(parentMeta?.editCount || 0));
+    if (currentEditCount >= 2) {
+      return res.status(429).json({
+        error: "edit_limit_reached",
+        code: "EDIT_LIMIT_REACHED",
+        editCount: currentEditCount,
+        message: "You have reached the maximum allowed free edits for this image. Please submit a new enhancement.",
+      });
     }
+
+    const baseMeta = parentMeta && parentMeta.jobId
+      ? parentMeta
+      : {
+          jobId: editCounterJobId,
+          userId: sessUser.id,
+          imageId,
+          createdAt: new Date().toISOString(),
+        };
+
+    await saveJobMetadata({
+      ...baseMeta,
+      editCount: currentEditCount + 1,
+      lastEditAt: new Date().toISOString(),
+    } as any);
 
     const enqueueParams = {
       userId: sessUser.id,

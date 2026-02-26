@@ -9,11 +9,11 @@ import { addImageToUser } from "../services/users.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
 import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
-import { getJobMetadata } from "@realenhance/shared/imageStore";
+import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
-import { reserveAllowance, incrementRetry } from "../services/usageLedger.js";
+import { reserveAllowance } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -614,11 +614,8 @@ export function retrySingleRouter() {
         console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!stage2OnlyMode}`);
       }
 
-      // ✅ PATCH 3 & CHECK 4: Billing - reserve 1 credit for manual retry
-      // Retry quota enforcement (CHECK 4):
-      // - Scope: Per parent job (not per user, not per imageId)
-      // - Counts: Manual retries ONLY (not validator/system retries)
-      // - Limit: Max 2 manual retries per parent job
+      // Free retry contract: exactly one free retry per parent image.
+      // This retry must not reserve additional credit and must be tracked on parent job metadata.
       const agencyId = sessUser.agencyId || null;
       if (!agencyId) {
         return res.status(400).json({ 
@@ -628,46 +625,74 @@ export function retrySingleRouter() {
         });
       }
 
-      // Enforce retry quota cap
+      // Enforce one free retry via parent job metadata.
       if (parentJobId) {
         try {
-          const retryCheck = await incrementRetry(parentJobId);
-          if (retryCheck.locked) {
-            return res.status(429).json({ 
+          if (!parentMeta) {
+            parentMeta = await getJobMetadata(parentJobId);
+          }
+
+          if (parentMeta?.freeRetryUsed === true) {
+            return res.status(429).json({
               success: false,
-              error: "retry_limit_reached", 
-              code: "RETRY_LIMIT_REACHED",
-              retryCount: retryCheck.retryCount,
-              message: "Maximum retry limit (2) reached for this image"
+              error: "free_retry_exhausted",
+              code: "FREE_RETRY_EXHAUSTED",
+              message: "The free retry has already been used for this image. Please submit a new enhancement.",
             });
           }
+
+          const baseMeta = parentMeta && parentMeta.jobId
+            ? parentMeta
+            : {
+                jobId: parentJobId,
+                userId: (parentJob as any)?.userId || sessUser.id,
+                imageId: (parentJob as any)?.imageId || String(parentImageId || ""),
+                createdAt: (parentJob as any)?.createdAt || new Date().toISOString(),
+              };
+
+          await saveJobMetadata({
+            ...baseMeta,
+            freeRetryUsed: true,
+            freeRetryUsedAt: new Date().toISOString(),
+          } as any);
         } catch (err: any) {
-          console.error('[retry-single] incrementRetry failed:', err);
-          // Continue - don't block on quota check failure
+          console.error("[retry-single] free retry metadata update failed:", err);
+          return res.status(503).json({
+            success: false,
+            error: "retry_contract_update_failed",
+            message: "Unable to validate free retry availability. Please try again.",
+          });
         }
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "missing_parent_job",
+          message: "parentJobId is required for free retry enforcement",
+        });
       }
 
       // Generate job ID for reservation
       const jobId = "job_" + crypto.randomUUID();
 
-      // Reserve exactly 1 credit for manual retry (all retries cost 1 credit)
+      // Free retry must not reserve additional credit.
+      // Reserve a zero-credit row only so worker finalization remains idempotent/traceable.
       try {
         await reserveAllowance({
           jobId,
           agencyId,
           userId: sessUser.id,
-          requiredImages: 1,  // Always 1 credit per retry
+          requiredImages: 0,
           requestedStage12: true,
           requestedStage2: effectiveAllowStaging,
         });
-        console.log(`[retry-single] Reserved 1 credit for manual retry job ${jobId}`);
+        console.log(`[retry-single] Registered free retry reservation row (0 credits) for job ${jobId}`);
       } catch (err: any) {
         if (err?.code === "QUOTA_EXCEEDED") {
           return res.status(402).json({ 
             success: false,
             code: "QUOTA_EXCEEDED", 
             snapshot: err.snapshot,
-            message: "Insufficient credits for retry"
+            message: "Unable to register retry reservation"
           });
         }
         console.error('[retry-single] Reservation failed:', err);

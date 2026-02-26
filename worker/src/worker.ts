@@ -2273,6 +2273,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
+        const isFreeManualRetry = (payload as any).retryType === "manual_retry";
         const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
         const billingStage2Url = pub2Url || null;
         const billingStage1AUrl = stage2OnlyBaseStage === "1A"
@@ -2281,11 +2282,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const billingStage1ASuccess = !!billingStage1AUrl || !!billingStage1BUrl;
         const billingStage1BSuccess = !!billingStage1BUrl;
         const billingStage2Success = !!billingStage2Url;
-        const actualCharge = !billingStage1ASuccess
-          ? 0
-          : (sceneLabel === "exterior"
-            ? 1
-            : (billingStage1BSuccess && billingStage2Success ? 2 : 1));
+        const completedJob = await getJob(payload.jobId);
+        const completedStatus = String((completedJob as any)?.status || "").toLowerCase();
+        const isTerminalComplete = completedStatus === "complete" || completedStatus === "completed";
+        const hasUsableFinalOutput = typeof pub2Url === "string" && pub2Url.length > 0;
+        const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
+        const actualCharge = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
 
         nLog("[BILLING_CHARGE_TELEMETRY]", {
           jobId: payload.jobId,
@@ -2295,6 +2297,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2Success: billingStage2Success,
           finalCharge: actualCharge,
           path: "stage2_only_retry",
+          billableFinalSuccess,
+          completedStatus,
+          freeRetryNoAdditionalCharge: isFreeManualRetry,
         });
 
         await finalizeReservationFromWorker({
@@ -2309,24 +2314,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       // ✅ BILLING FINALIZATION: Compute final charge based on published outputs
-      try {
-        const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
-        const billingStage2Url = pub2Url || null;
-        const billingStage1AUrl = stage2OnlyBaseStage === "1A"
-          ? (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null)
-          : (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null);
-        const billingStage1ASuccess = !!billingStage1AUrl || !!billingStage1BUrl;
-        const billingStage1BSuccess = !!billingStage1BUrl;
-        const billingStage2Success = !!billingStage2Url;
-        await finalizeImageChargeFromWorker({
-          jobId: payload.jobId,
-          stage1ASuccess: billingStage1ASuccess,
-          stage1BSuccess: billingStage1BSuccess,
-          stage2Success: billingStage2Success,
-          sceneType: sceneLabel || "interior",
-        });
-      } catch (chargeErr) {
-        nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
+      if ((payload as any).retryType !== "manual_retry") {
+        try {
+          const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
+          const billingStage2Url = pub2Url || null;
+          const billingStage1AUrl = stage2OnlyBaseStage === "1A"
+            ? (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null)
+            : (((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null);
+          const billingStage1ASuccess = !!billingStage1AUrl || !!billingStage1BUrl;
+          const billingStage1BSuccess = !!billingStage1BUrl;
+          const billingStage2Success = !!billingStage2Url;
+          await finalizeImageChargeFromWorker({
+            jobId: payload.jobId,
+            stage1ASuccess: billingStage1ASuccess,
+            stage1BSuccess: billingStage1BSuccess,
+            stage2Success: billingStage2Success,
+            sceneType: sceneLabel || "interior",
+          });
+        } catch (chargeErr) {
+          nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
+        }
+      } else {
+        nLog(`[BILLING] Skipping charge finalization for free manual retry: ${payload.jobId}`);
       }
 
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
@@ -5926,13 +5935,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const billingStage2Success = committedFinalStageLabel === "2" ? !!committedStage2Url : false;
 
   // ===== USAGE TRACKING =====
-  // Record a single bundled usage event following execution reality (not intent flags).
-  // imagesUsed is derived from actual stage completion signals computed above.
+  // Record usage from authoritative terminal job state only.
+  const finalizedJob = await getJob(payload.jobId);
+  const finalizedStatus = String((finalizedJob as any)?.status || "").toLowerCase();
+  const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
+  const hasUsableFinalOutput = typeof committedResultUrl === "string" && committedResultUrl.length > 0;
+  const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
+  const isFreeManualRetry = (payload as any).retryType === "manual_retry";
+
   try {
     const agencyId = (payload as any).agencyId || null;
-    // 2 credits only when BOTH stage1B AND stage2 actually published outputs.
-    // 1 credit for any other successful run (stage1A-only, stage1A+1B, stage1A+stage2-only).
-    const imagesUsed = (billingStage1BSuccess && billingStage2Success) ? 2 : 1;
+    const imagesUsed = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
     await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
   } catch (usageErr) {
     // Usage tracking must never block job completion
@@ -5944,11 +5957,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  const actualCharge = !billingStage1ASuccess
-    ? 0
-    : (sceneLabel === "exterior"
-      ? 1
-      : (billingEffectiveStage1B && billingStage2Success ? 2 : 1));
+  const actualCharge = billableFinalSuccess && !isFreeManualRetry ? 1 : 0;
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,
@@ -5961,6 +5970,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BUserSelected: originalUserDeclutter,
     geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
     billingEffectiveStage1B,
+    billableFinalSuccess,
+    completedStatus: finalizedStatus,
+    freeRetryNoAdditionalCharge: isFreeManualRetry,
   });
 
   try {
@@ -5979,19 +5991,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // ✅ BILLING FINALIZATION: Compute final charge based on final output
   // This runs AFTER job is marked complete to ensure idempotent charging
-  try {
-    await finalizeImageChargeFromWorker({
-      jobId: payload.jobId,
-      stage1ASuccess: billingStage1ASuccess,
-      stage1BSuccess: billingStage1BSuccess,
-      stage2Success: billingStage2Success,
-      sceneType: sceneLabel || "interior",
-      stage1BUserSelected: originalUserDeclutter,
-      geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
-    });
-  } catch (chargeErr) {
-    // Billing errors must not crash the worker
-    nLog("[BILLING] Failed to finalize charge (non-blocking):", (chargeErr as any)?.message || chargeErr);
+  if (!isFreeManualRetry) {
+    try {
+      await finalizeImageChargeFromWorker({
+        jobId: payload.jobId,
+        stage1ASuccess: billingStage1ASuccess,
+        stage1BSuccess: billingStage1BSuccess,
+        stage2Success: billingStage2Success,
+        sceneType: sceneLabel || "interior",
+        stage1BUserSelected: originalUserDeclutter,
+        geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
+      });
+    } catch (chargeErr) {
+      // Billing errors must not crash the worker
+      nLog("[BILLING] Failed to finalize charge (non-blocking):", (chargeErr as any)?.message || chargeErr);
+    }
+  } else {
+    nLog(`[BILLING] Skipping charge finalization for free manual retry: ${payload.jobId}`);
   }
 
   // Persist finalized metadata with longer history TTL
@@ -6536,4 +6552,18 @@ worker.on("completed", (job, result: any) => {
 
 worker.on("failed", (job, err) => {
   nLog(`[worker] failed job ${job?.id}`, err);
+  const failedJobId = String(job?.id || "").trim();
+  if (!failedJobId) return;
+  void (async () => {
+    try {
+      await finalizeReservationFromWorker({
+        jobId: failedJobId,
+        stage12Success: false,
+        stage2Success: false,
+      });
+      nLog(`[BILLING] Failed-event reservation release attempted for ${failedJobId}`);
+    } catch (releaseErr) {
+      nLog("[BILLING] Failed-event reservation release failed (non-blocking):", (releaseErr as any)?.message || releaseErr);
+    }
+  })();
 });

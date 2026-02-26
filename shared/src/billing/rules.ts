@@ -30,38 +30,11 @@ export interface StageFlags {
  * - else → charge = 1
  */
 export function computeCharge(flags: StageFlags): { amount: number; reason: string } {
-  // Stage 1A must succeed for any charge
   if (!flags.stage1A) {
     return { amount: 0, reason: "stage1A_failed" };
   }
 
-  // Stage1B counts toward 2-credit billing only when the user explicitly selected declutter
-  // OR when Gemini confirmed true furniture (auto-escalation for furnished rooms).
-  // Gate-triggered light-declutter on clutter-only empty rooms does NOT escalate billing.
-  // When both optional fields are absent (legacy callers), fall back to raw stage1B flag.
-  const effectiveStage1B =
-    flags.stage1B &&
-    (
-      flags.stage1BUserSelected === undefined && flags.geminiHasFurniture === undefined
-        ? true // legacy path: no intent info, trust stage execution as before
-        : (flags.stage1BUserSelected === true || flags.geminiHasFurniture === true)
-    );
-
-  // Compute raw charge from stage outcomes first
-  let amount = 1;
-  let reason = "interior_partial_pipeline";
-  if (effectiveStage1B && flags.stage2) {
-    amount = 2;
-    reason = "interior_full_pipeline";
-  }
-
-  // Apply exterior billing cap after stage-based computation
-  if (flags.sceneType === "exterior" && amount > 1) {
-    amount = 1;
-    reason = "exterior_cap";
-  }
-
-  return { amount, reason };
+  return { amount: 1, reason: "flat_one_image_model" };
 }
 
 /**
@@ -80,15 +53,6 @@ export function estimateCredits(params: {
   userSelectedStage1B: boolean; // declutter enabled
   userSelectedStage2: boolean; // virtual staging enabled
 }): number {
-  if (params.sceneType === "exterior") {
-    return 1;
-  }
-
-  // Interior logic
-  if (params.userSelectedStage1B && params.userSelectedStage2) {
-    return 2;
-  }
-
   return 1;
 }
 
