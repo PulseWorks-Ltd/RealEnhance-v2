@@ -647,9 +647,6 @@ export function buildFinalFixtureConfirmPrompt(input: {
   validationMode?: Stage2ValidationMode;
 } = {}): string {
   const findings = (input.localFindings || []).filter(Boolean);
-  const findingsBlock = findings.length
-    ? findings.map((f) => `- ${f}`).join("\n")
-    : "- none";
 
   const parsePercentFromFindings = (patterns: RegExp[]): number => {
     for (const finding of findings) {
@@ -663,6 +660,62 @@ export function buildFinalFixtureConfirmPrompt(input: {
     }
     return 0;
   };
+
+  const parseOpeningDeltaTotal = (): number => {
+    for (const finding of findings) {
+      const openingsDeltaMatch = finding.match(/openings_delta_total\s*:\s*([+-]?[\d.]+)/i);
+      if (openingsDeltaMatch?.[1]) {
+        const value = Number(openingsDeltaMatch[1]);
+        if (Number.isFinite(value)) return value;
+      }
+    }
+
+    let windowsDelta = 0;
+    let doorsDelta = 0;
+    let foundWindows = false;
+    let foundDoors = false;
+
+    for (const finding of findings) {
+      if (!foundWindows) {
+        const windowsMatch = finding.match(/window_count_delta\s*:\s*(-?\d+)\s*->\s*(-?\d+)/i);
+        if (windowsMatch) {
+          windowsDelta = Number(windowsMatch[2]) - Number(windowsMatch[1]);
+          foundWindows = true;
+        }
+      }
+
+      if (!foundDoors) {
+        const doorsMatch = finding.match(/door_count_delta\s*:\s*(-?\d+)\s*->\s*(-?\d+)/i);
+        if (doorsMatch) {
+          doorsDelta = Number(doorsMatch[2]) - Number(doorsMatch[1]);
+          foundDoors = true;
+        }
+      }
+
+      if (foundWindows && foundDoors) break;
+    }
+
+    if (foundWindows || foundDoors) return windowsDelta + doorsDelta;
+
+    for (const finding of findings) {
+      const semanticOpeningsMatch = finding.match(/openings\s*\+\s*(\d+)\s*\/\s*-\s*(\d+)/i);
+      if (semanticOpeningsMatch) {
+        return Number(semanticOpeningsMatch[1]) - Number(semanticOpeningsMatch[2]);
+      }
+    }
+
+    return 0;
+  };
+
+  const openingDeltaTotal = parseOpeningDeltaTotal();
+  const openingDeltaAdvisoryBlock = openingDeltaTotal !== 0
+    ? `- advisory_opening_delta_signal: openings_delta_total=${openingDeltaTotal >= 0 ? "+" : ""}${openingDeltaTotal}
+- advisory_opening_delta_note: validate opening continuity visually before final decision (advisory only)`
+    : "";
+
+  const findingsBlock = findings.length
+    ? [findings.map((f) => `- ${f}`).join("\n"), openingDeltaAdvisoryBlock].filter(Boolean).join("\n")
+    : openingDeltaAdvisoryBlock || "- none";
 
   const openingDriftPct = parsePercentFromFindings([
     /opening(?:_|\s*)drift(?:_|\s*)pct\s*[:=]\s*([\d.]+)/i,
@@ -2359,59 +2412,31 @@ If a door exists but is not realistically usable:
 → hardFail = true
 
 ────────────────────────────────
-EXPLICIT DOOR OBSTRUCTION RULE (HARD FAIL)
+CRITICAL OPENING CONTINUITY LOCK (HARD FAIL)
 ────────────────────────────────
 
-If a freestanding furniture item (e.g., dresser, wardrobe, tallboy,
-shelving unit, desk, bed frame, cabinet) is positioned directly in
-front of a doorway such that the door is not realistically usable,
-this is NOT furniture_change.
+Any BEFORE opening (door, window, or pass-through) must remain
+functionally continuous in AFTER.
+
+If an opening still visually exists but is effectively unusable due to
+staging placement, this is a hard failure.
+
+Treat as blocked if ANY of the following are true:
+
+• Door swing path is physically blocked by furniture
+• Sliding door travel path is blocked by furniture
+• Door threshold/circulation path is fully obstructed
+• Opening is visually sealed or converted into non-openable surface
+• Furniture placement makes real-world passage clearly impossible
 
 Classify as:
 → category = opening_blocked
 → hardFail = true
 
-A doorway is considered functionally blocked if ANY of the following
-are visually true in the AFTER image:
+Do NOT classify these cases as furniture_change.
 
-• The door cannot swing open due to furniture placement
-• The doorway opening cannot be physically entered
-• Clearance appears insufficient for a person to pass through
-• A large furniture item occupies the door threshold
-• The circulation path through the doorway is fully obstructed
-
-Important:
-
-• Minor proximity to a doorway is NOT a violation.
-• Partial visual overlap without functional obstruction is NOT a violation.
-• Perspective compression alone is NOT a violation.
-• The door must appear realistically unusable based on visual evidence.
-
-If a door exists but appears unusable due to furniture barricading it,
-this MUST be classified as opening_blocked, not furniture_change.
-🎯 Why This Works
-
-It defines physical usability.
-
-It distinguishes proximity from obstruction.
-
-It forces correct category selection.
-
-It avoids false positives from perspective correction.
-
-It does not interfere with geometric rules.
-
-🚫 What It Does NOT Do
-
-It does not alter enforcement hierarchy.
-
-It does not touch composite logic.
-
-It does not impact drift guard.
-
-It does not promote noisy metrics.
-
-It strictly corrects semantic classification.
+Minor proximity without functional obstruction is NOT a violation.
+Perspective compression alone is NOT a violation.
 
 WINDOWS:
 - Partial visual occlusion by movable furniture is acceptable
