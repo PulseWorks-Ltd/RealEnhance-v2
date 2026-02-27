@@ -259,7 +259,14 @@ export function statusRouter() {
         
         let pipelineStatus: NormalizedState;
         // FIX 3: Multi-layered completion detection
-        if (queueFailed) {
+        if (stateFromLocal === "failed") {
+          console.log("[STATUS_SHORT_CIRCUIT_LOCAL_FAILED]", {
+            id,
+            localStatus: localStatusRaw,
+            queueStatus,
+          });
+          pipelineStatus = "failed";
+        } else if (queueFailed) {
           pipelineStatus = "failed";
         } else if (allRequestedStagesPresent && !queueFailed) {
           // Layer 1: Explicit completion flags (most reliable)
@@ -713,7 +720,14 @@ export function statusRouter() {
         : normalizeQueueState(state);
       // ✅ FIX 2: Prioritize stage presence over queue state
       const queueFailed = queueStatus === "failed";
-      if (queueFailed) {
+      if (localStateNormalized === "failed") {
+        console.log("[STATUS_SHORT_CIRCUIT_LOCAL_FAILED]", {
+          id: jobId,
+          localStatus: local?.status || null,
+          queueStatus,
+        });
+        stateOut = "failed";
+      } else if (queueFailed) {
         stateOut = "failed";
       } else if (allRequestedStagesPresent && !queueFailed) {
         stateOut = "completed";

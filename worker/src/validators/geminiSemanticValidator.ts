@@ -2358,6 +2358,61 @@ If a door exists but is not realistically usable:
 → category = opening_blocked
 → hardFail = true
 
+────────────────────────────────
+EXPLICIT DOOR OBSTRUCTION RULE (HARD FAIL)
+────────────────────────────────
+
+If a freestanding furniture item (e.g., dresser, wardrobe, tallboy,
+shelving unit, desk, bed frame, cabinet) is positioned directly in
+front of a doorway such that the door is not realistically usable,
+this is NOT furniture_change.
+
+Classify as:
+→ category = opening_blocked
+→ hardFail = true
+
+A doorway is considered functionally blocked if ANY of the following
+are visually true in the AFTER image:
+
+• The door cannot swing open due to furniture placement
+• The doorway opening cannot be physically entered
+• Clearance appears insufficient for a person to pass through
+• A large furniture item occupies the door threshold
+• The circulation path through the doorway is fully obstructed
+
+Important:
+
+• Minor proximity to a doorway is NOT a violation.
+• Partial visual overlap without functional obstruction is NOT a violation.
+• Perspective compression alone is NOT a violation.
+• The door must appear realistically unusable based on visual evidence.
+
+If a door exists but appears unusable due to furniture barricading it,
+this MUST be classified as opening_blocked, not furniture_change.
+🎯 Why This Works
+
+It defines physical usability.
+
+It distinguishes proximity from obstruction.
+
+It forces correct category selection.
+
+It avoids false positives from perspective correction.
+
+It does not interfere with geometric rules.
+
+🚫 What It Does NOT Do
+
+It does not alter enforcement hierarchy.
+
+It does not touch composite logic.
+
+It does not impact drift guard.
+
+It does not promote noisy metrics.
+
+It strictly corrects semantic classification.
+
 WINDOWS:
 - Partial visual occlusion by movable furniture is acceptable
 - The window must still clearly exist as a window
