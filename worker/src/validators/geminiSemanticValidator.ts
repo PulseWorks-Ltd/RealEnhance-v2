@@ -565,8 +565,6 @@ function hasStage2FullPrimaryStructuralIdentityViolation(input: {
 function hasStage2PrimaryStructuralViolation(input: {
   violationType: GeminiViolationType;
   reasonText: string;
-  windowsDelta: number;
-  doorsDelta: number;
   stage2FullPrimaryStructuralIdentityViolation: boolean;
   builtInDetected: boolean;
   structuralAnchorCount: number;
@@ -579,10 +577,7 @@ function hasStage2PrimaryStructuralViolation(input: {
   hasEnvelopeDeformation: boolean;
   hasConfirmedBuiltInRelocation: boolean;
 } {
-  const hasOpeningChange =
-    input.violationType === "opening_change" ||
-    input.windowsDelta !== 0 ||
-    input.doorsDelta !== 0;
+  const hasOpeningChange = input.violationType === "opening_change";
 
   const hasWallGeometryDrift =
     input.violationType === "wall_change" ||
@@ -2826,8 +2821,6 @@ export async function runGeminiSemanticValidator(opts: {
     } = hasStage2PrimaryStructuralViolation({
       violationType,
       reasonText,
-      windowsDelta,
-      doorsDelta,
       stage2FullPrimaryStructuralIdentityViolation,
       builtInDetected,
       structuralAnchorCount,

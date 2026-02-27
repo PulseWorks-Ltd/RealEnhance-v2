@@ -295,82 +295,21 @@ function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): Compos
     metrics.semanticOpeningsDeltaTotal !== 0 ||
     metrics.maskedOpeningsDeltaTotal !== 0;
 
-  if (metrics.structuralDeviationDeg === null || !Number.isFinite(metrics.structuralDeviationDeg)) {
-    return {
-      failed: false,
-      maskedHigh,
-      semanticHigh,
-      openingsChanged,
-      reason: "missing_structural_deviation",
-      structDegMissing: true,
-    };
-  }
-
-  if (metrics.structuralDeviationDeg > 85) {
-    return {
-      failed: true,
-      maskedHigh,
-      semanticHigh,
-      openingsChanged,
-      reason: "catastrophic_override_structDeg_gt_85",
-      structDegMissing: false,
-    };
-  }
-
-  if (metrics.structuralDeviationDeg > 30 && (maskedHigh || semanticHigh)) {
-    return {
-      failed: true,
-      maskedHigh,
-      semanticHigh,
-      openingsChanged,
-      reason: "composite_structural_distortion",
-      structDegMissing: false,
-    };
-  }
-
-  let compositeFail = false;
-  const compositeReasons: string[] = [];
-
-  // --- Opening Continuity Composite Refinement ---
-
-  const openingSignalStrong =
-    openingsChanged === true &&
-    semanticWallDriftPct >= 45 &&
-    maskedArchitecturalDriftPct >= 30;
-
-  const openingSignalWeak =
-    openingsChanged === true &&
-    semanticWallDriftPct < 45 &&
-    maskedArchitecturalDriftPct < 30;
-
-  if (openingSignalStrong) {
-    compositeFail = true;
-    compositeReasons.push("opening_delta_structural_corroborated");
-  }
-
-  if (openingSignalWeak) {
-    // Advisory only — do not auto-fail on delta alone
-    compositeReasons.push("opening_delta_advisory_only");
-  }
-
-  if (compositeFail) {
-    return {
-      failed: true,
-      maskedHigh,
-      semanticHigh,
-      openingsChanged,
-      reason: compositeReasons[0],
-      structDegMissing: false,
-    };
-  }
+  const structDegMissing = metrics.structuralDeviationDeg === null || !Number.isFinite(metrics.structuralDeviationDeg);
+  const moderateDrift = maskedArchitecturalDriftPct >= 60 || semanticWallDriftPct >= 60;
+  const reason = openingsChanged
+    ? "opening_delta_detected"
+    : moderateDrift
+      ? "moderate_wall_drift"
+      : "none";
 
   return {
     failed: false,
     maskedHigh,
     semanticHigh,
     openingsChanged,
-    reason: compositeReasons[0] || "pass",
-    structDegMissing: false,
+    reason,
+    structDegMissing,
   };
 }
 
@@ -4532,6 +4471,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (payload.options.virtualStage) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
+    let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
+    let stage2ReinforcedRetryUsed = false;
 
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       if (await stopIfCancelled("stage2_validation_loop")) return;
@@ -4554,9 +4495,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (attempt > 1) {
         const currentRetrySampling = getStage2OuterRetrySampling(attempt);
         const retryFailureType = pendingStage2StructuralFailureType;
-        const isStochasticRetryOne = attempt === 2;
+        const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
+        const isStochasticRetryOne = attempt === 2 && !useReinforcedRetry;
         if (isStochasticRetryOne) {
           console.log("[STAGE2] Retry-1 using identical stochastic prompt");
+        } else if (useReinforcedRetry) {
+          console.log("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
           console.log("[STAGE2] Retry-2 using corrective structural prompt");
         }
@@ -4592,13 +4536,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           structuralRetryContext: isStochasticRetryOne
             ? undefined
             : {
-              compositeFail: retryFailureType !== null,
+              compositeFail: useReinforcedRetry,
               failureType: retryFailureType,
-              attemptNumber: attempt - 1,
+              attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
             },
           modelReason: `stage2 unified retry ${attempt - 1}`,
         });
+        if (useReinforcedRetry) {
+          stage2ReinforcedRetryUsed = true;
+        }
         pendingStage2StructuralFailureType = null;
+        pendingStage2RetryStrategy = null;
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -4848,9 +4796,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
-            `composite_local_failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged} metrics=` +
+            `composite_local_advisory: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh} metrics=` +
             `angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg,masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
-            `wall=${compositeSemanticWallDriftPct.toFixed(2)}%,semanticOpenings=${compositeSemanticOpeningsDeltaTotal},maskedOpenings=${compositeMaskedOpeningsDeltaTotal}`;
+            `wall=${compositeSemanticWallDriftPct.toFixed(2)}%`;
           stage2LocalReasons.push(compositeReason);
         }
 
@@ -4869,73 +4817,94 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           semanticHigh: compositeLocalEvaluation.semanticHigh,
           openingsChanged: compositeLocalEvaluation.openingsChanged,
           action: compositeLocalEvaluation.failed
-            ? (COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" ? "retry" : "log-only")
+            ? "advisory-only"
             : "none",
         });
 
         nLog(
-          `[COMPOSITE_DECISION] jobId=${payload.jobId} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeLocalEvaluation.openingsChanged} decision=${compositeLocalEvaluation.failed ? "FAIL" : "PASS"} reason=${compositeLocalEvaluation.reason}`
+          `[COMPOSITE_DECISION] jobId=${payload.jobId} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} decision=${compositeLocalEvaluation.failed ? "ADVISORY_SIGNAL" : "NO_SIGNAL"} reason=${compositeLocalEvaluation.reason}`
         );
       }
 
       const stage2LocalStatus = stage2LocalReasons.length ? "needs_confirm" : "pass";
       nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
 
-      if (
-        shouldRunCompositeLocalValidator &&
-        COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" &&
-        compositeLocalEvaluation?.failed === true
-      ) {
-        let compositeBlockError: Error;
-        try {
-          throw new Error(
-            `Composite local validator blocked stage2: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`
-          );
-        } catch (err: any) {
-          compositeBlockError = err;
-        }
+      const deviationScore = compositeStructuralDeviationDeg ?? 0;
+      const catastrophicGeometry = Boolean(
+        (unifiedValidation as any)?.raw?.structureValidator?.details?.catastrophicGeometry ??
+        (unifiedValidation as any)?.raw?.structure?.details?.catastrophicGeometry ??
+        false
+      );
+      const maskedDriftPct = compositeMaskedDriftPct;
+      const semanticWallDriftPct = compositeSemanticWallDriftPct;
+      const windowsBefore = stage2SemanticResult?.windows?.before ?? 0;
+      const windowsAfter = stage2SemanticResult?.windows?.after ?? 0;
+      const doorsBefore = stage2SemanticResult?.doors?.before ?? 0;
+      const doorsAfter = stage2SemanticResult?.doors?.after ?? 0;
+      const openingsCreated = stage2MaskedEdgeResult?.createdOpenings ?? 0;
+      const openingsClosed = stage2MaskedEdgeResult?.closedOpenings ?? 0;
+      const compositeReason = compositeLocalEvaluation?.reason || "none";
 
+      const isExtremeDeviation = deviationScore >= 90;
+      const isExtremeDrift = maskedDriftPct >= 95 && semanticWallDriftPct >= 95;
+      const stage2Tier: "EXTREME" | "GEMINI" =
+        (catastrophicGeometry || isExtremeDeviation || isExtremeDrift) ? "EXTREME" : "GEMINI";
+
+      nLog("[STAGE2_TIER_CLASSIFICATION]", {
+        deviationScore,
+        maskedDriftPct,
+        semanticWallDriftPct,
+        tier: stage2Tier,
+      });
+
+      nLog("[STAGE2_LOCAL_SIGNALS]", {
+        jobId: payload.jobId,
+        attempt,
+        deviationScore,
+        catastrophicGeometry,
+        maskedDriftPct,
+        semanticWallDriftPct,
+        windowsBefore,
+        windowsAfter,
+        doorsBefore,
+        doorsAfter,
+        openingsCreated,
+        openingsClosed,
+        compositeReason,
+      });
+
+      if (stage2Tier === "EXTREME") {
         const failReasons = [
-          compositeBlockError.message,
-          `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
-          ...(unifiedValidation.reasons || []),
+          "extreme_structural_violation",
+          `deviationScore=${deviationScore.toFixed(2)}`,
+          `catastrophicGeometry=${catastrophicGeometry}`,
+          `maskedDriftPct=${maskedDriftPct.toFixed(2)}`,
+          `semanticWallDriftPct=${semanticWallDriftPct.toFixed(2)}`,
         ];
 
-        nLog(`[COMPOSITE_LOCAL_VALIDATOR_BLOCK]`, {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
-          reason: compositeBlockError.message,
-          structuralDeviationDeg: compositeStructuralDeviationDeg,
-          maskedDriftPct: compositeMaskedDriftPct,
-          semanticWallDriftPct: compositeSemanticWallDriftPct,
-          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
-          maskedHigh: compositeLocalEvaluation.maskedHigh,
-          semanticHigh: compositeLocalEvaluation.semanticHigh,
-          openingsChanged: compositeLocalEvaluation.openingsChanged,
-        });
-        setStage2AttemptValidation(path2, "composite_local", failReasons);
+        setStage2AttemptValidation(path2, "extreme_structural_violation", failReasons);
         mergeAttemptValidation("2", attempt, {
           final: {
             result: "FAILED",
             finalHard: true,
-            finalCategory: "composite_local",
+            finalCategory: "extreme_structural_violation",
             retryTriggered: attempt < MAX_STAGE2_RETRIES,
             retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            reason: failReasons[0] || "composite_local",
+            retryStrategy: "REINFORCED",
+            reason: "extreme_structural_violation",
           },
         });
+
         logEvent("VALIDATION_RESULT", {
           jobId: payload.jobId,
           stage: "2",
           attempt,
-          localPass: unifiedValidation.passed === true,
+          localPass: false,
           geminiPass: null,
           confirmPass: null,
           finalPass: false,
-          violationType: "composite_local",
+          violationType: "extreme_structural_violation",
+          retryStrategy: "REINFORCED",
           retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
         });
 
@@ -4948,107 +4917,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           stage2Blocked = true;
           stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = "composite_validation_exhausted";
+          stage2BlockedReason = `stage2_structural_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
           fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_COMPOSITE_LOCAL_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage} reason=${stage2BlockedReason}`);
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
           logEvent("FATAL_RETRY_EXHAUSTION", {
             jobId: payload.jobId,
             stage: "2",
             attempts: attempt,
-            blockedBy: "composite_local",
+            blockedBy: "extreme_structural_violation",
             reason: stage2BlockedReason,
           });
           nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=composite_local retries=${attempt - 1}`);
+          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=extreme_structural_violation retries=${attempt - 1}`);
           break;
         }
 
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
-        pendingStage2StructuralFailureType = classifyStructuralFailure(compositeLocalEvaluation);
-        nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
+        pendingStage2RetryStrategy = "REINFORCED";
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK} retryStrategy=REINFORCED`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
           retry: attempt + 1,
           retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          reason: failReasons[0] || "composite_local",
-        });
-        continue;
-      }
-
-      if (
-        shouldRunCompositeLocalValidator &&
-        COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE !== "block" &&
-        compositeLocalEvaluation?.failed === true
-      ) {
-        const compositeReason =
-          `Composite local validator failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`;
-        const failReasons = [
-          compositeReason,
-          `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
-          ...(unifiedValidation.reasons || []),
-        ];
-
-        setStage2AttemptValidation(path2, "composite_local", failReasons);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "composite_local",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            reason: failReasons[0] || "composite_local",
-          },
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: unifiedValidation.passed === true,
-          geminiPass: null,
-          confirmPass: null,
-          finalPass: false,
-          violationType: "composite_local",
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-        });
-
-        if (attempt >= MAX_STAGE2_RETRIES) {
-          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1B;
-          const fallbackPath = fallback1B || path1A;
-          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = "composite_validation_exhausted";
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_COMPOSITE_LOCAL_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage} reason=${stage2BlockedReason} mode=${COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE}`);
-          logEvent("FATAL_RETRY_EXHAUSTION", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempts: attempt,
-            blockedBy: "composite_local",
-            reason: stage2BlockedReason,
-          });
-          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=composite_local retries=${attempt - 1}`);
-          break;
-        }
-
-        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
-        pendingStage2StructuralFailureType = classifyStructuralFailure(compositeLocalEvaluation);
-        nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK} mode=${COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE}`);
-        logEvent("STAGE_RETRY", {
-          jobId: payload.jobId,
-          stage: "2",
-          retry: attempt + 1,
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          reason: failReasons[0] || "composite_local",
+          reason: "extreme_structural_violation",
+          retryStrategy: "REINFORCED",
         });
         continue;
       }
@@ -5158,8 +5054,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       let lastGeminiConfirm: any = null;
-      if (GEMINI_CONFIRMATION_ENABLED && stage2CandidatePath) {
-        nLog(`[GEMINI_CONFIRM] stage=2 trigger=local_issues reasons=${JSON.stringify(stage2LocalReasons)}`);
+      if (stage2CandidatePath) {
+        nLog(`[GEMINI_CONFIRM] stage=2 trigger=mandatory_structural_confirm reasons=${JSON.stringify(stage2LocalReasons)}`);
         const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
         const gatedEvidence = shouldInjectEvidence(unifiedValidation?.evidence)
           ? unifiedValidation?.evidence
@@ -5228,29 +5124,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
       const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
-      const compositeLocalHardFail =
-        shouldRunCompositeLocalValidator &&
-        COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE === "block" &&
-        compositeLocalEvaluation?.failed === true;
       const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(unifiedValidation);
       const structuralFailDetected =
-        compositeLocalHardFail ||
-        (primaryStructuralViolationDetected && (unifiedHardFail || geminiSemanticHardFail || confirmHardFail));
+        confirmHardFail ||
+        (primaryStructuralViolationDetected && (unifiedHardFail || geminiSemanticHardFail));
 
       if (structuralFailDetected) {
-        const blockedBy = compositeLocalHardFail
-          ? "composite_local"
-          : confirmHardFail
-            ? "gemini"
-            : (unifiedValidation.blockSource || "gemini");
-        const compositeReasons = compositeLocalEvaluation?.failed
-          ? [
-              `Composite local validator failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`,
-              `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
-            ]
-          : [];
+        const blockedBy = confirmHardFail
+          ? "gemini"
+          : (unifiedValidation.blockSource || "gemini");
         const failReasons = [
-          ...compositeReasons,
           ...(unifiedValidation.reasons || []),
           ...(lastGeminiConfirm?.reasons || []),
         ];
@@ -5262,6 +5145,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             finalCategory: blockedBy || "structure",
             retryTriggered: attempt < MAX_STAGE2_RETRIES,
             retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryStrategy: "NORMAL",
             reason: failReasons[0] || blockedBy || "structure",
           },
         });
@@ -5274,6 +5158,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
           finalPass: false,
           violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
+          retryStrategy: "NORMAL",
           retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
         });
 
@@ -5364,7 +5249,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Compliance gate is part of Stage 2 retry flow.
       // A blocking compliance verdict triggers retry; it does not fail the job directly.
-      if (geminiSemanticValidatorMode !== null) {
+      const finalConfirmMode: "block" | "log" = geminiSemanticValidatorMode === "log" ? "log" : "block";
+      if (validationStage === "2") {
         try {
           const ai = getGeminiClient();
           const base1A = toBase64(path1A);
@@ -5432,8 +5318,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               placementViolation,
               highThreshold: HIGH_CONF,
               medThreshold: MED_CONF,
-              mode: geminiSemanticValidatorMode,
-              action: (complianceBlocking && complianceRetryEligible && geminiSemanticValidatorMode === "block") ? "retry" : "log-only",
+              mode: finalConfirmMode,
+              action: (complianceBlocking && complianceRetryEligible && finalConfirmMode === "block") ? "retry" : "log-only",
             });
 
             if (!complianceRetryEligible && complianceBlocking) {
@@ -5441,7 +5327,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               nLog("[STAGE2_COMPLIANCE_SKIP_RETRY] secondary_only_signals=true action=allow_pass");
             }
 
-            if (complianceBlocking && complianceRetryEligible && geminiSemanticValidatorMode === "block") {
+            if (complianceBlocking && complianceRetryEligible && finalConfirmMode === "block") {
               const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
               nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
               setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);
@@ -5452,6 +5338,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   finalCategory: "compliance",
                   retryTriggered: attempt < MAX_STAGE2_RETRIES,
                   retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+                  retryStrategy: "NORMAL",
                   reason: reasonText,
                 },
               });
@@ -5464,6 +5351,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 confirmPass: null,
                 finalPass: false,
                 violationType: "compliance",
+                retryStrategy: "NORMAL",
                 retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
               });
 
@@ -5505,7 +5393,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               continue;
             }
 
-            if (complianceBlocking && geminiSemanticValidatorMode === "log") {
+            if (complianceBlocking && finalConfirmMode === "log") {
               nLog(`[worker] ⚠️  Compliance failure detected (confidence ${confidence.toFixed(2)}) mode=log - ALLOWING job to proceed: ${reasonText}`);
             } else {
               nLog("[COMPLIANCE_SOFT_FAIL]", {
@@ -5523,8 +5411,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } catch (e: any) {
           nLog("[worker] compliance check skipped or error:", e?.message || e);
         }
-      } else {
-        nLog(`[worker] Compliance check skipped - geminiSemanticValidatorMode=disabled`);
       }
 
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
@@ -5535,6 +5421,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           finalCategory: "accept",
           retryTriggered: false,
           retriesExhausted: false,
+          retryStrategy: "NORMAL",
         },
       });
       logEvent("VALIDATION_RESULT", {

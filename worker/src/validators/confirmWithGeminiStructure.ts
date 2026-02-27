@@ -1,10 +1,59 @@
-import { buildFinalFixtureConfirmPrompt, runGeminiSemanticValidator } from "./geminiSemanticValidator";
+import { runGeminiSemanticValidator } from "./geminiSemanticValidator";
 import { getGeminiValidatorMode, isGeminiBlockingEnabled } from "./validationModes";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { nLog } from "../logger";
 
 type StageKey = "stage1b" | "stage2";
+
+function buildNeutralStage2StructureConfirmPrompt(input: {
+  sceneType?: "interior" | "exterior";
+  localFindings: string[];
+  validationMode?: Stage2ValidationMode;
+}): string {
+  const findings = (input.localFindings || []).filter(Boolean).slice(0, 25);
+  const findingsBlock = findings.length
+    ? findings.map((f) => `- ${f}`).join("\n")
+    : "- none";
+
+  return `ROLE — Stage 2 Structural Continuity Confirmation
+
+You are performing a structural continuity verification for Stage 2 output.
+
+Compare BEFORE (Stage 1A baseline) vs AFTER (Stage 2 candidate).
+
+Local structural detectors observed potential changes in opening continuity
+and/or elevated wall drift.
+
+Independently determine whether any window, door, or architectural opening
+was removed, sealed, resized, relocated, or structurally altered.
+
+Do not assume local signals are correct.
+Evaluate visually and semantically.
+
+MODE CONTEXT
+- Validation Mode: ${input.validationMode || "REFRESH_OR_DIRECT"}
+- Scene: ${(input.sceneType || "interior").toUpperCase()}
+
+LOCAL SIGNALS (ADVISORY ONLY)
+${findingsBlock}
+
+DECISION POLICY
+- If structural continuity is clearly violated: hardFail=true.
+- If structural continuity is clearly preserved: hardFail=false.
+- If uncertain/ambiguous: hardFail=true (fail-safe).
+
+Return JSON only:
+{
+  "hardFail": boolean,
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": [string],
+  "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
+}`;
+}
 
 function normalizeLocalFindings(params: {
   localReasons: string[];
@@ -72,7 +121,7 @@ export async function confirmWithGeminiStructure(params: {
     });
 
     const promptOverride = params.stage === "stage2"
-      ? buildFinalFixtureConfirmPrompt({
+      ? buildNeutralStage2StructureConfirmPrompt({
           sceneType: params.sceneType,
           localFindings: finalFindings,
           validationMode: params.validationMode,
@@ -99,14 +148,32 @@ export async function confirmWithGeminiStructure(params: {
       riskLevel: params.riskLevel,
     });
 
-    const pass = !verdict.hardFail;
+    const confidence = typeof verdict.confidence === "number" && Number.isFinite(verdict.confidence)
+      ? verdict.confidence
+      : NaN;
+    const uncertain = params.stage === "stage2" && (
+      !Number.isFinite(confidence) ||
+      verdict.category === "unknown"
+    );
+
+    const structuralChanged =
+      verdict.hardFail === true ||
+      verdict.category === "structure" ||
+      verdict.category === "opening_blocked";
+
+    const pass = !structuralChanged && !uncertain;
     if (!pass) {
+      if (uncertain) {
+        reasons.push("gemini_uncertain_fail_safe");
+      }
       reasons.push(...(verdict.reasons || []));
     }
 
-    const confirmedFail = geminiBlocking ? !pass : false;
+    const confirmedFail = params.stage === "stage2"
+      ? !pass
+      : (geminiBlocking ? !pass : false);
 
-    if (!geminiBlocking && !pass) {
+    if (params.stage !== "stage2" && !geminiBlocking && !pass) {
       reasons.push("gemini_mode=log");
     }
 
