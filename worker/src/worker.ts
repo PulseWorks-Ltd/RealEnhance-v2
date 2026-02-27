@@ -16,6 +16,7 @@ import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2, runStage2GenerationAttempt } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import { applyStructuralConsensusBackstop } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
@@ -4432,6 +4433,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     const hasWallGeometryDrift =
       violationType === "wall_change" ||
+      violationType === "structural_consensus" ||
       ["wall removed", "wall added", "wall plane", "wall geometry", "load-bearing"].some((token) => reasonText.includes(token));
 
     const hasCameraShift =
@@ -5120,6 +5122,63 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
           : null,
       });
+
+      // STRUCTURAL CONSENSUS BACKSTOP (Stage 2 FULL only)
+      if (
+        validationStage === "2" &&
+        stage2ValidationMode === "FULL_STAGE_ONLY"
+      ) {
+        const semantic = {
+          windowsStatus:
+            (stage2SemanticResult?.windows?.before ?? 0) !== (stage2SemanticResult?.windows?.after ?? 0)
+              ? "FAIL"
+              : "PASS",
+          wallDriftStatus:
+            (stage2SemanticResult?.walls?.driftRatio ?? 0) >= 0.12
+              ? "FAIL"
+              : "PASS",
+        };
+        const masked = {
+          maskedDriftStatus:
+            (stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18
+              ? "FAIL"
+              : "PASS",
+          openingsStatus:
+            ((stage2MaskedEdgeResult?.createdOpenings ?? 0) > 0 || (stage2MaskedEdgeResult?.closedOpenings ?? 0) > 0)
+              ? "FAIL"
+              : "PASS",
+        };
+        const composite = {
+          decision: compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS",
+        };
+
+        const consensusVerdict = {
+          hardFail: unifiedValidation.hardFail === true,
+          category: (unifiedValidation.raw as any)?.geminiSemantic?.details?.category,
+          violationType: (unifiedValidation.raw as any)?.geminiSemantic?.details?.violationType,
+        };
+
+        const consensusResult = applyStructuralConsensusBackstop(consensusVerdict, {
+          stage: validationStage,
+          validationMode: stage2ValidationMode,
+          jobId: payload.jobId,
+          semantic,
+          masked,
+          composite,
+        });
+
+        if (consensusResult.applied) {
+          unifiedValidation.hardFail = consensusVerdict.hardFail;
+          (unifiedValidation.raw as any) = (unifiedValidation.raw || {}) as any;
+          (unifiedValidation.raw as any).geminiSemantic = (unifiedValidation.raw as any).geminiSemantic || {};
+          (unifiedValidation.raw as any).geminiSemantic.details = {
+            ...((unifiedValidation.raw as any).geminiSemantic.details || {}),
+            hardFail: consensusVerdict.hardFail,
+            category: consensusVerdict.category,
+            violationType: consensusVerdict.violationType,
+          };
+        }
+      }
 
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
