@@ -23,6 +23,11 @@ export type StructuralConsensusVerdict = {
   violationType?: string;
 };
 
+export type StructuralConsensusCase =
+  | "CATASTROPHIC_BACKSTOP"
+  | "SOFT_STRUCTURAL_REVIEW"
+  | "NORMAL";
+
 function isFail(value: StructuralConsensusStatus | undefined): boolean {
   return String(value || "").toUpperCase() === "FAIL";
 }
@@ -62,4 +67,20 @@ export function applyStructuralConsensusBackstop(
   }
 
   return { applied: false, derivedWarnings };
+}
+
+export function classifyStructuralConsensusCase(
+  input: StructuralConsensusInput
+): { derivedWarnings: number; mode: StructuralConsensusCase } {
+  const derivedWarnings = countStructuralConsensusWarnings(input);
+
+  if (derivedWarnings >= 5) {
+    return { derivedWarnings, mode: "CATASTROPHIC_BACKSTOP" };
+  }
+
+  if (derivedWarnings === 3 || derivedWarnings === 4) {
+    return { derivedWarnings, mode: "SOFT_STRUCTURAL_REVIEW" };
+  }
+
+  return { derivedWarnings, mode: "NORMAL" };
 }

@@ -65,11 +65,10 @@ function isPaymentRequiredError(err: any): boolean {
  * Apply HDR-like tone mapping for better dynamic range
  */
 function applyHDRToneMapping(img: sharp.Sharp): sharp.Sharp {
-  // Strong S-curve that compresses highlights and lifts shadows
-  // This creates the "HDR look" that's popular in real estate
+  // Moderated S-curve for tonal stabilization (protect bright openings/windows)
   return img
-    .linear(1.18, -(128 * 0.18))  // Aggressive S-curve
-    .gamma(1.18);                  // Further midtone lift
+    .linear(1.12, -(128 * 0.12))
+    .gamma(1.10);
 }
 
 /**
@@ -160,11 +159,10 @@ async function enhanceWithGeminiStage1A(
  * Enhance sky regions (boost blues for more dramatic effect)
  */
 function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
-  // Boost saturation with slight hue shift toward cyan
-  // This makes dull skies more appealing
+  // Keep sky enhancement conservative to avoid clipped window openings
   return img.modulate({
     brightness: 1.0,    // Keep brightness stable
-    saturation: 1.22,   // +22% saturation (especially helps blues)
+    saturation: 1.14,
   });
 }
 
@@ -253,18 +251,18 @@ export async function runStage1A(
     img = img.linear(1 + interiorCfg.localContrast, -(128 * interiorCfg.localContrast));
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   } else {
-    const baseBrightness = 1.14; // +14% brightness (adaptive, marketing-grade)
+    const baseBrightness = 1.10; // reduced lift for opening stability
     const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     img = img.modulate({
       brightness,
-      saturation: 1.20,  // +20% saturation (clamped to avoid orange shift)
+      saturation: 1.16,
     });
     logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=1.20, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
   
   // 7. Gamma correction for shadow detail (lower = brighter shadows)
   if (!applyInteriorProfile) {
-    img = img.gamma(1.08);  // legacy optimization (non-profile path)
+    img = img.gamma(1.05);
   } else {
     // Profile already adjusted gamma; apply mild shadow lift using linear offset
     img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.15));
@@ -274,7 +272,7 @@ export async function runStage1A(
   img = applySkyEnhancement(img);
   
   // 9. Local contrast enhancement (CLAHE-like clarity boost)
-  img = img.linear(1.12, -(128 * 0.12));  // +12% micro-contrast
+  img = img.linear(1.08, -(128 * 0.08));
   
   // 10. Vignette reduction (brighten edges by 3-5%)
   img = img.linear(1.0, 5);  // Subtle edge lift

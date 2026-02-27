@@ -16,7 +16,7 @@ import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { runStage2, runStage2GenerationAttempt } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
-import { applyStructuralConsensusBackstop } from "./pipeline/stage2StructuralConsensusBackstop";
+import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
@@ -1232,6 +1232,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
   let stage2LocalReasons: string[] = [];
+  let stage2ConsensusCaseACount = 0;
+  let stage2ConsensusCaseBCount = 0;
+  let stage2ConsensusCaseCCount = 0;
   let compliance: any = undefined;
   const stage2AttemptOutputs: Array<{
     attempt: number;
@@ -4831,6 +4834,98 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage2LocalStatus = stage2LocalReasons.length ? "needs_confirm" : "pass";
       nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
 
+      const semanticConsensus = {
+        windowsStatus:
+          (stage2SemanticResult?.windows?.before ?? 0) !== (stage2SemanticResult?.windows?.after ?? 0)
+            ? "FAIL"
+            : "PASS",
+        wallDriftStatus:
+          (stage2SemanticResult?.walls?.driftRatio ?? 0) >= 0.12
+            ? "FAIL"
+            : "PASS",
+      };
+      const maskedConsensus = {
+        maskedDriftStatus:
+          (stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18
+            ? "FAIL"
+            : "PASS",
+        openingsStatus:
+          ((stage2MaskedEdgeResult?.createdOpenings ?? 0) > 0 || (stage2MaskedEdgeResult?.closedOpenings ?? 0) > 0)
+            ? "FAIL"
+            : "PASS",
+      };
+      const compositeConsensus = {
+        decision: compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS",
+      };
+
+      const consensusClassification = classifyStructuralConsensusCase({
+        stage: validationStage,
+        validationMode: stage2ValidationMode,
+        jobId: payload.jobId,
+        semantic: semanticConsensus,
+        masked: maskedConsensus,
+        composite: compositeConsensus,
+      });
+
+      const derivedWarnings = consensusClassification.derivedWarnings;
+      const softStructuralReviewMode = consensusClassification.mode === "SOFT_STRUCTURAL_REVIEW";
+      const catastrophicConsensusBackstop = consensusClassification.mode === "CATASTROPHIC_BACKSTOP";
+
+      if (consensusClassification.mode === "CATASTROPHIC_BACKSTOP") {
+        stage2ConsensusCaseACount += 1;
+      } else if (consensusClassification.mode === "SOFT_STRUCTURAL_REVIEW") {
+        stage2ConsensusCaseBCount += 1;
+      } else {
+        stage2ConsensusCaseCCount += 1;
+      }
+
+      nLog("[STRUCTURAL_CONSENSUS_BACKSTOP]", {
+        jobId: payload.jobId,
+        triggered: catastrophicConsensusBackstop,
+        derivedWarnings,
+        mode: consensusClassification.mode,
+      });
+
+      if (catastrophicConsensusBackstop) {
+        const failReasons = [
+          "STRUCTURAL_CATASTROPHIC_BACKSTOP",
+          `derivedWarnings=${derivedWarnings}`,
+        ];
+        nLog("[STRUCTURAL_CATASTROPHIC_BACKSTOP]", {
+          jobId: payload.jobId,
+          attempt,
+          derivedWarnings,
+        });
+
+        setStage2AttemptValidation(path2, "consensus", failReasons);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "structural_consensus",
+            retryTriggered: false,
+            retriesExhausted: true,
+            retryStrategy: "NORMAL",
+            reason: "STRUCTURAL_CATASTROPHIC_BACKSTOP",
+          },
+        });
+
+        const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1B;
+        const fallbackPath = fallback1B || path1A;
+        const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = "STRUCTURAL_CATASTROPHIC_BACKSTOP immediate_hard_stop";
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        nLog(`[STAGE2_CONSENSUS_HARD_STOP] fallback=${fallbackStage}`);
+        break;
+      }
+
       const deviationScore = compositeStructuralDeviationDeg ?? 0;
       const catastrophicGeometry = Boolean(
         (unifiedValidation as any)?.raw?.structureValidator?.details?.catastrophicGeometry ??
@@ -5057,11 +5152,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       let lastGeminiConfirm: any = null;
       if (stage2CandidatePath) {
-        nLog(`[GEMINI_CONFIRM] stage=2 trigger=mandatory_structural_confirm reasons=${JSON.stringify(stage2LocalReasons)}`);
+        nLog(`[GEMINI_CONFIRM] stage=2 trigger=mandatory_structural_confirm mode=${softStructuralReviewMode ? "SOFT_STRUCTURAL_REVIEW" : "NORMAL"} reasons=${JSON.stringify(stage2LocalReasons)}`);
         const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-        const gatedEvidence = shouldInjectEvidence(unifiedValidation?.evidence)
-          ? unifiedValidation?.evidence
-          : undefined;
+        const gatedEvidence = undefined;
         const injectionStatus = gatedEvidence ? "injected" : "suppressed";
         nLog(`[VALIDATION_EVIDENCE_GATE] stage=2 injected=${!!gatedEvidence} reason=${injectionStatus}`);
 
@@ -5075,8 +5168,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           localReasons: stage2LocalReasons,
           sourceStage: stage2SourceStage,
           validationMode: stage2ValidationMode,
-          evidence: gatedEvidence,
+          evidence: undefined,
           riskLevel: unifiedValidation?.riskLevel,
+          softStructuralReviewMode,
         });
         nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
       }
@@ -5123,63 +5217,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           : null,
       });
 
-      // STRUCTURAL CONSENSUS BACKSTOP (Stage 2 FULL only)
-      if (
-        validationStage === "2" &&
-        stage2ValidationMode === "FULL_STAGE_ONLY"
-      ) {
-        const semantic = {
-          windowsStatus:
-            (stage2SemanticResult?.windows?.before ?? 0) !== (stage2SemanticResult?.windows?.after ?? 0)
-              ? "FAIL"
-              : "PASS",
-          wallDriftStatus:
-            (stage2SemanticResult?.walls?.driftRatio ?? 0) >= 0.12
-              ? "FAIL"
-              : "PASS",
-        };
-        const masked = {
-          maskedDriftStatus:
-            (stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18
-              ? "FAIL"
-              : "PASS",
-          openingsStatus:
-            ((stage2MaskedEdgeResult?.createdOpenings ?? 0) > 0 || (stage2MaskedEdgeResult?.closedOpenings ?? 0) > 0)
-              ? "FAIL"
-              : "PASS",
-        };
-        const composite = {
-          decision: compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS",
-        };
-
-        const consensusVerdict = {
-          hardFail: unifiedValidation.hardFail === true,
-          category: (unifiedValidation.raw as any)?.geminiSemantic?.details?.category,
-          violationType: (unifiedValidation.raw as any)?.geminiSemantic?.details?.violationType,
-        };
-
-        const consensusResult = applyStructuralConsensusBackstop(consensusVerdict, {
-          stage: validationStage,
-          validationMode: stage2ValidationMode,
-          jobId: payload.jobId,
-          semantic,
-          masked,
-          composite,
-        });
-
-        if (consensusResult.applied) {
-          unifiedValidation.hardFail = consensusVerdict.hardFail;
-          (unifiedValidation.raw as any) = (unifiedValidation.raw || {}) as any;
-          (unifiedValidation.raw as any).geminiSemantic = (unifiedValidation.raw as any).geminiSemantic || {};
-          (unifiedValidation.raw as any).geminiSemantic.details = {
-            ...((unifiedValidation.raw as any).geminiSemantic.details || {}),
-            hardFail: consensusVerdict.hardFail,
-            category: consensusVerdict.category,
-            violationType: consensusVerdict.violationType,
-          };
-        }
-      }
-
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
       const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
@@ -5192,6 +5229,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const blockedBy = confirmHardFail
           ? "gemini"
           : (unifiedValidation.blockSource || "gemini");
+        const activeMaxAttempts = softStructuralReviewMode ? Math.min(MAX_STAGE2_RETRIES, 2) : MAX_STAGE2_RETRIES;
+        const retriesExhausted = attempt >= activeMaxAttempts;
         const failReasons = [
           ...(unifiedValidation.reasons || []),
           ...(lastGeminiConfirm?.reasons || []),
@@ -5202,8 +5241,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             result: "FAILED",
             finalHard: true,
             finalCategory: blockedBy || "structure",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryTriggered: !retriesExhausted,
+            retriesExhausted,
             retryStrategy: "NORMAL",
             reason: failReasons[0] || blockedBy || "structure",
           },
@@ -5218,7 +5257,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           finalPass: false,
           violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
           retryStrategy: "NORMAL",
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
         });
 
         // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
@@ -5268,7 +5307,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
         // ─────────────────────────────────────────────────────────────────────
 
-        if (attempt >= MAX_STAGE2_RETRIES) {
+        if (retriesExhausted) {
           const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
             ? stageLineage.stage1B.output
             : path1B;
@@ -5277,11 +5316,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           stage2Blocked = true;
           stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `stage2_structural_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+          stage2BlockedReason = softStructuralReviewMode
+            ? `stage2_soft_structural_review_exhausted after ${activeMaxAttempts} attempts`
+            : `stage2_structural_exhausted after ${activeMaxAttempts} attempts`;
           fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${activeMaxAttempts} fallback=${fallbackStage}`);
           logEvent("FATAL_RETRY_EXHAUSTION", {
             jobId: payload.jobId,
             stage: "2",
@@ -5295,12 +5336,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
 
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        if (softStructuralReviewMode) {
+          nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
+        } else {
+          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        }
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
           retry: attempt + 1,
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
           reason: failReasons[0] || "structure",
         });
         continue;
@@ -6334,6 +6379,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const debugMeta = {
       ...(existingMeta?.debug || {}),
       stage2ModeUsed,
+      structuralConsensusDistribution: {
+        CASE_A_COUNT: stage2ConsensusCaseACount,
+        CASE_B_COUNT: stage2ConsensusCaseBCount,
+        CASE_C_COUNT: stage2ConsensusCaseCCount,
+      },
       validatorSummary: unifiedValidation || (stage2Blocked ? { blocked: true, reason: stage2BlockedReason } : undefined),
     };
 
@@ -6360,6 +6410,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const finalWarningCount = unifiedValidation?.warnings?.length || 0;
   nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${unifiedValidation?.hardFail ?? false} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);
+  nLog("[STRUCTURAL_CONSENSUS_DISTRIBUTION]", {
+    jobId: payload.jobId,
+    CASE_A_COUNT: stage2ConsensusCaseACount,
+    CASE_B_COUNT: stage2ConsensusCaseBCount,
+    CASE_C_COUNT: stage2ConsensusCaseCCount,
+  });
   emitJobAttemptSummary(stage2Blocked ? "EXHAUSTED" : "SUCCESS");
 
   // Record enhanced image for "Previously Enhanced Images" history

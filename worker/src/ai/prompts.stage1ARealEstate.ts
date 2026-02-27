@@ -57,7 +57,22 @@ DO NOT generate new details.
 DO NOT reinterpret surfaces.
 DO NOT replace any visible items.
 
-Enhance only.`;
+Enhance only.
+
+WINDOW / OPENING PRESERVATION RULE:
+• Do NOT overexpose exterior sky visible through windows.
+• Preserve visible window frame edges and contrast.
+• Maintain clear boundary between wall surface and window opening.
+• Do not flatten bright exterior areas into pure white.
+• Avoid highlight clipping inside openings.
+• Preserve all visible architectural edge definition.
+
+TONAL STABILIZATION REQUIREMENTS:
+• Reduce exposure lift slightly when highlights are already bright.
+• Avoid aggressive highlight compression.
+• Preserve local contrast around window edges.
+• Do NOT alter structural geometry.
+• This is tonal stabilization only.`;
 
 /**
  * Stage 1A prompt for bright/daylight interiors
@@ -110,7 +125,22 @@ DO NOT generate new details.
 DO NOT reinterpret surfaces.
 DO NOT replace any visible items.
 
-Enhance only.`;
+Enhance only.
+
+WINDOW / OPENING PRESERVATION RULE:
+• Do NOT overexpose exterior sky visible through windows.
+• Preserve visible window frame edges and contrast.
+• Maintain clear boundary between wall surface and window opening.
+• Do not flatten bright exterior areas into pure white.
+• Avoid highlight clipping inside openings.
+• Preserve all visible architectural edge definition.
+
+TONAL STABILIZATION REQUIREMENTS:
+• Reduce exposure lift slightly when highlights are already bright.
+• Avoid aggressive highlight compression.
+• Preserve local contrast around window edges.
+• Do NOT alter structural geometry.
+• This is tonal stabilization only.`;
 
 /**
  * Stage 1A prompt for exterior/daylight scenes (canonical strong/normal exterior prompt)
@@ -164,7 +194,22 @@ DO NOT generate new sky content.
 DO NOT reinterpret landscaping.
 DO NOT replace any visible items.
 
-Enhance only.`;
+Enhance only.
+
+WINDOW / OPENING PRESERVATION RULE:
+• Do NOT overexpose exterior sky visible through windows.
+• Preserve visible window frame edges and contrast.
+• Maintain clear boundary between wall surface and window opening.
+• Do not flatten bright exterior areas into pure white.
+• Avoid highlight clipping inside openings.
+• Preserve all visible architectural edge definition.
+
+TONAL STABILIZATION REQUIREMENTS:
+• Reduce exposure lift slightly when highlights are already bright.
+• Avoid aggressive highlight compression.
+• Preserve local contrast around window edges.
+• Do NOT alter structural geometry.
+• This is tonal stabilization only.`;
 
 export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = STAGE1A_PROMPT_EXTERIOR_SKY_STRONG;
 

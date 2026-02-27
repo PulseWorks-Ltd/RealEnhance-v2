@@ -8,13 +8,27 @@ type StageKey = "stage1b" | "stage2";
 
 function buildNeutralStage2StructureConfirmPrompt(input: {
   sceneType?: "interior" | "exterior";
-  localFindings: string[];
   validationMode?: Stage2ValidationMode;
+  softStructuralReviewMode?: boolean;
 }): string {
-  const findings = (input.localFindings || []).filter(Boolean).slice(0, 25);
-  const findingsBlock = findings.length
-    ? findings.map((f) => `- ${f}`).join("\n")
-    : "- none";
+  const softReviewBlock = input.softStructuralReviewMode
+    ? `
+
+ARCHITECTURAL CONSISTENCY VERIFICATION:
+
+Please carefully verify:
+
+• All windows remain in the same positions and sizes as the input.
+• All doors remain fully visible and unobstructed.
+• No openings have been narrowed, sealed, or replaced with wall.
+• The architectural envelope of the room is unchanged.
+
+If any opening has been materially altered, classify as structural failure.
+
+If geometry appears consistent, ignore minor tonal or exposure differences.
+
+This is advisory, not accusatory.`
+    : "";
 
   return `ROLE — Stage 2 Structural Continuity Confirmation
 
@@ -22,21 +36,16 @@ You are performing a structural continuity verification for Stage 2 output.
 
 Compare BEFORE (Stage 1A baseline) vs AFTER (Stage 2 candidate).
 
-Local structural detectors observed potential changes in opening continuity
-and/or elevated wall drift.
-
 Independently determine whether any window, door, or architectural opening
 was removed, sealed, resized, relocated, or structurally altered.
 
-Do not assume local signals are correct.
 Evaluate visually and semantically.
 
 MODE CONTEXT
 - Validation Mode: ${input.validationMode || "REFRESH_OR_DIRECT"}
 - Scene: ${(input.sceneType || "interior").toUpperCase()}
 
-LOCAL SIGNALS (ADVISORY ONLY)
-${findingsBlock}
+${softReviewBlock}
 
 DECISION POLICY
 - If structural continuity is clearly violated: hardFail=true.
@@ -55,45 +64,6 @@ Return JSON only:
 }`;
 }
 
-function normalizeLocalFindings(params: {
-  localReasons: string[];
-  evidence?: ValidationEvidence;
-  localMetrics?: any;
-}): string[] {
-  const findings: string[] = [];
-
-  if (params.evidence) {
-    const e = params.evidence;
-    const windowsDelta = (e.openings?.windowsAfter ?? 0) - (e.openings?.windowsBefore ?? 0);
-    const doorsDelta = (e.openings?.doorsAfter ?? 0) - (e.openings?.doorsBefore ?? 0);
-    const openingsDelta = windowsDelta + doorsDelta;
-    findings.push(`window_count_delta: ${e.openings.windowsBefore} -> ${e.openings.windowsAfter}`);
-    findings.push(`door_count_delta: ${e.openings.doorsBefore} -> ${e.openings.doorsAfter}`);
-    findings.push(`openings_delta_total: ${openingsDelta >= 0 ? "+" : ""}${openingsDelta}`);
-    findings.push(`wall_drift_pct: ${e.drift.wallPercent.toFixed(2)}%`);
-    findings.push(`masked_drift_pct: ${e.drift.maskedEdgePercent.toFixed(2)}%`);
-    findings.push(`ssim: ${e.ssim.toFixed(4)} (threshold ${e.ssimThreshold})`);
-
-    if (e.anchorChecks.islandChanged) findings.push("anchor_flag: island_changed");
-    if (e.anchorChecks.hvacChanged) findings.push("anchor_flag: hvac_changed");
-    if (e.anchorChecks.cabinetryChanged) findings.push("anchor_flag: cabinetry_changed");
-    if (e.anchorChecks.lightingChanged) findings.push("anchor_flag: lighting_changed");
-  }
-
-  if (params.localMetrics && typeof params.localMetrics === "object") {
-    const metrics = params.localMetrics as Record<string, unknown>;
-    const metricKeys = ["ssim", "wallDrift", "maskedDrift", "openingsCreated", "openingsClosed", "windowDelta", "doorDelta"];
-    for (const key of metricKeys) {
-      if (metrics[key] !== undefined && metrics[key] !== null) {
-        findings.push(`metric_${key}: ${String(metrics[key])}`);
-      }
-    }
-  }
-
-  findings.push(...(params.localReasons || []).map((r) => String(r)));
-  return Array.from(new Set(findings)).slice(0, 40);
-}
-
 export async function confirmWithGeminiStructure(params: {
   baselinePathOrUrl: string;
   candidatePathOrUrl: string;
@@ -107,6 +77,7 @@ export async function confirmWithGeminiStructure(params: {
   validationMode?: Stage2ValidationMode;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
+  softStructuralReviewMode?: boolean;
 }): Promise<{ confirmedFail: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "error" }> {
   const failOpen = (process.env.GEMINI_CONFIRM_FAIL_OPEN ?? "1") === "1";
   const geminiMode = getGeminiValidatorMode();
@@ -114,23 +85,18 @@ export async function confirmWithGeminiStructure(params: {
   const reasons: string[] = [];
 
   try {
-    const finalFindings = normalizeLocalFindings({
-      localReasons: params.localReasons,
-      evidence: params.evidence,
-      localMetrics: params.localMetrics,
-    });
-
     const promptOverride = params.stage === "stage2"
       ? buildNeutralStage2StructureConfirmPrompt({
           sceneType: params.sceneType,
-          localFindings: finalFindings,
           validationMode: params.validationMode,
+          softStructuralReviewMode: params.softStructuralReviewMode,
         })
       : undefined;
 
     nLog("[VALIDATOR_PROMPT_MODE]", {
       mode: params.validationMode || null,
-      localSignalCount: finalFindings.length,
+      localSignalCount: Array.isArray(params.localReasons) ? params.localReasons.length : 0,
+      softStructuralReviewMode: params.softStructuralReviewMode === true,
       ssimValue: typeof params.evidence?.ssim === "number"
         ? Number(params.evidence.ssim.toFixed(4))
         : null,
@@ -144,7 +110,7 @@ export async function confirmWithGeminiStructure(params: {
       sourceStage: params.sourceStage,
       validationMode: params.validationMode,
       promptOverride,
-      evidence: params.evidence,
+      evidence: undefined,
       riskLevel: params.riskLevel,
     });
 
