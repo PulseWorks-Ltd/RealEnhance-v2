@@ -973,6 +973,44 @@ ${structuralGuidanceBlock}
 
 ${findingsBlock}
 
+────────────────────────────────────────
+CRITICAL OPENING CONTINUITY CHECK (HARD FAIL)
+
+You are comparing TWO images:
+- ORIGINAL (pre-stage)
+- ENHANCED (post-stage)
+
+Architectural openings (doors, closets, recesses, pass-throughs)
+that are visible in the ORIGINAL must remain architecturally present
+in the ENHANCED.
+
+You must explicitly verify:
+
+1. If a door frame, doorway, or recess opening exists in the ORIGINAL,
+  it must still exist in the ENHANCED.
+
+2. It is a HARD FAIL if any of the following occur:
+  - The opening is replaced with flat continuous wall surface
+  - The opening is painted over or visually removed
+  - The opening is filled in or extended into wall plane
+  - Furniture is placed directly in front of the opening AND
+    the opening structure is no longer visible
+  - A door location is converted into seamless wall backing
+
+3. Furniture placement does NOT justify architectural deletion.
+  Architectural continuity takes priority over layout plausibility.
+
+4. Minor lighting changes or shadow shifts are NOT structural changes.
+  Only removal or suppression of an opening counts.
+
+If an opening existed in the ORIGINAL and is not clearly present
+in the ENHANCED, you must return:
+
+violationType = "opening_suppressed"
+hardFail = true
+
+Do not remove or replace any existing prompt content.
+
 Adjudication rule:
 If findings suggest openings delta ≠ 0,
 doorway removed/added, opening sealed,

@@ -289,6 +289,8 @@ plus one short explanation sentence.`;
 function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): CompositeLocalEvaluation {
   const maskedHigh = metrics.maskedDriftPct > 85;
   const semanticHigh = metrics.semanticWallDriftPct > 50;
+  const maskedArchitecturalDriftPct = metrics.maskedDriftPct;
+  const semanticWallDriftPct = metrics.semanticWallDriftPct;
   const openingsChanged =
     metrics.semanticOpeningsDeltaTotal !== 0 ||
     metrics.maskedOpeningsDeltaTotal !== 0;
@@ -326,13 +328,38 @@ function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): Compos
     };
   }
 
-  if (openingsChanged && metrics.semanticWallDriftPct > 50) {
+  let compositeFail = false;
+  const compositeReasons: string[] = [];
+
+  // --- Opening Continuity Composite Refinement ---
+
+  const openingSignalStrong =
+    openingsChanged === true &&
+    semanticWallDriftPct >= 45 &&
+    maskedArchitecturalDriftPct >= 30;
+
+  const openingSignalWeak =
+    openingsChanged === true &&
+    semanticWallDriftPct < 45 &&
+    maskedArchitecturalDriftPct < 30;
+
+  if (openingSignalStrong) {
+    compositeFail = true;
+    compositeReasons.push("opening_delta_structural_corroborated");
+  }
+
+  if (openingSignalWeak) {
+    // Advisory only — do not auto-fail on delta alone
+    compositeReasons.push("opening_delta_advisory_only");
+  }
+
+  if (compositeFail) {
     return {
       failed: true,
       maskedHigh,
       semanticHigh,
       openingsChanged,
-      reason: "functional_opening_suppression",
+      reason: compositeReasons[0],
       structDegMissing: false,
     };
   }
@@ -342,7 +369,7 @@ function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): Compos
     maskedHigh,
     semanticHigh,
     openingsChanged,
-    reason: "pass",
+    reason: compositeReasons[0] || "pass",
     structDegMissing: false,
   };
 }
