@@ -97,6 +97,23 @@ function normalizePipelineState(raw: string | null | undefined): NormalizedState
   return "unknown";
 }
 
+function hasStage2ExhaustedSignal(parts: Array<string | null | undefined>): boolean {
+  const text = parts
+    .filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+    .join(" | ")
+    .toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("stage2_structural_exhausted") ||
+    text.includes("stage2_compliance_exhausted") ||
+    text.includes("stage2_validation_exhausted") ||
+    text.includes("composite_validation_exhausted") ||
+    text.includes("stage2_retry_failed") ||
+    text.includes("retries exhausted") ||
+    text.includes("retry exhausted")
+  );
+}
+
 export function statusRouter() {
   const r = Router();
 
@@ -362,6 +379,13 @@ export function statusRouter() {
         const blockedStage = (validationRaw as any)?.blockedStage || local.blockedStage || null;
         const fallbackStageMeta = (validationRaw as any)?.fallbackStage ?? local.fallbackStage ?? null;
         const validationNote = (validationRaw as any)?.note || local.validationNote || local?.meta?.validationNote || null;
+        const stage2Exhausted = hasStage2ExhaustedSignal([
+          validationNote,
+          local.errorMessage,
+          failedReason,
+          local?.meta?.stage2BlockedReason,
+          local?.meta?.fallbackReason,
+        ]);
 
         const warningSet = new Set<string>(Array.isArray(validationRaw?.warnings)
           ? validationRaw!.warnings as string[]
@@ -381,6 +405,10 @@ export function statusRouter() {
         if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage && stage2Expected) {
           pipelineStatus = "failed";
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+        }
+        if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
+          pipelineStatus = "failed";
+          warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
         }
         const isInformationalExteriorNote = requestedStage2 === true && isExteriorScene && !stage2Present;
         const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
@@ -667,6 +695,13 @@ export function statusRouter() {
       const blockedStage = (validationRaw as any)?.blockedStage || local.blockedStage || null;
       const fallbackStageMeta = (validationRaw as any)?.fallbackStage ?? local.fallbackStage ?? null;
       const validationNote = (validationRaw as any)?.note || local.validationNote || local?.meta?.validationNote || null;
+      const stage2Exhausted = hasStage2ExhaustedSignal([
+        validationNote,
+        local.errorMessage,
+        failedReason,
+        local?.meta?.stage2BlockedReason,
+        local?.meta?.fallbackReason,
+      ]);
 
       const warningSet = new Set<string>(Array.isArray(unified?.warnings) ? unified.warnings : (Array.isArray(validationRaw?.warnings) ? validationRaw.warnings : []));
       if (validationNote) warningSet.add(validationNote);
@@ -750,6 +785,10 @@ export function statusRouter() {
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
         stateOut = "failed";
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
+      }
+      if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
+        stateOut = "failed";
+        warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
       }
       if (requestedStage2 === true && isExteriorScene && !stage2Present) {
         warningSet.add("Staging isn't available for exterior images. The best enhanced version is shown.");

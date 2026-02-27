@@ -6020,7 +6020,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     || unifiedValidation?.passed === true
     || (!unifiedValidation && !stage2ValidationRisk);
 
-  if (hasStage2 && !(await canCompleteStage2(stage2ValidationPassed, "stage2_final_complete"))) return;
+  if (hasStage2 && !stage2ValidationPassed) {
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "failed",
+        blockedStage: "2",
+        errorMessage: "stage2_validation_exhausted",
+        validationNote: stage2BlockedReason || "stage2_validation_exhausted",
+      },
+      "stage2_validation_exhausted"
+    );
+    return;
+  }
+
+  if (hasStage2 && !(await canCompleteStage2(true, "stage2_final_complete"))) return;
 
   // Completion guard — full pipeline
   const mainGuard = canMarkJobComplete(latestJobBeforeCompletion as any, unifiedValidation as any, {
