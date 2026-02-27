@@ -1,4 +1,7 @@
 // server/src/index.ts
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import session, { type SessionOptions } from "express-session";
 import RedisStore from "connect-redis";
@@ -38,10 +41,16 @@ import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import adminResetRouter from "./routes/adminReset.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
-import path from "path";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { requireS3OrExit } from "./utils/s3.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const serverRoot = path.resolve(__dirname, "..");
+const envPath = path.resolve(serverRoot, ".env");
+console.log("[env] Loading .env from:", envPath);
+dotenv.config({ path: envPath });
 
 const IS_PROD = NODE_ENV === "production";
 

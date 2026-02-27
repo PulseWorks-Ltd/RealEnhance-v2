@@ -1,7 +1,14 @@
 import dotenv from "dotenv";
+import path from "path";
 import { Pool } from "pg";
+import { fileURLToPath } from "url";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const serverRoot = path.resolve(__dirname, "../..");
+const envPath = path.resolve(serverRoot, ".env");
+console.log("[env] Loading .env from:", envPath);
+dotenv.config({ path: envPath });
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
