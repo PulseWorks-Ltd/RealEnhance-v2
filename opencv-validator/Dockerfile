@@ -1,7 +1,11 @@
 # Dockerfile for OpenCV Structural Validator Microservice
 # Optimized for Railway deployment
 
-FROM python:3.11-slim
+# Use a resilient default registry mirror instead of Docker Hub directly.
+# Can be overridden at build time with:
+# --build-arg PYTHON_BASE_IMAGE=python:3.11-slim
+ARG PYTHON_BASE_IMAGE=public.ecr.aws/docker/library/python:3.11-slim
+FROM ${PYTHON_BASE_IMAGE}
 
 # Install system dependencies for OpenCV
 RUN apt-get update && apt-get install -y \

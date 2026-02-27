@@ -54,3 +54,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Client server listening on port ${PORT}`);
   console.log(`Cache control: HTML files = no-cache, Static assets = long-term cache`);
+});

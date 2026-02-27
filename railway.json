@@ -19,7 +19,7 @@
       "builder": "NIXPACKS",
       "rootDirectory": "client",
       "buildCommand": "pnpm install --no-frozen-lockfile --prefer-offline && pnpm run build",
-      "startCommand": "pnpm run preview -- --host 0.0.0.0 --port $PORT"
+      "startCommand": "pnpm run start"
     }
   ]
 }
