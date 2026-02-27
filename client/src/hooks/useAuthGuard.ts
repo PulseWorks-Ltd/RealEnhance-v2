@@ -29,15 +29,28 @@ export function useAuthGuard() {
         throw new Error("Please sign in to continue");
       }
 
-      await refreshUser();
-
-      if (!Number.isFinite(needCredits) || needCredits <= 0) {
-        return user;
+      const refreshedUser = await refreshUser();
+      if (!refreshedUser && !user) {
+        redirectToLogin();
+        throw new Error("Please sign in to continue");
       }
 
-      const resp = await fetch(api("/api/billing/subscription"), {
-        credentials: "include",
-      });
+      if (!Number.isFinite(needCredits) || needCredits <= 0) {
+        return refreshedUser || user;
+      }
+
+      let resp: Response;
+      try {
+        resp = await fetch(api("/api/billing/subscription"), {
+          credentials: "include",
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch (error) {
+        // Soft-fail billing preflight on transient/network issues.
+        // /api/upload remains the authoritative server-side credit gate.
+        console.warn("[auth-guard] billing preflight unavailable; deferring credit validation to server", error);
+        return refreshedUser || user;
+      }
 
       if (resp.status === 401 || resp.status === 403) {
         redirectToLogin();
@@ -45,7 +58,12 @@ export function useAuthGuard() {
       }
 
       if (!resp.ok) {
-        throw new Error("Unable to verify available credits. Please try again.");
+        // Fail open for non-auth responses; server enforces credits authoritatively.
+        console.warn("[auth-guard] billing preflight non-ok; deferring credit validation to server", {
+          status: resp.status,
+          needCredits,
+        });
+        return refreshedUser || user;
       }
 
       const summary = await resp.json().catch(() => ({} as any));
@@ -64,7 +82,7 @@ export function useAuthGuard() {
         throw err;
       }
 
-      return user;
+      return refreshedUser || user;
     },
     [user, refreshUser, redirectToLogin]
   );
