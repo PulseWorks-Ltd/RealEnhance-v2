@@ -4554,8 +4554,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (attempt > 1) {
         const currentRetrySampling = getStage2OuterRetrySampling(attempt);
         const retryFailureType = pendingStage2StructuralFailureType;
+        const isStochasticRetryOne = attempt === 2;
+        if (isStochasticRetryOne) {
+          console.log("[STAGE2] Retry-1 using identical stochastic prompt");
+        } else {
+          console.log("[STAGE2] Retry-2 using corrective structural prompt");
+        }
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
+        // IMPORTANT:
+        // Retry-1 must remain identical to initial Stage-2 generation.
+        // It exists purely as a stochastic second attempt.
+        // Do not introduce modified structural or eligibility behavior here.
         nLog("[STAGE2_PROMPT_SOURCE]", {
           source: "pipeline",
           retryType: "validator_forced_retry",
@@ -4572,16 +4582,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           curtainRailLikely: jobContext.curtainRailLikely,
           jobId: payload.jobId,
           outputPath: retryOutputPath,
-          generationConfig: {
-            temperature: currentRetrySampling.temperature,
-            topP: currentRetrySampling.topP,
-            topK: currentRetrySampling.topK,
-          },
-          structuralRetryContext: {
-            compositeFail: retryFailureType !== null,
-            failureType: retryFailureType,
-            attemptNumber: attempt - 1,
-          },
+          generationConfig: isStochasticRetryOne
+            ? undefined
+            : {
+              temperature: currentRetrySampling.temperature,
+              topP: currentRetrySampling.topP,
+              topK: currentRetrySampling.topK,
+            },
+          structuralRetryContext: isStochasticRetryOne
+            ? undefined
+            : {
+              compositeFail: retryFailureType !== null,
+              failureType: retryFailureType,
+              attemptNumber: attempt - 1,
+            },
           modelReason: `stage2 unified retry ${attempt - 1}`,
         });
         pendingStage2StructuralFailureType = null;
