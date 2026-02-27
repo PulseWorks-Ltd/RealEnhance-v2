@@ -4907,11 +4907,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           stage2Blocked = true;
           stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `stage2_composite_local_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+          stage2BlockedReason = "composite_validation_exhausted";
           fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_COMPOSITE_LOCAL_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+          nLog(`[STAGE2_COMPOSITE_LOCAL_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage} reason=${stage2BlockedReason}`);
           logEvent("FATAL_RETRY_EXHAUSTION", {
             jobId: payload.jobId,
             stage: "2",
@@ -4927,6 +4927,81 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         pendingStage2StructuralFailureType = classifyStructuralFailure(compositeLocalEvaluation);
         nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        logEvent("STAGE_RETRY", {
+          jobId: payload.jobId,
+          stage: "2",
+          retry: attempt + 1,
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          reason: failReasons[0] || "composite_local",
+        });
+        continue;
+      }
+
+      if (
+        shouldRunCompositeLocalValidator &&
+        COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE !== "block" &&
+        compositeLocalEvaluation?.failed === true
+      ) {
+        const compositeReason =
+          `Composite local validator failed: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh},openingsChanged=${compositeLocalEvaluation.openingsChanged}`;
+        const failReasons = [
+          compositeReason,
+          `Composite metrics: angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg masked=${Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100)).toFixed(2)}% wall=${Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100)).toFixed(2)}% semanticOpenings=${Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) + Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) + (stage2SemanticResult?.openings?.created ?? 0) + (stage2SemanticResult?.openings?.closed ?? 0)} maskedOpenings=${(stage2MaskedEdgeResult?.createdOpenings ?? 0) + (stage2MaskedEdgeResult?.closedOpenings ?? 0)}`,
+          ...(unifiedValidation.reasons || []),
+        ];
+
+        setStage2AttemptValidation(path2, "composite_local", failReasons);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "composite_local",
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            reason: failReasons[0] || "composite_local",
+          },
+        });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          localPass: unifiedValidation.passed === true,
+          geminiPass: null,
+          confirmPass: null,
+          finalPass: false,
+          violationType: "composite_local",
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+        });
+
+        if (attempt >= MAX_STAGE2_RETRIES) {
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1B;
+          const fallbackPath = fallback1B || path1A;
+          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = "composite_validation_exhausted";
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          nLog(`[STAGE2_COMPOSITE_LOCAL_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage} reason=${stage2BlockedReason} mode=${COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE}`);
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempts: attempt,
+            blockedBy: "composite_local",
+            reason: stage2BlockedReason,
+          });
+          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
+          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=composite_local retries=${attempt - 1}`);
+          break;
+        }
+
+        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        pendingStage2StructuralFailureType = classifyStructuralFailure(compositeLocalEvaluation);
+        nLog(`[STAGE2_COMPOSITE_LOCAL_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK} mode=${COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -5446,6 +5521,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   timings.validateMs = Date.now() - tVal;
   nLog(`[AUDIT FIX] Compliance evaluated in retry flow — proceeding to publish Stage 2 image or fallback`);
+
+  if (payload.options.virtualStage && stage2Blocked && stage2BlockedReason === "composite_validation_exhausted") {
+    const statusWritten = await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "failed",
+        blockedStage: "2",
+        reason: "composite_validation_exhausted",
+        validationNote: "composite_validation_exhausted",
+        errorMessage: "composite_validation_exhausted",
+      },
+      "stage2_composite_validation_exhausted"
+    );
+    if (!statusWritten) {
+      nLog("[STAGE2_TERMINAL_STATUS_WRITE_BLOCKED]", {
+        jobId: payload.jobId,
+        reason: "composite_validation_exhausted",
+      });
+    }
+    return;
+  }
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
