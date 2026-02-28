@@ -4,6 +4,14 @@
       "name": "server",
       "builder": "NIXPACKS",
       "rootDirectory": ".",
+      "watchPatterns": [
+        "server/**",
+        "shared/**",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "railway.json"
+      ],
       "buildCommand": "NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/server run build",
       "startCommand": "pnpm --filter @realenhance/server run start"
     },
@@ -11,6 +19,14 @@
       "name": "worker",
       "builder": "NIXPACKS",
       "rootDirectory": ".",
+      "watchPatterns": [
+        "worker/**",
+        "shared/**",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "railway.json"
+      ],
       "buildCommand": "NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/worker run build",
       "startCommand": "pnpm --filter @realenhance/worker run start"
     },
@@ -18,8 +34,16 @@
       "name": "client",
       "builder": "NIXPACKS",
       "rootDirectory": "client",
+      "watchPatterns": [
+        "client/**",
+        "shared/**",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "railway.json"
+      ],
       "buildCommand": "pnpm install --no-frozen-lockfile --prefer-offline && pnpm run build",
-      "startCommand": "pnpm run start"
+      "startCommand": "pnpm run preview -- --host 0.0.0.0 --port $PORT"
     }
   ]
 }

@@ -1,0 +1,84 @@
+name: Client Smoke Check
+
+on:
+  pull_request:
+    paths:
+      - "client/**"
+      - "shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/client-smoke.yml"
+  push:
+    branches:
+      - main
+      - fix/rollback-to-last-stable
+    paths:
+      - "client/**"
+      - "shared/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/client-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build client
+        run: pnpm --filter client run build
+
+      - name: Start preview and assert 200
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=4173
+
+          pnpm --filter client exec vite preview --host 127.0.0.1 --port "$PORT" --strictPort > /tmp/client-preview.log 2>&1 &
+          PREVIEW_PID=$!
+
+          cleanup() {
+            kill "$PREVIEW_PID" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for i in {1..30}; do
+            if curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null; then
+              break
+            fi
+
+            if [[ "$i" == "30" ]]; then
+              echo "Client preview failed to become ready"
+              cat /tmp/client-preview.log || true
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" "http://127.0.0.1:${PORT}/")
+          if [[ "$STATUS" != "200" ]]; then
+            echo "Expected HTTP 200 from client preview, got: $STATUS"
+            cat /tmp/client-preview.log || true
+            exit 1
+          fi
