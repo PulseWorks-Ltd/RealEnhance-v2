@@ -4726,45 +4726,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (shouldRunCompositeLocalValidator) {
         const rawStructuralDeviationDeg = unifiedValidation?.evidence?.drift?.angleDegrees;
+        const rawLineEdgeVerticalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.verticalDeviation;
+        const rawLineEdgeHorizontalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.horizontalDeviation;
+        const hasLineEdgeAngleEvidence =
+          (typeof rawLineEdgeVerticalDeviation === "number" && Number.isFinite(rawLineEdgeVerticalDeviation)) ||
+          (typeof rawLineEdgeHorizontalDeviation === "number" && Number.isFinite(rawLineEdgeHorizontalDeviation));
         compositeStructuralDeviationDeg =
-          typeof rawStructuralDeviationDeg === "number" && Number.isFinite(rawStructuralDeviationDeg)
+          typeof rawStructuralDeviationDeg === "number" &&
+          Number.isFinite(rawStructuralDeviationDeg) &&
+          (rawStructuralDeviationDeg !== 0 || hasLineEdgeAngleEvidence)
             ? Number(rawStructuralDeviationDeg)
             : null;
 
-        const rawStructureValidatorDeviation =
-          (unifiedValidation as any)?.raw?.structureValidator?.details?.deviationScore ??
-          (unifiedValidation as any)?.raw?.structure?.details?.deviationScore;
-        const rawLineEdgeVerticalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.verticalDeviation;
-        const rawLineEdgeHorizontalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.horizontalDeviation;
-        let structureValidatorLoggedAngle: number | null = null;
-        if (typeof rawStructureValidatorDeviation === "number" && Number.isFinite(rawStructureValidatorDeviation)) {
-          structureValidatorLoggedAngle = Number(rawStructureValidatorDeviation);
-        } else if (
-          typeof rawLineEdgeVerticalDeviation === "number" &&
-          Number.isFinite(rawLineEdgeVerticalDeviation) &&
-          typeof rawLineEdgeHorizontalDeviation === "number" &&
-          Number.isFinite(rawLineEdgeHorizontalDeviation)
-        ) {
-          structureValidatorLoggedAngle = Math.max(
-            Number(rawLineEdgeVerticalDeviation),
-            Number(rawLineEdgeHorizontalDeviation)
-          );
-        }
-
-        const structureCorrelationDelta =
-          compositeStructuralDeviationDeg !== null && structureValidatorLoggedAngle !== null
-            ? Math.abs(compositeStructuralDeviationDeg - structureValidatorLoggedAngle)
-            : null;
-
         nLog(
-          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} structureValidatorLoggedAngle=${structureValidatorLoggedAngle === null ? "missing" : structureValidatorLoggedAngle.toFixed(3)} delta=${structureCorrelationDelta === null ? "missing" : structureCorrelationDelta.toFixed(3)}`
+          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} source=lineEdge_evidence`
         );
-
-        if (structureCorrelationDelta !== null && structureCorrelationDelta > 0.5) {
-          nLog(
-            `[STRUCTURE_CORRELATION_WARNING] jobId=${payload.jobId} attempt=${attempt} delta=${structureCorrelationDelta.toFixed(3)} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} structureValidatorLoggedAngle=${structureValidatorLoggedAngle === null ? "missing" : structureValidatorLoggedAngle.toFixed(3)}`
-          );
-        }
 
         compositeSemanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
         compositeSemanticOpeningsDeltaTotal =
