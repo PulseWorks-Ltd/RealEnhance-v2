@@ -41,6 +41,30 @@ was removed, sealed, resized, relocated, or structurally altered.
 
 Evaluate visually and semantically.
 
+BUILT-IN STORAGE & FIXED JOINERY LOCK — STOP CONDITION
+
+Before finalizing your decision, inspect the original image for built-in architectural storage or fixed joinery.
+
+These include:
+• Sliding mirrored wardrobe doors
+• Built-in closets or recessed wardrobes
+• Floor-to-ceiling storage panels
+• Built-in cabinetry attached to walls
+• Recessed storage niches
+• Fixed shelving integrated into the wall structure
+
+These elements are part of the architectural identity of the room.
+
+You must verify that:
+1) Built-in storage visible in the original remains present in the enhanced image.
+2) The wall recess or opening containing it remains intact.
+3) It has not been painted over, flattened, sealed, or converted into continuous wall.
+4) Furniture has not replaced or structurally blocked it.
+
+If built-in storage has been removed or structurally altered:
+- category = "structure"
+- hardFail = true
+
 MODE CONTEXT
 - Validation Mode: ${input.validationMode || "REFRESH_OR_DIRECT"}
 - Scene: ${(input.sceneType || "interior").toUpperCase()}

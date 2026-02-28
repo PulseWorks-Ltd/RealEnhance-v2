@@ -65,6 +65,12 @@ FURNITURE ADDITION CONSTRAINTS
 Do NOT add any seating of any type (bar stools, chairs, benches) to or around kitchen islands.
 `.trim();
 
+const STAGE2_FULL_ARCHITECTURAL_IMMUTABILITY_BLOCK =
+  STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK.replace(
+    "- add/remove/move/resize walls, windows, doors, or openings",
+    "- add/remove/move/resize walls, windows, doors, or openings\nDo not remove, paint over, seal, or replace any built-in closets, sliding wardrobe doors, mirrored panels, or recessed storage visible in the original image.",
+  );
+
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
   const room = roomType || "room";
 
@@ -74,7 +80,7 @@ TASK:
 This is a FULL staging problem (from empty baseline).
 Synthesize a complete, realistic layout from scratch for the selected room type.
 
-${STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK}
+${STAGE2_FULL_ARCHITECTURAL_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_HARDENING_LAYER_V2}
 
