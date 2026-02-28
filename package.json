@@ -3,6 +3,9 @@
   "private": true,
   "packageManager": "pnpm@9.15.4",
   "scripts": {
+    "dev": "pnpm --parallel --filter @realenhance/server --filter client run dev",
+    "dev:server": "pnpm --filter @realenhance/server run dev",
+    "dev:client": "pnpm --filter client run dev",
     "install-all": "pnpm install -w",
     "build": "pnpm --filter ./client... run build && pnpm --filter @realenhance/server run build",
     "start": "pnpm --filter @realenhance/server run start"

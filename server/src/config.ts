@@ -1,5 +1,12 @@
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const serverRoot = path.resolve(__dirname, "..");
+const envPath = path.resolve(serverRoot, ".env");
+dotenv.config({ path: envPath });
 
 export const NODE_ENV = process.env.NODE_ENV ?? "development";
 export const PORT = Number(process.env.PORT ?? 5000);

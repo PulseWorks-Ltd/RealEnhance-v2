@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const devApiTarget = process.env.VITE_DEV_API_TARGET || "http://localhost:5000";
 
 export default defineConfig({
   plugins: [react()],
@@ -37,13 +38,13 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        target: devApiTarget,
         changeOrigin: true,
         secure: false,
         ws: true,
       },
       "/auth": {
-        target: "http://localhost:8080",
+        target: devApiTarget,
         changeOrigin: true,
         secure: false,
         ws: true,

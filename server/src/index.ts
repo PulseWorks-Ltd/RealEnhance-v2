@@ -1,5 +1,4 @@
 // server/src/index.ts
-import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
@@ -47,10 +46,6 @@ import { requireS3OrExit } from "./utils/s3.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const serverRoot = path.resolve(__dirname, "..");
-const envPath = path.resolve(serverRoot, ".env");
-console.log("[env] Loading .env from:", envPath);
-dotenv.config({ path: envPath });
 
 const IS_PROD = NODE_ENV === "production";
 
@@ -219,7 +214,6 @@ async function main() {
   }
 
   // Bind host/port for local dev and production (Railway)
-  const PORT = Number(process.env.PORT || 5000);
   const HOST = 
     process.env.HOST ||
     (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
