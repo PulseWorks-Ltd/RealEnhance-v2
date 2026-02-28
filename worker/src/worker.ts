@@ -418,6 +418,13 @@ Focus ONLY on structural architectural elements:
 - Wall planes
 - Permanent architectural openings
 
+Critical interpretation rules:
+- Closet doors are structural architectural elements.
+- Built-in wardrobes, fixed cabinetry, closet systems, and wall-integrated shelving are structural.
+- Freestanding furniture (dressers, sofas, tables, movable shelves) is NOT structural.
+- Curtains, blinds, curtain rods, decorative shelving, and lighting changes are NOT structural.
+- If a built-in appears replaced by freestanding furniture, treat this as structural removal.
+
 Do NOT evaluate:
 - Furniture
 - Decor
