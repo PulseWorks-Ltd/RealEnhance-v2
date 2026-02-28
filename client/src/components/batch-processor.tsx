@@ -5414,27 +5414,15 @@ export default function BatchProcessor() {
                     {requiredBatchCredits} {requiredBatchCredits === 1 ? 'Credit' : 'Credits'}
                   </span>
                 </div>
-                <div
-                  onClick={() => {
-                    if (isEnhanceCreditBlocked) {
-                      openCreditGateModal(requiredBatchCredits, Math.max(0, Number(availableCredits ?? 0)));
-                      return;
-                    }
-                    if (blockingCount > 0) {
-                      startBatchProcessing();
-                    }
-                  }}
+                <button
+                  onClick={handleStartEnhance}
+                  disabled={blockingCount > 0 || !files.length}
+                  title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                  className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
+                  data-testid="button-proceed-enhance"
                 >
-                  <button
-                    onClick={handleStartEnhance}
-                    disabled={blockingCount > 0 || !files.length || isEnhanceCreditBlocked}
-                    title={isEnhanceCreditBlocked ? "Not enough credits" : (blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined)}
-                    className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
-                    data-testid="button-proceed-enhance"
-                  >
-                    Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
-                  </button>
-                </div>
+                  Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
+                </button>
                 {isEnhanceCreditBlocked && (
                   <p className="mt-2 text-xs text-amber-700" title="Not enough credits">
                     Batch requires {requiredBatchCredits} credits — you have {Math.max(0, Number(availableCredits ?? 0))} available.
@@ -5469,8 +5457,8 @@ export default function BatchProcessor() {
                     </p>
                     <button
                       onClick={handleStartEnhance}
-                      disabled={!files.length || blockingCount > 0 || isEnhanceCreditBlocked}
-                      title={isEnhanceCreditBlocked ? "Not enough credits" : (blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined)}
+                      disabled={!files.length || blockingCount > 0}
+                      title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
                       className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                       data-testid="button-start-batch"
                     >
