@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useUsage } from "@/hooks/use-usage";
 
@@ -11,15 +10,13 @@ import { useUsage } from "@/hooks/use-usage";
  * - User has agencyId AND
  * - (active subscription OR valid trial OR addonRemaining > 0)
  * 
- * If conditions not met → redirect to billing management
+ * If conditions not met → keep user on page and defer enforcement to action APIs
  * 
  * This ensures users cannot access Enhance without proper credits/subscription.
  */
 export function RequireSubscription({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading } = useAuth();
   const { usage, loading: usageLoading, error: usageError } = useUsage();
-  const navigate = useNavigate();
-  const location = useLocation();
 
   useEffect(() => {
     if (authLoading || usageLoading) return;
@@ -38,14 +35,10 @@ export function RequireSubscription({ children }: { children: React.ReactNode })
     const hasAnyCredits = totalRemaining > 0;
     const hasAccess = hasActiveSubscription || hasValidTrial || hasAddonCredits || hasAnyCredits;
 
-    if (!hasAccess && location.pathname !== "/agency" && location.pathname !== "/settings/billing") {
-      console.log("[RequireSubscription] No active subscription or credits, redirecting to billing");
-      navigate("/agency", {
-        replace: true,
-        state: { from: location.pathname, reason: "subscription_required" },
-      });
+    if (!hasAccess) {
+      console.log("[RequireSubscription] No active subscription or credits; deferring enforcement to upload gate");
     }
-  }, [user, authLoading, usage, usageLoading, usageError, navigate, location.pathname]);
+  }, [user, authLoading, usage, usageLoading, usageError]);
 
   return <>{children}</>;
 }
