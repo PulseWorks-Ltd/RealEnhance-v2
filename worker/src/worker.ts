@@ -314,6 +314,180 @@ function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): Compos
   };
 }
 
+// --- STAGE 2 STRUCTURAL ESCALATION GATE ---
+// Deterministic invariant-based escalation to Gemini structural review
+function shouldEscalateToGeminiStructuralReview(params: {
+  windowsBefore?: number | null;
+  windowsAfter?: number | null;
+  doorsBefore?: number | null;
+  doorsAfter?: number | null;
+  closetDoorsBefore?: number | null;
+  closetDoorsAfter?: number | null;
+  builtInRemovalDetected?: boolean;
+  wallDriftPct?: number | null;
+  maskedEdgeDriftPct?: number | null;
+}): boolean {
+  const {
+    windowsBefore,
+    windowsAfter,
+    doorsBefore,
+    doorsAfter,
+    closetDoorsBefore,
+    closetDoorsAfter,
+    builtInRemovalDetected,
+    wallDriftPct,
+    maskedEdgeDriftPct,
+  } = params;
+
+  const windowDecrease =
+    typeof windowsBefore === "number" &&
+    typeof windowsAfter === "number" &&
+    windowsAfter < windowsBefore;
+
+  const doorDecrease =
+    typeof doorsBefore === "number" &&
+    typeof doorsAfter === "number" &&
+    doorsAfter < doorsBefore;
+
+  const closetDoorDecrease =
+    typeof closetDoorsBefore === "number" &&
+    typeof closetDoorsAfter === "number" &&
+    closetDoorsAfter < closetDoorsBefore;
+
+  const extremeEnvelopeContraction =
+    typeof wallDriftPct === "number" &&
+    typeof maskedEdgeDriftPct === "number" &&
+    wallDriftPct >= 70 &&
+    maskedEdgeDriftPct >= 40;
+
+  return (
+    windowDecrease ||
+    doorDecrease ||
+    closetDoorDecrease ||
+    builtInRemovalDetected === true ||
+    extremeEnvelopeContraction
+  );
+}
+
+function detectBuiltInRemoval(localReasons: string[] | undefined): boolean {
+  if (!Array.isArray(localReasons)) return false;
+
+  const text = localReasons.join(" ").toLowerCase();
+
+  const builtInKeywords = [
+    "built-in",
+    "built in",
+    "built-in wardrobe",
+    "built-in cabinet",
+    "fixed cabinetry",
+    "closet system",
+    "wall-integrated shelving",
+  ];
+
+  const removalKeywords = [
+    "removed",
+    "replaced",
+    "deleted",
+    "walled over",
+  ];
+
+  const hasBuiltInRef = builtInKeywords.some((k) => text.includes(k));
+  const hasRemovalRef = removalKeywords.some((k) => text.includes(k));
+
+  return hasBuiltInRef && hasRemovalRef;
+}
+
+async function runStructuralInvariantGeminiCheck(params: {
+  beforeImageUrl: string;
+  afterImageUrl: string;
+  roomType?: string;
+}): Promise<{
+  fail: boolean;
+  confidence: number;
+  reason: string;
+}> {
+  const prompt = `
+Compare Image A (original) and Image B (enhanced).
+
+Focus ONLY on structural architectural elements:
+
+- Windows
+- Doors
+- Closet doors
+- Built-in cabinetry
+- Wall planes
+- Permanent architectural openings
+
+Do NOT evaluate:
+- Furniture
+- Decor
+- Lighting
+- Appliances
+- Style changes
+
+Determine:
+
+1. Were any structural elements removed, sealed, or walled over?
+2. Were any built-in architectural components removed or replaced?
+3. Did the architectural envelope materially contract?
+
+Respond strictly in JSON:
+
+{
+  "fail": boolean,
+  "confidence": number (0.0–1.0),
+  "reason": string
+}
+`;
+
+  const ai = getGeminiClient();
+  const before = toBase64(params.beforeImageUrl).data;
+  const after = toBase64(params.afterImageUrl).data;
+
+  const response = await (ai as any).models.generateContent({
+    model: String(process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash"),
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `${prompt}\nroomType=${params.roomType || "unknown"}`,
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "image/webp", data: before } },
+          { inlineData: { mimeType: "image/webp", data: after } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      topP: 0.5,
+      maxOutputTokens: 512,
+    },
+  } as any);
+
+  const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
+  const rawText = textParts.map((p: any) => p?.text || "").join("\n").trim();
+  const jsonCandidate = rawText.match(/\{[\s\S]*\}/)?.[0] || "";
+
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(jsonCandidate);
+  } catch {
+    parsed = {};
+  }
+
+  return {
+    fail: parsed.fail === true,
+    confidence: typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence) ? parsed.confidence : 0,
+    reason: typeof parsed.reason === "string" && parsed.reason.trim().length > 0 ? parsed.reason.trim() : "unknown",
+  };
+}
+
 function getStage1BGeminiConfig(attempt: number) {
   const baseTemp = 33;
   const baseTopP = 0.70;
@@ -5124,6 +5298,114 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           baseArtifacts: stageLineage.baseArtifacts,
           topologyResult: topologyResultForEvidence,
         });
+      }
+
+      const closetDoorsBefore = (stage2SemanticResult as any)?.closetDoors?.before ?? null;
+      const closetDoorsAfter = (stage2SemanticResult as any)?.closetDoors?.after ?? null;
+      const builtInRemovalDetected = detectBuiltInRemoval(stage2LocalReasons);
+      const wallDriftPct = semanticWallDriftPct;
+      const maskedEdgeDriftPct = maskedDriftPct;
+
+      const escalateStructuralInvariant = shouldEscalateToGeminiStructuralReview({
+        windowsBefore,
+        windowsAfter,
+        doorsBefore,
+        doorsAfter,
+        closetDoorsBefore,
+        closetDoorsAfter,
+        builtInRemovalDetected,
+        wallDriftPct,
+        maskedEdgeDriftPct,
+      });
+
+      logger.info(
+        `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant}`
+      );
+
+      if (escalateStructuralInvariant && stage2CandidatePath) {
+        const invariantResult = await runStructuralInvariantGeminiCheck({
+          beforeImageUrl: path1A,
+          afterImageUrl: stage2CandidatePath,
+          roomType: payload.options.roomType,
+        });
+
+        logger.info(
+          `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
+        );
+
+        if (invariantResult.fail && invariantResult.confidence >= 0.9) {
+          logger.warn(
+            `[STRUCTURAL_INVARIANT_HARD_FAIL] reason=${invariantResult.reason}`
+          );
+
+          const failReasons = [
+            "structural_invariant",
+            `invariantConfidence=${invariantResult.confidence.toFixed(3)}`,
+            `invariantReason=${invariantResult.reason}`,
+          ];
+
+          setStage2AttemptValidation(path2, "structural_invariant", failReasons);
+          mergeAttemptValidation("2", attempt, {
+            final: {
+              result: "FAILED",
+              finalHard: true,
+              finalCategory: "structural_invariant",
+              retryTriggered: attempt < MAX_STAGE2_RETRIES,
+              retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+              retryStrategy: "NORMAL",
+              reason: invariantResult.reason,
+            },
+          });
+          logEvent("VALIDATION_RESULT", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempt,
+            localPass: unifiedValidation.passed === true,
+            geminiPass: false,
+            confirmPass: null,
+            finalPass: false,
+            violationType: "structural_invariant",
+            retryStrategy: "NORMAL",
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          });
+
+          if (attempt >= MAX_STAGE2_RETRIES) {
+            const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+              ? stageLineage.stage1B.output
+              : path1B;
+            const fallbackPath = fallback1B || path1A;
+            const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
+            stage2Blocked = true;
+            stage2FallbackStage = fallbackStage;
+            stage2BlockedReason = `stage2_structural_invariant_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+            fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+            path2 = fallbackPath;
+            stage2CandidatePath = fallbackPath;
+            nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+            logEvent("FATAL_RETRY_EXHAUSTION", {
+              jobId: payload.jobId,
+              stage: "2",
+              attempts: attempt,
+              blockedBy: "structural_invariant",
+              reason: stage2BlockedReason,
+            });
+            nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
+            nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_invariant retries=${attempt - 1}`);
+            break;
+          }
+
+          const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: "structural_invariant",
+          });
+          continue;
+        }
       }
 
       let lastGeminiConfirm: any = null;
