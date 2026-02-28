@@ -72,20 +72,27 @@ MODE CONTEXT
 ${softReviewBlock}
 
 DECISION POLICY
-- If structural continuity is clearly violated: hardFail=true.
-- If structural continuity is clearly preserved: hardFail=false.
-- If uncertain/ambiguous: hardFail=true (fail-safe).
+- If structural continuity is clearly violated: ok=false.
+- If structural continuity is clearly preserved: ok=true.
+- If uncertain/ambiguous: ok=false (fail-safe).
 
-Return JSON only:
+Return a JSON object with the following structure:
+
 {
-  "hardFail": boolean,
-  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
-  "reasons": [string],
+  "ok": boolean,
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
-  "builtInDetected": boolean,
-  "structuralAnchorCount": number
-}`;
+  "reason": string
+}
+
+Confidence rules:
+- 0.0–0.3 = low certainty
+- 0.4–0.6 = moderate uncertainty
+- 0.7–0.89 = high but not absolute certainty
+- 0.9–1.0 = near absolute certainty
+
+Confidence must reflect architectural certainty, not stylistic opinion.
+Do not default to 0 or 1 unless certainty is extreme.
+Always provide a numeric value between 0 and 1.`;
 }
 
 export async function confirmWithGeminiStructure(params: {

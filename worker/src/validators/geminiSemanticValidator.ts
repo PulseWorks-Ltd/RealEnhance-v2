@@ -2451,6 +2451,34 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
 
   try {
     const parsed = JSON.parse(target);
+
+    if (typeof parsed.ok === "boolean") {
+      const parsedResponse = parsed as {
+        ok: boolean;
+        confidence?: unknown;
+        reason?: unknown;
+      };
+      const geminiConfidence =
+        typeof parsedResponse.confidence === "number" && Number.isFinite(parsedResponse.confidence)
+          ? parsedResponse.confidence
+          : 0.0;
+      const reasonText = typeof parsedResponse.reason === "string"
+        ? parsedResponse.reason
+        : "";
+      const normalizedReason = reasonText.trim();
+
+      return {
+        hardFail: !parsedResponse.ok,
+        category: parsedResponse.ok ? "style_only" : "structure",
+        reasons: normalizedReason ? [normalizedReason] : [],
+        confidence: geminiConfidence,
+        violationType: parsedResponse.ok ? "layout_only" : "other",
+        builtInDetected: false,
+        structuralAnchorCount: 0,
+        rawText: text,
+      };
+    }
+
     const violationType = typeof parsed.violationType === "string"
       ? parsed.violationType.toLowerCase()
       : "other";

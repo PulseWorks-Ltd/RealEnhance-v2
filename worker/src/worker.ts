@@ -5193,6 +5193,102 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           : null,
       });
 
+      const windowDecrease =
+        typeof windowsBefore === "number" &&
+        typeof windowsAfter === "number" &&
+        windowsAfter < windowsBefore;
+      const doorDecrease =
+        typeof doorsBefore === "number" &&
+        typeof doorsAfter === "number" &&
+        doorsAfter < doorsBefore;
+      const geminiClassification = lastGeminiConfirm?.confirmedFail === true ? "FAIL" : "PASS";
+      const geminiConfidence =
+        typeof lastGeminiConfirm?.confidence === "number" && Number.isFinite(lastGeminiConfirm.confidence)
+          ? lastGeminiConfirm.confidence
+          : null;
+      const geminiStrongFail =
+        geminiClassification === "FAIL" &&
+        typeof geminiConfidence === "number" &&
+        geminiConfidence >= 0.9;
+
+      if (validationStage === "2" && (windowDecrease || doorDecrease) && geminiStrongFail) {
+        const failReasons = [
+          "opening_removal",
+          `windowsBefore=${windowsBefore}`,
+          `windowsAfter=${windowsAfter}`,
+          `doorsBefore=${doorsBefore}`,
+          `doorsAfter=${doorsAfter}`,
+          `geminiClassification=${geminiClassification}`,
+          `geminiConfidence=${geminiConfidence.toFixed(3)}`,
+        ];
+
+        nLog(
+          `[VALIDATE_FINAL][stage=2] Hard structural invariant triggered: opening removal confirmed by Gemini (confidence ${geminiConfidence.toFixed(3)}).`
+        );
+
+        setStage2AttemptValidation(path2, "opening_removal", failReasons);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "opening_removal",
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryStrategy: "NORMAL",
+            reason: "opening_removal",
+          },
+        });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          localPass: unifiedValidation.passed === true,
+          geminiPass: false,
+          confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
+          finalPass: false,
+          violationType: "opening_removal",
+          retryStrategy: "NORMAL",
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+        });
+
+        if (attempt >= MAX_STAGE2_RETRIES) {
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1B;
+          const fallbackPath = fallback1B || path1A;
+          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `stage2_opening_removal_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempts: attempt,
+            blockedBy: "opening_removal",
+            reason: stage2BlockedReason,
+          });
+          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
+          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=opening_removal retries=${attempt - 1}`);
+          break;
+        }
+
+        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        logEvent("STAGE_RETRY", {
+          jobId: payload.jobId,
+          stage: "2",
+          retry: attempt + 1,
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          reason: "opening_removal",
+        });
+        continue;
+      }
+
       const unifiedHardFail = unifiedValidation.hardFail === true;
       const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
       const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
