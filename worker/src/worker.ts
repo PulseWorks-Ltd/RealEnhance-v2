@@ -5326,6 +5326,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       logger.info(
+        `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
+      );
+
+      logger.info(
         `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant}`
       );
 
