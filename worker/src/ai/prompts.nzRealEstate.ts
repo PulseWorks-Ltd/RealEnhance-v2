@@ -1646,7 +1646,13 @@ Do NOT:
 • Soften or blur frame edges
 • Cover or crop frame edges with curtains
 • Add sheer or backing layers behind curtains that obscure frame boundaries
-• Place furniture overlapping the bottom sill line
+
+Furniture may sit in front of windows, but:
+• Window geometry (size, position, height, width) must remain EXACTLY unchanged.
+• Window frames and visible glass must remain clearly visible.
+• Do NOT fully block, seal, or visually remove the opening.
+• Do NOT alter sill height or window proportions.
+• Avoid excessive obstruction that would appear architecturally unrealistic.
 
 Curtain Rules:
 • Curtains must hang OUTSIDE visible frame edges
