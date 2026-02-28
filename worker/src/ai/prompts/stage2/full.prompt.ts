@@ -68,7 +68,7 @@ Do NOT add any seating of any type (bar stools, chairs, benches) to or around ki
 const STAGE2_FULL_ARCHITECTURAL_IMMUTABILITY_BLOCK =
   STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK.replace(
     "- add/remove/move/resize walls, windows, doors, or openings",
-    "- add/remove/move/resize walls, windows, doors, or openings\nDo not remove, paint over, seal, or replace any built-in closets, sliding wardrobe doors, mirrored panels, or recessed storage visible in the original image.",
+    "- add/remove/move/resize walls, windows, doors, or openings",
   );
 
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
