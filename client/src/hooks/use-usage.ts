@@ -44,7 +44,14 @@ export function useUsage() {
       setError(null);
       const response = await apiFetch("/api/usage/summary");
       const data = (await response.json()) as UsageSummary;
-      setUsage(data);
+      const normalized: UsageSummary = {
+        ...data,
+        remaining:
+          Number(data?.remaining) >= 0
+            ? Number(data.remaining)
+            : Math.max(0, Number(data?.mainRemaining ?? 0)) + Math.max(0, Number(data?.addonRemaining ?? 0)),
+      };
+      setUsage(normalized);
     } catch (err) {
       console.error("Error fetching usage:", err);
       setError("Failed to fetch usage");

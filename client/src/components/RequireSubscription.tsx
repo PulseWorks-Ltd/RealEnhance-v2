@@ -11,7 +11,7 @@ import { useUsage } from "@/hooks/use-usage";
  * - User has agencyId AND
  * - (active subscription OR valid trial OR addonRemaining > 0)
  * 
- * If conditions not met → redirect to /signup
+ * If conditions not met → redirect to billing management
  * 
  * This ensures users cannot access Enhance without proper credits/subscription.
  */
@@ -32,12 +32,15 @@ export function RequireSubscription({ children }: { children: React.ReactNode })
     const hasActiveSubscription = !!(usage?.planName && usage.planName !== "Free" && usage.status === "active");
     const hasValidTrial = !!(usage?.trial && usage.trial.status === "active" && (usage.trial.remaining ?? 0) > 0);
     const hasAddonCredits = (usage?.addonRemaining ?? 0) > 0;
-    const hasAnyCredits = (usage?.remaining ?? 0) > 0;
+    const totalRemaining = Number.isFinite(usage?.remaining as number)
+      ? Number(usage?.remaining)
+      : Math.max(0, Number(usage?.mainRemaining ?? 0)) + Math.max(0, Number(usage?.addonRemaining ?? 0));
+    const hasAnyCredits = totalRemaining > 0;
     const hasAccess = hasActiveSubscription || hasValidTrial || hasAddonCredits || hasAnyCredits;
 
-    if (!hasAccess && location.pathname !== "/signup") {
-      console.log("[RequireSubscription] No active subscription or credits, redirecting to signup");
-      navigate("/signup", {
+    if (!hasAccess && location.pathname !== "/agency" && location.pathname !== "/settings/billing") {
+      console.log("[RequireSubscription] No active subscription or credits, redirecting to billing");
+      navigate("/agency", {
         replace: true,
         state: { from: location.pathname, reason: "subscription_required" },
       });
