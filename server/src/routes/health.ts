@@ -3,12 +3,35 @@ import { NODE_ENV, REDIS_URL } from "../config.js";
 import { Queue } from "bullmq";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { ensureS3Ready } from "../utils/s3.js";
+import { pool } from "../db/index.js";
+
+async function checkDbConnection(): Promise<boolean> {
+  try {
+    await pool.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function healthRouter() {
   const r = Router();
-  r.get("/health", (_req: Request, res: Response) => {
+  r.get("/health", async (_req: Request, res: Response) => {
+    const dbReady = await checkDbConnection();
+    if (!dbReady) {
+      return res.status(503).json({
+        ok: false,
+        status: "starting",
+        dbReady: false,
+        env: NODE_ENV,
+        time: new Date().toISOString()
+      });
+    }
+
     res.json({
       ok: true,
+      status: "ok",
+      dbReady: true,
       env: NODE_ENV,
       time: new Date().toISOString()
     });

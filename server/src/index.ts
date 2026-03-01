@@ -43,18 +43,30 @@ import batchSubmitRouter from "./routes/batch-submit.js";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { requireS3OrExit } from "./utils/s3.js";
+import { pool } from "./db/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const IS_PROD = NODE_ENV === "production";
 
+async function checkDbConnection(): Promise<boolean> {
+  try {
+    await pool.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });
   redisClient.on("error", (err) => console.error("[redis] error", err));
   if (REDIS_URL) {
-    await redisClient.connect();
+    redisClient.connect().catch((err) => {
+      console.error("[redis] initial connect failed", err);
+    });
   } else {
     console.warn("[redis] REDIS_URL not set; session store will not connect.");
   }
@@ -66,8 +78,6 @@ async function main() {
   // ---------------- Express ----------------
   const app: Express = express();
 
-  // Hard-fail S3 early if required (production) to avoid silent local fallback
-  await requireS3OrExit();
   app.set("trust proxy", 1);
 
   app.use(
@@ -148,8 +158,25 @@ async function main() {
   });
 
   // Health
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true, env: process.env.NODE_ENV || "dev", time: new Date().toISOString() });
+  app.get("/health", async (_req, res) => {
+    const dbReady = await checkDbConnection();
+    if (!dbReady) {
+      return res.status(503).json({
+        ok: false,
+        status: "starting",
+        dbReady: false,
+        env: process.env.NODE_ENV || "dev",
+        time: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      ok: true,
+      status: "ok",
+      dbReady: true,
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
+    });
   });
 
   // Auth + API routes
@@ -204,15 +231,6 @@ async function main() {
     app.use("/files", express.static(filesRoot));
   }
 
-  // One-time admin seeding to guarantee partner accounts have 10k credits
-  try {
-    const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
-    const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
-    console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
-  } catch (e) {
-    console.warn("[seed] failed to ensure credits:", e);
-  }
-
   // Bind host/port for local dev and production (Railway)
   const HOST = 
     process.env.HOST ||
@@ -221,6 +239,21 @@ async function main() {
   app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
   });
+
+  requireS3OrExit().catch((err) => {
+    console.error("[server] S3 readiness check failed:", err);
+    process.exit(1);
+  });
+
+  (async () => {
+    try {
+      const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
+      const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
+      console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
+    } catch (e) {
+      console.warn("[seed] failed to ensure credits:", e);
+    }
+  })();
 
   process.on("SIGTERM", async () => {
     try {
