@@ -461,31 +461,37 @@ This includes (but is not limited to):
 - recessed cavities
 - any visible framed penetration of a wall surface
 
-Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters), or temporary movable objects is NOT removal, provided that:
+Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters),
+or temporary movable objects is NOT removal ONLY IF ALL of the following remain true:
 
-- The opening frame remains visible or inferable,
-- The depth void/light cavity remains present,
-- The wall plane does NOT become continuous across the previous opening.
+- The structural frame edges are still visibly present,
+- The depth void or light cavity of the opening remains visible,
+- The wall plane does NOT become continuous across the prior opening boundary.
+
+If any of the above conditions are not satisfied, treat it as structural removal.
 
 Replacement of an opening with continuous wall surface IS removal.
 Loss of visible frame continuity IS removal.
 Loss of depth void/light cavity IS removal.
+Expansion of wall plane into a former opening cavity IS removal.
 
 You must:
 
 1) Count total structural wall openings in BEFORE.
 2) Count total structural wall openings in AFTER.
-3) Determine whether any opening present in BEFORE is:
+3) Compare approximate wall locations of each opening.
+4) Determine whether any opening present in BEFORE is:
    - missing in AFTER
    - replaced by continuous wall
    - relocated
-   - merely occluded
-4) Detect if any wall plane expanded into a previous opening cavity.
-5) Compare approximate wall locations (left wall, right wall, far-right edge, corner, etc.)
+   - merely occluded (meeting ALL occlusion conditions above)
+5) Detect if any wall plane expanded into a previous opening cavity.
 
 IMPORTANT:
-If opening count decreases, you must assume removal unless you can clearly
-identify preserved frame continuity and depth void.
+If opening count decreases, you must assume removal UNLESS you can clearly
+verify preserved frame continuity AND preserved depth void.
+
+Do not speculate. If uncertain between occlusion and removal, prefer removal.
 
 Return STRICT JSON only. No prose outside JSON.
 
