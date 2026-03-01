@@ -75,7 +75,7 @@ async function main() {
       origin: PUBLIC_ORIGIN,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With"]
+      allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "X-Device-Id"]
     })
   );
   app.use(helmet());
