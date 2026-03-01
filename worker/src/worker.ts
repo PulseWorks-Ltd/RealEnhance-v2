@@ -80,6 +80,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
+const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.0-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
     ? "block"
@@ -397,17 +398,60 @@ function detectBuiltInRemoval(localReasons: string[] | undefined): boolean {
   return hasBuiltInRef && hasRemovalRef;
 }
 
-async function runStructuralInvariantGeminiCheck(params: {
-  beforeImageUrl: string;
-  afterImageUrl: string;
-  roomType?: string;
-}): Promise<{
-  fail: boolean;
-  confidence: number;
-  reason: string;
-  raw: any;
-}> {
-  const prompt = `
+function buildInvariantHints(localSignals: {
+  windowsBefore?: number | null;
+  windowsAfter?: number | null;
+  doorsBefore?: number | null;
+  doorsAfter?: number | null;
+  closetDoorsBefore?: number | null;
+  closetDoorsAfter?: number | null;
+  builtInRemovalDetected?: boolean;
+  wallDriftPct?: number | null;
+  maskedEdgeDriftPct?: number | null;
+  localReasons?: string[];
+}): string[] {
+  const hints: string[] = [];
+
+  const openingCountDecrease =
+    (typeof localSignals.windowsBefore === "number" &&
+      typeof localSignals.windowsAfter === "number" &&
+      localSignals.windowsAfter < localSignals.windowsBefore) ||
+    (typeof localSignals.doorsBefore === "number" &&
+      typeof localSignals.doorsAfter === "number" &&
+      localSignals.doorsAfter < localSignals.doorsBefore) ||
+    (typeof localSignals.closetDoorsBefore === "number" &&
+      typeof localSignals.closetDoorsAfter === "number" &&
+      localSignals.closetDoorsAfter < localSignals.closetDoorsBefore);
+
+  if (openingCountDecrease) {
+    hints.push("signal:opening_count_decrease_detected");
+  }
+
+  if (localSignals.builtInRemovalDetected === true) {
+    hints.push("signal:built_in_removal_pattern_detected");
+  }
+
+  if (typeof localSignals.wallDriftPct === "number" && localSignals.wallDriftPct >= 60) {
+    hints.push("signal:high_wall_drift_detected");
+  }
+
+  if (
+    typeof localSignals.maskedEdgeDriftPct === "number" &&
+    localSignals.maskedEdgeDriftPct >= 35
+  ) {
+    hints.push("signal:high_masked_edge_drift_detected");
+  }
+
+  if (Array.isArray(localSignals.localReasons) && localSignals.localReasons.length > 0) {
+    hints.push(`context:local_reasons=${localSignals.localReasons.slice(0, 5).join("|")}`);
+  }
+
+  hints.push("interpretation:occlusion_without_wall_plane_is_not_removal");
+
+  return hints;
+}
+
+const STRUCTURAL_INVARIANT_BASE_PROMPT = `
 You are a structural architectural validator.
 
 Compare Image A (original) and Image B (generated).
@@ -469,18 +513,38 @@ Return ONLY valid JSON:
 }
 `;
 
+async function runStructuralInvariantGeminiCheck(
+  beforeImageUrl: string,
+  afterImageUrl: string,
+  hintFlags: string[] = []
+): Promise<{
+  fail: boolean;
+  confidence: number;
+  reason: string;
+  raw: any;
+}> {
+  const hintBlock =
+    hintFlags.length > 0
+      ? `\n\nLocal drift interpretation hints (informative only, not authoritative):\n- ${hintFlags.join("\n- ")}`
+      : "";
+  const prompt = `${STRUCTURAL_INVARIANT_BASE_PROMPT}${hintBlock}`;
+
+  logger.info(
+    `[STRUCTURAL_INVARIANT_PROMPT] model=${STRUCTURAL_INVARIANT_MODEL} hints=${JSON.stringify(hintFlags)} promptChars=${prompt.length}`
+  );
+
   const ai = getGeminiClient();
-  const before = toBase64(params.beforeImageUrl).data;
-  const after = toBase64(params.afterImageUrl).data;
+  const before = toBase64(beforeImageUrl).data;
+  const after = toBase64(afterImageUrl).data;
 
   const response = await (ai as any).models.generateContent({
-    model: String(process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash"),
+    model: STRUCTURAL_INVARIANT_MODEL,
     contents: [
       {
         role: "user",
         parts: [
           {
-            text: `${prompt}\nroomType=${params.roomType || "unknown"}`,
+            text: prompt,
           },
         ],
       },
@@ -530,6 +594,53 @@ Return ONLY valid JSON:
     reason: parsed.reason ?? "",
     raw: parsed,
   };
+}
+
+async function debugRunInvariantReplay() {
+  const cases = [
+    {
+      name: "job_362_attempt1",
+      originalPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772346967215-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A.webp",
+      generatedPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772346982136-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A-2.webp",
+    },
+    {
+      name: "job_362_retry1",
+      originalPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772346967215-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A.webp",
+      generatedPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772347011051-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A-2-retry1.webp",
+    },
+    {
+      name: "job_362_retry2",
+      originalPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772346967215-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A.webp",
+      generatedPath:
+        "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772347039436-realenhance-job_362deb34-ecc6-4b40-9191-e116791e41d1-1772346955084-0kxwsaeturoh-canonical-1A-2-retry2.webp",
+    },
+  ];
+
+  for (const c of cases) {
+    console.log(`\n=== INVARIANT REPLAY: ${c.name} ===`);
+
+    const result = await runStructuralInvariantGeminiCheck(
+      c.originalPath,
+      c.generatedPath,
+      ["debug_replay"]
+    );
+
+    console.log("Raw Result:", result.raw);
+    console.log("opening_removed:", result.raw?.opening_removed);
+    console.log("wall_plane_continuity:", result.raw?.wall_plane_continuity);
+    console.log("opening_occluded:", result.raw?.opening_occluded);
+    console.log(
+      "frame_continuity_preserved:",
+      result.raw?.frame_continuity_preserved
+    );
+    console.log("confidence:", result.confidence);
+    console.log("computed_fail:", result.fail);
+  }
 }
 
 function getStage1BGeminiConfig(attempt: number) {
@@ -5366,16 +5477,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
       );
 
+      const invariantHints = buildInvariantHints({
+        windowsBefore,
+        windowsAfter,
+        doorsBefore,
+        doorsAfter,
+        closetDoorsBefore,
+        closetDoorsAfter,
+        builtInRemovalDetected,
+        wallDriftPct,
+        maskedEdgeDriftPct,
+        localReasons: stage2LocalReasons,
+      });
+
       logger.info(
-        `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant}`
+        `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant} alwaysRun=true hints=${JSON.stringify(invariantHints)}`
       );
 
-      if (escalateStructuralInvariant && stage2CandidatePath) {
-        const invariantResult = await runStructuralInvariantGeminiCheck({
-          beforeImageUrl: path1A,
-          afterImageUrl: stage2CandidatePath,
-          roomType: payload.options.roomType,
-        });
+      if (stage2CandidatePath) {
+        const invariantResult = await runStructuralInvariantGeminiCheck(
+          path1A,
+          stage2CandidatePath,
+          invariantHints
+        );
 
         logger.info(
           `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
@@ -7065,6 +7189,12 @@ nLog('  SIGN_ALL_STAGE_OUTPUTS:', process.env.SIGN_ALL_STAGE_OUTPUTS === '1' ? '
 nLog('  STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS:', String(STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS));
 nLog('╚════════════════════════════════════════════════════════════════╝');
 nLog('\n'); // Force flush
+
+if (process.env.DEBUG_INVARIANT_REPLAY === "true") {
+  debugRunInvariantReplay()
+    .then(() => console.log("Invariant replay complete"))
+    .catch((err) => console.error("Invariant replay error:", err));
+}
 
 // Log validator configuration on startup
 logValidationModes();
