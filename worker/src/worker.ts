@@ -427,10 +427,6 @@ function buildInvariantHints(localSignals: {
     hints.push("signal:opening_count_decrease_detected");
   }
 
-  if (localSignals.builtInRemovalDetected === true) {
-    hints.push("signal:built_in_removal_pattern_detected");
-  }
-
   if (typeof localSignals.wallDriftPct === "number" && localSignals.wallDriftPct >= 60) {
     hints.push("signal:high_wall_drift_detected");
   }
@@ -442,75 +438,75 @@ function buildInvariantHints(localSignals: {
     hints.push("signal:high_masked_edge_drift_detected");
   }
 
-  if (Array.isArray(localSignals.localReasons) && localSignals.localReasons.length > 0) {
-    hints.push(`context:local_reasons=${localSignals.localReasons.slice(0, 5).join("|")}`);
-  }
-
   hints.push("interpretation:occlusion_without_wall_plane_is_not_removal");
 
   return hints;
 }
 
 const STRUCTURAL_INVARIANT_BASE_PROMPT = `
-You are a structural architectural validator.
+You are a strict structural integrity validator.
 
-Compare Image A (original) and Image B (generated).
+You are comparing two images of the SAME physical room:
+- BEFORE image
+- AFTER image
 
-We are ONLY evaluating structural integrity.
+Your task is to determine whether any structural openings were removed,
+walled over, relocated, or replaced with continuous wall plane.
 
-STRUCTURAL ELEMENTS include:
+STRUCTURAL OPENINGS INCLUDE:
 - Windows
 - Doors
-- Doorways
+- Sliding doors
 - Closet doors
-- Built-in wardrobes
-- Wall-integrated cabinetry
-- Structural shelving
-- Wall planes
+- Built-in wall-integrated openings
 
-NON-STRUCTURAL elements include:
-- Freestanding furniture
-- Beds, sofas, tables
-- Curtains or blinds
-- Decor
-- Lighting
-- Rugs
+CRITICAL RULE — OPENING COUNT DECREASE:
+If the number of visible structural openings decreases from BEFORE to AFTER,
+you MUST treat this as structural removal UNLESS ALL of the following are TRUE:
 
-Your task:
+1. The full frame edges of the opening are clearly visible.
+2. The depth void of the opening is visibly preserved.
+3. The interior of the opening is NOT replaced by continuous wall plane.
+4. Occlusion by furniture still leaves clear frame continuity.
 
-1. List structural openings in Image A.
-2. Compare to Image B.
-3. Determine if any structural opening was:
-   - Removed
-   - Occluded by furniture
-   - Relocated
-   - Preserved
+If ANY of the above are unclear, ambiguous, or partially missing,
+you must classify as opening_removed = true.
 
-4. Evaluate wall-plane continuity:
-   - Did any previously open void become continuous drywall?
-   - Was wall texture extended where an opening existed?
-   - Did trim/frame edges disappear?
+BURDEN OF PROOF RULE:
+Do NOT assume occlusion.
+Do NOT infer hidden structure.
+If the frame or void cannot be clearly verified, treat it as removed.
 
-STRUCTURAL OPENING CONTINUITY RULES:
+WALL PLANE CONTINUITY:
+If a previously open area appears flat, continuous, and consistent with adjacent wall surface,
+that is wall_plane_continuity = true.
 
-- If furniture blocks part of an opening but frame edges or depth remain visible,
-  this is OCCLUSION, not removal.
+BUILT-IN REMOVAL:
+If built-in closets, integrated cabinetry, recessed niches, or structural anchors disappear,
+classify as opening_removed = true.
 
-- If a void is replaced with continuous wall plane, this is STRUCTURAL REMOVAL.
+RETURN STRICT JSON ONLY.
+NO commentary.
+NO markdown.
+NO explanation.
 
-- Only classify as removal if wall plane continuity replaces the void.
-
-Return ONLY valid JSON:
+Format EXACTLY as:
 
 {
   "opening_removed": boolean,
-  "opening_occluded": boolean,
-  "opening_relocated": boolean,
   "wall_plane_continuity": boolean,
+  "opening_occluded": boolean,
   "frame_continuity_preserved": boolean,
-  "confidence": number between 0.0 and 1.0,
-  "reason": "brief explanation"
+  "confidence": number,
+  "reason": string
 }
+
+CONFIDENCE RULES:
+- 0.95–1.0 → clearly removed or clearly preserved
+- 0.75–0.94 → strong suspicion but minor ambiguity
+- Below 0.75 → uncertainty
+
+When uncertain between occlusion and removal, bias toward removal.
 `;
 
 async function runStructuralInvariantGeminiCheck(

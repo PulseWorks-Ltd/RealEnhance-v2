@@ -122,11 +122,15 @@ export const STAGE1B_FULL_RETRY_SAMPLING = Object.freeze({
 
 let singleton: GoogleGenAI | null = null;
 
+function resolveGeminiApiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY;
+}
+
 export function getGeminiClient(): GoogleGenAI {
   if (singleton) return singleton as any;
-  const apiKey = process.env.REALENHANCE_API_KEY;
+  const apiKey = resolveGeminiApiKey();
   if (!apiKey) {
-    throw new Error("REALENHANCE_API_KEY missing: set it in the worker service env to enable Gemini image generation");
+    throw new Error("GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation");
   }
   // The SDK exports types; instantiate via any to avoid type ctor mismatches
   const Ctor: any = require("@google/genai").GoogleGenAI;
@@ -201,10 +205,10 @@ export async function enhanceWithGemini(
   const filename = path.basename(inputPath || "");
 
   // Check if Gemini API key is available
-  const apiKey = process.env.REALENHANCE_API_KEY;
+  const apiKey = resolveGeminiApiKey();
   if (!apiKey) {
     console.error("❌ FATAL: Gemini API key not configured — cannot continue AI pipeline.");
-    throw new Error("REALENHANCE_API_KEY missing for Gemini enhancement — aborting job.");
+    throw new Error("GEMINI_API_KEY missing for Gemini enhancement — aborting job.");
   }
 
   const operationType = declutter ? "Enhance + Declutter" : "Enhance";

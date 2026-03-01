@@ -326,8 +326,8 @@ export async function runStage2(
   }
 
   // Check API key before attempting Gemini calls
-  if (!process.env.REALENHANCE_API_KEY) {
-    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ No REALENHANCE_API_KEY set – skipping (using ${baseStage} output)`);
+  if (!(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY)) {
+    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ No GEMINI_API_KEY set – skipping (using ${baseStage} output)`);
     return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
   }
 
