@@ -340,20 +340,29 @@ function shouldEscalateToGeminiStructuralReview(params: {
     maskedEdgeDriftPct,
   } = params;
 
-  const windowDecrease =
-    typeof windowsBefore === "number" &&
-    typeof windowsAfter === "number" &&
-    windowsAfter < windowsBefore;
+  const normalizeCount = (value?: number | null) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
 
-  const doorDecrease =
-    typeof doorsBefore === "number" &&
-    typeof doorsAfter === "number" &&
-    doorsAfter < doorsBefore;
+  const hasOpeningCountSignal =
+    typeof windowsBefore === "number" ||
+    typeof windowsAfter === "number" ||
+    typeof doorsBefore === "number" ||
+    typeof doorsAfter === "number" ||
+    typeof closetDoorsBefore === "number" ||
+    typeof closetDoorsAfter === "number";
 
-  const closetDoorDecrease =
-    typeof closetDoorsBefore === "number" &&
-    typeof closetDoorsAfter === "number" &&
-    closetDoorsAfter < closetDoorsBefore;
+  const totalOpeningsBefore =
+    normalizeCount(windowsBefore) +
+    normalizeCount(doorsBefore) +
+    normalizeCount(closetDoorsBefore);
+
+  const totalOpeningsAfter =
+    normalizeCount(windowsAfter) +
+    normalizeCount(doorsAfter) +
+    normalizeCount(closetDoorsAfter);
+
+  const openingCountDecrease =
+    hasOpeningCountSignal && totalOpeningsAfter < totalOpeningsBefore;
 
   const extremeEnvelopeContraction =
     typeof wallDriftPct === "number" &&
@@ -362,9 +371,7 @@ function shouldEscalateToGeminiStructuralReview(params: {
     maskedEdgeDriftPct >= 40;
 
   return (
-    windowDecrease ||
-    doorDecrease ||
-    closetDoorDecrease ||
+    openingCountDecrease ||
     builtInRemovalDetected === true ||
     extremeEnvelopeContraction
   );
@@ -405,23 +412,34 @@ function buildInvariantHints(localSignals: {
   doorsAfter?: number | null;
   closetDoorsBefore?: number | null;
   closetDoorsAfter?: number | null;
-  builtInRemovalDetected?: boolean;
   wallDriftPct?: number | null;
   maskedEdgeDriftPct?: number | null;
-  localReasons?: string[];
 }): string[] {
   const hints: string[] = [];
 
+  const normalizeCount = (value?: number | null) =>
+    typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+  const hasOpeningCountSignal =
+    typeof localSignals.windowsBefore === "number" ||
+    typeof localSignals.windowsAfter === "number" ||
+    typeof localSignals.doorsBefore === "number" ||
+    typeof localSignals.doorsAfter === "number" ||
+    typeof localSignals.closetDoorsBefore === "number" ||
+    typeof localSignals.closetDoorsAfter === "number";
+
+  const totalOpeningsBefore =
+    normalizeCount(localSignals.windowsBefore) +
+    normalizeCount(localSignals.doorsBefore) +
+    normalizeCount(localSignals.closetDoorsBefore);
+
+  const totalOpeningsAfter =
+    normalizeCount(localSignals.windowsAfter) +
+    normalizeCount(localSignals.doorsAfter) +
+    normalizeCount(localSignals.closetDoorsAfter);
+
   const openingCountDecrease =
-    (typeof localSignals.windowsBefore === "number" &&
-      typeof localSignals.windowsAfter === "number" &&
-      localSignals.windowsAfter < localSignals.windowsBefore) ||
-    (typeof localSignals.doorsBefore === "number" &&
-      typeof localSignals.doorsAfter === "number" &&
-      localSignals.doorsAfter < localSignals.doorsBefore) ||
-    (typeof localSignals.closetDoorsBefore === "number" &&
-      typeof localSignals.closetDoorsAfter === "number" &&
-      localSignals.closetDoorsAfter < localSignals.closetDoorsBefore);
+    hasOpeningCountSignal && totalOpeningsAfter < totalOpeningsBefore;
 
   if (openingCountDecrease) {
     hints.push("signal:opening_count_decrease_detected");
@@ -502,11 +520,17 @@ Required JSON format:
   "openings_after": number,
   "removed_openings_count": number,
   "removed_opening_locations": string[],
+  "relocation_detected": boolean,
+  "location_mismatch_detected": boolean,
   "wall_plane_replacement_detected": boolean,
   "opening_occlusion_only": boolean,
   "confidence": number,
   "reason": string
 }
+
+Even if opening counts remain equal,
+if an opening disappears from one wall location and appears elsewhere,
+you must classify this as relocation/removal.
 `;
 
 async function runStructuralInvariantGeminiCheck(
@@ -612,6 +636,8 @@ async function runStructuralInvariantGeminiCheck(
     "openings_after",
     "removed_openings_count",
     "removed_opening_locations",
+    "relocation_detected",
+    "location_mismatch_detected",
     "wall_plane_replacement_detected",
     "opening_occlusion_only",
     "confidence",
@@ -633,6 +659,8 @@ async function runStructuralInvariantGeminiCheck(
   const openingsBefore = parsed.openings_before;
   const openingsAfter = parsed.openings_after;
   const removedCount = parsed.removed_openings_count;
+  const relocationDetected = parsed.relocation_detected === true;
+  const locationMismatchDetected = parsed.location_mismatch_detected === true;
   const wallPlaneReplaced = parsed.wall_plane_replacement_detected === true;
   const confidence =
     typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
@@ -646,7 +674,10 @@ async function runStructuralInvariantGeminiCheck(
     wallPlaneReplaced &&
     confidence >= 0.9;
 
-  const fail = countDecrease || explicitRemoval;
+  const relocationRemoval =
+    (relocationDetected || locationMismatchDetected) && confidence >= 0.9;
+
+  const fail = countDecrease || explicitRemoval || relocationRemoval;
 
   return {
     fail,
@@ -5521,6 +5552,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const wallDriftPct = semanticWallDriftPct;
       const maskedEdgeDriftPct = maskedDriftPct;
 
+      const normalizeCount = (value?: number | null) =>
+        typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+      const totalOpeningsBefore =
+        normalizeCount(windowsBefore) +
+        normalizeCount(doorsBefore) +
+        normalizeCount(closetDoorsBefore);
+
+      const totalOpeningsAfter =
+        normalizeCount(windowsAfter) +
+        normalizeCount(doorsAfter) +
+        normalizeCount(closetDoorsAfter);
+
       const escalateStructuralInvariant = shouldEscalateToGeminiStructuralReview({
         windowsBefore,
         windowsAfter,
@@ -5534,7 +5578,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       logger.info(
-        `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
+        `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} totalOpeningsBefore=${totalOpeningsBefore} totalOpeningsAfter=${totalOpeningsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
       );
 
       const invariantHints = buildInvariantHints({
@@ -5544,10 +5588,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         doorsAfter,
         closetDoorsBefore,
         closetDoorsAfter,
-        builtInRemovalDetected,
         wallDriftPct,
         maskedEdgeDriftPct,
-        localReasons: stage2LocalReasons,
       });
 
       logger.info(
@@ -5555,11 +5597,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
 
       if (stage2CandidatePath) {
-        const invariantResult = await runStructuralInvariantGeminiCheck(
-          path1A,
-          stage2CandidatePath,
-          invariantHints
-        );
+        const deterministicGuardTriggered =
+          totalOpeningsAfter < totalOpeningsBefore &&
+          typeof wallDriftPct === "number" &&
+          wallDriftPct > 55;
+
+        let invariantResult: Awaited<ReturnType<typeof runStructuralInvariantGeminiCheck>>;
+
+        if (deterministicGuardTriggered) {
+          logger.warn(
+            `[STRUCTURAL_INVARIANT_DETERMINISTIC_GUARD] totalOpeningsBefore=${totalOpeningsBefore} totalOpeningsAfter=${totalOpeningsAfter} wallDriftPct=${wallDriftPct}`
+          );
+          invariantResult = {
+            fail: true,
+            confidence: 1,
+            reason: "deterministic_opening_count_drop_with_high_wall_drift",
+            raw: {
+              deterministic_guard: true,
+              totalOpeningsBefore,
+              totalOpeningsAfter,
+              wallDriftPct,
+            },
+          };
+        } else {
+          invariantResult = await runStructuralInvariantGeminiCheck(
+            path1A,
+            stage2CandidatePath,
+            invariantHints
+          );
+        }
 
         logger.info(
           `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
