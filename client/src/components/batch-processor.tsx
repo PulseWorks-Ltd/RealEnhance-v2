@@ -2341,8 +2341,18 @@ export default function BatchProcessor() {
             console.log('[BATCH][completion_fallback]', { jobId: key, source: completionSource, status, hasResult: !!resultUrlSafe });
           }
 
-          // FIX: Only mark as completed when target stage is reached
-          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit);
+          const completedViaFallback =
+            status === "completed" &&
+            !!displayUrl &&
+            !targetUrlPresent &&
+            !!(
+              blockedStage ||
+              fallbackStage ||
+              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
+            );
+
+          // FIX: mark fallback terminals as complete even when Stage 2 was requested but safely blocked
+          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit || completedViaFallback);
           const completionSourceResolved = isRegionEdit && completedFinal ? "region-edit" : completionSource;
           
           // Log when backend says completed but target not reached (still processing)
@@ -2650,7 +2660,20 @@ export default function BatchProcessor() {
             (targetStage === "1A" && !!stage1AUrl)
           );
           
+          const blockedStage = r?.blockedStage || r?.result?.blockedStage || r?.meta?.blockedStage || r?.result?.meta?.blockedStage || null;
+          const fallbackStage = r?.fallbackStage ?? r?.result?.fallbackStage ?? r?.meta?.fallbackStage ?? r?.result?.meta?.fallbackStage ?? null;
+          const resultStageNorm = String(r?.resultStage || r?.result?.resultStage || r?.finalStage || r?.result?.finalStage || "").toUpperCase();
+
           const completedWithTarget = (status === "completed" || status === "complete") && targetUrlPresent;
+          const completedViaFallback =
+            (status === "completed" || status === "complete") &&
+            !targetUrlPresent &&
+            !!(stage1AUrl || stage1BUrl || stage2Url) &&
+            !!(
+              blockedStage ||
+              fallbackStage ||
+              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
+            );
           
           // Debug log for items that haven't reached target
           if (!completedWithTarget && !failed) {
@@ -2667,7 +2690,7 @@ export default function BatchProcessor() {
             });
           }
           
-          return completedWithTarget;
+          return completedWithTarget || completedViaFallback;
         });
 
         // Use target-aware completion instead of blindly trusting serverSignaledDone
@@ -5525,10 +5548,19 @@ export default function BatchProcessor() {
                               (targetStage === "1B" && !!stage1BUrl) ||
                               (targetStage === "1A" && !!stage1AUrl)
                             );
+
+                            const blockedStage = r?.blockedStage || r?.result?.blockedStage || r?.meta?.blockedStage || r?.result?.meta?.blockedStage || null;
+                            const fallbackStage = r?.fallbackStage ?? r?.result?.fallbackStage ?? r?.meta?.fallbackStage ?? r?.result?.meta?.fallbackStage ?? null;
+                            const resultStageNorm = String(r?.resultStage || r?.result?.resultStage || r?.finalStage || r?.result?.finalStage || "").toUpperCase();
+                            const completedViaFallback = (status === "completed" || status === "complete") && !targetUrlPresent && !!(stage1AUrl || stage1BUrl || stage2Url) && !!(
+                              blockedStage ||
+                              fallbackStage ||
+                              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
+                            );
                             
                             // Count as complete if: reached target OR failed with fallback available
                             const failedWithFallback = (failed || hasError) && (stage1AUrl || stage1BUrl || stage2Url);
-                            return targetUrlPresent || failedWithFallback;
+                            return targetUrlPresent || failedWithFallback || completedViaFallback;
                           }).length;
                           const total = files.length || 0;
                           const remaining = Math.max(total - completedCount, 0);
@@ -5703,18 +5735,33 @@ export default function BatchProcessor() {
                           return !!stage1AUrl;
                         })();
 
+                        const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
+                        const fallbackStage = (result?.validation as any)?.fallbackStage || (result?.result?.validation as any)?.fallbackStage || result?.fallbackStage || result?.result?.fallbackStage || result?.meta?.fallbackStage || null;
                         const stageRank: Record<StageKey, number> = { "1A": 1, "1B": 2, "2": 3 };
                         const finalStageMeetsTarget = (() => {
                           if (!resultStage || !finalResultUrl) return false;
                           return stageRank[resultStage] >= stageRank[targetStage];
                         })();
 
+                        const fallbackResolvedUrl = (() => {
+                          if (fallbackStage === "1B" && stage1BUrl) return stage1BUrl;
+                          if (fallbackStage === "1A" && stage1AUrl) return stage1AUrl;
+                          if (stage1BUrl) return stage1BUrl;
+                          if (stage1AUrl) return stage1AUrl;
+                          return null;
+                        })();
+                        const fallbackTerminal = isSuccessStatus && !targetUrlPresent && !!fallbackResolvedUrl && !!(
+                          blockedStage ||
+                          fallbackStage ||
+                          (targetStage === "2" && (resultStage === "1A" || resultStage === "1B"))
+                        );
+
                         const resolvedFinalUrl = (finalResultUrl && finalStageMeetsTarget)
                           ? finalResultUrl
-                          : (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : null);
+                          : (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : (fallbackTerminal ? fallbackResolvedUrl : null));
                         const resolvedFinalStage: StageKey | null = (finalResultUrl && finalStageMeetsTarget)
                           ? (resultStage as StageKey | null)
-                          : (targetUrlPresent ? targetStage : null);
+                          : (targetUrlPresent ? targetStage : (fallbackTerminal ? ((fallbackStage === "1B" ? "1B" : fallbackStage === "1A" ? "1A" : (stage1BUrl ? "1B" : "1A")) as StageKey) : null));
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && targetUrlPresent) || isDone;
                         
@@ -5776,8 +5823,6 @@ export default function BatchProcessor() {
                           ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
-                        const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
-                        const fallbackStage = (result?.validation as any)?.fallbackStage || (result?.result?.validation as any)?.fallbackStage || result?.fallbackStage || result?.result?.fallbackStage || result?.meta?.fallbackStage || null;
                         const safeStage = resolveSafeStageUrl(result);
                         
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
