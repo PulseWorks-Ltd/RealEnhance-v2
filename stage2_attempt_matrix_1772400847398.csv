@@ -1,0 +1,7 @@
+jobId,attemptIndex,attemptLabel,stage2Generated,localSignalSummary,geminiOrTopologySignal,invarianceOutcome,blockedBy,retryTriggered,attemptOutcome,finalJobStage,finalJobOutcome
+job_ec6e2773-327a-4167-ad7e-4e995ac78847,0,base,yes,"local log-mode warnings present; non-blocking",GEMINI_CONFIRM pass,not_failed,none,no,accepted,2,Stage2 delivered
+job_964a00a2-b5c5-4bbd-a5b3-6ca6a5c84a9c,0,base,yes,"local log-mode warnings present; non-blocking",GEMINI_CONFIRM pass,not_failed,none,no,accepted,2,Stage2 delivered
+job_b1b76aa8-6d3e-4771-b910-62a77b28bacb,0,base,yes,"local log-mode warnings present; non-blocking",no blocking Gemini/topology fail recorded,not_failed,none,no,accepted,2,Stage2 delivered
+job_43739776-66fc-4ed0-9dab-bdc9f1afe0c6,0,base,yes,"LOCAL_VALIDATE=needs_confirm (semantic/masked/openings deltas)",topology not PASS at this point,deterministic_opening_count_drop_with_high_wall_drift,structural_invariant,yes,failed,1A,Fallback to 1A after Stage2 exhaustion
+job_43739776-66fc-4ed0-9dab-bdc9f1afe0c6,1,retry1,yes,"LOCAL_VALIDATE=needs_confirm (openings delta, high drift)",topology-validator FAIL -> schedule retry3,not_hard_failed,null,yes,intermediate_retry,1A,Fallback to 1A after Stage2 exhaustion
+job_43739776-66fc-4ed0-9dab-bdc9f1afe0c6,2,retry2,yes,"LOCAL_VALIDATE=needs_confirm (windows 4->3, openings +1/-0, high drift)",gemini hardFail downgraded advisory after topology PASS,deterministic_opening_count_drop_with_high_wall_drift,structural_invariant,no,failed,1A,Fallback to 1A after Stage2 exhaustion

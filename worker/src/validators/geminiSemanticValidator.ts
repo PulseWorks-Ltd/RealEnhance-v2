@@ -486,6 +486,42 @@ function hasStage2PrimaryStructuralViolation(input: {
   };
 }
 
+function hasOpeningIdentityViolationSignal(
+  violationType: GeminiViolationType | string | undefined,
+  reasonText: string
+): boolean {
+  const violation = String(violationType || "").toLowerCase();
+  if (
+    violation === "opening_change" ||
+    violation === "opening_removed" ||
+    violation === "opening_infilled" ||
+    violation === "opening_relocated" ||
+    violation === "door_removed" ||
+    violation === "window_removed" ||
+    violation === "closet_removed"
+  ) {
+    return true;
+  }
+
+  const openingIdentityTokens = [
+    "opening removed",
+    "removed opening",
+    "opening infilled",
+    "opening filled",
+    "opening relocated",
+    "opening moved",
+    "window removed",
+    "door removed",
+    "closet removed",
+    "closet door removed",
+    "sealed opening",
+    "walled over",
+    "continuous wall",
+  ];
+
+  return openingIdentityTokens.some((token) => reasonText.includes(token));
+}
+
 export function buildFinalFixtureConfirmPrompt(input: {
   sceneType?: "interior" | "exterior";
   localFindings?: string[];
@@ -2482,6 +2518,14 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
     const violationType = typeof parsed.violationType === "string"
       ? parsed.violationType.toLowerCase()
       : "other";
+    const openingAliasViolationType =
+      violationType === "opening_removed" ||
+      violationType === "opening_infilled" ||
+      violationType === "opening_relocated" ||
+      violationType === "door_removed" ||
+      violationType === "window_removed" ||
+      violationType === "closet_removed";
+
     const normalizedViolationType = (
       violationType === "opening_change" ||
       violationType === "wall_change" ||
@@ -2493,7 +2537,11 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
       violationType === "faucet_change" ||
       violationType === "layout_only" ||
       violationType === "other"
-    ) ? (violationType as GeminiSemanticVerdict["violationType"]) : "other";
+    )
+      ? (violationType as GeminiSemanticVerdict["violationType"])
+      : openingAliasViolationType
+        ? "opening_change"
+        : "other";
     return {
       hardFail: Boolean(parsed.hardFail),
       category: parsed.category || "unknown",
@@ -2666,6 +2714,11 @@ export async function runGeminiSemanticValidator(opts: {
       });
     }
 
+    const openingIdentityViolationDetected = hasOpeningIdentityViolationSignal(
+      violationType,
+      reasonText
+    );
+
     const moderateDriftGuardApplies =
       opts.validationMode === "FULL_STAGE_ONLY" &&
       structuralDeviationDeg === 0 &&
@@ -2708,6 +2761,7 @@ export async function runGeminiSemanticValidator(opts: {
     const onlySecondarySignalsPresent = !primaryStructuralViolationDetected && hasSecondarySignals;
 
     let hardFail = parsed.hardFail;
+    let downgradeApplied = false;
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
       const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
@@ -2727,7 +2781,10 @@ export async function runGeminiSemanticValidator(opts: {
       const builtInStrongEvidence = hasConfirmedBuiltInRelocation;
       if (opts.validationMode === "FULL_STAGE_ONLY") {
         if (geometricViolation) {
-          if (moderateDriftGuardApplies) {
+          if (openingIdentityViolationDetected) {
+            hardFail = true;
+            debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY opening_identity_lock=true violationType=${violationType}`);
+          } else if (moderateDriftGuardApplies) {
             console.log("[gemini-structure-guard] downgraded hardFail to advisory", {
               semanticWallDriftPct,
               structuralDeviationDeg,
@@ -2735,6 +2792,7 @@ export async function runGeminiSemanticValidator(opts: {
               topologyResult,
             });
             hardFail = false;
+            downgradeApplied = true;
           } else {
             hardFail = true;
             debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY primary_geometry_lock=true violationType=${violationType}`);
@@ -2748,6 +2806,7 @@ export async function runGeminiSemanticValidator(opts: {
               topologyResult,
             });
             hardFail = false;
+            downgradeApplied = true;
           } else {
             hardFail = true;
             debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY secondary_anchor_lock=true violationType=${violationType}`);
@@ -2796,7 +2855,10 @@ export async function runGeminiSemanticValidator(opts: {
 
     if (stage2FullPrimaryStructuralIdentityViolation) {
       category = "structure";
-      if (moderateDriftGuardApplies) {
+      if (openingIdentityViolationDetected) {
+        hardFail = true;
+        debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage=2 mode=FULL_STAGE_ONLY opening_identity_lock=true violationType=${violationType}`);
+      } else if (moderateDriftGuardApplies) {
         console.log("[gemini-structure-guard] downgraded hardFail to advisory", {
           semanticWallDriftPct,
           structuralDeviationDeg,
@@ -2804,6 +2866,7 @@ export async function runGeminiSemanticValidator(opts: {
           topologyResult,
         });
         hardFail = false;
+        downgradeApplied = true;
       } else {
         hardFail = true;
         if (violationType === "layout_only") {
@@ -2826,6 +2889,12 @@ export async function runGeminiSemanticValidator(opts: {
       structuralAnchorCount,
       rawText: text,
     };
+
+    if (opts.stage === "2") {
+      debugLog(
+        `[STRUCTURAL_GEMINI_DECISION] openingViolationDetected=${openingIdentityViolationDetected} hardFail=${verdict.hardFail} downgradeApplied=${downgradeApplied}`
+      );
+    }
 
     const ms = Date.now() - start;
     debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);

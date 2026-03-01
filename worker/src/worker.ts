@@ -457,21 +457,6 @@ function buildInvariantHints(localSignals: {
     typeof localSignals.maskedEdgeDriftPct !== "number" ||
     localSignals.maskedEdgeDriftPct < 20;
 
-  if (openingCountDecrease) {
-    hints.push("signal:opening_count_decrease_detected");
-  }
-
-  if (typeof localSignals.wallDriftPct === "number" && localSignals.wallDriftPct >= 60) {
-    hints.push("signal:high_wall_drift_detected");
-  }
-
-  if (
-    typeof localSignals.maskedEdgeDriftPct === "number" &&
-    localSignals.maskedEdgeDriftPct >= 35
-  ) {
-    hints.push("signal:high_masked_edge_drift_detected");
-  }
-
   const suspectOpeningAlteration =
     openingCountDecrease ||
     builtInRemovalDetected ||
@@ -483,7 +468,7 @@ function buildInvariantHints(localSignals: {
       "Local structural signals indicate a potential change to a wall opening or built-in element. Carefully verify whether any doors, windows, or closet openings have been removed, reduced, relocated, or infilled. Do not assume occlusion — confirm visually whether the wall plane has become continuous where an opening previously existed."
     );
   } else if (!openingCountDecrease && !builtInRemovalDetected && wallDriftLow && maskedEdgeDriftLow) {
-    hints.push("signal:verify_wall_plane_continuity_across_prior_openings");
+    hints.push("Local structural signals do not indicate a clear opening identity issue, but still verify wall-plane continuity and opening identity visually between BEFORE and AFTER.");
   }
 
   return hints;
@@ -569,11 +554,20 @@ async function runStructuralInvariantGeminiCheck(
   fail: boolean;
   confidence: number;
   reason: string;
+  openingViolationDetected: boolean;
+  violationType?:
+    | "opening_removed"
+    | "opening_infilled"
+    | "opening_relocated"
+    | "door_removed"
+    | "window_removed"
+    | "closet_removed"
+    | "other";
   raw: any;
 }> {
   const hintBlock =
     hintFlags.length > 0
-      ? `\n\nLocal drift interpretation hints (informative only, not authoritative):\n- ${hintFlags.join("\n- ")}`
+      ? `\n\nLocal structural review note (informative only, not authoritative):\n- ${hintFlags.join("\n- ")}`
       : "";
   const prompt = `${STRUCTURAL_INVARIANT_BASE_PROMPT}${hintBlock}`;
 
@@ -619,6 +613,8 @@ async function runStructuralInvariantGeminiCheck(
     fail: true,
     confidence: 0,
     reason,
+    openingViolationDetected: false,
+    violationType: "other" as const,
     raw,
   });
 
@@ -679,6 +675,8 @@ async function runStructuralInvariantGeminiCheck(
         fail: true,
         confidence: 0,
         reason: "Invariant schema invalid",
+        openingViolationDetected: false,
+        violationType: "other",
         raw: parsed,
       };
     }
@@ -696,6 +694,52 @@ async function runStructuralInvariantGeminiCheck(
       : 0;
 
   const countDecrease = openingsAfter < openingsBefore;
+  const reasonText = String(parsed.reason || "").toLowerCase();
+  const removedLocations = Array.isArray(parsed.removed_opening_locations)
+    ? parsed.removed_opening_locations.map((value: any) => String(value || "").toLowerCase()).join(" ")
+    : "";
+
+  const openingRemovedSignal =
+    removedCount > 0 ||
+    countDecrease ||
+    reasonText.includes("opening removed") ||
+    reasonText.includes("removed opening") ||
+    reasonText.includes("window removed") ||
+    reasonText.includes("door removed") ||
+    reasonText.includes("closet") && reasonText.includes("removed") ||
+    removedLocations.includes("window") && removedLocations.includes("removed") ||
+    removedLocations.includes("door") && removedLocations.includes("removed") ||
+    removedLocations.includes("closet") && removedLocations.includes("removed");
+
+  const openingInfilledSignal =
+    wallPlaneReplaced ||
+    reasonText.includes("infill") ||
+    reasonText.includes("infilled") ||
+    reasonText.includes("continuous wall") ||
+    reasonText.includes("wall plane");
+
+  const openingRelocatedSignal =
+    relocationDetected ||
+    locationMismatchDetected ||
+    reasonText.includes("relocat") ||
+    reasonText.includes("mismatch");
+
+  const openingViolationDetected =
+    openingRemovedSignal ||
+    openingInfilledSignal ||
+    openingRelocatedSignal;
+
+  const violationType = (() => {
+    if (openingRelocatedSignal) return "opening_relocated" as const;
+    if (openingInfilledSignal) return "opening_infilled" as const;
+    if (reasonText.includes("window removed")) return "window_removed" as const;
+    if (reasonText.includes("door removed")) return "door_removed" as const;
+    if ((reasonText.includes("closet") && reasonText.includes("removed")) || removedLocations.includes("closet")) {
+      return "closet_removed" as const;
+    }
+    if (openingRemovedSignal) return "opening_removed" as const;
+    return "other" as const;
+  })();
 
   const explicitRemoval =
     removedCount > 0 &&
@@ -705,12 +749,14 @@ async function runStructuralInvariantGeminiCheck(
   const relocationRemoval =
     (relocationDetected || locationMismatchDetected) && confidence >= 0.9;
 
-  const fail = countDecrease || explicitRemoval || relocationRemoval;
+  const fail = openingViolationDetected || explicitRemoval || relocationRemoval;
 
   return {
     fail,
     confidence,
     reason: parsed.reason ?? "",
+    openingViolationDetected,
+    violationType,
     raw: parsed,
   };
 }
@@ -5630,41 +5676,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const highWallDrift =
           typeof wallDriftPct === "number" &&
           wallDriftPct > 55;
-        const deterministicGuardTriggered =
-          openingsDrop &&
-          highWallDrift;
+        const deterministicGuardTriggered = false;
 
         logger.info(
           `[STRUCTURAL_GUARD_EVAL] openingsDrop=${openingsDrop} highWallDrift=${highWallDrift} builtInRemovalDetected=${builtInRemovalDetected} deterministicGuardTriggered=${deterministicGuardTriggered}`
         );
 
-        let invariantResult: Awaited<ReturnType<typeof runStructuralInvariantGeminiCheck>>;
-
-        if (deterministicGuardTriggered) {
-          logger.warn(
-            `[STRUCTURAL_INVARIANT_DETERMINISTIC_GUARD] totalOpeningsBefore=${totalOpeningsBefore} totalOpeningsAfter=${totalOpeningsAfter} wallDriftPct=${wallDriftPct}`
-          );
-          invariantResult = {
-            fail: true,
-            confidence: 1,
-            reason: "deterministic_opening_count_drop_with_high_wall_drift",
-            raw: {
-              deterministic_guard: true,
-              totalOpeningsBefore,
-              totalOpeningsAfter,
-              wallDriftPct,
-            },
-          };
-        } else {
-          invariantResult = await runStructuralInvariantGeminiCheck(
-            path1A,
-            stage2CandidatePath,
-            invariantHints
-          );
-        }
+        const invariantResult = await runStructuralInvariantGeminiCheck(
+          path1A,
+          stage2CandidatePath,
+          invariantHints
+        );
 
         logger.info(
           `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
+        );
+
+        logger.info(
+          `[STRUCTURAL_GEMINI_DECISION] openingViolationDetected=${invariantResult.openingViolationDetected} hardFail=${invariantResult.fail} downgradeApplied=false violationType=${invariantResult.violationType || "other"}`
         );
 
         if (invariantResult.fail) {
@@ -5676,6 +5705,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             "structural_invariant",
             `invariantConfidence=${invariantResult.confidence.toFixed(3)}`,
             `invariantReason=${invariantResult.reason}`,
+            `invariantViolationType=${invariantResult.violationType || "other"}`,
           ];
 
           setStage2AttemptValidation(path2, "structural_invariant", failReasons);
