@@ -80,7 +80,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
-const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.0-flash");
+const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
     ? "block"
@@ -560,27 +560,91 @@ async function runStructuralInvariantGeminiCheck(
       temperature: 0.1,
       topP: 0.5,
       maxOutputTokens: 512,
+      responseMimeType: "application/json",
     },
   } as any);
 
   const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
   const rawText = textParts.map((p: any) => p?.text || "").join("\n").trim();
-  const jsonCandidate = rawText.match(/\{[\s\S]*\}/)?.[0] || "";
+
+  const failClosed = (reason: string, raw: any) => ({
+    fail: true,
+    confidence: 0,
+    reason,
+    raw,
+  });
+
+  const extractJsonCandidate = (text: string): string => {
+    if (!text) return "";
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+    if (fenced) return fenced;
+
+    let start = -1;
+    let depth = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (char === "{") {
+        if (start === -1) start = index;
+        depth += 1;
+      } else if (char === "}" && start !== -1) {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, index + 1);
+        }
+      }
+    }
+
+    return text.trim();
+  };
+
+  const jsonCandidate = extractJsonCandidate(rawText);
 
   let parsed: any = {};
   try {
     parsed = JSON.parse(jsonCandidate);
   } catch {
-    parsed = {};
+    logger.error(`[STRUCTURAL_INVARIANT_PARSE_ERROR] rawText=${rawText}`);
+    return failClosed("Invariant JSON parsing failed", {
+      parse_error: true,
+      rawText,
+      jsonCandidate,
+    });
+  }
+
+  const requiredKeys = [
+    "opening_removed",
+    "wall_plane_continuity",
+    "opening_occluded",
+    "confidence",
+  ];
+
+  for (const key of requiredKeys) {
+    if (!(key in parsed)) {
+      logger.error(`[STRUCTURAL_INVARIANT_SCHEMA_ERROR] missingKey=${key} raw=${JSON.stringify(parsed)}`);
+      return failClosed(`Invariant missing required key: ${key}`, {
+        schema_error: true,
+        missingKey: key,
+        parsed,
+        rawText,
+      });
+    }
   }
 
   const openingRemoved = parsed.opening_removed === true;
   const wallPlaneContinuity = parsed.wall_plane_continuity === true;
   const occlusionDetected = parsed.opening_occluded === true;
-  const confidence =
-    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
-      ? parsed.confidence
-      : 0;
+
+  if (!(typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence))) {
+    logger.error(`[STRUCTURAL_INVARIANT_SCHEMA_ERROR] invalidConfidence raw=${JSON.stringify(parsed)}`);
+    return failClosed("Invariant confidence missing or invalid", {
+      schema_error: true,
+      invalidConfidence: parsed.confidence,
+      parsed,
+      rawText,
+    });
+  }
+
+  const confidence = parsed.confidence;
 
   const hardRemoval =
     openingRemoved &&
