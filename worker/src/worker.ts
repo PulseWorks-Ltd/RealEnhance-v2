@@ -444,69 +444,63 @@ function buildInvariantHints(localSignals: {
 }
 
 const STRUCTURAL_INVARIANT_BASE_PROMPT = `
-You are a strict structural integrity validator.
+You are a structural architectural validator.
 
-You are comparing two images of the SAME physical room:
-- BEFORE image
-- AFTER image
+Your task is to detect removal, infill, relocation, or structural alteration
+of wall openings between BEFORE and AFTER images.
 
-Your task is to determine whether any structural openings were removed,
-walled over, relocated, or replaced with continuous wall plane.
+A wall opening is defined as:
 
-STRUCTURAL OPENINGS INCLUDE:
-- Windows
-- Doors
-- Sliding doors
-- Closet doors
-- Built-in wall-integrated openings
+Any framed, recessed, or penetrative void through a wall plane.
+This includes (but is not limited to):
+- windows
+- doors
+- sliding doors
+- closet doors
+- internal pass-throughs
+- recessed cavities
+- any visible framed penetration of a wall surface
 
-CRITICAL RULE — OPENING COUNT DECREASE:
-If the number of visible structural openings decreases from BEFORE to AFTER,
-you MUST treat this as structural removal UNLESS ALL of the following are TRUE:
+Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters), or temporary movable objects is NOT removal, provided that:
 
-1. The full frame edges of the opening are clearly visible.
-2. The depth void of the opening is visibly preserved.
-3. The interior of the opening is NOT replaced by continuous wall plane.
-4. Occlusion by furniture still leaves clear frame continuity.
+- The opening frame remains visible or inferable,
+- The depth void/light cavity remains present,
+- The wall plane does NOT become continuous across the previous opening.
 
-If ANY of the above are unclear, ambiguous, or partially missing,
-you must classify as opening_removed = true.
+Replacement of an opening with continuous wall surface IS removal.
+Loss of visible frame continuity IS removal.
+Loss of depth void/light cavity IS removal.
 
-BURDEN OF PROOF RULE:
-Do NOT assume occlusion.
-Do NOT infer hidden structure.
-If the frame or void cannot be clearly verified, treat it as removed.
+You must:
 
-WALL PLANE CONTINUITY:
-If a previously open area appears flat, continuous, and consistent with adjacent wall surface,
-that is wall_plane_continuity = true.
+1) Count total structural wall openings in BEFORE.
+2) Count total structural wall openings in AFTER.
+3) Determine whether any opening present in BEFORE is:
+   - missing in AFTER
+   - replaced by continuous wall
+   - relocated
+   - merely occluded
+4) Detect if any wall plane expanded into a previous opening cavity.
+5) Compare approximate wall locations (left wall, right wall, far-right edge, corner, etc.)
 
-BUILT-IN REMOVAL:
-If built-in closets, integrated cabinetry, recessed niches, or structural anchors disappear,
-classify as opening_removed = true.
+IMPORTANT:
+If opening count decreases, you must assume removal unless you can clearly
+identify preserved frame continuity and depth void.
 
-RETURN STRICT JSON ONLY.
-NO commentary.
-NO markdown.
-NO explanation.
+Return STRICT JSON only. No prose outside JSON.
 
-Format EXACTLY as:
+Required JSON format:
 
 {
-  "opening_removed": boolean,
-  "wall_plane_continuity": boolean,
-  "opening_occluded": boolean,
-  "frame_continuity_preserved": boolean,
+  "openings_before": number,
+  "openings_after": number,
+  "removed_openings_count": number,
+  "removed_opening_locations": string[],
+  "wall_plane_replacement_detected": boolean,
+  "opening_occlusion_only": boolean,
   "confidence": number,
   "reason": string
 }
-
-CONFIDENCE RULES:
-- 0.95–1.0 → clearly removed or clearly preserved
-- 0.75–0.94 → strong suspicion but minor ambiguity
-- Below 0.75 → uncertainty
-
-When uncertain between occlusion and removal, bias toward removal.
 `;
 
 async function runStructuralInvariantGeminiCheck(
@@ -608,48 +602,48 @@ async function runStructuralInvariantGeminiCheck(
   }
 
   const requiredKeys = [
-    "opening_removed",
-    "wall_plane_continuity",
-    "opening_occluded",
+    "openings_before",
+    "openings_after",
+    "removed_openings_count",
+    "removed_opening_locations",
+    "wall_plane_replacement_detected",
+    "opening_occlusion_only",
     "confidence",
+    "reason",
   ];
 
   for (const key of requiredKeys) {
     if (!(key in parsed)) {
-      logger.error(`[STRUCTURAL_INVARIANT_SCHEMA_ERROR] missingKey=${key} raw=${JSON.stringify(parsed)}`);
-      return failClosed(`Invariant missing required key: ${key}`, {
-        schema_error: true,
-        missingKey: key,
-        parsed,
-        rawText,
-      });
+      logger.error("[STRUCTURAL_INVARIANT_SCHEMA_ERROR]", { missingKey: key });
+      return {
+        fail: true,
+        confidence: 0,
+        reason: "Invariant schema invalid",
+        raw: parsed,
+      };
     }
   }
 
-  const openingRemoved = parsed.opening_removed === true;
-  const wallPlaneContinuity = parsed.wall_plane_continuity === true;
-  const occlusionDetected = parsed.opening_occluded === true;
+  const openingsBefore = parsed.openings_before;
+  const openingsAfter = parsed.openings_after;
+  const removedCount = parsed.removed_openings_count;
+  const wallPlaneReplaced = parsed.wall_plane_replacement_detected === true;
+  const confidence =
+    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      ? parsed.confidence
+      : 0;
 
-  if (!(typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence))) {
-    logger.error(`[STRUCTURAL_INVARIANT_SCHEMA_ERROR] invalidConfidence raw=${JSON.stringify(parsed)}`);
-    return failClosed("Invariant confidence missing or invalid", {
-      schema_error: true,
-      invalidConfidence: parsed.confidence,
-      parsed,
-      rawText,
-    });
-  }
+  const countDecrease = openingsAfter < openingsBefore;
 
-  const confidence = parsed.confidence;
-
-  const hardRemoval =
-    openingRemoved &&
-    wallPlaneContinuity &&
-    !occlusionDetected &&
+  const explicitRemoval =
+    removedCount > 0 &&
+    wallPlaneReplaced &&
     confidence >= 0.9;
 
+  const fail = countDecrease || explicitRemoval;
+
   return {
-    fail: hardRemoval,
+    fail,
     confidence,
     reason: parsed.reason ?? "",
     raw: parsed,
