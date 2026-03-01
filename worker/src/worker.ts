@@ -405,45 +405,67 @@ async function runStructuralInvariantGeminiCheck(params: {
   fail: boolean;
   confidence: number;
   reason: string;
+  raw: any;
 }> {
   const prompt = `
-Compare Image A (original) and Image B (enhanced).
+You are a structural architectural validator.
 
-Focus ONLY on structural architectural elements:
+Compare Image A (original) and Image B (generated).
 
+We are ONLY evaluating structural integrity.
+
+STRUCTURAL ELEMENTS include:
 - Windows
 - Doors
+- Doorways
 - Closet doors
-- Built-in cabinetry
+- Built-in wardrobes
+- Wall-integrated cabinetry
+- Structural shelving
 - Wall planes
-- Permanent architectural openings
 
-Critical interpretation rules:
-- Closet doors are structural architectural elements.
-- Built-in wardrobes, fixed cabinetry, closet systems, and wall-integrated shelving are structural.
-- Freestanding furniture (dressers, sofas, tables, movable shelves) is NOT structural.
-- Curtains, blinds, curtain rods, decorative shelving, and lighting changes are NOT structural.
-- If a built-in appears replaced by freestanding furniture, treat this as structural removal.
-
-Do NOT evaluate:
-- Furniture
+NON-STRUCTURAL elements include:
+- Freestanding furniture
+- Beds, sofas, tables
+- Curtains or blinds
 - Decor
 - Lighting
-- Appliances
-- Style changes
+- Rugs
 
-Determine:
+Your task:
 
-1. Were any structural elements removed, sealed, or walled over?
-2. Were any built-in architectural components removed or replaced?
-3. Did the architectural envelope materially contract?
+1. List structural openings in Image A.
+2. Compare to Image B.
+3. Determine if any structural opening was:
+   - Removed
+   - Occluded by furniture
+   - Relocated
+   - Preserved
 
-Respond strictly in JSON:
+4. Evaluate wall-plane continuity:
+   - Did any previously open void become continuous drywall?
+   - Was wall texture extended where an opening existed?
+   - Did trim/frame edges disappear?
+
+STRUCTURAL OPENING CONTINUITY RULES:
+
+- If furniture blocks part of an opening but frame edges or depth remain visible,
+  this is OCCLUSION, not removal.
+
+- If a void is replaced with continuous wall plane, this is STRUCTURAL REMOVAL.
+
+- Only classify as removal if wall plane continuity replaces the void.
+
+Return ONLY valid JSON:
 
 {
-  "fail": boolean,
-  "confidence": number (0.0–1.0),
-  "reason": string
+  "opening_removed": boolean,
+  "opening_occluded": boolean,
+  "opening_relocated": boolean,
+  "wall_plane_continuity": boolean,
+  "frame_continuity_preserved": boolean,
+  "confidence": number between 0.0 and 1.0,
+  "reason": "brief explanation"
 }
 `;
 
@@ -488,10 +510,25 @@ Respond strictly in JSON:
     parsed = {};
   }
 
+  const openingRemoved = parsed.opening_removed === true;
+  const wallPlaneContinuity = parsed.wall_plane_continuity === true;
+  const occlusionDetected = parsed.opening_occluded === true;
+  const confidence =
+    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      ? parsed.confidence
+      : 0;
+
+  const hardRemoval =
+    openingRemoved &&
+    wallPlaneContinuity &&
+    !occlusionDetected &&
+    confidence >= 0.9;
+
   return {
-    fail: parsed.fail === true,
-    confidence: typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence) ? parsed.confidence : 0,
-    reason: typeof parsed.reason === "string" && parsed.reason.trim().length > 0 ? parsed.reason.trim() : "unknown",
+    fail: hardRemoval,
+    confidence,
+    reason: parsed.reason ?? "",
+    raw: parsed,
   };
 }
 
@@ -5344,7 +5381,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
         );
 
-        if (invariantResult.fail && invariantResult.confidence >= 0.9) {
+        if (invariantResult.fail) {
           logger.warn(
             `[STRUCTURAL_INVARIANT_HARD_FAIL] reason=${invariantResult.reason}`
           );
