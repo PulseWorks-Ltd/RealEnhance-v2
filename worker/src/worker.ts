@@ -412,6 +412,7 @@ function buildInvariantHints(localSignals: {
   doorsAfter?: number | null;
   closetDoorsBefore?: number | null;
   closetDoorsAfter?: number | null;
+  builtInRemovalDetected?: boolean;
   wallDriftPct?: number | null;
   maskedEdgeDriftPct?: number | null;
 }): string[] {
@@ -441,6 +442,21 @@ function buildInvariantHints(localSignals: {
   const openingCountDecrease =
     hasOpeningCountSignal && totalOpeningsAfter < totalOpeningsBefore;
 
+  const builtInRemovalDetected = localSignals.builtInRemovalDetected === true;
+  const wallDriftHigh =
+    typeof localSignals.wallDriftPct === "number" &&
+    localSignals.wallDriftPct >= 35;
+  const maskedEdgeDriftHigh =
+    typeof localSignals.maskedEdgeDriftPct === "number" &&
+    localSignals.maskedEdgeDriftPct >= 35;
+
+  const wallDriftLow =
+    typeof localSignals.wallDriftPct !== "number" ||
+    localSignals.wallDriftPct < 20;
+  const maskedEdgeDriftLow =
+    typeof localSignals.maskedEdgeDriftPct !== "number" ||
+    localSignals.maskedEdgeDriftPct < 20;
+
   if (openingCountDecrease) {
     hints.push("signal:opening_count_decrease_detected");
   }
@@ -456,7 +472,19 @@ function buildInvariantHints(localSignals: {
     hints.push("signal:high_masked_edge_drift_detected");
   }
 
-  hints.push("interpretation:occlusion_without_wall_plane_is_not_removal");
+  const suspectOpeningAlteration =
+    openingCountDecrease ||
+    builtInRemovalDetected ||
+    wallDriftHigh ||
+    maskedEdgeDriftHigh;
+
+  if (suspectOpeningAlteration) {
+    hints.push(
+      "Local structural signals indicate a potential change to a wall opening or built-in element. Carefully verify whether any doors, windows, or closet openings have been removed, reduced, relocated, or infilled. Do not assume occlusion — confirm visually whether the wall plane has become continuous where an opening previously existed."
+    );
+  } else if (!openingCountDecrease && !builtInRemovalDetected && wallDriftLow && maskedEdgeDriftLow) {
+    hints.push("signal:verify_wall_plane_continuity_across_prior_openings");
+  }
 
   return hints;
 }
@@ -5588,6 +5616,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         doorsAfter,
         closetDoorsBefore,
         closetDoorsAfter,
+        builtInRemovalDetected,
         wallDriftPct,
         maskedEdgeDriftPct,
       });
@@ -5597,10 +5626,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
 
       if (stage2CandidatePath) {
-        const deterministicGuardTriggered =
-          totalOpeningsAfter < totalOpeningsBefore &&
+        const openingsDrop = totalOpeningsAfter < totalOpeningsBefore;
+        const highWallDrift =
           typeof wallDriftPct === "number" &&
           wallDriftPct > 55;
+        const deterministicGuardTriggered =
+          openingsDrop &&
+          highWallDrift;
+
+        logger.info(
+          `[STRUCTURAL_GUARD_EVAL] openingsDrop=${openingsDrop} highWallDrift=${highWallDrift} builtInRemovalDetected=${builtInRemovalDetected} deterministicGuardTriggered=${deterministicGuardTriggered}`
+        );
 
         let invariantResult: Awaited<ReturnType<typeof runStructuralInvariantGeminiCheck>>;
 

@@ -232,9 +232,7 @@ async function main() {
   }
 
   // Bind host/port for local dev and production (Railway)
-  const HOST = 
-    process.env.HOST ||
-    (process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1");
+  const HOST = process.env.HOST || "0.0.0.0";
 
   app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);

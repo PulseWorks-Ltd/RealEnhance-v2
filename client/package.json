@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --strictPort --port 5173",
+    "dev": "vite --strictPort --host 0.0.0.0 --port 5173",
     "build": "vite build",
-    "preview": "vite preview --strictPort",
+    "preview": "vite preview --strictPort --host 0.0.0.0",
     "start": "node server.js"
   },
   "dependencies": {
