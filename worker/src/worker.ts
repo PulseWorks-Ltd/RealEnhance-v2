@@ -4907,17 +4907,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   };
 
-  const stage2OuterRetryProfiles = [
-    { temperature: 0.25, topP: 0.70, topK: 30 },
-    { temperature: 0.20, topP: 0.65, topK: 25 },
-    { temperature: 0.17, topP: 0.60, topK: 20 },
-  ] as const;
-
-  const getStage2OuterRetrySampling = (attemptNumber: number) => {
-    const profileIndex = Math.min(Math.max(0, attemptNumber - 1), stage2OuterRetryProfiles.length - 1);
-    return stage2OuterRetryProfiles[profileIndex];
-  };
-
   if (payload.options.virtualStage) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
@@ -4977,17 +4966,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (attempt > 1) {
-        const currentRetrySampling = getStage2OuterRetrySampling(attempt);
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
-        const isStochasticRetryOne = attempt === 2 && !useReinforcedRetry;
-        const retryOneStabilityTemperature = Math.max(0.15, currentRetrySampling.temperature * 0.6);
-        if (isStochasticRetryOne) {
-          console.log(`[STAGE2] Retry-1 using stabilized stochastic prompt (temperature=${retryOneStabilityTemperature.toFixed(3)})`);
-        } else if (useReinforcedRetry) {
+        if (useReinforcedRetry) {
           console.log("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
-          console.log("[STAGE2] Retry-2 using corrective structural prompt");
+          console.log("[STAGE2] Retry using corrective structural prompt");
         }
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
@@ -5011,18 +4995,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           curtainRailLikely: jobContext.curtainRailLikely,
           jobId: payload.jobId,
           outputPath: retryOutputPath,
-          generationConfig: isStochasticRetryOne
-            ? {
-              temperature: retryOneStabilityTemperature,
-            }
-            : {
-              temperature: currentRetrySampling.temperature,
-              topP: currentRetrySampling.topP,
-              topK: currentRetrySampling.topK,
-            },
-          structuralRetryContext: isStochasticRetryOne
-            ? undefined
-            : {
+          attempt,
+          structuralRetryContext: {
               compositeFail: useReinforcedRetry,
               failureType: retryFailureType,
               attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
@@ -5534,7 +5508,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           break;
         }
 
-        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
         pendingStage2RetryStrategy = "REINFORCED";
         emitStage2DecisionBreakdown({
@@ -5548,7 +5521,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           decisionPoint: "retry_schedule",
           reason: "extreme_structural_violation",
         });
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK} retryStrategy=REINFORCED`);
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} retryStrategy=REINFORCED`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -5603,7 +5576,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           if (topologyResult.result === "FAIL") {
             if (attempt < MAX_STAGE2_RETRIES) {
-              const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
               emitStage2DecisionBreakdown({
                 extremeLocalFail: false,
                 topologyFail: true,
@@ -5615,7 +5587,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 decisionPoint: "retry_schedule",
                 reason: "topology_violation_detected",
               });
-              nLog(`[topology-validator] FAIL → scheduling retry attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+              nLog(`[topology-validator] FAIL → scheduling retry attempt=${attempt + 1}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
                 stage: "2",
@@ -5846,7 +5818,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           pendingStage2StructuralFailureType = invariantFailureType;
           pendingStage2RetryStrategy = "NORMAL";
 
-          const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
           emitStage2DecisionBreakdown({
             extremeLocalFail: false,
             topologyFail: false,
@@ -5858,7 +5829,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             decisionPoint: "retry_schedule",
             reason: "structural_invariant",
           });
-          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
             stage: "2",
@@ -5959,7 +5930,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const geminiConfirmUncertain = lastGeminiConfirm?.uncertain === true;
 
       if (validationStage === "2" && geminiConfirmUncertain && attempt < MAX_STAGE2_RETRIES) {
-        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         emitStage2DecisionBreakdown({
           extremeLocalFail: false,
           topologyFail: false,
@@ -5971,7 +5941,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           decisionPoint: "retry_schedule",
           reason: "gemini_confirm_uncertain",
         });
-        nLog(`[STAGE2_GEMINI_UNCERTAIN_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        nLog(`[STAGE2_GEMINI_UNCERTAIN_RETRY] attempt=${attempt + 1}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -6059,7 +6029,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           break;
         }
 
-        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         emitStage2DecisionBreakdown({
           extremeLocalFail: false,
           topologyFail: false,
@@ -6071,7 +6040,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           decisionPoint: "retry_schedule",
           reason: "opening_removal",
         });
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
           stage: "2",
@@ -6211,7 +6180,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           break;
         }
 
-        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         emitStage2DecisionBreakdown({
           extremeLocalFail: false,
           topologyFail: false,
@@ -6226,7 +6194,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (softStructuralReviewMode) {
           nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
         } else {
-          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
         }
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
@@ -6386,7 +6354,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 break;
               }
 
-              const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
               emitStage2DecisionBreakdown({
                 extremeLocalFail: false,
                 topologyFail: false,
@@ -6398,7 +6365,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 decisionPoint: "retry_schedule",
                 reason: reasonText,
               });
-              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
                 stage: "2",

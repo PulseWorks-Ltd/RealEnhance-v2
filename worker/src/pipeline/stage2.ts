@@ -5,7 +5,6 @@ import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
 import { runOpenCVStructuralValidator } from "../validators/index";
-import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { getStagingStyleDirective } from "../ai/stagingStyles";
 import sharp from "sharp";
@@ -16,13 +15,23 @@ import { safeToBuffer, safeMetadata } from "../utils/sharp-utils"; // AUDIT FIX:
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
 import { validateStructureStageAware } from "../validators/structural/stageAwareValidator";
 import { getJob, updateJob } from "../utils/persist";
-import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
+import { buildTightenedPrompt, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 
 const logger = console;
+
+function getStage2Sampling(attempt: number) {
+  if (attempt === 1) {
+    return { temperature: 0.33, topP: 0.78, topK: 30 };
+  }
+  if (attempt === 2) {
+    return { temperature: 0.25, topP: 0.70, topK: 30 };
+  }
+  return { temperature: 0.25, topP: 0.70, topK: 30 };
+}
 
 // Stage 2: virtual staging (add furniture)
 
@@ -49,7 +58,8 @@ export async function runStage2GenerationAttempt(
     curtainRailLikely?: boolean | "unknown";
     jobId: string;
     outputPath: string;
-    generationConfig?: Record<string, any>;
+    attempt?: number;
+    maxOutputTokens?: number;
     tightenLevel?: TightenLevel;
     legacyStrictPrompt?: boolean;
     layoutContext?: LayoutContextResult | null;
@@ -183,10 +193,13 @@ Do not add blinds, rods, tracks, or new window coverings.
   if (styleDirective) requestParts.push({ text: styleDirective });
   requestParts.push({ text: textPrompt });
 
-  let generationConfig: any = opts.generationConfig || undefined;
-  if (opts.profile?.seed !== undefined) {
-    generationConfig = { ...(generationConfig || {}), seed: opts.profile.seed };
-  }
+  const sampling = getStage2Sampling(opts.attempt ?? 1);
+  logger.info("[STAGE2_SAMPLING]", { jobId: opts.jobId, attempt: opts.attempt ?? 1, sampling });
+  const generationConfig: any = {
+    ...sampling,
+    ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
+    ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
+  };
 
   const ai = getGeminiClient();
   const { resp } = await runWithPrimaryThenFallback({
@@ -259,7 +272,6 @@ export async function runStage2(
   const validatorNotes: any[] = [];
   let needsRetry = false;
   let lastValidatorResults: any = {};
-  let tempMultiplier = 1.0;
   let strictPrompt = false;
   const localMode: Mode = opts.validationConfig?.localMode || "log";
   const effectiveMode: "off" | "log" | "block" = localMode === "block" ? "block" : (localMode === "log" ? "log" : "off");
@@ -272,19 +284,6 @@ export async function runStage2(
   let attemptsUsed = 0;
   let validationRisk = false;
   let retryCount = 0;
-
-  const clampSampling = (sampling: { temperature: number; topP: number; topK: number }) => ({
-    temperature: Math.max(0.05, sampling.temperature),
-    topP: Math.max(0.3, sampling.topP),
-    topK: Math.max(10, Math.floor(sampling.topK)),
-  });
-
-  const nextAdaptiveSampling = (sampling: { temperature: number; topP: number; topK: number }) =>
-    clampSampling({
-      temperature: sampling.temperature * 0.9,
-      topP: sampling.topP * 0.9,
-      topK: sampling.topK * 0.9,
-    });
 
   // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
   // If stage1APath not provided, fallback to basePath with warning
@@ -429,7 +428,6 @@ export async function runStage2(
   const regenEnabled = maxAttempts > 1;
   console.log(`[STAGE2_REGEN_MODE] job=${opts.jobId || "unknown"} enabled=${regenEnabled} maxAttempts=${maxAttempts}`);
   let currentTightenLevel: TightenLevel = 0;
-  let adaptiveSamplingOverride: { temperature: number; topP: number; topK: number } | null = null;
 
   // This change removes duplicate Stage 2 validation retry channels and consolidates retry strategy
   // into internal adaptive loop for clarity, cost control, and deterministic behaviour.
@@ -517,7 +515,6 @@ export async function runStage2(
     } else if (attempt === 1) {
       // Legacy retry behavior when stage-aware is disabled
       textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
-      tempMultiplier = 0.8;
       strictPrompt = true;
     }
 
@@ -581,49 +578,12 @@ Do not add blinds, rods, tracks, or new window coverings.
       ai = getGeminiClient();
       if (!ai) throw new Error("getGeminiClient returned null/undefined");
       const apiStartTime = Date.now();
-      let generationConfig: any = useTest ? (profile?.seed !== undefined ? { seed: profile.seed } : undefined) : (profile?.seed !== undefined ? { seed: profile.seed } : undefined);
-      let effectiveSamplingForAttempt: { temperature: number; topP: number; topK: number } | null = null;
-      if (isNZStyleEnabled()) {
-        const preset = scene === 'interior' ? NZ_REAL_ESTATE_PRESETS.stage2Interior : NZ_REAL_ESTATE_PRESETS.stage2Exterior;
-        const refreshSampling = { temperature: 0.30, topP: 0.73, topK: 31 };
-        const fullSampling = { temperature: 0.25, topP: 0.70, topK: 30 };
-        const isInteriorScene = scene === 'interior';
-        const baseSampling = isInteriorScene
-          ? (isRefreshStaging ? refreshSampling : fullSampling)
-          : { temperature: preset.temperature, topP: preset.topP, topK: preset.topK };
-        let temperature = baseSampling.temperature;
-
-        // Apply tightened generation config when stage-aware is enabled
-        if (stageAwareConfig.enabled && currentTightenLevel > 0) {
-          const tightenedConfig = getTightenedGenerationConfig(currentTightenLevel, {
-            temperature: baseSampling.temperature,
-            topP: baseSampling.topP,
-            topK: baseSampling.topK,
-          });
-          effectiveSamplingForAttempt = clampSampling({
-            temperature: tightenedConfig.temperature,
-            topP: tightenedConfig.topP,
-            topK: tightenedConfig.topK,
-          });
-          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
-          focusLog("PIPELINE_VERBOSE", `[stage2] Applied tightened generation config: temp=${effectiveSamplingForAttempt.temperature.toFixed(2)}, topP=${effectiveSamplingForAttempt.topP}, topK=${effectiveSamplingForAttempt.topK}`);
-        } else {
-          // Legacy behavior
-          if (attempt === 1) temperature = Math.max(0.01, temperature * 0.8);
-          effectiveSamplingForAttempt = clampSampling({
-            temperature,
-            topP: Number(baseSampling.topP ?? 0.70),
-            topK: Number(baseSampling.topK ?? 30),
-          });
-          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
-        }
-
-        if (adaptiveSamplingOverride) {
-          effectiveSamplingForAttempt = clampSampling(adaptiveSamplingOverride);
-          generationConfig = { ...(generationConfig || {}), ...effectiveSamplingForAttempt };
-          console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 1} temperature=${effectiveSamplingForAttempt.temperature.toFixed(3)} topP=${effectiveSamplingForAttempt.topP.toFixed(3)} topK=${effectiveSamplingForAttempt.topK}`);
-        }
-      }
+      const sampling = getStage2Sampling(attempt + 1);
+      logger.info("[STAGE2_SAMPLING]", { jobId, attempt: attempt + 1, sampling });
+      const generationConfig: any = {
+        ...sampling,
+        ...(profile?.seed !== undefined ? { seed: profile.seed } : {}),
+      };
       // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
       const { resp, modelUsed } = await runWithPrimaryThenFallback({
         stageLabel: "2",
@@ -708,16 +668,9 @@ Do not add blinds, rods, tracks, or new window coverings.
             });
 
             if (allowRetries && attempt + 1 < maxAttempts) {
-              const currentSampling = clampSampling({
-                temperature: Number(generationConfig?.temperature ?? 0.25),
-                topP: Number(generationConfig?.topP ?? 0.70),
-                topK: Number(generationConfig?.topK ?? 30),
-              });
-              adaptiveSamplingOverride = nextAdaptiveSampling(currentSampling);
               currentTightenLevel = getTightenLevelFromAttempt(attempt + 1);
               needsRetry = true;
               retryCount++;
-              console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 2} temperature=${adaptiveSamplingOverride.temperature.toFixed(3)} topP=${adaptiveSamplingOverride.topP.toFixed(3)} topK=${adaptiveSamplingOverride.topK}`);
               if (opts.onStrictRetry) {
                 opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
               }
@@ -765,15 +718,8 @@ Do not add blinds, rods, tracks, or new window coverings.
         }
 
         if (validatorFailed && allowRetries && attempt + 1 < maxAttempts) {
-          const currentSampling = clampSampling({
-            temperature: Number(generationConfig?.temperature ?? 0.25),
-            topP: Number(generationConfig?.topP ?? 0.70),
-            topK: Number(generationConfig?.topK ?? 30),
-          });
-          adaptiveSamplingOverride = nextAdaptiveSampling(currentSampling);
           needsRetry = true;
           retryCount++;
-          console.log(`[STAGE2_INTERNAL_RETRY] attempt=${attempt + 2} temperature=${adaptiveSamplingOverride.temperature.toFixed(3)} topP=${adaptiveSamplingOverride.topP.toFixed(3)} topK=${adaptiveSamplingOverride.topK}`);
           continue;
         } else if (validatorFailed && !allowRetries) {
           console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
