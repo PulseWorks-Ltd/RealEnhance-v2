@@ -234,9 +234,42 @@ async function main() {
   // Bind host/port for local dev and production (Railway)
   const HOST = process.env.HOST || "0.0.0.0";
 
-  app.listen(PORT, HOST, () => {
+  const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
   });
+
+  let shuttingDown = false;
+  const gracefulShutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    console.log(`[server] ${signal} received, starting graceful shutdown`);
+    const FORCE_EXIT_MS = 10_000;
+    const forceTimer = setTimeout(() => {
+      console.error(`[server] forced exit after ${FORCE_EXIT_MS}ms during shutdown`);
+      process.exit(1);
+    }, FORCE_EXIT_MS);
+    forceTimer.unref();
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        httpServer.close((err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+
+      if (REDIS_URL) {
+        await redisClient.quit();
+      }
+
+      console.log("[server] graceful shutdown complete");
+      process.exit(0);
+    } catch (err) {
+      console.error("[server] shutdown error:", err);
+      process.exit(1);
+    }
+  };
 
   requireS3OrExit().catch((err) => {
     console.error("[server] S3 readiness check failed:", err);
@@ -253,12 +286,11 @@ async function main() {
     }
   })();
 
-  process.on("SIGTERM", async () => {
-    try {
-      if (REDIS_URL) await redisClient.quit();
-    } finally {
-      process.exit(0);
-    }
+  process.on("SIGTERM", () => {
+    void gracefulShutdown("SIGTERM");
+  });
+  process.on("SIGINT", () => {
+    void gracefulShutdown("SIGINT");
   });
 }
 
