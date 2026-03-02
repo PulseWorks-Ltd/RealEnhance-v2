@@ -72,16 +72,17 @@ MODE CONTEXT
 ${softReviewBlock}
 
 DECISION POLICY
-- If structural continuity is clearly violated: ok=false.
-- If structural continuity is clearly preserved: ok=true.
-- If uncertain/ambiguous: ok=false (fail-safe).
+- If structural continuity is clearly violated: set one or more violation booleans to true.
+- If structural continuity is clearly preserved: set all violation booleans to false.
+- If uncertain/ambiguous: set all violation booleans to true (fail-safe).
 
 Return a JSON object with the following structure:
 
 {
-  "ok": boolean,
-  "confidence": number,
-  "reason": string
+  "openingRemoved": boolean,
+  "openingRelocated": boolean,
+  "openingInfilled": boolean,
+  "confidence": number
 }
 
 Confidence rules:
@@ -92,7 +93,9 @@ Confidence rules:
 
 Confidence must reflect architectural certainty, not stylistic opinion.
 Do not default to 0 or 1 unless certainty is extreme.
-Always provide a numeric value between 0 and 1.`;
+Always provide a numeric value between 0 and 1.
+
+Do not return prose. Return JSON only.`;
 }
 
 export async function confirmWithGeminiStructure(params: {
@@ -178,6 +181,7 @@ If any built-in appears removed, sealed, covered, relocated, resized, or replace
       sourceStage: params.sourceStage,
       validationMode: params.validationMode,
       promptOverride,
+      deterministicStructureJson: params.stage === "stage2",
       evidence: undefined,
       riskLevel: params.riskLevel,
     });
@@ -185,15 +189,28 @@ If any built-in appears removed, sealed, covered, relocated, resized, or replace
     const confidence = typeof verdict.confidence === "number" && Number.isFinite(verdict.confidence)
       ? verdict.confidence
       : NaN;
-    const uncertain = params.stage === "stage2" && (
-      !Number.isFinite(confidence) ||
-      verdict.category === "unknown"
-    );
+    const hasBooleanContract =
+      typeof verdict.openingRemoved === "boolean" &&
+      typeof verdict.openingRelocated === "boolean" &&
+      typeof verdict.openingInfilled === "boolean";
 
-    const structuralChanged =
-      verdict.hardFail === true ||
-      verdict.category === "structure" ||
-      verdict.category === "opening_blocked";
+    const structuralChanged = params.stage === "stage2"
+      ? (hasBooleanContract
+        ? (
+          verdict.openingRemoved === true ||
+          verdict.openingRelocated === true ||
+          verdict.openingInfilled === true
+        )
+        : verdict.hardFail === true)
+      : (
+        verdict.hardFail === true ||
+        verdict.category === "structure" ||
+        verdict.category === "opening_blocked"
+      );
+
+    const uncertain = params.stage === "stage2"
+      ? (!Number.isFinite(confidence) || !hasBooleanContract)
+      : false;
 
     const pass = !structuralChanged && !uncertain;
     if (!pass) {

@@ -89,7 +89,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
-import { evaluateStructuralInvariantDecision, type StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
+import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
@@ -530,21 +530,15 @@ Return STRICT JSON only. No prose outside JSON.
 Required JSON format:
 
 {
-  "openings_before": number,
-  "openings_after": number,
-  "removed_openings_count": number,
-  "removed_opening_locations": string[],
-  "relocation_detected": boolean,
-  "location_mismatch_detected": boolean,
-  "wall_plane_replacement_detected": boolean,
-  "opening_occlusion_only": boolean,
-  "confidence": number,
-  "reason": string
+  "openingRemoved": boolean,
+  "openingRelocated": boolean,
+  "openingInfilled": boolean,
+  "confidence": number
 }
 
-Even if opening counts remain equal,
-if an opening disappears from one wall location and appears elsewhere,
-you must classify this as relocation/removal.
+Set openingRelocated=true if the opening appears moved to a different wall location.
+Set openingInfilled=true if a former opening area is now continuous wall.
+Set openingRemoved=true if an opening present in BEFORE is absent in AFTER.
 `;
 
 async function runStructuralInvariantGeminiCheck(
@@ -593,9 +587,9 @@ async function runStructuralInvariantGeminiCheck(
       },
     ],
     generationConfig: {
-      temperature: 0.1,
-      topP: 0.5,
-      maxOutputTokens: 512,
+      temperature: 0,
+      topP: 1,
+      maxOutputTokens: 256,
       responseMimeType: "application/json",
     },
   } as any);
@@ -650,16 +644,10 @@ async function runStructuralInvariantGeminiCheck(
   }
 
   const requiredKeys = [
-    "openings_before",
-    "openings_after",
-    "removed_openings_count",
-    "removed_opening_locations",
-    "relocation_detected",
-    "location_mismatch_detected",
-    "wall_plane_replacement_detected",
-    "opening_occlusion_only",
+    "openingRemoved",
+    "openingRelocated",
+    "openingInfilled",
     "confidence",
-    "reason",
   ];
 
   for (const key of requiredKeys) {
@@ -676,15 +664,45 @@ async function runStructuralInvariantGeminiCheck(
     }
   }
 
-  const decision = evaluateStructuralInvariantDecision(parsed);
+  const openingRemoved = parsed.openingRemoved === true;
+  const openingRelocated = parsed.openingRelocated === true;
+  const openingInfilled = parsed.openingInfilled === true;
+  const confidence =
+    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : 0;
+  const fail = openingRemoved || openingRelocated || openingInfilled;
+  const violationType: StructuralInvariantViolationType = openingRemoved
+    ? "opening_removed"
+    : openingRelocated
+      ? "opening_relocated"
+      : openingInfilled
+        ? "opening_infilled"
+        : "other";
+  const reason = openingRemoved
+    ? "openingRemoved=true"
+    : openingRelocated
+      ? "openingRelocated=true"
+      : openingInfilled
+        ? "openingInfilled=true"
+        : "no_opening_change";
+
+  const normalizedParsed = {
+    openingRemoved,
+    openingRelocated,
+    openingInfilled,
+    confidence,
+    reason,
+    violationType,
+  };
 
   return {
-    fail: decision.fail,
-    confidence: decision.confidence,
-    reason: decision.reason,
-    openingViolationDetected: decision.openingViolationDetected,
-    violationType: decision.violationType,
-    raw: parsed,
+    fail,
+    confidence,
+    reason,
+    openingViolationDetected: fail,
+    violationType,
+    raw: normalizedParsed,
   };
 }
 

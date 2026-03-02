@@ -144,6 +144,9 @@ export type GeminiSemanticVerdict = {
   category: "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown";
   reasons: string[];
   confidence: number;
+  openingRemoved?: boolean;
+  openingRelocated?: boolean;
+  openingInfilled?: boolean;
   violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "fixture_change" | "ceiling_fixture_change" | "plumbing_change" | "faucet_change" | "layout_only" | "other";
   builtInDetected?: boolean;
   structuralAnchorCount?: number;
@@ -2487,6 +2490,41 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
 
   try {
     const parsed = JSON.parse(target);
+    const hasDeterministicOpeningSchema =
+      typeof parsed?.openingRemoved === "boolean" &&
+      typeof parsed?.openingRelocated === "boolean" &&
+      typeof parsed?.openingInfilled === "boolean";
+
+    if (hasDeterministicOpeningSchema) {
+      const openingRemoved = parsed.openingRemoved === true;
+      const openingRelocated = parsed.openingRelocated === true;
+      const openingInfilled = parsed.openingInfilled === true;
+      const hardFail = openingRemoved || openingRelocated || openingInfilled;
+      const confidence =
+        typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
+          ? Math.max(0, Math.min(1, parsed.confidence))
+          : 0;
+
+      return {
+        hardFail,
+        category: hardFail ? "structure" : "style_only",
+        openingRemoved,
+        openingRelocated,
+        openingInfilled,
+        reasons: hardFail
+          ? [
+              ...(openingRemoved ? ["openingRemoved=true"] : []),
+              ...(openingRelocated ? ["openingRelocated=true"] : []),
+              ...(openingInfilled ? ["openingInfilled=true"] : []),
+            ]
+          : [],
+        confidence,
+        violationType: hardFail ? "opening_change" : "layout_only",
+        builtInDetected: false,
+        structuralAnchorCount: 0,
+        rawText: text,
+      };
+    }
 
     if (typeof parsed.ok === "boolean") {
       const parsedResponse = parsed as {
@@ -2570,6 +2608,7 @@ export async function runGeminiSemanticValidator(opts: {
   promptOverride?: string;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
+  deterministicStructureJson?: boolean;
 }): Promise<GeminiSemanticVerdict> {
   const ai = getGeminiClient();
   const before = toBase64(opts.basePath).data;
@@ -2601,13 +2640,15 @@ export async function runGeminiSemanticValidator(opts: {
 
   try {
     const start = Date.now();
+    const deterministicStructureJson = opts.deterministicStructureJson === true;
     const response = await (ai as any).models.generateContent({
       model,
       contents,
       generationConfig: {
-        temperature: 0.2,
-        topP: 0.5,
-        maxOutputTokens: 512,
+        temperature: deterministicStructureJson ? 0 : 0.2,
+        topP: deterministicStructureJson ? 1 : 0.5,
+        maxOutputTokens: deterministicStructureJson ? 256 : 512,
+        responseMimeType: deterministicStructureJson ? "application/json" : undefined,
       },
     } as any);
 
