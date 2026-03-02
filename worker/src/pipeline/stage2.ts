@@ -20,7 +20,7 @@ import { buildTightenedPrompt, getTightenedGenerationConfig, getTightenLevelFrom
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
-import { buildStructuralRetryInjection } from "./structuralRetryHelpers";
+import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 
 const logger = console;
 
@@ -56,7 +56,7 @@ export async function runStage2GenerationAttempt(
     modelReason?: string;
     structuralRetryContext?: {
       compositeFail: boolean;
-      failureType: "CATASTROPHIC_ORIENTATION" | "STRUCTURAL_DISTORTION" | "OPENING_SUPPRESSION" | null;
+      failureType: StructuralFailureType | null;
       attemptNumber: number;
     };
   }

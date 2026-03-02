@@ -4923,6 +4923,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stage2ReinforcedRetryUsed = false;
 
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
+      logger.info("[STAGE2_RETRY_CONTEXT]", {
+        jobId: payload.jobId,
+        attempt,
+        failureType: pendingStage2StructuralFailureType,
+        retryStrategy: pendingStage2RetryStrategy,
+      });
+
       if (await stopIfCancelled("stage2_validation_loop")) return;
       if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
         logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: Date.now() - t2 });
@@ -4945,8 +4952,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
         const isStochasticRetryOne = attempt === 2 && !useReinforcedRetry;
+        const retryOneStabilityTemperature = Math.max(0.15, currentRetrySampling.temperature * 0.6);
         if (isStochasticRetryOne) {
-          console.log("[STAGE2] Retry-1 using identical stochastic prompt");
+          console.log(`[STAGE2] Retry-1 using stabilized stochastic prompt (temperature=${retryOneStabilityTemperature.toFixed(3)})`);
         } else if (useReinforcedRetry) {
           console.log("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
@@ -4975,7 +4983,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           outputPath: retryOutputPath,
           generationConfig: isStochasticRetryOne
-            ? undefined
+            ? {
+              temperature: retryOneStabilityTemperature,
+            }
             : {
               temperature: currentRetrySampling.temperature,
               topP: currentRetrySampling.topP,
@@ -5709,6 +5719,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_invariant retries=${attempt - 1}`);
             break;
           }
+
+          const invariantFailureType: StructuralFailureType =
+            invariantResult.violationType === "opening_removed" ||
+            invariantResult.violationType === "opening_relocated" ||
+            invariantResult.violationType === "opening_infilled" ||
+            invariantResult.violationType === "other"
+              ? invariantResult.violationType
+              : "STRUCTURAL_INVARIANT";
+          pendingStage2StructuralFailureType = invariantFailureType;
+          pendingStage2RetryStrategy = "NORMAL";
 
           const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
           nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
@@ -6821,6 +6841,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  const finalHardFail = Boolean(unifiedValidation?.hardFail) || Boolean(stage2Blocked);
+
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
   await safeWriteJobStatus(payload.jobId, {
@@ -6875,10 +6897,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Validation results
     validation: (() => {
       const normalizedFlag = unifiedValidation?.normalized;
-      const structuralHardFail = stage2Blocked === true;
       if (unifiedValidation) {
         return {
-          hardFail: unifiedValidation.hardFail || structuralHardFail,
+          hardFail: finalHardFail,
           warnings: unifiedValidation.warnings,
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
@@ -6892,7 +6913,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       if (stage2Blocked) {
         return {
-          hardFail: true,
+          hardFail: finalHardFail,
           warnings: stage2BlockedReason ? [stage2BlockedReason] : [],
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
@@ -7054,6 +7075,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         CASE_B_COUNT: stage2ConsensusCaseBCount,
         CASE_C_COUNT: stage2ConsensusCaseCCount,
       },
+      finalHardFail,
       validatorSummary: unifiedValidation || (stage2Blocked ? { blocked: true, reason: stage2BlockedReason } : undefined),
     };
 
@@ -7079,7 +7101,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   const finalWarningCount = unifiedValidation?.warnings?.length || 0;
-  nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${unifiedValidation?.hardFail ?? false} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);
+  nLog(`[JOB_FINAL][job=${payload.jobId}] status=complete hardFail=${finalHardFail} warnings=${finalWarningCount} normalized=${unifiedValidation?.normalized ?? false}`);
   nLog("[STRUCTURAL_CONSENSUS_DISTRIBUTION]", {
     jobId: payload.jobId,
     CASE_A_COUNT: stage2ConsensusCaseACount,

@@ -1,7 +1,12 @@
 export type StructuralFailureType =
   | "CATASTROPHIC_ORIENTATION"
   | "STRUCTURAL_DISTORTION"
-  | "OPENING_SUPPRESSION";
+  | "OPENING_SUPPRESSION"
+  | "STRUCTURAL_INVARIANT"
+  | "opening_removed"
+  | "opening_relocated"
+  | "opening_infilled"
+  | "other";
 
 type CompositeDecisionLike = {
   failed: boolean;
