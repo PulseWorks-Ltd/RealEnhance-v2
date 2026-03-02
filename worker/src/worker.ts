@@ -5952,6 +5952,57 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         continue;
       }
 
+      if (validationStage === "2" && geminiConfirmStatus === "uncertain" && attempt >= MAX_STAGE2_RETRIES) {
+        logger.warn("[STAGE2] Rejecting due to structural uncertainty after retries exhausted");
+        setStage2AttemptValidation(path2, "guard", ["structural_uncertain_exhausted"]);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "structural_uncertain_exhausted",
+            retryTriggered: false,
+            retriesExhausted: true,
+            retryStrategy: "NORMAL",
+            reason: "structural_uncertain_exhausted",
+          },
+        });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          localPass: unifiedValidation.passed === true,
+          geminiPass: false,
+          confirmPass: false,
+          finalPass: false,
+          violationType: "structural_uncertain_exhausted",
+          retryStrategy: "NORMAL",
+          retriesRemaining: 0,
+        });
+
+        const fallbackPath = path1A;
+        const fallbackStage: "1A" = "1A";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = "structural_uncertain_exhausted";
+        fallbackUsed = "stage2_uncertain_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: false,
+          topologyFail: false,
+          invariantFail: false,
+          compositeDecision,
+          geminiConfirmStatus,
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "final_block",
+          reason: "structural_uncertain_exhausted",
+        });
+        nLog("[STAGE2_UNCERTAIN_EXHAUSTED] fallback=1A");
+        nLog("[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_uncertain_exhausted retries=" + (attempt - 1));
+        break;
+      }
+
       if (validationStage === "2" && (windowDecrease || doorDecrease) && geminiStrongFail) {
         const failReasons = [
           "opening_removal",

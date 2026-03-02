@@ -74,7 +74,29 @@ ${softReviewBlock}
 DECISION POLICY
 - If structural continuity is clearly violated: set one or more violation booleans to true.
 - If structural continuity is clearly preserved: set all violation booleans to false.
-- If uncertain/ambiguous: set all violation booleans to false and use confidence 0.4-0.6.
+
+STRUCTURAL PERMANENCE – AMBIGUITY HANDLING RULE
+
+Architectural openings (windows, doors, closet doors, sliding doors, built-in recesses, wall cutouts) are permanent structural elements.
+
+If an opening visible in the ORIGINAL image is not clearly and geometrically traceable in the OUTPUT image at the same location, it must NOT be treated as safe by default.
+
+Ambiguity MUST NOT be interpreted as preservation.
+
+Occlusion is allowed ONLY if:
+- The opening frame edges are partially visible, AND
+- The geometric boundary of the opening can still be visually traced, AND
+- The wall plane continuity clearly indicates the opening still exists behind foreground objects.
+
+If these conditions are NOT clearly satisfied:
+
+- Treat the opening as structurally altered.
+- Set the appropriate violation boolean to TRUE (opening_removed, opening_relocated, opening_infilled).
+- Set confidence LOW (0.4–0.6 if uncertain).
+
+Never resolve architectural ambiguity by setting all violation booleans to false.
+
+Ambiguity regarding architectural openings must be treated as potential structural modification.
 
 Return a JSON object with the following structure:
 
