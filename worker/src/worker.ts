@@ -4922,8 +4922,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
     let stage2ReinforcedRetryUsed = false;
+    const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
+      const emitStage2DecisionBreakdown = (params: {
+        extremeLocalFail: boolean;
+        topologyFail: boolean;
+        invariantFail: boolean;
+        compositeDecision: string;
+        geminiConfirmStatus: string;
+        complianceDecision: string;
+        stage2Blocked: boolean;
+        decisionPoint: "retry_schedule" | "final_block";
+        reason: string;
+      }) => {
+        logger.info("STAGE2_DECISION_BREAKDOWN", {
+          jobId: payload.jobId,
+          imageurl: stage2DecisionImageUrl,
+          attempt,
+          extremeLocalFail: params.extremeLocalFail,
+          topologyFail: params.topologyFail,
+          invariantFail: params.invariantFail,
+          compositeDecision: params.compositeDecision,
+          geminiConfirmStatus: params.geminiConfirmStatus,
+          complianceDecision: params.complianceDecision,
+          stage2Blocked: params.stage2Blocked,
+          decisionPoint: params.decisionPoint,
+          reason: params.reason,
+        });
+      };
+
       logger.info("[STAGE2_RETRY_CONTEXT]", {
         jobId: payload.jobId,
         attempt,
@@ -5404,6 +5432,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const openingsCreated = stage2MaskedEdgeResult?.createdOpenings ?? 0;
       const openingsClosed = stage2MaskedEdgeResult?.closedOpenings ?? 0;
       const compositeReason = compositeLocalEvaluation?.reason || "none";
+      const compositeDecision = compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS";
 
       const isExtremeDeviation = deviationScore >= 90;
       const isExtremeDrift = maskedDriftPct >= 95 && semanticWallDriftPct >= 95;
@@ -5489,6 +5518,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             blockedBy: "extreme_structural_violation",
             reason: stage2BlockedReason,
           });
+          emitStage2DecisionBreakdown({
+            extremeLocalFail: true,
+            topologyFail: false,
+            invariantFail: false,
+            compositeDecision,
+            geminiConfirmStatus: "not_run",
+            complianceDecision: "not_run",
+            stage2Blocked,
+            decisionPoint: "final_block",
+            reason: "extreme_structural_violation",
+          });
           nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
           nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=extreme_structural_violation retries=${attempt - 1}`);
           break;
@@ -5497,6 +5537,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
         pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
         pendingStage2RetryStrategy = "REINFORCED";
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: true,
+          topologyFail: false,
+          invariantFail: false,
+          compositeDecision,
+          geminiConfirmStatus: "not_run",
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "retry_schedule",
+          reason: "extreme_structural_violation",
+        });
         nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK} retryStrategy=REINFORCED`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
@@ -5553,6 +5604,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (topologyResult.result === "FAIL") {
             if (attempt < MAX_STAGE2_RETRIES) {
               const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+              emitStage2DecisionBreakdown({
+                extremeLocalFail: false,
+                topologyFail: true,
+                invariantFail: false,
+                compositeDecision,
+                geminiConfirmStatus: "not_run",
+                complianceDecision: "not_run",
+                stage2Blocked,
+                decisionPoint: "retry_schedule",
+                reason: "topology_violation_detected",
+              });
               nLog(`[topology-validator] FAIL → scheduling retry attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
@@ -5565,6 +5627,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
 
             nLog("[topology-validator] FAIL → retries exhausted");
+            emitStage2DecisionBreakdown({
+              extremeLocalFail: false,
+              topologyFail: true,
+              invariantFail: false,
+              compositeDecision,
+              geminiConfirmStatus: "not_run",
+              complianceDecision: "not_run",
+              stage2Blocked,
+              decisionPoint: "final_block",
+              reason: "topology_violation_detected",
+            });
             stage2LocalReasons.push("topology_violation_detected");
             setStage2AttemptValidation(path2, "topology_violation_detected", [
               ...stage2LocalReasons,
@@ -5747,6 +5820,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               blockedBy: "structural_invariant",
               reason: stage2BlockedReason,
             });
+            emitStage2DecisionBreakdown({
+              extremeLocalFail: false,
+              topologyFail: false,
+              invariantFail: true,
+              compositeDecision,
+              geminiConfirmStatus: "not_run",
+              complianceDecision: "not_run",
+              stage2Blocked,
+              decisionPoint: "final_block",
+              reason: "structural_invariant",
+            });
             nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
             nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_invariant retries=${attempt - 1}`);
             break;
@@ -5763,6 +5847,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           pendingStage2RetryStrategy = "NORMAL";
 
           const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+          emitStage2DecisionBreakdown({
+            extremeLocalFail: false,
+            topologyFail: false,
+            invariantFail: true,
+            compositeDecision,
+            geminiConfirmStatus: "not_run",
+            complianceDecision: "not_run",
+            stage2Blocked,
+            decisionPoint: "retry_schedule",
+            reason: "structural_invariant",
+          });
           nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
@@ -5859,6 +5954,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         geminiClassification === "FAIL" &&
         typeof geminiConfidence === "number" &&
         geminiConfidence >= 0.9;
+      const geminiConfirmStatus = lastGeminiConfirm?.status || (lastGeminiConfirm?.confirmedFail === true ? "confirmed_fail" : "pass");
 
       if (validationStage === "2" && (windowDecrease || doorDecrease) && geminiStrongFail) {
         const failReasons = [
@@ -5921,12 +6017,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             blockedBy: "opening_removal",
             reason: stage2BlockedReason,
           });
+          emitStage2DecisionBreakdown({
+            extremeLocalFail: false,
+            topologyFail: false,
+            invariantFail: true,
+            compositeDecision,
+            geminiConfirmStatus,
+            complianceDecision: "not_run",
+            stage2Blocked,
+            decisionPoint: "final_block",
+            reason: "opening_removal",
+          });
           nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
           nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=opening_removal retries=${attempt - 1}`);
           break;
         }
 
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: false,
+          topologyFail: false,
+          invariantFail: true,
+          compositeDecision,
+          geminiConfirmStatus,
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "retry_schedule",
+          reason: "opening_removal",
+        });
         nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
@@ -6051,12 +6169,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             blockedBy: "structure",
             reason: stage2BlockedReason,
           });
+          emitStage2DecisionBreakdown({
+            extremeLocalFail: false,
+            topologyFail: false,
+            invariantFail: false,
+            compositeDecision,
+            geminiConfirmStatus,
+            complianceDecision: "not_run",
+            stage2Blocked,
+            decisionPoint: "final_block",
+            reason: "structure",
+          });
           nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
           nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structure retries=${attempt - 1}`);
           break;
         }
 
         const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: false,
+          topologyFail: false,
+          invariantFail: false,
+          compositeDecision,
+          geminiConfirmStatus,
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "retry_schedule",
+          reason: failReasons[0] || "structure",
+        });
         if (softStructuralReviewMode) {
           nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
         } else {
@@ -6111,6 +6251,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const legacyBlock = confidence >= HIGH_CONF || (confidence >= MED_CONF && hasAnchorEvidence);
             const complianceBlocking = compliance.blocking === true || legacyBlock;
             const complianceRetryEligible = primaryStructuralViolationDetected;
+            let complianceDecision = "not_run";
 
             nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
               jobId: payload.jobId,
@@ -6149,10 +6290,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
             if (!complianceRetryEligible && complianceBlocking) {
               stage2Blocked = false;
+              complianceDecision = "allow_pass_secondary_only";
               nLog("[STAGE2_COMPLIANCE_SKIP_RETRY] secondary_only_signals=true action=allow_pass");
             }
 
             if (complianceBlocking && complianceRetryEligible && finalConfirmMode === "block") {
+              complianceDecision = "retry";
               const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
               nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
               setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);
@@ -6201,12 +6344,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   blockedBy: "compliance",
                   reason: stage2BlockedReason,
                 });
+                emitStage2DecisionBreakdown({
+                  extremeLocalFail: false,
+                  topologyFail: false,
+                  invariantFail: false,
+                  compositeDecision,
+                  geminiConfirmStatus,
+                  complianceDecision,
+                  stage2Blocked,
+                  decisionPoint: "final_block",
+                  reason: "compliance",
+                });
                 nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
                 nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=compliance retries=${attempt - 1}`);
                 break;
               }
 
               const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+              emitStage2DecisionBreakdown({
+                extremeLocalFail: false,
+                topologyFail: false,
+                invariantFail: false,
+                compositeDecision,
+                geminiConfirmStatus,
+                complianceDecision,
+                stage2Blocked,
+                decisionPoint: "retry_schedule",
+                reason: reasonText,
+              });
               nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
