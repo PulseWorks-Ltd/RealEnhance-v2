@@ -5709,6 +5709,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant} alwaysRun=true hints=${JSON.stringify(invariantHints)}`
       );
 
+      let structuralInvariantResult: { fail: boolean } | null = null;
       if (stage2CandidatePath) {
         const openingsDrop = totalOpeningsAfter < totalOpeningsBefore;
         const highWallDrift =
@@ -5725,6 +5726,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2CandidatePath,
           invariantHints
         );
+        structuralInvariantResult = invariantResult;
 
         logger.info(
           `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
@@ -5952,8 +5954,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         continue;
       }
 
+      // ----- Structural Uncertain Resolution Refinement -----
+      // If confirm is uncertain after retries exhausted,
+      // only fallback if invariant OR drift suggests real structural risk.
+      // Otherwise accept when deterministic evidence is clean.
       if (validationStage === "2" && geminiConfirmStatus === "uncertain" && attempt >= MAX_STAGE2_RETRIES) {
+        const invariantClean =
+          structuralInvariantResult &&
+          structuralInvariantResult.fail === false;
+
+        const lowDrift =
+          typeof maskedDriftPct === "number" &&
+          typeof semanticWallDriftPct === "number" &&
+          maskedDriftPct < 10 &&
+          semanticWallDriftPct < 10;
+
+        const compositeResult = compositeLocalEvaluation;
+        const noOpeningDelta =
+          compositeResult &&
+          compositeResult.openingsChanged === false;
+
+        if (invariantClean && lowDrift && noOpeningDelta) {
+          logger.info("[STAGE2] Accepting due to clean invariant + low drift despite confirm uncertainty");
+
+          setStage2AttemptValidation(path2, "pass", ["uncertain_but_structurally_clean"]);
+
+          break; // Accept
+        }
+
         logger.warn("[STAGE2] Rejecting due to structural uncertainty after retries exhausted");
+
         setStage2AttemptValidation(path2, "guard", ["structural_uncertain_exhausted"]);
         mergeAttemptValidation("2", attempt, {
           final: {
