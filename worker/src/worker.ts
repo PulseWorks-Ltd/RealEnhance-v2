@@ -4562,22 +4562,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
         const generatedAttempts = Math.max(1, Number(stage2Outcome.attempts || 1));
-        for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
-          const attemptNo = attemptIndex + 1;
-          const attemptPath = siblingOutPath(
-            stage2InputResolved,
-            attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
-            ".webp"
-          );
-          try {
-            const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
-            annotateAttemptSignedUrl("2", attemptNo, signed);
-          } catch (signErr) {
-            nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
-              jobId: payload.jobId,
-              attempt: attemptNo,
-              error: (signErr as any)?.message || String(signErr),
-            });
+        if (process.env.STAGE2_PREVALIDATION_ATTEMPT_PUBLISH === "1") {
+          for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
+            const attemptNo = attemptIndex + 1;
+            const attemptPath = siblingOutPath(
+              stage2InputResolved,
+              attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
+              ".webp"
+            );
+            try {
+              const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+              annotateAttemptSignedUrl("2", attemptNo, signed);
+            } catch (signErr) {
+              nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
+                jobId: payload.jobId,
+                attempt: attemptNo,
+                error: (signErr as any)?.message || String(signErr),
+              });
+            }
           }
         }
         stage2AttemptsUsed = stage2Outcome.attempts;
@@ -4760,22 +4762,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
         const generatedAttempts = Math.max(1, Number(stage2Outcome.attempts || 1));
-        for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
-          const attemptNo = attemptIndex + 1;
-          const attemptPath = siblingOutPath(
-            stage2InputResolved,
-            attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
-            ".webp"
-          );
-          try {
-            const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
-            annotateAttemptSignedUrl("2", attemptNo, signed);
-          } catch (signErr) {
-            nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
-              jobId: payload.jobId,
-              attempt: attemptNo,
-              error: (signErr as any)?.message || String(signErr),
-            });
+        if (process.env.STAGE2_PREVALIDATION_ATTEMPT_PUBLISH === "1") {
+          for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
+            const attemptNo = attemptIndex + 1;
+            const attemptPath = siblingOutPath(
+              stage2InputResolved,
+              attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`,
+              ".webp"
+            );
+            try {
+              const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+              annotateAttemptSignedUrl("2", attemptNo, signed);
+            } catch (signErr) {
+              nLog("[STAGE_OUTPUT_SIGNED] stage=2 sign failed", {
+                jobId: payload.jobId,
+                attempt: attemptNo,
+                error: (signErr as any)?.message || String(signErr),
+              });
+            }
           }
         }
         stage2AttemptsUsed = stage2Outcome.attempts;
@@ -5027,8 +5031,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
-      const stage2AttemptSigned = await captureSignedStageOutput("2", attempt, path2);
-      annotateAttemptSignedUrl("2", attempt, stage2AttemptSigned);
+      if (process.env.STAGE2_PREVALIDATION_ATTEMPT_PUBLISH === "1") {
+        const stage2AttemptSigned = await captureSignedStageOutput("2", attempt, path2);
+        annotateAttemptSignedUrl("2", attempt, stage2AttemptSigned);
+      }
 
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
@@ -5892,7 +5898,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const blockedBy = confirmHardFail
           ? "gemini"
           : (unifiedValidation.blockSource || "gemini");
-        const activeMaxAttempts = softStructuralReviewMode ? Math.min(MAX_STAGE2_RETRIES, 2) : MAX_STAGE2_RETRIES;
+        const activeMaxAttempts = MAX_STAGE2_RETRIES;
         const retriesExhausted = attempt >= activeMaxAttempts;
         const failReasons = [
           ...(unifiedValidation.reasons || []),
