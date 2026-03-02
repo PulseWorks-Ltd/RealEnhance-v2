@@ -89,6 +89,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
+import { evaluateStructuralInvariantDecision, type StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import { VALIDATOR_FOCUS } from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
@@ -555,14 +556,7 @@ async function runStructuralInvariantGeminiCheck(
   confidence: number;
   reason: string;
   openingViolationDetected: boolean;
-  violationType?:
-    | "opening_removed"
-    | "opening_infilled"
-    | "opening_relocated"
-    | "door_removed"
-    | "window_removed"
-    | "closet_removed"
-    | "other";
+  violationType?: StructuralInvariantViolationType;
   raw: any;
 }> {
   const hintBlock =
@@ -682,81 +676,14 @@ async function runStructuralInvariantGeminiCheck(
     }
   }
 
-  const openingsBefore = parsed.openings_before;
-  const openingsAfter = parsed.openings_after;
-  const removedCount = parsed.removed_openings_count;
-  const relocationDetected = parsed.relocation_detected === true;
-  const locationMismatchDetected = parsed.location_mismatch_detected === true;
-  const wallPlaneReplaced = parsed.wall_plane_replacement_detected === true;
-  const confidence =
-    typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
-      ? parsed.confidence
-      : 0;
-
-  const countDecrease = openingsAfter < openingsBefore;
-  const reasonText = String(parsed.reason || "").toLowerCase();
-  const removedLocations = Array.isArray(parsed.removed_opening_locations)
-    ? parsed.removed_opening_locations.map((value: any) => String(value || "").toLowerCase()).join(" ")
-    : "";
-
-  const openingRemovedSignal =
-    removedCount > 0 ||
-    countDecrease ||
-    reasonText.includes("opening removed") ||
-    reasonText.includes("removed opening") ||
-    reasonText.includes("window removed") ||
-    reasonText.includes("door removed") ||
-    reasonText.includes("closet") && reasonText.includes("removed") ||
-    removedLocations.includes("window") && removedLocations.includes("removed") ||
-    removedLocations.includes("door") && removedLocations.includes("removed") ||
-    removedLocations.includes("closet") && removedLocations.includes("removed");
-
-  const openingInfilledSignal =
-    wallPlaneReplaced ||
-    reasonText.includes("infill") ||
-    reasonText.includes("infilled") ||
-    reasonText.includes("continuous wall") ||
-    reasonText.includes("wall plane");
-
-  const openingRelocatedSignal =
-    relocationDetected ||
-    locationMismatchDetected ||
-    reasonText.includes("relocat") ||
-    reasonText.includes("mismatch");
-
-  const openingViolationDetected =
-    openingRemovedSignal ||
-    openingInfilledSignal ||
-    openingRelocatedSignal;
-
-  const violationType = (() => {
-    if (openingRelocatedSignal) return "opening_relocated" as const;
-    if (openingInfilledSignal) return "opening_infilled" as const;
-    if (reasonText.includes("window removed")) return "window_removed" as const;
-    if (reasonText.includes("door removed")) return "door_removed" as const;
-    if ((reasonText.includes("closet") && reasonText.includes("removed")) || removedLocations.includes("closet")) {
-      return "closet_removed" as const;
-    }
-    if (openingRemovedSignal) return "opening_removed" as const;
-    return "other" as const;
-  })();
-
-  const explicitRemoval =
-    removedCount > 0 &&
-    wallPlaneReplaced &&
-    confidence >= 0.9;
-
-  const relocationRemoval =
-    (relocationDetected || locationMismatchDetected) && confidence >= 0.9;
-
-  const fail = openingViolationDetected || explicitRemoval || relocationRemoval;
+  const decision = evaluateStructuralInvariantDecision(parsed);
 
   return {
-    fail,
-    confidence,
-    reason: parsed.reason ?? "",
-    openingViolationDetected,
-    violationType,
+    fail: decision.fail,
+    confidence: decision.confidence,
+    reason: decision.reason,
+    openingViolationDetected: decision.openingViolationDetected,
+    violationType: decision.violationType,
     raw: parsed,
   };
 }
