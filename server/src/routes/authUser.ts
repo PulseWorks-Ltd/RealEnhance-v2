@@ -29,9 +29,8 @@ export function authUserRouter() {
       role: (full.role as any) ?? "member",
     };
 
-    const imgs = listImagesForUser(full.id);
-
-    res.json({
+    const includeImages = String((req.query as any)?.includeImages || "0") === "1";
+    const payload: any = {
       id: full.id,
       name: full.name,
       firstName: full.firstName,
@@ -41,20 +40,33 @@ export function authUserRouter() {
       credits: full.credits,
       agencyId: full.agencyId,
       role: full.role,
-      images: imgs.map((img: any) => ({
-        imageId: img.imageId,
-        currentVersionId: img.currentVersionId,
-        roomType: img.roomType,
-        sceneType: img.sceneType,
-        history: img.history.map((v: any) => ({
-          versionId: v.versionId,
-          stageLabel: v.stageLabel,
-          filePath: v.filePath,
-          note: v.note,
-          createdAt: v.createdAt
-        }))
-      }))
-    });
+    };
+
+    if (includeImages) {
+      try {
+        const imgs = listImagesForUser(full.id);
+        payload.images = imgs.map((img: any) => ({
+          imageId: img.imageId,
+          currentVersionId: img.currentVersionId,
+          roomType: img.roomType,
+          sceneType: img.sceneType,
+          history: Array.isArray(img.history)
+            ? img.history.map((v: any) => ({
+                versionId: v.versionId,
+                stageLabel: v.stageLabel,
+                filePath: v.filePath,
+                note: v.note,
+                createdAt: v.createdAt,
+              }))
+            : [],
+        }));
+      } catch (err) {
+        console.warn("[auth-user] optional images payload failed:", (err as any)?.message || err);
+        payload.images = [];
+      }
+    }
+
+    res.json(payload);
   });
 
   // Backwards-compat alias: GET /api/auth-user/auth/user

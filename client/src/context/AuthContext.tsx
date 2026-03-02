@@ -42,19 +42,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const userRef = useRef<AuthUser | null>(null);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const shouldRetryBootstrapError = (error: any): boolean => {
+    const status = Number(error?.status ?? error?.code ?? 0);
+    const message = String(error?.message || "").toLowerCase();
+    if (status === 401 || status === 403) return false;
+    if (status >= 500) return true;
+    return (
+      message.includes("failed to fetch") ||
+      message.includes("network") ||
+      message.includes("timeout") ||
+      message.includes("abort")
+    );
+  };
+
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
-    try {
-      // ✅ correct path: /api/auth-user
-      const data = await clientApi.request<AuthUser>("/api/auth-user");
-      setUser(data);
-      return data;
-    } catch (e: any) {
-      if (e.code === 401 || e?.message?.includes("401")) setUser(null);
-      else console.error(e);
-      return null;
-    } finally {
-      setLoading(false);
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const data = await clientApi.request<AuthUser>("/api/auth-user");
+        setUser(data);
+        return data;
+      } catch (e: any) {
+        const status = Number(e?.status ?? e?.code ?? 0);
+        const unauthorized = status === 401 || String(e?.message || "").includes("401");
+        if (unauthorized) {
+          setUser(null);
+          return null;
+        }
+
+        const canRetry = attempt < maxAttempts && shouldRetryBootstrapError(e);
+        if (canRetry) {
+          await sleep(350);
+          continue;
+        }
+
+        console.error(e);
+        return null;
+      } finally {
+        if (attempt === maxAttempts) setLoading(false);
+      }
     }
+
+    setLoading(false);
+    return null;
   }, []);
 
   // Auto-check session on mount to maintain logged-in state across page loads
