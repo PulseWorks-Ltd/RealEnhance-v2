@@ -42,6 +42,10 @@ app.use((req, res, next) => {
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, 'dist')));
 
+app.get('/health', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'client' });
+});
+
 // SPA fallback - serve index.html for all non-file routes
 app.get('*', (req, res) => {
   // Ensure index.html is never cached
@@ -51,7 +55,22 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Client server listening on port ${PORT}`);
   console.log(`Cache control: HTML files = no-cache, Static assets = long-term cache`);
 });
+
+const shutdown = (signal) => {
+  console.log(`Received ${signal}, closing client server...`);
+  server.close(() => {
+    console.log('Client server closed');
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    process.exit(1);
+  }, 10000).unref();
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
