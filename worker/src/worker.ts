@@ -5187,18 +5187,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (shouldRunCompositeLocalValidator) {
-        const rawStructuralDeviationDeg = unifiedValidation?.evidence?.drift?.angleDegrees;
-        const rawLineEdgeVerticalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.verticalDeviation;
-        const rawLineEdgeHorizontalDeviation = (unifiedValidation as any)?.raw?.lineEdge?.details?.horizontalDeviation;
+        const rawTopologyResult = (unifiedValidation as any)?.raw?.lineEdge?.details;
+        const rawStructuralDeviationDeg =
+          (unifiedValidation as any)?.evidence?.drift?.angleDegrees ??
+          (unifiedValidation as any)?.evidence?.drift?.angleDeg;
+        const rawLineEdgeVerticalDeviation = rawTopologyResult?.verticalDeviation;
+        const rawLineEdgeHorizontalDeviation = rawTopologyResult?.horizontalDeviation;
         const hasLineEdgeAngleEvidence =
           (typeof rawLineEdgeVerticalDeviation === "number" && Number.isFinite(rawLineEdgeVerticalDeviation)) ||
           (typeof rawLineEdgeHorizontalDeviation === "number" && Number.isFinite(rawLineEdgeHorizontalDeviation));
-        compositeStructuralDeviationDeg =
-          typeof rawStructuralDeviationDeg === "number" &&
-          Number.isFinite(rawStructuralDeviationDeg) &&
-          (rawStructuralDeviationDeg !== 0 || hasLineEdgeAngleEvidence)
+        const derivedLineEdgeAngleDeg = hasLineEdgeAngleEvidence
+          ? Math.max(
+              typeof rawLineEdgeVerticalDeviation === "number" && Number.isFinite(rawLineEdgeVerticalDeviation)
+                ? rawLineEdgeVerticalDeviation
+                : 0,
+              typeof rawLineEdgeHorizontalDeviation === "number" && Number.isFinite(rawLineEdgeHorizontalDeviation)
+                ? rawLineEdgeHorizontalDeviation
+                : 0,
+            )
+          : null;
+        const structDeg =
+          typeof rawStructuralDeviationDeg === "number" && Number.isFinite(rawStructuralDeviationDeg)
             ? Number(rawStructuralDeviationDeg)
+            : derivedLineEdgeAngleDeg;
+        compositeStructuralDeviationDeg =
+          typeof structDeg === "number" &&
+          Number.isFinite(structDeg) &&
+          (structDeg !== 0 || hasLineEdgeAngleEvidence)
+            ? Number(structDeg)
             : null;
+
+        if (typeof structDeg !== "number" || !Number.isFinite(structDeg)) {
+          logger.error("STRUCT_DEG_MISSING", {
+            jobId: payload.jobId,
+            attempt,
+            rawTopologyResult,
+          });
+        }
 
         nLog(
           `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} source=lineEdge_evidence`
