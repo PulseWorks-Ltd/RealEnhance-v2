@@ -126,7 +126,7 @@ export default function AgencyPage() {
     loadAgencyData();
     // Note: Post-checkout sync is now handled by usePostCheckoutSync hook
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.agencyId, user?.role]);
 
   const loadAgencyData = async () => {
     try {

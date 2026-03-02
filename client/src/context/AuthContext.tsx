@@ -1,6 +1,7 @@
 // client/src/context/AuthContext.tsx
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import clientApi, { apiFetch } from "@/lib/api";
+import { apiFetchSoft } from "@/lib/api";
 import { requestClearEnhancementState } from "@/lib/enhancement-state";
 
 type AuthUser = {
@@ -98,8 +99,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = useCallback(async () => {
     try {
-      // Server exposes /auth/logout
-      await apiFetch("/auth/logout", { method: "POST" });
+      // Support both proxy shapes: /api/auth/logout and /auth/logout
+      const primary = await apiFetchSoft("/api/auth/logout", { method: "POST" }, 12_000);
+      if (!primary.ok && primary.status !== 404) {
+        await apiFetchSoft("/auth/logout", { method: "POST" }, 12_000);
+      }
+      if (primary.status === 404) {
+        await apiFetchSoft("/auth/logout", { method: "POST" }, 12_000);
+      }
     } catch (e) {
       console.warn("logout:", e);
     } finally {

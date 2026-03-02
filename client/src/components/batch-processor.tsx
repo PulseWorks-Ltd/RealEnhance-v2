@@ -3030,13 +3030,24 @@ export default function BatchProcessor() {
         stagesSelected: { stage1A: true, stage1B: declutter, stage2: allowStaging },
       });
       // Phase 1: Start batch processing with files
-      const uploadResp = await fetch(api("/api/upload"), {
+      const uploadOnce = async () => fetch(api("/api/upload"), {
         method: "POST",
         body: fd,
         credentials: "include",
         headers: withDevice().headers,
-        signal: controller.signal
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
       });
+
+      let uploadResp: Response;
+      try {
+        uploadResp = await uploadOnce();
+      } catch (uploadErr: any) {
+        const message = String(uploadErr?.message || "").toLowerCase();
+        const transient = message.includes("failed to fetch") || message.includes("network") || message.includes("timeout") || uploadErr?.name === "TimeoutError";
+        if (!transient) throw uploadErr;
+        console.warn("[ENHANCE_REQUEST] transient upload error, retrying once", uploadErr);
+        uploadResp = await uploadOnce();
+      }
 
       if (!uploadResp.ok) {
         setIsUploading(false);
