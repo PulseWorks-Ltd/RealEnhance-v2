@@ -58,35 +58,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
-    const maxAttempts = 2;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      try {
-        const data = await clientApi.request<AuthUser>("/api/auth-user");
-        setUser(data);
-        return data;
-      } catch (e: any) {
-        const status = Number(e?.status ?? e?.code ?? 0);
-        const unauthorized = status === 401 || String(e?.message || "").includes("401");
-        if (unauthorized) {
-          setUser(null);
+    try {
+      const maxAttempts = 2;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const data = await clientApi.request<AuthUser>("/api/auth-user");
+          setUser(data);
+          return data;
+        } catch (e: any) {
+          const status = Number(e?.status ?? e?.code ?? 0);
+          const unauthorized = status === 401 || String(e?.message || "").includes("401");
+          if (unauthorized) {
+            setUser(null);
+            return null;
+          }
+
+          const canRetry = attempt < maxAttempts && shouldRetryBootstrapError(e);
+          if (canRetry) {
+            await sleep(350);
+            continue;
+          }
+
+          console.error(e);
           return null;
         }
-
-        const canRetry = attempt < maxAttempts && shouldRetryBootstrapError(e);
-        if (canRetry) {
-          await sleep(350);
-          continue;
-        }
-
-        console.error(e);
-        return null;
-      } finally {
-        if (attempt === maxAttempts) setLoading(false);
       }
-    }
 
-    setLoading(false);
-    return null;
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   // Auto-check session on mount to maintain logged-in state across page loads
