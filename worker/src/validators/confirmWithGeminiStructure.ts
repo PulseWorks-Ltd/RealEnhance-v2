@@ -74,7 +74,7 @@ ${softReviewBlock}
 DECISION POLICY
 - If structural continuity is clearly violated: set one or more violation booleans to true.
 - If structural continuity is clearly preserved: set all violation booleans to false.
-- If uncertain/ambiguous: set all violation booleans to true (fail-safe).
+- If uncertain/ambiguous: set all violation booleans to false and use confidence 0.4-0.6.
 
 Return a JSON object with the following structure:
 
@@ -112,7 +112,7 @@ export async function confirmWithGeminiStructure(params: {
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
   softStructuralReviewMode?: boolean;
-}): Promise<{ confirmedFail: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "error" }> {
+}): Promise<{ confirmedFail: boolean; uncertain?: boolean; reasons: string[]; confidence?: number; raw?: any; status: "pass" | "fail" | "uncertain" | "error" }> {
   const failOpen = (process.env.GEMINI_CONFIRM_FAIL_OPEN ?? "1") === "1";
   const geminiMode = getGeminiValidatorMode();
   const geminiBlocking = isGeminiBlockingEnabled();
@@ -194,14 +194,30 @@ If any built-in appears removed, sealed, covered, relocated, resized, or replace
       typeof verdict.openingRelocated === "boolean" &&
       typeof verdict.openingInfilled === "boolean";
 
+    const explicitOpeningViolation =
+      hasBooleanContract && (
+        verdict.openingRemoved === true ||
+        verdict.openingRelocated === true ||
+        verdict.openingInfilled === true
+      );
+
+    const rawTextLower = String(verdict.rawText || "").toLowerCase();
+    const reasonTextLower = (Array.isArray(verdict.reasons) ? verdict.reasons : []).join(" ").toLowerCase();
+    const ambiguousTextSignal = [
+      "uncertain",
+      "ambiguous",
+      "unclear",
+      "cannot determine",
+      "can't determine",
+      "insufficient",
+      "not sure",
+      "unable to confirm",
+      "occluded",
+      "partially occluded",
+    ].some((token) => rawTextLower.includes(token) || reasonTextLower.includes(token));
+
     const structuralChanged = params.stage === "stage2"
-      ? (hasBooleanContract
-        ? (
-          verdict.openingRemoved === true ||
-          verdict.openingRelocated === true ||
-          verdict.openingInfilled === true
-        )
-        : verdict.hardFail === true)
+      ? explicitOpeningViolation
       : (
         verdict.hardFail === true ||
         verdict.category === "structure" ||
@@ -209,19 +225,21 @@ If any built-in appears removed, sealed, covered, relocated, resized, or replace
       );
 
     const uncertain = params.stage === "stage2"
-      ? (!Number.isFinite(confidence) || !hasBooleanContract)
+      ? (!explicitOpeningViolation && (!Number.isFinite(confidence) || !hasBooleanContract || ambiguousTextSignal))
       : false;
 
-    const pass = !structuralChanged && !uncertain;
-    if (!pass) {
+    const pass = !structuralChanged;
+    if (!pass || uncertain) {
       if (uncertain) {
-        reasons.push("gemini_uncertain_fail_safe");
+        reasons.push("gemini_confirm_uncertain");
       }
-      reasons.push(...(verdict.reasons || []));
+      if (Array.isArray(verdict.reasons) && verdict.reasons.length > 0) {
+        reasons.push(...verdict.reasons);
+      }
     }
 
     const confirmedFail = params.stage === "stage2"
-      ? !pass
+      ? structuralChanged
       : (geminiBlocking ? !pass : false);
 
     if (params.stage !== "stage2" && !geminiBlocking && !pass) {
@@ -230,15 +248,23 @@ If any built-in appears removed, sealed, covered, relocated, resized, or replace
 
     return {
       confirmedFail,
+      uncertain,
       reasons,
       confidence: verdict.confidence,
       raw: verdict,
-      status: pass ? "pass" : "fail",
+      status: confirmedFail ? "fail" : uncertain ? "uncertain" : "pass",
     };
   } catch (err: any) {
     const msg = err?.message || String(err);
     reasons.push(`gemini_confirm_error: ${msg}`);
-    const confirmedFail = geminiBlocking ? !failOpen : false;
-    return { confirmedFail, reasons, status: "error" };
+    const confirmedFail = params.stage === "stage2"
+      ? false
+      : (geminiBlocking ? !failOpen : false);
+    return {
+      confirmedFail,
+      uncertain: params.stage === "stage2",
+      reasons,
+      status: params.stage === "stage2" ? "uncertain" : "error",
+    };
   }
 }

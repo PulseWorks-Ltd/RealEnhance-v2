@@ -5892,7 +5892,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           riskLevel: unifiedValidation?.riskLevel,
           softStructuralReviewMode,
         });
-        nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
+        nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} uncertain=${lastGeminiConfirm.uncertain === true} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
       }
 
       const geminiRaw = (unifiedValidation.raw?.geminiSemantic as any)?.details || {};
@@ -5930,6 +5930,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         confirm: lastGeminiConfirm
           ? {
               confirmedFail: lastGeminiConfirm.confirmedFail === true,
+              uncertain: lastGeminiConfirm.uncertain === true,
               confirmedViolationsCount: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons.length : 0,
               confirmedViolationTypes: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons : [],
               confirmedConfidence: typeof lastGeminiConfirm.confidence === "number" ? lastGeminiConfirm.confidence : 0,
@@ -5955,6 +5956,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         typeof geminiConfidence === "number" &&
         geminiConfidence >= 0.9;
       const geminiConfirmStatus = lastGeminiConfirm?.status || (lastGeminiConfirm?.confirmedFail === true ? "confirmed_fail" : "pass");
+      const geminiConfirmUncertain = lastGeminiConfirm?.uncertain === true;
+
+      if (validationStage === "2" && geminiConfirmUncertain && attempt < MAX_STAGE2_RETRIES) {
+        const nextRetrySampling = getStage2OuterRetrySampling(attempt + 1);
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: false,
+          topologyFail: false,
+          invariantFail: false,
+          compositeDecision,
+          geminiConfirmStatus,
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "retry_schedule",
+          reason: "gemini_confirm_uncertain",
+        });
+        nLog(`[STAGE2_GEMINI_UNCERTAIN_RETRY] attempt=${attempt + 1} temp=${nextRetrySampling.temperature.toFixed(3)} topP=${nextRetrySampling.topP.toFixed(3)} topK=${nextRetrySampling.topK}`);
+        logEvent("STAGE_RETRY", {
+          jobId: payload.jobId,
+          stage: "2",
+          retry: attempt + 1,
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          reason: "gemini_confirm_uncertain",
+        });
+        continue;
+      }
 
       if (validationStage === "2" && (windowDecrease || doorDecrease) && geminiStrongFail) {
         const failReasons = [
