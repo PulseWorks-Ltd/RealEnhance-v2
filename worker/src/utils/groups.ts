@@ -9,7 +9,7 @@ export interface StagingProfile {
   roomGroupId: RoomGroupId;
   styleName: string;
   model: "staging-v1";
-  seed: number;
+  seed?: number;
   prompt: string;
   negativePrompt?: string;
   furniturePackId?: string;

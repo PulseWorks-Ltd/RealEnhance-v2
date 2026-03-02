@@ -27,7 +27,19 @@ export function groupsRouter() {
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
     try {
       const { roomGroupId, styleName, model, seed, prompt, negativePrompt, furniturePackId, palette } = req.body || {};
-      const rec = createStagingProfile({ roomGroupId, styleName, model: model || "staging-v1", seed: Number(seed ?? 0), prompt: String(prompt || ""), negativePrompt, furniturePackId, palette });
+      const parsedSeed = seed === undefined || seed === null || seed === ""
+        ? undefined
+        : Number(seed);
+      const rec = createStagingProfile({
+        roomGroupId,
+        styleName,
+        model: model || "staging-v1",
+        ...(parsedSeed !== undefined && Number.isFinite(parsedSeed) ? { seed: parsedSeed } : {}),
+        prompt: String(prompt || ""),
+        negativePrompt,
+        furniturePackId,
+        palette,
+      });
       res.json({ ok: true, data: rec });
     } catch (e:any) {
       res.status(400).json({ ok: false, error: e?.message || "invalid" });
