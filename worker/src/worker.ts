@@ -6851,9 +6851,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Validation results
     validation: (() => {
       const normalizedFlag = unifiedValidation?.normalized;
+      const structuralHardFail = stage2Blocked === true;
       if (unifiedValidation) {
         return {
-          hardFail: unifiedValidation.hardFail,
+          hardFail: unifiedValidation.hardFail || structuralHardFail,
           warnings: unifiedValidation.warnings,
           normalized: normalizedFlag,
           modeConfigured: structureValidatorMode,
