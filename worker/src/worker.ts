@@ -5920,9 +5920,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const openingHardFail = shouldHardFailOpening(openingValidationResult.summary, {
             relocationDetected,
           });
+          function detectStructuralMaskFailure(raw: any): boolean {
+            if (!raw || typeof raw !== "object") return false;
+
+            const candidates = [
+              raw?.structuralMask,
+              raw?.structure,
+              raw?.structureValidator,
+              raw?.maskValidator,
+            ];
+
+            return candidates.some(
+              (c) => c && typeof c === "object" && c.passed === false
+            );
+          }
           const structuralDegree = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
-          const localMaskFailureDetected = (unifiedValidation as any)?.raw?.structuralMask?.passed === false;
-          const structuralMaskFailure = Boolean(localMaskFailureDetected);
+          const structuralMaskFailure = detectStructuralMaskFailure(
+            (unifiedValidation as any)?.raw
+          );
           const geminiStructuredCategory = String((unifiedValidation as any)?.raw?.geminiSemantic?.details?.category ?? "");
           const geminiStructuredConfidence = Number((unifiedValidation as any)?.raw?.geminiSemantic?.details?.confidence ?? 0);
           const geminiStructuredHighConfidence =
