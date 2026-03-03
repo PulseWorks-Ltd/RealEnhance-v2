@@ -5833,18 +5833,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage2CandidatePath
           );
 
-          const openingValidationFail =
-            openingValidationResult.summary.openingRemoved === true ||
-            openingValidationResult.summary.openingSealed === true ||
-            openingValidationResult.summary.openingRelocated === true;
+          const violations = openingValidationResult.results.filter((result) => {
+            if (result.sealed === true) return true;
+            if (result.relocated === true) return true;
+            if (result.present === false && result.outOfFrame !== true) return true;
+            return false;
+          });
 
-          if (openingValidationFail) {
+          if (violations.length > 0) {
+            logger.warn({
+              event: "OPENING_VALIDATION_FAIL",
+              jobId: payload.jobId,
+              violations,
+            });
+
             nLog(
               `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`
             );
 
             const failReasons = [
               "opening_preservation",
+              `violations=${violations.length}`,
               `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
               `openingSealed=${openingValidationResult.summary.openingSealed}`,
               `openingRelocated=${openingValidationResult.summary.openingRelocated}`,
@@ -5936,6 +5945,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
             continue;
           }
+
+          logger.info({
+            event: "OPENING_VALIDATION_PASS",
+            jobId: payload.jobId,
+          });
 
           nLog(
             `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`

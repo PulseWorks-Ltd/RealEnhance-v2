@@ -20,18 +20,21 @@ export type StructuralBaseline = {
 };
 
 export type OpeningValidationResult = {
-  results: {
-    id: string;
-    present: boolean;
-    sealed: boolean;
-    relocated: boolean;
-    confidence: number;
-  }[];
+  results: OpeningResult[];
   summary: {
     openingRemoved: boolean;
     openingSealed: boolean;
     openingRelocated: boolean;
   };
+};
+
+export type OpeningResult = {
+  id: string;
+  present: boolean;
+  sealed: boolean;
+  relocated: boolean;
+  outOfFrame: boolean;
+  confidence: number;
 };
 
 const OPENING_VALIDATOR_MODEL = String(
@@ -103,7 +106,15 @@ Return only valid JSON.`;
 
 const OPENING_VALIDATION_SYSTEM_INSTRUCTION = `You are a structural preservation validator.
 
-Your job is to determine whether permanent architectural openings from a baseline image still exist in a new image.
+Your job is to determine whether permanent architectural openings from a baseline image still physically exist in a new image.
+
+You must distinguish between:
+- Removed / Sealed
+- Relocated
+- Still Present
+- Out of Frame (cropped)
+
+Definitions
 
 An opening is considered removed or sealed if:
 - It is replaced by flat wall
@@ -116,18 +127,22 @@ An opening is considered relocated if:
 - It exists but in a materially different wall position
 - It has shifted significantly along the wall
 
+An opening is considered outOfFrame if:
+- It is not visible in the new image,
+- AND there is no visible flat wall infill where it previously existed,
+- AND the absence is consistent with camera zoom, crop, or reframing.
+
 Furniture blocking does NOT count as removal.
-Curtains covering does NOT count as removal.
-Doors being open or closed does NOT count as removal.
+Curtains do NOT count as removal.
+Doors open vs closed does NOT count as removal.
 
-Ambiguity Rule:
-If you are uncertain whether an opening still exists, you must mark:
-- present: false
-- sealed: true
-- confidence: low (0.4–0.6)
+If uncertain between:
+- sealed vs outOfFrame
 
-Do NOT default to safe.
-Do NOT suppress violations due to uncertainty.
+You must prefer:
+- sealed = true
+
+Only use outOfFrame if there is no visible infill evidence.
 
 Return strict JSON only.
 No explanation.
@@ -263,6 +278,9 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     if (typeof item.relocated !== "boolean") {
       throw new Error(`relocated must be boolean at index ${index}`);
     }
+    if (typeof item.outOfFrame !== "boolean") {
+      throw new Error(`outOfFrame must be boolean at index ${index}`);
+    }
     if (typeof item.confidence !== "number" || !Number.isFinite(item.confidence)) {
       throw new Error(`confidence must be a finite number at index ${index}`);
     }
@@ -272,6 +290,7 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
       present: item.present,
       sealed: item.sealed,
       relocated: item.relocated,
+      outOfFrame: item.outOfFrame,
       confidence: Math.max(0, Math.min(1, item.confidence)),
     };
   });
@@ -285,7 +304,7 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   }
 
   const summary = {
-    openingRemoved: results.some((item) => item.present === false),
+    openingRemoved: results.some((item) => item.sealed === true && item.outOfFrame === false),
     openingSealed: results.some((item) => item.sealed === true),
     openingRelocated: results.some((item) => item.relocated === true),
   };
@@ -335,9 +354,10 @@ export async function validateOpeningPreservation(
 2) A new generated image.
 
 For each opening in the baseline:
-- Determine whether it is still present.
+- Determine whether it is still physically present.
 - Determine whether it has been sealed or removed.
 - Determine whether it has been relocated.
+- Determine whether it is out of frame due to camera crop.
 - Provide confidence 0.0–1.0.
 
 Return JSON in this schema:
@@ -349,6 +369,7 @@ Return JSON in this schema:
       "present": boolean,
       "sealed": boolean,
       "relocated": boolean,
+      "outOfFrame": boolean,
       "confidence": number
     }
   ],
@@ -363,7 +384,8 @@ Definitions:
 - present = opening frame and cavity still exist.
 - sealed = replaced with continuous wall.
 - relocated = moved materially from baseline position.
-- openingRemoved = true if any present=false.
+- outOfFrame = not visible but no infill evidence.
+- openingRemoved = true if any sealed=true AND outOfFrame=false.
 - openingSealed = true if any sealed=true.
 - openingRelocated = true if any relocated=true.
 
