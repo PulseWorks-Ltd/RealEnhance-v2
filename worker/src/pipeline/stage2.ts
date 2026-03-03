@@ -69,6 +69,7 @@ export async function runStage2GenerationAttempt(
       failureType: StructuralFailureType | null;
       attemptNumber: number;
     };
+    structuralConstraintBlock?: string;
   }
 ): Promise<string> {
   const normalizedRoomType = (opts.roomType || "")
@@ -155,6 +156,10 @@ export async function runStage2GenerationAttempt(
       retryTier: retryInjectionResult.retryTier,
       failureType: structuralRetryContext?.failureType,
     });
+  }
+
+  if (opts.structuralConstraintBlock && opts.structuralConstraintBlock.trim().length > 0) {
+    textPrompt = `${textPrompt}\n\n${opts.structuralConstraintBlock}`;
   }
 
   const railLikely = opts.curtainRailLikely;

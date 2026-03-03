@@ -108,6 +108,7 @@ import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 import { applyFinalBlackEdgeGuard, assertNoDarkBorder } from "./utils/finalBlackEdgeGuard";
+import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const logger = console;
@@ -4958,6 +4959,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (payload.options.virtualStage) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
+    let pendingStage2RetryReason: "opening_preservation" | null = null;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -5016,6 +5018,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (attempt > 1) {
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
+        let structuralConstraintBlock = "";
+        if (pendingStage2RetryReason === "opening_preservation" && structuralBaseline) {
+          const mode: "soft" | "hard" = attempt === 2 ? "soft" : "hard";
+          structuralConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
+          if (structuralConstraintBlock) {
+            logger.info({
+              event: "STRUCTURAL_CONSTRAINT_INJECTED",
+              jobId: payload.jobId,
+              attempt,
+              mode,
+            });
+          }
+        }
         if (useReinforcedRetry) {
           console.log("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
@@ -5049,6 +5064,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               failureType: retryFailureType,
               attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
             },
+          structuralConstraintBlock,
           modelReason: `stage2 unified retry ${attempt - 1}`,
         });
         if (useReinforcedRetry) {
@@ -5056,6 +5072,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
         pendingStage2StructuralFailureType = null;
         pendingStage2RetryStrategy = null;
+        pendingStage2RetryReason = null;
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -5558,6 +5575,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
         pendingStage2RetryStrategy = "REINFORCED";
+        pendingStage2RetryReason = null;
         emitStage2DecisionBreakdown({
           extremeLocalFail: true,
           topologyFail: false,
@@ -5923,6 +5941,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
             pendingStage2StructuralFailureType = "opening_removed";
             pendingStage2RetryStrategy = "NORMAL";
+            pendingStage2RetryReason = "opening_preservation";
 
             emitStage2DecisionBreakdown({
               extremeLocalFail: false,
@@ -6072,6 +6091,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               : "STRUCTURAL_INVARIANT";
           pendingStage2StructuralFailureType = invariantFailureType;
           pendingStage2RetryStrategy = "NORMAL";
+          pendingStage2RetryReason = null;
 
           emitStage2DecisionBreakdown({
             extremeLocalFail: false,
