@@ -552,8 +552,10 @@ export async function validateOpeningPreservation(
   For each baseline opening:
   1) It must still exist.
   2) It must remain on the same Wall Index.
-  3) It must remain within the same Horizontal Band.
-  4) It must remain within the same Vertical Band.
+    3) It must remain approximately within the same horizontal region.
+      Minor adjacent band shifts due to perspective normalization are allowed.
+    4) It must remain approximately within the same vertical region.
+      Minor adjacent band shifts due to perspective normalization are allowed.
   5) It must retain the same Structural Class.
   6) It must not be resized materially (width band mismatch).
   7) It must not be converted to flat wall.

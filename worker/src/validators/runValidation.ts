@@ -237,6 +237,7 @@ export async function runUnifiedValidation(
   const reasons: string[] = [];
   let geminiVerdict: GeminiSemanticVerdict | null = null;
   let stage2AnchorDirectReasons: string[] = [];
+  let stage2AnchorDirectEvents: Array<{ source: "anchor"; confidence: number; reasonCode: string }> = [];
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -811,12 +812,15 @@ export async function runUnifiedValidation(
       if (stage === "2") {
         if (anchorResult.hvacChanged) {
           stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_hvac_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_hvac_changed" });
         }
         if (anchorResult.cabinetryChanged) {
           stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_cabinetry_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_cabinetry_changed" });
         }
         if (anchorResult.lightingChanged) {
           stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_fixed_lighting_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_fixed_lighting_changed" });
         }
       }
 
@@ -1132,42 +1136,55 @@ export async function runUnifiedValidation(
   let stage2DirectHardFail = false;
   if (stage === "2") {
     const directReasons = [...stage2AnchorDirectReasons];
+    const directEvents: Array<{ source: "anchor" | "fixture" | "floor"; confidence: number; reasonCode: string }> = [
+      ...stage2AnchorDirectEvents,
+    ];
 
     const violationType = geminiVerdict?.violationType;
     const geminiConfidence = Number(geminiVerdict?.confidence ?? 0);
+    const geminiStructuredHardSignal =
+      geminiVerdict?.category === "structure" && geminiVerdict?.hardFail === true;
     const hasCriticalFixtureViolation =
       (violationType === "faucet_change" ||
         violationType === "plumbing_change" ||
         violationType === "fixture_change" ||
         violationType === "ceiling_fixture_change") &&
-      geminiConfidence >= 0.85;
+      geminiConfidence >= 0.9 &&
+      geminiStructuredHardSignal;
 
     if (hasCriticalFixtureViolation) {
       directReasons.push(`stage2_direct_hardfail: ${violationType} confidence=${geminiConfidence.toFixed(3)}`);
+      directEvents.push({
+        source: "fixture",
+        confidence: geminiConfidence,
+        reasonCode: String(violationType || "fixture_change"),
+      });
     }
 
-    const reasonBlob = (geminiVerdict?.reasons || []).join(" ").toLowerCase();
+    const localStructuralReason = String(results.structuralMask?.details?.reason || "").toLowerCase();
     const floorCoveringMaterialChanged =
-      geminiVerdict?.category === "structure" &&
-      geminiConfidence >= 0.85 &&
-      (
-        reasonBlob.includes("floor material") ||
-        reasonBlob.includes("floor covering") ||
-        reasonBlob.includes("floor recolor") ||
-        reasonBlob.includes("carpet") ||
-        reasonBlob.includes("hardwood") ||
-        reasonBlob.includes("timber floor") ||
-        reasonBlob.includes("wood floor") ||
-        reasonBlob.includes("tile floor")
-      );
+      localStructuralReason === "floor_material_changed" ||
+      localStructuralReason.startsWith("floor_");
 
     if (floorCoveringMaterialChanged) {
       directReasons.push("stage2_direct_hardfail: floor_covering_material_changed");
+      directEvents.push({
+        source: "floor",
+        confidence: 1,
+        reasonCode: localStructuralReason || "floor_material_changed",
+      });
     }
 
     if (directReasons.length > 0) {
       stage2DirectHardFail = true;
       reasons.push(...directReasons);
+      directEvents.forEach((event) => {
+        console.log("[STAGE2_DIRECT_GATE]", {
+          source: event.source,
+          confidence: event.confidence,
+          reasonCode: event.reasonCode,
+        });
+      });
       nLog(`[STAGE2_DIRECT_STRUCTURAL_CHECK] hardFail=true reasons=${directReasons.join(" | ")}`);
     }
   }
