@@ -375,7 +375,7 @@ function resolveStage2StructuralDegree(unifiedValidation: any): Stage2Structural
     });
   };
 
-  if (hasLineVertical || hasLineHorizontal) {
+  if ((hasLineVertical || hasLineHorizontal) && lineEdgeAngleDeg !== null && lineEdgeAngleDeg > 0) {
     const valueDeg = lineEdgeAngleDeg;
     logResolverInputs("line_edge_evidence", valueDeg);
     return {
@@ -386,7 +386,7 @@ function resolveStage2StructuralDegree(unifiedValidation: any): Stage2Structural
     };
   }
 
-  if (unifiedDriftAngleDeg !== null) {
+  if (unifiedDriftAngleDeg !== null && unifiedDriftAngleDeg > 0) {
     logResolverInputs("unified_drift_evidence", unifiedDriftAngleDeg);
     return {
       valueDeg: unifiedDriftAngleDeg,
