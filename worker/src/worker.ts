@@ -5774,6 +5774,58 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
 
+      if (stage2CandidatePath && !structuralBaseline) {
+        const failReason = "baseline_unavailable_block";
+        nLog(`[OPENING_VALIDATION_FAIL] reason=${failReason}`);
+        setStage2AttemptValidation(path2, "opening_preservation", [failReason]);
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "opening_preservation",
+            retryTriggered: false,
+            retriesExhausted: false,
+            retryStrategy: "NORMAL",
+            reason: failReason,
+          },
+        });
+        logEvent("VALIDATION_RESULT", {
+          jobId: payload.jobId,
+          stage: "2",
+          attempt,
+          localPass: unifiedValidation.passed === true,
+          geminiPass: false,
+          confirmPass: false,
+          finalPass: false,
+          violationType: failReason,
+          retryStrategy: "NORMAL",
+          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+        });
+
+        stage2Blocked = true;
+        stage2FallbackStage = "1A";
+        stage2BlockedReason = failReason;
+        fallbackUsed = "stage2_structure_fallback_1a";
+        path2 = path1A;
+        stage2CandidatePath = path1A;
+
+        emitStage2DecisionBreakdown({
+          extremeLocalFail: false,
+          topologyFail: false,
+          invariantFail: true,
+          compositeDecision,
+          geminiConfirmStatus: "not_run",
+          complianceDecision: "not_run",
+          stage2Blocked,
+          decisionPoint: "final_block",
+          reason: failReason,
+        });
+
+        nLog(`[FALLBACK_TO_STAGE1A] reason=${failReason}`);
+        nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=${failReason}`);
+        break;
+      }
+
       if (stage2CandidatePath && structuralBaseline) {
         try {
           openingValidationResult = await validateOpeningPreservation(
@@ -5891,9 +5943,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } catch (openingValidationErr: any) {
           nLog(`[OPENING_VALIDATION_ERROR] jobId=${payload.jobId} reason=${openingValidationErr?.message || openingValidationErr}`);
         }
-      } else {
+      } else if (!stage2CandidatePath) {
         nLog(
-          `[OPENING_VALIDATION_SKIPPED] baseline=${structuralBaseline ? "present" : "missing"} candidate=${stage2CandidatePath ? "present" : "missing"}`
+          `[OPENING_VALIDATION_SKIPPED] baseline=${structuralBaseline ? "present" : "missing"} candidate=missing`
         );
       }
 
