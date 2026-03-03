@@ -235,6 +235,8 @@ export async function runUnifiedValidation(
   const geminiMode = getGeminiValidatorMode();
   const results: Record<string, ValidatorResult> = {};
   const reasons: string[] = [];
+  let geminiVerdict: GeminiSemanticVerdict | null = null;
+  let stage2AnchorDirectReasons: string[] = [];
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -806,6 +808,18 @@ export async function runUnifiedValidation(
         }
       }
 
+      if (stage === "2") {
+        if (anchorResult.hvacChanged) {
+          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_hvac_changed");
+        }
+        if (anchorResult.cabinetryChanged) {
+          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_cabinetry_changed");
+        }
+        if (anchorResult.lightingChanged) {
+          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_fixed_lighting_changed");
+        }
+      }
+
       nLog(`[unified-validator] Anchors: island=${anchorResult.islandChanged} hvac=${anchorResult.hvacChanged} cabinetry=${anchorResult.cabinetryChanged} lighting=${anchorResult.lightingChanged}`);
     } catch (err) {
       console.warn("[unified-validator] Anchor validation error (fail-open):", err);
@@ -1017,6 +1031,7 @@ export async function runUnifiedValidation(
         evidence,
         riskLevel,
       });
+      geminiVerdict = geminiResult;
 
       const semantic = summarizeGeminiSemantic(geminiResult);
       const geminiHardFail = semantic.hardFail && geminiMode === "block";
@@ -1112,9 +1127,58 @@ export async function runUnifiedValidation(
     });
   }
 
+  // ===== STAGE2 DIRECT STRUCTURAL CHECKS =====
+  // Hard-fail specific critical categories regardless of log/enforce mode.
+  let stage2DirectHardFail = false;
+  if (stage === "2") {
+    const directReasons = [...stage2AnchorDirectReasons];
+
+    const violationType = geminiVerdict?.violationType;
+    const geminiConfidence = Number(geminiVerdict?.confidence ?? 0);
+    const hasCriticalFixtureViolation =
+      (violationType === "faucet_change" ||
+        violationType === "plumbing_change" ||
+        violationType === "fixture_change" ||
+        violationType === "ceiling_fixture_change") &&
+      geminiConfidence >= 0.85;
+
+    if (hasCriticalFixtureViolation) {
+      directReasons.push(`stage2_direct_hardfail: ${violationType} confidence=${geminiConfidence.toFixed(3)}`);
+    }
+
+    const reasonBlob = (geminiVerdict?.reasons || []).join(" ").toLowerCase();
+    const floorCoveringMaterialChanged =
+      geminiVerdict?.category === "structure" &&
+      geminiConfidence >= 0.85 &&
+      (
+        reasonBlob.includes("floor material") ||
+        reasonBlob.includes("floor covering") ||
+        reasonBlob.includes("floor recolor") ||
+        reasonBlob.includes("carpet") ||
+        reasonBlob.includes("hardwood") ||
+        reasonBlob.includes("timber floor") ||
+        reasonBlob.includes("wood floor") ||
+        reasonBlob.includes("tile floor")
+      );
+
+    if (floorCoveringMaterialChanged) {
+      directReasons.push("stage2_direct_hardfail: floor_covering_material_changed");
+    }
+
+    if (directReasons.length > 0) {
+      stage2DirectHardFail = true;
+      reasons.push(...directReasons);
+      nLog(`[STAGE2_DIRECT_STRUCTURAL_CHECK] hardFail=true reasons=${directReasons.join(" | ")}`);
+    }
+  }
+
   let blockSource: "local" | "gemini" | null = geminiHardFail
     ? "gemini"
     : ((mode === "enforce" && !allPassed) ? "local" : null);
+
+  if (stage2DirectHardFail) {
+    blockSource = "local";
+  }
 
   // ===== STAGE2 SEMANTIC OVERRIDE GATE =====
   // Allow Gemini semantic PASS to downgrade local failures when structural evidence is clean.

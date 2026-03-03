@@ -1,0 +1,511 @@
+{
+  "job_1173c887-f6db-497f-851f-9d7abbb57bc1": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530880261-realenhance-job_1173c887-f6db-497f-851f-9d7abbb57bc1-1772530848968-91rw1zwonff-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530880261-realenhance-job_1173c887-f6db-497f-851f-9d7abbb57bc1-1772530848968-91rw1zwonff-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094121Z&X-Amz-Expires=86400&X-Amz-Signature=5fa66dba9195a655e6c0dff40995e966c208e30834c8aaf049baa3d5b490e17d&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "result": "PASSED",
+        "reason": "other (confidence 1)"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 14.78,
+        "wallDriftPct": 33.36,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 14.78,
+        "semantic": 33.36,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {},
+    "retry2_amendments": []
+  },
+  "job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530885109-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530885109-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094126Z&X-Amz-Expires=86400&X-Amz-Signature=a0c7f7cccaf0edd44f03a04e4c6ada885946307198ce38f236f5344c89ac3b2e&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530952452-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2-retry1.webp",
+        "attempt_index": 1,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530952452-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094233Z&X-Amz-Expires=86400&X-Amz-Signature=9df451482e19eae8a3297f529be28db585fa15ce70b381d5104843f1530a53e3&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531019513-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2-retry2.webp",
+        "attempt_index": 2,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531019513-realenhance-job_1caa50b4-b8f2-4e49-ae5c-0c1574bb1209-1772530847865-aku14pg3w7u-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094340Z&X-Amz-Expires=86400&X-Amz-Signature=4973a7e7f621bb3142c27e1ea4b9c08cdd2a71e146713d951fee6a3b895cb915&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "reason": "opening_preservation"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 61.19,
+        "wallDriftPct": 38.04
+      },
+      "2": {
+        "maskedDriftPct": 44.68,
+        "wallDriftPct": 35.32,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 61.19,
+        "semantic": 38.04,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 44.68,
+        "semantic": 35.32,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 60.58,
+        "semantic": 42.7,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {
+      "2": "windowsBefore=6 windowsAfter=6 doorsBefore=0 doorsAfter=0 closetDoorsBefore=null closetDoorsAfter=null totalOpeningsBefore=6 totalOpeningsAfter=6 builtInRemovalDetected=false wallDriftPct=57.06 maskedEdgeDriftPct=15.74"
+    },
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530882788-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530882788-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2.webp"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530945538-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2-retry1.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530945538-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2-retry1.webp"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531015786-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2-retry2.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531015786-realenhance-job_5ed3491c-9f18-4083-a1eb-543eb3c28ff8-1772530851321-q5vh6ls38rl-canonical-1A-2-retry2.webp"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 51.65,
+        "wallDriftPct": 32.52,
+        "structuralDeg": 0.0
+      },
+      "2": {
+        "maskedDriftPct": 56.19,
+        "wallDriftPct": 34.78,
+        "structuralDeg": 0.0
+      },
+      "3": {
+        "maskedDriftPct": 64.18,
+        "wallDriftPct": 32.5
+      }
+    },
+    "composite": [
+      {
+        "masked": 51.65,
+        "semantic": 32.52,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 56.19,
+        "semantic": 34.78,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 64.18,
+        "semantic": 32.5,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {
+      "1": "windowsBefore=0 windowsAfter=0 doorsBefore=0 doorsAfter=0 closetDoorsBefore=null closetDoorsAfter=null totalOpeningsBefore=0 totalOpeningsAfter=0 builtInRemovalDetected=false wallDriftPct=14.28 maskedEdgeDriftPct=20.58"
+    },
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_9b58e937-eb24-49c8-b36c-e149789f2aef": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530874243-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530874243-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094115Z&X-Amz-Expires=86400&X-Amz-Signature=4e8ed1c555deba3315f3942e3c812be56d6ee22377898173a53c6f6fbe183593&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "gemini",
+        "result": "FAILED",
+        "reason": "Perceptual diff failed: SSIM 0.723 < 0.97 (confidence 1)"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530944871-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2-retry1.webp",
+        "attempt_index": 1,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530944871-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094226Z&X-Amz-Expires=86400&X-Amz-Signature=e9edbc49873af2497daded3c7f9527bc64e6b1ae4034f8348e17063f5e728288&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530995150-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2-retry2.webp",
+        "attempt_index": 2,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530995150-realenhance-job_9b58e937-eb24-49c8-b36c-e149789f2aef-1772530846948-jd7eyjtrtcm-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094316Z&X-Amz-Expires=86400&X-Amz-Signature=46d375d2914b3fac57e32edf115f697b2711cf16459386efca0cd7f93c7d0a59&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      }
+    },
+    "blocking_validator": "opening_preservation",
+    "final_decision": {
+      "decision": "fallback",
+      "blockedBy": "opening_preservation",
+      "retries": 2
+    },
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 64.51,
+        "wallDriftPct": 5.57,
+        "structuralDeg": 0.0
+      },
+      "2": {
+        "maskedDriftPct": 19.68,
+        "wallDriftPct": 25.73,
+        "structuralDeg": 0.0
+      },
+      "3": {
+        "maskedDriftPct": 23.07,
+        "wallDriftPct": 45.12,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 64.51,
+        "semantic": 5.57,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 19.68,
+        "semantic": 25.73,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 23.07,
+        "semantic": 45.12,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {},
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530874035-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530874035-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094115Z&X-Amz-Expires=86400&X-Amz-Signature=a4991f272757afe5407b5a10a853c11488a32e7b4b31d55aebab7a12770349fd&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530931807-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2-retry1.webp",
+        "attempt_index": 1,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530931807-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094213Z&X-Amz-Expires=86400&X-Amz-Signature=adba10d6b79c77bea2776909ef313174f9e135ca5fe1ab74726892eea17ee760&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531004479-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2-retry2.webp",
+        "attempt_index": 2,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531004479-realenhance-job_a66b0ce7-27bd-4928-83ac-e79fd7e9b42b-1772530846339-9jmg94xszo8-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094325Z&X-Amz-Expires=86400&X-Amz-Signature=5bda43a22c151433a8e71a4e1e32166c65034b60ee7d22c38df0e11bb97ef5f4&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 60.42,
+        "wallDriftPct": 64.07,
+        "structuralDeg": null
+      },
+      "2": {
+        "maskedDriftPct": 38.46,
+        "wallDriftPct": 61.06,
+        "structuralDeg": 0.0
+      },
+      "3": {
+        "maskedDriftPct": 67.54,
+        "wallDriftPct": 76.85,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 60.42,
+        "semantic": 64.07,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 38.46,
+        "semantic": 61.06,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 67.54,
+        "semantic": 76.85,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {},
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530878291-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530878291-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094119Z&X-Amz-Expires=86400&X-Amz-Signature=701c381dcf827f18f15a98f46595f492c8d805d1595fbbdf7f987ed143182057&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530937809-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2-retry1.webp",
+        "attempt_index": 1,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530937809-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094219Z&X-Amz-Expires=86400&X-Amz-Signature=e18ea6700aa4c712578ab4f94d30df87030112e842fe37df57350bdcecd60378&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530997220-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2-retry2.webp",
+        "attempt_index": 2,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530997220-realenhance-job_d8e229bb-3dfc-4c6c-96d0-9557e6a6e056-1772530849598-c10umuvj94c-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094318Z&X-Amz-Expires=86400&X-Amz-Signature=3a41c0ffba53d4103bc42bd099725d07fe29044cfd39157d390f65437c8b9430&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "result": "FAILED",
+        "reason": "opening_preservation"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 58.86,
+        "wallDriftPct": 23.25,
+        "structuralDeg": 0.0
+      },
+      "2": {
+        "maskedDriftPct": 41.43,
+        "wallDriftPct": 43.23,
+        "structuralDeg": null
+      },
+      "3": {
+        "maskedDriftPct": 27.48,
+        "wallDriftPct": 28.16,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 58.86,
+        "semantic": 23.25,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 41.43,
+        "semantic": 43.23,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 27.48,
+        "semantic": 28.16,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {},
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530878624-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2.webp",
+        "attempt_index": 0,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530878624-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094120Z&X-Amz-Expires=86400&X-Amz-Signature=2fcc6ff00a681be571e8c6ec99c25f0fdb5004a138bb58059ae5871f2597b560&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "gemini",
+        "reason": "gemini"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530944037-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2-retry1.webp",
+        "attempt_index": 1,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530944037-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094225Z&X-Amz-Expires=86400&X-Amz-Signature=b7fd4f5b471357c62ed58aa76390f81d69cb735d075ce5255ed8c62267ab5b6c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "reason": "opening_preservation"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530999631-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2-retry2.webp",
+        "attempt_index": 2,
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530999631-realenhance-job_dd20aa2d-25c8-4135-baf6-cf45d1ca8785-1772530851928-3g2pcb2f3nr-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T094321Z&X-Amz-Expires=86400&X-Amz-Signature=0d2633e487f41ceae269d9ad26aff8f8c8ad88373a2f70502de2079c8309baf5&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+        "blockedBy": "opening_preservation",
+        "reason": "opening_preservation"
+      }
+    },
+    "blocking_validator": "opening_preservation",
+    "final_decision": {
+      "decision": "fallback",
+      "blockedBy": "opening_preservation",
+      "retries": 2
+    },
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 52.16,
+        "wallDriftPct": 66.02,
+        "structuralDeg": 0.0
+      },
+      "2": {
+        "maskedDriftPct": 15.74,
+        "wallDriftPct": 57.06,
+        "structuralDeg": 0.0
+      },
+      "3": {
+        "maskedDriftPct": 77.6,
+        "wallDriftPct": 69.85,
+        "structuralDeg": 0.0
+      }
+    },
+    "composite": [
+      {
+        "masked": 52.16,
+        "semantic": 66.02,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 15.74,
+        "semantic": 57.06,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 77.6,
+        "semantic": 69.85,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {},
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  },
+  "job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9": {
+    "attempts": {
+      "base": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530876257-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530876257-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2.webp"
+      },
+      "retry1": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530957866-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2-retry1.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772530957866-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2-retry1.webp"
+      },
+      "retry2": {
+        "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531070377-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2-retry2.webp",
+        "signed_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772531070377-realenhance-job_dfe2a4f0-698e-4fe4-a324-c2959775ffc9-1772530850465-ixmbgbb7xb-canonical-1A-2-retry2.webp"
+      }
+    },
+    "blocking_validator": null,
+    "final_decision": null,
+    "local_metrics": {
+      "1": {
+        "maskedDriftPct": 20.58,
+        "wallDriftPct": 14.28,
+        "structuralDeg": 0.0
+      },
+      "2": {
+        "maskedDriftPct": 57.74,
+        "wallDriftPct": 34.2,
+        "structuralDeg": 0.0
+      },
+      "3": {
+        "maskedDriftPct": 54.73,
+        "wallDriftPct": 23.67
+      }
+    },
+    "composite": [
+      {
+        "masked": 20.58,
+        "semantic": 14.28,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 57.74,
+        "semantic": 34.2,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      },
+      {
+        "masked": 54.73,
+        "semantic": 23.67,
+        "decision": "NO_SIGNAL",
+        "reason": "opening_delta_detected"
+      }
+    ],
+    "invariance": {
+      "3": "windowsBefore=0 windowsAfter=1 doorsBefore=0 doorsAfter=0 closetDoorsBefore=null closetDoorsAfter=null totalOpeningsBefore=0 totalOpeningsAfter=1 builtInRemovalDetected=false wallDriftPct=23.67 maskedEdgeDriftPct=54.73"
+    },
+    "retry2_amendments": [
+      "retryType=validator_forced_retry",
+      "sampling=temperature0.25/topP0.7/topK30"
+    ]
+  }
+}
