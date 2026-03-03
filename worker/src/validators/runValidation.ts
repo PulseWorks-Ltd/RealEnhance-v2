@@ -238,6 +238,7 @@ export async function runUnifiedValidation(
   let geminiVerdict: GeminiSemanticVerdict | null = null;
   let stage2AnchorDirectReasons: string[] = [];
   let stage2AnchorDirectEvents: Array<{ source: "anchor"; confidence: number; reasonCode: string }> = [];
+  let stage2LightingAnchorChanged = false;
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
@@ -706,12 +707,8 @@ export async function runUnifiedValidation(
         results.windows?.passed === false ||
         results.walls?.passed === false ||
         results.structuralMask?.passed === false;
-      const geminiStructuredHighConfidence =
-        geminiVerdict?.category === "structure" &&
-        Number(geminiVerdict?.confidence ?? 0) >= 0.9;
       const islandCorroborated =
         structuralDegree > 0 ||
-        geminiStructuredHighConfidence ||
         openingViolationPresent;
       const islandChangedForDecision =
         anchorResult.islandChanged &&
@@ -827,10 +824,7 @@ export async function runUnifiedValidation(
           stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_cabinetry_changed");
           stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_cabinetry_changed" });
         }
-        if (anchorResult.lightingChanged) {
-          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_fixed_lighting_changed");
-          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_fixed_lighting_changed" });
-        }
+        stage2LightingAnchorChanged = anchorResult.lightingChanged;
       }
 
       nLog(`[unified-validator] Anchors: island=${anchorResult.islandChanged} hvac=${anchorResult.hvacChanged} cabinetry=${anchorResult.cabinetryChanged} lighting=${anchorResult.lightingChanged}`);
@@ -1149,6 +1143,28 @@ export async function runUnifiedValidation(
       ...stage2AnchorDirectEvents,
     ];
 
+    const structuralDegree = Number(evidence?.drift?.angleDegrees ?? 0);
+    const windowsBefore = evidence.openings.windowsBefore;
+    const windowsAfter = evidence.openings.windowsAfter;
+    const doorsBefore = evidence.openings.doorsBefore;
+    const doorsAfter = evidence.openings.doorsAfter;
+    const openingsDeltaDetected =
+      typeof windowsBefore === "number" &&
+      typeof windowsAfter === "number" &&
+      typeof doorsBefore === "number" &&
+      typeof doorsAfter === "number"
+        ? (Math.abs(windowsBefore - windowsAfter) !== 0 || Math.abs(doorsBefore - doorsAfter) !== 0)
+        : false;
+    const openingViolationDetected =
+      openingsDeltaDetected ||
+      results.windows?.passed === false ||
+      results.walls?.passed === false ||
+      results.structuralMask?.passed === false;
+    const geminiStructuredConfidence =
+      geminiVerdict?.category === "structure"
+        ? Number(geminiVerdict?.confidence ?? 0)
+        : 0;
+
     const violationType = geminiVerdict?.violationType;
     const geminiConfidence = Number(geminiVerdict?.confidence ?? 0);
     const geminiStructuredHardSignal =
@@ -1182,6 +1198,35 @@ export async function runUnifiedValidation(
         confidence: 1,
         reasonCode: localStructuralReason || "floor_material_changed",
       });
+    }
+
+    if (stage2LightingAnchorChanged) {
+      const lightingCorroborated =
+        structuralDegree > 0 ||
+        geminiStructuredConfidence >= 0.9 ||
+        openingViolationDetected;
+
+      if (lightingCorroborated) {
+        directReasons.push("stage2_direct_hardfail: anchor_fixed_lighting_changed");
+        directEvents.push({
+          source: "anchor",
+          confidence: 1,
+          reasonCode: "anchor_fixed_lighting_changed",
+        });
+      } else {
+        const advisoryReason =
+          "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated";
+        warnings.push(advisoryReason);
+        evidence.localFlags.push("anchor:lighting_advisory_uncorroborated");
+        console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
+          source: "anchor",
+          reasonCode: "anchor_fixed_lighting_changed",
+          corroborated: false,
+          structuralDegree,
+          geminiStructuredConfidence,
+          openingViolationDetected,
+        });
+      }
     }
 
     if (directReasons.length > 0) {
