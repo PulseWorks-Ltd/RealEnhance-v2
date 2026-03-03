@@ -265,7 +265,6 @@ export async function runUnifiedValidation(
   // ===== PERCEPTUAL DIFF (SSIM) GATE — FIRST STEP =====
   let perceptualFailed = false;
   let forceGemini = false;
-  let stage2IslandHardFail = false;
 
   // Initialize evidence packet
   const evidence = createEmptyEvidence(
@@ -700,9 +699,28 @@ export async function runUnifiedValidation(
         jobId,
       });
 
+      const normalizedRoomType = String(roomType || "").toLowerCase();
+      const isKitchenBaseline = normalizedRoomType === "kitchen";
+      const structuralDegree = Number(evidence?.drift?.angleDegrees ?? 0);
+      const openingViolationPresent =
+        results.windows?.passed === false ||
+        results.walls?.passed === false ||
+        results.structuralMask?.passed === false;
+      const geminiStructuredHighConfidence =
+        geminiVerdict?.category === "structure" &&
+        Number(geminiVerdict?.confidence ?? 0) >= 0.9;
+      const islandCorroborated =
+        structuralDegree > 0 ||
+        geminiStructuredHighConfidence ||
+        openingViolationPresent;
+      const islandChangedForDecision =
+        anchorResult.islandChanged &&
+        isKitchenBaseline &&
+        islandCorroborated;
+
       // Populate evidence anchor flags
       evidence.anchorChecks = {
-        islandChanged: anchorResult.islandChanged,
+        islandChanged: islandChangedForDecision,
         hvacChanged: anchorResult.hvacChanged,
         cabinetryChanged: anchorResult.cabinetryChanged,
         lightingChanged: anchorResult.lightingChanged,
@@ -716,9 +734,9 @@ export async function runUnifiedValidation(
 
       results.anchors = {
         name: "anchors",
-        passed: !anchorResult.islandChanged && !anchorResult.hvacChanged &&
+        passed: !islandChangedForDecision && !anchorResult.hvacChanged &&
                 !anchorResult.cabinetryChanged && !anchorResult.lightingChanged,
-        score: (anchorResult.islandChanged || anchorResult.hvacChanged ||
+        score: (islandChangedForDecision || anchorResult.hvacChanged ||
                 anchorResult.cabinetryChanged || anchorResult.lightingChanged) ? 0.0 : 1.0,
         message: evidence.localFlags.filter(f => f.startsWith("anchor:")).join(", ") || "All anchors intact",
         details: anchorResult,
@@ -726,13 +744,7 @@ export async function runUnifiedValidation(
 
       // Deterministic Stage2 kitchen-island enforcement.
       // Applies only for interior kitchen-related contexts when island is confidently detected in BEFORE image.
-      const isKitchenContext =
-        roomType === "kitchen" ||
-        roomType === "kitchen_dining" ||
-        roomType === "kitchen_living" ||
-        roomType === "living_dining";
-
-      if (stage === "2" && sceneType === "interior" && isKitchenContext) {
+      if (stage === "2" && sceneType === "interior" && isKitchenBaseline && islandChangedForDecision) {
         const islandDetectedBefore = anchorResult.details?.islandDetectedBefore === true;
         const islandDetectedConfidenceBefore = Number(anchorResult.details?.islandDetectedConfidenceBefore ?? 0);
         const areaDelta = Number(anchorResult.details?.islandAreaDeltaRatio ?? anchorResult.details?.islandRectMassDelta ?? 0);
@@ -762,14 +774,11 @@ export async function runUnifiedValidation(
         }
 
         if (confidenceGatePass && islandBand === "hard_fail") {
-          const enforcementReason = `island_anchor_enforced category=structure violationType=built_in_moved areaDeltaRatio=${areaDelta.toFixed(3)} islandMaskedEdgeDrift=${drift.toFixed(3)}`;
-          reasons.push(enforcementReason);
-          evidence.localFlags.push(`anchor:island_anchor_enforced`);
+          const enforcementReason = `island_anchor_advisory category=structure violationType=built_in_moved areaDeltaRatio=${areaDelta.toFixed(3)} islandMaskedEdgeDrift=${drift.toFixed(3)}`;
+          warnings.push(enforcementReason);
+          evidence.localFlags.push(`anchor:island_anchor_advisory`);
           evidence.localFlags.push(`anchor:island_violation_type:built_in_moved`);
-          results.anchors.passed = false;
-          results.anchors.score = 0.0;
-          results.anchors.message = enforcementReason;
-          stage2IslandHardFail = true;
+          forceGemini = true;
 
           nLog(`[ISLAND_ANCHOR_ENFORCED]`, {
             stage,
@@ -786,7 +795,7 @@ export async function runUnifiedValidation(
             islandMaskedEdgeDrift: drift,
             thresholdAreaDeltaRatio: 0.05,
             thresholdIslandMaskedEdgeDrift: 0.12,
-            enforced: true,
+            enforced: false,
           });
         } else if (confidenceGatePass) {
           nLog(`[ISLAND_ANCHOR_ENFORCED]`, {
@@ -1199,7 +1208,7 @@ export async function runUnifiedValidation(
 
   // ===== STAGE2 SEMANTIC OVERRIDE GATE =====
   // Allow Gemini semantic PASS to downgrade local failures when structural evidence is clean.
-  if (blockSource === "local" && stage === "2" && !stage2IslandHardFail) {
+  if (blockSource === "local" && stage === "2") {
     const semanticKnown = typeof results.geminiSemantic?.passed === "boolean";
     const semanticPass = semanticKnown && results.geminiSemantic?.passed === true;
 
