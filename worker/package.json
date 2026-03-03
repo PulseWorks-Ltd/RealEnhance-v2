@@ -6,7 +6,7 @@
   "types": "dist/worker/src/worker.d.ts",
   "scripts": {
     "dev": "NODE_ENV=development tsx src/worker.ts",
-    "build": "pnpm --filter @realenhance/shared run build && pnpm exec tsc -p tsconfig.json",
+    "build": "pnpm --filter @realenhance/shared run build && tsc -p tsconfig.json",
     "prestart": "pnpm run build",
     "start": "NODE_ENV=production node dist/worker/src/worker.js",
     "test": "jest --config jest.config.cjs --no-coverage",
