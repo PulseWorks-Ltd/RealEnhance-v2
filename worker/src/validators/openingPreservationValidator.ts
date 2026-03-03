@@ -2,21 +2,25 @@ import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 
 export type StructuralOpeningType = "window" | "door" | "closet" | "archway";
+export type StructuralClass = "circulation" | "storage" | "exterior" | "unknown";
 export type WallPosition = "left_wall" | "right_wall" | "far_wall" | "near_wall";
 export type RelativeHorizontalPosition = "left_third" | "center" | "right_third";
 
+export type StructuralOpening = {
+  id: string;
+  type: StructuralOpeningType;
+  wallPosition: WallPosition;
+  relativeHorizontalPosition: RelativeHorizontalPosition;
+  shape: string;
+  touchesFloor: boolean;
+  touchesCeiling: boolean;
+  approxCount: number;
+  structuralClass: StructuralClass;
+};
+
 export type StructuralBaseline = {
   cameraOrientation: string;
-  openings: {
-    id: string;
-    type: StructuralOpeningType;
-    wallPosition: WallPosition;
-    relativeHorizontalPosition: RelativeHorizontalPosition;
-    shape: string;
-    touchesFloor: boolean;
-    touchesCeiling: boolean;
-    approxCount: number;
-  }[];
+  openings: StructuralOpening[];
 };
 
 export type OpeningValidationResult = {
@@ -25,6 +29,7 @@ export type OpeningValidationResult = {
     openingRemoved: boolean;
     openingSealed: boolean;
     openingRelocated: boolean;
+    openingClassMismatch: boolean;
   };
 };
 
@@ -90,7 +95,8 @@ Return JSON in this exact schema:
       "shape": string,
       "touchesFloor": boolean,
       "touchesCeiling": boolean,
-      "approxCount": number
+      "approxCount": number,
+      "structuralClass": "circulation" | "storage" | "exterior" | "unknown"
     }
   ]
 }
@@ -188,6 +194,13 @@ function isRelativeHorizontalPosition(value: string): value is RelativeHorizonta
   return value === "left_third" || value === "center" || value === "right_third";
 }
 
+export function deriveStructuralClass(opening: Pick<StructuralOpening, "type" | "touchesFloor" | "touchesCeiling">): StructuralClass {
+  if (opening.type === "window") return "exterior";
+  if (opening.type === "closet") return "storage";
+  if (opening.type === "door" || opening.type === "archway") return "circulation";
+  return "unknown";
+}
+
 function validateStructuralBaseline(input: any): StructuralBaseline {
   if (!input || typeof input !== "object") {
     throw new Error("Structural baseline must be an object");
@@ -201,7 +214,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     throw new Error("Structural baseline openings must be an array");
   }
 
-  const openings = input.openings.map((opening: any, index: number) => {
+  const openings: StructuralOpening[] = input.openings.map((opening: any, index: number) => {
     if (!opening || typeof opening !== "object") {
       throw new Error(`Invalid opening at index ${index}`);
     }
@@ -231,7 +244,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       throw new Error(`Opening approxCount must be a non-negative number at index ${index}`);
     }
 
-    return {
+    const normalizedOpening = {
       id: opening.id,
       type: opening.type,
       wallPosition: opening.wallPosition,
@@ -240,6 +253,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       touchesFloor: opening.touchesFloor,
       touchesCeiling: opening.touchesCeiling,
       approxCount: opening.approxCount,
+    };
+
+    return {
+      ...normalizedOpening,
+      structuralClass: deriveStructuralClass(normalizedOpening),
     };
   });
 
@@ -303,10 +321,18 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     throw new Error(`Opening validation missing IDs: ${missingIds.join(", ")}`);
   }
 
+  if (!input.summary || typeof input.summary !== "object") {
+    throw new Error("Opening validation summary must be an object");
+  }
+  if (typeof input.summary.openingClassMismatch !== "boolean") {
+    throw new Error("openingClassMismatch must be boolean in summary");
+  }
+
   const summary = {
     openingRemoved: results.some((item) => item.sealed === true && item.outOfFrame === false),
     openingSealed: results.some((item) => item.sealed === true),
     openingRelocated: results.some((item) => item.relocated === true),
+    openingClassMismatch: input.summary?.openingClassMismatch === true,
   };
 
   return { results, summary };
@@ -358,6 +384,7 @@ For each opening in the baseline:
 - Determine whether it has been sealed or removed.
 - Determine whether it has been relocated.
 - Determine whether it is out of frame due to camera crop.
+- Determine whether its functional structural class matches baseline structuralClass.
 - Provide confidence 0.0–1.0.
 
 Return JSON in this schema:
@@ -376,7 +403,8 @@ Return JSON in this schema:
   "summary": {
     "openingRemoved": boolean,
     "openingSealed": boolean,
-    "openingRelocated": boolean
+    "openingRelocated": boolean,
+    "openingClassMismatch": boolean
   }
 }
 
@@ -388,6 +416,7 @@ Definitions:
 - openingRemoved = true if any sealed=true AND outOfFrame=false.
 - openingSealed = true if any sealed=true.
 - openingRelocated = true if any relocated=true.
+- openingClassMismatch = true if any opening no longer matches baseline structuralClass.
 
 Baseline JSON:
 ${JSON.stringify(baseline)}`;

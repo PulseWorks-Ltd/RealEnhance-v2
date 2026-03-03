@@ -5908,16 +5908,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             if (result.present === false && result.outOfFrame !== true) return true;
             return false;
           });
+          const openingClassMismatch = openingValidationResult.summary.openingClassMismatch === true;
 
-          if (violations.length > 0) {
+          if (openingClassMismatch) {
+            logger.warn({
+              event: "STRUCTURAL_CLASS_MISMATCH",
+              jobId: payload.jobId,
+              attempt,
+            });
+          }
+
+          if (violations.length > 0 || openingClassMismatch) {
             logger.warn({
               event: "OPENING_VALIDATION_FAIL",
               jobId: payload.jobId,
               violations,
+              openingClassMismatch,
             });
 
             nLog(
-              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`
+              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`
             );
 
             const failReasons = [
@@ -5926,6 +5936,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
               `openingSealed=${openingValidationResult.summary.openingSealed}`,
               `openingRelocated=${openingValidationResult.summary.openingRelocated}`,
+              `openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`,
             ];
 
             setStage2AttemptValidation(path2, "opening_preservation", failReasons);
@@ -6022,7 +6033,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
 
           nLog(
-            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`
+            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`
           );
         } catch (openingValidationErr: any) {
           nLog(`[OPENING_VALIDATION_ERROR] jobId=${payload.jobId} reason=${openingValidationErr?.message || openingValidationErr}`);
