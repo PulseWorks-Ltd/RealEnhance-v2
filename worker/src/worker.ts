@@ -89,6 +89,7 @@ import { runSemanticStructureValidator } from "./validators/semanticStructureVal
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
 import {
+  detectRelocation,
   extractStructuralBaseline,
   validateOpeningPreservation,
   type StructuralBaseline,
@@ -5908,7 +5909,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             if (result.present === false && result.outOfFrame !== true) return true;
             return false;
           });
+          const relocationDetected = detectRelocation(
+            structuralBaseline,
+            openingValidationResult.detectedOpenings
+          );
+          const openingResized = openingValidationResult.summary.openingResized === true;
           const openingClassMismatch = openingValidationResult.summary.openingClassMismatch === true;
+          const openingBandMismatch = openingValidationResult.summary.openingBandMismatch === true;
 
           if (openingClassMismatch) {
             logger.warn({
@@ -5918,16 +5925,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
           }
 
-          if (violations.length > 0 || openingClassMismatch) {
+          if (violations.length > 0 || openingResized || openingClassMismatch || openingBandMismatch || relocationDetected) {
             logger.warn({
-              event: "OPENING_VALIDATION_FAIL",
+              event: "SPATIAL_OPENING_VIOLATION",
               jobId: payload.jobId,
+              attempt,
               violations,
+              relocationDetected,
+              openingResized,
               openingClassMismatch,
+              openingBandMismatch,
+              outOfFrameOpenings: openingValidationResult.summary.outOfFrameOpenings,
+              validation: openingValidationResult.summary,
             });
 
             nLog(
-              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`
+              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
             );
 
             const failReasons = [
@@ -5936,7 +5949,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
               `openingSealed=${openingValidationResult.summary.openingSealed}`,
               `openingRelocated=${openingValidationResult.summary.openingRelocated}`,
+              `openingResized=${openingValidationResult.summary.openingResized}`,
               `openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`,
+              `openingBandMismatch=${openingValidationResult.summary.openingBandMismatch}`,
+              `relocationDetected=${relocationDetected}`,
             ];
 
             setStage2AttemptValidation(path2, "opening_preservation", failReasons);
@@ -6033,7 +6049,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
 
           nLog(
-            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`
+            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
           );
         } catch (openingValidationErr: any) {
           nLog(`[OPENING_VALIDATION_ERROR] jobId=${payload.jobId} reason=${openingValidationErr?.message || openingValidationErr}`);
