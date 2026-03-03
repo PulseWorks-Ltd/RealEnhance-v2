@@ -219,6 +219,87 @@ type StructuralTopologyCheckResult = {
   rawText: string;
 };
 
+type OpeningProfile = "declutter_to_stage" | "empty_to_stage";
+
+type OpeningPolicySignals = {
+  structuralDegree: number;
+  maskedDriftPct: number;
+  semanticWallDriftPct: number;
+  structuralMaskFailure: boolean;
+  geminiStructuredHighConfidence: boolean;
+  windowsBefore: number;
+  windowsAfter: number;
+  doorsBefore: number;
+  doorsAfter: number;
+};
+
+function determineOpeningProfile(payload: EnhanceJobPayload): OpeningProfile {
+  const declutterSelected = payload.options?.declutter === true;
+  const declutterMode = String((payload.options as any)?.declutterMode || "").toLowerCase();
+  const stage2SourceStage = String((payload.options as any)?.sourceStage || "").toLowerCase();
+  const stage2Variant = String((payload.options as any)?.stage2Variant || "").toLowerCase();
+
+  const cameFromStage1B =
+    declutterSelected ||
+    declutterMode === "light" ||
+    declutterMode === "stage-ready" ||
+    stage2SourceStage.startsWith("1b") ||
+    stage2Variant === "2a";
+
+  return cameFromStage1B ? "declutter_to_stage" : "empty_to_stage";
+}
+
+function applyDeclutterOpeningPolicy(signals: OpeningPolicySignals): { hardFail: boolean; reasons: string[] } {
+  const openingDelta =
+    signals.windowsBefore !== signals.windowsAfter ||
+    signals.doorsBefore !== signals.doorsAfter;
+
+  if (signals.structuralDegree >= 90) {
+    return { hardFail: true, reasons: ["declutter_extreme_structural_destruction"] };
+  }
+
+  if (signals.structuralMaskFailure && signals.maskedDriftPct >= 75) {
+    return { hardFail: true, reasons: ["declutter_structural_mask_collapse"] };
+  }
+
+  if (
+    openingDelta &&
+    (
+      signals.maskedDriftPct >= 60 ||
+      signals.semanticWallDriftPct >= 45 ||
+      signals.geminiStructuredHighConfidence
+    )
+  ) {
+    return { hardFail: true, reasons: ["declutter_opening_delta_corroborated"] };
+  }
+
+  return { hardFail: false, reasons: [] };
+}
+
+function applyEmptyOpeningPolicy(signals: OpeningPolicySignals): { hardFail: boolean; reasons: string[] } {
+  const openingDelta =
+    signals.windowsBefore !== signals.windowsAfter ||
+    signals.doorsBefore !== signals.doorsAfter;
+
+  if (signals.structuralDegree >= 35) {
+    return { hardFail: true, reasons: ["empty_moderate_structural_deviation"] };
+  }
+
+  if (signals.maskedDriftPct >= 45 && signals.structuralMaskFailure) {
+    return { hardFail: true, reasons: ["empty_structural_mask_degradation"] };
+  }
+
+  if (openingDelta) {
+    return { hardFail: true, reasons: ["empty_opening_count_delta"] };
+  }
+
+  if (signals.maskedDriftPct >= 45 && signals.structuralDegree >= 25) {
+    return { hardFail: true, reasons: ["empty_combined_drift_rule"] };
+  }
+
+  return { hardFail: false, reasons: [] };
+}
+
 async function runStructuralTopologyCheck(opts: {
   stage1APath: string;
   stage2Path: string;
@@ -5949,9 +6030,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const openingResized = openingValidationResult.summary.openingResized === true;
           const openingClassMismatch = openingValidationResult.summary.openingClassMismatch === true;
           const openingBandMismatch = openingValidationResult.summary.openingBandMismatch === true;
-          const openingHardFail = shouldHardFailOpening(openingValidationResult.summary, {
-            relocationDetected,
-          });
           function detectStructuralMaskFailure(raw: any): boolean {
             if (!raw || typeof raw !== "object") return false;
 
@@ -5966,7 +6044,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               (c) => c && typeof c === "object" && c.passed === false
             );
           }
-          const structuralDegree = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
+          const structuralDegree = Number(stage2StructuralDegreeMetric?.valueDeg ?? 0);
           const structuralMaskFailure = detectStructuralMaskFailure(
             (unifiedValidation as any)?.raw
           );
@@ -5975,14 +6053,51 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const geminiStructuredHighConfidence =
             geminiStructuredCategory === "structure" &&
             geminiStructuredConfidence >= 0.9;
-          const corroborated =
-            structuralDegree > 0 ||
-            structuralMaskFailure ||
-            geminiStructuredHighConfidence;
-          const openingHardFailCorroborated = openingHardFail && corroborated;
+
+          const windowsBeforePolicy = Number(stage2SemanticResult?.windows?.before ?? 0);
+          const windowsAfterPolicy = Number(stage2SemanticResult?.windows?.after ?? 0);
+          const doorsBeforePolicy = Number(stage2SemanticResult?.doors?.before ?? 0);
+          const doorsAfterPolicy = Number(stage2SemanticResult?.doors?.after ?? 0);
+
+          const openingProfile = determineOpeningProfile(payload);
+          const openingPolicySignals: OpeningPolicySignals = {
+            structuralDegree,
+            maskedDriftPct: compositeMaskedDriftPct,
+            semanticWallDriftPct: compositeSemanticWallDriftPct,
+            structuralMaskFailure,
+            geminiStructuredHighConfidence,
+            windowsBefore: windowsBeforePolicy,
+            windowsAfter: windowsAfterPolicy,
+            doorsBefore: doorsBeforePolicy,
+            doorsAfter: doorsAfterPolicy,
+          };
+
+          const openingPolicyDecision =
+            openingProfile === "declutter_to_stage"
+              ? applyDeclutterOpeningPolicy(openingPolicySignals)
+              : applyEmptyOpeningPolicy(openingPolicySignals);
+
+          const openingPolicyHardFail = openingPolicyDecision.hardFail;
           const openingAdvisoryOnly =
-            !openingHardFailCorroborated &&
+            !openingPolicyHardFail &&
             (openingResized || openingBandMismatch || relocationDetected || violations.length > 0);
+
+          nLog("[STAGE2_PROFILE_OPENING_GATE]", {
+            jobId: payload.jobId,
+            attempt,
+            profile: openingProfile,
+            hardFail: openingPolicyHardFail,
+            reasons: openingPolicyDecision.reasons,
+            structuralDegree,
+            maskedDriftPct: compositeMaskedDriftPct,
+            semanticWallDriftPct: compositeSemanticWallDriftPct,
+            structuralMaskFailure,
+            geminiStructuredHighConfidence,
+            windowsBefore: windowsBeforePolicy,
+            windowsAfter: windowsAfterPolicy,
+            doorsBefore: doorsBeforePolicy,
+            doorsAfter: doorsAfterPolicy,
+          });
 
           if (openingClassMismatch) {
             logger.warn({
@@ -5992,7 +6107,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
           }
 
-          if (openingHardFailCorroborated) {
+          if (openingPolicyHardFail) {
             logger.warn({
               event: "SPATIAL_OPENING_VIOLATION",
               jobId: payload.jobId,
@@ -6020,6 +6135,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               `openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`,
               `openingBandMismatch=${openingValidationResult.summary.openingBandMismatch}`,
               `relocationDetected=${relocationDetected}`,
+              `profile=${openingProfile}`,
+              ...openingPolicyDecision.reasons,
             ];
 
             setStage2AttemptValidation(path2, "opening_preservation", failReasons);
@@ -6108,19 +6225,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               reason: "opening_preservation",
             });
             continue;
-          } else if (openingHardFail && !corroborated) {
-            const advisoryReason = "stage2_direct_advisory: opening_preservation_uncorroborated";
+          } else {
+            const advisoryReason = "stage2_profile_opening_advisory";
             if (Array.isArray(unifiedValidation?.warnings)) {
               unifiedValidation.warnings.push(advisoryReason);
             }
             console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
               jobId: payload.jobId,
-              reason: "opening_preservation_uncorroborated",
+              reason: advisoryReason,
+              profile: openingProfile,
               structuralDegree,
+              maskedDriftPct: compositeMaskedDriftPct,
+              semanticWallDriftPct: compositeSemanticWallDriftPct,
               structuralMaskFailure,
               geminiStructuredHighConfidence,
+              windowsBefore: windowsBeforePolicy,
+              windowsAfter: windowsAfterPolicy,
+              doorsBefore: doorsBeforePolicy,
+              doorsAfter: doorsAfterPolicy,
             });
-          } else if (openingAdvisoryOnly) {
+          }
+
+          if (openingAdvisoryOnly) {
             logger.info({
               event: "SPATIAL_OPENING_ADVISORY",
               jobId: payload.jobId,
