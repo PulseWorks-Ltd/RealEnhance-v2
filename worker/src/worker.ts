@@ -338,11 +338,46 @@ function resolveStage2StructuralDegree(unifiedValidation: any): Stage2Structural
   const hasLineVertical = typeof lineVertical === "number" && Number.isFinite(lineVertical);
   const hasLineHorizontal = typeof lineHorizontal === "number" && Number.isFinite(lineHorizontal);
 
+  const lineEdgeAngleDeg = (hasLineVertical || hasLineHorizontal)
+    ? Math.max(
+        hasLineVertical ? Number(lineVertical) : 0,
+        hasLineHorizontal ? Number(lineHorizontal) : 0,
+      )
+    : null;
+
+  const unifiedDriftAngleRaw =
+    unifiedValidation?.evidence?.drift?.angleDegrees ??
+    unifiedValidation?.evidence?.drift?.angleDeg;
+  const unifiedDriftAngleDeg =
+    typeof unifiedDriftAngleRaw === "number" && Number.isFinite(unifiedDriftAngleRaw)
+      ? Number(unifiedDriftAngleRaw)
+      : null;
+
+  const opencvDeviationRaw =
+    unifiedValidation?.raw?.structureValidator?.details?.deviationScore ??
+    unifiedValidation?.raw?.structure?.details?.deviationScore ??
+    unifiedValidation?.raw?.opencvStructure?.details?.deviationScore;
+  const opencvDeviationDeg =
+    typeof opencvDeviationRaw === "number" && Number.isFinite(opencvDeviationRaw)
+      ? Number(opencvDeviationRaw)
+      : null;
+
+  const logResolverInputs = (
+    selectedSource: Stage2StructuralDegreeMetric["source"],
+    valueDeg: number | null
+  ) => {
+    nLog("[STAGE2_STRUCTURAL_DEGREE_RESOLVER_INPUTS]", {
+      lineEdgeAngleDeg,
+      unifiedDriftAngleDeg,
+      opencvDeviationDeg,
+      selectedSource,
+      valueDeg,
+    });
+  };
+
   if (hasLineVertical || hasLineHorizontal) {
-    const valueDeg = Math.max(
-      hasLineVertical ? Number(lineVertical) : 0,
-      hasLineHorizontal ? Number(lineHorizontal) : 0,
-    );
+    const valueDeg = lineEdgeAngleDeg;
+    logResolverInputs("line_edge_evidence", valueDeg);
     return {
       valueDeg,
       source: "line_edge_evidence",
@@ -351,30 +386,27 @@ function resolveStage2StructuralDegree(unifiedValidation: any): Stage2Structural
     };
   }
 
-  const unifiedDriftAngle =
-    unifiedValidation?.evidence?.drift?.angleDegrees ??
-    unifiedValidation?.evidence?.drift?.angleDeg;
-  if (typeof unifiedDriftAngle === "number" && Number.isFinite(unifiedDriftAngle)) {
+  if (unifiedDriftAngleDeg !== null) {
+    logResolverInputs("unified_drift_evidence", unifiedDriftAngleDeg);
     return {
-      valueDeg: Number(unifiedDriftAngle),
+      valueDeg: unifiedDriftAngleDeg,
       source: "unified_drift_evidence",
       available: true,
       reasonIfUnavailable: null,
     };
   }
 
-  const opencvDeviationScore =
-    unifiedValidation?.raw?.structureValidator?.details?.deviationScore ??
-    unifiedValidation?.raw?.structure?.details?.deviationScore ??
-    unifiedValidation?.raw?.opencvStructure?.details?.deviationScore;
-  if (typeof opencvDeviationScore === "number" && Number.isFinite(opencvDeviationScore)) {
+  if (opencvDeviationDeg !== null) {
+    logResolverInputs("opencv_deviation_score", opencvDeviationDeg);
     return {
-      valueDeg: Number(opencvDeviationScore),
+      valueDeg: opencvDeviationDeg,
       source: "opencv_deviation_score",
       available: true,
       reasonIfUnavailable: null,
     };
   }
+
+  logResolverInputs("none", null);
 
   return {
     valueDeg: null,
