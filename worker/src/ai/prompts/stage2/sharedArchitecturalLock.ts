@@ -13,6 +13,13 @@ Do NOT:
 - create partitions, bulkheads, room splits, recesses, or new planes
 - alter built-in footprints or fixed fixture geometry
 - repaint/retile/re-floor to conceal structural edits
+
+🔒 Architectural Priority Clarification
+
+Do NOT modify wall returns, wall angles, corner geometry, window side margins, or window height for aesthetic balance.
+Do NOT adjust sill height or window proportions to accommodate furniture.
+If furniture conflicts with architecture, reposition or resize the furniture instead.
+Furniture must adapt to the room. The room must never adapt to furniture.
 `;
 
 export const STAGE2_CAMERA_IMMUTABILITY_BLOCK = `
