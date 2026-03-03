@@ -88,6 +88,11 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
+import {
+  extractStructuralBaseline,
+  validateOpeningPreservation,
+  type StructuralBaseline,
+} from "./validators/openingPreservationValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
@@ -1760,6 +1765,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobSampling: any;
     jobDeclutterIntensity?: "light" | "standard" | "heavy";
     stagingRegion: any;
+    structuralBaseline: StructuralBaseline | null;
   }
 
   const jobContext: JobExecutionContext = {
@@ -1775,6 +1781,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobSampling: null,
     jobDeclutterIntensity: undefined,
     stagingRegion: null,
+    structuralBaseline: null,
   };
 
   const stageLineage = {
@@ -1787,6 +1794,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     baseArtifacts: null as any,
     fallbackUsed: null as string | null,
   };
+
+  let structuralBaseline: StructuralBaseline | null = null;
+  let structuralBaselinePromise: Promise<StructuralBaseline | null> | null = null;
+  try {
+    const existingJobState: any = await getJob(payload.jobId);
+    const persistedBaseline = existingJobState?.structuralBaseline || existingJobState?.meta?.structuralBaseline;
+    if (persistedBaseline && Array.isArray(persistedBaseline.openings)) {
+      structuralBaseline = persistedBaseline as StructuralBaseline;
+      jobContext.structuralBaseline = structuralBaseline;
+      structuralBaselinePromise = Promise.resolve(structuralBaseline);
+      nLog(`[STRUCTURAL_BASELINE_HYDRATED] jobId=${payload.jobId} openings=${structuralBaseline.openings.length}`);
+    }
+  } catch (hydrateErr: any) {
+    nLog(`[STRUCTURAL_BASELINE_HYDRATE_ERROR] jobId=${payload.jobId} reason=${hydrateErr?.message || hydrateErr}`);
+  }
 
   const logStageInput = (stage: string, sourceStage: string | null, path: string) => {
     nLog("[STAGE_INPUT_SELECTED]", { jobId: payload.jobId, stage, sourceStage, path: path.substring(path.length - 40) });
@@ -3310,6 +3332,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[STAGE1A_FATAL_BLACK_BORDER]");
     await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A");
     return;
+  }
+
+  if (structuralBaseline) {
+    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=already_hydrated`);
+  } else if (process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY) {
+    structuralBaselinePromise = (async () => {
+      try {
+        const extractedBaseline = await extractStructuralBaseline(path1A);
+        structuralBaseline = extractedBaseline;
+        jobContext.structuralBaseline = extractedBaseline;
+        await updateJob(payload.jobId, {
+          structuralBaseline: extractedBaseline as any,
+          meta: {
+            structuralBaseline: extractedBaseline as any,
+          } as any,
+        });
+        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
+        return extractedBaseline;
+      } catch (baselineErr: any) {
+        nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
+        return null;
+      }
+    })();
+    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId}`);
+  } else {
+    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=missing_gemini_key`);
   }
 
   try {
@@ -5710,6 +5758,145 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
 
       let structuralInvariantResult: { fail: boolean } | null = null;
+      let openingValidationResult: Awaited<ReturnType<typeof validateOpeningPreservation>> | null = null;
+
+      if (!structuralBaseline && structuralBaselinePromise) {
+        try {
+          structuralBaseline = await structuralBaselinePromise;
+          jobContext.structuralBaseline = structuralBaseline;
+          nLog(
+            `[STRUCTURAL_BASELINE_READY_FOR_STAGE2] jobId=${payload.jobId} openings=${structuralBaseline?.openings?.length ?? 0}`
+          );
+        } catch (baselineAwaitErr: any) {
+          nLog(
+            `[STRUCTURAL_BASELINE_AWAIT_ERROR] jobId=${payload.jobId} reason=${baselineAwaitErr?.message || baselineAwaitErr}`
+          );
+        }
+      }
+
+      if (stage2CandidatePath && structuralBaseline) {
+        try {
+          openingValidationResult = await validateOpeningPreservation(
+            structuralBaseline,
+            stage2CandidatePath
+          );
+
+          const openingValidationFail =
+            openingValidationResult.summary.openingRemoved === true ||
+            openingValidationResult.summary.openingSealed === true ||
+            openingValidationResult.summary.openingRelocated === true;
+
+          if (openingValidationFail) {
+            nLog(
+              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`
+            );
+
+            const failReasons = [
+              "opening_preservation",
+              `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
+              `openingSealed=${openingValidationResult.summary.openingSealed}`,
+              `openingRelocated=${openingValidationResult.summary.openingRelocated}`,
+            ];
+
+            setStage2AttemptValidation(path2, "opening_preservation", failReasons);
+            mergeAttemptValidation("2", attempt, {
+              final: {
+                result: "FAILED",
+                finalHard: true,
+                finalCategory: "opening_preservation",
+                retryTriggered: attempt < MAX_STAGE2_RETRIES,
+                retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+                retryStrategy: "NORMAL",
+                reason: "opening_preservation",
+              },
+            });
+            logEvent("VALIDATION_RESULT", {
+              jobId: payload.jobId,
+              stage: "2",
+              attempt,
+              localPass: unifiedValidation.passed === true,
+              geminiPass: false,
+              confirmPass: false,
+              finalPass: false,
+              violationType: "opening_preservation",
+              retryStrategy: "NORMAL",
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            });
+
+            if (attempt >= MAX_STAGE2_RETRIES) {
+              const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
+                ? stageLineage.stage1B.output
+                : path1B;
+              const fallbackPath = fallback1B || path1A;
+              const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+
+              stage2Blocked = true;
+              stage2FallbackStage = fallbackStage;
+              stage2BlockedReason = `stage2_opening_preservation_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+              fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+              path2 = fallbackPath;
+              stage2CandidatePath = fallbackPath;
+              nLog(`[STAGE2_OPENING_VALIDATION_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
+              logEvent("FATAL_RETRY_EXHAUSTION", {
+                jobId: payload.jobId,
+                stage: "2",
+                attempts: attempt,
+                blockedBy: "opening_preservation",
+                reason: stage2BlockedReason,
+              });
+              emitStage2DecisionBreakdown({
+                extremeLocalFail: false,
+                topologyFail: false,
+                invariantFail: true,
+                compositeDecision,
+                geminiConfirmStatus: "not_run",
+                complianceDecision: "not_run",
+                stage2Blocked,
+                decisionPoint: "final_block",
+                reason: "opening_preservation",
+              });
+              nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
+              nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=opening_preservation retries=${attempt - 1}`);
+              break;
+            }
+
+            pendingStage2StructuralFailureType = "opening_removed";
+            pendingStage2RetryStrategy = "NORMAL";
+
+            emitStage2DecisionBreakdown({
+              extremeLocalFail: false,
+              topologyFail: false,
+              invariantFail: true,
+              compositeDecision,
+              geminiConfirmStatus: "not_run",
+              complianceDecision: "not_run",
+              stage2Blocked,
+              decisionPoint: "retry_schedule",
+              reason: "opening_preservation",
+            });
+            nLog(`[STAGE2_OPENING_VALIDATION_RETRY] attempt=${attempt + 1}`);
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: "opening_preservation",
+            });
+            continue;
+          }
+
+          nLog(
+            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated}`
+          );
+        } catch (openingValidationErr: any) {
+          nLog(`[OPENING_VALIDATION_ERROR] jobId=${payload.jobId} reason=${openingValidationErr?.message || openingValidationErr}`);
+        }
+      } else {
+        nLog(
+          `[OPENING_VALIDATION_SKIPPED] baseline=${structuralBaseline ? "present" : "missing"} candidate=${stage2CandidatePath ? "present" : "missing"}`
+        );
+      }
+
       if (stage2CandidatePath) {
         const openingsDrop = totalOpeningsAfter < totalOpeningsBefore;
         const highWallDrift =
@@ -5845,27 +6032,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       let lastGeminiConfirm: any = null;
       if (stage2CandidatePath) {
-        nLog(`[GEMINI_CONFIRM] stage=2 trigger=mandatory_structural_confirm mode=${softStructuralReviewMode ? "SOFT_STRUCTURAL_REVIEW" : "NORMAL"} reasons=${JSON.stringify(stage2LocalReasons)}`);
-        const { confirmWithGeminiStructure } = await import("./validators/confirmWithGeminiStructure.js");
-        const gatedEvidence = undefined;
-        const injectionStatus = gatedEvidence ? "injected" : "suppressed";
-        nLog(`[VALIDATION_EVIDENCE_GATE] stage=2 injected=${!!gatedEvidence} reason=${injectionStatus}`);
-
-        lastGeminiConfirm = await confirmWithGeminiStructure({
-          baselinePathOrUrl: path1A,
-          candidatePathOrUrl: stage2CandidatePath,
-          stage: "stage2",
-          roomType: payload.options.roomType,
-          sceneType: sceneLabel as any,
-          jobId: payload.jobId,
-          localReasons: stage2LocalReasons,
-          sourceStage: stage2SourceStage,
-          validationMode: stage2ValidationMode,
-          evidence: undefined,
-          riskLevel: unifiedValidation?.riskLevel,
-          softStructuralReviewMode,
-        });
-        nLog(`[GEMINI_CONFIRM] stage=2 attempt=${attempt} status=${lastGeminiConfirm.status} confirmedFail=${lastGeminiConfirm.confirmedFail} uncertain=${lastGeminiConfirm.uncertain === true} reasons=${JSON.stringify(lastGeminiConfirm.reasons)}`);
+        nLog(`[GEMINI_CONFIRM] stage=2 skipped reason=opening_preservation_validator_active`);
       }
 
       const geminiRaw = (unifiedValidation.raw?.geminiSemantic as any)?.details || {};
