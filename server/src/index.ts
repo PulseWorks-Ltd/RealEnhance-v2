@@ -42,7 +42,7 @@ import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
-import { requireS3OrExit } from "./utils/s3.js";
+import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -57,6 +57,43 @@ async function checkDbConnection(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function initializeAsyncServices(): Promise<void> {
+  console.log("[startup] beginning background service initialization");
+
+  // S3 readiness warm-up with retries; never block or exit process.
+  const maxAttempts = 5;
+  const retryDelayMs = 20_000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const status = await ensureS3Ready();
+      if (status.ok) {
+        console.log(`[S3] Ready: bucket=${status.bucket} region=${status.region}`);
+        break;
+      }
+
+      console.warn(
+        `[S3] Unavailable${status.bucket ? ` (bucket=${status.bucket})` : ""}: ${status.reason} (attempt ${attempt}/${maxAttempts})`
+      );
+    } catch (err) {
+      console.warn(`[S3] readiness check failed (attempt ${attempt}/${maxAttempts})`, err);
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  try {
+    const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
+    const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
+    console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
+  } catch (e) {
+    console.warn("[seed] failed to ensure credits:", e);
+  }
+
+  console.log("[startup] background initialization complete");
 }
 
 async function main() {
@@ -236,6 +273,7 @@ async function main() {
 
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
+    void initializeAsyncServices();
   });
 
   let shuttingDown = false;
@@ -270,21 +308,6 @@ async function main() {
       process.exit(1);
     }
   };
-
-  requireS3OrExit().catch((err) => {
-    console.error("[server] S3 readiness check failed:", err);
-    process.exit(1);
-  });
-
-  (async () => {
-    try {
-      const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
-      const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
-      console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
-    } catch (e) {
-      console.warn("[seed] failed to ensure credits:", e);
-    }
-  })();
 
   process.on("SIGTERM", () => {
     void gracefulShutdown("SIGTERM");
