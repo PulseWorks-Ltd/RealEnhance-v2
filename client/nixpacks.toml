@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "pnpm", "caddy"]
+nixPkgs = ["nodejs_20", "pnpm"]
 
 [phases.install]
 cmd = "pnpm install --no-frozen-lockfile --prefer-offline"
