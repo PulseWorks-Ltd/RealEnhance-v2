@@ -5920,8 +5920,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const openingHardFail = shouldHardFailOpening(openingValidationResult.summary, {
             relocationDetected,
           });
+          const structuralDegree = Number(unifiedValidation?.evidence?.drift?.angleDegrees ?? 0);
+          const localMaskFailureDetected = (unifiedValidation as any)?.raw?.structuralMask?.passed === false;
+          const structuralMaskFailure = Boolean(localMaskFailureDetected);
+          const geminiStructuredCategory = String((unifiedValidation as any)?.raw?.geminiSemantic?.details?.category ?? "");
+          const geminiStructuredConfidence = Number((unifiedValidation as any)?.raw?.geminiSemantic?.details?.confidence ?? 0);
+          const geminiStructuredHighConfidence =
+            geminiStructuredCategory === "structure" &&
+            geminiStructuredConfidence >= 0.9;
+          const corroborated =
+            structuralDegree > 0 ||
+            structuralMaskFailure ||
+            geminiStructuredHighConfidence;
+          const openingHardFailCorroborated = openingHardFail && corroborated;
           const openingAdvisoryOnly =
-            !openingHardFail &&
+            !openingHardFailCorroborated &&
             (openingResized || openingBandMismatch || relocationDetected || violations.length > 0);
 
           if (openingClassMismatch) {
@@ -5932,7 +5945,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
           }
 
-          if (openingHardFail) {
+          if (openingHardFailCorroborated) {
             logger.warn({
               event: "SPATIAL_OPENING_VIOLATION",
               jobId: payload.jobId,
@@ -6048,6 +6061,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               reason: "opening_preservation",
             });
             continue;
+          } else if (openingHardFail && !corroborated) {
+            const advisoryReason = "stage2_direct_advisory: opening_preservation_uncorroborated";
+            if (Array.isArray(unifiedValidation?.warnings)) {
+              unifiedValidation.warnings.push(advisoryReason);
+            }
+            console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
+              jobId: payload.jobId,
+              reason: "opening_preservation_uncorroborated",
+              structuralDegree,
+              structuralMaskFailure,
+              geminiStructuredHighConfidence,
+            });
           } else if (openingAdvisoryOnly) {
             logger.info({
               event: "SPATIAL_OPENING_ADVISORY",
