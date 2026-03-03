@@ -204,6 +204,13 @@ type CompositeLocalEvaluation = {
   structDegMissing: boolean;
 };
 
+type Stage2StructuralDegreeMetric = {
+  valueDeg: number | null;
+  source: "line_edge_evidence" | "unified_drift_evidence" | "opencv_deviation_score" | "none";
+  available: boolean;
+  reasonIfUnavailable: string | null;
+};
+
 type StructuralTopologyCheckResult = {
   result: "PASS" | "FAIL";
   explanation: string;
@@ -319,6 +326,59 @@ function evaluateCompositeLocalValidator(metrics: CompositeLocalMetrics): Compos
     openingsChanged,
     reason,
     structDegMissing,
+  };
+}
+
+function resolveStage2StructuralDegree(unifiedValidation: any): Stage2StructuralDegreeMetric {
+  const rawLineEdge = unifiedValidation?.raw?.lineEdge?.details;
+  const lineVertical = rawLineEdge?.verticalDeviation;
+  const lineHorizontal = rawLineEdge?.horizontalDeviation;
+  const hasLineVertical = typeof lineVertical === "number" && Number.isFinite(lineVertical);
+  const hasLineHorizontal = typeof lineHorizontal === "number" && Number.isFinite(lineHorizontal);
+
+  if (hasLineVertical || hasLineHorizontal) {
+    const valueDeg = Math.max(
+      hasLineVertical ? Number(lineVertical) : 0,
+      hasLineHorizontal ? Number(lineHorizontal) : 0,
+    );
+    return {
+      valueDeg,
+      source: "line_edge_evidence",
+      available: true,
+      reasonIfUnavailable: null,
+    };
+  }
+
+  const unifiedDriftAngle =
+    unifiedValidation?.evidence?.drift?.angleDegrees ??
+    unifiedValidation?.evidence?.drift?.angleDeg;
+  if (typeof unifiedDriftAngle === "number" && Number.isFinite(unifiedDriftAngle)) {
+    return {
+      valueDeg: Number(unifiedDriftAngle),
+      source: "unified_drift_evidence",
+      available: true,
+      reasonIfUnavailable: null,
+    };
+  }
+
+  const opencvDeviationScore =
+    unifiedValidation?.raw?.structureValidator?.details?.deviationScore ??
+    unifiedValidation?.raw?.structure?.details?.deviationScore ??
+    unifiedValidation?.raw?.opencvStructure?.details?.deviationScore;
+  if (typeof opencvDeviationScore === "number" && Number.isFinite(opencvDeviationScore)) {
+    return {
+      valueDeg: Number(opencvDeviationScore),
+      source: "opencv_deviation_score",
+      available: true,
+      reasonIfUnavailable: null,
+    };
+  }
+
+  return {
+    valueDeg: null,
+    source: "none",
+    available: false,
+    reasonIfUnavailable: "no_structural_signal",
   };
 }
 
@@ -5189,6 +5249,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let stage2MaskedEdgeResult: Awaited<ReturnType<typeof runMaskedEdgeValidator>> | null = null;
       let compositeLocalEvaluation: CompositeLocalEvaluation | null = null;
       let compositeStructuralDeviationDeg: number | null = null;
+      let stage2StructuralDegreeMetric: Stage2StructuralDegreeMetric = {
+        valueDeg: null,
+        source: "none",
+        available: false,
+        reasonIfUnavailable: "not_computed",
+      };
       let compositeSemanticWallDriftPct = 0;
       let compositeSemanticOpeningsDeltaTotal = 0;
       let compositeMaskedDriftPct = 0;
@@ -5253,47 +5319,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
 
-      if (shouldRunCompositeLocalValidator) {
-        const rawTopologyResult = (unifiedValidation as any)?.raw?.lineEdge?.details;
-        const rawStructuralDeviationDeg =
-          (unifiedValidation as any)?.evidence?.drift?.angleDegrees ??
-          (unifiedValidation as any)?.evidence?.drift?.angleDeg;
-        const rawLineEdgeVerticalDeviation = rawTopologyResult?.verticalDeviation;
-        const rawLineEdgeHorizontalDeviation = rawTopologyResult?.horizontalDeviation;
-        const hasLineEdgeAngleEvidence =
-          (typeof rawLineEdgeVerticalDeviation === "number" && Number.isFinite(rawLineEdgeVerticalDeviation)) ||
-          (typeof rawLineEdgeHorizontalDeviation === "number" && Number.isFinite(rawLineEdgeHorizontalDeviation));
-        const derivedLineEdgeAngleDeg = hasLineEdgeAngleEvidence
-          ? Math.max(
-              typeof rawLineEdgeVerticalDeviation === "number" && Number.isFinite(rawLineEdgeVerticalDeviation)
-                ? rawLineEdgeVerticalDeviation
-                : 0,
-              typeof rawLineEdgeHorizontalDeviation === "number" && Number.isFinite(rawLineEdgeHorizontalDeviation)
-                ? rawLineEdgeHorizontalDeviation
-                : 0,
-            )
-          : null;
-        const structDeg =
-          typeof rawStructuralDeviationDeg === "number" && Number.isFinite(rawStructuralDeviationDeg)
-            ? Number(rawStructuralDeviationDeg)
-            : derivedLineEdgeAngleDeg;
-        compositeStructuralDeviationDeg =
-          typeof structDeg === "number" &&
-          Number.isFinite(structDeg) &&
-          (structDeg !== 0 || hasLineEdgeAngleEvidence)
-            ? Number(structDeg)
-            : null;
+      stage2StructuralDegreeMetric = resolveStage2StructuralDegree(unifiedValidation);
+      if (
+        stage2StructuralDegreeMetric.available &&
+        (typeof unifiedValidation?.evidence?.drift?.angleDegrees !== "number" ||
+          !Number.isFinite(unifiedValidation?.evidence?.drift?.angleDegrees))
+      ) {
+        (unifiedValidation as any).evidence = (unifiedValidation as any).evidence || {};
+        (unifiedValidation as any).evidence.drift = (unifiedValidation as any).evidence.drift || {};
+        (unifiedValidation as any).evidence.drift.angleDegrees = stage2StructuralDegreeMetric.valueDeg;
+      }
 
-        if (typeof structDeg !== "number" || !Number.isFinite(structDeg)) {
-          logger.error("STRUCT_DEG_MISSING", {
-            jobId: payload.jobId,
-            attempt,
-            rawTopologyResult,
-          });
-        }
+      logger.info("STRUCTURAL_DEGREE", {
+        jobId: payload.jobId,
+        stage: "2",
+        attempt,
+        available: stage2StructuralDegreeMetric.available,
+        valueDeg: stage2StructuralDegreeMetric.valueDeg,
+        source: stage2StructuralDegreeMetric.source,
+        unavailableReason: stage2StructuralDegreeMetric.reasonIfUnavailable,
+      });
+
+      if (shouldRunCompositeLocalValidator) {
+        compositeStructuralDeviationDeg = stage2StructuralDegreeMetric.available
+          ? stage2StructuralDegreeMetric.valueDeg
+          : null;
 
         nLog(
-          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} unifiedAngle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} source=lineEdge_evidence`
+          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} structuralDegreeSource=${stage2StructuralDegreeMetric.source} structuralDegreeAvailable=${stage2StructuralDegreeMetric.available}`
         );
 
         compositeSemanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
@@ -5316,23 +5369,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         };
 
         nLog(
-          `[COMPOSITE_INPUT_AUDIT] jobId=${payload.jobId} attempt=${attempt} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)} semanticWallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeSemanticOpeningsDeltaTotal !== 0 || compositeMaskedOpeningsDeltaTotal !== 0}`
+          `[COMPOSITE_INPUT_AUDIT] jobId=${payload.jobId} attempt=${attempt} maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)} semanticWallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeSemanticOpeningsDeltaTotal !== 0 || compositeMaskedOpeningsDeltaTotal !== 0}`
         );
-
-        if (compositeStructuralDeviationDeg === null) {
-          nLog(`[COMPOSITE_ERROR] structuralDeviationDeg missing`, {
-            jobId: payload.jobId,
-            attempt,
-            stage: "2",
-          });
-        }
 
         compositeLocalEvaluation = evaluateCompositeLocalValidator(compositeMetrics);
 
         if (compositeLocalEvaluation.failed) {
           const compositeReason =
             `composite_local_advisory: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh} metrics=` +
-            `angle=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(2)}deg,masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
+            `structAvailable=${stage2StructuralDegreeMetric.available},masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
             `wall=${compositeSemanticWallDriftPct.toFixed(2)}%`;
           stage2LocalReasons.push(compositeReason);
         }
@@ -5343,7 +5388,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attempt,
           mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
           failed: compositeLocalEvaluation.failed,
-          structuralDeviationDeg: compositeStructuralDeviationDeg,
+          structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
+          structuralDegreeSource: stage2StructuralDegreeMetric.source,
           maskedDriftPct: compositeMaskedDriftPct,
           semanticWallDriftPct: compositeSemanticWallDriftPct,
           semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
@@ -5357,7 +5403,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         nLog(
-          `[COMPOSITE_DECISION] jobId=${payload.jobId} structDeg=${compositeStructuralDeviationDeg === null ? "missing" : compositeStructuralDeviationDeg.toFixed(3)} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} decision=${compositeLocalEvaluation.failed ? "ADVISORY_SIGNAL" : "NO_SIGNAL"} reason=${compositeLocalEvaluation.reason}`
+          `[COMPOSITE_DECISION] jobId=${payload.jobId} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} decision=${compositeLocalEvaluation.failed ? "ADVISORY_SIGNAL" : "NO_SIGNAL"} reason=${compositeLocalEvaluation.reason}`
         );
       }
 
@@ -5456,7 +5502,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         break;
       }
 
-      const deviationScore = compositeStructuralDeviationDeg ?? 0;
+      const resolvedStructuralDeviationDeg = stage2StructuralDegreeMetric.available
+        ? stage2StructuralDegreeMetric.valueDeg
+        : null;
+      const deviationScore = resolvedStructuralDeviationDeg ?? 0;
       const catastrophicGeometry = Boolean(
         (unifiedValidation as any)?.raw?.structureValidator?.details?.catastrophicGeometry ??
         (unifiedValidation as any)?.raw?.structure?.details?.catastrophicGeometry ??
@@ -5473,13 +5522,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const compositeReason = compositeLocalEvaluation?.reason || "none";
       const compositeDecision = compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS";
 
-      const isExtremeDeviation = deviationScore >= 90;
+      const isExtremeDeviation = resolvedStructuralDeviationDeg !== null && deviationScore >= 90;
       const isExtremeDrift = maskedDriftPct >= 95 && semanticWallDriftPct >= 95;
       const stage2Tier: "EXTREME" | "GEMINI" =
         (catastrophicGeometry || isExtremeDeviation || isExtremeDrift) ? "EXTREME" : "GEMINI";
 
       nLog("[STAGE2_TIER_CLASSIFICATION]", {
-        deviationScore,
+        structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
+        structuralDegreeSource: stage2StructuralDegreeMetric.source,
         maskedDriftPct,
         semanticWallDriftPct,
         tier: stage2Tier,
@@ -5488,8 +5538,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[STAGE2_LOCAL_SIGNALS]", {
         jobId: payload.jobId,
         attempt,
-        deviationScore,
         catastrophicGeometry,
+        structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
+        structuralDegreeSource: stage2StructuralDegreeMetric.source,
         maskedDriftPct,
         semanticWallDriftPct,
         windowsBefore,
@@ -5504,7 +5555,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (stage2Tier === "EXTREME") {
         const failReasons = [
           "extreme_structural_violation",
-          `deviationScore=${deviationScore.toFixed(2)}`,
+          `structuralDegreeAvailable=${stage2StructuralDegreeMetric.available}`,
           `catastrophicGeometry=${catastrophicGeometry}`,
           `maskedDriftPct=${maskedDriftPct.toFixed(2)}`,
           `semanticWallDriftPct=${semanticWallDriftPct.toFixed(2)}`,
