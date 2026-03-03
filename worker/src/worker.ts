@@ -91,6 +91,7 @@ import { detectCurtainRail } from "./validators/curtainRailDetector";
 import {
   detectRelocation,
   extractStructuralBaseline,
+  shouldHardFailOpening,
   validateOpeningPreservation,
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
@@ -5916,6 +5917,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const openingResized = openingValidationResult.summary.openingResized === true;
           const openingClassMismatch = openingValidationResult.summary.openingClassMismatch === true;
           const openingBandMismatch = openingValidationResult.summary.openingBandMismatch === true;
+          const openingHardFail = shouldHardFailOpening(openingValidationResult.summary, {
+            relocationDetected,
+          });
+          const openingAdvisoryOnly =
+            !openingHardFail &&
+            (openingResized || openingBandMismatch || relocationDetected || violations.length > 0);
 
           if (openingClassMismatch) {
             logger.warn({
@@ -5925,7 +5932,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
           }
 
-          if (violations.length > 0 || openingResized || openingClassMismatch || openingBandMismatch || relocationDetected) {
+          if (openingHardFail) {
             logger.warn({
               event: "SPATIAL_OPENING_VIOLATION",
               jobId: payload.jobId,
@@ -6041,6 +6048,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               reason: "opening_preservation",
             });
             continue;
+          } else if (openingAdvisoryOnly) {
+            logger.info({
+              event: "SPATIAL_OPENING_ADVISORY",
+              jobId: payload.jobId,
+              attempt,
+              violations,
+              relocationDetected,
+              openingResized,
+              openingClassMismatch,
+              openingBandMismatch,
+              outOfFrameOpenings: openingValidationResult.summary.outOfFrameOpenings,
+              validation: openingValidationResult.summary,
+            });
+
+            nLog(
+              `[OPENING_VALIDATION_ADVISORY] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected} confidence=${openingValidationResult.summary.confidence}`
+            );
           }
 
           logger.info({

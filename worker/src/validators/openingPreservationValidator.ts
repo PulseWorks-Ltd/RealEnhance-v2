@@ -51,6 +51,8 @@ export type OpeningValidationResult = {
   detectedOpenings: StructuralOpening[];
 };
 
+export type OpeningValidationSummary = OpeningValidationResult["summary"];
+
 export type OpeningResult = {
   id: string;
   present: boolean;
@@ -639,6 +641,33 @@ ${JSON.stringify(baseline)}`;
   }
 
   return validated;
+}
+
+export function shouldHardFailOpening(
+  summary: OpeningValidationSummary,
+  opts?: {
+    relocationDetected?: boolean;
+    invariantStructuralDriftDetected?: boolean;
+  }
+): boolean {
+  if (summary.openingRemoved) return true;
+  if (summary.openingSealed) return true;
+  if (summary.openingRelocated) return true;
+  if (summary.openingClassMismatch) return true;
+  if (opts?.relocationDetected === true) return true;
+
+  const highConfidence = summary.confidence >= 0.9;
+  if (!highConfidence) return false;
+
+  const spatialSignals = [
+    summary.openingBandMismatch,
+    summary.openingResized,
+  ].filter(Boolean).length;
+
+  if (spatialSignals >= 2) return true;
+  if ((opts?.invariantStructuralDriftDetected === true) && spatialSignals >= 1) return true;
+
+  return false;
 }
 
 export function detectRelocation(
