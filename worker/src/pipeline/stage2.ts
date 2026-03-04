@@ -30,11 +30,11 @@ function getStage2Sampling(attempt: number) {
   }
   // Retry 1 (mild layout variation)
   if (attempt === 2) {
-    return { temperature: 0.36, topP: 0.90, topK: 40 };
+    return { temperature: 0.46, topP: 0.90, topK: 40 };
   }
   // Retry 2 (strong layout variation but still controlled)
   if (attempt === 3) {
-    return { temperature: 0.28, topP: 0.90, topK: 40 };
+    return { temperature: 0.52, topP: 0.90, topK: 40 };
   }
   // Default fallback (use stable)
   return { temperature: 0.40, topP: 0.90, topK: 40 };
