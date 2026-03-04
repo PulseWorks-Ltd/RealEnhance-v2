@@ -262,15 +262,8 @@ function applyDeclutterOpeningPolicy(signals: OpeningPolicySignals): { hardFail:
     return { hardFail: true, reasons: ["declutter_structural_mask_collapse"] };
   }
 
-  if (
-    openingDelta &&
-    (
-      signals.maskedDriftPct >= 60 ||
-      signals.semanticWallDriftPct >= 45 ||
-      signals.geminiStructuredHighConfidence
-    )
-  ) {
-    return { hardFail: true, reasons: ["declutter_opening_delta_corroborated"] };
+  if (openingDelta) {
+    return { hardFail: false, reasons: ["declutter_opening_delta_advisory"] };
   }
 
   return { hardFail: false, reasons: [] };
@@ -290,7 +283,7 @@ function applyEmptyOpeningPolicy(signals: OpeningPolicySignals): { hardFail: boo
   }
 
   if (openingDelta) {
-    return { hardFail: true, reasons: ["empty_opening_count_delta"] };
+    return { hardFail: false, reasons: ["empty_opening_count_delta_advisory"] };
   }
 
   if (signals.maskedDriftPct >= 45 && signals.structuralDegree >= 25) {
