@@ -1,5 +1,4 @@
 import { getGeminiClient } from "../ai/gemini";
-import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -23,21 +22,89 @@ import { buildStructuralRetryInjection, type StructuralFailureType } from "./str
 
 const logger = console;
 
-function getStage2Sampling(attempt: number) {
-  // Attempt 1 (stable)
-  if (attempt === 1) {
-    return { temperature: 0.30, topP: 0.90, topK: 40 };
+type Stage2RetryReason = "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown";
+
+type Stage2GenerationPlan = {
+  model: string;
+  temperature: number;
+  topP: number;
+  topK: number;
+  escalated: boolean;
+};
+
+function isStructuralRetryReason(reason: Stage2RetryReason): boolean {
+  return reason === "structural_violation" || reason === "opening_removed";
+}
+
+function resolveStage2Model(attempt: number, reason: Stage2RetryReason, previousModel?: string): string {
+  if (attempt <= 1) return "gemini-2.5-flash";
+  if (!isStructuralRetryReason(reason)) return previousModel || "gemini-2.5-flash";
+  if (attempt === 2) return "gemini-2.5-pro";
+  return "gemini-3-vision";
+}
+
+function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, previousTemperature?: number): number {
+  if (attempt <= 1) return 0.40;
+  if (!isStructuralRetryReason(reason)) return previousTemperature ?? 0.40;
+  if (attempt === 2) return 0.35;
+  return 0.30;
+}
+
+function resolveStage2GenerationPlan(opts: {
+  attempt: number;
+  retryReason: Stage2RetryReason;
+  previousPlan?: Stage2GenerationPlan | null;
+}): Stage2GenerationPlan {
+  const model = resolveStage2Model(opts.attempt, opts.retryReason, opts.previousPlan?.model);
+  const temperature = resolveStage2Temperature(opts.attempt, opts.retryReason, opts.previousPlan?.temperature);
+  const escalated = !!opts.previousPlan && model !== opts.previousPlan.model;
+  return {
+    model,
+    temperature,
+    topP: 0.90,
+    topK: 40,
+    escalated,
+  };
+}
+
+function resolveStage2GenerationPlanForAttempt(attempt: number, retryReason: Stage2RetryReason): Stage2GenerationPlan {
+  let plan: Stage2GenerationPlan | null = null;
+  const normalizedAttempt = Math.max(1, Math.floor(attempt));
+  for (let idx = 1; idx <= normalizedAttempt; idx += 1) {
+    plan = resolveStage2GenerationPlan({
+      attempt: idx,
+      retryReason: idx === 1 ? "initial" : retryReason,
+      previousPlan: plan,
+    });
   }
-  // Retry 1 (mild layout variation)
-  if (attempt === 2) {
-    return { temperature: 0.35, topP: 0.90, topK: 40 };
+  return plan as Stage2GenerationPlan;
+}
+
+function mapStructuralFailureTypeToRetryReason(failureType: StructuralFailureType | null): Stage2RetryReason {
+  if (!failureType) return "unknown";
+  if (failureType === "opening_removed" || failureType === "opening_infilled" || failureType === "opening_relocated") {
+    return "opening_removed";
   }
-  // Retry 2 (strong layout variation but still controlled)
-  if (attempt === 3) {
-    return { temperature: 0.40, topP: 0.90, topK: 40 };
+  return "structural_violation";
+}
+
+function deriveRetryReasonFromSignals(signals: string[]): Stage2RetryReason {
+  const blob = (signals || []).join(" ").toLowerCase();
+  if (!blob.trim()) return "unknown";
+
+  if (/(opening_removed|opening removed|opening_infilled|opening infilled|door|window|closet|walk[\s_-]?through|opening)/i.test(blob)) {
+    return "opening_removed";
   }
-  // Default fallback (use stable)
-  return { temperature: 0.30, topP: 0.90, topK: 40 };
+
+  if (/(lighting|style|styling|decor|furniture|layout preference|color mismatch|brightness)/i.test(blob)) {
+    return "cosmetic";
+  }
+
+  if (/(structural|structure|wall|iou|mask|invariant|topology|drift|distortion|orientation|opencv)/i.test(blob)) {
+    return "structural_violation";
+  }
+
+  return "unknown";
 }
 
 // Stage 2: virtual staging (add furnitur)
@@ -169,6 +236,26 @@ export async function runStage2GenerationAttempt(
     textPrompt = `${textPrompt}\n\n${opts.structuralConstraintBlock}`;
   }
 
+  const attemptNumber = Math.max(1, opts.attempt ?? 1);
+  const retryReason: Stage2RetryReason = attemptNumber > 1
+    ? (structuralRetryContext
+        ? mapStructuralFailureTypeToRetryReason(structuralRetryContext.failureType)
+        : "unknown")
+    : "initial";
+
+  const generationPlan = resolveStage2GenerationPlanForAttempt(attemptNumber, retryReason);
+
+  if (attemptNumber >= 3) {
+    textPrompt += `
+
+The previous attempt removed or altered an architectural opening.
+
+Ensure all windows, doors, closet doors, wardrobe doors, and walk-through openings remain visible and structurally intact.
+
+Do NOT place furniture, walls, mirrors, artwork, or cabinets over these openings.
+`;
+  }
+
   const railLikely = opts.curtainRailLikely;
   if (railLikely === false) {
     textPrompt += `
@@ -205,33 +292,20 @@ Do not add blinds, rods, tracks, or new window coverings.
   if (styleDirective) requestParts.push({ text: styleDirective });
   requestParts.push({ text: textPrompt });
 
-  const sampling = getStage2Sampling(opts.attempt ?? 1);
-  logger.info("[STAGE2_SAMPLING]", { jobId: opts.jobId, attempt: opts.attempt ?? 1, sampling });
+  logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
   const generationConfig: any = {
-    ...sampling,
+    temperature: generationPlan.temperature,
+    topP: generationPlan.topP,
+    topK: generationPlan.topK,
     ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
     ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
   };
 
   const ai = getGeminiClient();
-  const { resp } = await runWithPrimaryThenFallback({
-    stageLabel: "2",
-    ai: ai as any,
-    baseRequest: {
-      contents: requestParts,
-      generationConfig,
-    } as any,
-    context: "stage2",
-    meta: {
-      stage: "2",
-      jobId: opts.jobId,
-      filename: path.basename(inputForStage2 || ""),
-      roomType: opts.roomType,
-      reason: opts.modelReason
-        || (opts.roomType ? `${opts.roomType} → stage2` : "stage2"),
-      selectedModel: MODEL_CONFIG.stage2.primary,
-      fallbackModel: MODEL_CONFIG.stage2.fallback,
-    },
+  const resp = await (ai as any).models.generateContent({
+    model: generationPlan.model,
+    contents: requestParts,
+    generationConfig,
   });
 
   const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
@@ -449,6 +523,9 @@ export async function runStage2(
     return siblingOutPath(basePath, suffix, ".webp");
   };
 
+  let retryReasonForNextAttempt: Stage2RetryReason = "initial";
+  let previousGenerationPlan: Stage2GenerationPlan | null = null;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     needsRetry = false;
     validationRisk = false;
@@ -497,6 +574,8 @@ export async function runStage2(
     const { data, mime } = toBase64(inputForStage2);
     const profile = opts.profile;
     const useTest = process.env.USE_TEST_PROMPTS === "1";
+    const attemptNumber = attempt + 1;
+    const retryReasonForThisAttempt: Stage2RetryReason = attemptNumber === 1 ? "initial" : retryReasonForNextAttempt;
     // Log incoming staging style from options (before prompt assembly)
     const stagingStyleRaw: any = (opts as any)?.stagingStyle;
     focusLog("PROMPT", "[stage2] incoming stagingStyle =", stagingStyleRaw);
@@ -531,6 +610,26 @@ export async function runStage2(
     }
 
     console.log(`[STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=${opts.jobId}`);
+
+    const generationPlan = resolveStage2GenerationPlan({
+      attempt: attemptNumber,
+      retryReason: retryReasonForThisAttempt,
+      previousPlan: previousGenerationPlan,
+    });
+    previousGenerationPlan = generationPlan;
+
+    logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReasonForThisAttempt}`);
+
+    if (attemptNumber >= 3) {
+      textPrompt += `
+
+The previous attempt removed or altered an architectural opening.
+
+Ensure all windows, doors, closet doors, wardrobe doors, and walk-through openings remain visible and structurally intact.
+
+Do NOT place furniture, walls, mirrors, artwork, or cabinets over these openings.
+`;
+    }
 
     focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
     const railLikely = opts.curtainRailLikely;
@@ -590,38 +689,19 @@ Do not add blinds, rods, tracks, or new window coverings.
       ai = getGeminiClient();
       if (!ai) throw new Error("getGeminiClient returned null/undefined");
       const apiStartTime = Date.now();
-      const sampling = getStage2Sampling(attempt + 1);
-      logger.info("[STAGE2_SAMPLING]", { jobId, attempt: attempt + 1, sampling });
       const generationConfig: any = {
-        ...sampling,
+        temperature: generationPlan.temperature,
+        topP: generationPlan.topP,
+        topK: generationPlan.topK,
         ...(profile?.seed !== undefined ? { seed: profile.seed } : {}),
       };
-      // ✅ Stage 2 uses Gemini 3 → fallback to 2.5 on failure
-      const { resp, modelUsed } = await runWithPrimaryThenFallback({
-        stageLabel: "2",
-        ai: ai as any,
-        baseRequest: {
-          contents: requestParts,
-          generationConfig,
-        } as any,
-        context: "stage2",
-        meta: {
-          stage: "2",
-          jobId,
-          filename: path.basename(inputForStage2 || ""),
-          roomType: opts.roomType,
-          reason: ((): string => {
-            if (stagingStyleNorm && stagingStyleNorm !== "none") {
-              return `${opts.roomType || "unknown"} → ${stagingStyleNorm}`;
-            }
-            return opts.roomType ? `${opts.roomType} → stage2` : "stage2";
-          })(),
-          selectedModel: MODEL_CONFIG.stage2.primary,
-          fallbackModel: MODEL_CONFIG.stage2.fallback,
-        },
+      const resp = await (ai as any).models.generateContent({
+        model: generationPlan.model,
+        contents: requestParts,
+        generationConfig,
       });
       const apiElapsed = Date.now() - apiStartTime;
-      focusLog("PIPELINE_VERBOSE", `[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${modelUsed})`);
+      focusLog("PIPELINE_VERBOSE", `[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${generationPlan.model})`);
       const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
       focusLog("PIPELINE_VERBOSE", `[stage2] 📊 Response parts: ${responseParts.length}`);
       const img = responseParts.find(p => p.inlineData);
@@ -683,6 +763,9 @@ Do not add blinds, rods, tracks, or new window coverings.
               currentTightenLevel = getTightenLevelFromAttempt(attempt + 1);
               needsRetry = true;
               retryCount++;
+              retryReasonForNextAttempt = deriveRetryReasonFromSignals(
+                validationResult.triggers.map((t) => `${t.id}:${t.message || ""}`)
+              );
               if (opts.onStrictRetry) {
                 opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
               }
@@ -732,6 +815,7 @@ Do not add blinds, rods, tracks, or new window coverings.
         if (validatorFailed && allowRetries && attempt + 1 < maxAttempts) {
           needsRetry = true;
           retryCount++;
+          retryReasonForNextAttempt = deriveRetryReasonFromSignals(localReasons);
           continue;
         } else if (validatorFailed && !allowRetries) {
           console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
