@@ -723,6 +723,10 @@ export async function runUnifiedValidation(
         lightingChanged: anchorResult.lightingChanged,
       };
 
+      const stage2AnchorViolation =
+        stage === "2" &&
+        (islandChangedForDecision || anchorResult.hvacChanged || anchorResult.cabinetryChanged || anchorResult.lightingChanged);
+
       // Add anchor flags to localFlags for logging
       if (anchorResult.islandChanged) evidence.localFlags.push("anchor:island_changed");
       if (anchorResult.hvacChanged) evidence.localFlags.push("anchor:hvac_changed");
@@ -731,10 +735,14 @@ export async function runUnifiedValidation(
 
       results.anchors = {
         name: "anchors",
-        passed: !islandChangedForDecision && !anchorResult.hvacChanged &&
-                !anchorResult.cabinetryChanged && !anchorResult.lightingChanged,
-        score: (islandChangedForDecision || anchorResult.hvacChanged ||
-                anchorResult.cabinetryChanged || anchorResult.lightingChanged) ? 0.0 : 1.0,
+        passed: stage2AnchorViolation
+          ? true
+          : (!islandChangedForDecision && !anchorResult.hvacChanged &&
+             !anchorResult.cabinetryChanged && !anchorResult.lightingChanged),
+        score: stage2AnchorViolation
+          ? 1.0
+          : ((islandChangedForDecision || anchorResult.hvacChanged ||
+              anchorResult.cabinetryChanged || anchorResult.lightingChanged) ? 0.0 : 1.0),
         message: evidence.localFlags.filter(f => f.startsWith("anchor:")).join(", ") || "All anchors intact",
         details: anchorResult,
       };
@@ -816,13 +824,20 @@ export async function runUnifiedValidation(
       }
 
       if (stage === "2") {
+        if (stage2AnchorViolation) {
+          forceGemini = true;
+        }
         if (anchorResult.hvacChanged) {
-          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_hvac_changed");
-          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_hvac_changed" });
+          stage2AnchorDirectReasons.push("stage2_direct_advisory: anchor_hvac_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 0.5, reasonCode: "anchor_hvac_changed" });
         }
         if (anchorResult.cabinetryChanged) {
-          stage2AnchorDirectReasons.push("stage2_direct_hardfail: anchor_cabinetry_changed");
-          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 1, reasonCode: "anchor_cabinetry_changed" });
+          stage2AnchorDirectReasons.push("stage2_direct_advisory: anchor_cabinetry_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 0.5, reasonCode: "anchor_cabinetry_changed" });
+        }
+        if (islandChangedForDecision) {
+          stage2AnchorDirectReasons.push("stage2_direct_advisory: anchor_island_changed");
+          stage2AnchorDirectEvents.push({ source: "anchor", confidence: 0.5, reasonCode: "anchor_island_changed" });
         }
         stage2LightingAnchorChanged = anchorResult.lightingChanged;
       }
@@ -1135,10 +1150,11 @@ export async function runUnifiedValidation(
   }
 
   // ===== STAGE2 DIRECT STRUCTURAL CHECKS =====
-  // Hard-fail specific critical categories regardless of log/enforce mode.
+  // Stage 2 direct gate is advisory-only for anchor/fixture/floor signals.
+  // Extreme structural auto-fail remains enforced in worker.ts tier gate.
   let stage2DirectHardFail = false;
   if (stage === "2") {
-    const directReasons = [...stage2AnchorDirectReasons];
+    const directAdvisories = [...stage2AnchorDirectReasons];
     const directEvents: Array<{ source: "anchor" | "fixture" | "floor"; confidence: number; reasonCode: string }> = [
       ...stage2AnchorDirectEvents,
     ];
@@ -1178,10 +1194,10 @@ export async function runUnifiedValidation(
       geminiStructuredHardSignal;
 
     if (hasCriticalFixtureViolation) {
-      directReasons.push(`stage2_direct_hardfail: ${violationType} confidence=${geminiConfidence.toFixed(3)}`);
+      directAdvisories.push(`stage2_direct_advisory: ${violationType} confidence=${geminiConfidence.toFixed(3)}`);
       directEvents.push({
         source: "fixture",
-        confidence: geminiConfidence,
+        confidence: 0.5,
         reasonCode: String(violationType || "fixture_change"),
       });
     }
@@ -1192,46 +1208,35 @@ export async function runUnifiedValidation(
       localStructuralReason.startsWith("floor_");
 
     if (floorCoveringMaterialChanged) {
-      directReasons.push("stage2_direct_hardfail: floor_covering_material_changed");
+      directAdvisories.push("stage2_direct_advisory: floor_covering_material_changed");
       directEvents.push({
         source: "floor",
-        confidence: 1,
+        confidence: 0.5,
         reasonCode: localStructuralReason || "floor_material_changed",
       });
     }
 
     if (stage2LightingAnchorChanged) {
-      const lightingCorroborated =
-        structuralDegree > 0 ||
-        geminiStructuredConfidence >= 0.9 ||
-        openingViolationDetected;
-
-      if (lightingCorroborated) {
-        directReasons.push("stage2_direct_hardfail: anchor_fixed_lighting_changed");
-        directEvents.push({
-          source: "anchor",
-          confidence: 1,
-          reasonCode: "anchor_fixed_lighting_changed",
-        });
-      } else {
-        const advisoryReason =
-          "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated";
-        warnings.push(advisoryReason);
-        evidence.localFlags.push("anchor:lighting_advisory_uncorroborated");
-        console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
-          source: "anchor",
-          reasonCode: "anchor_fixed_lighting_changed",
-          corroborated: false,
-          structuralDegree,
-          geminiStructuredConfidence,
-          openingViolationDetected,
-        });
-      }
+      directAdvisories.push("stage2_direct_advisory: anchor_fixed_lighting_changed");
+      directEvents.push({
+        source: "anchor",
+        confidence: 0.5,
+        reasonCode: "anchor_fixed_lighting_changed",
+      });
+      warnings.push("stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated");
+      evidence.localFlags.push("anchor:lighting_advisory_uncorroborated");
+      console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
+        source: "anchor",
+        reasonCode: "anchor_fixed_lighting_changed",
+        corroborated: false,
+        structuralDegree,
+        geminiStructuredConfidence,
+        openingViolationDetected,
+      });
     }
 
-    if (directReasons.length > 0) {
-      stage2DirectHardFail = true;
-      reasons.push(...directReasons);
+    if (directAdvisories.length > 0) {
+      warnings.push(...directAdvisories);
       directEvents.forEach((event) => {
         console.log("[STAGE2_DIRECT_GATE]", {
           source: event.source,
@@ -1239,7 +1244,7 @@ export async function runUnifiedValidation(
           reasonCode: event.reasonCode,
         });
       });
-      nLog(`[STAGE2_DIRECT_STRUCTURAL_CHECK] hardFail=true reasons=${directReasons.join(" | ")}`);
+      nLog(`[STAGE2_DIRECT_STRUCTURAL_CHECK] hardFail=false reasons=${directAdvisories.join(" | ")}`);
     }
   }
 

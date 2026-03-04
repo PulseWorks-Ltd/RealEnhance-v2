@@ -1,0 +1,160 @@
+{
+  "source_log": "logs.1772583786333.log",
+  "job_count": 2,
+  "jobs": {
+    "job_bac5f1a7-1490-40a9-b66a-cae344418523": {
+      "attempts_per_job": {
+        "stage1B": 1,
+        "stage2": 3,
+        "total": 4
+      },
+      "retry_counts": {
+        "stage1B": 0,
+        "stage2": 2,
+        "stage2_from_validate_final": 2
+      },
+      "images": [
+        {
+          "stage": "1B",
+          "attempt": 1,
+          "path": "/tmp/realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B.webp",
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583366824-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B.webp",
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583369008-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B.webp",
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583569994-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B.webp"
+          ],
+          "blocking_validator": "LOCAL_VALIDATE status=pass",
+          "failure_reasons": [
+            "[]"
+          ],
+          "masked_drift_pct": null,
+          "wall_drift_pct": null,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "accept",
+          "direct_hardfail_source": null
+        },
+        {
+          "stage": "2",
+          "attempt": 1,
+          "path": "/tmp/realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B-2.webp",
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583379346-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B-2.webp"
+          ],
+          "blocking_validator": "LOCAL_VALIDATE status=needs_confirm",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.243 < 0.97",
+            "stage2_direct_hardfail: anchor_hvac_changed",
+            "semantic_validator_failed: windows 1\u21922, doors 1\u21920, wall_drift 49.08%, openings +0/-0",
+            "masked_edge_failed: drift 89.20%, openings +0/-1"
+          ],
+          "masked_drift_pct": 89.2,
+          "wall_drift_pct": 49.08,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "unknown",
+          "direct_hardfail_source": "anchor_hvac_changed"
+        },
+        {
+          "stage": "2",
+          "attempt": 2,
+          "path": null,
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583439979-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B-2-retry1.webp"
+          ],
+          "blocking_validator": "LOCAL_VALIDATE status=needs_confirm",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.165 < 0.97",
+            "stage2_direct_hardfail: anchor_hvac_changed",
+            "semantic_validator_failed: windows 1\u21922, doors 1\u21920, wall_drift 66.84%, openings +0/-1",
+            "masked_edge_failed: drift 87.04%, openings +0/-1"
+          ],
+          "masked_drift_pct": 87.04,
+          "wall_drift_pct": 66.84,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "accept",
+          "direct_hardfail_source": "anchor_hvac_changed"
+        },
+        {
+          "stage": "2",
+          "attempt": 3,
+          "path": null,
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583507383-realenhance-job_bac5f1a7-1490-40a9-b66a-cae344418523-1772583329056-e2loht1nlq7-canonical-1A-1B-2-retry2.webp"
+          ],
+          "blocking_validator": "LOCAL_VALIDATE status=needs_confirm",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.363 < 0.97",
+            "stage2_direct_hardfail: anchor_hvac_changed",
+            "semantic_validator_failed: windows 1\u21922, doors 1\u21920, wall_drift 67.31%, openings +0/-1",
+            "masked_edge_failed: drift 92.80%, openings +0/-1"
+          ],
+          "masked_drift_pct": 92.8,
+          "wall_drift_pct": 67.31,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "fallback",
+          "direct_hardfail_source": "anchor_hvac_changed"
+        }
+      ]
+    },
+    "job_c376434a-db60-421a-9c77-b9a81219d759": {
+      "attempts_per_job": {
+        "stage1B": 1,
+        "stage2": 1,
+        "total": 2
+      },
+      "retry_counts": {
+        "stage1B": 0,
+        "stage2": 0,
+        "stage2_from_validate_final": 0
+      },
+      "images": [
+        {
+          "stage": "1B",
+          "attempt": 1,
+          "path": "/tmp/realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B.webp",
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583371680-realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B.webp",
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583373773-realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B.webp",
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583464152-realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B.webp"
+          ],
+          "blocking_validator": "n/a",
+          "failure_reasons": [
+            "none logged"
+          ],
+          "masked_drift_pct": null,
+          "wall_drift_pct": null,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        },
+        {
+          "stage": "2",
+          "attempt": 1,
+          "path": "/tmp/realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B-2.webp",
+          "image_urls": [
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583384344-realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B-2.webp",
+            "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772583462842-realenhance-job_c376434a-db60-421a-9c77-b9a81219d759-1772583328092-g8hhxty6mcr-canonical-1A-1B-2.webp"
+          ],
+          "blocking_validator": "LOCAL_VALIDATE status=needs_confirm",
+          "failure_reasons": [
+            "All changes are limited to freestanding furniture and decor items, including the sofa, armchair, TV console, coffee table, and rugs.",
+            "No structural elements such as walls, openings (windows/doors), ceiling, or floor have been altered.",
+            "Built-in fixtures like the wall-mounted TV and air conditioning unit remain in their original positions and dimensions.",
+            "The camera viewpoint, field of view, and perspective are identical between BEFORE and AFTER images.",
+            "masked_edge_failed: drift 23.05%, openings +0/-0"
+          ],
+          "masked_drift_pct": 23.05,
+          "wall_drift_pct": null,
+          "deviation": null,
+          "structural_degree": null,
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        }
+      ]
+    }
+  }
+}
