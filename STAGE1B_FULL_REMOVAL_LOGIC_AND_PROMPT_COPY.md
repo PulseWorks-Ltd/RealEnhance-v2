@@ -314,9 +314,16 @@ If uncertain which item is dominant:
 → Keep the item most central to the room’s primary function.
 → Remove all other movable items.
 
-FUNCTIONAL ANCHOR LIMIT — STRICT
+ANCHOR SELECTION GOAL
 
-Only ONE movable anchor item per zone may remain.
+Strive to preserve a single dominant movable anchor item per zone.
+
+However:
+If removal of additional movable items risks structural instability,
+minor residual furniture may remain.
+
+Declutter completeness is secondary to structural integrity.
+Residual movable items are acceptable if structural safety is preserved.
 
 Do NOT preserve multiple similar furniture pieces.
 Do NOT preserve secondary seating.
@@ -330,7 +337,6 @@ If constraints conflict, prioritize preserving the original image geometry exact
 Never reinterpret, simplify, or regenerate the room layout to resolve ambiguity.
 
 SAFETY FAIL RULES:
-Any movable items remain → FAIL
 
 OUTPUT:
 Return only the empty room image.
