@@ -15,6 +15,7 @@ import { validateStage } from "../ai/unified-validator";
 import { runLowQualityDetector } from "../ai/qualityDetector";
 import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 import { logIfNotFocusMode } from "../logger";
+import { logImageAttemptUrl } from "../utils/debugImageUrls";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -137,7 +138,7 @@ async function enhanceWithGeminiStage1A(
     nzTopK = 40;
   }
 
-  return await enhanceWithGemini(sharpPath, {
+  const geminiPath = await enhanceWithGemini(sharpPath, {
     replaceSky: replaceSky,
     declutter: false,
     sceneType: sceneType,
@@ -153,6 +154,15 @@ async function enhanceWithGeminiStage1A(
     hardscapeClean: sceneType === "exterior",
     ...(jobSampling || {}),
   });
+
+  await logImageAttemptUrl({
+    stage: "1A",
+    attempt: 1,
+    jobId,
+    localPath: geminiPath,
+  });
+
+  return geminiPath;
 }
 
 /**
@@ -331,6 +341,13 @@ export async function runStage1A(
     })
     .toFile(sharpOutputPath);
 
+  await logImageAttemptUrl({
+    stage: "1A",
+    attempt: 1,
+    jobId: jobIdResolved,
+    localPath: sharpOutputPath,
+  });
+
   if (artifactsPromise) {
     try {
       const artifacts = await artifactsPromise;
@@ -394,6 +411,12 @@ export async function runStage1A(
       const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
       // AUDIT FIX: routed through applyTransformation for safe cleanup
       await applyTransformation(stabilityJpeg, stabilityWebp, s => s.webp({ quality: 95 }), jobIdResolved);
+      await logImageAttemptUrl({
+        stage: "1A",
+        attempt: 1,
+        jobId: jobIdResolved,
+        localPath: stabilityWebp,
+      });
       primary1AImage = stabilityWebp;
     } catch (err) {
       logIfNotFocusMode("[stage1A] ❌ Stability API failed:", err);
@@ -421,6 +444,12 @@ export async function runStage1A(
 
         const fs = await import("fs/promises");
         await fs.rename(geminiImage, finalOutputPath);
+        await logImageAttemptUrl({
+          stage: "1A",
+          attempt: 1,
+          jobId: jobIdResolved,
+          localPath: finalOutputPath,
+        });
         logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
         return finalOutputPath;
 
@@ -428,6 +457,12 @@ export async function runStage1A(
         logIfNotFocusMode("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only");
         const fs = await import("fs/promises");
         await fs.rename(sharpOutputPath, finalOutputPath);
+        await logImageAttemptUrl({
+          stage: "1A",
+          attempt: 1,
+          jobId: jobIdResolved,
+          localPath: finalOutputPath,
+        });
         logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
         return finalOutputPath;
       }
@@ -441,6 +476,12 @@ export async function runStage1A(
 
     const fs = await import("fs/promises");
     await fs.rename(primary1AImage, finalOutputPath);
+    await logImageAttemptUrl({
+      stage: "1A",
+      attempt: 1,
+      jobId: jobIdResolved,
+      localPath: finalOutputPath,
+    });
     logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
     return finalOutputPath;
   }
@@ -463,6 +504,12 @@ export async function runStage1A(
 
       const fs = await import("fs/promises");
       await fs.rename(geminiOutputPath, finalOutputPath);
+      await logImageAttemptUrl({
+        stage: "1A",
+        attempt: 1,
+        jobId: jobIdResolved,
+        localPath: finalOutputPath,
+      });
       logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
       return finalOutputPath;
     }
@@ -475,6 +522,12 @@ export async function runStage1A(
   logIfNotFocusMode("[stage1A] ℹ️ Using Sharp enhancement only (all AI failed)");
   const fs = await import("fs/promises");
   await fs.rename(sharpOutputPath, finalOutputPath);
+  await logImageAttemptUrl({
+    stage: "1A",
+    attempt: 1,
+    jobId: jobIdResolved,
+    localPath: finalOutputPath,
+  });
   logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
   return finalOutputPath;
 }

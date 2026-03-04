@@ -19,6 +19,7 @@ import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
+import { logImageAttemptUrl } from "../utils/debugImageUrls";
 
 const logger = console;
 
@@ -182,6 +183,12 @@ export async function runStage2GenerationAttempt(
         .toBuffer();
       const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
       await sharp(guided).toFile(guidedPath);
+      await logImageAttemptUrl({
+        stage: "2",
+        attempt: Math.max(1, opts.attempt ?? 1),
+        jobId: opts.jobId,
+        localPath: guidedPath,
+      });
       inputForStage2 = guidedPath;
     } catch (e) {
       focusLog("TEMP_FILE", "[stage2] Failed to build guided staging input; proceeding with original base image", e);
@@ -314,6 +321,13 @@ Do not add blinds, rods, tracks, or new window coverings.
     throw new Error("No image data in Gemini response");
   }
   writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${img.inlineData.data}`);
+  await logImageAttemptUrl({
+    stage: "2",
+    attempt: attemptNumber,
+    jobId: opts.jobId,
+    localPath: opts.outputPath,
+  });
+  logger.info(`[STAGE2_OUTPUT_PATH] job_id=${opts.jobId} attempt=${attemptNumber} path=${opts.outputPath}`);
   return opts.outputPath;
 }
 
@@ -562,6 +576,12 @@ export async function runStage2(
           .toBuffer();
         const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
         await sharp(guided).toFile(guidedPath);
+        await logImageAttemptUrl({
+          stage: "2",
+          attempt: attempt + 1,
+          jobId,
+          localPath: guidedPath,
+        });
         inputForStage2 = guidedPath;
         if (dbg) focusLog("TEMP_FILE", `[stage2] Built guided input for staging region: ${guidedPath}`);
       } catch (e) {
@@ -723,7 +743,14 @@ Do not add blinds, rods, tracks, or new window coverings.
         console.log(`[RETRY_OUTPUT] stage=2 attempt=${attempt} path=${candidatePath}`);
       }
       writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
+      await logImageAttemptUrl({
+        stage: "2",
+        attempt: attemptNumber,
+        jobId,
+        localPath: candidatePath,
+      });
       out = candidatePath;
+      logger.info(`[STAGE2_OUTPUT_PATH] job_id=${jobId} attempt=${attemptNumber} path=${candidatePath}`);
       focusLog("TEMP_FILE", `[stage2] 💾 Saved staged image to: ${candidatePath}`);
 
       // Run validators after Stage 2

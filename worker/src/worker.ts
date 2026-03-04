@@ -47,6 +47,7 @@ import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage } from "./utils/publish";
+import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
@@ -73,7 +74,7 @@ import {
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
-const SIGN_ALL_STAGE_OUTPUTS_ENABLED = process.env.SIGN_ALL_STAGE_OUTPUTS === "1";
+const SIGN_ALL_STAGE_OUTPUTS_ENABLED = isDebugImageUrlLoggingEnabled();
 const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
   1,
   Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
@@ -2629,6 +2630,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stageOutputSigningCache.has(localPath)) {
       const cached = stageOutputSigningCache.get(localPath)!;
       annotateAttemptSignedUrl(stage, attempt, cached);
+      console.log(
+        `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${cached.signedUrl || ""}`
+      );
       logStructured("STAGE_OUTPUT_SIGNED", {
         jobId: payload.jobId,
         stage,
@@ -2639,27 +2643,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return cached;
     }
 
-    const published = await publishImage(localPath);
-    logger.info("[PUBLISH] URL:", {
-      jobId: payload.jobId,
-      attempt,
-      url: published.url || null,
-    });
-    const imageKey = published.key || null;
-    let signedUrl: string | null = null;
+    const signed = await createDebugSignedUrl(localPath, payload.jobId);
+    const imageKey = signed.key;
+    const signedUrl = signed.signedUrl;
 
-    if (published.kind === "s3" && imageKey && process.env.S3_BUCKET) {
-      signedUrl = await signS3Object({
-        bucket: process.env.S3_BUCKET,
-        key: imageKey,
-        expiresIn: STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS,
-      });
-    }
+    console.log(
+      `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
+    );
 
     const snapshot = {
       signedUrl,
       imageKey,
-      publishedUrl: published.url || null,
+      publishedUrl: signedUrl,
     };
     stageOutputSigningCache.set(localPath, snapshot);
     annotateAttemptSignedUrl(stage, attempt, snapshot);
@@ -2670,7 +2665,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stage2Match) {
       stage2Match.signedUrl = signedUrl || undefined;
       stage2Match.imageKey = imageKey || undefined;
-      stage2Match.publishedUrl = stage2Match.publishedUrl || published.url;
+      stage2Match.publishedUrl = stage2Match.publishedUrl || signedUrl || undefined;
     }
 
     logStructured("STAGE_OUTPUT_SIGNED", {
@@ -5909,6 +5904,53 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${attempt}/${MAX_STAGE2_RETRIES}) ═══════════`);
 
+      try {
+        await logBaselineImageUrl({
+          stage: "2",
+          jobId: payload.jobId,
+          localPath: validationBasePath,
+        });
+      } catch (baselineSignErr: any) {
+        nLog("[BASELINE_IMAGE_URL] sign failed", {
+          jobId: payload.jobId,
+          stage: "2",
+          error: baselineSignErr?.message || String(baselineSignErr),
+        });
+      }
+
+      nLog(`[VALIDATOR_INPUT] stage=2 attempt=${attempt} base=${validationBasePath} candidate=${path2}`);
+
+      if (path2 === validationBasePath) {
+        console.warn("[STAGE2_ERROR] Candidate equals baseline — Stage-2 output missing", {
+          jobId: payload.jobId,
+          attempt,
+          base: validationBasePath,
+          candidate: path2,
+        });
+        stage2LocalReasons.push("stage2_candidate_equals_baseline");
+        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+        pendingStage2RetryStrategy = "NORMAL";
+        pendingStage2RetryReason = "opening_preservation";
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          nLog(`[STAGE2_RETRY] reason=stage2_candidate_equals_baseline next_attempt=${attempt + 1}`);
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = "stage2_candidate_equals_baseline";
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=stage2_candidate_equals_baseline`);
+        break;
+      }
+
       effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
       const stage2GeminiPolicy: "never" | "on_local_fail" = VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail";
       nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
@@ -7942,6 +7984,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
+    if (stage2CandidatePath === path1A) {
+      nLog("[STAGE2_PUBLISH_GUARD] Stage-2 candidate equals Stage-1A; suppressing Stage-2 publish and forcing fallback", {
+        jobId: payload.jobId,
+        candidate: stage2CandidatePath,
+        stage1A: path1A,
+      });
+      stage2Blocked = true;
+      stage2FallbackStage = path1B ? "1B" : "1A";
+      stage2BlockedReason = "stage2_candidate_equals_stage1a";
+      fallbackUsed = path1B ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+    }
+
+    if (stage2Blocked) {
+      nLog("[STAGE2_PUBLISH_GUARD] Skipping Stage-2 publish due to guarded fallback", {
+        jobId: payload.jobId,
+        reason: stage2BlockedReason,
+      });
+    } else {
     if (!(await ensureStage2AttemptOwner("stage2_publish_gate"))) return;
     // ═══ FINAL STATUS GUARD ═══
     const latestJob = await getJob(payload.jobId);
@@ -8019,6 +8079,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (e) {
         nLog('[worker] failed to publish Stage 2', e);
       }
+    }
     }
   }
 

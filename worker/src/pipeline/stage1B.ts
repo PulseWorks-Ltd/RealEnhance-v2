@@ -7,6 +7,7 @@ import { validateStage1BStructural } from "../validators/stage1BValidator";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { logIfNotFocusMode } from "../logger";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
+import { logImageAttemptUrl } from "../utils/debugImageUrls";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -39,6 +40,7 @@ export async function runStage1B(
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
+  const attemptForLogs = attemptIndex + 1;
   let resolvedAttemptIndex = attemptIndex;
   let suffix = resolvedAttemptIndex > 0 ? `-1B-retry${resolvedAttemptIndex}` : "-1B";
   let outputPath = siblingOutPath(stage1APath, suffix, ".webp");
@@ -214,6 +216,12 @@ If there is any ambiguity, leave the area unchanged.
     
     // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
+      await logImageAttemptUrl({
+        stage: "1B",
+        attempt: attemptForLogs,
+        jobId,
+        localPath: outputPath,
+      });
       const { validateStageOutput } = await import("../validators/index.js");
       logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__canonicalPath" });
       const canonicalPath: string | undefined = options.canonicalPath || undefined;
@@ -249,6 +257,12 @@ If there is any ambiguity, leave the area unchanged.
     const out = outputPath;
     // AUDIT FIX: routed through applyTransformation for safe cleanup
     await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
+    await logImageAttemptUrl({
+      stage: "1B",
+      attempt: attemptForLogs,
+      jobId,
+      localPath: out,
+    });
     logIfNotFocusMode(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
     return out;
     
@@ -258,6 +272,12 @@ If there is any ambiguity, leave the area unchanged.
     const out = outputPath;
     // AUDIT FIX: routed through applyTransformation for safe cleanup
     await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
+    await logImageAttemptUrl({
+      stage: "1B",
+      attempt: attemptForLogs,
+      jobId,
+      localPath: out,
+    });
     return out;
   }
 }
