@@ -623,11 +623,106 @@ type ClosetRegionDescriptor = {
   bboxText?: string;
 };
 
+function normalizeOpeningTypeForComparison(type: unknown): string {
+  const raw = String(type || "").trim().toLowerCase();
+  if (!raw) return "unknown";
+  if (raw === "closet" || raw === "closet_door" || raw === "closet door" || raw === "wardrobe sliding door" || raw === "wardrobe_door") {
+    return "closet_door";
+  }
+  if (raw === "archway" || raw === "walk-through" || raw === "walkthrough" || raw === "walk_through" || raw === "passthrough" || raw === "pass_through") {
+    return "walkthrough";
+  }
+  return raw;
+}
+
+type DecorObjectCandidate = {
+  type: string;
+  bbox?: [number, number, number, number] | null;
+};
+
+function normalizeDecorObjectType(type: unknown): string {
+  const raw = String(type || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "wall art" || raw === "wall-art") return "wall_art";
+  if (raw === "wall decor" || raw === "wall-decoration" || raw === "wall decoration") return "wall_decor";
+  if (raw === "picture frame" || raw === "framed art" || raw === "framed_art") return "picture_frame";
+  return raw.replace(/\s+/g, "_");
+}
+
+function normalizeBboxCandidate(input: any): [number, number, number, number] | null {
+  if (!Array.isArray(input) || input.length !== 4) return null;
+  const nums = input.map((v: any) => Number(v));
+  if (nums.some((v: number) => !Number.isFinite(v))) return null;
+  let [x1, y1, x2, y2] = nums;
+  const maybePixel = Math.max(Math.abs(x1), Math.abs(y1), Math.abs(x2), Math.abs(y2)) > 1.5;
+  if (maybePixel) return null;
+  x1 = Math.max(0, Math.min(1, x1));
+  y1 = Math.max(0, Math.min(1, y1));
+  x2 = Math.max(0, Math.min(1, x2));
+  y2 = Math.max(0, Math.min(1, y2));
+  if (x2 < x1) [x1, x2] = [x2, x1];
+  if (y2 < y1) [y1, y2] = [y2, y1];
+  if (x2 - x1 < 0.01 || y2 - y1 < 0.01) return null;
+  return [x1, y1, x2, y2];
+}
+
+function bboxOverlapRatio(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const ix1 = Math.max(a[0], b[0]);
+  const iy1 = Math.max(a[1], b[1]);
+  const ix2 = Math.min(a[2], b[2]);
+  const iy2 = Math.min(a[3], b[3]);
+  const iw = Math.max(0, ix2 - ix1);
+  const ih = Math.max(0, iy2 - iy1);
+  const interArea = iw * ih;
+  if (interArea <= 0) return 0;
+  const aArea = Math.max(0.0001, (a[2] - a[0]) * (a[3] - a[1]));
+  return interArea / aArea;
+}
+
+function extractDecorObjectCandidates(geminiDetails: any): DecorObjectCandidate[] {
+  if (!geminiDetails || typeof geminiDetails !== "object") return [];
+
+  const buckets = [
+    geminiDetails.detectedObjects,
+    geminiDetails.objects,
+    geminiDetails.wallObjects,
+    geminiDetails.decorObjects,
+  ];
+
+  const fromArrays: DecorObjectCandidate[] = [];
+  for (const bucket of buckets) {
+    if (!Array.isArray(bucket)) continue;
+    for (const item of bucket) {
+      if (!item || typeof item !== "object") continue;
+      const type = normalizeDecorObjectType(item.type || item.label || item.name || item.objectType);
+      if (!type) continue;
+      const bbox = normalizeBboxCandidate(item.bbox || item.box || item.region || item.bounds);
+      fromArrays.push({ type, bbox });
+    }
+  }
+
+  const summaryText = [
+    String(geminiDetails.reason ?? ""),
+    String(geminiDetails.explanation ?? ""),
+    String(geminiDetails.summary ?? ""),
+    String(geminiDetails.message ?? ""),
+  ].join(" ").toLowerCase();
+
+  const textHits: DecorObjectCandidate[] = [];
+  if (/mirror/.test(summaryText)) textHits.push({ type: "mirror", bbox: null });
+  if (/painting/.test(summaryText)) textHits.push({ type: "painting", bbox: null });
+  if (/artwork|wall\s*art/.test(summaryText)) textHits.push({ type: "artwork", bbox: null });
+  if (/wall\s*decor|wall\s*decoration/.test(summaryText)) textHits.push({ type: "wall_decor", bbox: null });
+  if (/picture\s*frame|framed\s*art/.test(summaryText)) textHits.push({ type: "picture_frame", bbox: null });
+
+  return [...fromArrays, ...textHits];
+}
+
 function collectClosetRegionDescriptors(baseline: StructuralBaseline | null | undefined): ClosetRegionDescriptor[] {
   if (!baseline || !Array.isArray(baseline.openings)) return [];
 
   return baseline.openings
-    .filter((opening) => String(opening?.type || "").toLowerCase() === "closet")
+    .filter((opening) => normalizeOpeningTypeForComparison((opening as any)?.type) === "closet_door")
     .map((opening) => {
       const maybeBbox = (opening as any)?.bbox;
       const bboxText = Array.isArray(maybeBbox) && maybeBbox.length === 4
@@ -6096,9 +6191,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (structuralBaseline?.openings?.length) {
         const openingHints = structuralBaseline.openings
           .slice(0, 4)
-          .map((o: any, i: number) =>
-            `${i + 1}. ${o.type || "opening"} on the ${o.wall || "wall"} side of the room`
-          );
+          .map((o: any, i: number) => {
+            const normalizedType = normalizeOpeningTypeForComparison(o?.type);
+            const displayType = normalizedType === "closet_door"
+              ? "closet_door"
+              : normalizedType === "walkthrough"
+                ? "walkthrough"
+                : (normalizedType || "opening");
+            const wall = String(o?.wallPosition || o?.wall || "wall").replace(/_/g, " ");
+            const horizontal = String(o?.horizontalBand || o?.relativeHorizontalPosition || "center").replace(/_/g, "-");
+            const areaPct = Number.isFinite(Number(o?.area_pct)) ? Number(o.area_pct) : 0;
+            return [
+              `Opening ${i + 1}:`,
+              `type: ${displayType}`,
+              `location: ${horizontal} ${wall}`,
+              `area: ${Math.round(areaPct)}% of image`,
+            ].join("\n");
+          });
 
         invariantHints.push(
           "The original image contained architectural openings:",
@@ -6109,11 +6218,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           "- closet doors",
           "- sliding wardrobe doors",
           "- walk-through openings between rooms",
-          "Verify these openings remain visible and functional.",
+          "Verify these openings remain present and structurally unchanged in the edited image.",
+          "They may be partially occluded by staging furniture but must not be removed, resized, or replaced by a wall surface.",
           "Do not assume occlusion. Confirm the wall plane has not become continuous where an opening previously existed."
         );
 
-        nLog(`[OPENING_BASELINE_HINTS] count=${openingHints.length}`);
+        const hintLogPayload = structuralBaseline.openings.slice(0, 4).map((opening: any) => ({
+          opening_type: normalizeOpeningTypeForComparison(opening?.type),
+          bbox: Array.isArray(opening?.bbox) ? opening.bbox : null,
+          area_delta: 0,
+        }));
+        nLog(`[OPENING_BASELINE_HINTS] job_id=${payload.jobId} count=${openingHints.length} openings=${JSON.stringify(hintLogPayload)}`);
       }
 
       if (stage2CandidatePath && !structuralBaseline) {
@@ -6189,9 +6304,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           if (geometryDriftDetected) {
             invariantHints.push(
+              "One of the architectural openings appears significantly resized or altered. Confirm whether the opening structure was modified.",
               "An architectural opening may have changed geometry. Verify that no windows, doors, or openings were resized, truncated, partially walled over, or otherwise altered. Furniture occlusion is allowed, but the original opening geometry must remain intact."
             );
-            logger.info(`[OPENING_GEOMETRY_HINT] detected=true`);
           }
           const relocationDetected = detectRelocation(
             structuralBaseline,
@@ -6257,20 +6372,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : [];
 
           const countByType = (arr: Array<{ type?: string }>, type: string) =>
-            arr.reduce((sum, item) => sum + (String(item?.type || "").toLowerCase() === type ? 1 : 0), 0);
+            arr.reduce((sum, item) => sum + (normalizeOpeningTypeForComparison(item?.type) === type ? 1 : 0), 0);
 
           const doorsBeforeDetected = countByType(structuralBaseline.openings as any[], "door");
           const doorsAfterDetected = countByType(detectedOpenings as any[], "door");
           const windowsBeforeDetected = countByType(structuralBaseline.openings as any[], "window");
           const windowsAfterDetected = countByType(detectedOpenings as any[], "window");
-          const closetsBeforeDetected = countByType(structuralBaseline.openings as any[], "closet");
-          const closetsAfterDetected = countByType(detectedOpenings as any[], "closet");
+          const closetsBeforeDetected = countByType(structuralBaseline.openings as any[], "closet_door");
+          const closetsAfterDetected = countByType(detectedOpenings as any[], "closet_door");
           const openingsBeforeDetected = structuralBaseline.openings.length;
           const openingsAfterDetected = detectedOpenings.length;
           const hasBaselineClosetDoors = closetsBeforeDetected > 0;
           const wallDriftHighForClosetRisk =
             compositeSemanticWallDriftPct >= 35 ||
             compositeMaskedDriftPct >= 35;
+
+          if (geometryDriftDetected) {
+            const representativeOpening = (structuralBaseline.openings || [])[0] as any;
+            const representativeType = normalizeOpeningTypeForComparison(representativeOpening?.type || "opening");
+            const representativeBbox = Array.isArray(representativeOpening?.bbox) ? representativeOpening.bbox : null;
+            const representativeAreaDelta = Number(metrics.semanticOpeningAreaDeltaPct ?? 0);
+            nLog(
+              `[OPENING_GEOMETRY_HINT] detected=true job_id=${payload.jobId} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)}`
+            );
+          }
 
           openingIdentityWarnings = [];
           if (doorsAfterDetected < doorsBeforeDetected) {
@@ -6303,6 +6428,80 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             openingIdentityWarnings.push("opening_obstructed");
             nLog("[OPENING][stage2] opening obstruction warning");
           }
+
+          const OPENING_AREA_DROP_THRESHOLD = 0.50;
+          const DECOR_TYPES = new Set([
+            "mirror",
+            "painting",
+            "artwork",
+            "wall_art",
+            "wall_decor",
+            "picture_frame",
+          ]);
+
+          const geminiDetails = (unifiedValidation as any)?.raw?.geminiSemantic?.details;
+          const detectedObjects = extractDecorObjectCandidates(geminiDetails);
+
+          let decorReplacementDetected = false;
+          let replacementOpeningType = "opening";
+          let replacementAreaDelta = 0;
+          let replacementDetectedObjectType = "unknown";
+
+          for (const baselineOpening of structuralBaseline.openings as any[]) {
+            const baselineBbox = normalizeBboxCandidate(baselineOpening?.bbox);
+            if (!baselineBbox) continue;
+
+            const baselineArea = Math.max(0.01, Number(baselineOpening?.area_pct ?? 0));
+            const matchedOpening = detectedOpenings.find((candidate: any) => {
+              const idMatch = String(candidate?.id || "") === String(baselineOpening?.id || "");
+              if (idMatch) return true;
+              const sameType = normalizeOpeningTypeForComparison(candidate?.type) === normalizeOpeningTypeForComparison(baselineOpening?.type);
+              const sameWall = Number(candidate?.wallIndex) === Number(baselineOpening?.wallIndex);
+              const sameBand = String(candidate?.horizontalBand || "") === String(baselineOpening?.horizontalBand || "");
+              return sameType && sameWall && sameBand;
+            });
+
+            const detectedArea = matchedOpening
+              ? Math.max(0.01, Number((matchedOpening as any)?.area_pct ?? 0))
+              : 0;
+            const openingAreaDelta = matchedOpening
+              ? Math.max(0, (baselineArea - detectedArea) / baselineArea)
+              : 1;
+
+            if (openingAreaDelta <= OPENING_AREA_DROP_THRESHOLD) continue;
+
+            const matchedDecorObject = detectedObjects.find((obj) => {
+              const normalizedType = normalizeDecorObjectType(obj.type);
+              if (!DECOR_TYPES.has(normalizedType)) return false;
+              if (!obj.bbox) return false;
+              return bboxOverlapRatio(baselineBbox, obj.bbox) >= 0.15;
+            });
+
+            if (!matchedDecorObject) continue;
+
+            decorReplacementDetected = true;
+            replacementOpeningType = normalizeOpeningTypeForComparison(baselineOpening?.type || "opening");
+            replacementAreaDelta = openingAreaDelta;
+            replacementDetectedObjectType = normalizeDecorObjectType(matchedDecorObject.type);
+            break;
+          }
+
+          if (decorReplacementDetected) {
+            openingIdentityWarnings.push("possible_opening_replacement");
+            if (Array.isArray(unifiedValidation?.warnings)) {
+              unifiedValidation.warnings.push("possible_opening_replaced_by_wall_decor");
+            }
+            invariantHints.push(
+              "A decorative wall object appears in the location where an architectural opening existed. Confirm that the opening was not removed or replaced with a wall surface."
+            );
+            nLog(
+              `[OPENING_DECOR_REPLACEMENT] detected=true job_id=${payload.jobId} opening_type=${replacementOpeningType} area_delta=${replacementAreaDelta.toFixed(3)} detected_object_type=${replacementDetectedObjectType}`
+            );
+          }
+
+          nLog(
+            `[OPENING_AUDIT] job_id=${payload.jobId} baseline_openings=${structuralBaseline.openings.length} geometry_flags=${geometryDriftDetected ? 1 : 0} decor_replacement=${decorReplacementDetected}`
+          );
 
           const stage2FurnitureAgainstWall = detectFurnitureAgainstWallSignal({
             localReasons: stage2LocalReasons,
