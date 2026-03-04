@@ -26,18 +26,18 @@ const logger = console;
 function getStage2Sampling(attempt: number) {
   // Attempt 1 (stable)
   if (attempt === 1) {
-    return { temperature: 0.40, topP: 0.90, topK: 40 };
+    return { temperature: 0.30, topP: 0.90, topK: 40 };
   }
   // Retry 1 (mild layout variation)
   if (attempt === 2) {
-    return { temperature: 0.46, topP: 0.90, topK: 40 };
+    return { temperature: 0.35, topP: 0.90, topK: 40 };
   }
   // Retry 2 (strong layout variation but still controlled)
   if (attempt === 3) {
-    return { temperature: 0.52, topP: 0.90, topK: 40 };
+    return { temperature: 0.40, topP: 0.90, topK: 40 };
   }
   // Default fallback (use stable)
-  return { temperature: 0.40, topP: 0.90, topK: 40 };
+  return { temperature: 0.30, topP: 0.90, topK: 40 };
 }
 
 // Stage 2: virtual staging (add furniture)
