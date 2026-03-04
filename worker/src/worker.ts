@@ -6183,7 +6183,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           if (geometryDriftDetected) {
             invariantHints.push(
-              "An architectural opening appears to have changed shape or size significantly. Verify that windows and openings have not been partially filled, resized, or truncated."
+              "An architectural opening may have changed geometry. Verify that no windows, doors, or openings were resized, truncated, partially walled over, or otherwise altered. Furniture occlusion is allowed, but the original opening geometry must remain intact."
             );
             logger.info(`[OPENING_GEOMETRY_HINT] detected=true`);
           }
