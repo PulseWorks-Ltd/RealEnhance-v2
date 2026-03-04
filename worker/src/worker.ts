@@ -4198,8 +4198,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         catastrophicConsensusBackstop: stage1BCatastrophicConsensusBackstop,
       });
 
+      const originalHardFail =
+        !stage1BMinorReconstructionSignal &&
+        (structureResult.hardFail || stage1BCalibratedStructuralHardFail || openingRemovalHardFail);
       const effectiveHardFail =
-        stage1BExtremeHardFail;
+        originalHardFail || stage1BExtremeHardFail;
       const effectiveViolationType =
         stage1BCatastrophicConsensusBackstop
           ? "structural_consensus"
