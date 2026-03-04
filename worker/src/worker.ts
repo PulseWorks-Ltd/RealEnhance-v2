@@ -621,6 +621,73 @@ function detectFurnitureAgainstWallSignal(input: {
   return hasLargeFurniture && hasWallContact;
 }
 
+type ClosetRegionDescriptor = {
+  id: string;
+  wallPosition: string;
+  horizontalBand: string;
+  verticalBand: string;
+  widthBand: string;
+  bboxText?: string;
+};
+
+function collectClosetRegionDescriptors(baseline: StructuralBaseline | null | undefined): ClosetRegionDescriptor[] {
+  if (!baseline || !Array.isArray(baseline.openings)) return [];
+
+  return baseline.openings
+    .filter((opening) => String(opening?.type || "").toLowerCase() === "closet")
+    .map((opening) => {
+      const maybeBbox = (opening as any)?.bbox;
+      const bboxText = Array.isArray(maybeBbox) && maybeBbox.length === 4
+        ? `bbox=[${maybeBbox.map((value: any) => Number(value)).join(",")}]`
+        : undefined;
+      return {
+        id: String(opening.id || "closet"),
+        wallPosition: String(opening.wallPosition || opening.wallIndex || "unknown"),
+        horizontalBand: String(opening.horizontalBand || opening.relativeHorizontalPosition || "unknown"),
+        verticalBand: String(opening.verticalBand || "unknown"),
+        widthBand: String(opening.widthBand || "unknown"),
+        bboxText,
+      };
+    });
+}
+
+function buildClosetSurfaceExclusionConstraintBlock(
+  baseline: StructuralBaseline | null | undefined,
+  mode: "soft" | "hard"
+): { block: string; regionCount: number } {
+  const regions = collectClosetRegionDescriptors(baseline);
+  if (!regions.length) return { block: "", regionCount: 0 };
+
+  const regionLines = regions.map((region) => {
+    const bboxSuffix = region.bboxText ? `, ${region.bboxText}` : "";
+    return `- ${region.id}: wall=${region.wallPosition}, horizontal=${region.horizontalBand}, vertical=${region.verticalBand}, width=${region.widthBand}${bboxSuffix}`;
+  });
+
+  const modeRules = mode === "soft"
+    ? [
+        "Treat these closet-door wall bands as no-go placement surfaces for large furniture.",
+        "Do not place beds, sofas, wardrobes, or cabinets directly in front of these regions.",
+        "Preserve closet-door visibility and operability.",
+      ]
+    : [
+        "You MUST treat these closet-door regions as strict no-placement surfaces.",
+        "Do not place or align large furniture against these regions.",
+        "Keep closet-door openings visibly intact and operable.",
+      ];
+
+  const block = `
+================ CLOSET PRESERVATION SURFACE EXCLUSION ================
+Closet door regions detected from structural baseline:
+
+${regionLines.join("\n")}
+
+${modeRules.join("\n")}
+=======================================================================
+`;
+
+  return { block, regionCount: regions.length };
+}
+
 function buildInvariantHints(localSignals: {
   windowsBefore?: number | null;
   windowsAfter?: number | null;
@@ -5245,7 +5312,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (payload.options.virtualStage) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
-    let pendingStage2RetryReason: "opening_preservation" | null = null;
+    let pendingStage2RetryReason: "opening_preservation" | "closet_visibility_risk" | null = null;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -5305,16 +5372,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
         let structuralConstraintBlock = "";
-        if (pendingStage2RetryReason === "opening_preservation" && structuralBaseline && attempt >= 3) {
+        if (pendingStage2RetryReason && structuralBaseline && attempt >= 3) {
           const mode: "soft" | "hard" = attempt === 3 ? "soft" : "hard";
-          structuralConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
+          const openingConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
+          const closetConstraint = buildClosetSurfaceExclusionConstraintBlock(structuralBaseline, mode);
+          structuralConstraintBlock = [openingConstraintBlock, closetConstraint.block]
+            .filter((part) => typeof part === "string" && part.trim().length > 0)
+            .join("\n\n");
+
           if (structuralConstraintBlock) {
             logger.info({
               event: "STRUCTURAL_CONSTRAINT_INJECTED",
               jobId: payload.jobId,
               attempt,
               mode,
+              retryReason: pendingStage2RetryReason,
+              closetRegionCount: closetConstraint.regionCount,
             });
+          }
+
+          if (closetConstraint.regionCount > 0) {
+            nLog(
+              `[CLOSET][stage2] surface excluded – closet door region(s)=${closetConstraint.regionCount} attempt=${attempt} mode=${mode}`
+            );
           }
         }
         if (useReinforcedRetry) {
@@ -6209,6 +6289,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const closetsAfterDetected = countByType(detectedOpenings as any[], "closet");
           const openingsBeforeDetected = structuralBaseline.openings.length;
           const openingsAfterDetected = detectedOpenings.length;
+          const hasBaselineClosetDoors = closetsBeforeDetected > 0;
+          const wallDriftHighForClosetRisk =
+            compositeSemanticWallDriftPct >= 35 ||
+            compositeMaskedDriftPct >= 35;
 
           openingIdentityWarnings = [];
           if (doorsAfterDetected < doorsBeforeDetected) {
@@ -6226,6 +6310,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (openingsAfterDetected < openingsBeforeDetected) {
             openingIdentityWarnings.push("opening_count_decrease");
             nLog(`[OPENING][stage2] opening count decrease detected (${openingsBeforeDetected} → ${openingsAfterDetected})`);
+          }
+          if (hasBaselineClosetDoors && wallDriftHighForClosetRisk) {
+            openingIdentityWarnings.push("closet_visibility_risk");
+            nLog(
+              `[CLOSET][stage2] closet visibility risk detected (closetsBefore=${closetsBeforeDetected}, wallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)}, maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)})`
+            );
           }
 
           const openingObstructed =
@@ -6267,6 +6357,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               invariantHints = [
                 ...invariantHints,
                 "Large furniture is positioned against a wall plane. Confirm that this wall did not previously contain a doorway or open passage that has been filled or hidden.",
+              ];
+            }
+            if (dedupedWarnings.includes("closet_visibility_risk")) {
+              const closetRegions = collectClosetRegionDescriptors(structuralBaseline)
+                .map((region) => `${region.id}:${region.wallPosition}/${region.horizontalBand}/${region.verticalBand}`)
+                .slice(0, 4);
+              invariantHints = [
+                ...invariantHints,
+                `Closet-door visibility risk detected. Confirm closet openings remain visible and operable; avoid large furniture against closet-door wall regions${closetRegions.length ? ` (${closetRegions.join(", ")})` : ""}.`,
               ];
             }
             nLog(`[OPENING][stage2] opening_identity_warning=${dedupedWarnings.join(",")}`);
@@ -6799,7 +6898,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reason: "opening_removal",
         });
         if (attempt >= 2 && openingIdentityWarnings.length > 0) {
-          pendingStage2RetryReason = "opening_preservation";
+          pendingStage2RetryReason = openingIdentityWarnings.includes("closet_visibility_risk")
+            ? "closet_visibility_risk"
+            : "opening_preservation";
         }
         nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
         logEvent("STAGE_RETRY", {
@@ -6953,7 +7054,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reason: failReasons[0] || "structure",
         });
         if (attempt >= 2 && openingIdentityWarnings.length > 0) {
-          pendingStage2RetryReason = "opening_preservation";
+          pendingStage2RetryReason = openingIdentityWarnings.includes("closet_visibility_risk")
+            ? "closet_visibility_risk"
+            : "opening_preservation";
         }
         if (softStructuralReviewMode) {
           nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
