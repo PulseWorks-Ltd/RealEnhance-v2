@@ -40,7 +40,7 @@ function getStage2Sampling(attempt: number) {
   return { temperature: 0.30, topP: 0.90, topK: 40 };
 }
 
-// Stage 2: virtual staging (add furniture)
+// Stage 2: virtual staging (add furnitur)
 
 export type Stage2Result = {
   outputPath: string;

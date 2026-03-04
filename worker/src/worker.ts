@@ -640,6 +640,28 @@ type DecorObjectCandidate = {
   bbox?: [number, number, number, number] | null;
 };
 
+type GrayFrame = {
+  data: Uint8Array;
+  width: number;
+  height: number;
+};
+
+type FloorlineBreakSignal = {
+  detected: boolean;
+  floorY: number | null;
+  baselineMaxGapPx: number;
+  candidateMaxGapPx: number;
+  gapDeltaPx: number;
+  openingBbox: [number, number, number, number] | null;
+};
+
+type CornerRectangleSignal = {
+  lost: boolean;
+  baselineRectangles: number;
+  candidateRectangles: number;
+  representativeBbox: [number, number, number, number] | null;
+};
+
 function normalizeDecorObjectType(type: unknown): string {
   const raw = String(type || "").trim().toLowerCase();
   if (!raw) return "";
@@ -716,6 +738,340 @@ function extractDecorObjectCandidates(geminiDetails: any): DecorObjectCandidate[
   if (/picture\s*frame|framed\s*art/.test(summaryText)) textHits.push({ type: "picture_frame", bbox: null });
 
   return [...fromArrays, ...textHits];
+}
+
+async function loadGrayFrame(imagePath: string, maxDim = 512): Promise<GrayFrame> {
+  const meta = await sharp(imagePath).metadata();
+  const srcW = meta.width || 0;
+  const srcH = meta.height || 0;
+  if (!srcW || !srcH) {
+    return { data: new Uint8Array(0), width: 0, height: 0 };
+  }
+
+  const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+  const width = Math.max(96, Math.round(srcW * scale));
+  const height = Math.max(96, Math.round(srcH * scale));
+  const { data } = await sharp(imagePath)
+    .rotate()
+    .resize(width, height, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  return {
+    data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+    width,
+    height,
+  };
+}
+
+function sobelEdgeMap(gray: Uint8Array, width: number, height: number, threshold: number): Uint8Array {
+  const out = new Uint8Array(width * height);
+  if (!width || !height || gray.length !== width * height) return out;
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const idx = y * width + x;
+      const gx =
+        gray[idx - width - 1] + 2 * gray[idx - 1] + gray[idx + width - 1] -
+        gray[idx - width + 1] - 2 * gray[idx + 1] - gray[idx + width + 1];
+      const gy =
+        gray[idx - width - 1] + 2 * gray[idx - width] + gray[idx - width + 1] -
+        gray[idx + width - 1] - 2 * gray[idx + width] - gray[idx + width + 1];
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      if (mag >= threshold) out[idx] = 1;
+    }
+  }
+
+  return out;
+}
+
+function findDominantFloorlineY(edges: Uint8Array, width: number, height: number): number | null {
+  if (!width || !height || edges.length !== width * height) return null;
+  const yStart = Math.max(0, Math.floor(height * 0.55));
+  const yEnd = Math.max(yStart + 1, Math.floor(height * 0.95));
+
+  let bestY = -1;
+  let bestScore = -1;
+
+  for (let y = yStart; y < yEnd; y += 1) {
+    const rowOffset = y * width;
+    let rowEdges = 0;
+    for (let x = 0; x < width; x += 1) {
+      if (edges[rowOffset + x]) rowEdges += 1;
+    }
+
+    const prev = y > 0 ? y - 1 : y;
+    const next = y < height - 1 ? y + 1 : y;
+    const neighborBoost = (() => {
+      let count = 0;
+      for (const yy of [prev, next]) {
+        const off = yy * width;
+        for (let x = 0; x < width; x += 1) {
+          if (edges[off + x]) count += 1;
+        }
+      }
+      return count * 0.25;
+    })();
+
+    const score = rowEdges + neighborBoost;
+    if (score > bestScore) {
+      bestScore = score;
+      bestY = y;
+    }
+  }
+
+  if (bestY < 0) return null;
+  if (bestScore < Math.max(12, width * 0.05)) return null;
+  return bestY;
+}
+
+function rowSegments(edges: Uint8Array, width: number, y: number, minLen: number): Array<{ start: number; end: number }> {
+  const segments: Array<{ start: number; end: number }> = [];
+  if (y < 0) return segments;
+  const off = y * width;
+  let start = -1;
+
+  for (let x = 0; x < width; x += 1) {
+    const on = edges[off + x] === 1;
+    if (on && start < 0) start = x;
+    if (!on && start >= 0) {
+      const end = x - 1;
+      if (end - start + 1 >= minLen) segments.push({ start, end });
+      start = -1;
+    }
+  }
+
+  if (start >= 0) {
+    const end = width - 1;
+    if (end - start + 1 >= minLen) segments.push({ start, end });
+  }
+
+  return segments;
+}
+
+function maxSegmentGap(
+  segments: Array<{ start: number; end: number }>,
+  width: number
+): { maxGap: number; gapStart: number; gapEnd: number } {
+  if (!segments.length) {
+    return { maxGap: width, gapStart: 0, gapEnd: Math.max(0, width - 1) };
+  }
+
+  let maxGap = 0;
+  let gapStart = 0;
+  let gapEnd = 0;
+
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const start = segments[i].end + 1;
+    const end = segments[i + 1].start - 1;
+    const gap = Math.max(0, end - start + 1);
+    if (gap > maxGap) {
+      maxGap = gap;
+      gapStart = start;
+      gapEnd = end;
+    }
+  }
+
+  return { maxGap, gapStart, gapEnd };
+}
+
+async function detectFloorlineBreakSignal(
+  baselinePath: string,
+  candidatePath: string
+): Promise<FloorlineBreakSignal> {
+  const [baseline, candidate] = await Promise.all([
+    loadGrayFrame(baselinePath, 512),
+    loadGrayFrame(candidatePath, 512),
+  ]);
+
+  if (!baseline.width || !candidate.width || baseline.width !== candidate.width || baseline.height !== candidate.height) {
+    return {
+      detected: false,
+      floorY: null,
+      baselineMaxGapPx: 0,
+      candidateMaxGapPx: 0,
+      gapDeltaPx: 0,
+      openingBbox: null,
+    };
+  }
+
+  const width = baseline.width;
+  const height = baseline.height;
+  const baseEdges = sobelEdgeMap(baseline.data, width, height, 48);
+  const candEdges = sobelEdgeMap(candidate.data, width, height, 48);
+
+  const floorY = findDominantFloorlineY(baseEdges, width, height);
+  if (floorY === null) {
+    return {
+      detected: false,
+      floorY: null,
+      baselineMaxGapPx: 0,
+      candidateMaxGapPx: 0,
+      gapDeltaPx: 0,
+      openingBbox: null,
+    };
+  }
+
+  const minLen = Math.max(6, Math.floor(width * 0.03));
+  const baselineSegments = rowSegments(baseEdges, width, floorY, minLen);
+  const candidateSegments = rowSegments(candEdges, width, floorY, minLen);
+
+  const baselineGap = maxSegmentGap(baselineSegments, width);
+  const candidateGap = maxSegmentGap(candidateSegments, width);
+  const gapDeltaPx = candidateGap.maxGap - baselineGap.maxGap;
+  const minGapThresholdPx = Math.max(40, Math.floor(width * 0.08));
+  const detected = candidateGap.maxGap > minGapThresholdPx && gapDeltaPx > Math.max(8, Math.floor(width * 0.02));
+
+  const openingBbox: [number, number, number, number] | null = detected
+    ? [
+        Math.max(0, Math.min(1, candidateGap.gapStart / width)),
+        Math.max(0, Math.min(1, (floorY - Math.max(10, Math.floor(height * 0.12))) / height)),
+        Math.max(0, Math.min(1, candidateGap.gapEnd / width)),
+        Math.max(0, Math.min(1, Math.min(height - 1, floorY + Math.max(8, Math.floor(height * 0.04))) / height)),
+      ]
+    : null;
+
+  return {
+    detected,
+    floorY,
+    baselineMaxGapPx: baselineGap.maxGap,
+    candidateMaxGapPx: candidateGap.maxGap,
+    gapDeltaPx,
+    openingBbox,
+  };
+}
+
+function connectedComponents(
+  map: Uint8Array,
+  width: number,
+  height: number,
+  minPixels: number
+): Array<{ points: number; bbox: { x1: number; y1: number; x2: number; y2: number } }> {
+  const visited = new Uint8Array(map.length);
+  const out: Array<{ points: number; bbox: { x1: number; y1: number; x2: number; y2: number } }> = [];
+  const neighbors = [
+    -width - 1, -width, -width + 1,
+    -1, 1,
+    width - 1, width, width + 1,
+  ];
+
+  for (let i = 0; i < map.length; i += 1) {
+    if (!map[i] || visited[i]) continue;
+    const stack = [i];
+    visited[i] = 1;
+
+    let points = 0;
+    let x1 = width;
+    let y1 = height;
+    let x2 = 0;
+    let y2 = 0;
+
+    while (stack.length > 0) {
+      const idx = stack.pop() as number;
+      points += 1;
+      const y = Math.floor(idx / width);
+      const x = idx - y * width;
+      if (x < x1) x1 = x;
+      if (y < y1) y1 = y;
+      if (x > x2) x2 = x;
+      if (y > y2) y2 = y;
+
+      for (const offset of neighbors) {
+        const next = idx + offset;
+        if (next < 0 || next >= map.length) continue;
+        if (!map[next] || visited[next]) continue;
+        const ny = Math.floor(next / width);
+        const nx = next - ny * width;
+        if (Math.abs(nx - x) > 1 || Math.abs(ny - y) > 1) continue;
+        visited[next] = 1;
+        stack.push(next);
+      }
+    }
+
+    if (points >= minPixels) {
+      out.push({ points, bbox: { x1, y1, x2, y2 } });
+    }
+  }
+
+  return out;
+}
+
+function detectCornerRectangles(frame: GrayFrame): Array<[number, number, number, number]> {
+  const { data, width, height } = frame;
+  if (!width || !height || data.length !== width * height) return [];
+
+  const cornerMap = new Uint8Array(width * height);
+  const gxThreshold = 28;
+  const gyThreshold = 28;
+  const yStart = Math.floor(height * 0.12);
+  const yEnd = Math.floor(height * 0.92);
+
+  for (let y = Math.max(1, yStart); y < Math.min(height - 1, yEnd); y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const idx = y * width + x;
+      const gx = Math.abs(data[idx + 1] - data[idx - 1]);
+      const gy = Math.abs(data[idx + width] - data[idx - width]);
+      if (gx >= gxThreshold && gy >= gyThreshold) {
+        cornerMap[idx] = 1;
+      }
+    }
+  }
+
+  const comps = connectedComponents(cornerMap, width, height, Math.max(8, Math.floor(width * height * 0.00005)));
+  const rectangles: Array<[number, number, number, number]> = [];
+
+  for (const comp of comps) {
+    const bw = comp.bbox.x2 - comp.bbox.x1 + 1;
+    const bh = comp.bbox.y2 - comp.bbox.y1 + 1;
+    if (bw < width * 0.06 || bh < height * 0.10) continue;
+
+    const aspect = bw / Math.max(1, bh);
+    if (aspect < 0.35 || aspect > 3.2) continue;
+
+    const area = bw * bh;
+    const density = comp.points / Math.max(1, area);
+    if (density > 0.30) continue;
+
+    rectangles.push([
+      comp.bbox.x1 / width,
+      comp.bbox.y1 / height,
+      comp.bbox.x2 / width,
+      comp.bbox.y2 / height,
+    ]);
+  }
+
+  return rectangles;
+}
+
+async function detectCornerRectangleLossSignal(
+  baselinePath: string,
+  candidatePath: string
+): Promise<CornerRectangleSignal> {
+  const [baseline, candidate] = await Promise.all([
+    loadGrayFrame(baselinePath, 512),
+    loadGrayFrame(candidatePath, 512),
+  ]);
+
+  if (!baseline.width || !candidate.width || baseline.width !== candidate.width || baseline.height !== candidate.height) {
+    return {
+      lost: false,
+      baselineRectangles: 0,
+      candidateRectangles: 0,
+      representativeBbox: null,
+    };
+  }
+
+  const baselineRects = detectCornerRectangles(baseline);
+  const candidateRects = detectCornerRectangles(candidate);
+  const lost = baselineRects.length > 0 && candidateRects.length < baselineRects.length;
+
+  return {
+    lost,
+    baselineRectangles: baselineRects.length,
+    candidateRectangles: candidateRects.length,
+    representativeBbox: lost ? baselineRects[0] ?? null : null,
+  };
 }
 
 function collectClosetRegionDescriptors(baseline: StructuralBaseline | null | undefined): ClosetRegionDescriptor[] {
@@ -6302,6 +6658,59 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             Math.abs(metrics.semanticOpeningAreaDeltaPct ?? 0) > 0.40 ||
             Math.abs(metrics.semanticOpeningAspectRatioDelta ?? 0) > 0.40;
 
+          const representativeOpening = (structuralBaseline.openings || [])[0] as any;
+          const representativeType = normalizeOpeningTypeForComparison(representativeOpening?.type || "opening");
+          const representativeBbox = normalizeBboxCandidate(representativeOpening?.bbox);
+          const representativeAreaDelta = Number(metrics.semanticOpeningAreaDeltaPct ?? 0);
+
+          let floorlineBreakSignal: FloorlineBreakSignal = {
+            detected: false,
+            floorY: null,
+            baselineMaxGapPx: 0,
+            candidateMaxGapPx: 0,
+            gapDeltaPx: 0,
+            openingBbox: null,
+          };
+
+          try {
+            floorlineBreakSignal = await detectFloorlineBreakSignal(path1A, stage2CandidatePath);
+          } catch (floorlineErr: any) {
+            nLog(`[FLOORLINE_BREAK] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} error=${floorlineErr?.message || floorlineErr}`);
+          }
+
+          if (floorlineBreakSignal.detected) {
+            nLog(
+              `[FLOORLINE_BREAK] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(floorlineBreakSignal.openingBbox || representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} gap_width=${floorlineBreakSignal.candidateMaxGapPx} baseline_gap=${floorlineBreakSignal.baselineMaxGapPx} gap_delta=${floorlineBreakSignal.gapDeltaPx}`
+            );
+          } else {
+            nLog(
+              `[FLOORLINE_BREAK] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} gap_width=${floorlineBreakSignal.candidateMaxGapPx} baseline_gap=${floorlineBreakSignal.baselineMaxGapPx} gap_delta=${floorlineBreakSignal.gapDeltaPx}`
+            );
+          }
+
+          let cornerRectangleSignal: CornerRectangleSignal = {
+            lost: false,
+            baselineRectangles: 0,
+            candidateRectangles: 0,
+            representativeBbox: null,
+          };
+
+          try {
+            cornerRectangleSignal = await detectCornerRectangleLossSignal(path1A, stage2CandidatePath);
+          } catch (cornerErr: any) {
+            nLog(`[OPENING_RECTANGLE_LOST] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} error=${cornerErr?.message || cornerErr}`);
+          }
+
+          if (cornerRectangleSignal.lost) {
+            nLog(
+              `[OPENING_RECTANGLE_LOST] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(cornerRectangleSignal.representativeBbox || representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} rectangles_before=${cornerRectangleSignal.baselineRectangles} rectangles_after=${cornerRectangleSignal.candidateRectangles}`
+            );
+          } else {
+            nLog(
+              `[OPENING_RECTANGLE_LOST] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} rectangles_before=${cornerRectangleSignal.baselineRectangles} rectangles_after=${cornerRectangleSignal.candidateRectangles}`
+            );
+          }
+
           if (geometryDriftDetected) {
             invariantHints.push(
               "One of the architectural openings appears significantly resized or altered. Confirm whether the opening structure was modified.",
@@ -6388,12 +6797,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             compositeMaskedDriftPct >= 35;
 
           if (geometryDriftDetected) {
-            const representativeOpening = (structuralBaseline.openings || [])[0] as any;
-            const representativeType = normalizeOpeningTypeForComparison(representativeOpening?.type || "opening");
-            const representativeBbox = Array.isArray(representativeOpening?.bbox) ? representativeOpening.bbox : null;
-            const representativeAreaDelta = Number(metrics.semanticOpeningAreaDeltaPct ?? 0);
             nLog(
-              `[OPENING_GEOMETRY_HINT] detected=true job_id=${payload.jobId} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)}`
+              `[OPENING_GEOMETRY_HINT] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)}`
             );
           }
 
@@ -6446,6 +6851,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           let replacementOpeningType = "opening";
           let replacementAreaDelta = 0;
           let replacementDetectedObjectType = "unknown";
+          let replacementBbox: [number, number, number, number] | null = null;
 
           for (const baselineOpening of structuralBaseline.openings as any[]) {
             const baselineBbox = normalizeBboxCandidate(baselineOpening?.bbox);
@@ -6483,6 +6889,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             replacementOpeningType = normalizeOpeningTypeForComparison(baselineOpening?.type || "opening");
             replacementAreaDelta = openingAreaDelta;
             replacementDetectedObjectType = normalizeDecorObjectType(matchedDecorObject.type);
+            replacementBbox = baselineBbox;
             break;
           }
 
@@ -6495,12 +6902,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               "A decorative wall object appears in the location where an architectural opening existed. Confirm that the opening was not removed or replaced with a wall surface."
             );
             nLog(
-              `[OPENING_DECOR_REPLACEMENT] detected=true job_id=${payload.jobId} opening_type=${replacementOpeningType} area_delta=${replacementAreaDelta.toFixed(3)} detected_object_type=${replacementDetectedObjectType}`
+              `[OPENING_DECOR_REPLACEMENT] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${replacementOpeningType} bbox=${JSON.stringify(replacementBbox)} area_delta=${replacementAreaDelta.toFixed(3)} detected_object_type=${replacementDetectedObjectType}`
+            );
+          }
+
+          const geometrySignal = geometryDriftDetected ? 1 : 0;
+          const floorlineBreakSignalValue = floorlineBreakSignal.detected ? 1 : 0;
+          const cornerRectangleLostSignal = cornerRectangleSignal.lost ? 1 : 0;
+          const decorReplacementSignal = decorReplacementDetected ? 1 : 0;
+          const openingSignalScore =
+            geometrySignal +
+            floorlineBreakSignalValue +
+            cornerRectangleLostSignal +
+            decorReplacementSignal;
+
+          const openingSignalSeverity =
+            openingSignalScore >= 3
+              ? "high"
+              : openingSignalScore >= 2
+                ? "medium"
+                : openingSignalScore >= 1
+                  ? "advisory"
+                  : "ignore";
+
+          nLog(
+            `[OPENING_SIGNAL_FUSION] job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} score=${openingSignalScore} severity=${openingSignalSeverity} geometry_drift=${geometrySignal} floorline_break=${floorlineBreakSignalValue} corner_rectangle_lost=${cornerRectangleLostSignal} decor_replacement=${decorReplacementSignal}`
+          );
+
+          if (openingSignalSeverity === "medium" || openingSignalSeverity === "high") {
+            invariantHints.push(
+              "Multiple structural signals suggest an architectural opening may have been removed. Verify that windows, doors, closet doors, and walk-through openings remain present."
+            );
+          }
+
+          if (openingSignalSeverity === "high") {
+            invariantHints.push(
+              "Several local signals strongly indicate that an architectural opening may have been replaced by a wall surface or decoration. Confirm whether the opening was removed."
             );
           }
 
           nLog(
-            `[OPENING_AUDIT] job_id=${payload.jobId} baseline_openings=${structuralBaseline.openings.length} geometry_flags=${geometryDriftDetected ? 1 : 0} decor_replacement=${decorReplacementDetected}`
+            `[OPENING_AUDIT] job_id=${payload.jobId} attempt=${attempt} baseline_openings=${structuralBaseline.openings.length} geometry_flags=${geometryDriftDetected ? 1 : 0} floorline_break=${floorlineBreakSignal.detected ? 1 : 0} corner_rectangle_lost=${cornerRectangleSignal.lost ? 1 : 0} decor_replacement=${decorReplacementDetected ? 1 : 0}`
           );
 
           const stage2FurnitureAgainstWall = detectFurnitureAgainstWallSignal({

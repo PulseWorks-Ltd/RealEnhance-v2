@@ -23,8 +23,9 @@ function resolveTier(confidence: number): number {
 }
 
 async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
+  const complianceModel = process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
   const resp = await (ai as any).models.generateContent({
-    model: "gemini-2.0-flash",
+    model: complianceModel,
     contents: [{
       role: "user",
       parts: [
