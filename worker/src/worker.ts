@@ -14,7 +14,12 @@ import { randomUUID } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
-import { runStage2, runStage2GenerationAttempt } from "./pipeline/stage2";
+import {
+  isStage2RetryableGenerationError,
+  resolveStage2MaxAttempts,
+  runStage2,
+  runStage2GenerationAttempt,
+} from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
@@ -5387,6 +5392,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2FallbackStage = stage2BaseStage;
           stage2BlockedReason = `Stage 2 processing exceeded ${STAGE2_TIMEOUT_MS / 1000}s timeout. Using best available result.`;
           stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
+        } else if (isStage2RetryableGenerationError(timeoutError)) {
+          nLog("[STAGE2_GENERATION_RETRYABLE]", {
+            jobId: payload.jobId,
+            reason: (timeoutError as any)?.code || timeoutError?.message || String(timeoutError),
+            fallback: "defer_to_unified_retry_loop",
+          });
+          stage2Outcome = {
+            outputPath: stage2InputResolved,
+            attempts: 1,
+            maxAttempts: resolveStage2MaxAttempts(),
+            validationRisk: true,
+            fallbackUsed: false,
+            localReasons: [(timeoutError as any)?.code || "stage2_generation_retryable"],
+          };
         } else {
           throw timeoutError;
         }
@@ -5555,48 +5574,68 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         source: "pipeline",
         retryType: "light_declutter_backstop",
       });
-      const stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
-        roomType: (
-          !payload.options.roomType ||
-          ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
-        )
-          ? String(detectedRoom || "living_room")
-          : payload.options.roomType,
-        sceneType: sceneLabel as any,
-        profile,
-        angleHint,
-        stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
-        stagingStyle: stagingStyleFallback,
-        sourceStage: fallbackRouting.sourceStage,
-        promptMode: fallbackRouting.mode,
-        jobId: payload.jobId,
-        validationConfig: { localMode: localValidatorMode },
-        stage1APath: stage2ValidationBaseline,
-        curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
-        onStrictRetry: ({ reasons }) => {
-          void (async () => {
-            if (stage2Active) {
-              if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
-            }
-            try {
-              const msg = reasons && reasons.length
-                ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
-                : "Validation failed. Retrying with stricter settings...";
-              updateJob(payload.jobId, {
-                message: msg,
-                meta: {
-                  ...(sceneLabel ? { ...sceneMeta } : {}),
-                  strictRetry: true,
-                  strictRetryReasons: reasons || []
-                }
-              });
-            } catch {}
-          })();
-        },
-        onAttemptSuperseded: (nextAttemptId) => {
-          stage2AttemptId = nextAttemptId;
+      let stage2Outcome: any;
+      try {
+        stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
+          roomType: (
+            !payload.options.roomType ||
+            ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+          )
+            ? String(detectedRoom || "living_room")
+            : payload.options.roomType,
+          sceneType: sceneLabel as any,
+          profile,
+          angleHint,
+          stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+          stagingStyle: stagingStyleFallback,
+          sourceStage: fallbackRouting.sourceStage,
+          promptMode: fallbackRouting.mode,
+          jobId: payload.jobId,
+          validationConfig: { localMode: localValidatorMode },
+          stage1APath: stage2ValidationBaseline,
+          curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
+          onStrictRetry: ({ reasons }) => {
+            void (async () => {
+              if (stage2Active) {
+                if (!(await ensureStage2AttemptOwner("stage2_fallback_strict_retry"))) return;
+              }
+              try {
+                const msg = reasons && reasons.length
+                  ? `Validation failed: ${reasons.join('; ')}. Retrying with stricter settings...`
+                  : "Validation failed. Retrying with stricter settings...";
+                updateJob(payload.jobId, {
+                  message: msg,
+                  meta: {
+                    ...(sceneLabel ? { ...sceneMeta } : {}),
+                    strictRetry: true,
+                    strictRetryReasons: reasons || []
+                  }
+                });
+              } catch {}
+            })();
+          },
+          onAttemptSuperseded: (nextAttemptId) => {
+            stage2AttemptId = nextAttemptId;
+          }
+        });
+      } catch (stage2GenErr: any) {
+        if (!isStage2RetryableGenerationError(stage2GenErr)) {
+          throw stage2GenErr;
         }
-      });
+        nLog("[STAGE2_GENERATION_RETRYABLE]", {
+          jobId: payload.jobId,
+          reason: stage2GenErr?.code || stage2GenErr?.message || String(stage2GenErr),
+          fallback: "defer_to_unified_retry_loop",
+        });
+        stage2Outcome = {
+          outputPath: stage2InputResolved,
+          attempts: 1,
+          maxAttempts: resolveStage2MaxAttempts(),
+          validationRisk: true,
+          fallbackUsed: false,
+          localReasons: [stage2GenErr?.code || "stage2_generation_retryable"],
+        };
+      }
 
       if (typeof stage2Outcome === "string") {
         path2 = stage2Outcome;
@@ -5851,27 +5890,59 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           source: "pipeline",
           retryType: "validator_forced_retry",
         });
-        const retryStage2Path = await runStage2GenerationAttempt(stage2InputResolved, {
-          roomType: payload.options.roomType,
-          sceneType: sceneLabel as any,
-          profile,
-          referenceImagePath: undefined,
-          stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
-          stagingStyle: payload.options.stagingStyle || "nz_standard",
-          sourceStage: stage2SourceStage,
-          promptMode: stage2PromptMode,
-          curtainRailLikely: jobContext.curtainRailLikely,
-          jobId: payload.jobId,
-          outputPath: retryOutputPath,
-          attempt,
-          structuralRetryContext: {
-              compositeFail: useReinforcedRetry,
-              failureType: retryFailureType,
-              attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
-            },
-          structuralConstraintBlock,
-          modelReason: `stage2 unified retry ${attempt - 1}`,
-        });
+        let retryStage2Path: string;
+        try {
+          retryStage2Path = await runStage2GenerationAttempt(stage2InputResolved, {
+            roomType: payload.options.roomType,
+            sceneType: sceneLabel as any,
+            profile,
+            referenceImagePath: undefined,
+            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+            stagingStyle: payload.options.stagingStyle || "nz_standard",
+            sourceStage: stage2SourceStage,
+            promptMode: stage2PromptMode,
+            curtainRailLikely: jobContext.curtainRailLikely,
+            jobId: payload.jobId,
+            outputPath: retryOutputPath,
+            attempt,
+            structuralRetryContext: {
+                compositeFail: useReinforcedRetry,
+                failureType: retryFailureType,
+                attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
+              },
+            structuralConstraintBlock,
+            modelReason: `stage2 unified retry ${attempt - 1}`,
+          });
+        } catch (retryGenerationErr: any) {
+          if (!isStage2RetryableGenerationError(retryGenerationErr)) {
+            throw retryGenerationErr;
+          }
+          nLog("[STAGE2_GENERATION_RETRYABLE]", {
+            jobId: payload.jobId,
+            attempt,
+            reason: retryGenerationErr?.code || retryGenerationErr?.message || String(retryGenerationErr),
+          });
+          stage2LocalReasons.push(retryGenerationErr?.code || "stage2_generation_retryable");
+          pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+          pendingStage2RetryStrategy = "NORMAL";
+          pendingStage2RetryReason = "opening_preservation";
+          if (attempt < MAX_STAGE2_RETRIES) {
+            nLog(`[STAGE2_RETRY] reason=stage2_generation_retryable next_attempt=${attempt + 1}`);
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = retryGenerationErr?.code || "stage2_generation_retryable_exhausted";
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          break;
+        }
         if (useReinforcedRetry) {
           stage2ReinforcedRetryUsed = true;
         }

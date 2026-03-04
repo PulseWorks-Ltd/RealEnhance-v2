@@ -2,6 +2,17 @@ import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 import { logIfNotFocusMode } from "../logger";
 
+function ensureImageCapableModel(model: string | undefined, fallback: string, envName: string): string {
+  const candidate = String(model || "").trim();
+  if (candidate && candidate.toLowerCase().includes("image")) {
+    return candidate;
+  }
+  if (candidate) {
+    console.warn(`[MODEL_CONFIG_INVALID] env=${envName} value=${candidate} reason=non_image_model fallback=${fallback}`);
+  }
+  return fallback;
+}
+
 /**
  * Per-stage Gemini model configuration with safe fallback
  *
@@ -21,8 +32,8 @@ export const MODEL_CONFIG = {
     fallback: process.env.REALENHANCE_MODEL_STAGE1B_FALLBACK || "gemini-2.5-flash-image",
   },
   stage2: {
-    primary: process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || "gemini-2.5-flash-image",
-    fallback: process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || "gemini-2.5-flash-image",
+    primary: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_PRIMARY, "gemini-2.5-flash-image", "REALENHANCE_MODEL_STAGE2_PRIMARY"),
+    fallback: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_FALLBACK, "gemini-2.5-pro-image", "REALENHANCE_MODEL_STAGE2_FALLBACK"),
   },
 };
 
@@ -67,7 +78,24 @@ type ModelLogMeta = {
   reason?: string;
   selectedModel?: string;
   fallbackModel?: string | null;
+  attempt?: number;
 };
+
+function logNoImageResponse(meta: ModelLogMeta | undefined, stageLabel: "1B" | "2", model: string, parts: any[]) {
+  if (stageLabel !== "2") return;
+  const partTypes = (parts || []).map((part: any) => {
+    if (!part || typeof part !== "object") return "unknown";
+    if (part.inlineData) return "inlineData";
+    if (part.text) return "text";
+    if (part.functionCall) return "functionCall";
+    if (part.functionResponse) return "functionResponse";
+    return Object.keys(part)[0] || "unknown";
+  });
+  const inlineDataPresent = (parts || []).some((part: any) => !!part?.inlineData?.data);
+  console.warn(
+    `[stage2_generation_no_image] model=${model} attempt=${meta?.attempt ?? "unknown"} response_parts=${partTypes.join(",") || "none"} inlineData_present=${inlineDataPresent}`
+  );
+}
 
 function logModelResolution(meta: ModelLogMeta) {
   const stageLabel = meta.stage || "n/a";
@@ -182,6 +210,7 @@ export async function runWithPrimaryThenFallback({
     console.info(`[GEMINI][${context}] Primary attempt with ${primaryModel} parts=${parts.length} hasImage=${validation.valid}`);
 
     if (!validation.valid) {
+      logNoImageResponse(meta, stageLabel, primaryModel, parts);
       primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
       console.warn(`[stage${stageLabel}] Gemini primary failed: ${validation.reason} → falling back to ${fallbackModel}`);
     } else {
@@ -209,6 +238,7 @@ export async function runWithPrimaryThenFallback({
     console.info(`[GEMINI][${context}] Fallback attempt with ${fallbackModel} parts=${parts.length} hasImage=${validation.valid}`);
 
     if (!validation.valid) {
+      logNoImageResponse(meta, stageLabel, fallbackModel, parts);
       fallbackError = new Error(`Fallback model ${fallbackModel} ${validation.reason}`);
       console.error(`[stage${stageLabel}] Fallback model failed: ${validation.reason}`);
     } else {

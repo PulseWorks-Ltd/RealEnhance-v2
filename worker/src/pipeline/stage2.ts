@@ -20,6 +20,7 @@ import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
+import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
 
 const logger = console;
 
@@ -37,11 +38,26 @@ function isStructuralRetryReason(reason: Stage2RetryReason): boolean {
   return reason === "structural_violation" || reason === "opening_removed";
 }
 
-function resolveStage2Model(attempt: number, reason: Stage2RetryReason, previousModel?: string): string {
-  if (attempt <= 1) return "gemini-2.5-flash";
-  if (!isStructuralRetryReason(reason)) return previousModel || "gemini-2.5-flash";
-  if (attempt === 2) return "gemini-2.5-pro";
-  return "gemini-3-vision";
+function ensureImageCapableModel(model: string | undefined, fallback: string): string {
+  const candidate = String(model || "").trim();
+  if (candidate && candidate.toLowerCase().includes("image")) {
+    return candidate;
+  }
+  return fallback;
+}
+
+export function resolveStage2Model(attempt: number, reason: Stage2RetryReason, previousModel?: string): string {
+  const primary = ensureImageCapableModel(
+    process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || MODEL_CONFIG.stage2.primary,
+    "gemini-2.5-flash-image"
+  );
+  const fallback = ensureImageCapableModel(
+    process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || MODEL_CONFIG.stage2.fallback || "gemini-2.5-pro-image",
+    "gemini-2.5-pro-image"
+  );
+  if (attempt <= 1) return primary;
+  if (!isStructuralRetryReason(reason)) return previousModel || primary;
+  return fallback;
 }
 
 function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, previousTemperature?: number): number {
@@ -118,6 +134,61 @@ export type Stage2Result = {
   fallbackUsed: boolean;
   localReasons: string[];
 };
+
+export class Stage2GenerationFailure extends Error {
+  public readonly retryable: boolean;
+  public readonly code: string;
+
+  constructor(message: string, code = "stage2_generation_failure", retryable = true) {
+    super(message);
+    this.name = "Stage2GenerationFailure";
+    this.retryable = retryable;
+    this.code = code;
+  }
+}
+
+export class Stage2GenerationNoImageError extends Stage2GenerationFailure {
+  constructor(message = "No image data in Gemini response") {
+    super(message, "stage2_generation_no_image", true);
+    this.name = "Stage2GenerationNoImageError";
+  }
+}
+
+export function isStage2RetryableGenerationError(error: unknown): boolean {
+  return error instanceof Stage2GenerationFailure && error.retryable;
+}
+
+function summarizeResponsePartTypes(parts: any[]): string {
+  if (!Array.isArray(parts) || parts.length === 0) return "none";
+  return parts
+    .map((part: any) => {
+      if (!part || typeof part !== "object") return "unknown";
+      if (part.inlineData) return "inlineData";
+      if (part.text) return "text";
+      if (part.functionCall) return "functionCall";
+      if (part.functionResponse) return "functionResponse";
+      return Object.keys(part)[0] || "unknown";
+    })
+    .join(",");
+}
+
+function getStage2ConfiguredMaxAttempts(): number {
+  const stageAwareConfig = loadStageAwareConfig();
+  const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
+  const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw) ? Math.max(0, Math.floor(geminiMaxRetriesRaw)) : null;
+  const configuredAttempts = geminiMaxRetries !== null
+    ? Math.max(1, geminiMaxRetries + 1)
+    : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
+  const maxInternalAttemptsRaw = Number(process.env.STAGE2_INTERNAL_MAX_ATTEMPTS || 3);
+  const maxInternalAttempts = Number.isFinite(maxInternalAttemptsRaw)
+    ? Math.min(4, Math.max(1, Math.floor(maxInternalAttemptsRaw)))
+    : 3;
+  return Math.min(configuredAttempts, maxInternalAttempts);
+}
+
+export function resolveStage2MaxAttempts(): number {
+  return getStage2ConfiguredMaxAttempts();
+}
 
 export async function runStage2GenerationAttempt(
   basePath: string,
@@ -309,18 +380,58 @@ Do not add blinds, rods, tracks, or new window coverings.
   };
 
   const ai = getGeminiClient();
-  const resp = await (ai as any).models.generateContent({
-    model: generationPlan.model,
-    contents: requestParts,
-    generationConfig,
-  });
+  let resp: any;
+  let modelUsed = generationPlan.model;
+  try {
+    const run = await runWithPrimaryThenFallback({
+      stageLabel: "2",
+      ai: ai as any,
+      baseRequest: {
+        contents: requestParts,
+        generationConfig,
+      } as any,
+      context: "stage2_generation_attempt",
+      meta: {
+        stage: "2",
+        jobId: opts.jobId,
+        roomType: opts.roomType,
+        reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
+        attempt: attemptNumber,
+      },
+    });
+    resp = run.resp;
+    modelUsed = run.modelUsed;
+  } catch (error: any) {
+    const message = String(error?.message || error || "unknown_error");
+    if (/no inline image data|no image data in gemini response/i.test(message)) {
+      throw new Stage2GenerationNoImageError(message);
+    }
+    throw new Stage2GenerationFailure(`[stage2] generation failed: ${message}`);
+  }
 
   const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
   const img = responseParts.find((p) => p.inlineData);
   if (!img?.inlineData?.data) {
-    throw new Error("No image data in Gemini response");
+    const inlineDataPresent = responseParts.some((part: any) => !!part?.inlineData?.data);
+    console.warn(
+      `[stage2_generation_no_image] model=${modelUsed} attempt=${attemptNumber} response_parts=${summarizeResponsePartTypes(
+        responseParts
+      )} inlineData_present=${inlineDataPresent}`
+    );
+    throw new Stage2GenerationNoImageError();
   }
+
+  if (path.resolve(opts.outputPath) === path.resolve(basePath)) {
+    throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_path_equals_baseline", "stage2_candidate_collapse");
+  }
+
   writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${img.inlineData.data}`);
+  try {
+    await fs.access(opts.outputPath);
+  } catch {
+    throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_file_missing", "stage2_candidate_collapse");
+  }
+
   await logImageAttemptUrl({
     stage: "2",
     attempt: attemptNumber,
@@ -343,7 +454,7 @@ export async function runStage2(
     stagingRegion?: StagingRegion | null;
     stagingStyle?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
-    promptMode: "full" | "refresh";
+    promptMode?: "full" | "refresh";
     curtainRailLikely?: boolean;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
@@ -357,8 +468,16 @@ export async function runStage2(
     validationConfig?: { localMode?: Mode };
   }
 ): Promise<Stage2Result> {
-  // Normalize room type format for prompt compatibility
-  // Client sends "dining-room" (hyphen), prompts expect "dining_room" (underscore)
+  const validationBaseline = opts.stage1APath || basePath;
+
+  if (process.env.USE_GEMINI_STAGE2 !== "1") {
+    return { outputPath: basePath, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
+  }
+
+  if (!(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY)) {
+    return { outputPath: basePath, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
+  }
+
   const normalizedRoomType = (opts.roomType || "")
     .toLowerCase()
     .replace(/-/g, "_")
@@ -367,539 +486,56 @@ export async function runStage2(
     ? "multiple_living"
     : normalizedRoomType;
 
-  let out = basePath;
-  const dbg = process.env.STAGE2_DEBUG === "1";
-  const validatorNotes: any[] = [];
-  let needsRetry = false;
-  let lastValidatorResults: any = {};
-  let strictPrompt = false;
-  const localMode: Mode = opts.validationConfig?.localMode || "log";
-  const effectiveMode: "off" | "log" | "block" = localMode === "block" ? "block" : (localMode === "log" ? "log" : "off");
-  const allowRetries = effectiveMode === "block";
-  let localReasons: string[] = [];
-
-  const stageAwareConfig = loadStageAwareConfig();
-  focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__jobId" });
-  const jobId = opts.jobId;
-  let attemptsUsed = 0;
-  let validationRisk = false;
-  let retryCount = 0;
-
-  // CRITICAL: Stage2 validation baseline should be Stage1A output, NOT original
-  // If stage1APath not provided, fallback to basePath with warning
-  const validationBaseline = opts.stage1APath || basePath;
-  if (!opts.stage1APath) {
-    focusLog("PIPELINE_BASELINE_WARN", `[stage2] ⚠️ No stage1APath provided - using basePath as validation baseline (may cause false positives)`);
-  }
-
-  focusLog("PIPELINE_VERBOSE", `[stage2] 🔵 Starting virtual staging...`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Input: ${basePath}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Validation baseline: ${validationBaseline}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Source stage: ${baseStage === '1B' ? 'Stage1B (decluttered)' : 'Stage1A (enhanced)'}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Room type: ${opts.roomType}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Scene type: ${opts.sceneType || 'interior'}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Profile: ${opts.profile?.styleName || 'default'}`);
-  focusLog("PIPELINE_VERBOSE", `[stage2] Stage-aware validation: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
-
-  // Early exit if Stage 2 not enabled
-  if (process.env.USE_GEMINI_STAGE2 !== "1") {
-    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
-    if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] USE_GEMINI_STAGE2!=1 → skipping (using ${baseStage} output)`);
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
-  }
-
-  // Run OpenCV validator after Stage 1B (before staging) - legacy behavior
-  if (!stageAwareConfig.enabled) {
-    try {
-      // AUDIT FIX: routed through safeToBuffer for safe cleanup
-      const imageBuffer = await safeToBuffer(basePath, jobId);
-      const result1B = await runOpenCVStructuralValidator(imageBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
-      validatorNotes.push({ stage: '1B', validator: 'OpenCV', result: result1B });
-      lastValidatorResults['1B'] = result1B;
-      if (!result1B.ok) needsRetry = true;
-    } catch (e) {
-      validatorNotes.push({ stage: '1B', validator: 'OpenCV', error: String(e) });
-      lastValidatorResults['1B'] = { ok: false, error: String(e) };
-      needsRetry = true;
-    }
-  }
-
-  // Check API key before attempting Gemini calls
-  if (!(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY)) {
-    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ No GEMINI_API_KEY set – skipping (using ${baseStage} output)`);
-    return { outputPath: out, attempts: 0, maxAttempts: 0, validationRisk: false, fallbackUsed: false, localReasons: [] };
-  }
-
-  if (dbg) focusLog("PIPELINE_VERBOSE", `[stage2] starting with roomType=${opts.roomType}, base=${basePath}`);
-
-  // ═══════════════════════════════════════════════════════════
-  // LAYOUT PLANNER PRE-PASS (Gemini Vision - Low Cost)
-  // Only for Stage 2 FULL staging (empty rooms)
-  // KILL SWITCH: USE_GEMINI_LAYOUT_PLANNER=1
-  // ═══════════════════════════════════════════════════════════
-  let layoutContext: LayoutContextResult | null = null;
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedPromptMode: "full" | "refresh" = opts.promptMode
     ? opts.promptMode
     : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
-  if (!opts.promptMode) {
-    focusLog("PIPELINE_VERBOSE", `[stage2] ⚠️ promptMode missing; using fallback inference from sourceStage (legacy caller)`);
-  }
-  const isFullStaging = resolvedPromptMode === "full";
-  const isRefreshStaging = !isFullStaging;
+
+  let layoutContext: LayoutContextResult | null = null;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
-  
-  if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && layoutPlannerEnabled) {
-    focusLog("LAYOUT_PLANNER", "[stage2] 🔍 Running layout planner pre-pass for FULL staging...");
-    const plannerStartTime = Date.now();
+  const isFullStaging = resolvedPromptMode === "full";
+  if (isFullStaging && layoutPlannerEnabled) {
     try {
       layoutContext = await buildLayoutContext(basePath);
-      const plannerElapsed = Date.now() - plannerStartTime;
-      
-      if (layoutContext) {
-        focusLog("LAYOUT_PLANNER", "[stage2] ✅ Layout context extracted", {
-          elapsed: plannerElapsed,
-          roomTypeGuess: layoutContext.room_type_guess,
-          complexity: layoutContext.layout_complexity,
-          confidence: layoutContext.confidence,
-          zoneCount: layoutContext.zones.length,
-          featureCount: layoutContext.major_fixed_features.length,
-        });
-        
-        // Store in job metadata for ROI tracking
-        try {
-          await updateJob(jobId, {
-            layoutPlannerUsed: true,
-            layoutPlannerElapsed: plannerElapsed,
-            layoutContext: {
-              room_type_guess: layoutContext.room_type_guess,
-              open_plan: layoutContext.open_plan,
-              layout_complexity: layoutContext.layout_complexity,
-              occlusion_risk: layoutContext.occlusion_risk,
-              confidence: layoutContext.confidence,
-              zones: layoutContext.zones.slice(0, 4), // Cap at 4 zones
-              major_fixed_features: layoutContext.major_fixed_features.slice(0, 6), // Cap at 6 features
-              staging_risk_flags: layoutContext.staging_risk_flags.slice(0, 4), // Cap at 4 flags
-            }
-          });
-        } catch (updateError) {
-          focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Failed to store layout context in job metadata", updateError);
-        }
-      } else {
-        focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Layout planner returned null - continuing without layout context", {
-          elapsed: plannerElapsed,
-        });
-        // Log that planner was attempted but failed
-        try {
-          await updateJob(jobId, { layoutPlannerUsed: false, layoutPlannerFailed: true });
-        } catch {}
-      }
     } catch (error: any) {
-      const plannerElapsed = Date.now() - plannerStartTime;
-      focusLog("LAYOUT_PLANNER", "[stage2] ⚠️ Layout planner failed - continuing without layout context", {
-        elapsed: plannerElapsed,
-        error: error.message,
+      focusLog("LAYOUT_PLANNER", "[stage2] Layout planner failed - continuing without layout context", {
+        error: error?.message || String(error),
       });
-      // Log failure for ROI tracking
-      try {
-        await updateJob(jobId, { layoutPlannerUsed: false, layoutPlannerFailed: true, layoutPlannerError: error.message });
-      } catch {}
     }
-  } else if (isFullStaging && process.env.USE_GEMINI_STAGE2 === "1" && !layoutPlannerEnabled) {
-    focusLog("LAYOUT_PLANNER", "[stage2] ℹ️ Layout planner disabled (USE_GEMINI_LAYOUT_PLANNER!=1)");
-    // Log that planner was not used
-    try {
-      await updateJob(jobId, { layoutPlannerUsed: false });
-    } catch {}
   }
 
-  // Retry loop: honor GEMINI_MAX_RETRIES when provided; otherwise use stage-aware config
-  const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
-  const geminiMaxRetries = Number.isFinite(geminiMaxRetriesRaw) ? Math.max(0, Math.floor(geminiMaxRetriesRaw)) : null;
-  const configuredAttempts = geminiMaxRetries !== null
-    ? Math.max(1, geminiMaxRetries + 1)
-    : (stageAwareConfig.enabled ? stageAwareConfig.maxRetryAttempts + 1 : 2);
-  const maxInternalAttemptsRaw = Number(process.env.STAGE2_INTERNAL_MAX_ATTEMPTS || 3);
-  const maxInternalAttempts = Number.isFinite(maxInternalAttemptsRaw)
-    ? Math.min(4, Math.max(1, Math.floor(maxInternalAttemptsRaw)))
-    : 3;
-  const maxAttempts = Math.min(configuredAttempts, maxInternalAttempts);
-  const regenEnabled = maxAttempts > 1;
-  console.log(`[STAGE2_REGEN_MODE] job=${opts.jobId || "unknown"} enabled=${regenEnabled} maxAttempts=${maxAttempts}`);
-  let currentTightenLevel: TightenLevel = 0;
+  const outputPath = siblingOutPath(basePath, "-2", ".webp");
+  const generatedPath = await runStage2GenerationAttempt(basePath, {
+    roomType: opts.roomType,
+    sceneType: opts.sceneType,
+    profile: opts.profile,
+    referenceImagePath: opts.referenceImagePath,
+    stagingRegion: opts.stagingRegion,
+    stagingStyle: opts.stagingStyle,
+    sourceStage: opts.sourceStage,
+    promptMode: resolvedPromptMode,
+    curtainRailLikely: opts.curtainRailLikely,
+    jobId: opts.jobId,
+    outputPath,
+    attempt: 1,
+    layoutContext,
+    modelReason: "stage2_initial_generation",
+  });
 
-  // This change removes duplicate Stage 2 validation retry channels and consolidates retry strategy
-  // into internal adaptive loop for clarity, cost control, and deterministic behaviour.
+  if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {
+    throw new Stage2GenerationFailure(
+      "stage2_candidate_collapse: candidate_equals_validation_baseline",
+      "stage2_candidate_collapse"
+    );
+  }
 
-  const buildStage2OutputPath = (attemptIndex: number) => {
-    const suffix = attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`;
-    return siblingOutPath(basePath, suffix, ".webp");
+  return {
+    outputPath: generatedPath,
+    attempts: 1,
+    maxAttempts: resolveStage2MaxAttempts(),
+    validationRisk: false,
+    fallbackUsed: false,
+    localReasons: [],
   };
-
-  let retryReasonForNextAttempt: Stage2RetryReason = "initial";
-  let previousGenerationPlan: Stage2GenerationPlan | null = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    needsRetry = false;
-    validationRisk = false;
-    localReasons = [];
-    
-    // ✅ FIX: Always use baseline input (Stage 1B or 1A), never compound previous retry outputs
-    // This ensures each retry starts fresh from the correct stage baseline
-    let inputForStage2 = basePath;
-    
-    // ✅ GUARD: Log retry baseline usage for debugging
-    if (attempt > 0) {
-      focusLog("PIPELINE_VERBOSE", `[stage2] Retry attempt ${attempt}: using baseline ${basePath.substring(basePath.length - 60)} (NOT previous output)`);
-    }
-    
-    if (opts.stagingRegion) {
-      try {
-        // ✅ FIX: Build staging region overlay from baseline, not previous retry output
-        const meta = await sharp(basePath).metadata();
-        const W = meta.width || 0;
-        const H = meta.height || 0;
-        const r = opts.stagingRegion;
-        const x = Math.max(0, Math.min(Math.floor(r.x), Math.max(0, W - 1)));
-        const y = Math.max(0, Math.min(Math.floor(r.y), Math.max(0, H - 1)));
-        const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
-        const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
-        const overlay = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0.35 } } }).toBuffer();
-        const regionPatch = await sharp(basePath).extract({ left: x, top: y, width: w, height: h }).toBuffer();
-        const guided = await sharp(basePath)
-          .composite([
-            { input: overlay, left: 0, top: 0 },
-            { input: regionPatch, left: x, top: y }
-          ])
-          .toFormat("png")
-          .toBuffer();
-        const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
-        await sharp(guided).toFile(guidedPath);
-        await logImageAttemptUrl({
-          stage: "2",
-          attempt: attempt + 1,
-          jobId,
-          localPath: guidedPath,
-        });
-        inputForStage2 = guidedPath;
-        if (dbg) focusLog("TEMP_FILE", `[stage2] Built guided input for staging region: ${guidedPath}`);
-      } catch (e) {
-        focusLog("TEMP_FILE", "[stage2] Failed to build guided staging input; proceeding with original base image", e);
-      }
-    }
-
-    // Build prompt and call Gemini
-    const scene = opts.sceneType || "interior";
-    const { data, mime } = toBase64(inputForStage2);
-    const profile = opts.profile;
-    const useTest = process.env.USE_TEST_PROMPTS === "1";
-    const attemptNumber = attempt + 1;
-    const retryReasonForThisAttempt: Stage2RetryReason = attemptNumber === 1 ? "initial" : retryReasonForNextAttempt;
-    // Log incoming staging style from options (before prompt assembly)
-    const stagingStyleRaw: any = (opts as any)?.stagingStyle;
-    focusLog("PROMPT", "[stage2] incoming stagingStyle =", stagingStyleRaw);
-    const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === "string"
-      ? stagingStyleRaw.trim()
-      : "none";
-
-    let textPrompt = useTest
-      ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
-      : buildStage2PromptNZStyle(normalizedRoomType, scene, { 
-          stagingStyle: stagingStyleNorm, 
-          sourceStage: opts.sourceStage,
-          mode: resolvedPromptMode,
-          layoutContext: layoutContext || undefined 
-        });
-    // Build a high-priority staging style directive (system-like block)
-    const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
-    if (useTest) {
-      textPrompt = require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType);
-    }
-
-    // Apply prompt tightening based on retry attempt
-    if (stageAwareConfig.enabled && attempt > 0) {
-      currentTightenLevel = getTightenLevelFromAttempt(attempt);
-      logTighteningInfo("2", attempt, currentTightenLevel);
-      textPrompt = buildTightenedPrompt("2", textPrompt, currentTightenLevel);
-      strictPrompt = true;
-    } else if (attempt === 1) {
-      // Legacy retry behavior when stage-aware is disabled
-      textPrompt += "\n\nSTRICT VALIDATION: Please ensure the output strictly matches the requested room type and scene, and correct any structural issues.";
-      strictPrompt = true;
-    }
-
-    console.log(`[STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=${opts.jobId}`);
-
-    const generationPlan = resolveStage2GenerationPlan({
-      attempt: attemptNumber,
-      retryReason: retryReasonForThisAttempt,
-      previousPlan: previousGenerationPlan,
-    });
-    previousGenerationPlan = generationPlan;
-
-    logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReasonForThisAttempt}`);
-
-    if (attemptNumber >= 3) {
-      textPrompt += `
-
-The previous attempt removed or altered an architectural opening.
-
-Ensure all windows, doors, closet doors, wardrobe doors, and walk-through openings remain visible and structurally intact.
-
-Do NOT place furniture, walls, mirrors, artwork, or cabinets over these openings.
-`;
-    }
-
-    focusLog("PIPELINE_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "pipeline/stage2.ts", variable: "__curtainRailLikely" });
-    const railLikely = opts.curtainRailLikely;
-    if (railLikely === false) {
-      textPrompt += `
-
-WINDOW COVERING HARD PROHIBITION:
-No curtain rails or tracks are visible in the input image.
-DO NOT add curtains, drapes, rods, or tracks.
-Leave windows bare.
-`;
-    } else if (railLikely === true) {
-      textPrompt += `
-
-WINDOW COVERING PRESERVATION:
-Curtain rails/tracks are present.
-Keep existing curtains and rails/tracks unchanged.
-Do not add blinds.
-`;
-    } else if (railLikely === "unknown") {
-      textPrompt += `
-
-WINDOW COVERING PRESERVATION:
-If curtain rails/tracks and curtains are present, keep them unchanged.
-Do not add blinds, rods, tracks, or new window coverings.
-`;
-    }
-  logger.debug("Stage2 prompt hierarchy: camera lock placed first");
-    const requestParts: any[] = [];
-    // Always include the primary input image first
-    requestParts.push({ inlineData: { mimeType: mime, data } });
-    // Optional reference image (kept immediately after the primary image)
-    if (opts.referenceImagePath) {
-      const ref = toBase64(opts.referenceImagePath);
-      requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
-    }
-    // Insert the style directive as a separate text part before the main prompt
-    if (styleDirective) {
-      requestParts.push({ text: styleDirective });
-    }
-    // Finally, add the main prompt
-    requestParts.push({ text: textPrompt });
-    if (dbg) {
-      const combinedPrompt = styleDirective + "\n\n" + textPrompt;
-      const preview = combinedPrompt.slice(0, 1000);
-      focusLog("PROMPT", `[stage2] [PROMPT_ASSEMBLED] stagingStyle=${stagingStyleNorm} len=${combinedPrompt.length}\n${preview}${combinedPrompt.length > 1000 ? '\n...[truncated]' : ''}`);
-      focusLog("PROMPT", "[stage2][PROMPT_ASSEMBLED]", {
-        stagingStyle: stagingStyleNorm,
-        len: combinedPrompt.length,
-        preview: combinedPrompt.slice(0, 400),
-      });
-    }
-    if (dbg) focusLog("GEMINI_CALL", "[stage2] invoking Gemini with roomType=%s", opts.roomType);
-    focusLog("GEMINI_CALL", `[stage2] 🤖 Calling Gemini API for virtual staging... (attempt ${attempt + 1}${strictPrompt ? ' [STRICT]' : ''})`);
-    try {
-      let ai: any = null;
-      ai = getGeminiClient();
-      if (!ai) throw new Error("getGeminiClient returned null/undefined");
-      const apiStartTime = Date.now();
-      const generationConfig: any = {
-        temperature: generationPlan.temperature,
-        topP: generationPlan.topP,
-        topK: generationPlan.topK,
-        ...(profile?.seed !== undefined ? { seed: profile.seed } : {}),
-      };
-      const resp = await (ai as any).models.generateContent({
-        model: generationPlan.model,
-        contents: requestParts,
-        generationConfig,
-      });
-      const apiElapsed = Date.now() - apiStartTime;
-      focusLog("PIPELINE_VERBOSE", `[stage2] ✅ Gemini API responded in ${apiElapsed} ms (model=${generationPlan.model})`);
-      const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-      focusLog("PIPELINE_VERBOSE", `[stage2] 📊 Response parts: ${responseParts.length}`);
-      const img = responseParts.find(p => p.inlineData);
-      if (!img?.inlineData?.data) {
-        validatorNotes.push({ stage: '2', validator: 'Gemini', error: 'No image data in Gemini response' });
-        if (dbg) focusLog("PIPELINE_VERBOSE", "[stage2] no image in response → using previous output");
-        break;
-      }
-      const candidatePath = buildStage2OutputPath(attempt);
-      if (attempt > 0) {
-        try {
-          await fs.access(candidatePath);
-          throw new Error(`[stage2] Retry output already exists: ${candidatePath}`);
-        } catch (err: any) {
-          if (err?.code !== "ENOENT") {
-            throw err;
-          }
-        }
-        console.log(`[RETRY_OUTPUT] stage=2 attempt=${attempt} path=${candidatePath}`);
-      }
-      writeImageDataUrl(candidatePath, `data:image/webp;base64,${img.inlineData.data}`);
-      await logImageAttemptUrl({
-        stage: "2",
-        attempt: attemptNumber,
-        jobId,
-        localPath: candidatePath,
-      });
-      out = candidatePath;
-      logger.info(`[STAGE2_OUTPUT_PATH] job_id=${jobId} attempt=${attemptNumber} path=${candidatePath}`);
-      focusLog("TEMP_FILE", `[stage2] 💾 Saved staged image to: ${candidatePath}`);
-
-      // Run validators after Stage 2
-      let validatorFailed = false;
-
-      console.log(`[VALIDATOR_INPUT] stage=2 attempt=${attempt} using=${out}`);
-
-      if (stageAwareConfig.enabled) {
-        // ===== STAGE-AWARE VALIDATION (Feature-flagged) =====
-        // CRITICAL: Use Stage1A output as baseline, NOT original
-        try {
-          const validationResult = await validateStructureStageAware({
-            stage: "stage2",
-            baselinePath: validationBaseline, // Stage1A output
-            candidatePath: out, // Stage2 output
-            mode: localMode === "block" ? "block" : "log",
-            jobId,
-            sceneType: opts.sceneType || "interior",
-            roomType: opts.roomType,
-            retryAttempt: attempt,
-            config: stageAwareConfig,
-          });
-
-          validatorNotes.push({ stage: '2', validator: 'StageAware', result: validationResult });
-          lastValidatorResults['2'] = validationResult;
-
-          if (validationResult.risk) {
-            validatorFailed = true;
-            validationRisk = true;
-            localReasons = validationResult.triggers.map((t) => t.message || t.id);
-            console.warn(`[stage2] Stage-aware validation detected risk (${validationResult.triggers.length} triggers)`);
-            validationResult.triggers.forEach((t, i) => {
-              console.warn(`[stage2]   ${i + 1}. ${t.id}: ${t.message}`);
-            });
-
-            if (allowRetries && attempt + 1 < maxAttempts) {
-              currentTightenLevel = getTightenLevelFromAttempt(attempt + 1);
-              needsRetry = true;
-              retryCount++;
-              retryReasonForNextAttempt = deriveRetryReasonFromSignals(
-                validationResult.triggers.map((t) => `${t.id}:${t.message || ""}`)
-              );
-              if (opts.onStrictRetry) {
-                opts.onStrictRetry({ reasons: validationResult.triggers.map(t => t.message) });
-              }
-              continue;
-            }
-            if (!allowRetries) {
-              console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
-            } else {
-              console.log(`[STAGE2_INTERNAL_RETRY_EXHAUSTED] attempts=${attempt + 1} maxAttempts=${maxAttempts}`);
-            }
-            attemptsUsed = attempt + 1;
-            break;
-          } else {
-            console.log(`[stage2] ✅ Stage-aware validation passed (risk=false)`);
-            attemptsUsed = attempt + 1;
-            break;
-          }
-        } catch (e) {
-          console.error(`[stage2] Stage-aware validation error:`, e);
-          validatorNotes.push({ stage: '2', validator: 'StageAware', error: String(e) });
-          // On error, don't retry - just continue with the output
-          attemptsUsed = attempt + 1;
-          break;
-        }
-      } else {
-        // ===== LEGACY VALIDATION (OpenCV) =====
-        try {
-          // AUDIT FIX: routed through safeToBuffer for safe cleanup
-          const stagedBuffer = await safeToBuffer(out, jobId);
-          const result2 = await runOpenCVStructuralValidator(stagedBuffer, { strict: !!process.env.STRICT_STRUCTURE_VALIDATION });
-          validatorNotes.push({ stage: '2', validator: 'OpenCV', result: result2 });
-          lastValidatorResults['2'] = result2;
-          if (!result2.ok) {
-            validatorFailed = true;
-            validationRisk = true;
-            const reason = (result2 as any)?.reason || (result2 as any)?.errors?.[0] || "opencv_structural_risk";
-            localReasons = [reason];
-          }
-        } catch (e) {
-          validatorNotes.push({ stage: '2', validator: 'OpenCV', error: String(e) });
-          lastValidatorResults['2'] = { ok: false, error: String(e) };
-          validatorFailed = true;
-          validationRisk = true;
-          localReasons = ["opencv_structural_error"];
-        }
-
-        if (validatorFailed && allowRetries && attempt + 1 < maxAttempts) {
-          needsRetry = true;
-          retryCount++;
-          retryReasonForNextAttempt = deriveRetryReasonFromSignals(localReasons);
-          continue;
-        } else if (validatorFailed && !allowRetries) {
-          console.warn(`[validator] retry suppressed due to mode=${effectiveMode}`);
-          attemptsUsed = attempt + 1;
-          break;
-        } else if (validatorFailed) {
-          console.log(`[STAGE2_INTERNAL_RETRY_EXHAUSTED] attempts=${attempt + 1} maxAttempts=${maxAttempts}`);
-          attemptsUsed = attempt + 1;
-          break;
-        } else {
-          attemptsUsed = attempt + 1;
-          break;
-        }
-      }
-    } catch (e: any) {
-      validatorNotes.push({ stage: '2', validator: 'Gemini', error: String(e) });
-      lastValidatorResults['2'] = { ok: false, error: String(e) };
-      console.error("[stage2] ❌ Gemini API error:", e?.message || String(e));
-      attemptsUsed = attempt + 1;
-      break;
-    }
-  }
-  // After retry, always return the last output and notes
-  if (attemptsUsed === 0) attemptsUsed = Math.max(1, maxAttempts);
-  
-  // ═══════════════════════════════════════════════════════════
-  // ROI METRICS TRACKING (Layout Planner Impact)
-  // ═══════════════════════════════════════════════════════════
-  try {
-    const finalJob = await getJob(jobId);
-    const layoutPlannerWasUsed = (finalJob as any)?.layoutPlannerUsed === true;
-    
-    focusLog("LAYOUT_PLANNER_ROI", "[stage2] ROI Metrics", {
-      jobId,
-      layoutPlannerUsed: layoutPlannerWasUsed,
-      stage2RetryCount: attemptsUsed - 1, // 0-indexed retries
-      totalAttempts: attemptsUsed,
-      validationRisk,
-      validatorEscalations: validatorNotes.length,
-      finalPassValidatorLevel: localMode, // 'log' or 'block'
-      needsRetry: needsRetry,
-    });
-    
-    // Store final metrics in job for analysis
-    await updateJob(jobId, {
-      stage2Metrics: {
-        retryCount: attemptsUsed - 1,
-        totalAttempts: attemptsUsed,
-        validationRisk,
-        validatorEscalations: validatorNotes.length,
-        finalValidatorMode: localMode,
-      }
-    });
-  } catch (metricsError) {
-    // Don't fail the job if metrics logging fails
-    focusLog("LAYOUT_PLANNER_ROI", "[stage2] ⚠️ Failed to log ROI metrics", metricsError);
-  }
-  
-  return { outputPath: out, attempts: attemptsUsed, maxAttempts, validationRisk, fallbackUsed: false, localReasons };
 }
