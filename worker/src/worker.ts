@@ -6234,10 +6234,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return false;
           });
           // Detect large geometry change in preserved openings (advisory only)
-          const metrics: {
-            semanticOpeningAreaDeltaPct?: number;
-            semanticOpeningAspectRatioDelta?: number;
-          } = openingValidationResult?.summary ?? {};
+          const metrics = (openingValidationResult?.summary ?? {}) as any;
           const geometryDriftDetected =
             Math.abs(metrics.semanticOpeningAreaDeltaPct ?? 0) > 0.40 ||
             Math.abs(metrics.semanticOpeningAspectRatioDelta ?? 0) > 0.40;
