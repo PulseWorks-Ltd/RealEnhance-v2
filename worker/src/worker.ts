@@ -6129,6 +6129,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         maskedEdgeDriftPct,
       });
 
+      // Detect large geometry change in preserved openings (advisory only)
+      const metrics = (typeof openingValidationResult === 'object' && openingValidationResult?.summary)
+        ? openingValidationResult.summary
+        : {};
+      const geometryDriftDetected =
+        Math.abs(metrics.semanticOpeningAreaDeltaPct ?? 0) > 0.40 ||
+        Math.abs(metrics.semanticOpeningAspectRatioDelta ?? 0) > 0.40;
+
+      if (geometryDriftDetected) {
+        invariantHints.push(
+          "An architectural opening appears to have changed shape or size significantly. Verify that windows and openings have not been partially filled, resized, or truncated."
+        );
+        logger.info(`[OPENING_GEOMETRY_HINT] detected=true`);
+      }
+
       logger.info(
         `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant} alwaysRun=true hints=${JSON.stringify(invariantHints)}`
       );
