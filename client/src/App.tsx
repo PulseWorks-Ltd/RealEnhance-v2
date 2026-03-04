@@ -1,7 +1,6 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { Header } from "@/components/Header";
-import { AppShell } from "@/components/layout/AppShell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAgency } from "@/components/RequireAgency";
 import { RequireSubscription } from "@/components/RequireSubscription";
@@ -88,20 +87,20 @@ export default function App() {
             <Route path="*" element={<NotFound />} />
           </Route>
 
-          {/* App Routes with Sidebar Shell */}
+          {/* App Routes (full-width layout) */}
           {/* All routes require authentication via RequireAuth */}
           <Route element={<RequireAuth><Outlet /></RequireAuth>}>
             {/* Agency page: RequireAuth only (new users create agency here) */}
-            <Route path="/agency" element={<AppShell><Agency /></AppShell>} />
-            <Route path="/settings/billing" element={<AppShell><BillingSettings /></AppShell>} />
+            <Route path="/agency" element={<Agency />} />
+            <Route path="/settings/billing" element={<BillingSettings />} />
             
             {/* Protected routes: RequireAuth + RequireAgency */}
             <Route element={<RequireAgency><Outlet /></RequireAgency>}>
               {/* Enhance page: Additional RequireSubscription guard */}
-              <Route path="/home" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
+              <Route path="/home" element={<RequireSubscription><Home /></RequireSubscription>} />
               
               {/* Other app routes: RequireAuth + RequireAgency */}
-              <Route element={<AppShell><Outlet /></AppShell>}>
+              <Route element={<Outlet />}>
                 <Route path="/change-password" element={<ChangePassword />} />
                 <Route path="/settings/profile" element={<ProfileSettings />} />
                 <Route path="/settings/security" element={<SecuritySettings />} />
