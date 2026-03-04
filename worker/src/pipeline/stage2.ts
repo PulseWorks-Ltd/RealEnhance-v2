@@ -24,13 +24,20 @@ import { buildStructuralRetryInjection, type StructuralFailureType } from "./str
 const logger = console;
 
 function getStage2Sampling(attempt: number) {
+  // Attempt 1 (stable)
   if (attempt === 1) {
-    return { temperature: 0.33, topP: 0.78, topK: 30 };
+    return { temperature: 0.40, topP: 0.90, topK: 40 };
   }
+  // Retry 1 (mild layout variation)
   if (attempt === 2) {
-    return { temperature: 0.25, topP: 0.70, topK: 30 };
+    return { temperature: 0.45, topP: 0.92, topK: 50 };
   }
-  return { temperature: 0.25, topP: 0.70, topK: 30 };
+  // Retry 2 (strong layout variation but still controlled)
+  if (attempt === 3) {
+    return { temperature: 0.50, topP: 0.95, topK: 80 };
+  }
+  // Default fallback (use stable)
+  return { temperature: 0.40, topP: 0.90, topK: 40 };
 }
 
 // Stage 2: virtual staging (add furniture)
