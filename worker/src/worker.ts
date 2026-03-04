@@ -3971,6 +3971,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         mode: "log",
       });
 
+      const stage1BMaskedEdgeResult = await runMaskedEdgeValidator({
+        originalImagePath: path1A,
+        enhancedImagePath: candidate,
+        scene: sceneLabel === "exterior" ? "exterior" : "interior",
+        mode: "log",
+        jobId: payload.jobId,
+      });
+      const stage1BMaskedDriftPct = Number(((stage1BMaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
+      const stage1BMaskedOpeningsDeltaTotal =
+        (stage1BMaskedEdgeResult?.createdOpenings ?? 0) +
+        (stage1BMaskedEdgeResult?.closedOpenings ?? 0);
+
       const stage1BOpeningsBefore =
         (stage1BSemanticSignals?.windows?.before ?? 0) +
         (stage1BSemanticSignals?.doors?.before ?? 0);
@@ -4013,7 +4025,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
         drift: {
           wallPercent: (stage1BSemanticSignals?.walls?.driftRatio ?? 0) * 100,
-          maskedEdgePercent: 0,
+          maskedEdgePercent: stage1BMaskedDriftPct,
           angleDegrees: 0,
         },
         anchorChecks: {
@@ -4132,24 +4144,86 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         openingCountDelta,
       });
 
+      const stage1BSemanticWallDriftPct = (stage1BSemanticSignals?.walls?.driftRatio ?? 0) * 100;
+      const stage1BStructuralDeviationDeg = Number(stage1BStructuralEvidence?.drift?.angleDegrees ?? 0);
+      const stage1BIsExtremeDeviation =
+        Number.isFinite(stage1BStructuralDeviationDeg) && stage1BStructuralDeviationDeg >= 90;
+      const stage1BIsExtremeMaskCollapse =
+        stage1BMaskedDriftPct >= 95 && stage1BSemanticWallDriftPct >= 95;
+
+      const stage1BSemanticConsensus = {
+        windowsStatus: stage1BOpeningsBefore !== stage1BOpeningsAfter ? "FAIL" : "PASS",
+        wallDriftStatus: (stage1BSemanticSignals?.walls?.driftRatio ?? 0) >= 0.12 ? "FAIL" : "PASS",
+      };
+      const stage1BMaskedConsensus = {
+        maskedDriftStatus: (stage1BMaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18 ? "FAIL" : "PASS",
+        openingsStatus: stage1BMaskedOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
+      };
+      const stage1BCompositeEvaluation = evaluateCompositeLocalValidator({
+        structuralDeviationDeg: Number.isFinite(stage1BStructuralDeviationDeg)
+          ? stage1BStructuralDeviationDeg
+          : null,
+        maskedDriftPct: stage1BMaskedDriftPct,
+        semanticWallDriftPct: stage1BSemanticWallDriftPct,
+        semanticOpeningsDeltaTotal: openingCountDelta,
+        maskedOpeningsDeltaTotal: stage1BMaskedOpeningsDeltaTotal,
+      });
+      const stage1BConsensusClassification = classifyStructuralConsensusCase({
+        stage: "1B",
+        validationMode: "FULL_STAGE_ONLY",
+        jobId: payload.jobId,
+        semantic: stage1BSemanticConsensus,
+        masked: stage1BMaskedConsensus,
+        composite: {
+          decision: stage1BCompositeEvaluation.failed === true ? "FAIL" : "PASS",
+        },
+      });
+      const stage1BCatastrophicConsensusBackstop =
+        stage1BConsensusClassification.mode === "CATASTROPHIC_BACKSTOP";
+      const stage1BExtremeHardFail =
+        stage1BIsExtremeDeviation ||
+        stage1BIsExtremeMaskCollapse ||
+        stage1BCatastrophicConsensusBackstop;
+
+      nLog("[STAGE1B_EXTREME_GATE]", {
+        jobId: payload.jobId,
+        attempt: stage1BAttemptNo,
+        structuralDeviationDeg: stage1BStructuralDeviationDeg,
+        maskedDriftPct: stage1BMaskedDriftPct,
+        semanticWallDriftPct: stage1BSemanticWallDriftPct,
+        isExtremeDeviation: stage1BIsExtremeDeviation,
+        isExtremeMaskCollapse: stage1BIsExtremeMaskCollapse,
+        consensusDerivedWarnings: stage1BConsensusClassification.derivedWarnings,
+        consensusMode: stage1BConsensusClassification.mode,
+        catastrophicConsensusBackstop: stage1BCatastrophicConsensusBackstop,
+      });
+
       const effectiveHardFail =
-        !stage1BMinorReconstructionSignal &&
-        (structureResult.hardFail || stage1BCalibratedStructuralHardFail || openingRemovalHardFail);
-      const effectiveViolationType = wallDelta.hardFail
-        ? wallDelta.violationType
-        : openingRemovalHardFail
-          ? "opening_change"
-          : openingMinorDriftTolerated
-            ? "opening_minor_drift"
-          : stage1BCalibratedStructuralHardFail
-            ? (wallDelta.newWallRatio > STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD
-              ? "wall_plane_expansion"
-              : "opening_change")
-          : suspiciousWallExpansion
-            ? "wall_plane_expansion"
-        : structureResult.violationType;
+        stage1BExtremeHardFail;
+      const effectiveViolationType =
+        stage1BCatastrophicConsensusBackstop
+          ? "structural_consensus"
+          : stage1BIsExtremeDeviation || stage1BIsExtremeMaskCollapse
+            ? "extreme_structural_violation"
+            : structureResult.violationType;
       const effectiveReasons = [
         ...((Array.isArray(structureResult.reasons) ? structureResult.reasons : []) as string[]),
+        ...(stage1BIsExtremeDeviation
+          ? [
+              `extreme_deviation:deg=${stage1BStructuralDeviationDeg}`,
+            ]
+          : []),
+        ...(stage1BIsExtremeMaskCollapse
+          ? [
+              `extreme_mask_collapse:maskedDriftPct=${stage1BMaskedDriftPct.toFixed(2)}`,
+              `extreme_mask_collapse:semanticWallDriftPct=${stage1BSemanticWallDriftPct.toFixed(2)}`,
+            ]
+          : []),
+        ...(stage1BCatastrophicConsensusBackstop
+          ? [
+              `consensus_derived_warnings=${stage1BConsensusClassification.derivedWarnings}`,
+            ]
+          : []),
         ...(openingRemovalHardFail
           ? [
               `opening_count_removed:before=${beforeOpeningCount}`,

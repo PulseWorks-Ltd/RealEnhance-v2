@@ -1,0 +1,396 @@
+{
+  "source_log": "logs.1772579704927.log",
+  "job_count": 8,
+  "batch_split_seconds_gap": 449.967206,
+  "batch_1_jobs": [
+    "job_08f58775-90d6-4433-a84c-3588fa917a88",
+    "job_149cc163-03ef-4614-a2b5-71ef708cf162",
+    "job_66c66bcc-5019-4e02-8f2f-efac866585d9",
+    "job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41",
+    "job_bb06eb07-8974-4c10-8022-58523ad69cc8"
+  ],
+  "batch_2_jobs": [
+    "job_260202ff-6e04-4652-82da-d498e9fe3c41",
+    "job_24b02873-e94a-45a5-b3a5-ec6d9c137203",
+    "job_21140c7a-e28c-47b0-a402-24d36803c17c"
+  ],
+  "jobs": {
+    "job_08f58775-90d6-4433-a84c-3588fa917a88": {
+      "first_ts": "2026-03-03T23:03:08.563368307Z",
+      "first_line": 190,
+      "stage1b_completed": true,
+      "stage2_urls": [
+        {
+          "line": 2244,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015994-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2.webp"
+        },
+        {
+          "line": 3703,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579083117-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2-retry1.webp"
+        },
+        {
+          "line": 5171,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579150867-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2-retry1.webp"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015994-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2.webp",
+          "blocking_validator": "gemini mode=block hardFail=false",
+          "failure_reasons": [
+            "unknown",
+            "semantic_validator_failed: windows 6\u21926, doors 0\u21920, wall_drift 54.25%, openings +1/-0",
+            "masked_edge_failed: drift 71.94%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 71.94,
+            "wall_drift_pct": 54.25,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "needs_confirm_or_failed",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 2,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579083117-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2-retry1.webp",
+          "blocking_validator": "gemini mode=block hardFail=true",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.277 < 0.97",
+            "Gemini structure: All architectural elements including walls, ceiling, floor, windows, and the existing ceiling light fixture remain identical in position, size, and form., The curtain systems (rods and drapes) are preserved exactly as in the BEFORE image., No camera shift, perspective change, or envelope geometry drift is detected., The room has been appropriately staged as a bedroom, adding suitable furniture without altering the underlying structure or blocking openings.",
+            "stage2_direct_hardfail: anchor_fixed_lighting_changed",
+            "semantic_validator_failed: windows 4\u21922, doors 0\u21920, wall_drift 44.52%, openings +1/-0",
+            "masked_edge_failed: drift 20.69%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 20.69,
+            "wall_drift_pct": 44.52,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "blocked",
+          "direct_hardfail_source": "anchor_fixed_lighting_changed"
+        },
+        {
+          "attempt_number": 2,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579150867-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2-retry1.webp",
+          "blocking_validator": null,
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": 9.01,
+            "structural_degree": 9.01
+          },
+          "final_decision": "published",
+          "direct_hardfail_source": null
+        }
+      ],
+      "attempts_per_job": 3,
+      "retry_count": 2
+    },
+    "job_149cc163-03ef-4614-a2b5-71ef708cf162": {
+      "first_ts": "2026-03-03T23:03:10.229894091Z",
+      "first_line": 239,
+      "stage1b_completed": true,
+      "stage2_urls": [
+        {
+          "line": 2113,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015460-realenhance-job_149cc163-03ef-4614-a2b5-71ef708cf162-1772578989035-v86om2jq1n8-canonical-1A-2.webp"
+        },
+        {
+          "line": 4369,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579093703-realenhance-job_149cc163-03ef-4614-a2b5-71ef708cf162-1772578989035-v86om2jq1n8-canonical-1A-2.webp"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015460-realenhance-job_149cc163-03ef-4614-a2b5-71ef708cf162-1772578989035-v86om2jq1n8-canonical-1A-2.webp",
+          "blocking_validator": null,
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579093703-realenhance-job_149cc163-03ef-4614-a2b5-71ef708cf162-1772578989035-v86om2jq1n8-canonical-1A-2.webp",
+          "blocking_validator": "gemini mode=block hardFail=false",
+          "failure_reasons": [
+            "No structural or architectural changes detected.",
+            "Camera viewpoint and perspective remain identical.",
+            "All walls, openings (window, door), ceiling, and floor are preserved.",
+            "Built-in recessed lights and power outlets are unchanged.",
+            "The room has been meaningfully staged as a bedroom while adhering to all structural constraints.",
+            "semantic_validator_failed: windows 3\u21923, doors 0\u21920, wall_drift 62.39%, openings +1/-0",
+            "masked_edge_failed: drift 43.06%, openings +0/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 43.06,
+            "wall_drift_pct": 62.39,
+            "deviation_deg": 90.721,
+            "structural_degree": null
+          },
+          "final_decision": "published",
+          "direct_hardfail_source": null
+        }
+      ],
+      "attempts_per_job": 2,
+      "retry_count": 1
+    },
+    "job_66c66bcc-5019-4e02-8f2f-efac866585d9": {
+      "first_ts": "2026-03-03T23:03:10.583966682Z",
+      "first_line": 308,
+      "stage1b_completed": true,
+      "stage2_urls": [
+        {
+          "line": 1995,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579014346-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2.webp"
+        },
+        {
+          "line": 3393,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579071635-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2-retry1.webp"
+        },
+        {
+          "line": 5089,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579143656-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2-retry2.webp"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579014346-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2.webp",
+          "blocking_validator": null,
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 2,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579071635-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2-retry1.webp",
+          "blocking_validator": "gemini mode=block hardFail=true",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.277 < 0.97",
+            "Gemini structure: All architectural elements including walls, ceiling, floor, windows, and the existing ceiling light fixture remain identical in position, size, and form., The curtain systems (rods and drapes) are preserved exactly as in the BEFORE image., No camera shift, perspective change, or envelope geometry drift is detected., The room has been appropriately staged as a bedroom, adding suitable furniture without altering the underlying structure or blocking openings.",
+            "stage2_direct_hardfail: anchor_fixed_lighting_changed",
+            "semantic_validator_failed: windows 4\u21922, doors 0\u21920, wall_drift 44.52%, openings +1/-0",
+            "masked_edge_failed: drift 20.69%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 20.69,
+            "wall_drift_pct": 44.52,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "blocked",
+          "direct_hardfail_source": "anchor_fixed_lighting_changed"
+        },
+        {
+          "attempt_number": 3,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579143656-realenhance-job_66c66bcc-5019-4e02-8f2f-efac866585d9-1772578989571-cictp6zh81r-canonical-1A-2-retry2.webp",
+          "blocking_validator": "gemini mode=block hardFail=true",
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": 9.01,
+            "structural_degree": 9.01
+          },
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        }
+      ],
+      "attempts_per_job": 3,
+      "retry_count": 2
+    },
+    "job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41": {
+      "first_ts": "2026-03-03T23:03:11.623701761Z",
+      "first_line": 431,
+      "stage1b_completed": true,
+      "stage2_urls": [
+        {
+          "line": 2261,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579017620-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2.webp"
+        },
+        {
+          "line": 4639,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579097917-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry1.webp"
+        },
+        {
+          "line": 5516,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579167456-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry2.webp"
+        },
+        {
+          "line": 5950,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579237885-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry2.webp"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579017620-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2.webp",
+          "blocking_validator": "gemini mode=block hardFail=false",
+          "failure_reasons": [
+            "unknown",
+            "semantic_validator_failed: windows 6\u21926, doors 0\u21920, wall_drift 54.25%, openings +1/-0",
+            "masked_edge_failed: drift 71.94%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 71.94,
+            "wall_drift_pct": 54.25,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "needs_confirm_or_failed",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 2,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579097917-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry1.webp",
+          "blocking_validator": "gemini mode=block hardFail=true",
+          "failure_reasons": [
+            "Perceptual diff failed: SSIM 0.536 < 0.97",
+            "Gemini structure: The room has been appropriately staged with furniture suitable for a bedroom., All architectural elements including walls, windows, doors, ceiling, floor, and built-in wardrobe remain unchanged in position, size, and form., There are no structural changes or camera shifts detected., Ceiling fixtures (downlights) are preserved., The built-in mirrored wardrobe maintains its exact footprint and silhouette.",
+            "semantic_validator_failed: windows 0\u21921, doors 0\u21920, wall_drift 38.04%, openings +1/-0",
+            "masked_edge_failed: drift 58.43%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 58.43,
+            "wall_drift_pct": 38.04,
+            "deviation_deg": 90.721,
+            "structural_degree": null
+          },
+          "final_decision": "needs_confirm_or_failed",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 3,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579167456-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry2.webp",
+          "blocking_validator": "gemini mode=block hardFail=false",
+          "failure_reasons": [
+            "unknown",
+            "semantic_validator_failed: windows 4\u21923, doors 0\u21920, wall_drift 53.09%, openings +1/-0",
+            "masked_edge_failed: drift 18.67%, openings +1/-0",
+            "semantic_validator_failed: windows 0\u21920, doors 0\u21920, wall_drift 30.24%, openings +0/-0",
+            "masked_edge_failed: drift 47.70%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 47.7,
+            "wall_drift_pct": 30.24,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "needs_confirm_or_failed",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 3,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579237885-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry2.webp",
+          "blocking_validator": "gemini mode=block hardFail=false",
+          "failure_reasons": [
+            "unknown",
+            "semantic_validator_failed: windows 0\u21920, doors 0\u21920, wall_drift 30.24%, openings +0/-0",
+            "masked_edge_failed: drift 47.70%, openings +1/-0"
+          ],
+          "local_validator_readings": {
+            "masked_drift_pct": 47.7,
+            "wall_drift_pct": 30.24,
+            "deviation_deg": 81.073,
+            "structural_degree": null
+          },
+          "final_decision": "published",
+          "direct_hardfail_source": null
+        }
+      ],
+      "attempts_per_job": 4,
+      "retry_count": 3
+    },
+    "job_bb06eb07-8974-4c10-8022-58523ad69cc8": {
+      "first_ts": "2026-03-03T23:03:12.614900114Z",
+      "first_line": 541,
+      "stage1b_completed": true,
+      "stage2_urls": [
+        {
+          "line": 1918,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579014025-realenhance-job_bb06eb07-8974-4c10-8022-58523ad69cc8-1772578987274-rh1z8gdkg7a-canonical-1A-2.webp"
+        },
+        {
+          "line": 3907,
+          "url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579087851-realenhance-job_bb06eb07-8974-4c10-8022-58523ad69cc8-1772578987274-rh1z8gdkg7a-canonical-1A-2.webp"
+        }
+      ],
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579014025-realenhance-job_bb06eb07-8974-4c10-8022-58523ad69cc8-1772578987274-rh1z8gdkg7a-canonical-1A-2.webp",
+          "blocking_validator": null,
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": null,
+            "structural_degree": null
+          },
+          "final_decision": "unknown",
+          "direct_hardfail_source": null
+        },
+        {
+          "attempt_number": 1,
+          "image_url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579087851-realenhance-job_bb06eb07-8974-4c10-8022-58523ad69cc8-1772578987274-rh1z8gdkg7a-canonical-1A-2.webp",
+          "blocking_validator": null,
+          "failure_reasons": [],
+          "local_validator_readings": {
+            "masked_drift_pct": null,
+            "wall_drift_pct": null,
+            "deviation_deg": 63.968,
+            "structural_degree": null
+          },
+          "final_decision": "published",
+          "direct_hardfail_source": null
+        }
+      ],
+      "attempts_per_job": 2,
+      "retry_count": 1
+    },
+    "job_260202ff-6e04-4652-82da-d498e9fe3c41": {
+      "first_ts": "2026-03-03T23:10:42.582106759Z",
+      "first_line": 6195,
+      "stage1b_completed": true,
+      "stage2_urls": [],
+      "attempts": [],
+      "attempts_per_job": 0,
+      "retry_count": 0
+    },
+    "job_24b02873-e94a-45a5-b3a5-ec6d9c137203": {
+      "first_ts": "2026-03-03T23:10:42.637509570Z",
+      "first_line": 6275,
+      "stage1b_completed": true,
+      "stage2_urls": [],
+      "attempts": [],
+      "attempts_per_job": 0,
+      "retry_count": 0
+    },
+    "job_21140c7a-e28c-47b0-a402-24d36803c17c": {
+      "first_ts": "2026-03-03T23:10:47.553513556Z",
+      "first_line": 6380,
+      "stage1b_completed": true,
+      "stage2_urls": [],
+      "attempts": [],
+      "attempts_per_job": 0,
+      "retry_count": 0
+    }
+  }
+}

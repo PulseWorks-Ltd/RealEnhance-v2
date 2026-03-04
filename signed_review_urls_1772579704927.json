@@ -1,0 +1,95 @@
+{
+  "count": 15,
+  "rows": [
+    {
+      "line": 3450,
+      "jobId": "job_08f58775-90d6-4433-a84c-3588fa917a88",
+      "stageGuess": "debug",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug/stage2-full-failed/job_08f58775-90d6-4433-a84c-3588fa917a88-1.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230434Z&X-Amz-Expires=86400&X-Amz-Signature=c3fbab314696a6f7087f2ffe144991f24d7c8e6ff05cd5445be1a9e477fbc9f0&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 5191,
+      "jobId": "job_08f58775-90d6-4433-a84c-3588fa917a88",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015994-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230337Z&X-Amz-Expires=86400&X-Amz-Signature=34afd5184b3d2e9145a25e67ef7699f1a6c2178a37896d61894121dffeca3f7c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 5200,
+      "jobId": "job_08f58775-90d6-4433-a84c-3588fa917a88",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579083117-realenhance-job_08f58775-90d6-4433-a84c-3588fa917a88-1772578986699-npji8jgicln-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230444Z&X-Amz-Expires=86400&X-Amz-Signature=0c7c222cb176dad4a5bca8faba6ad3f4f5bf810c68aca033ddb7db2a7bdeb882&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 4390,
+      "jobId": "job_149cc163-03ef-4614-a2b5-71ef708cf162",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579015460-realenhance-job_149cc163-03ef-4614-a2b5-71ef708cf162-1772578989035-v86om2jq1n8-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230336Z&X-Amz-Expires=86400&X-Amz-Signature=5896142ccbc2032ace974aae7284012b0c847127b25a126fc25912b882c775d9&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 10271,
+      "jobId": "job_21140c7a-e28c-47b0-a402-24d36803c17c",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579491243-realenhance-job_21140c7a-e28c-47b0-a402-24d36803c17c-1772579441222-pewsxbgcld-canonical-1A-1B-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231132Z&X-Amz-Expires=86400&X-Amz-Signature=95b4bd9a49e8926d9d25d86686cd28e0a00c4df7b2e55bf8699b175cc3d41c6d&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 10280,
+      "jobId": "job_21140c7a-e28c-47b0-a402-24d36803c17c",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579556448-realenhance-job_21140c7a-e28c-47b0-a402-24d36803c17c-1772579441222-pewsxbgcld-canonical-1A-1B-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231237Z&X-Amz-Expires=86400&X-Amz-Signature=ac40a0dad277e544b62a1a3cde17ab361a947e0c7e327a8acdac9c25b9cbfb45&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 10289,
+      "jobId": "job_21140c7a-e28c-47b0-a402-24d36803c17c",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579622198-realenhance-job_21140c7a-e28c-47b0-a402-24d36803c17c-1772579441222-pewsxbgcld-canonical-1A-1B-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231343Z&X-Amz-Expires=86400&X-Amz-Signature=568a118d7a9220b3d47e41b97a7bac001f4d81214d4da31b792eef72fe6f7155&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 9568,
+      "jobId": "job_24b02873-e94a-45a5-b3a5-ec6d9c137203",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579491151-realenhance-job_24b02873-e94a-45a5-b3a5-ec6d9c137203-1772579439407-9rd3mkfueyr-canonical-1A-1B-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231132Z&X-Amz-Expires=86400&X-Amz-Signature=460da4807f0aa17d2f34792efc4bdc8b03b4ac2b1cb69cf56503d625f9bde89c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 9578,
+      "jobId": "job_24b02873-e94a-45a5-b3a5-ec6d9c137203",
+      "stageGuess": "1A",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579478937-realenhance-job_24b02873-e94a-45a5-b3a5-ec6d9c137203-1772579439407-9rd3mkfueyr-canonical-1A-1B.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231120Z&X-Amz-Expires=86400&X-Amz-Signature=8821afc09b1aefe072bab04ed07f57c8ac3e64b4f3a3e7c67b4ce55ea22cda06&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 9863,
+      "jobId": "job_260202ff-6e04-4652-82da-d498e9fe3c41",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579495377-realenhance-job_260202ff-6e04-4652-82da-d498e9fe3c41-1772579440309-hcq5xvgt79-canonical-1A-1B-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231136Z&X-Amz-Expires=86400&X-Amz-Signature=f972ed5a17dea63142ec6609dd0ce6b17fddfd87dd9ffdbb4622dbe6ecc80ad3&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 9872,
+      "jobId": "job_260202ff-6e04-4652-82da-d498e9fe3c41",
+      "stageGuess": "2 (from 1B)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579567412-realenhance-job_260202ff-6e04-4652-82da-d498e9fe3c41-1772579440309-hcq5xvgt79-canonical-1A-1B-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T231248Z&X-Amz-Expires=86400&X-Amz-Signature=454e6af88a17f1e319415fe606d3bfe031b1df4629ecc6bee0347ce96928a671&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 3935,
+      "jobId": "job_bb06eb07-8974-4c10-8022-58523ad69cc8",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579014025-realenhance-job_bb06eb07-8974-4c10-8022-58523ad69cc8-1772578987274-rh1z8gdkg7a-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230335Z&X-Amz-Expires=86400&X-Amz-Signature=5b22b8db0b1f463e91b0598af8e4b453416f3ddf716d90cd33b355c4954bc309&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 5976,
+      "jobId": "job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579017620-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230338Z&X-Amz-Expires=86400&X-Amz-Signature=c09127f5d065dae2e7280805f53eda5ab5dc37d91c30011ffa9d94a751ab4926&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 5985,
+      "jobId": "job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579097917-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230459Z&X-Amz-Expires=86400&X-Amz-Signature=ab854a734d8ff2fcc8021c1fb3258ac222706045fe876719c72776a30e606bba&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    },
+    {
+      "line": 5994,
+      "jobId": "job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41",
+      "stageGuess": "2 (from 1A)",
+      "signedUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1772579167456-realenhance-job_f6a3bc83-9003-4a4c-abaf-b43fed9bba41-1772578988126-didf9qehkys-canonical-1A-2-retry2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2BYPOHVL%2F20260303%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260303T230608Z&X-Amz-Expires=86400&X-Amz-Signature=6b08fc2058f24e7ed606691f15e79f699de2767d3c900d684fbec9ece619ca5c&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject"
+    }
+  ]
+}
