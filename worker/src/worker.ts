@@ -6103,6 +6103,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         invariantHints.push(
           "The original image contained architectural openings:",
           ...openingHints,
+          "Architectural openings include:",
+          "- windows",
+          "- doors",
+          "- closet doors",
+          "- sliding wardrobe doors",
+          "- walk-through openings between rooms",
           "Verify these openings remain visible and functional.",
           "Do not assume occlusion. Confirm the wall plane has not become continuous where an opening previously existed."
         );
