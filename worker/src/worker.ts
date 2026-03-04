@@ -6150,6 +6150,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
 
+      // Inject Stage-1A opening baseline hints for Gemini verification
+      if (structuralBaseline?.openings?.length) {
+        const openingHints = structuralBaseline.openings
+          .slice(0, 4)
+          .map((o: any, i: number) =>
+            `${i + 1}. ${o.type || "opening"} on the ${o.wall || "wall"} side of the room`
+          );
+
+        invariantHints.push(
+          "The original image contained architectural openings:",
+          ...openingHints,
+          "Verify these openings remain visible and functional.",
+          "Do not assume occlusion. Confirm the wall plane has not become continuous where an opening previously existed."
+        );
+
+        nLog(`[OPENING_BASELINE_HINTS] count=${openingHints.length}`);
+      }
+
       if (stage2CandidatePath && !structuralBaseline) {
         const failReason = "baseline_unavailable_block";
         nLog(`[OPENING_VALIDATION_FAIL] reason=${failReason}`);
