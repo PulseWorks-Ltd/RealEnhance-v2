@@ -263,7 +263,7 @@ function applyDeclutterOpeningPolicy(signals: OpeningPolicySignals): { hardFail:
   }
 
   if (openingDelta) {
-    return { hardFail: false, reasons: ["declutter_opening_delta_advisory"] };
+    return { hardFail: false, reasons: ["opening_count_drop_detected"] };
   }
 
   return { hardFail: false, reasons: [] };
@@ -283,7 +283,7 @@ function applyEmptyOpeningPolicy(signals: OpeningPolicySignals): { hardFail: boo
   }
 
   if (openingDelta) {
-    return { hardFail: false, reasons: ["empty_opening_count_delta_advisory"] };
+    return { hardFail: false, reasons: ["opening_count_drop_detected"] };
   }
 
   if (signals.maskedDriftPct >= 45 && signals.structuralDegree >= 25) {
@@ -5826,6 +5826,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const isExtremeDrift = maskedDriftPct >= 95 && semanticWallDriftPct >= 95;
       const stage2Tier: "EXTREME" | "GEMINI" =
         (catastrophicGeometry || isExtremeDeviation || isExtremeDrift) ? "EXTREME" : "GEMINI";
+      const extremeLocalSuspicion = stage2Tier === "EXTREME";
+
+      const extremeLocalSignals: string[] = [];
+      if (windowsAfter < windowsBefore || doorsAfter < doorsBefore || openingsClosed > 0) {
+        extremeLocalSignals.push("opening_count_drop_detected");
+      }
+      if (catastrophicGeometry || maskedDriftPct >= 70 || semanticWallDriftPct >= 45) {
+        extremeLocalSignals.push("wall_plane_shift");
+      }
+      if (openingsClosed > 0 || maskedDriftPct >= 80) {
+        extremeLocalSignals.push("opening_region_occluded");
+      }
+      if (Math.abs(windowsAfter - windowsBefore) > 0 || Math.abs(doorsAfter - doorsBefore) > 0) {
+        extremeLocalSignals.push("opening_geometry_change");
+      }
 
       nLog("[STAGE2_TIER_CLASSIFICATION]", {
         structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
@@ -5852,102 +5867,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         compositeReason,
       });
 
-      if (stage2Tier === "EXTREME") {
-        const failReasons = [
-          "extreme_structural_violation",
-          `structuralDegreeAvailable=${stage2StructuralDegreeMetric.available}`,
-          `catastrophicGeometry=${catastrophicGeometry}`,
-          `maskedDriftPct=${maskedDriftPct.toFixed(2)}`,
-          `semanticWallDriftPct=${semanticWallDriftPct.toFixed(2)}`,
-        ];
-
-        setStage2AttemptValidation(path2, "extreme_structural_violation", failReasons);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "extreme_structural_violation",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "REINFORCED",
-            reason: "extreme_structural_violation",
-          },
-        });
-
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: false,
-          geminiPass: null,
-          confirmPass: null,
-          finalPass: false,
-          violationType: "extreme_structural_violation",
-          retryStrategy: "REINFORCED",
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-        });
-
-        if (attempt >= MAX_STAGE2_RETRIES) {
-          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1B;
-          const fallbackPath = fallback1B || path1A;
-          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `stage2_structural_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
-          logEvent("FATAL_RETRY_EXHAUSTION", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempts: attempt,
-            blockedBy: "extreme_structural_violation",
-            reason: stage2BlockedReason,
-          });
-          emitStage2DecisionBreakdown({
-            extremeLocalFail: true,
-            topologyFail: false,
-            invariantFail: false,
-            compositeDecision,
-            geminiConfirmStatus: "not_run",
-            complianceDecision: "not_run",
-            stage2Blocked,
-            decisionPoint: "final_block",
-            reason: "extreme_structural_violation",
-          });
-          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=extreme_structural_violation retries=${attempt - 1}`);
-          break;
-        }
-
+      if (extremeLocalSuspicion) {
         pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
         pendingStage2RetryStrategy = "REINFORCED";
         pendingStage2RetryReason = null;
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: true,
-          topologyFail: false,
-          invariantFail: false,
-          compositeDecision,
-          geminiConfirmStatus: "not_run",
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "retry_schedule",
-          reason: "extreme_structural_violation",
-        });
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1} retryStrategy=REINFORCED`);
-        logEvent("STAGE_RETRY", {
+        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED;
+        if (Array.isArray(unifiedValidation?.warnings)) {
+          unifiedValidation.warnings.push(...Array.from(new Set(extremeLocalSignals)));
+        }
+        nLog("[STAGE2_EXTREME_ADVISORY_ESCALATION]", {
           jobId: payload.jobId,
-          stage: "2",
-          retry: attempt + 1,
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          reason: "extreme_structural_violation",
-          retryStrategy: "REINFORCED",
+          attempt,
+          stage2Tier,
+          catastrophicGeometry,
+          maskedDriftPct,
+          semanticWallDriftPct,
+          windowsBefore,
+          windowsAfter,
+          doorsBefore,
+          doorsAfter,
+          openingsClosed,
+          advisorySignals: Array.from(new Set(extremeLocalSignals)),
         });
-        continue;
       }
 
       let topologyResultForEvidence: "PASS" | "FAIL" | undefined;
@@ -6121,6 +6062,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         wallDriftPct,
         maskedEdgeDriftPct,
       });
+
+      if (extremeLocalSuspicion) {
+        invariantHints.push(
+          "Local validators detected extreme structural drift.",
+          "Carefully verify that no walls, windows, doors, or architectural openings have been removed, added, relocated, resized, or partially occluded.",
+          "Treat this as high suspicion and confirm against the Stage-1A baseline while avoiding furniture-only false positives."
+        );
+      }
 
       logger.info(
         `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant} alwaysRun=true hints=${JSON.stringify(invariantHints)}`
