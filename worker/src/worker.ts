@@ -587,6 +587,40 @@ function detectBuiltInRemoval(localReasons: string[] | undefined): boolean {
   return hasBuiltInRef && hasRemovalRef;
 }
 
+function detectFurnitureAgainstWallSignal(input: {
+  localReasons?: string[];
+  warnings?: string[];
+  geminiDetails?: any;
+}): boolean {
+  const details = input.geminiDetails && typeof input.geminiDetails === "object"
+    ? input.geminiDetails
+    : {};
+
+  const explicitFlag =
+    details.bedAgainstWall === true ||
+    details.sofaAgainstWall === true ||
+    details.cabinetAgainstWall === true ||
+    details.furnitureAgainstWall === true;
+
+  if (explicitFlag) return true;
+
+  const textParts: string[] = [];
+  if (Array.isArray(input.localReasons)) textParts.push(...input.localReasons);
+  if (Array.isArray(input.warnings)) textParts.push(...input.warnings);
+  textParts.push(
+    String(details.reason ?? ""),
+    String(details.explanation ?? ""),
+    String(details.summary ?? ""),
+    String(details.message ?? "")
+  );
+
+  const text = textParts.join(" ").toLowerCase();
+  const hasLargeFurniture = /(bed|sofa|couch|cabinet|wardrobe|dresser)/.test(text);
+  const hasWallContact = /(against\s+wall|flush\s+against\s+wall|touch(ing)?\s+wall|wall\s+plane)/.test(text);
+
+  return hasLargeFurniture && hasWallContact;
+}
+
 function buildInvariantHints(localSignals: {
   windowsBefore?: number | null;
   windowsAfter?: number | null;
@@ -6202,6 +6236,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog("[OPENING][stage2] opening obstruction warning");
           }
 
+          const stage2FurnitureAgainstWall = detectFurnitureAgainstWallSignal({
+            localReasons: stage2LocalReasons,
+            warnings: Array.isArray(unifiedValidation?.warnings)
+              ? unifiedValidation.warnings
+              : [],
+            geminiDetails: (unifiedValidation as any)?.raw?.geminiSemantic?.details,
+          });
+          const doorwayContinuitySuspicion =
+            stage2FurnitureAgainstWall === true &&
+            structuralBaseline.openings.length === 0 &&
+            compositeSemanticWallDriftPct > 35;
+
+          if (doorwayContinuitySuspicion) {
+            openingIdentityWarnings.push("possible_hidden_opening_removed");
+            nLog("[OPENING][stage2] doorway continuity suspicion triggered");
+          }
+
           if (openingIdentityWarnings.length > 0) {
             const dedupedWarnings = Array.from(new Set(openingIdentityWarnings));
             openingIdentityWarnings = dedupedWarnings;
@@ -6212,6 +6263,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               ...invariantHints,
               `opening_identity_warning: ${dedupedWarnings.join(", ")}`,
             ];
+            if (dedupedWarnings.includes("possible_hidden_opening_removed")) {
+              invariantHints = [
+                ...invariantHints,
+                "Large furniture is positioned against a wall plane. Confirm that this wall did not previously contain a doorway or open passage that has been filled or hidden.",
+              ];
+            }
             nLog(`[OPENING][stage2] opening_identity_warning=${dedupedWarnings.join(",")}`);
           }
 
