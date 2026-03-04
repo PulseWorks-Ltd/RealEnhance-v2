@@ -5271,8 +5271,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
         let structuralConstraintBlock = "";
-        if (pendingStage2RetryReason === "opening_preservation" && structuralBaseline) {
-          const mode: "soft" | "hard" = attempt === 2 ? "soft" : "hard";
+        if (pendingStage2RetryReason === "opening_preservation" && structuralBaseline && attempt >= 3) {
+          const mode: "soft" | "hard" = attempt === 3 ? "soft" : "hard";
           structuralConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
           if (structuralConstraintBlock) {
             logger.info({
@@ -5333,6 +5333,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       stage2AttemptsUsed = Math.max(stage2AttemptsUsed, attempt);
       stage2LocalReasons = [];
+      let openingIdentityWarnings: string[] = [];
       stage2NeedsConfirm = false;
 
       const validationStartTime = Date.now();
@@ -6002,7 +6003,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} totalOpeningsBefore=${totalOpeningsBefore} totalOpeningsAfter=${totalOpeningsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
       );
 
-      const invariantHints = buildInvariantHints({
+      let invariantHints = buildInvariantHints({
         windowsBefore,
         windowsAfter,
         doorsBefore,
@@ -6158,6 +6159,61 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const openingAdvisoryOnly =
             !openingPolicyHardFail &&
             (openingResized || openingBandMismatch || relocationDetected || violations.length > 0);
+
+          const detectedOpenings = Array.isArray(openingValidationResult.detectedOpenings)
+            ? openingValidationResult.detectedOpenings
+            : [];
+
+          const countByType = (arr: Array<{ type?: string }>, type: string) =>
+            arr.reduce((sum, item) => sum + (String(item?.type || "").toLowerCase() === type ? 1 : 0), 0);
+
+          const doorsBeforeDetected = countByType(structuralBaseline.openings as any[], "door");
+          const doorsAfterDetected = countByType(detectedOpenings as any[], "door");
+          const windowsBeforeDetected = countByType(structuralBaseline.openings as any[], "window");
+          const windowsAfterDetected = countByType(detectedOpenings as any[], "window");
+          const closetsBeforeDetected = countByType(structuralBaseline.openings as any[], "closet");
+          const closetsAfterDetected = countByType(detectedOpenings as any[], "closet");
+          const openingsBeforeDetected = structuralBaseline.openings.length;
+          const openingsAfterDetected = detectedOpenings.length;
+
+          openingIdentityWarnings = [];
+          if (doorsAfterDetected < doorsBeforeDetected) {
+            openingIdentityWarnings.push("door_count_decrease");
+            nLog(`[OPENING][stage2] door count decrease detected (${doorsBeforeDetected} → ${doorsAfterDetected})`);
+          }
+          if (windowsAfterDetected < windowsBeforeDetected) {
+            openingIdentityWarnings.push("window_count_decrease");
+            nLog(`[OPENING][stage2] window count decrease detected (${windowsBeforeDetected} → ${windowsAfterDetected})`);
+          }
+          if (closetsAfterDetected < closetsBeforeDetected) {
+            openingIdentityWarnings.push("closet_door_missing");
+            nLog(`[OPENING][stage2] closet door missing detected (${closetsBeforeDetected} → ${closetsAfterDetected})`);
+          }
+          if (openingsAfterDetected < openingsBeforeDetected) {
+            openingIdentityWarnings.push("opening_count_decrease");
+            nLog(`[OPENING][stage2] opening count decrease detected (${openingsBeforeDetected} → ${openingsAfterDetected})`);
+          }
+
+          const openingObstructed =
+            openingValidationResult.summary.openingSealed === true ||
+            violations.some((result) => result.sealed === true);
+          if (openingObstructed) {
+            openingIdentityWarnings.push("opening_obstructed");
+            nLog("[OPENING][stage2] opening obstruction warning");
+          }
+
+          if (openingIdentityWarnings.length > 0) {
+            const dedupedWarnings = Array.from(new Set(openingIdentityWarnings));
+            openingIdentityWarnings = dedupedWarnings;
+            if (Array.isArray(unifiedValidation?.warnings)) {
+              unifiedValidation.warnings.push(...dedupedWarnings.map((code) => `opening_identity_warning:${code}`));
+            }
+            invariantHints = [
+              ...invariantHints,
+              `opening_identity_warning: ${dedupedWarnings.join(", ")}`,
+            ];
+            nLog(`[OPENING][stage2] opening_identity_warning=${dedupedWarnings.join(",")}`);
+          }
 
           nLog("[STAGE2_PROFILE_OPENING_GATE]", {
             jobId: payload.jobId,
@@ -6685,6 +6741,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           decisionPoint: "retry_schedule",
           reason: "opening_removal",
         });
+        if (attempt >= 2 && openingIdentityWarnings.length > 0) {
+          pendingStage2RetryReason = "opening_preservation";
+        }
         nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
         logEvent("STAGE_RETRY", {
           jobId: payload.jobId,
@@ -6836,6 +6895,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           decisionPoint: "retry_schedule",
           reason: failReasons[0] || "structure",
         });
+        if (attempt >= 2 && openingIdentityWarnings.length > 0) {
+          pendingStage2RetryReason = "opening_preservation";
+        }
         if (softStructuralReviewMode) {
           nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
         } else {
