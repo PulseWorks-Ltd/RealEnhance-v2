@@ -6199,10 +6199,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
 
             nLog(
-              `[OPENING_VALIDATION_FAIL] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
+              `[OPENING_VALIDATION_ADVISORY] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
             );
 
-            const failReasons = [
+            const advisoryReasons = [
               "opening_preservation",
               `violations=${violations.length}`,
               `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
@@ -6216,92 +6216,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               ...openingPolicyDecision.reasons,
             ];
 
-            setStage2AttemptValidation(path2, "opening_preservation", failReasons);
-            mergeAttemptValidation("2", attempt, {
-              final: {
-                result: "FAILED",
-                finalHard: true,
-                finalCategory: "opening_preservation",
-                retryTriggered: attempt < MAX_STAGE2_RETRIES,
-                retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-                retryStrategy: "NORMAL",
-                reason: "opening_preservation",
-              },
-            });
-            logEvent("VALIDATION_RESULT", {
-              jobId: payload.jobId,
-              stage: "2",
-              attempt,
-              localPass: unifiedValidation.passed === true,
-              geminiPass: false,
-              confirmPass: false,
-              finalPass: false,
-              violationType: "opening_preservation",
-              retryStrategy: "NORMAL",
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            });
-
-            if (attempt >= MAX_STAGE2_RETRIES) {
-              const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-                ? stageLineage.stage1B.output
-                : path1B;
-              const fallbackPath = fallback1B || path1A;
-              const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-              stage2Blocked = true;
-              stage2FallbackStage = fallbackStage;
-              stage2BlockedReason = `stage2_opening_preservation_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
-              fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-              path2 = fallbackPath;
-              stage2CandidatePath = fallbackPath;
-              nLog(`[STAGE2_OPENING_VALIDATION_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
-              logEvent("FATAL_RETRY_EXHAUSTION", {
-                jobId: payload.jobId,
-                stage: "2",
-                attempts: attempt,
-                blockedBy: "opening_preservation",
-                reason: stage2BlockedReason,
-              });
-              emitStage2DecisionBreakdown({
-                extremeLocalFail: false,
-                topologyFail: false,
-                invariantFail: true,
-                compositeDecision,
-                geminiConfirmStatus: "not_run",
-                complianceDecision: "not_run",
-                stage2Blocked,
-                decisionPoint: "final_block",
-                reason: "opening_preservation",
-              });
-              nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-              nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=opening_preservation retries=${attempt - 1}`);
-              break;
+            if (Array.isArray(unifiedValidation?.warnings)) {
+              unifiedValidation.warnings.push(...advisoryReasons);
             }
 
-            pendingStage2StructuralFailureType = "opening_removed";
-            pendingStage2RetryStrategy = "NORMAL";
-            pendingStage2RetryReason = "opening_preservation";
-
-            emitStage2DecisionBreakdown({
-              extremeLocalFail: false,
-              topologyFail: false,
-              invariantFail: true,
-              compositeDecision,
-              geminiConfirmStatus: "not_run",
-              complianceDecision: "not_run",
-              stage2Blocked,
-              decisionPoint: "retry_schedule",
-              reason: "opening_preservation",
-            });
-            nLog(`[STAGE2_OPENING_VALIDATION_RETRY] attempt=${attempt + 1}`);
-            logEvent("STAGE_RETRY", {
+            stage2NeedsConfirm = true;
+            console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
               jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
               reason: "opening_preservation",
+              profile: openingProfile,
+              advisoryReasons,
+              structuralDegree,
+              maskedDriftPct: compositeMaskedDriftPct,
+              semanticWallDriftPct: compositeSemanticWallDriftPct,
+              structuralMaskFailure,
+              geminiStructuredHighConfidence,
+              windowsBefore: windowsBeforePolicy,
+              windowsAfter: windowsAfterPolicy,
+              doorsBefore: doorsBeforePolicy,
+              doorsAfter: doorsAfterPolicy,
             });
-            continue;
           } else {
             const advisoryReason = "stage2_profile_opening_advisory";
             if (Array.isArray(unifiedValidation?.warnings)) {
