@@ -186,33 +186,39 @@ function resolveRetryBaseline(params: {
       };
     }
     selectedSourceStage = "1A-stage-ready";
-    selectedSourceUrl = resolve("1A") || (typeof stageUrls.original === "string" ? stageUrls.original : null);
+    selectedSourceUrl = resolve("1A");
     retryFromStage = "1B";
     if (!selectedSourceUrl) {
-      selectedSourceStage = "1A";
+      hardFail = {
+        code: "missing_stage1a_baseline",
+        message: "Stage 1A baseline is required for Stage 1B retry but was not found",
+      };
+      selectedSourceStage = null;
     }
   } else if (requestedStage === "2") {
     selectedSourceStage = "1B-stage-ready";
     selectedSourceUrl = resolve("1B");
     if (!selectedSourceUrl) {
-      if (stage1BWasRequested) {
+      selectedSourceStage = "1A";
+      selectedSourceUrl = resolve("1A");
+      stage2OnlyDisabled = true;
+      retryFromStage = "1B";
+
+      if (!selectedSourceUrl) {
         hardFail = {
-          code: "missing_stage1b_baseline",
-          message: "Stage 1B baseline is required for Stage 2 retry but was not found",
+          code: "missing_stage1a_baseline",
+          message: "Stage 1A baseline is required to rebuild Stage 1B before Stage 2 retry but was not found",
         };
-      } else {
-        selectedSourceStage = "1A";
-        selectedSourceUrl = resolve("1A");
-        stage2OnlyDisabled = true;
-        if (stage1ATainted) {
-          hardFail = {
-            code: "stage1a_tainted_requires_upload",
-            message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
-          };
-          selectedSourceStage = null;
-          selectedSourceUrl = null;
-          stage2OnlyDisabled = false;
-        }
+        selectedSourceStage = null;
+        stage2OnlyDisabled = false;
+      } else if (stage1ATainted) {
+        hardFail = {
+          code: "stage1a_tainted_requires_upload",
+          message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
+        };
+        selectedSourceStage = null;
+        selectedSourceUrl = null;
+        stage2OnlyDisabled = false;
       }
     }
   } else if (sourceUrlRaw) {
@@ -293,20 +299,11 @@ export function retrySingleRouter() {
       const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
       const useStageSource = !!sourceUrlRaw;
 
-      // Deterministic manual retry policy: this endpoint only permits Stage-2-only retries.
-      if (requestedStage !== "2") {
-        return res.status(409).json({
-          success: false,
-          error: "manual_retry_requires_stage2",
-          message: "Manual retry must target requestedStage=2",
-        });
-      }
-
-      if (!useStageSource) {
+      if (!useStageSource && !parentJobId) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_requires_stage_source",
-          message: "Manual retry requires a valid stage baseline source URL for deterministic Stage2Only routing",
+          message: "Manual retry requires a parent job or explicit source URL to resolve stage baseline",
         });
       }
 
@@ -354,7 +351,7 @@ export function retrySingleRouter() {
       let parentJob: any = undefined;
       let parentMeta: any = undefined;
 
-      if (useStageSource) {
+      if (useStageSource || parentJobId) {
         const bucket = process.env.S3_BUCKET;
         if (!bucket) {
           return res.status(400).json({ success: false, error: "s3_not_configured", message: "S3 bucket is required to retry from a stage output" });
@@ -421,13 +418,13 @@ export function retrySingleRouter() {
             const hasStage1ABaseline =
               !!selectedSourceStage &&
               (selectedSourceStage === "1A" || selectedSourceStage.toLowerCase().startsWith("1a"));
-            const canUseStage1AForStage2 = !stage1BWasRequested && hasStage1ABaseline;
+            const canUseStage1AForStage2 = hasStage1ABaseline && (stage2OnlyDisabled || !stage1BWasRequested);
 
             if (!selectedSourceUrl || (!hasStage1BBaseline && !canUseStage1AForStage2)) {
               return res.status(409).json({
                 success: false,
                 error: "manual_retry_stage2only_required",
-                message: "Manual retry requires Stage2Only payload with a valid Stage 1B baseline, or Stage 1A only when decluttering was not required",
+                message: "Manual retry requires a valid Stage 1B baseline, or Stage 1A baseline when Stage 1B must be rebuilt",
               });
             }
           }
@@ -462,6 +459,14 @@ export function retrySingleRouter() {
               console.warn("[RETRY_META_MISSING_ALLOW]", { jobId: parentJobId, reason: "no_stage_urls_or_history", selectedSourceUrl });
             }
           }
+        }
+
+        if (!selectedSourceUrl) {
+          return res.status(409).json({
+            success: false,
+            error: "retry_baseline_not_found",
+            message: "Unable to resolve retry baseline from parent job stage outputs",
+          });
         }
 
         const parsedKey = extractKeyFromS3Url(selectedSourceUrl || sourceUrlRaw);
@@ -618,7 +623,7 @@ export function retrySingleRouter() {
         ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
         undefined;
       const stage2OnlyMode =
-        requestedStage === '2' && selectedSourceUrl
+        requestedStage === '2' && selectedSourceUrl && !stage2OnlyDisabled
           ? {
               enabled: true,
               baseStage: stage2OnlyBaseStage,
@@ -635,10 +640,7 @@ export function retrySingleRouter() {
           : !!stage2OnlyMode.base1BUrl
       );
 
-      if (
-        requestedStage === "2" &&
-        !hasValidStage2OnlyPayload
-      ) {
+      if (requestedStage === "2" && !stage2OnlyDisabled && !hasValidStage2OnlyPayload) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_stage2only_payload_invalid",

@@ -3417,7 +3417,7 @@ export default function BatchProcessor() {
       // Backend contract: if Stage 1B was part of the requested pipeline, Stage 2 retry requires Stage 1B baseline.
       // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
       const requiresStage1BRebuild = forceStage2Retry && stage1BWasRequested && !hasStage1BBaseline;
-      const canUseStage1AForStage2Retry = forceStage2Retry && !stage1BWasRequested && hasStage1ABaseline;
+      const canUseStage1AForStage2Retry = forceStage2Retry && hasStage1ABaseline && (!stage1BWasRequested || requiresStage1BRebuild);
 
       const stage1BBaseline =
         stageMap?.['1B'] ||
@@ -3435,7 +3435,7 @@ export default function BatchProcessor() {
         toast({
           title: "Retry unavailable",
           description: stage1BWasRequested
-            ? "This image has no Stage 1B baseline. Stage-only retry for declutter-required rooms needs a completed Stage 1B baseline."
+            ? "This image has no Stage 1B baseline. Retry requires Stage 1A so Stage 1B can be rebuilt before staging."
             : "This image has no valid Stage 1A/1B baseline available for stage-only retry.",
           variant: "destructive",
         });

@@ -282,8 +282,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // Determine restoreFromUrl for pixel-level restoration
     let restoreFromUrl: string | undefined = undefined;
     if (workerMode === "Restore") {
-      // Prefer Stage 1B or original image for restoration
-      restoreFromUrl = record.latest?.stage1BUrl || record.latest?.originalUrl || baseImageUrl;
+      // Edit contract: restoration source must remain the currently visible committed output.
+      restoreFromUrl = baseImageUrl;
     }
 
     // Map workerMode to API mode for enqueueRegionEditJob
