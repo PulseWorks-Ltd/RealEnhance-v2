@@ -44,7 +44,7 @@ export function evaluateOpeningDriftGuard(
 ): OpeningDriftGuardResult {
   const widthDeltaThreshold = clamp(opts?.widthDeltaThreshold ?? 0.08, 0.01, 0.5);
   const heightDeltaThreshold = clamp(opts?.heightDeltaThreshold ?? 0.08, 0.01, 0.5);
-  const centerShiftThreshold = clamp(opts?.centerShiftThreshold ?? 0.06, 0.01, 0.5);
+  const centerShiftThreshold = clamp(opts?.centerShiftThreshold ?? 0.10, 0.01, 0.5);
 
   if (!baselineOpenings.length || !candidateOpenings.length) {
     return {

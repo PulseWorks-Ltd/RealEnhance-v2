@@ -7075,7 +7075,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const driftGuard = evaluateOpeningDriftGuard(openingBaselineLite, openingCandidateLite, {
               widthDeltaThreshold: 0.08,
               heightDeltaThreshold: 0.08,
-              centerShiftThreshold: 0.06,
+              centerShiftThreshold: 0.10,
             });
             nLog(
               `[OPENING_DRIFT] job=${payload.jobId} attempt=${attempt} width_delta=${driftGuard.widthDeltaMax.toFixed(3)} height_delta=${driftGuard.heightDeltaMax.toFixed(3)} shift=${driftGuard.centerShiftMax.toFixed(3)} opening_delta_detected=${driftGuard.openingDeltaDetected} drift_exceeds_threshold=${driftGuard.driftExceedsThreshold} retry=${driftGuard.verdict === "retry"}`
