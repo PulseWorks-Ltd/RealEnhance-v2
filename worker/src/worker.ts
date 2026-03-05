@@ -31,6 +31,7 @@ import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 import { detectFurniture, getAnchorClassSet, resolveFurnishedGateDecision } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
+import { detectOpenings, type Opening } from "./vision/detectOpenings";
 
 import {
   updateJob,
@@ -117,9 +118,13 @@ import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
 import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact } from "./utils/finalBlackEdgeGuard";
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
+import { evaluateOpeningDriftGuard } from "./validators/openingDriftGuard";
+import { evaluateClosetGuard } from "./validators/closetGuard";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
+const OPENING_DRIFT_GUARD_ENABLED = String(process.env.REALENHANCE_OPENING_DRIFT_GUARD || "on").toLowerCase() !== "off";
+const CLOSET_GUARD_ENABLED = String(process.env.REALENHANCE_CLOSET_GUARD || "on").toLowerCase() !== "off";
 const logger = console;
 
 function shouldLog(eventType?: string): boolean {
@@ -640,6 +645,21 @@ function normalizeOpeningTypeForComparison(type: unknown): string {
     return "walkthrough";
   }
   return raw;
+}
+
+function hasCenteredWindow(openings: Opening[]): boolean {
+  return openings.some((opening) => {
+    if (opening.type !== "window") return false;
+    return Math.abs(opening.cx - 0.5) <= 0.12;
+  });
+}
+
+function hasLikelyBed(geminiDetails: any): boolean {
+  const candidates = extractDecorObjectCandidates(geminiDetails);
+  return candidates.some((obj) => {
+    const normalized = normalizeDecorObjectType(obj.type);
+    return normalized.includes("bed") || normalized.includes("headboard");
+  });
 }
 
 type DecorObjectCandidate = {
@@ -2527,6 +2547,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobDeclutterIntensity?: "light" | "standard" | "heavy";
     stagingRegion: any;
     structuralBaseline: StructuralBaseline | null;
+    openingBaseline: Opening[] | null;
   }
 
   const jobContext: JobExecutionContext = {
@@ -2543,6 +2564,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobDeclutterIntensity: undefined,
     stagingRegion: null,
     structuralBaseline: null,
+    openingBaseline: null,
   };
 
   const stageLineage = {
@@ -3263,6 +3285,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         promptMode: stage2OnlyRouting.mode,
         jobId: payload.jobId,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
+        openingBaseline: jobContext.openingBaseline || [],
+        bedroomWindowBedConflictHint: false,
         onAttemptSuperseded: (nextAttemptId) => {
           stage2AttemptId = nextAttemptId;
         },
@@ -4215,6 +4239,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
+  }
+
+  try {
+    const openingBaselineSource = jobContext.canonicalPath || path1A;
+    const detectedOpenings = await detectOpenings(openingBaselineSource);
+    jobContext.openingBaseline = detectedOpenings;
+    nLog(`[OPENING_BASELINE] job=${payload.jobId} source=${openingBaselineSource} count=${detectedOpenings.length} openings=${JSON.stringify(detectedOpenings)}`);
+  } catch (openingErr: any) {
+    jobContext.openingBaseline = [];
+    nLog(`[OPENING_BASELINE] job=${payload.jobId} source=error count=0 reason=${openingErr?.message || openingErr}`);
   }
 
   // STAGE 1B (optional declutter)
@@ -5406,6 +5440,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
+            openingBaseline: jobContext.openingBaseline || [],
+            bedroomWindowBedConflictHint: false,
             onStrictRetry: ({ reasons }) => {
               void (async () => {
                 if (stage2Active) {
@@ -5658,6 +5694,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           validationConfig: { localMode: localValidatorMode },
           stage1APath: stage2ValidationBaseline,
           curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
+          openingBaseline: jobContext.openingBaseline || [],
+          bedroomWindowBedConflictHint: false,
           onStrictRetry: ({ reasons }) => {
             void (async () => {
               if (stage2Active) {
@@ -5855,6 +5893,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
     let pendingStage2RetryReason: "opening_preservation" | "closet_visibility_risk" | null = null;
+    let pendingBedroomWindowBedConflictHint = false;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -5976,6 +6015,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               },
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
+            openingBaseline: jobContext.openingBaseline || [],
+            bedroomWindowBedConflictHint: pendingBedroomWindowBedConflictHint,
           });
         } catch (retryGenerationErr: any) {
           if (!isStage2RetryableGenerationError(retryGenerationErr)) {
@@ -7011,6 +7052,61 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             nLog("[OPENING][stage2] opening obstruction warning");
           }
 
+          const openingBaselineLite = jobContext.openingBaseline || [];
+          const geminiDetails = (unifiedValidation as any)?.raw?.geminiSemantic?.details;
+          let openingCandidateLite: Opening[] = [];
+          if (stage2CandidatePath) {
+            try {
+              openingCandidateLite = await detectOpenings(stage2CandidatePath);
+              nLog(`[OPENING_CANDIDATE] job=${payload.jobId} attempt=${attempt} count=${openingCandidateLite.length} openings=${JSON.stringify(openingCandidateLite)}`);
+            } catch (openingCandidateErr: any) {
+              nLog(`[OPENING_CANDIDATE] job=${payload.jobId} attempt=${attempt} count=0 reason=${openingCandidateErr?.message || openingCandidateErr}`);
+            }
+          }
+
+          const roomTypeNorm = String(payload.options.roomType || "").toLowerCase().replace(/-/g, "_");
+          const isBedroom2 = roomTypeNorm === "bedroom_2";
+          const bedWindowConflictDetected = isBedroom2 && hasCenteredWindow(openingBaselineLite) && hasLikelyBed(geminiDetails);
+          if (bedWindowConflictDetected) {
+            pendingBedroomWindowBedConflictHint = true;
+          }
+
+          if (OPENING_DRIFT_GUARD_ENABLED && openingBaselineLite.length > 0 && openingCandidateLite.length > 0) {
+            const driftGuard = evaluateOpeningDriftGuard(openingBaselineLite, openingCandidateLite, {
+              widthDeltaThreshold: 0.08,
+              heightDeltaThreshold: 0.08,
+              centerShiftThreshold: 0.06,
+            });
+            nLog(
+              `[OPENING_DRIFT] job=${payload.jobId} attempt=${attempt} width_delta=${driftGuard.widthDeltaMax.toFixed(3)} height_delta=${driftGuard.heightDeltaMax.toFixed(3)} shift=${driftGuard.centerShiftMax.toFixed(3)} opening_delta_detected=${driftGuard.openingDeltaDetected} drift_exceeds_threshold=${driftGuard.driftExceedsThreshold} retry=${driftGuard.verdict === "retry"}`
+            );
+
+            if (driftGuard.verdict === "retry" && attempt < MAX_STAGE2_RETRIES) {
+              pendingStage2StructuralFailureType = "opening_relocated";
+              pendingStage2RetryStrategy = "NORMAL";
+              pendingStage2RetryReason = "opening_preservation";
+              stage2LocalReasons.push("opening_geometry_drift");
+              nLog(`[STAGE2_RETRY] reason=opening_geometry_drift next_attempt=${attempt + 1}`);
+              continue;
+            }
+          }
+
+          if (CLOSET_GUARD_ENABLED && isBedroom2 && openingBaselineLite.length > 0 && openingCandidateLite.length > 0) {
+            const closetGuard = evaluateClosetGuard(openingBaselineLite, openingCandidateLite);
+            nLog(
+              `[CLOSET_GUARD] job=${payload.jobId} attempt=${attempt} baseline=${closetGuard.baselineClosetLikeCount} missing=${closetGuard.missingClosetLikeCount} retry=${closetGuard.verdict === "retry"}`
+            );
+
+            if (closetGuard.verdict === "retry" && attempt < MAX_STAGE2_RETRIES) {
+              pendingStage2StructuralFailureType = "opening_removed";
+              pendingStage2RetryStrategy = "NORMAL";
+              pendingStage2RetryReason = "closet_visibility_risk";
+              stage2LocalReasons.push("potential_closet_removal");
+              nLog(`[STAGE2_RETRY] reason=potential_closet_removal next_attempt=${attempt + 1}`);
+              continue;
+            }
+          }
+
           const OPENING_AREA_DROP_THRESHOLD = 0.50;
           const DECOR_TYPES = new Set([
             "mirror",
@@ -7021,7 +7117,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             "picture_frame",
           ]);
 
-          const geminiDetails = (unifiedValidation as any)?.raw?.geminiSemantic?.details;
           const detectedObjects = extractDecorObjectCandidates(geminiDetails);
 
           let decorReplacementDetected = false;

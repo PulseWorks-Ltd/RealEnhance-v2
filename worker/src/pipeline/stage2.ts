@@ -21,8 +21,42 @@ import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanne
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
+import type { Opening } from "../vision/detectOpenings";
 
 const logger = console;
+const OPENING_ANCHORING_ENABLED = String(process.env.REALENHANCE_OPENING_ANCHORING || "off").toLowerCase() === "on";
+
+function buildOpeningAnchoringPrompt(openings: Opening[], attempt: number): string {
+  const retryTier = attempt >= 3 ? 2 : 1;
+  const openingSummary = openings
+    .slice(0, 6)
+    .map((o, idx) => `${idx + 1}. ${o.type} cx=${o.cx.toFixed(2)} cy=${o.cy.toFixed(2)} w=${o.width.toFixed(2)} h=${o.height.toFixed(2)}`)
+    .join("\n");
+
+  const guidance = retryTier === 1
+    ? `Architectural openings detected in the room.
+
+These windows and doors must remain in the same position
+and approximately the same size relative to the walls.
+
+Do not move, resize, remove, or invent openings.
+
+Furniture and decor must adapt to the existing architecture.`
+    : `Important architectural constraint:
+
+Windows and doors must remain fixed in their original
+position and size relative to the walls.
+
+Do not shift or resize openings to make room for furniture.
+Furniture placement must adapt to the architecture.`;
+
+  return [
+    "ARCHITECTURAL OPENING BASELINE:",
+    openingSummary || "No opening geometry available.",
+    "",
+    guidance,
+  ].join("\n");
+}
 
 type Stage2RetryReason = "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown";
 
@@ -216,6 +250,8 @@ export async function runStage2GenerationAttempt(
       attemptNumber: number;
     };
     structuralConstraintBlock?: string;
+    openingBaseline?: Opening[];
+    bedroomWindowBedConflictHint?: boolean;
   }
 ): Promise<string> {
   const normalizedRoomType = (opts.roomType || "")
@@ -322,6 +358,19 @@ export async function runStage2GenerationAttempt(
     : "initial";
 
   const generationPlan = resolveStage2GenerationPlanForAttempt(attemptNumber, retryReason);
+
+  if (OPENING_ANCHORING_ENABLED && attemptNumber > 1 && Array.isArray(opts.openingBaseline) && opts.openingBaseline.length > 0) {
+    const anchoringBlock = buildOpeningAnchoringPrompt(opts.openingBaseline, attemptNumber);
+    textPrompt = `${textPrompt}\n\n${anchoringBlock}`;
+    logger.info(`[ANCHORING_INJECTED] job=${opts.jobId} attempt=${attemptNumber} openings=${opts.openingBaseline.length}`);
+
+    if (opts.bedroomWindowBedConflictHint) {
+      textPrompt += `\n\nBeds placed under windows must not block or alter the window.
+
+Maintain the original window size and position.
+Furniture placement must adapt to the existing window.`;
+    }
+  }
 
   if (attemptNumber >= 3) {
     textPrompt += `
@@ -466,6 +515,8 @@ export async function runStage2(
     jobId: string;
     /** Validation configuration (local-mode driven) */
     validationConfig?: { localMode?: Mode };
+    openingBaseline?: Opening[];
+    bedroomWindowBedConflictHint?: boolean;
   }
 ): Promise<Stage2Result> {
   const validationBaseline = opts.stage1APath || basePath;
@@ -521,6 +572,8 @@ export async function runStage2(
     attempt: 1,
     layoutContext,
     modelReason: "stage2_initial_generation",
+    openingBaseline: opts.openingBaseline,
+    bedroomWindowBedConflictHint: opts.bedroomWindowBedConflictHint,
   });
 
   if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {
