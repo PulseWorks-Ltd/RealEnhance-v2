@@ -6731,6 +6731,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         wallDriftPct,
         maskedEdgeDriftPct,
       });
+      const structuralAdvisories: string[] = [];
 
       if (extremeLocalSuspicion) {
         invariantHints.push(
@@ -7077,18 +7078,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               heightDeltaThreshold: 0.08,
               centerShiftThreshold: 0.10,
             });
-            nLog(
-              `[OPENING_DRIFT] job=${payload.jobId} attempt=${attempt} width_delta=${driftGuard.widthDeltaMax.toFixed(3)} height_delta=${driftGuard.heightDeltaMax.toFixed(3)} shift=${driftGuard.centerShiftMax.toFixed(3)} opening_delta_detected=${driftGuard.openingDeltaDetected} drift_exceeds_threshold=${driftGuard.driftExceedsThreshold} retry=${driftGuard.verdict === "retry"}`
+            const driftAdvisory =
+              `${driftGuard.signal}: opening_delta_detected=${driftGuard.openingDeltaDetected}; ` +
+              `drift_exceeds_threshold=${driftGuard.driftExceedsThreshold}; ` +
+              `width_delta_max=${driftGuard.widthDeltaMax.toFixed(3)}; ` +
+              `height_delta_max=${driftGuard.heightDeltaMax.toFixed(3)}; ` +
+              `center_shift_max=${driftGuard.centerShiftMax.toFixed(3)}`;
+            structuralAdvisories.push(driftAdvisory);
+            invariantHints.push(
+              `Advisory (non-authoritative): ${driftAdvisory}. Use this as a hint only and independently verify opening preservation against the Stage-1A baseline.`
             );
 
-            if (driftGuard.verdict === "retry" && attempt < MAX_STAGE2_RETRIES) {
-              pendingStage2StructuralFailureType = "opening_relocated";
-              pendingStage2RetryStrategy = "NORMAL";
-              pendingStage2RetryReason = "opening_preservation";
-              stage2LocalReasons.push("opening_geometry_drift");
-              nLog(`[STAGE2_RETRY] reason=opening_geometry_drift next_attempt=${attempt + 1}`);
-              continue;
-            }
+            nLog(
+              `[OPENING_DRIFT_ADVISORY] job=${payload.jobId} attempt=${attempt} width_delta_max=${driftGuard.widthDeltaMax.toFixed(3)} height_delta_max=${driftGuard.heightDeltaMax.toFixed(3)} center_shift_max=${driftGuard.centerShiftMax.toFixed(3)} opening_delta_detected=${driftGuard.openingDeltaDetected} drift_exceeds_threshold=${driftGuard.driftExceedsThreshold}`
+            );
           }
 
           if (CLOSET_GUARD_ENABLED && isBedroom2 && openingBaselineLite.length > 0 && openingCandidateLite.length > 0) {
@@ -7406,6 +7409,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         logger.info(
           `[STRUCTURAL_GUARD_EVAL] openingsDrop=${openingsDrop} highWallDrift=${highWallDrift} builtInRemovalDetected=${builtInRemovalDetected} deterministicGuardTriggered=${deterministicGuardTriggered}`
         );
+        if (structuralAdvisories.length > 0) {
+          logger.info(
+            `[STRUCTURAL_ADVISORIES] job=${payload.jobId} attempt=${attempt} advisories=${JSON.stringify(structuralAdvisories)}`
+          );
+        }
 
         const invariantResult = await runStructuralInvariantGeminiCheck(
           path1A,

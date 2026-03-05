@@ -1,8 +1,7 @@
 import type { Opening } from "../vision/detectOpenings";
 
 export type OpeningDriftGuardResult = {
-  verdict: "pass" | "retry";
-  reason?: "opening_geometry_drift";
+  signal: "opening_geometry_drift";
   openingDeltaDetected: boolean;
   driftExceedsThreshold: boolean;
   widthDeltaMax: number;
@@ -48,7 +47,7 @@ export function evaluateOpeningDriftGuard(
 
   if (!baselineOpenings.length || !candidateOpenings.length) {
     return {
-      verdict: "pass",
+      signal: "opening_geometry_drift",
       openingDeltaDetected: false,
       driftExceedsThreshold: false,
       widthDeltaMax: 0,
@@ -109,20 +108,8 @@ export function evaluateOpeningDriftGuard(
 
   const driftExceedsThreshold = anyThresholdExceeded;
 
-  if (openingDeltaDetected && driftExceedsThreshold) {
-    return {
-      verdict: "retry",
-      reason: "opening_geometry_drift",
-      openingDeltaDetected,
-      driftExceedsThreshold,
-      widthDeltaMax,
-      heightDeltaMax,
-      centerShiftMax,
-    };
-  }
-
   return {
-    verdict: "pass",
+    signal: "opening_geometry_drift",
     openingDeltaDetected,
     driftExceedsThreshold,
     widthDeltaMax,
