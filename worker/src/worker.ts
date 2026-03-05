@@ -1226,6 +1226,31 @@ This includes (but is not limited to):
 - recessed cavities
 - any visible framed penetration of a wall surface
 
+OPENING SIZE INVARIANT
+
+For each wall opening identified in BEFORE, the corresponding opening in AFTER
+must remain approximately the same perceptual width and height relative to the wall.
+
+An opening is considered structurally altered if:
+
+- its width appears noticeably wider or narrower than in BEFORE
+- its height appears noticeably taller or shorter than in BEFORE
+- the width-to-height proportion of the opening changes
+- the opening occupies a significantly larger or smaller portion of the wall
+
+Minor perspective normalization, lighting adjustments, or camera correction
+are acceptable and should NOT be considered resizing.
+
+Curtains, blinds, furniture, or decor may partially occlude an opening,
+but they must NOT alter the perceived structural size of the opening frame.
+
+If the opening frame is still present but appears noticeably resized,
+treat this as a structural alteration.
+
+Large architectural openings such as sliding glass doors or wide windows
+are structural anchors and must remain identical in perceptual size
+and position relative to the wall.
+
 Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters),
 or temporary movable objects is NOT removal ONLY IF ALL of the following remain true:
 
@@ -1249,6 +1274,7 @@ You must:
    - missing in AFTER
    - replaced by continuous wall
    - relocated
+  - structurally resized
    - merely occluded (meeting ALL occlusion conditions above)
 5) Detect if any wall plane expanded into a previous opening cavity.
 
@@ -1266,12 +1292,15 @@ Required JSON format:
   "openingRemoved": boolean,
   "openingRelocated": boolean,
   "openingInfilled": boolean,
+  "openingResized": boolean,
   "confidence": number
 }
 
 Set openingRelocated=true if the opening appears moved to a different wall location.
 Set openingInfilled=true if a former opening area is now continuous wall.
 Set openingRemoved=true if an opening present in BEFORE is absent in AFTER.
+Set openingResized=true if the opening frame remains present but its width, height, or proportions differ noticeably from BEFORE.
+Set confidence to a number between 0 and 1.
 `;
 
 async function runStructuralInvariantGeminiCheck(
@@ -1380,6 +1409,7 @@ async function runStructuralInvariantGeminiCheck(
     "openingRemoved",
     "openingRelocated",
     "openingInfilled",
+    "openingResized",
     "confidence",
   ];
 
@@ -1400,17 +1430,20 @@ async function runStructuralInvariantGeminiCheck(
   const openingRemoved = parsed.openingRemoved === true;
   const openingRelocated = parsed.openingRelocated === true;
   const openingInfilled = parsed.openingInfilled === true;
+  const openingResized = parsed.openingResized === true;
   const confidence =
     typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
       ? Math.max(0, Math.min(1, parsed.confidence))
       : 0;
-  const fail = openingRemoved || openingRelocated || openingInfilled;
+  const fail = openingRemoved || openingRelocated || openingInfilled || openingResized;
   const violationType: StructuralInvariantViolationType = openingRemoved
     ? "opening_removed"
     : openingRelocated
       ? "opening_relocated"
       : openingInfilled
         ? "opening_infilled"
+        : openingResized
+          ? "opening_resized"
         : "other";
   const reason = openingRemoved
     ? "openingRemoved=true"
@@ -1418,12 +1451,15 @@ async function runStructuralInvariantGeminiCheck(
       ? "openingRelocated=true"
       : openingInfilled
         ? "openingInfilled=true"
+        : openingResized
+          ? "openingResized=true"
         : "no_opening_change";
 
   const normalizedParsed = {
     openingRemoved,
     openingRelocated,
     openingInfilled,
+    openingResized,
     confidence,
     reason,
     violationType,

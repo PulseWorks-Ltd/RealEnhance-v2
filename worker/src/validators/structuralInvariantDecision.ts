@@ -2,6 +2,7 @@ export type StructuralInvariantViolationType =
   | "opening_removed"
   | "opening_infilled"
   | "opening_relocated"
+  | "opening_resized"
   | "door_removed"
   | "window_removed"
   | "closet_removed"
