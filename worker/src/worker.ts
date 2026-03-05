@@ -4067,7 +4067,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   let stage1ABlackArtifactDetected = false;
   for (let attempt = 1; attempt <= STAGE1A_MAX_ATTEMPTS; attempt += 1) {
-    path1A = await runStage1A(canonicalPath, {
+    // First pass uses canonical preprocessing; retries must use untouched upload.
+    const stage1AInputPath = attempt === 1 ? canonicalPath : origPath;
+    path1A = await runStage1A(stage1AInputPath, {
       replaceSky: safeReplaceSky,
       declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
       sceneType: sceneLabel,
@@ -4100,6 +4102,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       jobId: payload.jobId,
       attempt,
       maxAttempts: STAGE1A_MAX_ATTEMPTS,
+      inputPath: attempt === 1 ? "canonical_preprocessed" : "upload_original",
       action: attempt < STAGE1A_MAX_ATTEMPTS ? "retry_from_original" : "exhausted",
     });
   }

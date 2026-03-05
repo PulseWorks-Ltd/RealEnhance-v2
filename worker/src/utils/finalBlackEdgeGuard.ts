@@ -116,8 +116,106 @@ async function scanForBlackEdges(imagePath: string): Promise<{ trigger: boolean;
 }
 
 export async function detectBlackCornerArtifact(imagePath: string): Promise<{ detected: boolean; stats: ScanStats }> {
-  const scan = await scanForBlackEdges(imagePath);
-  return { detected: scan.trigger, stats: scan.stats };
+  const sample = await sharp(imagePath)
+    .ensureAlpha()
+    .resize(768, 768, { fit: "inside", withoutEnlargement: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = sample.info.width || 0;
+  const height = sample.info.height || 0;
+  const channels = sample.info.channels || 4;
+  if (!width || !height) {
+    return {
+      detected: false,
+      stats: {
+        width: 0,
+        height: 0,
+        borderPx: 0,
+        globalDarkRatio: 0,
+        topDarkRatio: 0,
+        bottomDarkRatio: 0,
+        leftDarkRatio: 0,
+        rightDarkRatio: 0,
+        cornerMaxDarkRatio: 0,
+      },
+    };
+  }
+
+  const cornerRegionRatio = Math.max(0.005, Number(process.env.BLACK_CORNER_REGION_RATIO || 0.02));
+  const nearBlackLuma = clamp(Math.round(Number(process.env.BLACK_CORNER_NEAR_BLACK_LUMA || 18)), 0, 255);
+  const cornerArtifactRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_CORNER_ARTIFACT_RATIO || 0.6)));
+  const globalMeanBrightnessGuard = clamp(Number(process.env.BLACK_CORNER_GLOBAL_BRIGHTNESS_GUARD || 40), 0, 255);
+
+  const regionW = Math.max(1, Math.floor(width * cornerRegionRatio));
+  const regionH = Math.max(1, Math.floor(height * cornerRegionRatio));
+
+  const lumaAt = (x: number, y: number) => {
+    const i = (y * width + x) * channels;
+    const r = sample.data[i] || 0;
+    const g = sample.data[i + 1] || 0;
+    const b = sample.data[i + 2] || 0;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  };
+
+  const cornerRatio = (x0: number, y0: number) => {
+    let dark = 0;
+    let total = 0;
+    const x1 = Math.min(width, x0 + regionW);
+    const y1 = Math.min(height, y0 + regionH);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (lumaAt(x, y) < nearBlackLuma) dark++;
+        total++;
+      }
+    }
+    return total > 0 ? dark / total : 0;
+  };
+
+  let globalLumaSum = 0;
+  let globalNearBlackCount = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const luma = lumaAt(x, y);
+      globalLumaSum += luma;
+      if (luma < nearBlackLuma) globalNearBlackCount++;
+    }
+  }
+  const meanBrightness = globalLumaSum / Math.max(1, width * height);
+  const globalDarkRatio = globalNearBlackCount / Math.max(1, width * height);
+
+  const topLeft = cornerRatio(0, 0);
+  const topRight = cornerRatio(Math.max(0, width - regionW), 0);
+  const bottomLeft = cornerRatio(0, Math.max(0, height - regionH));
+  const bottomRight = cornerRatio(Math.max(0, width - regionW), Math.max(0, height - regionH));
+
+  const cornerRatios = [topLeft, topRight, bottomLeft, bottomRight];
+  const cornerMaxDarkRatio = Math.max(...cornerRatios);
+  const strongCorners = cornerRatios.map((r) => r > cornerArtifactRatio);
+  const adjacentCornerSignal =
+    (strongCorners[0] && strongCorners[1]) ||
+    (strongCorners[0] && strongCorners[2]) ||
+    (strongCorners[1] && strongCorners[3]) ||
+    (strongCorners[2] && strongCorners[3]);
+
+  const detected =
+    meanBrightness > globalMeanBrightnessGuard &&
+    (cornerMaxDarkRatio > cornerArtifactRatio || adjacentCornerSignal);
+
+  return {
+    detected,
+    stats: {
+      width,
+      height,
+      borderPx: Math.min(regionW, regionH),
+      globalDarkRatio,
+      topDarkRatio: Math.max(topLeft, topRight),
+      bottomDarkRatio: Math.max(bottomLeft, bottomRight),
+      leftDarkRatio: Math.max(topLeft, bottomLeft),
+      rightDarkRatio: Math.max(topRight, bottomRight),
+      cornerMaxDarkRatio,
+    },
+  };
 }
 
 async function detectContentBounds(imagePath: string): Promise<{ width: number; height: number; bounds: Rect | null }> {
