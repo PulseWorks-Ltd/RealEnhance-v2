@@ -115,6 +115,11 @@ async function scanForBlackEdges(imagePath: string): Promise<{ trigger: boolean;
   };
 }
 
+export async function detectBlackCornerArtifact(imagePath: string): Promise<{ detected: boolean; stats: ScanStats }> {
+  const scan = await scanForBlackEdges(imagePath);
+  return { detected: scan.trigger, stats: scan.stats };
+}
+
 async function detectContentBounds(imagePath: string): Promise<{ width: number; height: number; bounds: Rect | null }> {
   const raw = await sharp(imagePath)
     .ensureAlpha()

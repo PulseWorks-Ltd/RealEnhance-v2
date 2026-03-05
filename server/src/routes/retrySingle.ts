@@ -122,6 +122,19 @@ function normalizeRoomType(raw: unknown): string {
   return aliases[value] || value.replace(/-/g, "_");
 }
 
+function isStage1ATainted(parentJob: any, parentMeta: any): boolean {
+  const errorMessage = String(parentJob?.errorMessage || "").toUpperCase();
+  const jobMeta = (parentJob as any)?.meta || {};
+  const savedMeta = parentMeta || {};
+
+  return (
+    errorMessage.includes("BLACK_BORDER_STAGE1A") ||
+    errorMessage.includes("STAGE1A_TAINTED") ||
+    jobMeta?.stage1ATainted === true ||
+    savedMeta?.stage1ATainted === true
+  );
+}
+
 function resolveRetryBaseline(params: {
   jobId: string;
   requestedStage: string;
@@ -129,6 +142,7 @@ function resolveRetryBaseline(params: {
   sourceUrlRaw: string;
   stageUrls: Record<string, string | null>;
   stage1BWasRequested: boolean;
+  stage1ATainted?: boolean;
 }): {
   selectedSourceStage: string | null;
   selectedSourceUrl: string | null;
@@ -136,7 +150,7 @@ function resolveRetryBaseline(params: {
   stage2OnlyDisabled: boolean;
   hardFail: { code: string; message: string } | null;
 } {
-  const { jobId, requestedStage, sourceStageRaw, sourceUrlRaw, stageUrls, stage1BWasRequested } = params;
+  const { jobId, requestedStage, sourceStageRaw, sourceUrlRaw, stageUrls, stage1BWasRequested, stage1ATainted } = params;
 
   let selectedSourceStage: string | null = null;
   let selectedSourceUrl: string | null = null;
@@ -156,9 +170,21 @@ function resolveRetryBaseline(params: {
     });
 
   if (requestedStage === "1A") {
+    if (stage1ATainted) {
+      hardFail = {
+        code: "stage1a_tainted_requires_upload",
+        message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
+      };
+    }
     selectedSourceStage = "1A";
     selectedSourceUrl = resolve("1A");
   } else if (requestedStage === "1B") {
+    if (stage1ATainted) {
+      hardFail = {
+        code: "stage1a_tainted_requires_upload",
+        message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
+      };
+    }
     selectedSourceStage = "1A-stage-ready";
     selectedSourceUrl = resolve("1A") || (typeof stageUrls.original === "string" ? stageUrls.original : null);
     retryFromStage = "1B";
@@ -178,6 +204,15 @@ function resolveRetryBaseline(params: {
         selectedSourceStage = "1A";
         selectedSourceUrl = resolve("1A");
         stage2OnlyDisabled = true;
+        if (stage1ATainted) {
+          hardFail = {
+            code: "stage1a_tainted_requires_upload",
+            message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
+          };
+          selectedSourceStage = null;
+          selectedSourceUrl = null;
+          stage2OnlyDisabled = false;
+        }
       }
     }
   } else if (sourceUrlRaw) {
@@ -360,6 +395,7 @@ export function retrySingleRouter() {
             sourceUrlRaw,
             stageUrls: allStageUrls,
             stage1BWasRequested,
+            stage1ATainted: isStage1ATainted(parentJob, parentMeta),
           });
 
           if (baseline.hardFail) {

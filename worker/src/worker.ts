@@ -115,10 +115,11 @@ import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCriti
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
-import { applyFinalBlackEdgeGuard, assertNoDarkBorder } from "./utils/finalBlackEdgeGuard";
+import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact } from "./utils/finalBlackEdgeGuard";
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
+const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
 const logger = console;
 
 function shouldLog(eventType?: string): boolean {
@@ -1917,29 +1918,25 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
   return publishImage(localPath);
 }
 
-async function detectBlackBorder(imageBuffer: Buffer): Promise<boolean> {
-  const tempPath = `/tmp/stage1a-black-border-${randomUUID()}.webp`;
+async function detectStage1ABorderOrCornerArtifact(imagePath: string): Promise<boolean> {
   const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
   const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
   const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
 
   try {
-    await fs.promises.writeFile(tempPath, imageBuffer);
-    await assertNoDarkBorder(tempPath, borderPx, threshold, maxDarkRatio);
-    return false;
+    await assertNoDarkBorder(imagePath, borderPx, threshold, maxDarkRatio);
   } catch (error: any) {
     if (error?.code === "BLACK_BORDER_DETECTED") {
       return true;
     }
     throw error;
-  } finally {
-    try {
-      await fs.promises.unlink(tempPath);
-    } catch {}
   }
+
+  const cornerScan = await detectBlackCornerArtifact(imagePath);
+  return cornerScan.detected;
 }
 
-async function markJobFailed(jobId: string, reason: string): Promise<void> {
+async function markJobFailed(jobId: string, reason: string, meta: Record<string, any> = {}): Promise<void> {
   await safeWriteJobStatus(
     jobId,
     {
@@ -1947,6 +1944,7 @@ async function markJobFailed(jobId: string, reason: string): Promise<void> {
       errorMessage: reason,
       currentStage: "1A",
       stage: "1A",
+      ...(Object.keys(meta).length ? { meta } : {}),
     },
     "stage1a_fatal_black_border"
   );
@@ -2024,6 +2022,42 @@ async function completePartialJob(params: {
   };
 }) {
   const { jobId, triggerStage, finalStage, finalPath, pub1AUrl, pub1BUrl, sceneMeta, userMessage, reason, stageOutputs, billingContext } = params;
+
+  if (finalStage === "1A") {
+    try {
+      const stage1ATainted = await detectStage1ABorderOrCornerArtifact(finalPath);
+      if (stage1ATainted) {
+        nLog("[STAGE1A_TAINTED_FALLBACK_BLOCKED]", {
+          jobId,
+          triggerStage,
+          reason,
+          finalPath,
+        });
+        await safeWriteJobStatus(
+          jobId,
+          {
+            status: "failed",
+            errorMessage: "stage1a_tainted_fallback_blocked",
+            currentStage: "1A",
+            stage: "1A",
+            meta: {
+              stage1ATainted: true,
+              stage1ATaintReason: "black_corner_or_border_detected",
+              fallbackBlocked: true,
+            },
+          },
+          "stage1a_tainted_fallback_blocked"
+        );
+        return;
+      }
+    } catch (taintErr: any) {
+      nLog("[STAGE1A_TAINT_CHECK_ERROR]", {
+        jobId,
+        reason: taintErr?.message || String(taintErr),
+      });
+    }
+  }
+
   let resultUrl = finalStage === "1A" ? pub1AUrl : pub1BUrl;
   if (!resultUrl) {
     const pub = await publishWithOptionalBlackEdgeGuard(finalPath, `partial-${finalStage}`);
@@ -4031,27 +4065,54 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Determine sky mode from scene detection results (already force-safe applied in detection block)
   const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
-  path1A = await runStage1A(canonicalPath, {
-    replaceSky: safeReplaceSky,
-    declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-    sceneType: sceneLabel,
-    interiorProfile: ((): any => {
-      const p = (payload.options as any)?.interiorProfile;
-      if (p === 'nz_high_end' || p === 'nz_standard') return p;
-      return undefined;
-    })(),
-    skyMode: skyModeForStage1A,
-    jobId: payload.jobId,
-    roomType: payload.options.roomType,
-    baseArtifacts: jobContext.baseArtifacts,
-    baseArtifactsCache: jobContext.baseArtifactsCache,
-    jobSampling: jobContext.jobSampling,
-  });
+  let stage1ABlackArtifactDetected = false;
+  for (let attempt = 1; attempt <= STAGE1A_MAX_ATTEMPTS; attempt += 1) {
+    path1A = await runStage1A(canonicalPath, {
+      replaceSky: safeReplaceSky,
+      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
+      sceneType: sceneLabel,
+      interiorProfile: ((): any => {
+        const p = (payload.options as any)?.interiorProfile;
+        if (p === 'nz_high_end' || p === 'nz_standard') return p;
+        return undefined;
+      })(),
+      skyMode: skyModeForStage1A,
+      jobId: payload.jobId,
+      roomType: payload.options.roomType,
+      baseArtifacts: jobContext.baseArtifacts,
+      baseArtifactsCache: jobContext.baseArtifactsCache,
+      jobSampling: jobContext.jobSampling,
+    });
 
-  const stage1ABuffer = await fs.promises.readFile(path1A);
-  if (await detectBlackBorder(stage1ABuffer)) {
+    stage1ABlackArtifactDetected = await detectStage1ABorderOrCornerArtifact(path1A);
+    if (!stage1ABlackArtifactDetected) {
+      if (attempt > 1) {
+        nLog("[STAGE1A_RETRY_RECOVERED]", {
+          jobId: payload.jobId,
+          attempt,
+          maxAttempts: STAGE1A_MAX_ATTEMPTS,
+        });
+      }
+      break;
+    }
+
+    nLog("[STAGE1A_BLACK_CORNER_RETRY]", {
+      jobId: payload.jobId,
+      attempt,
+      maxAttempts: STAGE1A_MAX_ATTEMPTS,
+      action: attempt < STAGE1A_MAX_ATTEMPTS ? "retry_from_original" : "exhausted",
+    });
+  }
+
+  if (stage1ABlackArtifactDetected) {
     nLog("[STAGE1A_FATAL_BLACK_BORDER]");
-    await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A");
+    await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A", {
+      stage1ATainted: true,
+      stage1ATaintReason: "black_corner_or_border_detected",
+      stage1AAttemptsUsed: STAGE1A_MAX_ATTEMPTS,
+      stage1AAttemptsMax: STAGE1A_MAX_ATTEMPTS,
+      retrySourceRequired: "upload_original",
+    });
     return;
   }
 
