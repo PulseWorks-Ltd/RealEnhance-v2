@@ -2201,6 +2201,8 @@ export default function BatchProcessor() {
         const completed = items.filter((it: any) => it && (String(it.state || it.jobState || it.queueStatus || "").toLowerCase() === 'completed')).length;
 
         // surface per-item updates (processing or completed) and merge stage URLs progressively
+        const retryTerminalIndices = new Set<number>();
+
         for (const it of items) {
           const polledId = it?.jobId || it?.id || it?.job_id || it?.job?.id || it?.job?.jobId || it?.result?.jobId;
           const retryInfo = it?.retryInfo || it?.retry_info || it?.meta?.retryInfo || it?.meta?.retry_info || {};
@@ -2483,6 +2485,7 @@ export default function BatchProcessor() {
               if (mergedMeta.allowStaging === undefined && typeof allowStaging === 'boolean') {
                 mergedMeta.allowStaging = allowStaging;
               }
+              const isTerminalStatusForRetry = status === "completed" || status === "failed";
               copy[idx] = {
                 ...existing,
                 status,
@@ -2536,9 +2539,15 @@ export default function BatchProcessor() {
                 blockedStage: blockedStage || existing.blockedStage,
                 fallbackStage: fallbackStage || existing.fallbackStage,
                 validationNote: validationNote || existing.validationNote,
+                retryInFlight: isTerminalStatusForRetry ? undefined : existing.retryInFlight,
+                retryStage: isTerminalStatusForRetry ? undefined : existing.retryStage,
               };
               return copy;
             });
+
+            if (isTerminalFlag) {
+              retryTerminalIndices.add(idx);
+            }
 
             if (isRegionEdit && completedFinal) {
               clearEditFallbackTimer(idx);
@@ -2627,6 +2636,20 @@ export default function BatchProcessor() {
             }
           }
         }
+
+        if (retryTerminalIndices.size > 0) {
+          setRetryingImages(prev => {
+            const next = new Set(prev);
+            retryTerminalIndices.forEach((idx) => next.delete(idx));
+            return next;
+          });
+          setRetryLoadingImages(prev => {
+            const next = new Set(prev);
+            retryTerminalIndices.forEach((idx) => next.delete(idx));
+            return next;
+          });
+        }
+
         schedule();
 
         const terminalCount = Object.entries(statusCounts).reduce((acc, [st, count]) => acc + (TERMINAL_STATUSES.has(st) ? count : 0), 0);
@@ -3960,7 +3983,24 @@ export default function BatchProcessor() {
               const statusData = await resp.json();
               const items = Array.isArray(statusData.items) ? statusData.items : [];
               const job = items.find((j: any) => j.id === jobId) || items[0];
-              if (job && job.status === "completed" && job.imageUrl) {
+              const jobStatusRaw = String(job?.status || job?.state || "").toLowerCase();
+              const isJobCompleted = jobStatusRaw === "completed" || jobStatusRaw === "complete";
+              const isJobFailed = jobStatusRaw === "failed" || jobStatusRaw === "error" || jobStatusRaw === "cancelled" || jobStatusRaw === "canceled";
+              const jobStageUrls = job?.stageUrls || job?.stage_urls || {};
+              const completedOutputUrl =
+                toDisplayUrl(job?.imageUrl) ||
+                toDisplayUrl(job?.resultUrl) ||
+                toDisplayUrl(job?.publishedUrl) ||
+                toDisplayUrl(jobStageUrls?.stage2) ||
+                toDisplayUrl(jobStageUrls?.["2"]) ||
+                toDisplayUrl(jobStageUrls?.stage1B) ||
+                toDisplayUrl(jobStageUrls?.["1B"]) ||
+                toDisplayUrl(jobStageUrls?.stage1A) ||
+                toDisplayUrl(jobStageUrls?.["1A"]) ||
+                null;
+              const hasCompletedOutput = !!completedOutputUrl;
+
+              if (job && isJobCompleted && hasCompletedOutput) {
                 // ✅ Clear timeout on success (spinner stays until onLoad)
                 if (retryTimeoutRef.current) {
                   clearTimeout(retryTimeoutRef.current);
@@ -3969,12 +4009,12 @@ export default function BatchProcessor() {
 
                 // Update UI with the new image
                 const stamp = Date.now();
-                const stageUrls = job.stageUrls || job.stage_urls || null;
+                const stageUrls = jobStageUrls || null;
                 const imageIdFromJob = job.imageId || job.image_id || null;
                 const retryResult = {
-                  image: job.imageUrl,
-                  imageUrl: job.imageUrl,
-                  result: { imageUrl: job.imageUrl },
+                  image: completedOutputUrl,
+                  imageUrl: completedOutputUrl,
+                  result: { imageUrl: completedOutputUrl },
                   stageUrls,
                   imageId: imageIdFromJob,
                   error: null,
@@ -3993,20 +4033,20 @@ export default function BatchProcessor() {
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
                     ...r,
-                    image: job.imageUrl,
-                    imageUrl: job.imageUrl,
-                    resultUrl: job.imageUrl,
+                    image: completedOutputUrl,
+                    imageUrl: completedOutputUrl,
+                    resultUrl: completedOutputUrl,
                     version: stamp,
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
                     stageUrls: r?.stageUrls || stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
-                    retryLatestUrl: job.imageUrl,
+                    retryLatestUrl: completedOutputUrl,
                     retryHistory: [
                       ...existingRetryHistory,
                       {
-                        url: job.imageUrl,
+                        url: completedOutputUrl,
                         ts: stamp,
                         stage: retryStage || null,
                         jobId,
@@ -4021,29 +4061,29 @@ export default function BatchProcessor() {
                     finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
                     result: {
                       ...(normalizedResult || {}),
-                      image: job.imageUrl,
-                      imageUrl: job.imageUrl,
-                      resultUrl: job.imageUrl,
+                      image: completedOutputUrl,
+                      imageUrl: completedOutputUrl,
+                      resultUrl: completedOutputUrl,
                       originalImageUrl: preservedOriginalUrl,
                       stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                      retryLatestUrl: job.imageUrl,
+                      retryLatestUrl: completedOutputUrl,
                     },
                     error: null,
                     filename: r?.filename
                   } : r
                 ));
                 setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
-                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: job.imageUrl }));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: completedOutputUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
-                  newSet.add(job.imageUrl);
+                  newSet.add(completedOutputUrl);
                   return Array.from(newSet);
                 });
                 setProcessedImagesByIndex(prev => ({
                   ...prev,
-                  [imageIndex]: job.imageUrl
+                  [imageIndex]: completedOutputUrl
                 }));
                 await refreshUser();
 
@@ -4056,7 +4096,7 @@ export default function BatchProcessor() {
                 // ❌ setProgressText("Retry complete! Enhanced image is ready.");
 
                 return;
-              } else if (job && job.status === "failed") {
+              } else if (job && isJobFailed) {
                 // ✅ Clear timeout on failure
                 if (retryTimeoutRef.current) {
                   clearTimeout(retryTimeoutRef.current);
