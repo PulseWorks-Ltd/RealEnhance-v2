@@ -179,6 +179,8 @@ type ForensicAttemptEntry = {
 
 type ForensicJobEntry = {
   jobId: string;
+  imageName: string;
+  stagingStyle: string;
   uploadUrl: string | null;
   stage1AUrl: string | null;
   attempts: ForensicAttemptEntry[];
@@ -197,6 +199,34 @@ type ForensicBatchState = {
 
 const batchForensicCollectors = new Map<string, ForensicBatchState>();
 const forensicJobBatchIndex = new Map<string, string>();
+
+const DEFAULT_STAGING_STYLE = "standard_listing";
+
+function normalizeForensicStagingStyle(raw: unknown): string {
+  const base = String(raw ?? "").trim().toLowerCase();
+  if (!base) return DEFAULT_STAGING_STYLE;
+
+  const aliases: Record<string, string> = {
+    standard_listing: "standard_listing",
+    standard: "standard_listing",
+    "standard listing": "standard_listing",
+    family_home: "family_home",
+    "family home": "family_home",
+    urban_apartment: "urban_apartment",
+    "urban apartment": "urban_apartment",
+    high_end_luxury: "high_end_luxury",
+    "high end luxury": "high_end_luxury",
+    "high-end luxury": "high_end_luxury",
+    country_lifestyle: "country_lifestyle",
+    "country lifestyle": "country_lifestyle",
+    "country / lifestyle": "country_lifestyle",
+    lived_in_rental: "lived_in_rental",
+    "lived in rental": "lived_in_rental",
+    "lived-in rental": "lived_in_rental",
+  };
+
+  return aliases[base] || DEFAULT_STAGING_STYLE;
+}
 
 function inferForensicBatchId(payload: any): string {
   const fromPayload =
@@ -227,6 +257,8 @@ function beginBatchForensicForJob(payload: any) {
   if (!batch.jobs.has(jobId)) {
     batch.jobs.set(jobId, {
       jobId,
+      imageName: String(payload?.label || payload?.originalFilename || payload?.imageId || "unknown"),
+      stagingStyle: normalizeForensicStagingStyle(payload?.options?.stagingStyle),
       uploadUrl: payload?.remoteOriginalUrl || null,
       stage1AUrl: null,
       attempts: [],
@@ -250,6 +282,8 @@ function upsertForensicJobSnapshot(jobId: string, patch: Partial<ForensicJobEntr
 
   const current = batch.jobs.get(jobId) || {
     jobId,
+    imageName: "unknown",
+    stagingStyle: DEFAULT_STAGING_STYLE,
     uploadUrl: null,
     stage1AUrl: null,
     attempts: [],
@@ -270,6 +304,7 @@ function upsertForensicJobSnapshot(jobId: string, patch: Partial<ForensicJobEntr
 
 function emitBatchForensicSummary(batch: ForensicBatchState) {
   const jobs = [...batch.jobs.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
+  const safeStyle = (style: unknown) => normalizeForensicStagingStyle(style);
   const jobsTotal = jobs.length;
   const jobsCompleted = jobs.filter((j) => {
     const status = String(j.finalStatus).toLowerCase();
@@ -288,14 +323,27 @@ function emitBatchForensicSummary(batch: ForensicBatchState) {
   nLog(`failed=${jobsFailed}`);
   nLog(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
 
+  const styleDistribution = jobs.reduce<Record<string, number>>((acc, job) => {
+    const style = safeStyle(job.stagingStyle);
+    acc[style] = (acc[style] || 0) + 1;
+    return acc;
+  }, {});
+  nLog("STAGING STYLE DISTRIBUTION");
+  for (const [style, count] of Object.entries(styleDistribution).sort((a, b) => a[0].localeCompare(b[0]))) {
+    nLog(`${style}: ${count}`);
+  }
+
   for (const job of jobs) {
     nLog(`JOB ${job.jobId}`);
+    nLog(`image=${job.imageName || "unknown"}`);
+    nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
     nLog(`upload=${job.uploadUrl || ""}`);
     nLog(`stage1A=${job.stage1AUrl || ""}`);
 
     const attempts = [...(job.attempts || [])].sort((a, b) => a.attemptNumber - b.attemptNumber);
     for (const attempt of attempts) {
       nLog(`ATTEMPT ${attempt.attemptNumber}`);
+      nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
       nLog(`stage=${attempt.pipelineStage}`);
       nLog(`model=${attempt.model}`);
       nLog(`retry_reason=${attempt.retryReason}`);
@@ -2529,8 +2577,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  const imageLabel = (payload as any).label || (payload as any).originalFilename || payload.imageId || "unknown";
+  let stagingStyleNorm: string | undefined =
+    typeof (payload as any)?.options?.stagingStyle === "string"
+      ? String((payload as any).options.stagingStyle).trim()
+      : undefined;
+  nLog(`[JOB_START] job=${payload.jobId} image=${imageLabel} stagingStyle=${normalizeForensicStagingStyle(stagingStyleNorm)}`);
   if ((payload as any).retryType === "manual_retry") {
-    nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'}`);
+    nLog(`[JOB_START] retryType=manual_retry sourceStage=${(payload as any).retrySourceStage || 'upload'} sourceUrl=${(payload as any).retrySourceUrl || 'n/a'} sourceKey=${(payload as any).retrySourceKey || 'n/a'} parentJobId=${(payload as any).retryParentJobId || 'n/a'} stagingStyle=${normalizeForensicStagingStyle(stagingStyleNorm)}`);
     // Attach retryMeta for observability
     buildRetryMeta(payload.jobId, {
       attempt: 1,
@@ -2569,8 +2623,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BRequired: boolean;
   };
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
-
-  let stagingStyleNorm: string | undefined;
 
   try {
     const [liveJob, savedMeta] = await Promise.all([
@@ -2693,6 +2745,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const jobAttemptLog = {
     jobId: payload.jobId,
     roomType: payload.options.roomType || null,
+    stagingStyle: stagingStyleNorm,
     stageLogs: {
       "1B": [] as Array<{
         attempt: number;
@@ -2972,6 +3025,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     lines.push("==============================");
     lines.push(`Image: ${payload.jobId}`);
     lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
+    lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
     lines.push("");
 
     const renderStage = (stageLabel: "1B" | "2") => {
@@ -3153,6 +3207,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
     upsertForensicJobSnapshot(payload.jobId, {
+      stagingStyle: normalizeForensicStagingStyle(stagingStyleNorm),
       uploadUrl: params.uploadUrl ?? null,
       stage1AUrl: params.stage1AUrl ?? null,
       attempts,
@@ -3166,6 +3221,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const flushStage1AFailureForensicSnapshot = (reason: string) => {
     upsertForensicJobSnapshot(payload.jobId, {
+      stagingStyle: normalizeForensicStagingStyle(stagingStyleNorm),
       uploadUrl: (payload as any).remoteOriginalUrl || null,
       attempts: [
         {
@@ -6317,6 +6373,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
+      nLog(`[STAGE2_ATTEMPT] job=${payload.jobId} image=${imageLabel} attempt=${attempt} stagingStyle=${normalizeForensicStagingStyle(stagingStyleNorm)}`);
       const emitStage2DecisionBreakdown = (params: {
         extremeLocalFail: boolean;
         topologyFail: boolean;
@@ -6347,6 +6404,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       logger.info("[STAGE2_RETRY_CONTEXT]", {
         jobId: payload.jobId,
         attempt,
+        stagingStyle: normalizeForensicStagingStyle(stagingStyleNorm),
         failureType: pendingStage2StructuralFailureType,
         retryStrategy: pendingStage2RetryStrategy,
       });
