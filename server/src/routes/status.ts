@@ -402,12 +402,17 @@ export function statusRouter() {
         const updatedAtRaw = local.updatedAt || local.updated_at || null;
         const updatedAtMs = updatedAtRaw ? Date.parse(updatedAtRaw) : null;
         const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued" || pipelineStatus === "awaiting_payment";
+        const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl || bestAvailableStage.url);
         if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage && stage2Expected) {
-          pipelineStatus = "failed";
+          if (!hasFallbackOutput) {
+            pipelineStatus = "failed";
+          }
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
         }
         if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
-          pipelineStatus = "failed";
+          if (!hasFallbackOutput) {
+            pipelineStatus = "failed";
+          }
           warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
         }
         const isInformationalExteriorNote = requestedStage2 === true && isExteriorScene && !stage2Present;
@@ -782,12 +787,17 @@ export function statusRouter() {
         stateOut = "completed";
       }
 
+      const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl);
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
-        stateOut = "failed";
+        if (!hasFallbackOutput) {
+          stateOut = "failed";
+        }
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
       }
       if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
-        stateOut = "failed";
+        if (!hasFallbackOutput) {
+          stateOut = "failed";
+        }
         warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
       }
       if (requestedStage2 === true && isExteriorScene && !stage2Present) {

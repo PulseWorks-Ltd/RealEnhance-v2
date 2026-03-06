@@ -603,25 +603,28 @@ const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string =
 
 type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "retry";
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
+type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
+
+const MESSAGE_ROTATION_MS = 10_000;
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
-    "Uploading Image",
-    "Straightening Image",
-    "Improving Clarity",
-    "Enhancing Image Quality",
+    "Optimizing lighting",
+    "Improving image clarity",
+    "Balancing exposure",
+    "Enhancing details",
   ],
   stage1b: [
-    "Decluttering",
-    "Removing Furniture",
-    "Tidying Room",
-    "Cleaning Surfaces",
+    "Removing distractions",
+    "Tidying the room",
+    "Simplifying the space",
+    "Cleaning visual noise",
   ],
   stage2: [
-    "Designing Room Layout",
-    "Staging Room",
-    "Placing Furniture",
-    "Adding Decor",
+    "Placing furniture",
+    "Designing the layout",
+    "Finalizing staging",
+    "Styling the space",
   ],
   validator: [
     "Reviewing Image",
@@ -636,6 +639,36 @@ const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
     "Refining Furniture Layout",
   ],
 };
+
+function normalizeCurrentStage(raw: unknown): string {
+  return String(raw || "").toLowerCase();
+}
+
+function resolveDisplayStageKey(params: {
+  status: string;
+  currentStage: string;
+  isDone: boolean;
+  isRetryActive: boolean;
+  isUploading: boolean;
+}): DisplayStageKey {
+  const { status, currentStage, isDone, isRetryActive, isUploading } = params;
+  if (isDone) return "completed";
+  if (isRetryActive) return "retry";
+  if (isUploading || status === "queued" || status === "waiting") return "uploading";
+  if (currentStage.includes("1b")) return "stage1b";
+  if (currentStage.includes("2")) return "stage2";
+  if (currentStage.includes("valid")) return "validator";
+  if (currentStage.includes("1a") || currentStage.includes("upload")) return "stage1a";
+  return "stage1a";
+}
+
+function toProcessingMessageStage(key: DisplayStageKey): ProcessingMessageStage {
+  if (key === "stage1b") return "stage1b";
+  if (key === "stage2") return "stage2";
+  if (key === "validator" || key === "completed") return "validator";
+  if (key === "retry") return "retry";
+  return "stage1a";
+}
 
 const STAGE_PROGRESS: Record<string, number> = {
   uploading: 10,
@@ -687,7 +720,9 @@ export default function BatchProcessor() {
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
-  const [messageTick, setMessageTick] = useState(0);
+  const [messageIndexByImage, setMessageIndexByImage] = useState<Record<number, number>>({});
+  const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setInterval>>>({});
+  const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
   const [creditGateModal, setCreditGateModal] = useState<{
@@ -738,12 +773,67 @@ export default function BatchProcessor() {
   }, [runState]);
 
   useEffect(() => {
-    if (runState !== "running") return;
-    const interval = setInterval(() => {
-      setMessageTick((prev) => prev + 1);
-    }, 1800);
-    return () => clearInterval(interval);
-  }, [runState]);
+    const clearMessageTimer = (index: number) => {
+      const timer = messageTimerByImageRef.current[index];
+      if (timer) {
+        clearInterval(timer);
+        delete messageTimerByImageRef.current[index];
+      }
+      delete messageStageByImageRef.current[index];
+    };
+
+    files.forEach((_, index) => {
+      const item = results[index] || {};
+      const status = String(item?.status || item?.result?.status || "").toLowerCase();
+      const isTerminal = status === "completed" || status === "complete" || status === "failed" || status === "cancelled";
+      const isRetryActive = Boolean(item?.retryInFlight);
+      const currentStage = normalizeCurrentStage(item?.currentStage || item?.result?.currentStage);
+      const shouldRotate = !isTerminal && (runState === "running" || status === "processing" || status === "queued" || status === "waiting" || isUploading || isRetryActive);
+
+      if (!shouldRotate) {
+        clearMessageTimer(index);
+        return;
+      }
+
+      const displayStageKey = resolveDisplayStageKey({
+        status,
+        currentStage,
+        isDone: false,
+        isRetryActive,
+        isUploading,
+      });
+      const messageStage = toProcessingMessageStage(displayStageKey);
+
+      if (!messageTimerByImageRef.current[index] || messageStageByImageRef.current[index] !== messageStage) {
+        clearMessageTimer(index);
+
+        const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
+        const randomStart = Math.floor(Math.random() * Math.max(1, messages.length));
+        setMessageIndexByImage((prev) => ({ ...prev, [index]: randomStart }));
+        messageStageByImageRef.current[index] = messageStage;
+
+        messageTimerByImageRef.current[index] = setInterval(() => {
+          setMessageIndexByImage((prev) => ({
+            ...prev,
+            [index]: ((prev[index] ?? randomStart) + 1) % Math.max(1, messages.length),
+          }));
+        }, MESSAGE_ROTATION_MS);
+      }
+    });
+
+  }, [files, results, runState, isUploading]);
+
+  useEffect(() => {
+    return () => {
+      Object.keys(messageTimerByImageRef.current).forEach((key) => {
+        const index = Number(key);
+        const timer = messageTimerByImageRef.current[index];
+        if (timer) clearInterval(timer);
+      });
+      messageTimerByImageRef.current = {};
+      messageStageByImageRef.current = {};
+    };
+  }, []);
 
   const [jobId, setJobId] = useState<string>("");
   const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
@@ -2264,6 +2354,7 @@ export default function BatchProcessor() {
 
           const statusCounts: Record<string, number> = {};
         const nonTerminalIndices: number[] = [];
+        const reachedTargetOrFailedIndices = new Set<number>();
         let hasUnmappedNonTerminal = false;
         const queuedWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
           const errorWithOutputs: Array<{ idx?: number; jobId?: string }> = [];
@@ -2506,6 +2597,9 @@ export default function BatchProcessor() {
             if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
               nonTerminalIndices.push(idx);
             }
+            if (status === "failed" || completedFinal) {
+              reachedTargetOrFailedIndices.add(idx);
+            }
             const filename = files[idx]?.name || `image-${idx + 1}`;
             setResults(prev => {
               const copy = prev ? [...prev] : [];
@@ -2744,39 +2838,34 @@ export default function BatchProcessor() {
 
         // ✅ FIX #1: Target-aware completion check
         // Don't stop polling just because backend says "done" - verify all images reached their targets
-        const allImagesReachedTargetOrFailed = results.every((r, idx) => {
+        const allImagesReachedTargetOrFailed = files.length > 0 && files.every((_, idx) => {
+          if (reachedTargetOrFailedIndices.has(idx)) return true;
+          const r = results[idx];
           if (!r) return false;
           const status = String(r?.status || "").toLowerCase();
-          const failed = status === "failed";
-          if (failed) return true; // Failed images are terminal
-          
-          // Calculate target stage for this image
+          if (status === "failed") return true;
+
           const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
           const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
           const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
-          
           const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
-          
-          // Check if target URL is present
+
           const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
           const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
           const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
           const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
-          
           const targetUrlPresent = (
             (targetStage === "2" && !!stage2Url) ||
             (targetStage === "1B" && !!stage1BUrl) ||
             (targetStage === "1A" && !!stage1AUrl)
           );
-          
+
           const blockedStage = r?.blockedStage || r?.result?.blockedStage || r?.meta?.blockedStage || r?.result?.meta?.blockedStage || null;
           const fallbackStage = r?.fallbackStage ?? r?.result?.fallbackStage ?? r?.meta?.fallbackStage ?? r?.result?.meta?.fallbackStage ?? null;
           const resultStageNorm = String(r?.resultStage || r?.result?.resultStage || r?.finalStage || r?.result?.finalStage || "").toUpperCase();
-
-          const completedWithTarget = (status === "completed" || status === "complete") && targetUrlPresent;
           const completedViaFallback =
             (status === "completed" || status === "complete") &&
             !targetUrlPresent &&
@@ -2786,23 +2875,7 @@ export default function BatchProcessor() {
               fallbackStage ||
               (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
             );
-          
-          // Debug log for items that haven't reached target
-          if (!completedWithTarget && !failed) {
-            console.log('[BATCH][poll][target-not-reached]', {
-              idx,
-              status,
-              targetStage,
-              targetUrlPresent,
-              hasStage2: !!stage2Url,
-              hasStage1B: !!stage1BUrl,
-              hasStage1A: !!stage1AUrl,
-              requestedStages,
-              sceneLabel
-            });
-          }
-          
-          return completedWithTarget || completedViaFallback;
+          return ((status === "completed" || status === "complete") && targetUrlPresent) || completedViaFallback;
         });
 
         // Use target-aware completion instead of blindly trusting serverSignaledDone
@@ -6112,38 +6185,24 @@ export default function BatchProcessor() {
                           : declutter
                           ? "Further decluttering required"
                           : "Enhancing";
-                        const currentStage = String((result?.currentStage || result?.result?.currentStage || "") as string).toLowerCase();
-                        const inferredStageKey = (() => {
-                          if (isUiComplete || isDone) return "completed";
-                          if (isRetryActive) return "retry";
-                          if (isUploading || status === "queued" || status === "waiting") return "uploading";
-                          if (currentStage.includes("valid")) return "validator";
-                          if (currentStage.includes("2")) return "stage2";
-                          if (currentStage.includes("1b")) return "stage1b";
-                          if (currentStage.includes("1a") || currentStage.includes("upload")) return "stage1a";
-                          if (stage2Url) return "validator";
-                          if (stage1BUrl) return "stage2";
-                          if (stage1AUrl && (declutterRequested || stage2Expected)) return "stage1b";
-                          if (stage1AUrl) return "validator";
-                          return "uploading";
-                        })();
-                        const stageMessageKey: ProcessingMessageStage = inferredStageKey === "retry"
-                          ? "retry"
-                          : inferredStageKey === "stage1b"
-                          ? "stage1b"
-                          : inferredStageKey === "stage2"
-                          ? "stage2"
-                          : inferredStageKey === "validator" || inferredStageKey === "completed"
-                          ? "validator"
-                          : "stage1a";
+                        const currentStage = normalizeCurrentStage(result?.currentStage || result?.result?.currentStage);
+                        const displayStageKey = resolveDisplayStageKey({
+                          status,
+                          currentStage,
+                          isDone,
+                          isRetryActive,
+                          isUploading,
+                        });
+                        const stageMessageKey = toProcessingMessageStage(displayStageKey);
                         const rotatingMessages = STAGE_MESSAGES[stageMessageKey] || STAGE_MESSAGES.stage1a;
-                        const rotatingMessage = rotatingMessages[messageTick % rotatingMessages.length];
+                        const messageIndex = messageIndexByImage[i] ?? 0;
+                        const rotatingMessage = rotatingMessages[messageIndex % rotatingMessages.length];
                         const stageProgressValue = isDone
                           ? 100
-                          : (STAGE_PROGRESS[inferredStageKey] ?? (isProcessing ? 35 : 0));
+                          : (STAGE_PROGRESS[displayStageKey] ?? (isProcessing ? 35 : 0));
                         const stageTitle = isDone
                           ? STAGE_TITLES.completed
-                          : (STAGE_TITLES[inferredStageKey] || STAGE_TITLES.stage1a);
+                          : (STAGE_TITLES[displayStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = (() => {
                           if (currentStage.includes("2")) return "Staging image...";
                           if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
