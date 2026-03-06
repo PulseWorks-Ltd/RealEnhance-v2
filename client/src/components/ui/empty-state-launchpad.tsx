@@ -41,7 +41,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-slate-50">
+    <div className="relative w-full min-h-screen overflow-hidden bg-white px-8 py-6">
       {/* Dot Pattern Background */}
       <div 
         className="absolute inset-0 opacity-40"
@@ -52,7 +52,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
       />
 
       {/* Content Container */}
-      <div className="relative z-10 w-full max-w-6xl px-6 py-12 space-y-12">
+      <div className="relative z-10 w-full px-6 py-12 space-y-12">
         
         {/* Hero Dropzone Card */}
         <div
@@ -62,7 +62,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
           onDrop={handleDrop}
           className={`
             relative group cursor-pointer
-            max-w-4xl mx-auto
+            max-w-xl mx-auto
             bg-white rounded-3xl shadow-2xl
             border-2 border-dashed transition-all duration-300
             ${isDragOver 

@@ -1134,7 +1134,6 @@ export default function BatchProcessor() {
   async function detectSceneFromFile(f: File): Promise<SceneDetectResult> {
     const cacheKey = `${f.name}:${f.size}:${f.lastModified}`;
     if (sceneDetectCacheRef.current[cacheKey]) return sceneDetectCacheRef.current[cacheKey];
-
     try {
       const bmp = await createImageBitmap(f);
       // Normalize width to 256 while preserving aspect
@@ -1198,7 +1197,6 @@ export default function BatchProcessor() {
         meanLum: luminanceSum / denom,
       };
 
-      // Covered exterior suspect guard (align with worker defaults)
       const coveredExteriorSuspect =
         features.skyTop10 > 0.02 &&
         features.blueOverall < 0.06 &&
@@ -1213,7 +1211,7 @@ export default function BatchProcessor() {
           reason: "covered_exterior_suspect",
           source: "client",
         };
-        console.debug('[SceneDetect][client] covered_exterior_suspect → unsure', {
+        console.debug('[SceneDetect][client] covered_exterior_suspect -> unsure', {
           skyTop10: features.skyTop10,
           skyTop40: features.skyTop40,
           blueOverall: features.blueOverall,
@@ -1224,7 +1222,6 @@ export default function BatchProcessor() {
         return unsure;
       }
 
-      // Aggregate signal (pre-penalty)
       let signal = Math.max(
         features.skyTop10,
         features.skyTop40 * 0.9,
@@ -1233,12 +1230,10 @@ export default function BatchProcessor() {
         features.greenOverall * 0.8
       );
 
-      // Contradiction penalties to push ambiguous cases to uncertain
       if (features.skyTop40 < 0.03 && features.blueOverall > 0.10) signal *= 0.7;
       if (features.grassBottom < 0.02 && features.greenOverall > 0.08) signal *= 0.8;
       if (features.meanLum > 0.70 && features.skyTop40 < 0.02) signal *= 0.85;
 
-      // Two-threshold band decision
       let scene: SceneType | null = null;
       let reason: SceneDetectResult["reason"] = "uncertain";
       if (signal <= SCENE_SIGNAL_LOW) {
@@ -1249,7 +1244,6 @@ export default function BatchProcessor() {
         reason = "confident_exterior";
       }
 
-      // Confidence based on distance from the uncertain band
       const mid = (SCENE_SIGNAL_LOW + SCENE_SIGNAL_HIGH) / 2;
       const halfBand = (SCENE_SIGNAL_HIGH - SCENE_SIGNAL_LOW) / 2;
       const margin = Math.abs(signal - mid) - halfBand;
@@ -1288,22 +1282,16 @@ export default function BatchProcessor() {
     }
   }
 
-  // Track previous file IDs to detect additions vs removals
   const prevFileIdsRef = useRef<Set<string>>(new Set());
 
-  // When files change, only clear state for completely new batches (not removals)
   useEffect(() => {
     const currentIds = new Set(files.map(getFileId));
     const prevIds = prevFileIdsRef.current;
-
-    // Check if this is a completely new batch (no overlap with previous)
     const hasOverlap = [...currentIds].some(id => prevIds.has(id));
     const hasNewFiles = [...currentIds].some(id => !prevIds.has(id));
     const userSelected = files.some(f => !(f as any).__restored);
 
-    // Only clear all state if user selected completely new files (no overlap)
     if (userSelected && hasNewFiles && !hasOverlap && prevIds.size > 0) {
-      // Completely new batch - clear all state
       setImageSceneTypesById({});
       setManualSceneTypesById({});
       setImageRoomTypesById({});
@@ -1315,7 +1303,6 @@ export default function BatchProcessor() {
       scenePredictionsByIdRef.current = {};
       sceneDetectCacheRef.current = {};
     } else if (prevIds.size === 0 && currentIds.size > 0 && userSelected) {
-      // First batch selection - clear any stale state
       setImageSceneTypesById({});
       setManualSceneTypesById({});
       setImageRoomTypesById({});
@@ -1327,12 +1314,10 @@ export default function BatchProcessor() {
       scenePredictionsByIdRef.current = {};
       sceneDetectCacheRef.current = {};
     }
-    // For removals or additions to existing batch, state is preserved (keyed by ID)
 
     prevFileIdsRef.current = currentIds;
   }, [files]);
 
-  // Cleanup retry timeout on unmount
   useEffect(() => {
     return () => {
       if (retryTimeoutRef.current) {
@@ -4980,6 +4965,14 @@ export default function BatchProcessor() {
     setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
   }, [currentImageId, currentImageIndex, files.length, flashAssignedThumbnail, setCurrentImageIndex]);
 
+  const currentAssignedRoomType = currentImageId ? (imageRoomTypesById[currentImageId] || "") : "";
+  const quickAssignButtonClass = (isAssigned: boolean) =>
+    `rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+      isAssigned
+        ? "border-green-500 bg-green-50 text-green-700"
+        : "border-gray-300 bg-white text-slate-700 hover:bg-slate-50"
+    }`;
+
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
     if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
 
@@ -5097,13 +5090,19 @@ export default function BatchProcessor() {
       {/* Main header and tab navigation remain unchanged. No legacy bottom edit section. All region editing is handled in the RegionEditor modal. */}
 
       {/* Tab Content */}
-  <div className={(activeTab === 'enhance' || activeTab === 'images') ? "w-full min-h-screen font-sans text-slate-900" : "max-w-6xl mx-auto bg-brand-surface/95 rounded-xl shadow-lg p-8"}>
+  <div
+    className="relative w-full min-h-screen bg-white px-8 py-6 font-sans text-slate-900"
+    style={{
+      backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.05) 1px, transparent 1px)",
+      backgroundSize: "24px 24px",
+    }}
+  >
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
-          <div className="text-center">
-            <h2 className="text-2xl font-semibold text-white mb-4">Upload Your Images</h2>
-            <p className="text-gray-300 mb-8">
+          <div className="text-center relative z-10">
+            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Upload Your Images</h2>
+            <p className="text-slate-600 mb-8">
               {files.length === 0 
                 ? "Select multiple images to enhance in batch"
                 : `${files.length} image${files.length === 1 ? '' : 's'} selected • Click below to add more from other folders`
@@ -5122,7 +5121,7 @@ export default function BatchProcessor() {
 
             {files.length > 0 && (
               <div className="mt-8">
-                <h3 className="text-lg font-medium text-white mb-4">
+                <h3 className="text-lg font-medium text-slate-900 mb-4">
                   Selected Images ({files.length})
                 </h3>
                 
@@ -5234,13 +5233,45 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full min-h-screen bg-slate-100 py-6">
-            <div className="max-w-screen-2xl mx-auto px-6 space-y-4">
+          <div className="w-full min-h-screen py-6">
+            <div className="mx-auto w-full max-w-[1800px] space-y-4 px-2 sm:px-4 lg:px-6">
               {files.length > 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap gap-6">
-                  <div className="min-w-[260px] flex-1 space-y-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Enhancement Options</p>
-                    <label className="flex items-start gap-2">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900">Image Preparation</h2>
+                      <p className="mt-1 text-sm text-slate-600">Review each image, assign room types, and confirm enhancement preferences.</p>
+                    </div>
+                    <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-semibold text-slate-700">
+                      {configuredImagesCount} / {files.length} images configured
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:max-w-4xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const checked = !declutter;
+                        setDeclutter(checked);
+                        setFurnitureReplacement(checked);
+                      }}
+                      className={`rounded-xl border p-4 text-left transition-all ${declutter ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                    >
+                      <p className="text-sm font-semibold">Declutter Mode</p>
+                      <p className="mt-1 text-xs">Removes furniture and clutter while preserving structure.</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAllowStaging(!allowStaging)}
+                      className={`rounded-xl border p-4 text-left transition-all ${allowStaging ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                    >
+                      <p className="text-sm font-semibold">Virtual Staging Mode</p>
+                      <p className="mt-1 text-xs">Adds staging to supported interior scenes.</p>
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-6">
+                    <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={declutter}
@@ -5254,7 +5285,7 @@ export default function BatchProcessor() {
                       />
                       <span className="text-sm text-slate-700">Remove furniture and clutter</span>
                     </label>
-                    <label className="flex items-start gap-2">
+                    <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={allowStaging}
@@ -5264,57 +5295,9 @@ export default function BatchProcessor() {
                       />
                       <span className="text-sm text-slate-700">Add virtual staging</span>
                     </label>
-                    {allowStaging && (
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select">
-                          Staging Style
-                        </label>
-                        <select
-                          id="staging-style-select"
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                          value={stagingStyle}
-                          onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
-                          data-testid="select-staging-style"
-                        >
-                          <option value="standard_listing">Standard Listing</option>
-                          <option value="family_home">Family Home</option>
-                          <option value="urban_apartment">Urban Apartment</option>
-                          <option value="high_end_luxury">High-End Luxury</option>
-                          <option value="country_lifestyle">Country / Lifestyle</option>
-                          <option value="lived_in_rental">Lived-In / Rental</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => setStagingStyle("standard_listing")}
-                          className="mt-1 text-xs text-action-600 underline hover:text-action-700"
-                        >
-                          Reset to Standard Listing
-                        </button>
-                        {allowStaging && !declutter && (
-                          <p className="mt-1 text-xs text-amber-700">
-                            For best results in staging-only mode, upload images that are already mostly empty.
-                          </p>
-                        )}
-                      </div>
-                    )}
                   </div>
 
-                  <div className="min-w-[240px] flex-1 space-y-3">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="property-address-input">
-                        Property Address
-                      </label>
-                      <input
-                        id="property-address-input"
-                        type="text"
-                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                        value={propertyAddress}
-                        onChange={(e) => setPropertyAddress(e.target.value)}
-                        placeholder="e.g., 21 Smith Street"
-                        data-testid="input-property-address"
-                      />
-                    </div>
-
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                     <div>
                       <button
                         onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
@@ -5336,27 +5319,59 @@ export default function BatchProcessor() {
                         />
                       )}
                     </div>
-                  </div>
 
-                  <div className="min-w-[260px] flex-1 rounded-lg border border-blue-200 bg-blue-50 p-3">
-                    <p className="text-xs font-semibold text-blue-900">Image consumption per photo</p>
-                    <p className="mt-1 text-sm text-blue-800">
-                      {declutter && allowStaging ? "2 images per photo" : "1 image per photo"}
-                    </p>
-                    <p className="mt-1 text-xs text-blue-700">
-                      {declutter && allowStaging
-                        ? "1 for enhancement + declutter, 1 for staging"
-                        : declutter
-                          ? "Enhancement + declutter"
-                          : allowStaging
-                            ? "Enhancement + staging"
-                            : "Enhancement only"}
-                    </p>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="property-address-input">
+                        Property Address
+                      </label>
+                      <input
+                        id="property-address-input"
+                        type="text"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                        value={propertyAddress}
+                        onChange={(e) => setPropertyAddress(e.target.value)}
+                        placeholder="e.g., 21 Smith Street"
+                        data-testid="input-property-address"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select">
+                        Staging Style
+                      </label>
+                      <select
+                        id="staging-style-select"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:bg-slate-100"
+                        value={stagingStyle}
+                        onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
+                        data-testid="select-staging-style"
+                        disabled={!allowStaging}
+                      >
+                        <option value="standard_listing">Standard Listing</option>
+                        <option value="family_home">Family Home</option>
+                        <option value="urban_apartment">Urban Apartment</option>
+                        <option value="high_end_luxury">High-End Luxury</option>
+                        <option value="country_lifestyle">Country / Lifestyle</option>
+                        <option value="lived_in_rental">Lived-In / Rental</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setStagingStyle("standard_listing")}
+                        className="mt-1 text-xs text-action-600 underline hover:text-action-700"
+                      >
+                        Reset to Standard Listing
+                      </button>
+                      {allowStaging && !declutter && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          For best results in staging-only mode, upload images that are already mostly empty.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-              <div className="flex min-h-[calc(100vh-220px)] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
+              <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 {files.length === 0 ? (
                   <EmptyStateLaunchpad
                     onFileSelect={triggerFileSelector}
@@ -5371,9 +5386,7 @@ export default function BatchProcessor() {
                     }}
                   />
                 ) : (
-                  <>
-                    {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
-                    <div className="relative flex flex-1 flex-col overflow-hidden bg-slate-50/50">
+                  <div className="relative flex flex-col overflow-hidden bg-slate-50/40">
 
                       {/* Top Bar: Nav & Counter */}
                       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-center justify-between p-4">
@@ -5391,16 +5404,16 @@ export default function BatchProcessor() {
                       </div>
 
                       {/* Main Viewer Area */}
-                      <div className="relative flex h-full w-full flex-1 items-center justify-center p-8 lg:p-12">
+                      <div className="relative flex w-full items-center justify-center p-6 lg:p-10">
                         {/* The Viewer Frame */}
-                        <div className="relative mx-auto flex h-full w-full max-w-5xl flex-col items-center justify-center">
+                        <div className="relative mx-auto flex w-full max-w-[1400px] flex-col items-center justify-center">
 
                           {/* The Image */}
-                          <div className="relative flex h-full w-full items-center justify-center">
+                          <div className="relative flex w-full aspect-[16/9] items-center justify-center rounded-xl bg-slate-100">
                             <img
                               src={previewUrls[currentImageIndex]}
                               alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                              className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+                              className="h-full w-full rounded-xl object-contain shadow-2xl"
                             />
 
                             {/* Delete Button (Overlay) */}
@@ -5452,40 +5465,40 @@ export default function BatchProcessor() {
                         </div>
                       </div>
 
-                      <div className="mx-auto mb-2 flex w-full max-w-5xl flex-wrap items-center gap-2 px-4">
-                        <span className="text-xs font-medium text-slate-600">Quick Assign:</span>
+                      <div className="mx-auto mb-2 flex w-full max-w-[1400px] flex-wrap items-center gap-2 px-4">
+                        <span className="text-xs font-medium text-slate-600">Quick Assign Room:</span>
                         <button
                           type="button"
                           onClick={() => quickAssignRoomType("living_room")}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className={quickAssignButtonClass(currentAssignedRoomType === "living_room")}
                         >
                           Living Room
                         </button>
                         <button
                           type="button"
                           onClick={() => quickAssignRoomType("bedroom")}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className={quickAssignButtonClass(currentAssignedRoomType === "bedroom")}
                         >
                           Bedroom
                         </button>
                         <button
                           type="button"
                           onClick={() => quickAssignRoomType("kitchen")}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className={quickAssignButtonClass(currentAssignedRoomType === "kitchen")}
                         >
                           Kitchen
                         </button>
                         <button
                           type="button"
                           onClick={() => quickAssignRoomType("bathroom-1")}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className={quickAssignButtonClass(currentAssignedRoomType === "bathroom-1")}
                         >
                           Bathroom
                         </button>
                         <button
                           type="button"
                           onClick={() => quickAssignRoomType("exterior")}
-                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                          className={quickAssignButtonClass(currentAssignedRoomType === "")}
                         >
                           Exterior
                         </button>
@@ -5493,7 +5506,7 @@ export default function BatchProcessor() {
 
                       {/* Bottom: Thumbnail Strip */}
                       {files.length > 1 && (
-                        <div className="relative z-10 w-full border-t border-slate-200 bg-slate-100/50 px-8 pb-2 pt-3 backdrop-blur-sm">
+                        <div className="relative z-10 w-full border-t border-slate-200 bg-slate-100/50 px-4 pb-2 pt-3 backdrop-blur-sm sm:px-8">
                           {/* Validation Alert Overlay (if needed) */}
                           {blockingCount > 0 && (
                             <div className="absolute -top-10 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 shadow-sm animate-bounce-subtle">
@@ -5502,19 +5515,19 @@ export default function BatchProcessor() {
                             </div>
                           )}
 
-                          <div className="mx-auto mb-2 flex w-full max-w-5xl items-center justify-between text-xs text-slate-600">
+                          <div className="mx-auto mb-2 flex w-full max-w-[1400px] items-center justify-between text-xs text-slate-600">
                             <p>Assign a room type to each image before starting enhancement.</p>
                             <p>{configuredImagesCount} / {files.length} images configured</p>
                           </div>
 
-                          <div className="mx-auto mb-3 h-2 w-full max-w-5xl overflow-hidden rounded-full bg-slate-200">
+                          <div className="mx-auto mb-3 h-2 w-full max-w-[1400px] overflow-hidden rounded-full bg-slate-200">
                             <div
                               className="h-full rounded-full bg-blue-600 transition-all"
                               style={{ width: `${configuredProgressPct}%` }}
                             />
                           </div>
 
-                          <div className="no-scrollbar flex max-w-full snap-x gap-4 overflow-x-auto px-4 pb-2 pt-2">
+                          <div className="flex flex-wrap justify-center gap-2 px-2 pb-2 pt-2">
                             {files.map((file, idx) => {
                               const status = imageValidationStatus(idx);
                               const isCurrent = idx === currentImageIndex;
@@ -5532,11 +5545,11 @@ export default function BatchProcessor() {
                                 : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
 
                               return (
-                                <div key={idx} className="group relative shrink-0 overflow-hidden p-1 py-1 transition-all duration-300 ease-in-out">
+                                <div key={idx} className="group relative overflow-hidden p-1 py-1 transition-all duration-300 ease-in-out">
                                   <button
                                     id={`thumbnail-btn-${idx}`}
                                     onClick={() => setCurrentImageIndex(idx)}
-                                    className={`relative h-24 w-32 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${flashAssignedThumbnailIndex === idx ? 'animate-pulse bg-green-200 duration-200' : ''} ${baseClass}`}
+                                    className={`relative h-16 w-24 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${flashAssignedThumbnailIndex === idx ? 'animate-pulse bg-green-200 duration-200' : ''} ${baseClass}`}
                                   >
                                     <img
                                       src={previewUrls[idx]}
@@ -5578,248 +5591,226 @@ export default function BatchProcessor() {
                           </div>
                         </div>
                       )}
-                    </div>
 
-                {/* RIGHT PANEL: Settings Sidebar (Fixed Width) */}
-                <div className="w-96 flex-shrink-0 bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
+                      <div className="border-t border-slate-200 bg-white">
+                        <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-8">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                            <div>
+                              <h2 className="text-xl font-semibold tracking-tight text-slate-900">Image Settings</h2>
+                              <p className="mt-1 truncate font-mono text-xs text-slate-500" title={files[currentImageIndex]?.name}>
+                                {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (!currentImageId) return;
+                                setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "auto" }));
+                                setManualSceneTypesById((prev) => {
+                                  const next = { ...prev } as Record<string, SceneLabel | null>;
+                                  delete next[currentImageId];
+                                  return next;
+                                });
+                                setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: false }));
+                                setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
+                                setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "" }));
+                              }}
+                              className="rounded bg-action-50 px-2 py-1 text-xs font-medium text-action-600 transition-colors hover:text-action-700"
+                              type="button"
+                            >
+                              Reset
+                            </button>
+                          </div>
 
-              {/* Sidebar Header */}
-              <div className="p-6 border-b border-slate-100 bg-white sticky top-0 z-10">
-                <div className="flex justify-between items-center mb-1">
-                  <h2 className="text-xl font-semibold text-slate-900 tracking-tight">Image Settings</h2>
-                  <button
-                    onClick={() => {
-                      if (!currentImageId) return;
-                      // Reset current image settings to auto
-                      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "auto" }));
-                      setManualSceneTypesById(prev => {
-                        const next = { ...prev } as Record<string, SceneLabel | null>;
-                        delete next[currentImageId];
-                        return next;
-                      });
-                      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: false }));
-                      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
-                      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
-                    }}
-                    className="text-xs text-action-600 font-medium hover:text-action-700 bg-action-50 px-2 py-1 rounded transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 truncate font-mono mt-1" title={files[currentImageIndex]?.name}>
-                   {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                </p>
-              </div>
+                          <div className="space-y-6">
+                            <section>
+                              <label className="mb-3 block text-xs font-bold uppercase tracking-wider text-slate-400">Scene Type</label>
+                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <button
+                                  onClick={() => {
+                                    if (!currentImageId) return;
+                                    setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                    setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                    setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  }}
+                                  data-testid={`select-scene-${currentImageIndex}`}
+                                  type="button"
+                                  className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all duration-200 ${
+                                    currentFinalScene === "exterior"
+                                      ? "border-action-500 bg-action-50 text-action-700 ring-1 ring-action-500"
+                                      : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <div className={`rounded-full p-2 ${currentFinalScene === "exterior" ? "bg-white" : "bg-slate-100"}`}>
+                                    <Home className="h-5 w-5" />
+                                  </div>
+                                  <span className="text-sm font-medium">Exterior</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (!currentImageId) return;
+                                    setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                    setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                    setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                    setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
+                                  }}
+                                  type="button"
+                                  className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all duration-200 ${
+                                    currentFinalScene === "interior"
+                                      ? "border-action-500 bg-action-50 text-action-700 ring-1 ring-action-500"
+                                      : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                  }`}
+                                >
+                                  <div className={`rounded-full p-2 ${currentFinalScene === "interior" ? "bg-white" : "bg-slate-100"}`}>
+                                    <Armchair className="h-5 w-5" />
+                                  </div>
+                                  <span className="text-sm font-medium">Interior</span>
+                                </button>
+                              </div>
+                              {sceneRequiresInput(currentImageIndex) && (
+                                <p className="mt-2 text-xs text-amber-700">Scene detection is unsure. Please select Interior or Exterior.</p>
+                              )}
+                            </section>
 
-              {/* Scrollable Settings Area */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-white no-scrollbar">
+                            <section className="space-y-4 border-t border-slate-100 pt-2">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">AI Enhancements</h3>
+                              {currentFinalScene === "exterior" && (
+                                <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:border-slate-200">
+                                  <div className="flex gap-3">
+                                    <div className="mt-0.5 text-blue-500">
+                                      <CloudSun className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-slate-900">Blue Sky</label>
+                                      <p className="mt-0.5 text-xs text-slate-500">Replace overcast skies.</p>
+                                    </div>
+                                  </div>
+                                  <Switch
+                                    checked={currentImageId ? imageSkyReplacementById[currentImageId] !== false : true}
+                                    onCheckedChange={(checked) => {
+                                      if (!currentImageId || manualSceneOverrideById[currentImageId]) return;
+                                      setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: checked }));
+                                    }}
+                                    disabled={!currentImageId || !!manualSceneOverrideById[currentImageId]}
+                                    data-testid={`toggle-sky-${currentImageIndex}`}
+                                    className="data-[state=checked]:bg-action-600"
+                                  />
+                                </div>
+                              )}
 
-                {/* Scene Type Selection - Visual Cards */}
-                <section>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 block">Scene Type</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => {
-                        if (!currentImageId) return;
-                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "exterior" });
-                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
-                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
-                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
-                      }}
-                      data-testid={`select-scene-${currentImageIndex}`}
-                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
-                        currentFinalScene === "exterior"
-                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className={`p-2 rounded-full ${currentFinalScene === "exterior" ? 'bg-white' : 'bg-slate-100'}`}>
-                         <Home className="w-5 h-5" />
-                      </div>
-                      <span className="text-sm font-medium">Exterior</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!currentImageId) return;
-                        console.log("[SceneSelect] manual override set", { imageId: currentImageId, scene: "interior" });
-                        setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
-                        setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
-                        setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
-                        setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
-                      }}
-                      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all duration-200 ${
-                        currentFinalScene === "interior"
-                          ? 'border-action-500 bg-action-50 text-action-700 shadow-sm ring-1 ring-action-500'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                       <div className={`p-2 rounded-full ${currentFinalScene === "interior" ? 'bg-white' : 'bg-slate-100'}`}>
-                         <Armchair className="w-5 h-5" />
-                      </div>
-                      <span className="text-sm font-medium">Interior</span>
-                    </button>
-                  </div>
-                  {sceneRequiresInput(currentImageIndex) && (
-                    <p className="mt-2 text-xs text-amber-700">
-                      Scene detection unsure - please select Interior or Exterior.
-                    </p>
-                  )}
-                </section>
+                              {allowStaging && currentFinalScene === "exterior" && (
+                                <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                  <p className="text-sm text-amber-700">Virtual staging is not applied to exterior scenes.</p>
+                                </section>
+                              )}
+                            </section>
 
-                {/* AI Enhancements Section */}
-                <section className="space-y-4 pt-2 border-t border-slate-100">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Enhancements</h3>
+                            {currentFinalScene === "interior" && (
+                              <section className="border-t border-slate-100 pt-2">
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-400">Room Staging</label>
+                                <FixedSelect
+                                  value={currentImageId ? imageRoomTypesById[currentImageId] || "" : ""}
+                                  onValueChange={(v) => {
+                                    if (!currentImageId) return;
+                                    setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
+                                    flashAssignedThumbnail(currentImageIndex);
+                                  }}
+                                  placeholder="Select room type..."
+                                  className="w-full"
+                                >
+                                  {INTERIOR_ROOM_TYPES.map((room) => (
+                                    <FixedSelectItem key={room.value} value={room.value}>
+                                      {room.label}
+                                    </FixedSelectItem>
+                                  ))}
+                                </FixedSelect>
+                                {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
+                                  <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
+                                    <p>Open-plan and multi-zone spaces use layout-preserving refresh mode.</p>
+                                    <p>This protects kitchens, islands, and walkways.</p>
+                                  </div>
+                                )}
+                              </section>
+                            )}
 
-                  {/* Sky Replacement Toggle - Only for Exterior */}
-                  {currentFinalScene === "exterior" && (
-                    <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors bg-slate-50/50">
-                      <div className="flex gap-3">
-                        <div className="mt-0.5 text-blue-500"><CloudSun className="w-5 h-5" /></div>
-                        <div>
-                          <label className="text-sm font-medium text-slate-900 block">Blue Sky</label>
-                          <p className="text-xs text-slate-500 mt-0.5">Replace overcast skies</p>
+                            {(() => {
+                              const sceneNeeds = sceneRequiresInput(currentImageIndex);
+                              const roomNeeds = roomTypeRequiresInput(currentImageIndex);
+                              const prediction = currentImageId ? scenePredictionsById[currentImageId] : undefined;
+                              const conf = clamp01(prediction?.confidence ?? null);
+                              const detectedLine = prediction?.scene
+                                ? `Scene type was auto-detected as ${prediction.scene}. You can change it if it looks wrong.`
+                                : null;
+                              const isAlert = sceneNeeds || roomNeeds;
+                              const lines: string[] = [];
+                              if (sceneNeeds) lines.push("We could not confidently detect whether this image is interior or exterior. Please select one to continue.");
+                              if (roomNeeds) lines.push("Room Type is required when Staged output is enabled.");
+                              if (!lines.length && detectedLine) lines.push(detectedLine);
+                              if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
+
+                              return (
+                                <div className={`${isAlert ? "border border-red-200 bg-red-50 text-red-700" : "border border-blue-100 bg-blue-50 text-blue-700"} flex gap-3 rounded-lg p-3 shadow-sm`}>
+                                  <Info className={`mt-0.5 h-5 w-5 flex-shrink-0 ${isAlert ? "text-red-500" : "text-blue-500"}`} />
+                                  <div className="space-y-1 text-xs leading-relaxed">
+                                    {lines.map((line, idx) => (
+                                      <p key={idx}>{line}</p>
+                                    ))}
+                                    {IS_DEV && prediction && (
+                                      <div className="mt-2 text-[11px] text-slate-500">
+                                        <div className="font-semibold text-slate-600">Scene Debug</div>
+                                        <div className="flex flex-wrap gap-2">
+                                          <span>scene={prediction.scene ?? "null"}</span>
+                                          <span>conf={(conf ?? 0).toFixed(2)}</span>
+                                          <span>reason={prediction.reason}</span>
+                                          <span>signal={(prediction.signal ?? 0).toFixed(3)}</span>
+                                          <span>low={SCENE_SIGNAL_LOW.toFixed(3)}</span>
+                                          <span>high={SCENE_SIGNAL_HIGH.toFixed(3)}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                          <span>sky10={(prediction.features?.skyTop10 ?? 0).toFixed(3)}</span>
+                                          <span>sky40={(prediction.features?.skyTop40 ?? 0).toFixed(3)}</span>
+                                          <span>grass={(prediction.features?.grassBottom ?? 0).toFixed(3)}</span>
+                                          <span>blue={(prediction.features?.blueOverall ?? 0).toFixed(3)}</span>
+                                          <span>green={(prediction.features?.greenOverall ?? 0).toFixed(3)}</span>
+                                          <span>lum={(prediction.features?.meanLum ?? 0).toFixed(3)}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+
+                        <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+                          <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-end gap-3">
+                            {isEnhanceCreditBlocked && (
+                              <p className="text-xs text-amber-700" title="Not enough credits">
+                                Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
+                              </p>
+                            )}
+                            {blockingCount > 0 && (
+                              <p className="text-xs text-red-700">Complete required settings for images highlighted in red to continue.</p>
+                            )}
+                            <button
+                              onClick={handleStartEnhance}
+                              disabled={blockingCount > 0 || !files.length}
+                              title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? "" : "s"}.` : undefined}
+                              className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                              data-testid="button-proceed-enhance"
+                              type="button"
+                            >
+                              Start Enhancement ({files.length} {files.length === 1 ? "Image" : "Images"})
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <Switch
-                        checked={(() => {
-                          if (!currentImageId) return true;
-                          const val = imageSkyReplacementById[currentImageId] !== undefined ? imageSkyReplacementById[currentImageId] : true;
-                          return manualSceneOverrideById[currentImageId] ? false : val;
-                        })()}
-                        onCheckedChange={(checked: boolean) => {
-                          if (!currentImageId || manualSceneOverrideById[currentImageId]) return;
-                          setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: checked }));
-                        }}
-                        disabled={!currentImageId || !!manualSceneOverrideById[currentImageId]}
-                        data-testid={`toggle-sky-${currentImageIndex}`}
-                        className="data-[state=checked]:bg-action-600"
-                      />
                     </div>
                   )}
-
-                  {/* Link Images Toggle - Hidden for V1, code preserved for future use */}
-                </section>
-
-                {/* Staging Not Available Message - For exterior images when staging enabled globally */}
-                {allowStaging && currentFinalScene === "exterior" && (
-                  <section className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <p className="text-sm text-amber-700">
-                      <strong>Note:</strong> {getStagingDisabledMessage("exterior")}
-                    </p>
-                  </section>
-                )}
-
-                {/* Room Type Selection - For interior photos */}
-                {currentFinalScene === "interior" && (
-                  <section className="pt-2 border-t border-slate-100">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Room Staging</label>
-                    <FixedSelect
-                      value={(currentImageId && imageRoomTypesById[currentImageId]) || ""}
-                      onValueChange={(v) => {
-                        if (!currentImageId) return;
-                        setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
-                        flashAssignedThumbnail(currentImageIndex);
-                      }}
-                      placeholder="Select room type…"
-                      className="w-full"
-                    >
-                      {INTERIOR_ROOM_TYPES.map((room) => (
-                        <FixedSelectItem key={room.value} value={room.value}>{room.label}</FixedSelectItem>
-                      ))}
-                    </FixedSelect>
-                    {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
-                      <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
-                        <p>Open-plan and multi-zone spaces are staged using layout-preserving refresh mode.</p>
-                        <p>This protects kitchens, islands, and walkways and avoids incorrect empty-room staging.</p>
-                      </div>
-                    )}
-                  </section>
-                )}
-
-                {/* Guidance / Alerts */}
-                {(() => {
-                  const sceneNeeds = sceneRequiresInput(currentImageIndex);
-                  const roomNeeds = roomTypeRequiresInput(currentImageIndex);
-                  const prediction = currentImageId ? scenePredictionsById[currentImageId] : undefined;
-                  const conf = clamp01(prediction?.confidence ?? null);
-                  const detectedLine = prediction?.scene
-                    ? `Scene type was auto-detected as ${prediction.scene}. You can change it if it looks wrong.`
-                    : null;
-                  const isAlert = sceneNeeds || roomNeeds;
-                  const lines: string[] = [];
-                  if (sceneNeeds) lines.push("We couldn’t confidently detect whether this image is interior or exterior. Please select one to continue.");
-                  if (roomNeeds) lines.push("Room Type is required when Staged output is enabled.");
-                  if (!lines.length && detectedLine) lines.push(detectedLine);
-                  if (!lines.length) lines.push("Scene type is required for low-confidence images. If auto-detected, you can still change it.");
-                  return (
-                    <div className={`${isAlert ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-blue-50 border border-blue-100 text-blue-700'} rounded-lg p-3 flex gap-3 shadow-sm`}>
-                      <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${isAlert ? 'text-red-500' : 'text-blue-500'}`} />
-                      <div className="text-xs leading-relaxed space-y-1">
-                        {lines.map((line, idx) => (
-                          <p key={idx}>{line}</p>
-                        ))}
-                        {IS_DEV && prediction && (
-                          <div className="mt-2 text-[11px] text-slate-500">
-                            <div className="font-semibold text-slate-600">Scene Debug</div>
-                            <div className="flex flex-wrap gap-2">
-                              <span>scene={prediction.scene ?? 'null'}</span>
-                              <span>conf={(conf ?? 0).toFixed(2)}</span>
-                              <span>reason={prediction.reason}</span>
-                              <span>signal={(prediction.signal ?? 0).toFixed(3)}</span>
-                              <span>low={SCENE_SIGNAL_LOW.toFixed(3)}</span>
-                              <span>high={SCENE_SIGNAL_HIGH.toFixed(3)}</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <span>sky10={(prediction.features?.skyTop10 ?? 0).toFixed(3)}</span>
-                              <span>sky40={(prediction.features?.skyTop40 ?? 0).toFixed(3)}</span>
-                              <span>grass={(prediction.features?.grassBottom ?? 0).toFixed(3)}</span>
-                              <span>blue={(prediction.features?.blueOverall ?? 0).toFixed(3)}</span>
-                              <span>green={(prediction.features?.greenOverall ?? 0).toFixed(3)}</span>
-                              <span>lum={(prediction.features?.meanLum ?? 0).toFixed(3)}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Sidebar Footer - Sticky */}
-              <div className="p-5 border-t border-slate-200 bg-slate-50">
-                <div className="flex justify-between text-sm mb-4">
-                  <span className="text-slate-600">Estimated Cost</span>
-                  <span className="font-semibold text-slate-900">
-                    {requiredBatchCredits} {requiredBatchCredits === 1 ? 'Credit' : 'Credits'}
-                  </span>
                 </div>
-                <button
-                  onClick={handleStartEnhance}
-                  disabled={blockingCount > 0 || !files.length}
-                  title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
-                  className="w-full bg-action-600 hover:bg-action-700 text-white font-medium py-3 px-4 rounded-lg shadow-md transition-all focus:ring-2 focus:ring-offset-2 focus:ring-action-500 disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-lg transform active:scale-[0.98]"
-                  data-testid="button-proceed-enhance"
-                >
-                  Start Enhancement ({files.length} {files.length === 1 ? 'Image' : 'Images'})
-                </button>
-                {isEnhanceCreditBlocked && (
-                  <p className="mt-2 text-xs text-amber-700" title="Not enough credits">
-                    Batch requires {requiredBatchCredits} credits — you have {Math.max(0, Number(availableCredits ?? 0))} available.
-                  </p>
-                )}
-                {blockingCount > 0 && (
-                  <p className="mt-2 text-xs text-red-700">
-                    Complete required settings for images highlighted in red to continue.
-                  </p>
-                )}
               </div>
             </div>
-              </>
-            )}
-          </div>
-          </div>
-          </div>
-        )}
+          )}
 
         {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
