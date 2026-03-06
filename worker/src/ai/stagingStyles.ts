@@ -6,7 +6,9 @@ export type StagingStyle =
   | "standard_listing"
   | "family_home"
   | "urban_apartment"
-  | "high_end_luxury";
+  | "high_end_luxury"
+  | "country_lifestyle"
+  | "lived_in_rental";
 
 export const DEFAULT_STAGING_STYLE: StagingStyle = "standard_listing";
 
@@ -49,7 +51,11 @@ export const STYLE_PROMPT_MODIFIERS: Record<StagingStyle, string> = {
   urban_apartment:
     "Stage the space as a modern city apartment. Use contemporary furniture with efficient layouts appropriate for compact urban living.",
   high_end_luxury:
-    "Stage the space as a high-end luxury property. Use sophisticated furniture, refined materials, and an elegant upscale aesthetic.",
+    "Stage the space as a premium luxury property. Use elegant furniture, refined materials, and a sophisticated upscale aesthetic.",
+  country_lifestyle:
+    "Stage the space to suit a New Zealand rural or lifestyle property. Use warm natural materials, timber furniture, relaxed layouts, and a comfortable countryside aesthetic.",
+  lived_in_rental:
+    "Stage the space to feel naturally lived-in rather than showroom-styled. Use simple practical furniture, modest decor, and a realistic residential layout suitable for rental or entry-level homes.",
 };
 
 export function normalizeStagingStyle(style: string | null | undefined): StagingStyle {
@@ -71,6 +77,13 @@ export function normalizeStagingStyle(style: string | null | undefined): Staging
     high_end_luxury: "high_end_luxury",
     "high-end luxury": "high_end_luxury",
     "high end luxury": "high_end_luxury",
+    country_lifestyle: "country_lifestyle",
+    "country lifestyle": "country_lifestyle",
+    "country / lifestyle": "country_lifestyle",
+    lived_in_rental: "lived_in_rental",
+    "lived in rental": "lived_in_rental",
+    "lived-in rental": "lived_in_rental",
+    "lived-in / rental": "lived_in_rental",
   };
 
   const normalized = aliases[key] || aliases[key.replace(/-/g, "_").replace(/\s+/g, "_")];

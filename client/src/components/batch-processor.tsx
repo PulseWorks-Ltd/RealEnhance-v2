@@ -423,7 +423,9 @@ type StagingStyle =
   | "standard_listing"
   | "family_home"
   | "urban_apartment"
-  | "high_end_luxury";
+  | "high_end_luxury"
+  | "country_lifestyle"
+  | "lived_in_rental";
 
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
@@ -5234,7 +5236,7 @@ export default function BatchProcessor() {
                   {allowStaging && (
                     <div className="mb-2">
                       <label className="text-sm font-medium text-white block mb-1" htmlFor="staging-style-select">
-                        Staging Style <span className="text-gray-400 text-xs">(applies to all staged images in this batch)</span>
+                        Listing Style <span className="text-gray-400 text-xs">(applies to all staged images in this batch)</span>
                       </label>
                       <select
                         id="staging-style-select"
@@ -5247,6 +5249,8 @@ export default function BatchProcessor() {
                         <option value="family_home">Family Home</option>
                         <option value="urban_apartment">Urban Apartment</option>
                         <option value="high_end_luxury">High-End Luxury</option>
+                        <option value="country_lifestyle">Country / Lifestyle</option>
+                        <option value="lived_in_rental">Lived-In / Rental</option>
                       </select>
                       <button
                         onClick={() => setStagingStyle("standard_listing")}

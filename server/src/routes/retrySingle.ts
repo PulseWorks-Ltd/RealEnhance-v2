@@ -150,10 +150,17 @@ function normalizeStagingStyle(raw: unknown): string {
     high_end_luxury: "high_end_luxury",
     "high-end luxury": "high_end_luxury",
     "high end luxury": "high_end_luxury",
+    country_lifestyle: "country_lifestyle",
+    "country lifestyle": "country_lifestyle",
+    "country / lifestyle": "country_lifestyle",
+    lived_in_rental: "lived_in_rental",
+    "lived in rental": "lived_in_rental",
+    "lived-in rental": "lived_in_rental",
+    "lived-in / rental": "lived_in_rental",
   };
 
   const normalized = aliases[value] || value.replace(/-/g, "_").replace(/\s+/g, "_");
-  return ["standard_listing", "family_home", "urban_apartment", "high_end_luxury"].includes(normalized)
+  return ["standard_listing", "family_home", "urban_apartment", "high_end_luxury", "country_lifestyle", "lived_in_rental"].includes(normalized)
     ? normalized
     : "standard_listing";
 }
