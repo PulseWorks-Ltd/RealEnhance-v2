@@ -4940,8 +4940,27 @@ export default function BatchProcessor() {
     return Math.round((configuredImagesCount / files.length) * 100);
   }, [configuredImagesCount, files.length]);
 
+  const [flashAssignedThumbnailIndex, setFlashAssignedThumbnailIndex] = useState<number | null>(null);
+  const flashAssignedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashAssignedThumbnail = useCallback((index: number) => {
+    setFlashAssignedThumbnailIndex(index);
+    if (flashAssignedTimerRef.current) clearTimeout(flashAssignedTimerRef.current);
+    flashAssignedTimerRef.current = setTimeout(() => {
+      setFlashAssignedThumbnailIndex(null);
+      flashAssignedTimerRef.current = null;
+    }, 200);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (flashAssignedTimerRef.current) clearTimeout(flashAssignedTimerRef.current);
+    };
+  }, []);
+
   const quickAssignRoomType = useCallback((preset: "living_room" | "bedroom" | "kitchen" | "bathroom-1" | "exterior") => {
     if (!currentImageId) return;
+    const assignedIndex = currentImageIndex;
 
     if (preset === "exterior") {
       setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
@@ -4957,8 +4976,9 @@ export default function BatchProcessor() {
       setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: preset }));
     }
 
+    flashAssignedThumbnail(assignedIndex);
     setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
-  }, [currentImageId, files.length, setCurrentImageIndex]);
+  }, [currentImageId, currentImageIndex, files.length, flashAssignedThumbnail, setCurrentImageIndex]);
 
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
     if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
@@ -5516,7 +5536,7 @@ export default function BatchProcessor() {
                                   <button
                                     id={`thumbnail-btn-${idx}`}
                                     onClick={() => setCurrentImageIndex(idx)}
-                                    className={`relative h-24 w-32 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${baseClass}`}
+                                    className={`relative h-24 w-32 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${flashAssignedThumbnailIndex === idx ? 'animate-pulse bg-green-200 duration-200' : ''} ${baseClass}`}
                                   >
                                     <img
                                       src={previewUrls[idx]}
@@ -5698,6 +5718,7 @@ export default function BatchProcessor() {
                       onValueChange={(v) => {
                         if (!currentImageId) return;
                         setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
+                        flashAssignedThumbnail(currentImageIndex);
                       }}
                       placeholder="Select room type…"
                       className="w-full"
@@ -5795,6 +5816,8 @@ export default function BatchProcessor() {
             </div>
               </>
             )}
+          </div>
+          </div>
           </div>
         )}
 
