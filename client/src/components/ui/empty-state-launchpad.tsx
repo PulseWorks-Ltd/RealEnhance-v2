@@ -62,7 +62,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
           onDrop={handleDrop}
           className={`
             relative group cursor-pointer
-            max-w-xl mx-auto
+            max-w-3xl mx-auto
             bg-white rounded-3xl shadow-2xl
             border-2 border-dashed transition-all duration-300
             ${isDragOver 

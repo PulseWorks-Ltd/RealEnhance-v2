@@ -5371,7 +5371,7 @@ export default function BatchProcessor() {
                 </div>
               )}
 
-              <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className={files.length === 0 ? "w-full" : "w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"}>
                 {files.length === 0 ? (
                   <EmptyStateLaunchpad
                     onFileSelect={triggerFileSelector}
