@@ -51,6 +51,14 @@ const __dirname = path.dirname(__filename);
 
 const IS_PROD = NODE_ENV === "production";
 
+const startupState: {
+  schemaReady: boolean;
+  schemaError: string | null;
+} = {
+  schemaReady: false,
+  schemaError: null,
+};
+
 async function checkDbConnection(): Promise<boolean> {
   try {
     await pool.query("SELECT 1");
@@ -99,6 +107,27 @@ async function ensureEnhancedImagesSchemaCompatibility(): Promise<void> {
   }
 }
 
+async function ensureSchemaCompatibilityWithRetry(): Promise<void> {
+  const retryDelayMs = 10_000;
+  let attempt = 0;
+
+  while (!startupState.schemaReady) {
+    attempt += 1;
+    try {
+      await ensureEnhancedImagesSchemaCompatibility();
+      startupState.schemaReady = true;
+      startupState.schemaError = null;
+      console.log(`[startup] schema compatibility confirmed (attempt ${attempt})`);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      startupState.schemaError = message;
+      console.error(`[startup] schema compatibility check failed (attempt ${attempt})`, err);
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+}
+
 async function initializeAsyncServices(): Promise<void> {
   console.log("[startup] beginning background service initialization");
 
@@ -137,8 +166,6 @@ async function initializeAsyncServices(): Promise<void> {
 }
 
 async function main() {
-  await ensureEnhancedImagesSchemaCompatibility();
-
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });
   redisClient.on("error", (err) => console.error("[redis] error", err));
@@ -239,11 +266,15 @@ async function main() {
   // Health
   app.get("/health", async (_req, res) => {
     const dbReady = await checkDbConnection();
-    if (!dbReady) {
+    const schemaReady = startupState.schemaReady;
+
+    if (!dbReady || !schemaReady) {
       return res.status(503).json({
         ok: false,
         status: "starting",
-        dbReady: false,
+        dbReady,
+        schemaReady,
+        schemaError: startupState.schemaError,
         env: process.env.NODE_ENV || "dev",
         time: new Date().toISOString(),
       });
@@ -252,7 +283,8 @@ async function main() {
     res.json({
       ok: true,
       status: "ok",
-      dbReady: true,
+      dbReady,
+      schemaReady,
       env: process.env.NODE_ENV || "dev",
       time: new Date().toISOString(),
     });
@@ -316,6 +348,7 @@ async function main() {
 
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
+    void ensureSchemaCompatibilityWithRetry();
     void initializeAsyncServices();
   });
 
