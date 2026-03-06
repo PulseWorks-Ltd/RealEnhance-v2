@@ -7,8 +7,8 @@ export default function Home() {
     <div className="space-y-6 w-full" data-testid="home-page">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <PageHeader
-          title="Enhance Property Photos"
-          description="Upload property photos to declutter, enhance, and stage them with professional image enhancement in seconds"
+          title="Turn Every Listing into a Show-Home"
+          description="Transform your full property gallery into market-ready assets in under 2 minutes"
         />
       </div>
       

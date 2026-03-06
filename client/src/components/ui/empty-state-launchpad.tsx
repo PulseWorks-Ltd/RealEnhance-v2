@@ -92,7 +92,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
             <div className="space-y-3">
               <div className="flex items-center justify-center gap-2">
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                  {isDragOver ? 'Drop to Upload' : 'Enhance Property Photos'}
+                  {isDragOver ? 'Drop to Upload' : 'Prepare Your Next Listing'}
                 </h1>
                 {!isDragOver && (
                   <div className="group/badge relative">
@@ -102,7 +102,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
                     </div>
                     {/* Tooltip */}
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-900 text-white text-xs rounded-lg opacity-0 group-hover/badge:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-xl z-10">
-                      <div className="font-medium mb-0.5">Structure-Preserving AI</div>
+                      <div className="font-medium mb-0.5">Professional Structural Cleanup</div>
                       <div className="text-slate-300">Floor plans and walls stay intact</div>
                       <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900"></div>
                     </div>
@@ -112,7 +112,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               <p className="text-base text-slate-600 max-w-lg">
                 {isDragOver 
                   ? 'Release to start enhancing your images' 
-                  : 'Professional staging & cleanup powered by structure-preserving AI'
+                  : 'Professional staging and structural cleanup for entire photo batches. Market-ready results in 120 seconds'
                 }
               </p>
             </div>
@@ -155,7 +155,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shadow-lg ring-2 ring-blue-200">
                 1
               </div>
-              <span className="text-slate-800 font-semibold">Upload</span>
+              <span className="text-slate-800 font-semibold">Gallery Upload</span>
             </div>
             <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -164,7 +164,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 text-white font-bold text-sm shadow-lg ring-2 ring-purple-200">
                 2
               </div>
-              <span className="text-slate-800 font-semibold">Configure</span>
+              <span className="text-slate-800 font-semibold">Studio Settings</span>
             </div>
             <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
@@ -175,7 +175,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               </div>
               <span className="text-amber-700 font-semibold inline-flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4" />
-                Validator Check
+                Quality Assurance
               </span>
             </div>
             <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -185,7 +185,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg ring-2 ring-emerald-200">
                 4
               </div>
-              <span className="text-slate-800 font-semibold">Download</span>
+              <span className="text-slate-800 font-semibold">Market Ready</span>
             </div>
           </div>
         </div>
@@ -199,8 +199,8 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               </svg>
             </div>
             <div>
-              <div className="font-medium text-sm text-slate-900">Lightning Fast</div>
-              <div className="text-xs text-slate-600">Process images in seconds</div>
+              <div className="font-medium text-sm text-slate-900">2-Minute Turnaround</div>
+              <div className="text-xs text-slate-600">Go from upload to download in less time than it takes to brew a coffee</div>
             </div>
           </div>
 
@@ -211,8 +211,8 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               </svg>
             </div>
             <div>
-              <div className="font-medium text-sm text-slate-900">Studio Quality</div>
-              <div className="text-xs text-slate-600">Professional results every time</div>
+              <div className="font-medium text-sm text-slate-900">Batch Excellence</div>
+              <div className="text-xs text-slate-600">Consistent, pro-grade staging applied across your entire gallery simultaneously</div>
             </div>
           </div>
 
@@ -223,8 +223,8 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
               </svg>
             </div>
             <div>
-              <div className="font-medium text-sm text-slate-900">Secure & Private</div>
-              <div className="text-xs text-slate-600">Your images stay confidential</div>
+              <div className="font-medium text-sm text-slate-900">Effortless Operation</div>
+              <div className="text-xs text-slate-600">One-click processing. No complex editing skills or manual tweaking required</div>
             </div>
           </div>
         </div>
