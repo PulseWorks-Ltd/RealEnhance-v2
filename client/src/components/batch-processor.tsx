@@ -720,6 +720,7 @@ export default function BatchProcessor() {
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
+  const [results, setResults] = useState<any[]>([]);
   const [messageIndexByImage, setMessageIndexByImage] = useState<Record<number, number>>({});
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setInterval>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
@@ -840,7 +841,6 @@ export default function BatchProcessor() {
   const jobIdToIndexRef = useRef<Record<string, number>>({});
   const imageIdToIndexRef = useRef<Record<string, number>>({});
   const jobIdToImageIdRef = useRef<Record<string, string>>({});
-  const [results, setResults] = useState<any[]>([]);
   const [displayStageByIndex, setDisplayStageByIndex] = useState<Record<number, DisplayOutputKey>>({});
   const [progressText, setProgressText] = useState<string>("");
   const [lastDetected, setLastDetected] = useState<{ index: number; label: string; confidence: number } | null>(null);
@@ -3688,7 +3688,8 @@ export default function BatchProcessor() {
         referenceImage,
         highestStage, // retryStage: tells the server which stage to produce
         effectiveSourceUrl, // baselineUrl: correct upstream image
-        effectiveSourceStageLabel // sourceStageLabel: for server metadata
+        effectiveSourceStageLabel, // sourceStageLabel: for server metadata
+        stage1BWasRequested // backend needs this to validate stage2-only retry policy
       );
     } catch (error) {
       // Error is already handled in handleRetryImage
@@ -3801,7 +3802,7 @@ export default function BatchProcessor() {
     setRegionEditorOpen(true);
   };
 
-  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string) => {
+  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean) => {
     // ✅ Prevent double retry on same image
     if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
 
@@ -3953,7 +3954,7 @@ export default function BatchProcessor() {
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
-      fd.append("stage1BWasRequested", String(stage1BWasRequested));
+      fd.append("stage1BWasRequested", String(Boolean(stage1BWasRequested)));
       fd.append("requestedStage", "2");
 
       try {
