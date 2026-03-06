@@ -5675,12 +5675,13 @@ export default function BatchProcessor() {
                         const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const isEditComplete = editCompletedImages.has(i)
+                        const hasActiveEdit = editingImages.has(i);
+                        const isEditComplete = !hasActiveEdit && (editCompletedImages.has(i)
                           || !!result?.editLatestUrl
                           || !!result?.result?.editLatestUrl
                           || result?.completionSource === "region-edit"
-                          || result?.result?.completionSource === "region-edit";
-                        const isEditing = editingImages.has(i) && !isEditComplete;
+                          || result?.result?.completionSource === "region-edit");
+                        const isEditing = hasActiveEdit;
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
                         const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
                           || result?.result?.meta?.autoInsertedStage1B === true;
@@ -6307,6 +6308,30 @@ export default function BatchProcessor() {
               return meta?.roomType || meta?.room || meta?.room_type || undefined;
             })()}
             onStart={() => {
+              // Force inline processing state immediately for every edit submit.
+              const activeEditIndex = editingImageIndex;
+              if (activeEditIndex != null && Number.isInteger(activeEditIndex) && activeEditIndex >= 0) {
+                setEditingImages(prev => new Set(prev).add(activeEditIndex));
+                setEditCompletedImages(prev => {
+                  const next = new Set(prev);
+                  next.delete(activeEditIndex);
+                  return next;
+                });
+                setResults(prev => prev.map((r, i) => {
+                  if (i !== activeEditIndex) return r;
+                  return {
+                    ...r,
+                    status: "editing",
+                    currentStage: "editing",
+                    completionSource: null,
+                    uiStatus: "ok",
+                    error: null,
+                    errorCode: undefined,
+                    warnings: [],
+                    progressLabel: "Editing image...",
+                  } as any;
+                }));
+              }
               // Inline card indicators are used for edit progress; no extra popup state.
               setIsEditingInProgress(false);
             }}
@@ -6329,6 +6354,20 @@ export default function BatchProcessor() {
                 next.delete(activeEditIndex);
                 return next;
               });
+              setResults(prev => prev.map((r, i) => {
+                if (i !== activeEditIndex) return r;
+                return {
+                  ...r,
+                  status: "editing",
+                  currentStage: "editing",
+                  completionSource: null,
+                  uiStatus: "ok",
+                  error: null,
+                  errorCode: undefined,
+                  warnings: [],
+                  progressLabel: "Editing image...",
+                } as any;
+              }));
 
               clearEditFallbackTimer(activeEditIndex);
               editFallbackTimersRef.current[activeEditIndex] = setTimeout(() => {
@@ -6494,6 +6533,11 @@ export default function BatchProcessor() {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number') {
                 clearEditFallbackTimer(editingImageIndex);
+                setEditingImages(prev => {
+                  const next = new Set(prev);
+                  next.delete(editingImageIndex);
+                  return next;
+                });
               }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
@@ -6503,6 +6547,11 @@ export default function BatchProcessor() {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number') {
                 clearEditFallbackTimer(editingImageIndex);
+                setEditingImages(prev => {
+                  const next = new Set(prev);
+                  next.delete(editingImageIndex);
+                  return next;
+                });
               }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
