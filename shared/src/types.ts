@@ -129,7 +129,7 @@ export interface EnhanceJobPayload {
     roomType: RoomType | string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
-    stagingStyle?: string;  // Staging style (defaults to nz_standard)
+    stagingStyle?: string;  // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;  // Light declutter or structured-retain declutter
     // Optional tuning controls
     sampling?: {

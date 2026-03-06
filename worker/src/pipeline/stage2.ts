@@ -5,7 +5,7 @@ import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
 import { runOpenCVStructuralValidator } from "../validators/index";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
-import { getStagingStyleDirective } from "../ai/stagingStyles";
+import { normalizeStagingStyle, STYLE_PROMPT_MODIFIERS } from "../ai/stagingStyles";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
@@ -269,19 +269,21 @@ export async function runStage2GenerationAttempt(
   const scene = opts.sceneType || "interior";
   const { data, mime } = toBase64(inputForStage2);
   const useTest = process.env.USE_TEST_PROMPTS === "1";
-  const stagingStyleRaw: any = opts.stagingStyle;
-  const stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === "string"
-    ? stagingStyleRaw.trim()
-    : "none";
+  const selectedStyle = normalizeStagingStyle(opts.stagingStyle);
 
   let textPrompt = useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
     : buildStage2PromptNZStyle(normalizedRoomType, scene, {
-        stagingStyle: stagingStyleNorm,
+        stagingStyle: selectedStyle,
         sourceStage: opts.sourceStage,
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
       });
+
+  const styleModifier = STYLE_PROMPT_MODIFIERS[selectedStyle];
+  if (styleModifier) {
+    textPrompt += "\n\nSTYLE CONTEXT:\n" + styleModifier;
+  }
 
   if (opts.tightenLevel && opts.tightenLevel > 0) {
     textPrompt = buildTightenedPrompt("2", textPrompt, opts.tightenLevel);
@@ -360,14 +362,12 @@ Do not add blinds, rods, tracks, or new window coverings.
 `;
   }
 
-  const styleDirective = stagingStyleNorm !== "none" ? getStagingStyleDirective(stagingStyleNorm) : "";
   const requestParts: any[] = [];
   requestParts.push({ inlineData: { mimeType: mime, data } });
   if (opts.referenceImagePath) {
     const ref = toBase64(opts.referenceImagePath);
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
   }
-  if (styleDirective) requestParts.push({ text: styleDirective });
   requestParts.push({ text: textPrompt });
 
   logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);

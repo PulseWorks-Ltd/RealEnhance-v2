@@ -242,6 +242,9 @@ export async function runUnifiedValidation(
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
   const isNZStandard = !stagingStyle ||
+    stagingStyle.toLowerCase().includes('standard_listing') ||
+    stagingStyle.toLowerCase().includes('standard listing') ||
+    stagingStyle.toLowerCase().includes('nz_standard_real_estate') ||
     stagingStyle.toLowerCase().includes('nz_standard') ||
     stagingStyle.toLowerCase().includes('nz standard');
 
@@ -254,7 +257,7 @@ export async function runUnifiedValidation(
   console.log(`[validator] start jobId=${jobId ?? "unknown"} stage=${stage}`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
-  nLog(`[unified-validator] Staging Style: ${stagingStyle || 'nz_standard (default)'}`);
+  nLog(`[unified-validator] Staging Style: ${stagingStyle || 'standard_listing (default)'}`);
   nLog(`[unified-validator] Modes: local=${validatorMode} gemini=${geminiMode}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);

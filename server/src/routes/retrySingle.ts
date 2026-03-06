@@ -133,6 +133,31 @@ function normalizeRoomType(raw: unknown): string {
   return aliases[value] || value.replace(/-/g, "_");
 }
 
+function normalizeStagingStyle(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "standard_listing";
+
+  const aliases: Record<string, string> = {
+    nz_standard: "standard_listing",
+    "nz standard": "standard_listing",
+    "nz standard real estate": "standard_listing",
+    nz_standard_real_estate: "standard_listing",
+    "standard listing": "standard_listing",
+    family_home: "family_home",
+    "family home": "family_home",
+    urban_apartment: "urban_apartment",
+    "urban apartment": "urban_apartment",
+    high_end_luxury: "high_end_luxury",
+    "high-end luxury": "high_end_luxury",
+    "high end luxury": "high_end_luxury",
+  };
+
+  const normalized = aliases[value] || value.replace(/-/g, "_").replace(/\s+/g, "_");
+  return ["standard_listing", "family_home", "urban_apartment", "high_end_luxury"].includes(normalized)
+    ? normalized
+    : "standard_listing";
+}
+
 function isStage1ATainted(parentJob: any, parentMeta: any): boolean {
   const errorMessage = String(parentJob?.errorMessage || "").toUpperCase();
   const jobMeta = (parentJob as any)?.meta || {};
@@ -311,7 +336,7 @@ export function retrySingleRouter() {
       const sceneType = body.sceneType || 'auto';
       const roomType = normalizeRoomType(body.roomType || 'unknown');
       const allowStaging = toBool(body.allowStaging, true);
-      const stagingStyle = String(body.stagingStyle || '').trim();
+      const stagingStyle = normalizeStagingStyle(body.stagingStyle);
       const declutter = toBool(body.declutter, false);
       const declutterModeRaw = String(body.declutterMode || '').trim();
       let declutterMode: "light" | "stage-ready" | null = null;

@@ -106,6 +106,35 @@ function normalizeRoomType(raw: unknown): string {
   return aliases[value] || value.replace(/-/g, "_");
 }
 
+function normalizeStagingStyle(raw: unknown): string {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "standard_listing";
+
+  const aliases: Record<string, string> = {
+    // Backward compatibility
+    nz_standard: "standard_listing",
+    "nz standard": "standard_listing",
+    "nz standard real estate": "standard_listing",
+    nz_standard_real_estate: "standard_listing",
+    "standard listing": "standard_listing",
+
+    family_home: "family_home",
+    "family home": "family_home",
+
+    urban_apartment: "urban_apartment",
+    "urban apartment": "urban_apartment",
+
+    high_end_luxury: "high_end_luxury",
+    "high-end luxury": "high_end_luxury",
+    "high end luxury": "high_end_luxury",
+  };
+
+  const normalized = aliases[value] || value.replace(/-/g, "_").replace(/\s+/g, "_");
+  return ["standard_listing", "family_home", "urban_apartment", "high_end_luxury"].includes(normalized)
+    ? normalized
+    : "standard_listing";
+}
+
 export function uploadRouter() {
   const r = Router();
 
@@ -124,7 +153,7 @@ export function uploadRouter() {
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
-    const stagingStyleForm = String((req.body as any)?.stagingStyle || "").trim();
+    const stagingStyleForm = normalizeStagingStyle((req.body as any)?.stagingStyle);
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
@@ -379,7 +408,7 @@ export function uploadRouter() {
       };
             // Staging style: read from per-item options or metaJson
             if (typeof (optionsList[i] || {}).stagingStyle === 'string') {
-              opts.stagingStyle = String((optionsList[i] as any).stagingStyle).trim();
+              opts.stagingStyle = normalizeStagingStyle((optionsList[i] as any).stagingStyle);
             }
       // Merge metadata from metaJson if available
       const meta = metaByIndex[i] || {};
@@ -391,7 +420,7 @@ export function uploadRouter() {
       // Pass scenePrediction to worker for SKY_SAFE forcing logic
       if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
       if (typeof meta.stagingStyle === 'string' && !opts.stagingStyle) {
-        opts.stagingStyle = String(meta.stagingStyle).trim();
+        opts.stagingStyle = normalizeStagingStyle(meta.stagingStyle);
       }
       if (meta.stage2Variant === "2A" || meta.stage2Variant === "2B") {
         opts.stage2Variant = meta.stage2Variant;
@@ -401,7 +430,7 @@ export function uploadRouter() {
       }
       // Apply form-level stagingStyle if no per-item style is set
       if (!opts.stagingStyle && stagingStyleForm) {
-        opts.stagingStyle = stagingStyleForm;
+        opts.stagingStyle = normalizeStagingStyle(stagingStyleForm);
       }
       // Staging preference override (refresh vs full)
       const metaStagingPreference = meta.stagingPreference;
@@ -436,9 +465,9 @@ export function uploadRouter() {
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
         opts.manualSceneOverride = true;
       }
-      // CRITICAL: Default to NZ Standard Real Estate if no style specified
+      // Default to Standard Listing (legacy NZ Standard behavior)
       if (!opts.stagingStyle || opts.stagingStyle.trim() === '') {
-        opts.stagingStyle = 'nz_standard';
+        opts.stagingStyle = 'standard_listing';
       }
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;

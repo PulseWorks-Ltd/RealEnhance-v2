@@ -192,7 +192,7 @@ export interface EnhanceJobPayload {
     sceneType: string | "auto";
     stage2Only?: boolean;
     replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)
-    stagingStyle?: string;           // Staging style (defaults to nz_standard)
+    stagingStyle?: string;           // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;   // Stage 1B mode (light or structured-retain)
     declutterIntensity?: "light" | "standard" | "heavy";
     manualSceneOverride?: boolean;   // Per-image manual scene flag

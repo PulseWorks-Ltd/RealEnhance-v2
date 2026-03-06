@@ -419,6 +419,12 @@ interface PersistedBatchJob {
   imageIdToIndex?: Record<string, number>;
 }
 
+type StagingStyle =
+  | "standard_listing"
+  | "family_home"
+  | "urban_apartment"
+  | "high_end_luxury";
+
 const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
 const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
 const EDIT_COMPLETE_FALLBACK_MS = (() => {
@@ -697,8 +703,8 @@ const BATCH_PHASE_LABELS: Record<BatchPhaseState, string> = {
 };
 
 export default function BatchProcessor() {
-    // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
-    const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
+  // Staging style preset for the batch - default preserves legacy NZ Standard behavior
+  const [stagingStyle, setStagingStyle] = useState<StagingStyle>("standard_listing");
   
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1841,7 +1847,7 @@ export default function BatchProcessor() {
     setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
     setDeclutter(savedState.settings.declutter ?? false);
     setPropertyAddress(savedState.settings.propertyAddress ?? "");
-    // DO NOT restore stagingStyle - always default to NZ Standard Real Estate
+    // DO NOT restore stagingStyle - always default to Standard Listing
     // User must explicitly select a different style for each new session
     
     // Restore file metadata if available
@@ -5234,30 +5240,20 @@ export default function BatchProcessor() {
                         id="staging-style-select"
                         className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
                         value={stagingStyle}
-                        onChange={e => setStagingStyle(e.target.value)}
+                        onChange={e => setStagingStyle(e.target.value as StagingStyle)}
                         data-testid="select-staging-style"
                       >
-                        <option value="NZ Standard Real Estate">NZ Standard Real Estate</option>
-                        <option value="Coastal">Coastal</option>
-                        <option value="Contemporary">Contemporary</option>
-                        <option value="Hamptons">Hamptons</option>
-                        <option value="Industrial">Industrial</option>
-                        <option value="Japandi">Japandi</option>
-                        <option value="Luxe Contemporary">Luxe Contemporary</option>
-                        <option value="Minimalist">Minimalist</option>
-                        <option value="Modern">Modern</option>
-                        <option value="Modern Farmhouse">Modern Farmhouse</option>
-                        <option value="NZ Modern">NZ Modern</option>
-                        <option value="Scandinavian">Scandinavian</option>
-                        <option value="Traditional">Traditional</option>
-                        <option value="Urban Loft">Urban Loft</option>
+                        <option value="standard_listing">Standard Listing</option>
+                        <option value="family_home">Family Home</option>
+                        <option value="urban_apartment">Urban Apartment</option>
+                        <option value="high_end_luxury">High-End Luxury</option>
                       </select>
                       <button
-                        onClick={() => setStagingStyle("NZ Standard Real Estate")}
+                        onClick={() => setStagingStyle("standard_listing")}
                         className="text-xs text-blue-400 hover:text-blue-300 underline mt-1"
                         type="button"
                       >
-                        Reset to NZ Standard
+                        Reset to Standard Listing
                       </button>
                       {allowStaging && !declutter && (
                         <p className="text-xs text-amber-200/90 mt-2">
