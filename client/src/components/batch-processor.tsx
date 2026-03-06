@@ -34,6 +34,7 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
 type DisplayOutputKey = StageKey | "retried" | "edited";
+type PreviewModalImage = { url: string; filename: string; originalUrl?: string; index: number };
 
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
@@ -786,7 +787,7 @@ export default function BatchProcessor() {
   const [cancelIds, setCancelIds] = useState<string[]>([]);
   
   // Preview/edit modal state
-  const [previewImage, setPreviewImage] = useState<{ url: string, filename: string, originalUrl?: string, index: number } | null>(null);
+  const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
@@ -4847,6 +4848,87 @@ export default function BatchProcessor() {
     };
   }, [files.length, isUploading, results, runState]);
 
+  const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
+    if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
+
+    const file = files[index];
+    if (!file) return null;
+
+    const result = results[index];
+    const selectedStage = displayStageByIndex[index] as DisplayOutputKey | undefined;
+    const preEditSnapshot = preEditStageUrlsRef.current[index] || { stage2: null, stage1B: null, stage1A: null };
+    const resolved = resolveBestStageOutput(result, selectedStage, previewUrls[index] || null, {
+      stage2: preEditSnapshot.stage2,
+      stage1B: preEditSnapshot.stage1B,
+      stage1A: preEditSnapshot.stage1A,
+    });
+    const bestDisplayUrl = resolved.url || previewUrls[index] || null;
+    const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
+
+    const persistedOriginalUrl =
+      result?.result?.originalImageUrl ||
+      result?.originalImageUrl ||
+      result?.result?.originalUrl ||
+      result?.originalUrl ||
+      null;
+    const localOriginal =
+      (file as any)?.__restored !== true &&
+      previewUrls[index] &&
+      previewUrls[index] !== RESTORED_PLACEHOLDER
+        ? previewUrls[index]
+        : undefined;
+    const originalUrl = persistedOriginalUrl || localOriginal;
+    const finalUrl = enhancedUrl || previewUrls[index];
+    if (!finalUrl) return null;
+
+    return {
+      url: finalUrl,
+      filename: file.name || `Image ${index + 1}`,
+      originalUrl,
+      index,
+    };
+  }, [displayStageByIndex, files, previewUrls, results]);
+
+  const openPreviewImage = useCallback((index: number) => {
+    const payload = buildPreviewImage(index);
+    if (!payload) return;
+    setPreviewImage(payload);
+  }, [buildPreviewImage]);
+
+  const goToPreviousPreviewImage = useCallback(() => {
+    if (!previewImage) return;
+    openPreviewImage(previewImage.index - 1);
+  }, [openPreviewImage, previewImage]);
+
+  const goToNextPreviewImage = useCallback(() => {
+    if (!previewImage) return;
+    openPreviewImage(previewImage.index + 1);
+  }, [openPreviewImage, previewImage]);
+
+  useEffect(() => {
+    if (!previewImage) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goToNextPreviewImage();
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToPreviousPreviewImage();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setPreviewImage(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [goToNextPreviewImage, goToPreviousPreviewImage, previewImage]);
+
   // Debug: Log button visibility state
   React.useEffect(() => {
     if (results.length > 0) {
@@ -5311,11 +5393,7 @@ export default function BatchProcessor() {
                              {/* Fullscreen Button (Overlay) */}
                              <div className="absolute bottom-4 right-4 z-20">
                                 <button
-                                  onClick={() => setPreviewImage({
-                                    url: previewUrls[currentImageIndex],
-                                    filename: files[currentImageIndex]?.name || '',
-                                    index: currentImageIndex
-                                  })}
+                                  onClick={() => openPreviewImage(currentImageIndex)}
                                   className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center text-white transition-all hover:scale-105"
                                   title="View fullscreen"
                                 >
@@ -6203,12 +6281,7 @@ export default function BatchProcessor() {
                               className={`relative w-full aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
                                 if (!previewUrl) return;
-                                setPreviewImage({
-                                  url: enhancedUrl || previewUrl,
-                                  filename: file.name,
-                                  originalUrl: compareOriginalUrl,
-                                  index: i
-                                });
+                                openPreviewImage(i);
                               }}
                             >
                               <img 
@@ -6348,12 +6421,7 @@ export default function BatchProcessor() {
                               {bestDisplayUrl && (isUiComplete || isError) && (
                                 <>
                                   <button 
-                                    onClick={() => setPreviewImage({
-                                      url: enhancedUrl!,
-                                      filename: file.name,
-                                      originalUrl: compareOriginalUrl,
-                                      index: i
-                                    })}
+                                    onClick={() => openPreviewImage(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:opacity-90 transition"
                                   >
                                     Preview
@@ -6436,12 +6504,75 @@ export default function BatchProcessor() {
       {/* Preview/Edit Modals */}
       {previewImage && (
         <Modal isOpen={true} onClose={() => setPreviewImage(null)} maxWidth="full" contentClassName="max-w-7xl">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold mb-4">{previewImage.filename}</h3>
-            
-            {/* Show before/after slider if we have both original and enhanced images */}
-            {previewImage.originalUrl ? (
-              <div className="mb-4">
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-semibold text-slate-900">{previewImage.filename}</h3>
+                <p className="text-xs text-slate-500">{`Image ${previewImage.index + 1} of ${files.length}`}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                <button
+                  onClick={() => {
+                    const index = previewImage.index;
+                    setPreviewImage(null);
+                    handleEditImage(index);
+                  }}
+                  disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="button-edit-from-preview"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => {
+                    const index = previewImage.index;
+                    setPreviewImage(null);
+                    handleOpenRetryDialog(index);
+                  }}
+                  disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  className="rounded-lg bg-action-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-action-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="button-retry-from-preview"
+                >
+                  Retry
+                </button>
+                <a
+                  href={previewImage.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  data-testid="link-download-preview"
+                >
+                  Download
+                </a>
+                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                  Enhanced ✓
+                </span>
+              </div>
+            </div>
+
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={goToPreviousPreviewImage}
+                disabled={previewImage.index <= 0}
+                className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
+                aria-label="Previous image"
+              >
+                <ChevronLeft className="mx-auto h-5 w-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={goToNextPreviewImage}
+                disabled={previewImage.index >= files.length - 1}
+                className="absolute right-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
+                aria-label="Next image"
+              >
+                <ChevronRight className="mx-auto h-5 w-5" />
+              </button>
+
+              {previewImage.originalUrl ? (
                 <CompareSlider
                   originalImage={previewImage.originalUrl}
                   enhancedImage={previewImage.url}
@@ -6452,67 +6583,24 @@ export default function BatchProcessor() {
                   className="mx-auto"
                   data-testid="compare-slider-preview"
                 />
-              </div>
-            ) : (
-              /* Fallback to just enhanced image if no original available */
-              <img 
-                src={previewImage.url} 
-                alt={previewImage.filename} 
-                className="max-w-full max-h-[80vh] mx-auto rounded border"
-                data-testid="img-preview-modal"
-                onError={(e) => {
-                  console.error('[PREVIEW] Image failed to load:', {
-                    url: previewImage.url,
-                    filename: previewImage.filename,
-                    error: e
-                  });
-                }}
-                onLoad={() => {
-                  console.log('[PREVIEW] Image loaded successfully:', previewImage.url?.substring(0, 100));
-                }}
-              />
-            )}
-            
-            <div className="mt-4 flex justify-center gap-3">
-              <button
-                onClick={() => setPreviewImage(null)}
-                className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
-                data-testid="button-close-preview"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  const index = previewImage.index;
-                  setPreviewImage(null);
-                  handleOpenRetryDialog(index);
-                }}
-                disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
-                className="px-4 py-2 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="button-retry-from-preview"
-              >
-                Retry
-              </button>
-              <button
-                onClick={() => {
-                  const index = previewImage.index;
-                  setPreviewImage(null);
-                  handleEditImage(index);
-                }}
-                disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
-                className="px-4 py-2 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                data-testid="button-edit-from-preview"
-              >
-                Edit
-              </button>
-              <a
-                href={previewImage.url}
-                target="_blank"
-                className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
-                data-testid="link-download-preview"
-              >
-                Download
-              </a>
+              ) : (
+                <img
+                  src={previewImage.url}
+                  alt={previewImage.filename}
+                  className="max-h-[80vh] max-w-full mx-auto rounded border"
+                  data-testid="img-preview-modal"
+                  onError={(e) => {
+                    console.error('[PREVIEW] Image failed to load:', {
+                      url: previewImage.url,
+                      filename: previewImage.filename,
+                      error: e,
+                    });
+                  }}
+                  onLoad={() => {
+                    console.log('[PREVIEW] Image loaded successfully:', previewImage.url?.substring(0, 100));
+                  }}
+                />
+              )}
             </div>
           </div>
         </Modal>
