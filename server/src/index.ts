@@ -60,6 +60,45 @@ async function checkDbConnection(): Promise<boolean> {
   }
 }
 
+async function ensureEnhancedImagesSchemaCompatibility(): Promise<void> {
+  const requiredColumns = ["property_id", "parent_image_id", "source"] as const;
+
+  const colRes = await pool.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'enhanced_images'
+        AND column_name = ANY($1::text[])
+    `,
+    [requiredColumns]
+  );
+
+  const presentColumns = new Set<string>(colRes.rows.map((r: any) => String(r.column_name)));
+  const missingColumns = requiredColumns.filter((col) => !presentColumns.has(col));
+
+  const tableRes = await pool.query(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'properties'
+      ) AS exists
+    `
+  );
+
+  const propertiesTableExists = Boolean(tableRes.rows[0]?.exists);
+
+  if (missingColumns.length > 0 || !propertiesTableExists) {
+    throw new Error(
+      `[startup] Schema mismatch detected. Missing migration features for enhanced image gallery. ` +
+      `missingColumns=${missingColumns.join(",") || "none"} propertiesTable=${propertiesTableExists ? "present" : "missing"}. ` +
+      `Apply migrations (including 008_property_folders_and_versions.sql) before starting the server.`
+    );
+  }
+}
+
 async function initializeAsyncServices(): Promise<void> {
   console.log("[startup] beginning background service initialization");
 
@@ -98,6 +137,8 @@ async function initializeAsyncServices(): Promise<void> {
 }
 
 async function main() {
+  await ensureEnhancedImagesSchemaCompatibility();
+
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });
   redisClient.on("error", (err) => console.error("[redis] error", err));

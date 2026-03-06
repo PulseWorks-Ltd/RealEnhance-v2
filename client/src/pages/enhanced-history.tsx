@@ -48,6 +48,9 @@ export default function EnhancedHistoryPage() {
 
       const response = await apiFetch('/api/enhanced-images?limit=200&offset=0');
       if (!response.ok) {
+        if (response.status >= 500) {
+          throw new Error('Gallery is temporarily unavailable. Please try again in a few minutes.');
+        }
         throw new Error('Failed to load enhanced images');
       }
 
@@ -57,7 +60,8 @@ export default function EnhancedHistoryPage() {
       setTotal(Number(data.total || 0));
     } catch (err) {
       console.error('[enhanced-history] Failed to fetch images:', err);
-      setError('Failed to load enhanced images. Please try again.');
+      const message = err instanceof Error ? err.message : 'Failed to load enhanced images. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }
