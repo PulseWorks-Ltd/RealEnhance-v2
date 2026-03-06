@@ -17,6 +17,7 @@ import { runStage1B } from "./pipeline/stage1B";
 import {
   isStage2RetryableGenerationError,
   resolveStage2MaxAttempts,
+  resolveStage2Model,
   runStage2,
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
@@ -157,6 +158,208 @@ function logStructured(event: string, payload: Record<string, any>) {
       });
     }
     console.error("[SYSTEM_ERROR] structured log failure", err);
+  }
+}
+
+type ForensicAttemptEntry = {
+  attemptNumber: number;
+  pipelineStage: "1A" | "2";
+  model: string;
+  retryReason: string;
+  retryTrigger: string;
+  validatorWarnings: string[];
+  decisionSource: "local" | "gemini" | "consensus";
+  compositeDecision: string;
+  geminiConfirmation: boolean;
+  geminiResult: "pass" | "fail";
+  candidateUrl: string | null;
+  outputUrl: string | null;
+  artifactUrls: string[];
+};
+
+type ForensicJobEntry = {
+  jobId: string;
+  uploadUrl: string | null;
+  stage1AUrl: string | null;
+  attempts: ForensicAttemptEntry[];
+  finalStatus: string;
+  warningsCount: number;
+  hardFail: boolean;
+  completionGuard: string;
+  finalOutputUrl: string | null;
+};
+
+type ForensicBatchState = {
+  batchId: string;
+  jobs: Map<string, ForensicJobEntry>;
+  activeJobIds: Set<string>;
+};
+
+const batchForensicCollectors = new Map<string, ForensicBatchState>();
+const forensicJobBatchIndex = new Map<string, string>();
+
+function inferForensicBatchId(payload: any): string {
+  const fromPayload =
+    payload?.retryClientBatchId || payload?.clientBatchId || payload?.batchId || payload?.listingId;
+  if (fromPayload) return String(fromPayload);
+
+  const jobId = String(payload?.jobId || "");
+  const batchPrefix = jobId.match(/^(batch_[^_]+_[^_]+)/)?.[1];
+  if (batchPrefix) return batchPrefix;
+
+  return `single_${jobId || Date.now()}`;
+}
+
+function beginBatchForensicForJob(payload: any) {
+  const jobId = String(payload?.jobId || "");
+  if (!jobId) return;
+  const batchId = inferForensicBatchId(payload);
+  let batch = batchForensicCollectors.get(batchId);
+  if (!batch) {
+    batch = {
+      batchId,
+      jobs: new Map<string, ForensicJobEntry>(),
+      activeJobIds: new Set<string>(),
+    };
+    batchForensicCollectors.set(batchId, batch);
+  }
+
+  if (!batch.jobs.has(jobId)) {
+    batch.jobs.set(jobId, {
+      jobId,
+      uploadUrl: payload?.remoteOriginalUrl || null,
+      stage1AUrl: null,
+      attempts: [],
+      finalStatus: "processing",
+      warningsCount: 0,
+      hardFail: false,
+      completionGuard: "unknown",
+      finalOutputUrl: null,
+    });
+  }
+
+  batch.activeJobIds.add(jobId);
+  forensicJobBatchIndex.set(jobId, batchId);
+}
+
+function upsertForensicJobSnapshot(jobId: string, patch: Partial<ForensicJobEntry>) {
+  const batchId = forensicJobBatchIndex.get(jobId);
+  if (!batchId) return;
+  const batch = batchForensicCollectors.get(batchId);
+  if (!batch) return;
+
+  const current = batch.jobs.get(jobId) || {
+    jobId,
+    uploadUrl: null,
+    stage1AUrl: null,
+    attempts: [],
+    finalStatus: "processing",
+    warningsCount: 0,
+    hardFail: false,
+    completionGuard: "unknown",
+    finalOutputUrl: null,
+  };
+
+  const next: ForensicJobEntry = {
+    ...current,
+    ...patch,
+    attempts: patch.attempts ?? current.attempts,
+  };
+  batch.jobs.set(jobId, next);
+}
+
+function emitBatchForensicSummary(batch: ForensicBatchState) {
+  const jobs = [...batch.jobs.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
+  const jobsTotal = jobs.length;
+  const jobsCompleted = jobs.filter((j) => {
+    const status = String(j.finalStatus).toLowerCase();
+    return status === "complete" || status === "completed";
+  }).length;
+  const jobsFailed = jobs.filter((j) => String(j.finalStatus).toLowerCase() === "failed").length;
+  const avgStage2Attempts =
+    jobsTotal > 0
+      ? jobs.reduce((sum, job) => sum + (job.attempts?.length || 0), 0) / jobsTotal
+      : 0;
+
+  nLog("[BATCH_FORENSIC_SUMMARY]");
+  nLog(`batch=${batch.batchId}`);
+  nLog(`jobs=${jobsTotal}`);
+  nLog(`completed=${jobsCompleted}`);
+  nLog(`failed=${jobsFailed}`);
+  nLog(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
+
+  for (const job of jobs) {
+    nLog(`JOB ${job.jobId}`);
+    nLog(`upload=${job.uploadUrl || ""}`);
+    nLog(`stage1A=${job.stage1AUrl || ""}`);
+
+    const attempts = [...(job.attempts || [])].sort((a, b) => a.attemptNumber - b.attemptNumber);
+    for (const attempt of attempts) {
+      nLog(`ATTEMPT ${attempt.attemptNumber}`);
+      nLog(`stage=${attempt.pipelineStage}`);
+      nLog(`model=${attempt.model}`);
+      nLog(`retry_reason=${attempt.retryReason}`);
+      nLog(`retry_trigger=${attempt.retryTrigger}`);
+      nLog(`validator_warnings=${attempt.validatorWarnings.join("|")}`);
+      nLog(`decision_source=${attempt.decisionSource}`);
+      nLog(`composite=${attempt.compositeDecision}`);
+      nLog(`gemini_confirmation=${attempt.geminiConfirmation}`);
+      nLog(`gemini_result=${attempt.geminiResult}`);
+      nLog(`candidate=${attempt.candidateUrl || ""}`);
+      nLog(`output=${attempt.outputUrl || ""}`);
+      nLog(`artifact_urls=${(attempt.artifactUrls || []).join(",")}`);
+    }
+
+    nLog("FINAL");
+    nLog(`status=${job.finalStatus}`);
+    nLog(`warnings=${job.warningsCount}`);
+    nLog(`completion_guard=${job.completionGuard}`);
+    nLog(`output=${job.finalOutputUrl || ""}`);
+  }
+}
+
+async function finalizeBatchForensicForJob(jobId: string, payload: any) {
+  const batchId = forensicJobBatchIndex.get(jobId);
+  if (!batchId) return;
+  const batch = batchForensicCollectors.get(batchId);
+  if (!batch) return;
+
+  try {
+    const current = await getJob(jobId);
+    const status = String((current as any)?.status || "unknown").toLowerCase();
+    const stageUrls = ((current as any)?.stageUrls || {}) as Record<string, string | null | undefined>;
+    const validation = ((current as any)?.validation || {}) as any;
+    const errorMessage = String((current as any)?.errorMessage || "");
+
+    const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+    const completionGuard = errorMessage.includes("completion_guard_block")
+      ? "blocked"
+      : (status === "complete" ? "passed" : "unknown");
+
+    upsertForensicJobSnapshot(jobId, {
+      uploadUrl: (current as any)?.originalUrl || payload?.remoteOriginalUrl || null,
+      stage1AUrl: stageUrls["1A"] || stageUrls["stage1a"] || null,
+      finalStatus: status,
+      warningsCount: warnings.length,
+      hardFail: validation?.hardFail === true || status === "failed",
+      completionGuard,
+      finalOutputUrl: (current as any)?.resultUrl || (current as any)?.imageUrl || null,
+    });
+  } catch {
+    // Non-blocking forensic path.
+  }
+
+  batch.activeJobIds.delete(jobId);
+  if (batch.activeJobIds.size === 0) {
+    try {
+      emitBatchForensicSummary(batch);
+    } catch (err) {
+      console.warn("[FORENSIC_SUMMARY_ERROR]", err);
+    }
+    batchForensicCollectors.delete(batchId);
+    for (const key of batch.jobs.keys()) {
+      forensicJobBatchIndex.delete(key);
+    }
   }
 }
 
@@ -2805,8 +3008,201 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   };
 
+  const inferForensicRetryReason = (attemptNumber: number, reasonText: string): "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown" => {
+    if (attemptNumber <= 1) return "initial";
+    const normalized = String(reasonText || "").toLowerCase();
+    if (!normalized) return "unknown";
+    if (/(opening|window|door|closet|infilled|relocat)/.test(normalized)) return "opening_removed";
+    if (/(structural|invariant|topology|wall|drift|distortion|orientation)/.test(normalized)) return "structural_violation";
+    if (/(style|cosmetic|lighting|decor|furniture)/.test(normalized)) return "cosmetic";
+    return "unknown";
+  };
+
+  const normalizeForensicDecisionSource = (blockedBy?: string | null): "local" | "gemini" | "consensus" => {
+    const normalized = String(blockedBy || "").toLowerCase();
+    if (normalized === "gemini") return "gemini";
+    if (normalized === "consensus") return "consensus";
+    return "local";
+  };
+
+  const inferForensicRetryTrigger = (params: {
+    attemptNumber: number;
+    blockedBy?: string | null;
+    finalReason?: string | null;
+    localReasons?: string[];
+    localWarnings?: string[];
+  }): string => {
+    if (params.attemptNumber <= 1) return "initial";
+
+    const blockedBy = String(params.blockedBy || "").toLowerCase();
+    if (blockedBy === "consensus") return "validator_consensus";
+    if (blockedBy === "gemini") return "gemini_structural_fail";
+
+    const joined = [
+      params.finalReason || "",
+      ...(params.localReasons || []),
+      ...(params.localWarnings || []),
+      blockedBy,
+    ].join(" ").toLowerCase();
+
+    if (/(opening_removed|opening_removal|opening removed|opening removal)/.test(joined)) {
+      return "opening_removed";
+    }
+    if (/(geometry|drift|topology|opening_preservation|structural_invariant|topology_violation)/.test(joined)) {
+      return "opening_geometry_drift";
+    }
+    if (/(consensus|case_a|case_b|case_c)/.test(joined)) {
+      return "validator_consensus";
+    }
+    if (/(gemini|semantic|compliance)/.test(joined)) {
+      return "gemini_structural_fail";
+    }
+    return "unknown";
+  };
+
+  const isHttpUrl = (value: unknown): value is string => {
+    if (typeof value !== "string") return false;
+    return /^https?:\/\//i.test(value.trim());
+  };
+
+  const toLikelyDebugUrlFromKey = (key?: string | null): string | null => {
+    if (!key || !key.startsWith("debug-attempts/")) return null;
+    const base = String(process.env.S3_PUBLIC_BASEURL || "").replace(/\/$/, "");
+    if (!base) return null;
+    return `${base}/${key}`;
+  };
+
+  const flushEnhanceForensicSnapshot = (params: {
+    uploadUrl?: string | null;
+    stage1AUrl?: string | null;
+    finalStatus?: string;
+    warningsCount?: number;
+    hardFail?: boolean;
+    completionGuard?: string;
+    finalOutputUrl?: string | null;
+  }) => {
+    const attempts = [...jobAttemptLog.stageLogs["2"]]
+      .sort((a, b) => a.attempt - b.attempt)
+      .map((attemptEntry) => {
+        const outputMatches = stage2AttemptOutputs.filter((entry) => entry.attempt === attemptEntry.attempt - 1);
+        const outputMatch = outputMatches[0];
+        const localReasons = Array.isArray(attemptEntry.validation.local?.reasons)
+          ? attemptEntry.validation.local.reasons.map((x: any) => String(x))
+          : [];
+        const localWarnings = Array.isArray(attemptEntry.validation.local?.warnings)
+          ? attemptEntry.validation.local.warnings.map((x: any) => String(x))
+          : [];
+        const finalReason = String(attemptEntry.validation.final?.reason || localReasons.join(";") || "");
+        const retryKind = inferForensicRetryReason(attemptEntry.attempt, finalReason);
+        const model = resolveStage2Model(attemptEntry.attempt, retryKind as any);
+        const candidateUrl = attemptEntry.signedUrl || outputMatch?.signedUrl || outputMatch?.publishedUrl || null;
+        const outputUrl = attemptEntry.publishedUrl || outputMatch?.publishedUrl || null;
+
+        const outputUrls = outputMatches.flatMap((entry) => [
+          entry.signedUrl,
+          entry.publishedUrl,
+        ]);
+        const debugUrlsFromKeys = [
+          toLikelyDebugUrlFromKey(attemptEntry.imageKey),
+          ...outputMatches.map((entry) => toLikelyDebugUrlFromKey(entry.imageKey)),
+        ];
+        const artifactUrls = [
+          candidateUrl,
+          outputUrl,
+          attemptEntry.signedUrl,
+          attemptEntry.publishedUrl,
+          ...outputUrls,
+          ...debugUrlsFromKeys,
+          outputMatch?.signedUrl,
+          outputMatch?.publishedUrl,
+        ].filter((value, index, arr): value is string => isHttpUrl(value) && arr.indexOf(value) === index);
+
+        const decisionSource = normalizeForensicDecisionSource(
+          outputMatch?.blockedBy
+          || attemptEntry.validation.final?.decisionSource
+          || (attemptEntry.validation.gemini?.hardFail === true ? "gemini" : null)
+          || (attemptEntry.validation.final?.result === "FAILED" && attemptEntry.validation.local?.hardFail === true ? "local" : null)
+          || null
+        );
+        const retryTrigger = inferForensicRetryTrigger({
+          attemptNumber: attemptEntry.attempt,
+          blockedBy: outputMatch?.blockedBy || null,
+          finalReason,
+          localReasons,
+          localWarnings,
+        });
+
+        return {
+          attemptNumber: attemptEntry.attempt,
+          pipelineStage: "2" as const,
+          model,
+          retryReason: finalReason || retryKind,
+          retryTrigger,
+          validatorWarnings: [...localReasons, ...localWarnings].filter((value, index, arr) => arr.indexOf(value) === index),
+          decisionSource,
+          compositeDecision:
+            attemptEntry.validation.final?.result === "FAILED" || attemptEntry.validation.local?.hardFail === true
+              ? "FAIL"
+              : "PASS",
+          geminiConfirmation: attemptEntry.validation.confirm !== null,
+          geminiResult: (attemptEntry.validation.gemini?.hardFail === true ? "fail" : "pass") as "pass" | "fail",
+          candidateUrl,
+          outputUrl,
+          artifactUrls,
+        };
+      });
+
+    upsertForensicJobSnapshot(payload.jobId, {
+      uploadUrl: params.uploadUrl ?? null,
+      stage1AUrl: params.stage1AUrl ?? null,
+      attempts,
+      finalStatus: params.finalStatus || "processing",
+      warningsCount: Number.isFinite(Number(params.warningsCount)) ? Number(params.warningsCount) : 0,
+      hardFail: params.hardFail === true,
+      completionGuard: params.completionGuard || "unknown",
+      finalOutputUrl: params.finalOutputUrl ?? null,
+    });
+  };
+
+  const flushStage1AFailureForensicSnapshot = (reason: string) => {
+    upsertForensicJobSnapshot(payload.jobId, {
+      uploadUrl: (payload as any).remoteOriginalUrl || null,
+      attempts: [
+        {
+          attemptNumber: 1,
+          pipelineStage: "1A",
+          model: "stage1A",
+          retryReason: reason,
+          retryTrigger: reason,
+          validatorWarnings: [reason],
+          decisionSource: "local",
+          compositeDecision: "FAIL",
+          geminiConfirmation: false,
+          geminiResult: "pass",
+          candidateUrl: null,
+          outputUrl: null,
+          artifactUrls: [],
+        },
+      ],
+      finalStatus: "failed",
+      warningsCount: 1,
+      hardFail: true,
+      completionGuard: "stage1a_blocked",
+      finalOutputUrl: null,
+    });
+  };
+
   const completePartialJobWithSummary = async (params: Parameters<typeof completePartialJob>[0]) => {
     emitJobAttemptSummary("EXHAUSTED");
+    flushEnhanceForensicSnapshot({
+      uploadUrl: (payload as any).remoteOriginalUrl || null,
+      stage1AUrl: params.pub1AUrl || null,
+      finalStatus: "partial",
+      warningsCount: 0,
+      hardFail: true,
+      completionGuard: "fallback",
+      finalOutputUrl: (params.finalStage === "1A" ? params.pub1AUrl : params.pub1BUrl) || null,
+    });
     await completePartialJob(params);
   };
 
@@ -3177,6 +3573,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         { status: "failed", errorMessage: "stage2_retry_failed: invalid_manual_retry_payload" },
         "stage2_retry_failed_invalid_payload"
       );
+      flushEnhanceForensicSnapshot({
+        uploadUrl: (payload as any).remoteOriginalUrl || null,
+        stage1AUrl: (payload.stage2OnlyMode as any)?.base1AUrl || null,
+        finalStatus: "failed",
+        warningsCount: 1,
+        hardFail: true,
+        completionGuard: "invalid_manual_retry_payload",
+        finalOutputUrl: null,
+      });
       return;
     }
   }
@@ -3611,6 +4016,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
         }
       }, "stage2_only_complete");
+
+      flushEnhanceForensicSnapshot({
+        uploadUrl: (payload as any).remoteOriginalUrl || null,
+        stage1AUrl: ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null,
+        finalStatus: "completed",
+        warningsCount: 0,
+        hardFail: false,
+        completionGuard: "passed",
+        finalOutputUrl: pub2Url || null,
+      });
 
       emitJobAttemptSummary("SUCCESS");
 
@@ -4142,6 +4557,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (stage1ABlackArtifactDetected) {
     nLog("[STAGE1A_FATAL_BLACK_BORDER]");
+    flushStage1AFailureForensicSnapshot("black_corner_or_border_detected");
     await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A", {
       stage1ATainted: true,
       stage1ATaintReason: "black_corner_or_border_detected",
@@ -4245,6 +4661,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     "stage1a_progress"
   );
+  flushEnhanceForensicSnapshot({
+    uploadUrl: (payload as any).remoteOriginalUrl || null,
+    stage1AUrl: pub1AUrl || null,
+    finalStatus: "processing",
+    warningsCount: 0,
+    hardFail: false,
+    completionGuard: "in_progress",
+    finalOutputUrl: null,
+  });
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
     return;
@@ -9295,6 +9720,8 @@ const worker = new Worker(
       return;
     }
 
+    beginBatchForensicForJob(payload as any);
+
     await safeWriteJobStatus(jobId, { status: "processing" }, "job_start");
     try {
       if (typeof payload === "object" && payload && "type" in payload) {
@@ -9533,6 +9960,17 @@ const worker = new Worker(
       await safeWriteJobStatus(jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
       throw err;
     } finally {
+      try {
+        if (jobId) {
+          await finalizeBatchForensicForJob(jobId, payload as any);
+        }
+      } catch (forensicErr) {
+        nLog("[BATCH_FORENSIC] finalize failed (non-blocking)", {
+          jobId,
+          error: (forensicErr as any)?.message || String(forensicErr),
+        });
+      }
+
       // Best-effort temp file cleanup — prevents /tmp from filling up
       try {
         if (jobId) cleanupTempFiles(jobId);
