@@ -263,7 +263,17 @@ async function main() {
     }
   });
 
-  // Health
+  // Liveness for orchestrators: process is up and accepting requests.
+  app.get("/healthz", (_req, res) => {
+    res.json({
+      ok: true,
+      status: "live",
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
+    });
+  });
+
+  // Readiness: dependencies/schema are usable for full traffic.
   app.get("/health", async (_req, res) => {
     const dbReady = await checkDbConnection();
     const schemaReady = startupState.schemaReady;

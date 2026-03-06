@@ -10,9 +10,37 @@ const envPath = path.resolve(serverRoot, ".env");
 console.log("[env] Loading .env from:", envPath);
 dotenv.config({ path: envPath });
 
-const connectionString = process.env.DATABASE_URL;
+function isRailwayInternalHost(urlValue: string): boolean {
+  try {
+    return new URL(urlValue).hostname.endsWith(".railway.internal");
+  } catch {
+    return false;
+  }
+}
+
+const runningOnRailway = Boolean(
+  process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_SERVICE_ID
+);
+const databaseUrl = process.env.DATABASE_URL;
+const databasePublicUrl = process.env.DATABASE_PUBLIC_URL;
+
+let connectionString = databaseUrl;
+
+if (!runningOnRailway && databaseUrl && isRailwayInternalHost(databaseUrl) && databasePublicUrl) {
+  connectionString = databasePublicUrl;
+  console.warn("[db] DATABASE_URL points to Railway private host outside Railway; using DATABASE_PUBLIC_URL instead");
+}
+
 if (!connectionString) {
-  throw new Error("DATABASE_URL is required for database access (set it in server/.env or environment)");
+  throw new Error(
+    "DATABASE_URL is required for database access (or set DATABASE_PUBLIC_URL for local runs)"
+  );
+}
+
+if (!runningOnRailway && isRailwayInternalHost(connectionString) && !databasePublicUrl) {
+  throw new Error(
+    "DATABASE_URL points to a Railway private host that is not reachable locally. Set DATABASE_PUBLIC_URL for local commands, or run this command inside Railway with `railway run ...`."
+  );
 }
 
 // Small helper to share a single pool across the server
