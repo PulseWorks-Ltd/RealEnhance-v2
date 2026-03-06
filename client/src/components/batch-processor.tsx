@@ -718,7 +718,7 @@ export default function BatchProcessor() {
   const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
   
   // Tab state for clean UI flow - default to images tab when empty to show launchpad
-  const [activeTab, setActiveTab] = useState<"upload" | "describe" | "images" | "enhance">(
+  const [activeTab, setActiveTab] = useState<"upload" | "images" | "enhance">(
     () => files.length === 0 ? "images" : "upload"
   );
   const [isUploading, setIsUploading] = useState(false);
@@ -744,7 +744,7 @@ export default function BatchProcessor() {
     availableCredits: 0,
   });
 
-  // Auto-switch from images tab to upload tab when files are restored asynchronously (one-shot guard)
+  // Keep restored batches in the unified workspace when files arrive asynchronously.
   useEffect(() => {
     const hasRestoredFiles = files.some(f => (f as any).__restored === true);
     
@@ -753,7 +753,6 @@ export default function BatchProcessor() {
       hasRestoredFiles &&
       activeTab === "images"
     ) {
-      setActiveTab("upload");
       hasRestoredRef.current = true;
     }
   }, [files, activeTab]);
@@ -4522,9 +4521,8 @@ export default function BatchProcessor() {
   };
 
   // Helper function to check if user can proceed to next tab
-  const canProceedToTab = (tab: "upload" | "describe" | "images" | "enhance"): boolean => {
+  const canProceedToTab = (tab: "upload" | "images" | "enhance"): boolean => {
     switch(tab) {
-      case "describe": return files.length > 0;
       case "images": return files.length > 0;
       case "enhance": return files.length > 0;
       default: return true;
@@ -4536,9 +4534,9 @@ export default function BatchProcessor() {
     const fileList = Array.from(e.target.files || []);
     // Append new files to existing ones instead of replacing
     setFiles(prev => [...prev, ...fileList]);
-    // Auto-advance to describe tab when files are selected
+    // Auto-advance to the unified workspace when files are selected.
     if (fileList.length > 0 && activeTab === "upload") {
-      setActiveTab("describe");
+      setActiveTab("images");
     }
   };
 
@@ -4616,9 +4614,9 @@ export default function BatchProcessor() {
       return [...prev, ...unique];
     });
     
-    // Context-safe tab switch - only switch from images tab
+    // Context-safe tab switch for the unified workspace
     if (validFiles.length > 0) {
-      setActiveTab(prev => prev === "images" ? "describe" : prev);
+      setActiveTab(prev => prev === "upload" ? "images" : prev);
     }
     
     // Reset input to allow re-selection of same files
@@ -4691,9 +4689,9 @@ export default function BatchProcessor() {
       return [...prev, ...unique];
     });
     
-    // Context-safe tab switch - only switch from images tab
+    // Context-safe tab switch for the unified workspace
     if (validFiles.length > 0) {
-      setActiveTab(prev => prev === "images" ? "describe" : prev);
+      setActiveTab(prev => prev === "upload" ? "images" : prev);
     }
   }, [files, toast]);
 
@@ -4930,6 +4928,38 @@ export default function BatchProcessor() {
     };
   }, [files.length, isUploading, results, runState]);
 
+  const configuredImagesCount = useMemo(() => {
+    if (!files.length) return 0;
+    return files.reduce((count, _file, index) => {
+      return imageValidationStatus(index) === "ok" ? count + 1 : count;
+    }, 0);
+  }, [files, imageValidationStatus]);
+
+  const configuredProgressPct = useMemo(() => {
+    if (!files.length) return 0;
+    return Math.round((configuredImagesCount / files.length) * 100);
+  }, [configuredImagesCount, files.length]);
+
+  const quickAssignRoomType = useCallback((preset: "living_room" | "bedroom" | "kitchen" | "bathroom-1" | "exterior") => {
+    if (!currentImageId) return;
+
+    if (preset === "exterior") {
+      setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
+      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
+      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
+      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
+    } else {
+      setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
+      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
+      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: preset }));
+    }
+
+    setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
+  }, [currentImageId, files.length, setCurrentImageIndex]);
+
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
     if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
 
@@ -5063,7 +5093,7 @@ export default function BatchProcessor() {
             <Dropzone 
               onFilesSelected={(newFiles) => {
                 setFiles(prev => [...prev, ...newFiles]);
-                if (newFiles.length > 0) setActiveTab("describe");
+                if (newFiles.length > 0) setActiveTab("images");
               }}
               maxFiles={50}
               maxSizeMB={15}
@@ -5171,413 +5201,364 @@ export default function BatchProcessor() {
                   ))}
                 </div>
                 <button
-                  onClick={() => setActiveTab("describe")}
+                  onClick={() => setActiveTab("images")}
                   className="mt-6 bg-action-600 text-white px-6 py-3 rounded-lg hover:bg-action-700 transition-colors font-medium"
-                  data-testid="button-proceed-describe"
+                  data-testid="button-proceed-workspace"
                 >
-                  Next: Describe Enhancement →
+                  Next: Configure and Review
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Describe Tab */}
-        {activeTab === "describe" && (
-          <div>
-            <h2 className="text-2xl font-semibold text-white mb-6">Describe Your Enhancement</h2>
-            
-            <div className="grid md:grid-cols-2 gap-8">
-              {/* Left Column - Settings */}
-              <div className="space-y-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium text-white">Enhancement Options</h3>
-
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={declutter}
-                      onChange={(e) => { 
-                        const checked = e.target.checked;
-                        setDeclutter(checked); 
-                        setFurnitureReplacement(checked);
-                      }}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-declutter"
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-white">Remove furniture & clutter</span>
-                      <p className="text-xs text-gray-400">
-                        {allowStaging
-                          ? "Structured retain declutter: keeps primary anchors, removes secondary items"
-                          : "Light declutter: removes clutter while preserving main furniture"}
-                      </p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={allowStaging}
-                      onChange={(e) => setAllowStaging(e.target.checked)}
-                      className="w-5 h-5 text-purple-600 border-gray-600 bg-gray-800 rounded focus:ring-purple-500"
-                      data-testid="checkbox-allow-staging"
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-white">Add virtual staging</span>
-                      <p className="text-xs text-gray-400">
-                        {declutter 
-                          ? "Create a staged version that augments the retained layout" 
-                          : "Create a staged version with furniture and decor"}
-                      </p>
-                    </div>
-                  </label>
-                  {/* Staging Style Dropdown - only shown if staging is enabled */}
-                  {allowStaging && (
-                    <div className="mb-2">
-                      <label className="text-sm font-medium text-white block mb-1" htmlFor="staging-style-select">
-                        Listing Style <span className="text-gray-400 text-xs">(applies to all staged images in this batch)</span>
-                      </label>
-                      <select
-                        id="staging-style-select"
-                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-                        value={stagingStyle}
-                        onChange={e => setStagingStyle(e.target.value as StagingStyle)}
-                        data-testid="select-staging-style"
-                      >
-                        <option value="standard_listing">Standard Listing</option>
-                        <option value="family_home">Family Home</option>
-                        <option value="urban_apartment">Urban Apartment</option>
-                        <option value="high_end_luxury">High-End Luxury</option>
-                        <option value="country_lifestyle">Country / Lifestyle</option>
-                        <option value="lived_in_rental">Lived-In / Rental</option>
-                      </select>
-                      <button
-                        onClick={() => setStagingStyle("standard_listing")}
-                        className="text-xs text-blue-400 hover:text-blue-300 underline mt-1"
-                        type="button"
-                      >
-                        Reset to Standard Listing
-                      </button>
-                      {allowStaging && !declutter && (
-                        <p className="text-xs text-amber-200/90 mt-2">
-                          For best results in staging-only mode, upload images that are already mostly empty.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Image Consumption Notice */}
-                <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
-                  <p className="text-sm font-medium text-blue-300 mb-1">Image consumption per photo:</p>
-                  <p className="text-sm text-blue-200">
-                    {declutter && allowStaging ? (
-                      <>
-                        <span className="font-semibold">2 images</span> will be consumed per photo
-                        <span className="text-xs block text-blue-300 mt-1">
-                          (1 for enhancement + declutter, 1 for staging)
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold">1 image</span> will be consumed per photo
-                        <span className="text-xs block text-blue-300 mt-1">
-                          ({declutter ? 'Enhancement + declutter' : allowStaging ? 'Enhancement + staging' : 'Enhancement only'})
-                        </span>
-                      </>
-                    )}
-                  </p>
-                  {!declutter && !allowStaging && (
-                    <p className="text-xs text-blue-200/80 mt-2 border-t border-blue-500/20 pt-2">
-                      Enhancement-only mode: Your images will be professionally enhanced with improved lighting, color balance, and clarity. No furniture will be added or removed.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-white block mb-1" htmlFor="property-address-input">
-                    Property Address <span className="text-gray-400 text-xs">(optional)</span>
-                  </label>
-                  <input
-                    id="property-address-input"
-                    type="text"
-                    className="w-full border border-gray-600 rounded-lg px-3 py-2 bg-gray-800 text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                    value={propertyAddress}
-                    onChange={(e) => setPropertyAddress(e.target.value)}
-                    placeholder="e.g., 21 Smith Street"
-                    data-testid="input-property-address"
-                  />
-                </div>
-
-                <div>
-                  <button
-                    onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
-                    className="flex items-center justify-between w-full text-left p-3 bg-gray-800 hover:bg-gray-700 rounded-lg border border-gray-600 transition-colors"
-                    data-testid="button-toggle-specific-requirements"
-                  >
-                    <span className="text-sm font-medium text-white">
-                      Specific Requirements <span className="text-gray-400">(optional)</span>
-                    </span>
-                    <span className={`transform transition-transform text-gray-400 ${showSpecificRequirements ? 'rotate-180' : ''}`}>
-                      ▼
-                    </span>
-                  </button>
-                  
-                  {showSpecificRequirements && (
-                    <div className="mt-2">
-                      <textarea
-                        className="w-full border border-gray-600 rounded-lg p-3 bg-gray-800 text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                        rows={4}
-                        placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
-                        value={globalGoal}
-                        onChange={e => setGlobalGoal(e.target.value)}
-                        data-testid="textarea-global-goal"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column - Preview */}
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">Image Preview</h3>
-                {files.length > 0 && (
-                  <div className="grid grid-cols-2 gap-3">
-                    {previewUrls.slice(0, 4).map((url, i) => (
-                      <img 
-                        key={i}
-                        src={url} 
-                        alt={`preview-${i}`} 
-                        className="w-full h-32 object-cover rounded-lg border border-gray-600"
-                      />
-                    ))}
-                    {files.length > 4 && (
-                      <button
-                        onClick={() => setActiveTab("images")}
-                        className="w-full h-32 bg-gray-800 rounded-lg border border-gray-600 flex items-center justify-center hover:bg-gray-700 hover:border-action-500 transition-colors cursor-pointer"
-                        title="Click to view all images"
-                      >
-                        <span className="text-gray-400 text-sm">+{files.length - 4} more</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {allowStaging && (
-                  <div className="mt-4 p-4 bg-purple-900/20 border border-purple-500/30 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <span className="text-purple-400 text-lg">📐</span>
-                      <div>
-                        <p className="text-sm font-medium text-purple-300">Preserve + Stage Mode</p>
-                        <p className="text-xs text-purple-200 mt-1">
-                          Items will be placed on floor planes only, keeping doors, windows, and cabinets fully visible.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-gray-600">
-              <div className="flex justify-between items-center">
-                <button
-                  onClick={() => setActiveTab("upload")}
-                  className="px-6 py-3 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
-                  data-testid="button-back-upload"
-                >
-                  ← Back to Upload
-                </button>
-                <button
-                  onClick={() => setActiveTab("images")}
-                  className="px-6 py-3 bg-action-600 text-white rounded-lg hover:bg-action-700 transition-colors font-medium"
-                  data-testid="button-next-to-images"
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          /* WORKBENCH LAYOUT: Full width container with side-by-side grid */
-          <div className="flex h-[calc(100vh-140px)] w-full bg-slate-100 overflow-hidden shadow-sm border-t border-slate-200">
-            {files.length === 0 ? (
-              <EmptyStateLaunchpad 
-                onFileSelect={triggerFileSelector}
-                onFileDrop={handleFileDrop}
-                onSampleSelect={(sampleType) => {
-                  // TODO: Implement sample image loading
-                  console.log('[BatchProcessor] Sample selected:', sampleType);
-                  toast({
-                    title: "Sample images coming soon",
-                    description: `${sampleType} sample will be available in the next release.`,
-                  });
-                }}
-              />
-            ) : (
-              <>
-                {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
-                <div className="flex-1 relative flex flex-col bg-slate-50/50 overflow-hidden">
-                  
-                  {/* Top Bar: Nav & Counter */}
-                  <div className="absolute top-0 left-0 right-0 z-10 flex justify-between items-center p-4 pointer-events-none">
-                    <button
-                      onClick={() => setActiveTab("describe")}
-                      className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-white/80 backdrop-blur-md rounded-lg shadow-sm border border-white/20 text-slate-600 hover:text-slate-900 transition-all hover:shadow-md text-sm font-medium"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      Back
-                    </button>
+          <div className="w-full min-h-screen bg-slate-100 py-6">
+            <div className="max-w-screen-2xl mx-auto px-6 space-y-4">
+              {files.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-wrap gap-6">
+                  <div className="min-w-[260px] flex-1 space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Enhancement Options</p>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={declutter}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setDeclutter(checked);
+                          setFurnitureReplacement(checked);
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
+                        data-testid="checkbox-declutter"
+                      />
+                      <span className="text-sm text-slate-700">Remove furniture and clutter</span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={allowStaging}
+                        onChange={(e) => setAllowStaging(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
+                        data-testid="checkbox-allow-staging"
+                      />
+                      <span className="text-sm text-slate-700">Add virtual staging</span>
+                    </label>
+                    {allowStaging && (
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select">
+                          Staging Style
+                        </label>
+                        <select
+                          id="staging-style-select"
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                          value={stagingStyle}
+                          onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
+                          data-testid="select-staging-style"
+                        >
+                          <option value="standard_listing">Standard Listing</option>
+                          <option value="family_home">Family Home</option>
+                          <option value="urban_apartment">Urban Apartment</option>
+                          <option value="high_end_luxury">High-End Luxury</option>
+                          <option value="country_lifestyle">Country / Lifestyle</option>
+                          <option value="lived_in_rental">Lived-In / Rental</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setStagingStyle("standard_listing")}
+                          className="mt-1 text-xs text-action-600 underline hover:text-action-700"
+                        >
+                          Reset to Standard Listing
+                        </button>
+                        {allowStaging && !declutter && (
+                          <p className="mt-1 text-xs text-amber-700">
+                            For best results in staging-only mode, upload images that are already mostly empty.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="pointer-events-auto bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-white/20">
-                      Image {currentImageIndex + 1} of {files.length}
+                  <div className="min-w-[240px] flex-1 space-y-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="property-address-input">
+                        Property Address
+                      </label>
+                      <input
+                        id="property-address-input"
+                        type="text"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                        value={propertyAddress}
+                        onChange={(e) => setPropertyAddress(e.target.value)}
+                        placeholder="e.g., 21 Smith Street"
+                        data-testid="input-property-address"
+                      />
+                    </div>
+
+                    <div>
+                      <button
+                        onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
+                        className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                        data-testid="button-toggle-specific-requirements"
+                        type="button"
+                      >
+                        <span>Specific Requirements</span>
+                        <span className={`text-slate-400 transition-transform ${showSpecificRequirements ? "rotate-180" : ""}`}>▼</span>
+                      </button>
+                      {showSpecificRequirements && (
+                        <textarea
+                          className="mt-2 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
+                          rows={3}
+                          placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
+                          value={globalGoal}
+                          onChange={(e) => setGlobalGoal(e.target.value)}
+                          data-testid="textarea-global-goal"
+                        />
+                      )}
                     </div>
                   </div>
 
-                  {/* Main Viewer Area */}
-                  <div className="flex-1 relative w-full h-full flex items-center justify-center p-8 lg:p-12">
-                     {/* The Viewer Frame */}
-                     <div className="relative w-full h-full flex items-center justify-center max-w-[1600px] mx-auto">
-                        
-                        {/* The Image */}
-                        <div className="relative flex items-center justify-center w-full h-full"> 
+                  <div className="min-w-[260px] flex-1 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <p className="text-xs font-semibold text-blue-900">Image consumption per photo</p>
+                    <p className="mt-1 text-sm text-blue-800">
+                      {declutter && allowStaging ? "2 images per photo" : "1 image per photo"}
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      {declutter && allowStaging
+                        ? "1 for enhancement + declutter, 1 for staging"
+                        : declutter
+                          ? "Enhancement + declutter"
+                          : allowStaging
+                            ? "Enhancement + staging"
+                            : "Enhancement only"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex min-h-[calc(100vh-220px)] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
+                {files.length === 0 ? (
+                  <EmptyStateLaunchpad
+                    onFileSelect={triggerFileSelector}
+                    onFileDrop={handleFileDrop}
+                    onSampleSelect={(sampleType) => {
+                      // TODO: Implement sample image loading
+                      console.log('[BatchProcessor] Sample selected:', sampleType);
+                      toast({
+                        title: "Sample images coming soon",
+                        description: `${sampleType} sample will be available in the next release.`,
+                      });
+                    }}
+                  />
+                ) : (
+                  <>
+                    {/* LEFT PANEL: The Canvas (Flex-1 to fill space) */}
+                    <div className="relative flex flex-1 flex-col overflow-hidden bg-slate-50/50">
+
+                      {/* Top Bar: Nav & Counter */}
+                      <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-center justify-between p-4">
+                        <button
+                          onClick={() => setActiveTab("upload")}
+                          className="pointer-events-auto flex items-center gap-2 rounded-lg border border-white/20 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm backdrop-blur-md transition-all hover:text-slate-900 hover:shadow-md"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          Upload
+                        </button>
+
+                        <div className="pointer-events-auto rounded-full border border-white/20 bg-white/80 px-4 py-1.5 text-xs font-semibold text-slate-700 shadow-sm backdrop-blur-md">
+                          Image {currentImageIndex + 1} of {files.length}
+                        </div>
+                      </div>
+
+                      {/* Main Viewer Area */}
+                      <div className="relative flex h-full w-full flex-1 items-center justify-center p-8 lg:p-12">
+                        {/* The Viewer Frame */}
+                        <div className="relative mx-auto flex h-full w-full max-w-5xl flex-col items-center justify-center">
+
+                          {/* The Image */}
+                          <div className="relative flex h-full w-full items-center justify-center">
                             <img
                               src={previewUrls[currentImageIndex]}
                               alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                              className="max-h-full max-w-full object-contain shadow-2xl rounded-lg"
+                              className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
                             />
-                            
-                            {/* Delete Button (Overlay) - Centered & Refined */}
-                            <div className="absolute top-4 right-4 z-20">
+
+                            {/* Delete Button (Overlay) */}
+                            <div className="absolute right-4 top-4 z-20">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveImage(currentImageIndex)}
                                 disabled={removeDisabled}
-                                className="group h-8 w-8 rounded-full bg-slate-200/80 hover:bg-red-600 backdrop-blur-md border border-white/40 shadow-lg flex items-center justify-center transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="group flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-slate-200/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
                                 title="Remove image"
                               >
-                                <X className="w-4 h-4 text-slate-600 group-hover:text-white group-hover:scale-110 transition-transform group-hover:stroke-2" />
+                                <X className="h-4 w-4 text-slate-600 transition-transform group-hover:scale-110 group-hover:stroke-2 group-hover:text-white" />
                               </button>
                             </div>
 
-                             {/* Fullscreen Button (Overlay) */}
-                             <div className="absolute bottom-4 right-4 z-20">
-                                <button
-                                  onClick={() => openPreviewImage(currentImageIndex)}
-                                  className="h-8 w-8 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/10 shadow-lg flex items-center justify-center text-white transition-all hover:scale-105"
-                                  title="View fullscreen"
-                                >
-                                  <Maximize2 className="w-4 h-4 drop-shadow-sm" />
-                                </button>
-                             </div>
-                        </div>
+                            {/* Fullscreen Button (Overlay) */}
+                            <div className="absolute bottom-4 right-4 z-20">
+                              <button
+                                onClick={() => openPreviewImage(currentImageIndex)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/10 text-white shadow-lg backdrop-blur-md transition-all hover:scale-105 hover:bg-white/20"
+                                title="View fullscreen"
+                              >
+                                <Maximize2 className="h-4 w-4 drop-shadow-sm" />
+                              </button>
+                            </div>
+                          </div>
 
-                        {/* Navigation Arrows (Outside Image) */}
-                         {files.length > 1 && (
+                          {/* Navigation Arrows (Outside Image) */}
+                          {files.length > 1 && (
                             <>
                               <button
-                                onClick={() => setCurrentImageIndex(i => Math.max(0, i - 1))}
+                                onClick={() => setCurrentImageIndex((i) => Math.max(0, i - 1))}
                                 disabled={currentImageIndex === 0}
-                                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-2 lg:-ml-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                className="absolute left-0 top-1/2 z-20 -ml-2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-xl transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:pointer-events-none disabled:opacity-0 lg:-ml-6"
                                 aria-label="Previous image"
                               >
-                                <ChevronLeft className="h-5 w-5 mr-0.5" />
+                                <ChevronLeft className="ml-0.5 h-5 w-5" />
                               </button>
                               <button
-                                onClick={() => setCurrentImageIndex(i => Math.min(files.length - 1, i + 1))}
+                                onClick={() => setCurrentImageIndex((i) => Math.min(files.length - 1, i + 1))}
                                 disabled={currentImageIndex === files.length - 1}
-                                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-2 lg:-mr-6 h-12 w-12 rounded-full bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center justify-center transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-0 disabled:pointer-events-none z-20"
+                                className="absolute right-0 top-1/2 z-20 -mr-2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-xl transition-all hover:scale-110 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:pointer-events-none disabled:opacity-0 lg:-mr-6"
                                 aria-label="Next image"
                               >
-                                <ChevronRight className="h-5 w-5 ml-0.5" />
+                                <ChevronRight className="ml-0.5 h-5 w-5" />
                               </button>
                             </>
                           )}
-                     </div>
-                  </div>
+                        </div>
+                      </div>
 
-                  {/* Bottom: Thumbnail Strip */}
-                  {files.length > 1 && (
-                    <div className="relative h-32 bg-slate-100/50 border-t border-slate-200 backdrop-blur-sm flex items-center justify-center px-8 z-10 w-full">
-                       {/* Validation Alert Overlay (if needed) */}
-                       {blockingCount > 0 && (
-                          <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-amber-50 text-amber-800 px-4 py-2 rounded-full text-xs font-semibold shadow-sm border border-amber-200 flex items-center gap-2 animate-bounce-subtle">
-                             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                             Complete settings for highlighted images
+                      <div className="mx-auto mb-2 flex w-full max-w-5xl flex-wrap items-center gap-2 px-4">
+                        <span className="text-xs font-medium text-slate-600">Quick Assign:</span>
+                        <button
+                          type="button"
+                          onClick={() => quickAssignRoomType("living_room")}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Living Room
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quickAssignRoomType("bedroom")}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Bedroom
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quickAssignRoomType("kitchen")}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Kitchen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quickAssignRoomType("bathroom-1")}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Bathroom
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => quickAssignRoomType("exterior")}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Exterior
+                        </button>
+                      </div>
+
+                      {/* Bottom: Thumbnail Strip */}
+                      {files.length > 1 && (
+                        <div className="relative z-10 w-full border-t border-slate-200 bg-slate-100/50 px-8 pb-2 pt-3 backdrop-blur-sm">
+                          {/* Validation Alert Overlay (if needed) */}
+                          {blockingCount > 0 && (
+                            <div className="absolute -top-10 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 shadow-sm animate-bounce-subtle">
+                              <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+                              Complete settings for highlighted images
+                            </div>
+                          )}
+
+                          <div className="mx-auto mb-2 flex w-full max-w-5xl items-center justify-between text-xs text-slate-600">
+                            <p>Assign a room type to each image before starting enhancement.</p>
+                            <p>{configuredImagesCount} / {files.length} images configured</p>
                           </div>
-                       )}
-                       
-                       <div className="flex gap-4 overflow-x-auto pb-2 pt-2 snap-x px-4 max-w-full no-scrollbar">
-                          {files.map((file, idx) => {
-                            const status = imageValidationStatus(idx);
-                            const isCurrent = idx === currentImageIndex;
-                            const isMissingInput = status === "needs_input";
-                            
-                            // Status indicators
-                            // Restore Red Outline logic:
-                            // If incomplete: red outline (ring-red-500)
-                            // If active & complete: green (emerald) active ring
-                            // If active & incomplete: red ring + active glow
-                            
-                            let ringClass = "ring-slate-300"; // Default grey
-                            if (isMissingInput) {
+
+                          <div className="mx-auto mb-3 h-2 w-full max-w-5xl overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className="h-full rounded-full bg-blue-600 transition-all"
+                              style={{ width: `${configuredProgressPct}%` }}
+                            />
+                          </div>
+
+                          <div className="no-scrollbar flex max-w-full snap-x gap-4 overflow-x-auto px-4 pb-2 pt-2">
+                            {files.map((file, idx) => {
+                              const status = imageValidationStatus(idx);
+                              const isCurrent = idx === currentImageIndex;
+                              const isMissingInput = status === "needs_input";
+
+                              let ringClass = "ring-slate-300";
+                              if (isMissingInput) {
                                 ringClass = isCurrent ? "ring-red-500 ring-offset-red-50" : "ring-red-500";
-                            } else if (status === "ok") {
+                              } else if (status === "ok") {
                                 ringClass = "ring-emerald-500";
-                            }
-                            
-                            // Apply active scaling and opacity
-                            // Desaturation: grayscale opacity-70 for inactive
-                            const baseClass = isCurrent 
-                              ? `grayscale-0 opacity-100 scale-105 ring-4 ${ringClass} ring-offset-2 shadow-lg z-10` 
-                              : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
+                              }
 
-                            return (
-                              <div key={idx} className="relative group shrink-0 transition-all duration-300 ease-in-out py-1 overflow-hidden p-1">
-                                <button
-                                  id={`thumbnail-btn-${idx}`}
-                                  onClick={() => setCurrentImageIndex(idx)}
-                                  className={`relative w-32 h-24 rounded-lg overflow-hidden transition-all duration-300 ease-in-out bg-slate-200 ${baseClass}`}
-                                >
-                                  <img 
-                                    src={previewUrls[idx]} 
-                                    alt="" 
-                                    className="w-full h-full object-cover" 
-                                    loading="lazy"
-                                  />
-                                </button>
-                                
-                                {/* Thumbnail Delete - Explicit X button */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveImage(idx);
-                                  }}
-                                  disabled={removeDisabled}
-                                  className={`absolute top-2 right-2 h-6 w-6 rounded-full bg-slate-200/90 text-slate-600 shadow-sm flex items-center justify-center transition-all hover:bg-red-600 hover:text-white hover:scale-110 z-20 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                                  title="Remove image"
-                                >
-                                  <X className="w-3 h-3 hover:stroke-2" />
-                                </button>
+                              const baseClass = isCurrent
+                                ? `grayscale-0 opacity-100 scale-105 ring-4 ${ringClass} ring-offset-2 shadow-lg z-10`
+                                : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
 
-                                {/* Alert Icon for Needs Input */}
-                                {isMissingInput && (
-                                   <div className="absolute bottom-2 right-2 bg-red-500 text-white p-0.5 rounded-full shadow-sm z-10 pointer-events-none">
-                                      <Info className="w-3 h-3" />
-                                   </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                       </div>
+                              return (
+                                <div key={idx} className="group relative shrink-0 overflow-hidden p-1 py-1 transition-all duration-300 ease-in-out">
+                                  <button
+                                    id={`thumbnail-btn-${idx}`}
+                                    onClick={() => setCurrentImageIndex(idx)}
+                                    className={`relative h-24 w-32 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${baseClass}`}
+                                  >
+                                    <img
+                                      src={previewUrls[idx]}
+                                      alt=""
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  </button>
+
+                                  {/* Thumbnail Delete - Explicit X button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveImage(idx);
+                                    }}
+                                    disabled={removeDisabled}
+                                    className={`absolute right-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-slate-200/90 text-slate-600 shadow-sm transition-all hover:scale-110 hover:bg-red-600 hover:text-white ${isCurrent ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                                    title="Remove image"
+                                  >
+                                    <X className="h-3 w-3 hover:stroke-2" />
+                                  </button>
+
+                                  {/* Alert Icon for Needs Input */}
+                                  {isMissingInput && (
+                                    <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 shadow-sm">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                                    </div>
+                                  )}
+
+                                  {!isMissingInput && status === "ok" && (
+                                    <div className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full bg-emerald-500 p-0.5 text-white shadow-sm">
+                                      <CheckCircle className="h-3 w-3" />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
                 {/* RIGHT PANEL: Settings Sidebar (Fixed Width) */}
                 <div className="w-96 flex-shrink-0 bg-white border-l border-slate-200 flex flex-col shadow-xl z-20">
@@ -5864,11 +5845,11 @@ export default function BatchProcessor() {
                     )}
                     <div className="flex justify-center mt-4">
                       <button
-                        onClick={() => setActiveTab("describe")}
+                        onClick={() => setActiveTab("images")}
                         className="text-gray-500 hover:text-gray-700 text-sm"
-                        data-testid="button-back-describe"
+                        data-testid="button-back-workspace"
                       >
-                        ← Back to settings
+                        ← Back to workspace
                       </button>
                     </div>
                   </div>
