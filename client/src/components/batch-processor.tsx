@@ -5473,7 +5473,14 @@ export default function BatchProcessor() {
 
         {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
-          <div className="min-h-screen bg-slate-50 relative pointer-events-auto">
+          <div className="min-h-screen bg-slate-50 relative pointer-events-auto overflow-hidden">
+            <div
+              className="absolute inset-0 opacity-40"
+              style={{
+                backgroundImage: `radial-gradient(circle, rgb(148 163 184) 1px, transparent 1px)`,
+                backgroundSize: '24px 24px',
+              }}
+            />
             
             {(runState === "idle") ? (
               /* Idle State - "Ready to Start" similar to before but cleaner */
@@ -5521,11 +5528,11 @@ export default function BatchProcessor() {
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
-             <div className="max-w-5xl mx-auto py-8 px-4">
+             <div className="max-w-7xl mx-auto px-6 py-8 relative z-10">
                 
                 {/* 1. Header Section */}
-                <div className="mb-8">
-                    <div className="flex justify-between items-end mb-4">
+                <div className="mb-10">
+                  <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-end mb-5">
                     <div>
                         {(() => {
                           // ✅ FIX #2: Target-aware completion count
@@ -5635,7 +5642,7 @@ export default function BatchProcessor() {
                     </div>
 
                     {/* 2. Global Progress Bar */}
-                    <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-4 w-full rounded-full overflow-hidden bg-white/80 border border-slate-200 shadow-inner">
                      {/* Calculate total progress - use IIFE for clean variable scope */}
                      {(() => {
                          const completed = results.filter(r => (r?.result?.image || (r?.result?.imageUrl)) || r?.error).length;
@@ -5645,7 +5652,7 @@ export default function BatchProcessor() {
                          const displayPct = isUploading ? 30 : Math.max(5, pct);
                          return (
                             <div 
-                                className="h-full bg-emerald-600 transition-all duration-500 ease-out" 
+                          className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out" 
                                 style={{ width: `${runState === 'done' ? 100 : displayPct}%` }}
                             />
                          );
@@ -5653,8 +5660,8 @@ export default function BatchProcessor() {
                     </div>
                 </div>
 
-                {/* 3. The List */}
-                <div className="space-y-4">
+                  {/* 3. Gallery Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {files.map((file, i) => {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
@@ -5932,11 +5939,11 @@ export default function BatchProcessor() {
                         return (
                           <div 
                             key={i} 
-                            className="group relative bg-white border border-slate-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all flex items-center gap-6"
+                            className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-md hover:shadow-xl transition-all space-y-3"
                           >
                             {/* Thumbnail with Overlay */}
                             <div
-                              className={`relative h-20 w-32 shrink-0 bg-slate-100 rounded-md overflow-hidden border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
+                              className={`relative h-48 w-full bg-slate-100 rounded-lg overflow-hidden border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
                                 if (!previewUrl) return;
                                 setPreviewImage({
@@ -5961,8 +5968,9 @@ export default function BatchProcessor() {
                                 }}
                               />
                               {isProcessing && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
-                                   <Loader2 className="w-5 h-5 text-slate-600 animate-spin" />
+                                <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm">
+                                  <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                                  <Loader2 className="relative z-10 w-6 h-6 text-indigo-600 animate-spin" />
                                 </div>
                               )}
                               {!isProcessing && isUiComplete && (
@@ -5973,11 +5981,11 @@ export default function BatchProcessor() {
                             </div>
 
                             {/* Info Column */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex justify-between items-center mb-1">
-                                <h3 className="text-sm font-semibold text-slate-900 truncate">{file.name}</h3>
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center gap-3">
+                                <h3 className="font-semibold text-sm text-slate-900 truncate">{file.name}</h3>
                                 {/* Individual % - Fake it if processing, real if done */}
-                                <span className="text-xs font-mono text-slate-400">
+                                <span className="text-xs font-mono text-slate-500">
                                     {isDone ? '100%' : isProcessing ? 'Processing...' : '0%'}
                                 </span>
                               </div>
@@ -6026,7 +6034,7 @@ export default function BatchProcessor() {
                                   <StatusBadge status="queued" />
                                 )}
                               </div>
-                              <p className="mt-1 text-xs text-slate-600">
+                              <p className="text-xs text-slate-500">
                                 {displayStatus}
                               </p>
                               {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
@@ -6044,7 +6052,7 @@ export default function BatchProcessor() {
                                 </div>
                               )}
 
-                              <div className="mt-2 space-y-1.5">
+                              <div className="space-y-1.5">
                                 <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${selectedStage === '2' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-50 text-slate-600 border border-slate-200'}`}>
                                   {stageBadgeLabel}
                                 </span>
@@ -6069,7 +6077,7 @@ export default function BatchProcessor() {
                                 {isProcessing && (
                                 <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                                   <div 
-                                    className="h-full bg-slate-400 transition-all duration-300 animate-pulse" 
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300 animate-pulse" 
                                     style={{ width: `${isUploading ? 30 : 60}%` }} 
                                   />
                                 </div>
@@ -6077,7 +6085,7 @@ export default function BatchProcessor() {
                             </div>
 
                             {/* Action / Cancel Column */}
-                            <div className="shrink-0 flex gap-2">
+                            <div className="flex flex-wrap gap-2 pt-1">
                               {bestDisplayUrl && (isUiComplete || isError) && (
                                 <>
                                   <button 
@@ -6087,21 +6095,21 @@ export default function BatchProcessor() {
                                       originalUrl: compareOriginalUrl,
                                       index: i
                                     })}
-                                    className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                                    className="rounded-full px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:opacity-90 transition"
                                   >
                                     Preview
                                   </button>
                                    <button 
                                     onClick={() => handleEditImage(i)}
                                     disabled={result?.retryInFlight || editingImages.has(i)}
-                                    className="text-xs font-medium px-3 py-2 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                    className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     Edit
                                   </button>
                                     <button
                                     onClick={() => handleOpenRetryDialog(i)}
                                     disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
-                                    className="text-xs font-medium px-3 py-2 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                    className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                     data-testid={`button-retry-${i}`}
                                     >
                                     {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
