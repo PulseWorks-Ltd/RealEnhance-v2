@@ -3,6 +3,27 @@ import { ShieldCheck, Sofa, Zap, CheckCircle, Upload, ArrowRight } from 'lucide-
 import { Button } from "@/components/ui/button";
 
 export default function Landing() {
+  const sampleImages = [
+    {
+      type: 'interior',
+      label: 'Interior',
+      gradient: 'from-blue-500 to-violet-600',
+      description: 'Living Room Enhancement',
+    },
+    {
+      type: 'exterior',
+      label: 'Exterior',
+      gradient: 'from-emerald-500 to-teal-600',
+      description: 'Home Facade Staging',
+    },
+    {
+      type: 'kitchen',
+      label: 'Kitchen',
+      gradient: 'from-orange-500 to-rose-600',
+      description: 'Kitchen Declutter',
+    },
+  ] as const;
+
   return (
     <div className="min-h-screen bg-white font-sans text-slate-600">
       
@@ -58,7 +79,77 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 2. THE "WHY REALENHANCE" (Value Props) */}
+      {/* 2. SAMPLE GALLERY */}
+      <section className="bg-white pb-14">
+        <div className="container mx-auto px-4">
+          <div className="text-center space-y-2 mb-8">
+            <h2 className="text-2xl lg:text-3xl font-serif font-semibold text-slate-900">
+              Try with Sample Images
+            </h2>
+            <p className="text-slate-600">
+              Preview realistic before-and-after transformations across common listing photo types.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {sampleImages.map((sample) => (
+              <a
+                key={sample.type}
+                href="/login"
+                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:scale-[1.03] border border-slate-200"
+              >
+                <div className="relative h-52 bg-gradient-to-br from-slate-100 to-slate-200">
+                  <div className="absolute inset-0 flex">
+                    <div className="flex-1 bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 relative">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center space-y-1">
+                          <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Before</div>
+                          <div className="w-12 h-12 mx-auto bg-slate-600/20 rounded-lg"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="w-0.5 bg-white/80 relative z-10 shadow-lg">
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-slate-200 group-hover:scale-110 transition-transform duration-300">
+                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div className={`flex-1 bg-gradient-to-br ${sample.gradient} relative`}>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center space-y-1">
+                          <div className="text-xs font-semibold text-white uppercase tracking-wider">After</div>
+                          <div className="w-12 h-12 mx-auto bg-white/20 rounded-lg backdrop-blur-sm"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="relative p-5 bg-white">
+                  <div className="space-y-1 text-center">
+                    <div className="font-bold text-slate-900 text-lg">{sample.label}</div>
+                    <div className="text-xs text-slate-500">{sample.description}</div>
+                  </div>
+
+                  <div className="mt-3 opacity-0 group-hover:opacity-100 transition-all duration-300 transform group-hover:translate-y-0 translate-y-2">
+                    <div className={`inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-wide bg-gradient-to-r ${sample.gradient} text-white shadow-md`}>
+                      Try Demo
+                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 3. THE "WHY REALENHANCE" (Value Props) */}
       <section className="bg-slate-50 py-20">
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-3 gap-8">
@@ -91,7 +182,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 3. HOW IT WORKS (The "Validator" Logic) */}
+      {/* 4. HOW IT WORKS (The "Validator" Logic) */}
       <section className="bg-white py-24">
         <div className="container mx-auto px-4 text-center max-w-4xl">
           <h2 className="text-3xl lg:text-4xl font-serif font-bold text-slate-900 mb-16">
@@ -144,7 +235,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 4. AUDIENCE SECTION */}
+      {/* 5. AUDIENCE SECTION */}
       <section className="bg-slate-900 py-24 text-white">
         <div className="container mx-auto px-4">
           <div className="grid md:grid-cols-3 gap-12 divide-y md:divide-y-0 md:divide-x divide-slate-800">
@@ -193,7 +284,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 5. FINAL CTA */}
+      {/* 6. FINAL CTA */}
       <section className="bg-white py-24 text-center">
         <div className="container mx-auto px-4 max-w-3xl">
           <h2 className="text-4xl lg:text-5xl font-serif font-bold text-slate-900 mb-8 leading-tight">

@@ -8,7 +8,7 @@ interface EmptyStateLaunchpadProps {
   onSampleSelect?: (sampleType: 'interior' | 'exterior' | 'kitchen') => void;
 }
 
-export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }: EmptyStateLaunchpadProps) {
+export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaunchpadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -39,27 +39,6 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
       onFileDrop(droppedFiles);
     }
   };
-
-  const sampleImages = [
-    { 
-      type: 'interior' as const, 
-      label: 'Interior', 
-      gradient: 'from-blue-500 to-purple-600',
-      description: 'Living Room Enhancement'
-    },
-    { 
-      type: 'exterior' as const, 
-      label: 'Exterior', 
-      gradient: 'from-emerald-500 to-teal-600',
-      description: 'Home Facade Staging'
-    },
-    { 
-      type: 'kitchen' as const, 
-      label: 'Kitchen', 
-      gradient: 'from-orange-500 to-pink-600',
-      description: 'Kitchen Declutter'
-    },
-  ];
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden bg-slate-50">
@@ -171,7 +150,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
 
         {/* What Happens Next - Process Flow with Stronger Active States */}
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center justify-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shadow-lg ring-2 ring-blue-200">
                 1
@@ -191,98 +170,31 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
             </svg>
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg ring-2 ring-emerald-200">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 text-white font-bold text-sm shadow-lg ring-2 ring-amber-200">
                 3
+              </div>
+              <span className="text-amber-700 font-semibold inline-flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4" />
+                Validator Check
+              </span>
+            </div>
+            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+            </svg>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg ring-2 ring-emerald-200">
+                4
               </div>
               <span className="text-slate-800 font-semibold">Download</span>
             </div>
           </div>
         </div>
 
-        {/* Sample Images Gallery */}
-        <div className="space-y-6">
-          <div className="text-center space-y-2">
-            <h3 className="text-xl font-semibold text-slate-800">
-              Try with Sample Images
-            </h3>
-            <p className="text-sm text-slate-600">
-              See the transformation instantly with our demo photos
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-            {sampleImages.map((sample) => (
-              <button
-                key={sample.type}
-                onClick={() => onSampleSelect?.(sample.type)}
-                className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:scale-[1.08] border border-slate-200 cursor-pointer"
-              >
-                {/* Before/After Split Preview */}
-                <div className="relative h-48 bg-gradient-to-br from-slate-100 to-slate-200">
-                  {/* Simulated Before/After with peek effect */}
-                  <div className="absolute inset-0 flex">
-                    {/* Before (left side) */}
-                    <div className="flex-1 bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 relative">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center space-y-1">
-                          <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Before</div>
-                          <div className="w-12 h-12 mx-auto bg-slate-600/20 rounded-lg"></div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Divider with hover effect */}
-                    <div className="w-0.5 bg-white/80 relative z-10 shadow-lg">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-slate-200 group-hover:scale-110 transition-transform duration-300">
-                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                        </svg>
-                      </div>
-                    </div>
-                    
-                    {/* After (right side) */}
-                    <div className={`flex-1 bg-gradient-to-br ${sample.gradient} relative`}>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center space-y-1">
-                          <div className="text-xs font-semibold text-white uppercase tracking-wider">After</div>
-                          <div className="w-12 h-12 mx-auto bg-white/20 rounded-lg backdrop-blur-sm"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Content */}
-                <div className="relative p-5 bg-white">
-                  <div className="space-y-1 text-center">
-                    <div className="font-bold text-slate-900 text-lg">{sample.label}</div>
-                    <div className="text-xs text-slate-500">{sample.description}</div>
-                  </div>
-                  
-                  {/* Hover CTA with high contrast */}
-                  <div className="mt-3 opacity-0 group-hover:opacity-100 transition-all duration-300 transform group-hover:translate-y-0 translate-y-2">
-                    <div className={`
-                      inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg
-                      text-xs font-bold uppercase tracking-wide
-                      bg-gradient-to-r ${sample.gradient} text-white shadow-md
-                    `}>
-                      Try Demo
-                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Features Grid (Optional) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto pt-8">
           <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
@@ -293,8 +205,8 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
           </div>
 
           <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-              <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
@@ -305,8 +217,8 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop, onSampleSelect }
           </div>
 
           <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-              <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex-shrink-0 w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
             </div>
