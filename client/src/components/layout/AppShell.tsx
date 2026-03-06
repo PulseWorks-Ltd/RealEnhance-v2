@@ -43,6 +43,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { usage } = useUsage();
   const location = useLocation();
   const isEnhanceRoute = location.pathname === '/home';
+  const isGalleryRoute = location.pathname === '/enhanced-history';
 
   // Get user initials
   const userInitials = user?.firstName && user?.lastName
@@ -223,7 +224,9 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             "py-6 lg:py-8",
             isEnhanceRoute
               ? "w-full"
-              : "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8"
+              : isGalleryRoute
+                ? "mx-auto w-full max-w-screen-2xl px-4 sm:px-6 lg:px-8"
+                : "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8"
           )}>
             {children}
           </div>

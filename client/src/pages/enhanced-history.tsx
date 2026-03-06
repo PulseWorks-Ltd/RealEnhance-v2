@@ -106,7 +106,7 @@ export default function EnhancedHistoryPage() {
   const renderImageCard = (image: EnhancedImageListItem) => (
     <div
       key={image.id}
-      className="group relative rounded-lg overflow-hidden border border-border bg-card hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+      className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
       onClick={() => setSelected(image)}
     >
       <div className="aspect-[4/3] bg-muted">
@@ -218,7 +218,7 @@ export default function EnhancedHistoryPage() {
                     <span>{folder.address}</span>
                     <Badge variant="outline">{folder.images.length}</Badge>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5">
                     {folder.images.map(renderImageCard)}
                   </div>
                 </section>
@@ -231,7 +231,7 @@ export default function EnhancedHistoryPage() {
                   <Badge variant="outline">{unassignedImages.length}</Badge>
                 </div>
                 {unassignedImages.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5">
                     {unassignedImages.map(renderImageCard)}
                   </div>
                 ) : (

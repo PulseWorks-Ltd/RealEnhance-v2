@@ -5916,7 +5916,7 @@ export default function BatchProcessor() {
                         <p className="text-sm font-semibold text-slate-900">{`Processing ${batchQueueFeedback.total} Images`}</p>
                         <div className="mt-3 h-2 rounded-full bg-slate-200 overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
+                            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500"
                             style={{ width: `${batchQueueFeedback.phaseProgress}%` }}
                           />
                         </div>
@@ -5956,7 +5956,7 @@ export default function BatchProcessor() {
                          const displayPct = isUploading ? 30 : Math.max(5, pct);
                          return (
                             <div 
-                          className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500 ease-out" 
+                          className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out" 
                                 style={{ width: `${runState === 'done' ? 100 : displayPct}%` }}
                             />
                          );
@@ -6300,7 +6300,7 @@ export default function BatchProcessor() {
                               {isProcessing && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm">
                                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent [background-size:200%_100%] animate-[shimmer_2s_infinite]" />
-                                  <Loader2 className="relative z-10 w-6 h-6 text-indigo-600 animate-spin" />
+                                  <Loader2 className="relative z-10 w-6 h-6 text-blue-600 animate-spin" />
                                 </div>
                               )}
                               {!isProcessing && isUiComplete && (
@@ -6409,7 +6409,7 @@ export default function BatchProcessor() {
                               {(isProcessing || isUiComplete || isEditComplete) && (
                                 <div className="mt-3 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                   <div 
-                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500" 
+                                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500" 
                                     style={{ width: `${Math.max(0, Math.min(100, stageProgressValue))}%` }} 
                                   />
                                 </div>
