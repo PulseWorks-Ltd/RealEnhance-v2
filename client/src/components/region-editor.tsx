@@ -1502,6 +1502,7 @@ export function RegionEditor({
                     <SelectItem value="living_dining">Living &amp; Dining</SelectItem>
                     <SelectItem value="multiple_living">Multiple Living</SelectItem>
                     <SelectItem value="bathroom">Bathroom</SelectItem>
+                    <SelectItem value="sunroom">Sunroom</SelectItem>
                     <SelectItem value="exterior">Exterior</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>

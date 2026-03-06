@@ -56,6 +56,31 @@ type SceneDetectResult = {
 
 const EMPTY_SCENE_FEATURES = { skyTop10: 0, skyTop40: 0, grassBottom: 0, blueOverall: 0, greenOverall: 0, meanLum: 0 };
 
+const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
+  { value: "bedroom", label: "Bedroom" },
+  { value: "living_room", label: "Living" },
+  { value: "dining_room", label: "Dining" },
+  { value: "kitchen", label: "Kitchen" },
+  { value: "kitchen_dining", label: "Kitchen & Dining" },
+  { value: "kitchen_living", label: "Kitchen & Living" },
+  { value: "living_dining", label: "Living & Dining" },
+  { value: "multiple_living", label: "Multiple Living" },
+  { value: "study", label: "Study" },
+  { value: "office", label: "Office" },
+  { value: "bathroom-1", label: "Bathroom 1" },
+  { value: "bathroom-2", label: "Bathroom 2" },
+  { value: "laundry", label: "Laundry" },
+  { value: "garage", label: "Garage" },
+  { value: "basement", label: "Basement" },
+  { value: "attic", label: "Attic" },
+  { value: "hallway", label: "Hallway" },
+  { value: "staircase", label: "Staircase" },
+  { value: "entryway", label: "Entryway" },
+  { value: "closet", label: "Closet" },
+  { value: "pantry", label: "Pantry" },
+  { value: "sunroom", label: "Sunroom" },
+];
+
 function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
   return images.reduce((sum, img) => {
     const sceneType = String(img.sceneType || "").toLowerCase();
@@ -82,16 +107,11 @@ const clamp01 = (value: number | null | undefined): number | null => {
   return Math.min(1, Math.max(0, v));
 };
 
-// Scene confidence guard (auto-accept only when >= guard)
-// NOTE:
-// If VITE_SCENE_CONF_THRESHOLD === 0,
-// confidence does NOT gate auto-selection.
-// Scene auto-select is based purely on LOW/HIGH hysteresis band.
-const SCENE_CONFIDENCE_GUARD = (() => {
-  const raw = Number((import.meta as any).env?.VITE_SCENE_CONF_THRESHOLD);
-  const clamped = clamp01(raw);
-  return clamped === null ? 0.75 : clamped;
-})();
+const normalizeSceneLabel = (value: unknown): SceneType | null => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "interior" || normalized === "exterior") return normalized;
+  return null;
+};
 
 // Scene signal thresholds (two-band hysteresis)
 const SCENE_SIGNAL_LOW = (() => {
@@ -939,15 +959,6 @@ export default function BatchProcessor() {
     });
   }, [addonHref, billingHref, hasRoleInfo, isAdminUser, toast]);
 
-  const isSceneAutoAcceptable = (pred?: SceneDetectResult | null) => {
-    if (!pred) return false;
-    if (!pred.scene) return false;
-    const conf = clamp01(pred.confidence);
-    if (conf === null) return false;
-    if (pred.reason === "uncertain" || pred.reason === "covered_exterior_suspect") return false;
-    return conf >= SCENE_CONFIDENCE_GUARD;
-  };
-
   // Lightweight client-side scene detector (prefill UX): 3-state with uncertain band
   async function detectSceneFromFile(f: File): Promise<SceneDetectResult> {
     const cacheKey = `${f.name}:${f.size}:${f.lastModified}`;
@@ -1203,7 +1214,7 @@ export default function BatchProcessor() {
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
           nextPreds[imageId] = prediction;
-          if (isSceneAutoAcceptable(prediction) && prediction.scene && !manualSceneTypesByIdRef.current[imageId]) {
+          if (prediction.scene && !manualSceneTypesByIdRef.current[imageId]) {
             setImageSceneTypesById(prev => {
               if (prev[imageId] && prev[imageId] !== "auto") return prev;
               return { ...prev, [imageId]: prediction.scene as string };
@@ -1239,7 +1250,7 @@ export default function BatchProcessor() {
     const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return explicit;
     const pred = scenePredictionsById[imageId];
-    if (isSceneAutoAcceptable(pred) && pred?.scene) return pred.scene;
+    if (pred?.scene) return pred.scene;
     return null;
   }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
@@ -1251,14 +1262,14 @@ export default function BatchProcessor() {
     const explicit = imageSceneTypesById[imageId];
     if (explicit === "interior" || explicit === "exterior") return false;
     const pred = scenePredictionsById[imageId];
-    if (isSceneAutoAcceptable(pred)) return false;
-    return true; // no confident prediction and no user selection
+    if (pred?.scene) return false;
+    return true; // no scene prediction and no user selection
   }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const roomTypeRequiresInput = useCallback((index: number) => {
     if (!allowStaging) return false;
     const scene = finalSceneForIndex(index);
-    if (scene === "exterior") return false;
+    if (scene !== "interior") return false;
     const imageId = getImageIdForIndex(index);
     if (!imageId) return true;
     return !(imageRoomTypesById[imageId]);
@@ -1292,7 +1303,7 @@ export default function BatchProcessor() {
       source: prediction?.source || "server",
     };
     setScenePredictionsById(prev => ({ ...prev, [imageId]: normalized }));
-    if (isSceneAutoAcceptable(normalized) && normalized.scene) {
+    if (normalized.scene) {
       setImageSceneTypesById(prev => {
         if (prev[imageId] && prev[imageId] !== "auto") return prev;
         return { ...prev, [imageId]: normalized.scene as string };
@@ -1540,18 +1551,19 @@ export default function BatchProcessor() {
         // If the server included job meta like scene detection, surface it
         if (next.result && next.result.meta && next.result.meta.scene) {
           const scene = next.result.meta.scene;
+          const normalizedScene = normalizeSceneLabel(scene.label);
           const conf = clamp01(scene.confidence ?? null);
           recordScenePrediction(next.index, {
-            scene: (scene.label as SceneLabel) ?? null,
+            scene: normalizedScene,
             confidence: conf ?? 0,
             signal: clamp01(scene.signal ?? conf ?? null) ?? 0,
             features: scene.features || EMPTY_SCENE_FEATURES,
-            reason: scene.reason || (scene.label ? (scene.label === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
+            reason: scene.reason || (normalizedScene ? (normalizedScene === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
             source: "server",
           });
-          if (scene.label) {
-            setProgressText(`Detected: ${scene.label} (${Math.round((conf || 0) * 100)}%)`);
-            setLastDetected({ index: next.index, label: scene.label, confidence: conf || 0 });
+          if (normalizedScene) {
+            setProgressText(`Detected: ${normalizedScene} (${Math.round((conf || 0) * 100)}%)`);
+            setLastDetected({ index: next.index, label: normalizedScene, confidence: conf || 0 });
           }
         }
 
@@ -1937,13 +1949,14 @@ export default function BatchProcessor() {
             }
             if (item?.meta?.scene) {
               const scene = item.meta.scene;
+              const normalizedScene = normalizeSceneLabel(scene.label);
               const conf = clamp01(scene.confidence ?? null);
               recordScenePrediction(i, {
-                scene: (scene.label as SceneLabel) ?? null,
+                scene: normalizedScene,
                 confidence: conf ?? 0,
                 signal: clamp01(scene.signal ?? conf ?? null) ?? 0,
                 features: scene.features || EMPTY_SCENE_FEATURES,
-                reason: scene.reason || (scene.label ? (scene.label === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
+                reason: scene.reason || (normalizedScene ? (normalizedScene === "exterior" ? "confident_exterior" : "confident_interior") : "uncertain"),
                 source: "server",
               });
             }
@@ -5301,6 +5314,11 @@ export default function BatchProcessor() {
                       <span className="text-sm font-medium">Interior</span>
                     </button>
                   </div>
+                  {sceneRequiresInput(currentImageIndex) && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Scene detection unsure - please select Interior or Exterior.
+                    </p>
+                  )}
                 </section>
 
                 {/* AI Enhancements Section */}
@@ -5347,7 +5365,7 @@ export default function BatchProcessor() {
                 )}
 
                 {/* Room Type Selection - For interior photos */}
-                {(currentFinalScene !== "exterior") && (
+                {currentFinalScene === "interior" && (
                   <section className="pt-2 border-t border-slate-100">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Room Staging</label>
                     <FixedSelect
@@ -5359,27 +5377,9 @@ export default function BatchProcessor() {
                       placeholder="Select room type…"
                       className="w-full"
                     >
-                      <FixedSelectItem value="bedroom">Bedroom</FixedSelectItem>
-                      <FixedSelectItem value="living_room">Living</FixedSelectItem>
-                      <FixedSelectItem value="dining_room">Dining</FixedSelectItem>
-                      <FixedSelectItem value="kitchen">Kitchen</FixedSelectItem>
-                      <FixedSelectItem value="kitchen_dining">Kitchen &amp; Dining</FixedSelectItem>
-                      <FixedSelectItem value="kitchen_living">Kitchen &amp; Living</FixedSelectItem>
-                      <FixedSelectItem value="living_dining">Living &amp; Dining</FixedSelectItem>
-                      <FixedSelectItem value="multiple_living">Multiple Living</FixedSelectItem>
-                      <FixedSelectItem value="study">Study</FixedSelectItem>
-                      <FixedSelectItem value="office">Office</FixedSelectItem>
-                      <FixedSelectItem value="bathroom-1">Bathroom 1</FixedSelectItem>
-                      <FixedSelectItem value="bathroom-2">Bathroom 2</FixedSelectItem>
-                      <FixedSelectItem value="laundry">Laundry</FixedSelectItem>
-                      <FixedSelectItem value="garage">Garage</FixedSelectItem>
-                      <FixedSelectItem value="basement">Basement</FixedSelectItem>
-                      <FixedSelectItem value="attic">Attic</FixedSelectItem>
-                      <FixedSelectItem value="hallway">Hallway</FixedSelectItem>
-                      <FixedSelectItem value="staircase">Staircase</FixedSelectItem>
-                      <FixedSelectItem value="entryway">Entryway</FixedSelectItem>
-                      <FixedSelectItem value="closet">Closet</FixedSelectItem>
-                      <FixedSelectItem value="pantry">Pantry</FixedSelectItem>
+                      {INTERIOR_ROOM_TYPES.map((room) => (
+                        <FixedSelectItem key={room.value} value={room.value}>{room.label}</FixedSelectItem>
+                      ))}
                     </FixedSelect>
                     {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
                       <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
@@ -5396,8 +5396,7 @@ export default function BatchProcessor() {
                   const roomNeeds = roomTypeRequiresInput(currentImageIndex);
                   const prediction = currentImageId ? scenePredictionsById[currentImageId] : undefined;
                   const conf = clamp01(prediction?.confidence ?? null);
-                  const autoAccepted = isSceneAutoAcceptable(prediction);
-                  const detectedLine = autoAccepted && prediction?.scene
+                  const detectedLine = prediction?.scene
                     ? `Scene type was auto-detected as ${prediction.scene}. You can change it if it looks wrong.`
                     : null;
                   const isAlert = sceneNeeds || roomNeeds;

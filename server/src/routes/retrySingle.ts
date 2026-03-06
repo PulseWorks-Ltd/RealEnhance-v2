@@ -82,6 +82,7 @@ const CANONICAL_ROOM_TYPES = new Set([
   "basement",
   "attic",
   "hallway",
+  "sunroom",
   "staircase",
   "entryway",
   "closet",
@@ -118,6 +119,7 @@ function normalizeRoomType(raw: unknown): string {
     "living-and-dining": "living_dining",
     "bathroom-1": "bathroom_1",
     "bathroom-2": "bathroom_2",
+    "sun-room": "sunroom",
   };
   return aliases[value] || value.replace(/-/g, "_");
 }

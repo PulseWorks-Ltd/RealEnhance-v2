@@ -88,6 +88,7 @@ export type RoomType =
   | "basement"
   | "attic"
   | "hallway"
+  | "sunroom"
   | "staircase"
   | "entryway"
   | "closet"

@@ -739,6 +739,8 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
       ? "Stage this as an OFFICE: Add desk as primary piece, office chair, storage solutions, and work-appropriate décor."
       : roomType === "kitchen"
       ? "Stage this as a KITCHEN: Add appropriate kitchen accessories, décor on counters/islands (minimally), and enhance existing features."
+      : roomType === "sunroom"
+      ? "Stage this as a SUNROOM: Design a bright, airy space with abundant natural light, light furniture, neutral tones, indoor plants, and minimal clutter. Do NOT modify, resize, or relocate any windows or glass doors, and preserve all architectural openings exactly."
       : roomType === "bathroom"
       ? "Stage this as a BATHROOM: Add appropriate bathroom accessories, towels, and minimal décor without modifying fixtures."
       : `Stage this space according to its ${roomType} function with appropriate furniture and décor.`,

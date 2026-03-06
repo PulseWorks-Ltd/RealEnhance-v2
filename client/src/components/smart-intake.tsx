@@ -162,6 +162,7 @@ export default function SmartIntake({
               <SelectItem value="basement">Basement</SelectItem>
               <SelectItem value="attic">Attic</SelectItem>
               <SelectItem value="hallway">Hallway</SelectItem>
+              <SelectItem value="sunroom">Sunroom</SelectItem>
               <SelectItem value="staircase">Staircase</SelectItem>
               <SelectItem value="entryway">Entryway</SelectItem>
               <SelectItem value="closet">Closet</SelectItem>

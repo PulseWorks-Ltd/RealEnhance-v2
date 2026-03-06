@@ -195,7 +195,8 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
                     <SelectItem value="garage">Garage</SelectItem>
                     <SelectItem value="laundry">Laundry</SelectItem>
                     <SelectItem value="outdoor">Outdoor</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="sunroom">Sunroom</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
                 {roomTypeError && <div className="text-red-500 text-xs mt-1">{roomTypeError}</div>}
