@@ -5499,7 +5499,8 @@ export default function BatchProcessor() {
 
         {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
-          <div className="min-h-screen bg-slate-50 relative pointer-events-auto overflow-hidden">
+          <div className="min-h-screen bg-slate-50 relative pointer-events-auto overflow-x-hidden">
+            <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
             <div
               className="absolute inset-0 opacity-40"
               style={{
@@ -5554,11 +5555,11 @@ export default function BatchProcessor() {
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
-             <div className="max-w-7xl mx-auto px-6 py-8 relative z-10">
+             <div className="max-w-[1600px] mx-auto px-6 lg:px-8 py-8 relative z-10">
                 
                 {/* 1. Header Section */}
-                <div className="mb-10">
-                  <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-end mb-5">
+                <div className="sticky top-0 z-20 -mx-6 lg:-mx-8 px-6 lg:px-8 py-4 mb-8 bg-white/80 backdrop-blur border-b border-slate-200">
+                  <div className="flex flex-col gap-4 md:flex-row md:justify-between md:items-center mb-4">
                     <div>
                         {(() => {
                           // ✅ FIX #2: Target-aware completion count
@@ -5609,16 +5610,25 @@ export default function BatchProcessor() {
                           const title = isComplete ? "Enhancement Complete" : "Processing Batch";
                           const subtitle = isComplete
                             ? "Please review and download your images."
-                            : `Please keep this tab open. ${remaining} image${remaining === 1 ? '' : 's'} remaining.`;
+                            : `${remaining} image${remaining === 1 ? '' : 's'} remaining`;
                           return (
                             <>
                               <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">{title}</h1>
-                              <p className="text-slate-500 mt-1">{subtitle}</p>
+                              <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
                             </>
                           );
                         })()}
                     </div>
-                    <div className="text-right">
+                    <div className="flex items-center gap-3 md:justify-end">
+                        {runState === 'running' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={cancelBatchProcessing}
+                          >
+                            Cancel enhancement
+                          </Button>
+                        )}
                         {(runState === 'running' || isUploading) && (
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
                                 <Loader2 className="w-3 h-3 mr-2 animate-spin" />
@@ -5634,7 +5644,6 @@ export default function BatchProcessor() {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="ml-3"
                               onClick={handleRestart}
                               title="Clear results and start a new batch"
                             >
@@ -5642,22 +5651,11 @@ export default function BatchProcessor() {
                             </Button>
                             </>
                         )}
-                        {runState === 'running' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="ml-3"
-                            onClick={cancelBatchProcessing}
-                          >
-                            Cancel enhancement
-                          </Button>
-                        )}
                         {/* Failsafe: Always show reset when there are results, even if stuck in weird state */}
                         {results.length > 0 && runState !== 'running' && runState !== 'done' && (
                           <Button
                             variant="outline"
                             size="sm"
-                            className="ml-3"
                             onClick={handleRestart}
                             title="Reset and clear all results"
                           >
@@ -5668,7 +5666,7 @@ export default function BatchProcessor() {
                     </div>
 
                     {/* 2. Global Progress Bar */}
-                    <div className="h-4 w-full rounded-full overflow-hidden bg-white/80 border border-slate-200 shadow-inner">
+                    <div className="h-4 w-full rounded-full overflow-hidden bg-slate-200">
                      {/* Calculate total progress - use IIFE for clean variable scope */}
                      {(() => {
                          const completed = results.filter(r => (r?.result?.image || (r?.result?.imageUrl)) || r?.error).length;
@@ -5687,7 +5685,7 @@ export default function BatchProcessor() {
                 </div>
 
                   {/* 3. Gallery Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                     {files.map((file, i) => {
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
@@ -5965,11 +5963,11 @@ export default function BatchProcessor() {
                         return (
                           <div 
                             key={i} 
-                            className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-md hover:shadow-xl transition-all space-y-3"
+                            className="group relative rounded-xl border border-slate-200 bg-white p-4 shadow-md hover:shadow-xl hover:-translate-y-[2px] transition-all duration-300 space-y-3"
                           >
                             {/* Thumbnail with Overlay */}
                             <div
-                              className={`relative h-48 w-full bg-slate-100 rounded-lg overflow-hidden border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
+                              className={`relative w-full aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
                                 if (!previewUrl) return;
                                 setPreviewImage({
@@ -5995,7 +5993,7 @@ export default function BatchProcessor() {
                               />
                               {isProcessing && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm">
-                                  <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent [background-size:200%_100%] animate-[shimmer_2s_infinite]" />
                                   <Loader2 className="relative z-10 w-6 h-6 text-indigo-600 animate-spin" />
                                 </div>
                               )}
