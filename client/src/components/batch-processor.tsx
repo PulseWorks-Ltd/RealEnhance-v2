@@ -3444,22 +3444,19 @@ export default function BatchProcessor() {
         stageMap?.stage1A ||
         null;
 
-      if (!stage1BBaseline && !canUseStage1AForStage2Retry) {
-        toast({
-          title: "Retry unavailable",
-          description: stage1BWasRequested
-            ? "This image has no Stage 1B baseline. Retry requires Stage 1A so Stage 1B can be rebuilt before staging."
-            : "This image has no valid Stage 1A/1B baseline available for stage-only retry.",
-          variant: "destructive",
-        });
-        return;
-      }
+      const hasAnyStageBaseline = !!(stage1BBaseline || stage1ABaseline);
+      const isFullPipelineFallback = !hasAnyStageBaseline;
 
-      // Retry-single backend is deterministic Stage-2-only from Stage 1B baseline.
+      // Retry-single backend remains deterministic Stage-2-only when baseline exists.
+      // When baseline is missing, let backend fallback restart full pipeline from original upload.
       const effectiveStagesToRun = ["2"] as StageKey[];
       const effectiveAllowStaging = true;
       const effectiveSourceUrl = stage1BBaseline || stage1ABaseline;
-      const effectiveSourceStageLabel = stage1BBaseline ? "stage1b" : "stage1a";
+      const effectiveSourceStageLabel = stage1BBaseline
+        ? "stage1b"
+        : stage1ABaseline
+          ? "stage1a"
+          : "original";
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
@@ -3468,6 +3465,7 @@ export default function BatchProcessor() {
         forceStage2Retry,
         requiresStage1BRebuild,
         canUseStage1AForStage2Retry,
+        isFullPipelineFallback,
         stage1BWasRequested,
         hasStage1BBaseline,
         hasStage1ABaseline,
