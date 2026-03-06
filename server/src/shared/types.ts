@@ -182,6 +182,7 @@ export interface EnhanceJobPayload {
   imageId: ImageId;
   type: "enhance";
   agencyId?: string | null;          // Usage/billing context
+  propertyId?: string | null;
   listingId?: string;                // Optional grouping across listings
   manualSceneOverride?: boolean;     // Top-level override flag (legacy support)
   options: {
@@ -233,12 +234,16 @@ export interface EditJobPayload {
   createdAt: string; // ISO
   allowStaging?: boolean;
   stagingStyle?: string;
+  propertyId?: string;
+  sourceImageId?: string;
 }
 
 export interface RegionEditJobPayload {
   jobId: JobId;
   userId: UserId;
   imageId: ImageId;
+  sourceImageId?: ImageId;
+  propertyId?: string;
   type: "region-edit";
   baseVersionId: string;
   mode: "Add" | "Remove" | "Restore";

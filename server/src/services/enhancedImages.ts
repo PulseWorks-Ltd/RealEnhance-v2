@@ -1,13 +1,16 @@
 /**
  * Enhanced Images Service
  *
- * Manages previously enhanced images with quota-bound retention.
- * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
- * Oldest images expire first (FIFO).
+ * Manages previously enhanced images with quota-bound retention,
+ * property-folder grouping, and version lineage.
  */
 
 import { pool } from '../db/index.js';
-import type { EnhancedImage, EnhancedImageListItem } from '@realenhance/shared/types';
+import type {
+  EnhancedImage,
+  EnhancedImageGalleryResponse,
+  EnhancedImageListItem,
+} from '@realenhance/shared/types';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
 import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
 
@@ -22,27 +25,13 @@ async function safeSign(key?: string | null): Promise<string | null> {
   }
 }
 
-/**
- * LAZY CLEANUP APPROACH (V1)
- *
- * Retention is enforced lazily:
- * - On list/read operations, count retained images
- * - If count > max allowed, expire oldest images
- * - Expired images are immediately hidden from UI
- *
- * Why lazy cleanup?
- * - Simpler implementation for launch
- * - No background job infrastructure required
- * - Automatic enforcement on every read
- * - Storage deletion can be done async (optional)
- *
- * Future: Consider background cleanup job for storage deletion
- */
-
 interface CreateEnhancedImageParams {
   agencyId: string;
   userId: string;
   jobId: string;
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
   publicUrl: string;
   thumbnailUrl?: string;
@@ -57,14 +46,17 @@ interface CreateEnhancedImageParams {
   stage2AttemptId?: string;
 }
 
+interface Scope {
+  agencyId: string;
+  userId?: string;
+}
+
 /**
- * Create a new enhanced image record
- * Automatically generates audit_ref and enforces retention limits
+ * Create a new enhanced image record.
  */
 export async function createEnhancedImage(
   params: CreateEnhancedImageParams
 ): Promise<EnhancedImage> {
-
   const auditRef = generateAuditRef();
   const traceId = params.traceId || generateTraceId(params.jobId);
   const storageKey = extractStorageKey(params.publicUrl);
@@ -75,13 +67,14 @@ export async function createEnhancedImage(
   const result = await pool.query(
     `INSERT INTO enhanced_images (
       agency_id, user_id, job_id, stages_completed,
+      property_id, parent_image_id, source,
       storage_key, public_url, thumbnail_url,
       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
       size_bytes, content_type,
       audit_ref, trace_id,
       stage12_attempt_id, stage2_attempt_id,
       is_expired
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, FALSE)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, FALSE)
     ON CONFLICT (job_id) DO UPDATE SET
       updated_at = NOW()
     RETURNING *`,
@@ -90,6 +83,9 @@ export async function createEnhancedImage(
       params.userId,
       params.jobId,
       params.stagesCompleted,
+      params.propertyId || null,
+      params.parentImageId || null,
+      params.source || 'stage2',
       storageKey,
       params.publicUrl,
       params.thumbnailUrl || params.publicUrl,
@@ -109,60 +105,191 @@ export async function createEnhancedImage(
   const row = result.rows[0];
   console.log(`[enhanced-images] Created record: ${row.audit_ref} for job ${params.jobId}`);
 
-  // Enforce retention limits after insert
   await enforceRetentionLimits(params.agencyId);
 
   return dbRowToEnhancedImage(row);
 }
 
+function scopedWhereClause(scope: Scope, startParam: number = 1): { sql: string; params: any[] } {
+  const clauses = [`ei.agency_id = $${startParam}`, 'ei.is_expired = FALSE'];
+  const params: any[] = [scope.agencyId];
+
+  if (scope.userId) {
+    clauses.push(`ei.user_id = $${startParam + 1}`);
+    params.push(scope.userId);
+  }
+
+  return {
+    sql: clauses.join(' AND '),
+    params,
+  };
+}
+
 /**
- * Get enhanced images for a user or agency
- * Enforces retention limits before returning results
- *
- * @param agencyId - Agency ID to filter by
- * @param userId - Optional: If provided, only return user's images (for non-admin users)
- * @param limit - Max number of results to return (default: 100)
- * @param offset - Pagination offset (default: 0)
+ * Grouped gallery payload: property folders + unassigned images.
  */
 export async function listEnhancedImages(
   agencyId: string,
   userId?: string,
   limit: number = 100,
   offset: number = 0
-): Promise<{ images: EnhancedImageListItem[]; total: number }> {
-
-  // Enforce retention before listing (lazy cleanup)
+): Promise<EnhancedImageGalleryResponse> {
   await enforceRetentionLimits(agencyId);
 
-    const baseQuery = userId
-     ? `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
-       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key
-       FROM enhanced_images
-       WHERE agency_id = $1 AND user_id = $2 AND is_expired = FALSE
-       ORDER BY created_at DESC`
-     : `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
-       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key
-       FROM enhanced_images
-       WHERE agency_id = $1 AND is_expired = FALSE
-       ORDER BY created_at DESC`;
+  const scope = { agencyId, userId };
+  const scoped = scopedWhereClause(scope);
 
-  const countQuery = userId
-    ? `SELECT COUNT(*) FROM enhanced_images WHERE agency_id = $1 AND user_id = $2 AND is_expired = FALSE`
-    : `SELECT COUNT(*) FROM enhanced_images WHERE agency_id = $1 AND is_expired = FALSE`;
+  const listSql = `
+    SELECT
+      ei.id,
+      ei.public_url,
+      ei.thumbnail_url,
+      ei.stages_completed,
+      ei.created_at,
+      ei.audit_ref,
+      ei.original_s3_key,
+      ei.enhanced_s3_key,
+      ei.thumb_s3_key,
+      ei.remote_original_url,
+      ei.storage_key,
+      ei.property_id,
+      ei.parent_image_id,
+      ei.source,
+      p.address AS property_address,
+      p.normalized_address AS property_normalized_address,
+      (
+        SELECT COUNT(*)::int
+        FROM enhanced_images c
+        WHERE c.parent_image_id = ei.id
+          AND c.is_expired = FALSE
+          AND c.agency_id = ei.agency_id
+          ${userId ? 'AND c.user_id = ei.user_id' : ''}
+      ) AS version_count
+    FROM enhanced_images ei
+    LEFT JOIN properties p ON p.id = ei.property_id
+    WHERE ${scoped.sql}
+    ORDER BY ei.created_at DESC
+    LIMIT $${scoped.params.length + 1}
+    OFFSET $${scoped.params.length + 2}
+  `;
 
-  const params = userId ? [agencyId, userId] : [agencyId];
+  const countSql = `
+    SELECT COUNT(*)
+    FROM enhanced_images ei
+    WHERE ${scoped.sql}
+  `;
 
   const [listResult, countResult] = await Promise.all([
-    pool.query(baseQuery + ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [
-      ...params,
-      limit,
-      offset,
-    ]),
-    pool.query(countQuery, params),
+    pool.query(listSql, [...scoped.params, limit, offset]),
+    pool.query(countSql, scoped.params),
   ]);
 
-  const images: EnhancedImageListItem[] = [];
+  const propertyMap = new Map<string, { id: string; address: string; normalizedAddress: string; images: EnhancedImageListItem[] }>();
+  const unassignedImages: EnhancedImageListItem[] = [];
+  const flatImages: EnhancedImageListItem[] = [];
+
   for (const row of listResult.rows) {
+    const enhancedKey = row.enhanced_s3_key || row.storage_key || null;
+    const thumbKey = row.thumb_s3_key || row.storage_key || null;
+    const originalKey = row.original_s3_key || null;
+
+    const signedEnhanced = enhancedKey ? await safeSign(enhancedKey) : row.public_url;
+    const signedThumb = thumbKey ? await safeSign(thumbKey) : row.thumbnail_url;
+    const signedOriginal = originalKey ? await safeSign(originalKey) : (row.remote_original_url || null);
+
+    const image: EnhancedImageListItem = {
+      id: row.id,
+      thumbnailUrl: signedThumb || row.thumbnail_url,
+      publicUrl: signedEnhanced || row.public_url,
+      originalUrl: signedOriginal,
+      stagesCompleted: row.stages_completed,
+      createdAt: row.created_at,
+      auditRef: row.audit_ref,
+      propertyId: row.property_id,
+      parentImageId: row.parent_image_id,
+      source: row.source,
+      versionCount: Number(row.version_count || 0),
+    };
+
+    flatImages.push(image);
+
+    if (row.property_id) {
+      if (!propertyMap.has(row.property_id)) {
+        propertyMap.set(row.property_id, {
+          id: row.property_id,
+          address: row.property_address || 'Untitled Property',
+          normalizedAddress: row.property_normalized_address || '',
+          images: [],
+        });
+      }
+      propertyMap.get(row.property_id)!.images.push(image);
+    } else {
+      unassignedImages.push(image);
+    }
+  }
+
+  const properties = Array.from(propertyMap.values()).sort((a, b) => a.address.localeCompare(b.address));
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  return {
+    properties,
+    unassignedImages,
+    total,
+    images: flatImages,
+  };
+}
+
+/**
+ * Get one image with scoped access checks.
+ */
+export async function getEnhancedImage(
+  imageId: string,
+  agencyId: string,
+  userId?: string
+): Promise<EnhancedImage | null> {
+  await enforceRetentionLimits(agencyId);
+
+  const query = userId
+    ? `SELECT * FROM enhanced_images
+       WHERE id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE`
+    : `SELECT * FROM enhanced_images
+       WHERE id = $1 AND agency_id = $2 AND is_expired = FALSE`;
+
+  const params = userId ? [imageId, agencyId, userId] : [imageId, agencyId];
+  const result = await pool.query(query, params);
+
+  if (result.rows.length === 0) return null;
+  return dbRowToEnhancedImage(result.rows[0]);
+}
+
+/**
+ * Version history endpoint helper.
+ */
+export async function getImageVersions(
+  imageId: string,
+  agencyId: string,
+  userId?: string
+): Promise<EnhancedImageListItem[]> {
+  await enforceRetentionLimits(agencyId);
+
+  const where = userId
+    ? `agency_id = $1 AND user_id = $2 AND is_expired = FALSE AND (id = $3 OR parent_image_id = $3)`
+    : `agency_id = $1 AND is_expired = FALSE AND (id = $2 OR parent_image_id = $2)`;
+
+  const params = userId ? [agencyId, userId, imageId] : [agencyId, imageId];
+
+  const result = await pool.query(
+    `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
+            original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key,
+            property_id, parent_image_id, source
+     FROM enhanced_images
+     WHERE ${where}
+     ORDER BY created_at ASC`,
+    params
+  );
+
+  const images: EnhancedImageListItem[] = [];
+  for (const row of result.rows) {
     const enhancedKey = row.enhanced_s3_key || row.storage_key || null;
     const thumbKey = row.thumb_s3_key || row.storage_key || null;
     const originalKey = row.original_s3_key || null;
@@ -179,62 +306,65 @@ export async function listEnhancedImages(
       stagesCompleted: row.stages_completed,
       createdAt: row.created_at,
       auditRef: row.audit_ref,
+      propertyId: row.property_id,
+      parentImageId: row.parent_image_id,
+      source: row.source,
+      versionCount: 0,
     });
   }
 
-  const total = parseInt(countResult.rows[0].count, 10);
-
-  return { images, total };
+  return images;
 }
 
 /**
- * Get a single enhanced image by ID
- * Enforces retention and permissions
- *
- * @param imageId - UUID of the enhanced image
- * @param agencyId - Agency ID for permission check
- * @param userId - Optional: User ID for additional permission check
+ * Resolve an enhanced_images row by URL in scoped access context.
+ * Used by region-edit to set parentImageId/propertyId lineage.
  */
-export async function getEnhancedImage(
-  imageId: string,
-  agencyId: string,
-  userId?: string
-): Promise<EnhancedImage | null> {
+export async function findScopedEnhancedImageByUrl(params: {
+  agencyId: string;
+  userId?: string;
+  publicUrl: string;
+}): Promise<{ id: string; propertyId: string | null; userId: string; agencyId: string } | null> {
+  const query = params.userId
+    ? `SELECT id, property_id, user_id, agency_id
+       FROM enhanced_images
+       WHERE agency_id = $1
+         AND user_id = $2
+         AND is_expired = FALSE
+         AND (
+           split_part(public_url, '?', 1) = split_part($3, '?', 1)
+           OR split_part(thumbnail_url, '?', 1) = split_part($3, '?', 1)
+         )
+       ORDER BY created_at DESC
+       LIMIT 1`
+    : `SELECT id, property_id, user_id, agency_id
+       FROM enhanced_images
+       WHERE agency_id = $1
+         AND is_expired = FALSE
+         AND (
+           split_part(public_url, '?', 1) = split_part($2, '?', 1)
+           OR split_part(thumbnail_url, '?', 1) = split_part($2, '?', 1)
+         )
+       ORDER BY created_at DESC
+       LIMIT 1`;
 
-  // Enforce retention before retrieval (lazy cleanup)
-  await enforceRetentionLimits(agencyId);
+  const args = params.userId
+    ? [params.agencyId, params.userId, params.publicUrl]
+    : [params.agencyId, params.publicUrl];
 
-  const query = userId
-    ? `SELECT * FROM enhanced_images
-       WHERE id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE`
-    : `SELECT * FROM enhanced_images
-       WHERE id = $1 AND agency_id = $2 AND is_expired = FALSE`;
+  const result = await pool.query(query, args);
+  if (result.rows.length === 0) return null;
 
-  const params = userId ? [imageId, agencyId, userId] : [imageId, agencyId];
-
-  const result = await pool.query(query, params);
-
-  if (result.rows.length === 0) {
-    return null;
-  }
-
-  return await dbRowToEnhancedImage(result.rows[0]);
+  return {
+    id: result.rows[0].id,
+    propertyId: result.rows[0].property_id,
+    userId: result.rows[0].user_id,
+    agencyId: result.rows[0].agency_id,
+  };
 }
 
-/**
- * Enforce retention limits for an agency (LAZY CLEANUP)
- *
- * Retention formula: max_retained = monthly_included_images * 3
- *
- * If current count > max_retained:
- * - Mark oldest images as expired (is_expired = TRUE)
- * - Images immediately hidden from UI
- * - Storage deletion can be done async (future enhancement)
- */
 async function enforceRetentionLimits(agencyId: string): Promise<void> {
-
   try {
-    // Get agency plan allowance
     const agencyResult = await pool.query(
       `SELECT monthly_included_images FROM agency_accounts WHERE agency_id = $1`,
       [agencyId]
@@ -246,14 +376,13 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
     }
 
     const monthlyAllowance = agencyResult.rows[0].monthly_included_images || 0;
-    const maxRetained = monthlyAllowance * 3; // 3 months of allowance
+    const maxRetained = monthlyAllowance * 3;
 
     if (maxRetained === 0) {
       console.warn(`[retention] Agency ${agencyId} has 0 allowance, skipping retention`);
       return;
     }
 
-    // Count current non-expired images
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM enhanced_images WHERE agency_id = $1 AND is_expired = FALSE`,
       [agencyId]
@@ -262,11 +391,9 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
     const currentCount = parseInt(countResult.rows[0].count, 10);
 
     if (currentCount <= maxRetained) {
-      // Within limits, no action needed
       return;
     }
 
-    // Expire oldest images (FIFO)
     const excessCount = currentCount - maxRetained;
 
     const expireResult = await pool.query(
@@ -287,14 +414,6 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
         `[retention] Expired ${expireResult.rows.length} images for agency ${agencyId} (max: ${maxRetained}, had: ${currentCount})`
       );
 
-      // Log expired images for audit trail
-      expireResult.rows.forEach((row) => {
-        console.log(
-          `[retention] Expired image ${row.audit_ref} (created: ${row.created_at})`
-        );
-      });
-
-      // Best-effort storage cleanup for expired items
       for (const row of expireResult.rows) {
         const keys = [row.original_s3_key, row.enhanced_s3_key, row.thumb_s3_key].filter(Boolean) as string[];
         for (const key of keys) {
@@ -304,13 +423,9 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
     }
   } catch (error) {
     console.error(`[retention] Failed to enforce retention for agency ${agencyId}:`, error);
-    // Non-blocking: don't fail the request if retention enforcement fails
   }
 }
 
-/**
- * Convert database row to EnhancedImage type
- */
 async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
   const enhancedKey = row.enhanced_s3_key || row.storage_key || null;
   const thumbKey = row.thumb_s3_key || row.storage_key || null;
@@ -325,6 +440,9 @@ async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
     agencyId: row.agency_id,
     userId: row.user_id,
     jobId: row.job_id,
+    propertyId: row.property_id,
+    parentImageId: row.parent_image_id,
+    source: row.source,
     stagesCompleted: row.stages_completed,
     storageKey: row.storage_key,
     publicUrl,
@@ -346,23 +464,10 @@ async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
   };
 }
 
-/**
- * Delete expired images from storage (OPTIONAL - for future use)
- * This can be called from a background job or cleanup script
- *
- * @param agencyId - Optional: Limit to specific agency
- * @param batchSize - Number of images to delete per batch
- */
 export async function deleteExpiredImagesFromStorage(
-  agencyId?: string,
-  batchSize: number = 100
+  _agencyId?: string,
+  _batchSize: number = 100
 ): Promise<number> {
-
-  // TODO: Implement S3 deletion logic
-  // 1. Query expired images with storage_key
-  // 2. Delete from S3
-  // 3. Delete database records (or mark as deleted)
-
   console.log('[cleanup] Storage deletion not yet implemented');
   return 0;
 }

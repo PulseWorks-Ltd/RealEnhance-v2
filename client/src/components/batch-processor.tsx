@@ -411,6 +411,7 @@ interface PersistedBatchJob {
     furnitureReplacement: boolean;
     declutter: boolean;
     stagingStyle: string;
+    propertyAddress?: string;
   };
   fileMetadata: PersistedFileMetadata[];
   jobIdToIndex: Record<string, number>;
@@ -618,6 +619,7 @@ export default function BatchProcessor() {
   );
   const [isUploading, setIsUploading] = useState(false);
   const [globalGoal, setGlobalGoal] = useState("");
+  const [propertyAddress, setPropertyAddress] = useState("");
   const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
@@ -1676,6 +1678,7 @@ export default function BatchProcessor() {
     setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
     setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
     setDeclutter(savedState.settings.declutter ?? false);
+    setPropertyAddress(savedState.settings.propertyAddress ?? "");
     // DO NOT restore stagingStyle - always default to NZ Standard Real Estate
     // User must explicitly select a different style for each new session
     
@@ -1763,7 +1766,8 @@ export default function BatchProcessor() {
           outdoorStaging,
           furnitureReplacement,
           declutter,
-          stagingStyle
+          stagingStyle,
+          propertyAddress,
         },
         fileMetadata: files.map(file => ({
           name: file.name,
@@ -1776,7 +1780,7 @@ export default function BatchProcessor() {
       };
       saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, currentUserId]);
+  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, propertyAddress, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -3023,6 +3027,9 @@ export default function BatchProcessor() {
     }
     fd.append("stage2Only", stage2Only.toString());
     fd.append("outdoorStaging", outdoorStaging);
+    if (propertyAddress.trim()) {
+      fd.append("propertyAddress", propertyAddress.trim());
+    }
     // NEW: Manual room linking metadata
     fd.append("metaJson", metaJson);
     
@@ -3310,6 +3317,9 @@ export default function BatchProcessor() {
     fd.append("stagingStyle", allowStaging ? stagingStyle : "");
     fd.append("allowRetouch", "true");
     fd.append("furnitureReplacement", furnitureReplacement.toString());
+    if (propertyAddress.trim()) {
+      fd.append("propertyAddress", propertyAddress.trim());
+    }
     // Manual room linking metadata (for retry)
     fd.append("metaJson", metaJson);
 
@@ -4254,6 +4264,7 @@ export default function BatchProcessor() {
     // Clear all state to start fresh
     setFiles([]);
     setGlobalGoal("");
+    setPropertyAddress("");
     setPreserveStructure(true);
     setRunState("idle");
     setJobId("");
@@ -4958,6 +4969,21 @@ export default function BatchProcessor() {
                       Enhancement-only mode: Your images will be professionally enhanced with improved lighting, color balance, and clarity. No furniture will be added or removed.
                     </p>
                   )}
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-white block mb-1" htmlFor="property-address-input">
+                    Property Address <span className="text-gray-400 text-xs">(optional)</span>
+                  </label>
+                  <input
+                    id="property-address-input"
+                    type="text"
+                    className="w-full border border-gray-600 rounded-lg px-3 py-2 bg-gray-800 text-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    value={propertyAddress}
+                    onChange={(e) => setPropertyAddress(e.target.value)}
+                    placeholder="e.g., 21 Smith Street"
+                    data-testid="input-property-address"
+                  />
                 </div>
 
                 <div>

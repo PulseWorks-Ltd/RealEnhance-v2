@@ -119,6 +119,7 @@ export interface EnhanceJobPayload {
   imageId: ImageId;
   type: "enhance";
   agencyId?: string | null; // Optional: agency ID for usage billing
+  propertyId?: string | null;
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   manualSceneOverride?: boolean;
   options: {
@@ -180,6 +181,8 @@ export interface EditJobPayload {
   mask: unknown;
   allowStaging?: boolean;
   stagingStyle?: string;
+  propertyId?: string;
+  sourceImageId?: string;
   createdAt: string;
 }
 
@@ -289,6 +292,9 @@ export interface EnhancedImage {
   agencyId: string;
   userId: UserId;
   jobId: JobId;
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: 'stage2' | 'region-edit';
 
   // Stage completion tracking
   stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
@@ -332,4 +338,22 @@ export interface EnhancedImageListItem {
   stagesCompleted: string[];
   createdAt: string;
   auditRef: string; // May be shown to users as generic "Support reference"
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: 'stage2' | 'region-edit';
+  versionCount?: number;
+}
+
+export interface PropertyFolder {
+  id: string;
+  address: string;
+  normalizedAddress: string;
+  images: EnhancedImageListItem[];
+}
+
+export interface EnhancedImageGalleryResponse {
+  properties: PropertyFolder[];
+  unassignedImages: EnhancedImageListItem[];
+  total: number;
+  images?: EnhancedImageListItem[];
 }

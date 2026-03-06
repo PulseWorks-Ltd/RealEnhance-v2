@@ -74,6 +74,7 @@ function buildEnhanceArtifacts(params: {
   userId: UserId;
   imageId: ImageId;
   agencyId?: string | null;
+  propertyId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -153,6 +154,7 @@ function buildEnhanceArtifacts(params: {
     imageId: params.imageId,
     type: "enhance",
     agencyId: params.agencyId,
+    propertyId: params.propertyId,
     options: params.options,
     createdAt: now,
     remoteOriginalUrl: params.remoteOriginalUrl as any,
@@ -189,6 +191,7 @@ export async function enqueueEnhanceJob(params: {
   userId: UserId;
   imageId: ImageId;
   agencyId?: string | null;
+  propertyId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -261,6 +264,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   userId: UserId;
   imageId: ImageId;
   agencyId?: string | null;
+  propertyId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -439,6 +443,8 @@ export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Ar
 export async function enqueueEditJob(params: {
   userId: UserId;
   agencyId?: string;
+  propertyId?: string;
+  sourceImageId?: string;
   imageId: ImageId;
   baseVersionId: string;
   mode: "Add" | "Remove" | "Replace" | "Restore";
@@ -465,6 +471,8 @@ export async function enqueueEditJob(params: {
     createdAt: now,
     ...(params.remoteBaseUrl ? { remoteBaseUrl: params.remoteBaseUrl } : {}),
     ...(params.remoteRestoreUrl ? { remoteRestoreUrl: params.remoteRestoreUrl } : {}),
+    ...(params.propertyId ? { propertyId: params.propertyId } : {}),
+    ...(params.sourceImageId ? { sourceImageId: params.sourceImageId } : {}),
     ...(params.allowStaging !== undefined ? { allowStaging: params.allowStaging } : {}),
     ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
   } as any;
@@ -477,6 +485,8 @@ export async function enqueueEditJob(params: {
 export async function enqueueRegionEditJob(params: {
   userId: UserId;
   agencyId?: string;
+  propertyId?: string;
+  sourceImageId?: string;
   imageId?: ImageId;
   mode: "add" | "remove" | "restore" | "replace";
   prompt?: string;
@@ -494,6 +504,8 @@ export async function enqueueRegionEditJob(params: {
     userId: params.userId,
     agencyId: params.agencyId,
     imageId: params.imageId,
+    sourceImageId: params.sourceImageId,
+    propertyId: params.propertyId,
     type: "region-edit",
     mode: params.mode,
     prompt: params.prompt,

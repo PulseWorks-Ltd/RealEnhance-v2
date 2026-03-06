@@ -61,7 +61,7 @@ export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete
  * - "stage-ready": Structured retain declutter (preserve anchors, remove secondary items)
  */
 export type DeclutterMode = "light" | "stage-ready";
-export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";
+export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "sunroom" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface EnhanceJobPayload {
     jobId: JobId;
@@ -69,6 +69,7 @@ export interface EnhanceJobPayload {
     imageId: ImageId;
     type: "enhance";
     agencyId?: string | null;
+    propertyId?: string | null;
     listingId?: string;
     manualSceneOverride?: boolean;
     options: {
@@ -127,6 +128,8 @@ export interface EditJobPayload {
     mask: unknown;
     allowStaging?: boolean;
     stagingStyle?: string;
+    propertyId?: string;
+    sourceImageId?: string;
     createdAt: string;
 }
 export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
@@ -213,6 +216,9 @@ export interface EnhancedImage {
     agencyId: string;
     userId: UserId;
     jobId: JobId;
+    propertyId?: string | null;
+    parentImageId?: string | null;
+    source?: 'stage2' | 'region-edit';
     stagesCompleted: string[];
     storageKey: string;
     publicUrl: string;
@@ -244,4 +250,20 @@ export interface EnhancedImageListItem {
     stagesCompleted: string[];
     createdAt: string;
     auditRef: string;
+    propertyId?: string | null;
+    parentImageId?: string | null;
+    source?: 'stage2' | 'region-edit';
+    versionCount?: number;
+}
+export interface PropertyFolder {
+    id: string;
+    address: string;
+    normalizedAddress: string;
+    images: EnhancedImageListItem[];
+}
+export interface EnhancedImageGalleryResponse {
+    properties: PropertyFolder[];
+    unassignedImages: EnhancedImageListItem[];
+    total: number;
+    images?: EnhancedImageListItem[];
 }

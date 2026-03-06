@@ -37,6 +37,7 @@ import { myImagesRouter } from "./routes/myImages.js";
 import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
+import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
@@ -253,6 +254,7 @@ async function main() {
   app.use("/api", myImagesRouter());
   // Previously enhanced images (quota-bound retention)
   app.use("/api/enhanced-images", enhancedImagesRouter());
+  app.use("/api", imageVersionsRouter());
   // Admin analysis endpoints
   app.use("/api/admin", adminAnalysisRouter);
   // Promo trial onboarding

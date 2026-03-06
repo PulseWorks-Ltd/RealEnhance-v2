@@ -6,6 +6,7 @@ import { findByPublicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
+import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -300,9 +301,19 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       apiMode = "replace";
     }
 
+    const sourceEnhanced = sessUser.agencyId
+      ? await findScopedEnhancedImageByUrl({
+          agencyId: sessUser.agencyId,
+          userId: sessUser.role === 'admin' || sessUser.role === 'owner' ? undefined : sessUser.id,
+          publicUrl: imageUrl,
+        })
+      : null;
+
     const jobPayload = {
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
+      sourceImageId: sourceEnhanced?.id,
+      propertyId: sourceEnhanced?.propertyId || undefined,
       imageId: record.imageId || record.id,
       mode: apiMode,
       prompt: instruction,

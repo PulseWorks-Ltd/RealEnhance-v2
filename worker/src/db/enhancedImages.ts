@@ -11,6 +11,9 @@ interface CreateEnhancedImageParams {
   agencyId: string;
   userId: string;
   jobId: string;
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
   publicUrl: string;
   thumbnailUrl?: string;
@@ -37,17 +40,21 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
     await pool.query(
       `INSERT INTO enhanced_images (
         agency_id, user_id, job_id, stages_completed,
+        property_id, parent_image_id, source,
         storage_key, public_url, thumbnail_url,
         original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
         audit_ref, trace_id,
         is_expired
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, FALSE)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, FALSE)
       ON CONFLICT (job_id) DO NOTHING`,
       [
         params.agencyId,
         params.userId,
         params.jobId,
         params.stagesCompleted,
+        params.propertyId || null,
+        params.parentImageId || null,
+        params.source || 'stage2',
         storageKey,
         params.publicUrl,
         params.thumbnailUrl || params.publicUrl,

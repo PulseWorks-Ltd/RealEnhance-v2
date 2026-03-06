@@ -7,7 +7,6 @@
 
 import { Router, type Request, type Response } from 'express';
 import { listEnhancedImages, getEnhancedImage } from '../services/enhancedImages.js';
-import type { EnhancedImageListItem, EnhancedImage } from '@realenhance/shared/types';
 
 export function enhancedImagesRouter() {
   const router = Router();
@@ -45,7 +44,7 @@ export function enhancedImagesRouter() {
       // Check user role for permissions
       const isAdminOrOwner = user.role === 'owner' || user.role === 'admin';
 
-      // List images (admin sees all, regular user sees only their own)
+      // List images (admin sees all in agency, agents/members only see their own)
       const result = await listEnhancedImages(
         user.agencyId,
         isAdminOrOwner ? undefined : user.id, // undefined = all agency images

@@ -15,6 +15,7 @@ import { reserveAllowance, finalizeReservation, getUsageSnapshot } from "../serv
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
+import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
@@ -129,6 +130,7 @@ export function uploadRouter() {
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
+    const propertyAddressRaw = String((req.body as any)?.propertyAddress || '').trim();
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s stage2Variant=%s furnishedState=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode, (req.body as any)?.stage2Variant, (req.body as any)?.furnishedState);
       console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s stage2VariantForm=%s furnishedStateForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm), stage2VariantForm || 'unset', furnishedStateForm || 'unset');
@@ -257,6 +259,21 @@ export function uploadRouter() {
     const agencyId = fullUser?.agencyId || undefined;
     if (!agencyId) {
       return res.status(400).json({ error: "agency_required", message: "Uploads require an agency context" });
+    }
+
+    let propertyIdForBatch: string | null = null;
+    if (propertyAddressRaw) {
+      try {
+        const property = await findOrCreateProperty({
+          agencyId,
+          createdByUserId: sessUser.id,
+          address: propertyAddressRaw,
+        });
+        propertyIdForBatch = property.id;
+      } catch (propertyErr) {
+        console.error('[upload] Failed to resolve property address', propertyErr);
+        return res.status(400).json({ error: 'invalid_property_address', message: 'Property address is invalid' });
+      }
     }
 
     // Server-side validation: if staging is enabled, every interior image must have a valid roomType
@@ -673,6 +690,7 @@ export function uploadRouter() {
         remoteOriginalUrl,
         remoteOriginalKey,
         agencyId,
+        propertyId: propertyIdForBatch,
         options: {
           declutter: finalDeclutter,
           declutterMode: opts.declutterMode,
