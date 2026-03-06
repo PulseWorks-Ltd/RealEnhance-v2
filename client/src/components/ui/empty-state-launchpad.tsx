@@ -1,4 +1,4 @@
-import { CloudUpload, ShieldCheck } from 'lucide-react';
+import { CloudUpload, ShieldCheck, Timer, Layers, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from './button';
 
@@ -52,7 +52,7 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
       />
 
       {/* Content Container */}
-      <div className="relative z-10 w-full max-w-4xl px-6 py-12 space-y-12">
+      <div className="relative z-10 w-full max-w-6xl px-6 py-12 space-y-12">
         
         {/* Hero Dropzone Card */}
         <div
@@ -62,12 +62,12 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
           onDrop={handleDrop}
           className={`
             relative group cursor-pointer
-            max-w-2xl mx-auto
-            bg-white rounded-2xl shadow-xl
+            max-w-4xl mx-auto
+            bg-white rounded-3xl shadow-2xl
             border-2 border-dashed transition-all duration-300
             ${isDragOver 
               ? 'border-blue-500 bg-blue-50/30 scale-[1.02] shadow-2xl' 
-              : 'border-slate-300 hover:border-blue-400 hover:shadow-2xl'
+              : 'border-slate-300 hover:border-blue-400 hover:shadow-2xl hover:scale-[1.01]'
             }
           `}
           onClick={onFileSelect}
@@ -149,54 +149,43 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
         </div>
 
         {/* What Happens Next - Process Flow with Stronger Active States */}
-        <div className="max-w-2xl mx-auto">
-          <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
-            <div className="flex items-center gap-2">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid grid-cols-4 items-start gap-3 sm:gap-6 text-sm text-center">
+            <div className="flex flex-col items-center gap-2 min-w-0">
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shadow-lg ring-2 ring-blue-200">
                 1
               </div>
-              <span className="text-slate-800 font-semibold">Gallery Upload</span>
+              <span className="text-slate-800 font-semibold leading-tight">Gallery Upload</span>
             </div>
-            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-2 min-w-0">
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 text-white font-bold text-sm shadow-lg ring-2 ring-purple-200">
                 2
               </div>
-              <span className="text-slate-800 font-semibold">Studio Settings</span>
+              <span className="text-slate-800 font-semibold leading-tight">Studio Settings</span>
             </div>
-            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-orange-500 text-white font-bold text-sm shadow-lg ring-2 ring-amber-200">
+            <div className="flex flex-col items-center gap-2 min-w-0">
+              <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-teal-600 to-sky-700 text-white font-bold text-sm shadow-lg ring-2 ring-teal-200">
                 3
               </div>
-              <span className="text-amber-700 font-semibold inline-flex items-center gap-1.5">
+              <span className="text-sky-800 font-semibold inline-flex items-center gap-1.5 leading-tight">
                 <ShieldCheck className="w-4 h-4" />
                 Quality Assurance
               </span>
             </div>
-            <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-center gap-2 min-w-0">
               <div className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold text-sm shadow-lg ring-2 ring-emerald-200">
                 4
               </div>
-              <span className="text-slate-800 font-semibold">Market Ready</span>
+              <span className="text-slate-800 font-semibold leading-tight">Market Ready</span>
             </div>
           </div>
         </div>
 
         {/* Features Grid (Optional) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto pt-8">
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto pt-6 border-t border-border/40">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
             <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
+              <Timer className="w-6 h-6 text-blue-600" />
             </div>
             <div>
               <div className="font-medium text-sm text-slate-900">2-Minute Turnaround</div>
@@ -204,11 +193,9 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
             </div>
           </div>
 
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
             <div className="flex-shrink-0 w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
+              <Layers className="w-6 h-6 text-purple-600" />
             </div>
             <div>
               <div className="font-medium text-sm text-slate-900">Batch Excellence</div>
@@ -216,11 +203,9 @@ export function EmptyStateLaunchpad({ onFileSelect, onFileDrop }: EmptyStateLaun
             </div>
           </div>
 
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm">
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-white/60 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
             <div className="flex-shrink-0 w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
-              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
+              <Sparkles className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
               <div className="font-medium text-sm text-slate-900">Effortless Operation</div>
