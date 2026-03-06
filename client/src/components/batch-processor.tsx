@@ -600,6 +600,68 @@ const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string =
   return "Retrying...";
 };
 
+type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "retry";
+type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
+
+const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
+  stage1a: [
+    "Uploading Image",
+    "Straightening Image",
+    "Improving Clarity",
+    "Enhancing Image Quality",
+  ],
+  stage1b: [
+    "Decluttering",
+    "Removing Furniture",
+    "Tidying Room",
+    "Cleaning Surfaces",
+  ],
+  stage2: [
+    "Designing Room Layout",
+    "Staging Room",
+    "Placing Furniture",
+    "Adding Decor",
+  ],
+  validator: [
+    "Reviewing Image",
+    "Checking Structural Integrity",
+    "Ensuring Furniture Scale",
+    "Checking Minor Items",
+  ],
+  retry: [
+    "Improving Layout",
+    "Proposing New Room Design",
+    "Selecting Additional Furniture",
+    "Refining Furniture Layout",
+  ],
+};
+
+const STAGE_PROGRESS: Record<string, number> = {
+  uploading: 10,
+  stage1a: 35,
+  stage1b: 60,
+  stage2: 90,
+  validator: 100,
+  retry: 70,
+  completed: 100,
+};
+
+const STAGE_TITLES: Record<string, string> = {
+  uploading: "Upload — Preparing Image",
+  stage1a: "Stage 1A — Enhancing Image",
+  stage1b: "Stage 1B — Decluttering",
+  stage2: "Stage 2 — Active Staging",
+  validator: "Validator — Quality Review",
+  retry: "Layout Refinement",
+  completed: "Enhancement Complete",
+};
+
+const BATCH_PHASE_LABELS: Record<BatchPhaseState, string> = {
+  UPLOADING: "Phase 1 — Uploading Images",
+  QUEUE_WAIT: "Phase 2 — Queue Placement",
+  PROCESSING: "Phase 3 — Active Processing",
+};
+
 export default function BatchProcessor() {
     // Staging style preset for the batch - DEFAULT to NZ Standard Real Estate
     const [stagingStyle, setStagingStyle] = useState<string>("NZ Standard Real Estate");
@@ -624,6 +686,7 @@ export default function BatchProcessor() {
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
+  const [messageTick, setMessageTick] = useState(0);
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
   const [creditGateModal, setCreditGateModal] = useState<{
@@ -670,6 +733,14 @@ export default function BatchProcessor() {
             return next;
         });
     }, 2500);
+    return () => clearInterval(interval);
+  }, [runState]);
+
+  useEffect(() => {
+    if (runState !== "running") return;
+    const interval = setInterval(() => {
+      setMessageTick((prev) => prev + 1);
+    }, 1800);
     return () => clearInterval(interval);
   }, [runState]);
 
@@ -4719,6 +4790,63 @@ export default function BatchProcessor() {
     return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active");
   });
 
+  const batchQueueFeedback = useMemo(() => {
+    const total = files.length || 0;
+    const statuses = results.map((r) => String(r?.status || r?.result?.status || "").toLowerCase());
+    const queuedCount = statuses.filter((s) => s === "queued" || s === "waiting").length;
+    const processingCount = statuses.filter((s) => s === "processing" || s === "active" || s === "staging" || s === "validating").length;
+
+    const queuedResult = results.find((r) => {
+      const s = String(r?.status || r?.result?.status || "").toLowerCase();
+      return s === "queued" || s === "waiting";
+    });
+
+    const queuePositionRaw =
+      queuedResult?.queuePosition ??
+      queuedResult?.result?.queuePosition ??
+      queuedResult?.meta?.queuePosition ??
+      queuedResult?.result?.meta?.queuePosition ??
+      queuedResult?.position ??
+      queuedResult?.result?.position;
+
+    const estimatedStartRaw =
+      queuedResult?.estimatedStartSeconds ??
+      queuedResult?.result?.estimatedStartSeconds ??
+      queuedResult?.meta?.estimatedStartSeconds ??
+      queuedResult?.result?.meta?.estimatedStartSeconds ??
+      queuedResult?.etaSeconds ??
+      queuedResult?.result?.etaSeconds;
+
+    const queuePosition = Number.isFinite(Number(queuePositionRaw)) ? Number(queuePositionRaw) : undefined;
+    const estimatedStartSeconds = Number.isFinite(Number(estimatedStartRaw)) ? Number(estimatedStartRaw) : undefined;
+
+    let phaseState: BatchPhaseState;
+    if (isUploading) {
+      phaseState = "UPLOADING";
+    } else if (runState === "running" && queuedCount > 0 && processingCount === 0) {
+      phaseState = "QUEUE_WAIT";
+    } else {
+      phaseState = "PROCESSING";
+    }
+
+    const phaseProgress = runState === "done"
+      ? 100
+      : phaseState === "UPLOADING"
+        ? 20
+        : phaseState === "QUEUE_WAIT"
+          ? 35
+          : Math.max(40, Math.min(95, Math.round((Math.max(processingCount, 1) / Math.max(total, 1)) * 100)));
+
+    return {
+      total,
+      queuedCount,
+      phaseState,
+      phaseProgress,
+      queuePosition,
+      estimatedStartSeconds,
+    };
+  }, [files.length, isUploading, results, runState]);
+
   // Debug: Log button visibility state
   React.useEffect(() => {
     if (results.length > 0) {
@@ -5647,7 +5775,7 @@ export default function BatchProcessor() {
                           const total = files.length || 0;
                           const remaining = Math.max(total - completedCount, 0);
                           const isComplete = runState === 'done' && remaining === 0;
-                          const title = isComplete ? "Enhancement Complete" : "Processing Batch";
+                          const title = isComplete ? "Enhancement Complete" : `Processing ${files.length} Images`;
                           const subtitle = isComplete
                             ? "Please review and download your images."
                             : `${remaining} image${remaining === 1 ? '' : 's'} remaining`;
@@ -5704,6 +5832,40 @@ export default function BatchProcessor() {
                         )}
                     </div>
                     </div>
+
+                    {(runState === "running" || isUploading) && (
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-sm font-semibold text-slate-900">{`Processing ${batchQueueFeedback.total} Images`}</p>
+                        <div className="mt-3 h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500"
+                            style={{ width: `${batchQueueFeedback.phaseProgress}%` }}
+                          />
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs text-slate-600">
+                          <p className={batchQueueFeedback.phaseState === "UPLOADING" ? "font-semibold text-slate-900" : ""}>
+                            {BATCH_PHASE_LABELS.UPLOADING}
+                          </p>
+                          <p className={batchQueueFeedback.phaseState === "QUEUE_WAIT" ? "font-semibold text-slate-900" : ""}>
+                            {BATCH_PHASE_LABELS.QUEUE_WAIT}
+                          </p>
+                          <p className={batchQueueFeedback.phaseState === "PROCESSING" ? "font-semibold text-slate-900" : ""}>
+                            {BATCH_PHASE_LABELS.PROCESSING}
+                          </p>
+                        </div>
+                        {batchQueueFeedback.phaseState === "QUEUE_WAIT" && (
+                          <div className="mt-3 text-xs text-slate-600 space-y-1">
+                            <p>Your batch has been added to the processing queue.</p>
+                            {batchQueueFeedback.queuePosition !== undefined && (
+                              <p>{`Position: ${batchQueueFeedback.queuePosition}`}</p>
+                            )}
+                            {batchQueueFeedback.estimatedStartSeconds !== undefined && (
+                              <p>{`Estimated start: ~${batchQueueFeedback.estimatedStartSeconds}s`}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* 2. Global Progress Bar */}
                     <div className="h-4 w-full rounded-full overflow-hidden bg-slate-200">
@@ -5873,6 +6035,37 @@ export default function BatchProcessor() {
                           ? "Further decluttering required"
                           : "Enhancing";
                         const currentStage = String((result?.currentStage || result?.result?.currentStage || "") as string).toLowerCase();
+                        const inferredStageKey = (() => {
+                          if (isUiComplete || isDone) return "completed";
+                          if (isRetryActive) return "retry";
+                          if (isUploading || status === "queued" || status === "waiting") return "uploading";
+                          if (currentStage.includes("valid")) return "validator";
+                          if (currentStage.includes("2")) return "stage2";
+                          if (currentStage.includes("1b")) return "stage1b";
+                          if (currentStage.includes("1a") || currentStage.includes("upload")) return "stage1a";
+                          if (stage2Url) return "validator";
+                          if (stage1BUrl) return "stage2";
+                          if (stage1AUrl && (declutterRequested || stage2Expected)) return "stage1b";
+                          if (stage1AUrl) return "validator";
+                          return "uploading";
+                        })();
+                        const stageMessageKey: ProcessingMessageStage = inferredStageKey === "retry"
+                          ? "retry"
+                          : inferredStageKey === "stage1b"
+                          ? "stage1b"
+                          : inferredStageKey === "stage2"
+                          ? "stage2"
+                          : inferredStageKey === "validator" || inferredStageKey === "completed"
+                          ? "validator"
+                          : "stage1a";
+                        const rotatingMessages = STAGE_MESSAGES[stageMessageKey] || STAGE_MESSAGES.stage1a;
+                        const rotatingMessage = rotatingMessages[messageTick % rotatingMessages.length];
+                        const stageProgressValue = isDone
+                          ? 100
+                          : (STAGE_PROGRESS[inferredStageKey] ?? (isProcessing ? 35 : 0));
+                        const stageTitle = isDone
+                          ? STAGE_TITLES.completed
+                          : (STAGE_TITLES[inferredStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = (() => {
                           if (currentStage.includes("2")) return "Staging image...";
                           if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
@@ -6048,11 +6241,11 @@ export default function BatchProcessor() {
                             <div className="space-y-2">
                               <div className="flex justify-between items-center gap-3">
                                 <h3 className="font-semibold text-sm text-slate-900 truncate">{file.name}</h3>
-                                {/* Individual % - Fake it if processing, real if done */}
                                 <span className="text-xs font-mono text-slate-500">
-                                    {isDone ? '100%' : isProcessing ? 'Processing...' : '0%'}
+                                  {`${stageProgressValue}%`}
                                 </span>
                               </div>
+                              <p className="text-xs font-medium text-slate-700">{stageTitle}</p>
                               
                               {/* Status Badges */}
                               <div className="flex items-center gap-3 mt-1.5 h-7">
@@ -6101,6 +6294,9 @@ export default function BatchProcessor() {
                               <p className="text-xs text-slate-500">
                                 {displayStatus}
                               </p>
+                              {isProcessing && !isError && (
+                                <p className="text-xs text-slate-500">{rotatingMessage}</p>
+                              )}
                               {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
                                 <p className="mt-1 text-xs text-rose-600">
                                   {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
@@ -6137,12 +6333,11 @@ export default function BatchProcessor() {
                                 )}
                               </div>
 
-                              {/* Individual Progress Line - Only when processing */}
-                                {isProcessing && (
-                                <div className="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                              {(isProcessing || isUiComplete || isEditComplete) && (
+                                <div className="mt-3 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                   <div 
-                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-300 animate-pulse" 
-                                    style={{ width: `${isUploading ? 30 : 60}%` }} 
+                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-500" 
+                                    style={{ width: `${Math.max(0, Math.min(100, stageProgressValue))}%` }} 
                                   />
                                 </div>
                               )}
@@ -6163,21 +6358,32 @@ export default function BatchProcessor() {
                                   >
                                     Preview
                                   </button>
-                                   <button 
+                                  <button 
                                     onClick={() => handleEditImage(i)}
                                     disabled={result?.retryInFlight || editingImages.has(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     Edit
                                   </button>
-                                    <button
-                                    onClick={() => handleOpenRetryDialog(i)}
-                                    disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
-                                    className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                                    data-testid={`button-retry-${i}`}
+                                  {(isUiComplete || isEditComplete) ? (
+                                    <a
+                                      href={enhancedUrl || previewUrl || "#"}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"
                                     >
-                                    {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                      Download
+                                    </a>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleOpenRetryDialog(i)}
+                                      disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
+                                      className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                                      data-testid={`button-retry-${i}`}
+                                    >
+                                      {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
                                     </button>
+                                  )}
                                 </>
                               )}
                             </div>
