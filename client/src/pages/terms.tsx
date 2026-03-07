@@ -5,7 +5,7 @@ export default function TermsPage() {
         <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
           <header className="mb-8 space-y-2">
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">RealEnhance Terms of Service (Draft)</h1>
-            <p className="text-sm text-slate-600">Effective Date: [Insert Date]</p>
+            <p className="text-sm text-slate-600">Effective Date: 9 March 2026</p>
             <p className="text-slate-700">
               Welcome to RealEnhance. These Terms of Service ("Terms") govern your use of the RealEnhance website,
               applications, and services (collectively, the "Service").
