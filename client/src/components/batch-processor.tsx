@@ -5233,23 +5233,31 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full max-w-[1200px] mx-auto px-6 py-8">
-            {files.length === 0 ? (
-              <EmptyStateLaunchpad
-                onFileSelect={triggerFileSelector}
-                onFileDrop={handleFileDrop}
-                onSampleSelect={(sampleType) => {
-                  console.log('[BatchProcessor] Sample selected:', sampleType);
-                  toast({
-                    title: "Sample images coming soon",
-                    description: `${sampleType} sample will be available in the next release.`,
-                  });
-                }}
-              />
-            ) : (
-              <>
-                <div className="flex flex-col w-full">
-                  <aside className="max-w-[420px] mx-auto mb-8 w-full">
+          <div className="min-h-screen relative overflow-x-hidden">
+            <div
+              className="absolute inset-0 opacity-40 pointer-events-none"
+              style={{
+                backgroundImage: `radial-gradient(circle, rgb(148 163 184) 1px, transparent 1px)`,
+                backgroundSize: '24px 24px',
+              }}
+            />
+            <div className="relative z-10 w-full max-w-[1600px] mx-auto px-6 py-8">
+              {files.length === 0 ? (
+                <EmptyStateLaunchpad
+                  onFileSelect={triggerFileSelector}
+                  onFileDrop={handleFileDrop}
+                  onSampleSelect={(sampleType) => {
+                    console.log('[BatchProcessor] Sample selected:', sampleType);
+                    toast({
+                      title: "Sample images coming soon",
+                      description: `${sampleType} sample will be available in the next release.`,
+                    });
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="flex flex-col lg:flex-row gap-8 w-full items-start">
+                    <aside className="w-full lg:w-[380px] shrink-0 sticky top-8">
                         <div className="bg-white border rounded-xl p-4 space-y-4">
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -5357,7 +5365,9 @@ export default function BatchProcessor() {
                         </div>
                       </aside>
 
-                      <div className="flex justify-between w-full max-w-[1000px] mx-auto mb-2 px-2">
+                    <div className="flex-1 w-full min-w-0 flex flex-col items-center">
+                      <div className="w-full max-w-[1100px] bg-white border rounded-xl overflow-hidden shadow-sm flex flex-col p-4 sm:p-6 mb-8">
+                        <div className="flex justify-between w-full mx-auto mb-4 px-2">
                         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
                           Image {currentImageIndex + 1} of {files.length}
                         </div>
@@ -5457,24 +5467,33 @@ export default function BatchProcessor() {
                                   </div>
 
                                   {!sceneSelected ? (
-                                    <p className="mt-2 text-sm text-red-600 font-medium">Select interior or exterior for this image</p>
+                                    <p className="mt-2 text-sm text-red-600 font-bold mb-4">Select interior or exterior for this image</p>
+                                  ) : sceneType === "exterior" ? (
+                                    <p className="mt-2 text-sm text-emerald-600 font-bold mb-4">Ready. Move onto next image.</p>
                                   ) : (
-                                    <select
-                                      value={currentRoomType}
-                                      onChange={(e) => {
-                                        if (!currentImageId) return;
-                                        setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
-                                        flashAssignedThumbnail(currentImageIndex);
-                                      }}
-                                      className="w-[280px] rounded-lg border px-4 py-2 text-sm bg-slate-800 text-white"
-                                    >
-                                      <option value="">Select room type...</option>
-                                      {INTERIOR_ROOM_TYPES.map((room) => (
-                                        <option key={room.value} value={room.value}>
-                                          {room.label}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    <div className="flex flex-col items-center gap-2 mt-2">
+                                      <select
+                                        value={currentRoomType}
+                                        onChange={(e) => {
+                                          if (!currentImageId) return;
+                                          setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
+                                          flashAssignedThumbnail(currentImageIndex);
+                                        }}
+                                        className="w-[280px] rounded-lg border px-4 py-2 text-sm bg-slate-800 text-white"
+                                      >
+                                        <option value="">Select room type...</option>
+                                        {INTERIOR_ROOM_TYPES.map((room) => (
+                                          <option key={room.value} value={room.value}>
+                                            {room.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {!currentRoomType ? (
+                                        <p className="text-sm text-red-600 font-bold mb-4">*Select room type to continue</p>
+                                      ) : (
+                                        <p className="text-sm text-emerald-600 font-bold mb-4">Ready. Move onto next image.</p>
+                                      )}
+                                    </div>
                                   )}
                                 </>
                               );
@@ -5485,6 +5504,21 @@ export default function BatchProcessor() {
                         {files.map((file, idx) => {
                           const isCurrent = idx === currentImageIndex;
                           const needsRoomType = roomTypeRequiresInput(idx);
+                          const fileId = getFileId(file);
+                          const sceneType = imageSceneTypesById[fileId];
+                          const roomType = imageRoomTypesById[fileId];
+
+                          let label = "";
+                          if (needsRoomType) {
+                            label = "Assign Room Type";
+                          } else if (sceneType === "exterior") {
+                            label = "Exterior";
+                          } else if (sceneType === "interior" && roomType) {
+                            const roomObj = INTERIOR_ROOM_TYPES.find((r) => r.value === roomType);
+                            label = roomObj ? roomObj.label : "Interior";
+                          } else {
+                            label = "Assign Room Type";
+                          }
 
                           return (
                             <button
@@ -5492,23 +5526,27 @@ export default function BatchProcessor() {
                               id={`thumbnail-btn-${idx}`}
                               type="button"
                               onClick={() => setCurrentImageIndex(idx)}
-                              className={`relative shrink-0 rounded-lg ${isCurrent ? "ring-2 ring-indigo-500" : ""} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300" : ""}`}
+                              className={`relative shrink-0 rounded-lg border overflow-hidden ${isCurrent ? "ring-2 ring-indigo-500 border-transparent" : "border-slate-300"} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300 border-transparent" : ""}`}
                             >
-                              {needsRoomType && (
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-                              )}
                               <img
                                 src={previewUrls[idx]}
                                 alt={file.name || `Image ${idx + 1}`}
-                                className="w-28 h-20 object-cover rounded-lg border"
+                                className="w-28 h-20 object-cover"
                                 loading="lazy"
                               />
+                              <div className="absolute inset-0 flex flex-col justify-end pointer-events-none">
+                                <div className="w-full bg-gradient-to-t from-black/90 via-black/40 to-transparent p-1 pt-6 text-center leading-tight">
+                                  <span className={`block text-[11px] font-semibold tracking-wide drop-shadow-md ${needsRoomType ? "text-red-400" : "text-slate-50"}`}>
+                                    {label}
+                                  </span>
+                                </div>
+                              </div>
                             </button>
                           );
                         })}
                       </div>
 
-                      <div className="flex justify-center mt-4">
+                      <div className="flex justify-end mt-4 w-full px-2 sm:px-6">
                         <div className="flex items-center gap-3 pb-4">
                           {isEnhanceCreditBlocked && (
                             <p className="text-xs text-amber-700" title="Not enough credits">
@@ -5528,8 +5566,11 @@ export default function BatchProcessor() {
                         </div>
                       </div>
                     </div>
-                  </>
-                )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
