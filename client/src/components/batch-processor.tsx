@@ -4006,7 +4006,7 @@ export default function BatchProcessor() {
             const violationDetails = err.reasons?.join(", ") || "structural preservation requirements";
             toast({
               title: "Cannot generate different result",
-              description: `The AI cannot create a compliant variation due to ${violationDetails}. Try adjusting your settings or using a different approach. No credit was charged.`,
+              description: `The enhancer cannot create a compliant variation due to ${violationDetails}. Try adjusting your settings or using a different approach. No credit was charged.`,
               variant: "destructive",
               duration: 8000
             });
@@ -5233,21 +5233,21 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full min-h-screen py-6">
-            <div className="mx-auto w-full max-w-[1800px] space-y-4 px-2 sm:px-4 lg:px-6">
+          <div className="w-full min-h-[calc(100vh-80px)] py-2">
+            <div className="mx-auto flex h-[calc(100vh-96px)] w-full max-w-[1800px] flex-col gap-3 px-2 sm:px-4 lg:px-6">
               {files.length > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <h2 className="text-xl font-semibold text-slate-900">Image Preparation</h2>
-                      <p className="mt-1 text-sm text-slate-600">Review each image, assign room types, and confirm enhancement preferences.</p>
+                      <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
+                      <p className="mt-0.5 text-xs text-slate-600">Set global options once, then review each image below.</p>
                     </div>
                     <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-semibold text-slate-700">
                       {configuredImagesCount} / {files.length} images configured
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:max-w-4xl">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:max-w-5xl">
                     <button
                       type="button"
                       onClick={() => {
@@ -5255,7 +5255,7 @@ export default function BatchProcessor() {
                         setDeclutter(checked);
                         setFurnitureReplacement(checked);
                       }}
-                      className={`rounded-xl border p-4 text-left transition-all ${declutter ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                      className={`rounded-xl border p-3 text-left transition-all ${declutter ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
                     >
                       <p className="text-sm font-semibold">Declutter Mode</p>
                       <p className="mt-1 text-xs">Removes furniture and clutter while preserving structure.</p>
@@ -5263,62 +5263,11 @@ export default function BatchProcessor() {
                     <button
                       type="button"
                       onClick={() => setAllowStaging(!allowStaging)}
-                      className={`rounded-xl border p-4 text-left transition-all ${allowStaging ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                      className={`rounded-xl border p-3 text-left transition-all ${allowStaging ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
                     >
                       <p className="text-sm font-semibold">Virtual Staging Mode</p>
                       <p className="mt-1 text-xs">Adds staging to supported interior scenes.</p>
                     </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-6">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={declutter}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setDeclutter(checked);
-                          setFurnitureReplacement(checked);
-                        }}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
-                        data-testid="checkbox-declutter"
-                      />
-                      <span className="text-sm text-slate-700">Remove furniture and clutter</span>
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={allowStaging}
-                        onChange={(e) => setAllowStaging(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
-                        data-testid="checkbox-allow-staging"
-                      />
-                      <span className="text-sm text-slate-700">Add virtual staging</span>
-                    </label>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <div>
-                      <button
-                        onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
-                        className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                        data-testid="button-toggle-specific-requirements"
-                        type="button"
-                      >
-                        <span>Specific Requirements</span>
-                        <span className={`text-slate-400 transition-transform ${showSpecificRequirements ? "rotate-180" : ""}`}>▼</span>
-                      </button>
-                      {showSpecificRequirements && (
-                        <textarea
-                          className="mt-2 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
-                          rows={3}
-                          placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
-                          value={globalGoal}
-                          onChange={(e) => setGlobalGoal(e.target.value)}
-                          data-testid="textarea-global-goal"
-                        />
-                      )}
-                    </div>
 
                     <div>
                       <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="property-address-input">
@@ -5361,13 +5310,63 @@ export default function BatchProcessor() {
                       >
                         Reset to Standard Listing
                       </button>
-                      {allowStaging && !declutter && (
-                        <p className="mt-1 text-xs text-amber-700">
-                          For best results in staging-only mode, upload images that are already mostly empty.
-                        </p>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <button
+                        onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
+                        className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                        data-testid="button-toggle-specific-requirements"
+                        type="button"
+                      >
+                        <span>Specific Requirements</span>
+                        <span className={`text-slate-400 transition-transform ${showSpecificRequirements ? "rotate-180" : ""}`}>▼</span>
+                      </button>
+                      {showSpecificRequirements && (
+                        <textarea
+                          className="mt-2 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
+                          rows={2}
+                          placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
+                          value={globalGoal}
+                          onChange={(e) => setGlobalGoal(e.target.value)}
+                          data-testid="textarea-global-goal"
+                        />
                       )}
                     </div>
                   </div>
+
+                  <div className="hidden">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={declutter}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setDeclutter(checked);
+                          setFurnitureReplacement(checked);
+                        }}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
+                        data-testid="checkbox-declutter"
+                      />
+                      <span className="text-sm text-slate-700">Remove furniture and clutter</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={allowStaging}
+                        onChange={(e) => setAllowStaging(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600"
+                        data-testid="checkbox-allow-staging"
+                      />
+                      <span className="text-sm text-slate-700">Add virtual staging</span>
+                    </label>
+                  </div>
+
+                  {allowStaging && !declutter && (
+                    <p className="text-xs text-amber-700">
+                      For best results in staging-only mode, upload images that are already mostly empty.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -5386,10 +5385,10 @@ export default function BatchProcessor() {
                     }}
                   />
                 ) : (
-                  <div className="relative flex flex-col overflow-hidden bg-slate-50/40">
+                  <div className="relative flex h-full flex-col overflow-hidden bg-slate-50/40">
 
                       {/* Top Bar: Nav & Counter */}
-                      <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-center justify-between p-4">
+                      <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 flex items-center justify-between p-3">
                         <button
                           onClick={() => setActiveTab("upload")}
                           className="pointer-events-auto flex items-center gap-2 rounded-lg border border-white/20 bg-white/80 px-3 py-2 text-sm font-medium text-slate-600 shadow-sm backdrop-blur-md transition-all hover:text-slate-900 hover:shadow-md"
@@ -5404,16 +5403,16 @@ export default function BatchProcessor() {
                       </div>
 
                       {/* Main Viewer Area */}
-                      <div className="relative flex w-full items-center justify-center p-6 lg:p-10">
+                      <div className="relative flex w-full items-center justify-center px-3 pb-3 pt-12 lg:px-6">
                         {/* The Viewer Frame */}
                         <div className="relative mx-auto flex w-full max-w-[1400px] flex-col items-center justify-center">
 
                           {/* The Image */}
-                          <div className="relative flex w-full aspect-[16/9] items-center justify-center rounded-xl bg-slate-100">
+                          <div className="relative flex w-full aspect-[16/9] max-h-[420px] items-center justify-center overflow-hidden rounded-xl bg-slate-100 shadow-lg">
                             <img
                               src={previewUrls[currentImageIndex]}
                               alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                              className="h-full w-full rounded-xl object-contain shadow-2xl"
+                              className="h-full w-full rounded-xl object-contain"
                             />
 
                             {/* Delete Button (Overlay) */}
@@ -5465,69 +5464,60 @@ export default function BatchProcessor() {
                         </div>
                       </div>
 
-                      <div className="mx-auto mb-2 flex w-full max-w-[1400px] flex-wrap items-center gap-2 px-4">
-                        <span className="text-xs font-medium text-slate-600">Quick Assign Room:</span>
-                        <button
-                          type="button"
-                          onClick={() => quickAssignRoomType("living_room")}
-                          className={quickAssignButtonClass(currentAssignedRoomType === "living_room")}
-                        >
-                          Living Room
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => quickAssignRoomType("bedroom")}
-                          className={quickAssignButtonClass(currentAssignedRoomType === "bedroom")}
-                        >
-                          Bedroom
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => quickAssignRoomType("kitchen")}
-                          className={quickAssignButtonClass(currentAssignedRoomType === "kitchen")}
-                        >
-                          Kitchen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => quickAssignRoomType("bathroom-1")}
-                          className={quickAssignButtonClass(currentAssignedRoomType === "bathroom-1")}
-                        >
-                          Bathroom
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => quickAssignRoomType("exterior")}
-                          className={quickAssignButtonClass(currentAssignedRoomType === "")}
-                        >
-                          Exterior
-                        </button>
-                      </div>
+                      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-3 px-3 pb-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-slate-600">Quick Assign:</span>
+                          <button
+                            type="button"
+                            onClick={() => quickAssignRoomType("living_room")}
+                            className={quickAssignButtonClass(currentAssignedRoomType === "living_room")}
+                          >
+                            Living Room
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quickAssignRoomType("bedroom")}
+                            className={quickAssignButtonClass(currentAssignedRoomType === "bedroom")}
+                          >
+                            Bedroom
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quickAssignRoomType("kitchen")}
+                            className={quickAssignButtonClass(currentAssignedRoomType === "kitchen")}
+                          >
+                            Kitchen
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quickAssignRoomType("bathroom-1")}
+                            className={quickAssignButtonClass(currentAssignedRoomType === "bathroom-1")}
+                          >
+                            Bathroom
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quickAssignRoomType("exterior")}
+                            className={quickAssignButtonClass(currentAssignedRoomType === "")}
+                          >
+                            Exterior
+                          </button>
+                        </div>
 
-                      {/* Bottom: Thumbnail Strip */}
-                      {files.length > 1 && (
-                        <div className="relative z-10 w-full border-t border-slate-200 bg-slate-100/50 px-4 pb-2 pt-3 backdrop-blur-sm sm:px-8">
-                          {/* Validation Alert Overlay (if needed) */}
-                          {blockingCount > 0 && (
-                            <div className="absolute -top-10 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 shadow-sm animate-bounce-subtle">
-                              <div className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                              Complete settings for highlighted images
+                        {files.length > 1 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] text-slate-600">
+                              <p>Configure each image before starting enhancement.</p>
+                              <p>{configuredImagesCount} / {files.length} images configured</p>
                             </div>
-                          )}
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className="h-full rounded-full bg-blue-500 transition-all"
+                                style={{ width: `${configuredProgressPct}%` }}
+                              />
+                            </div>
 
-                          <div className="mx-auto mb-2 flex w-full max-w-[1400px] items-center justify-between text-xs text-slate-600">
-                            <p>Assign a room type to each image before starting enhancement.</p>
-                            <p>{configuredImagesCount} / {files.length} images configured</p>
-                          </div>
-
-                          <div className="mx-auto mb-3 h-2 w-full max-w-[1400px] overflow-hidden rounded-full bg-slate-200">
-                            <div
-                              className="h-full rounded-full bg-blue-600 transition-all"
-                              style={{ width: `${configuredProgressPct}%` }}
-                            />
-                          </div>
-
-                          <div className="flex flex-wrap justify-center gap-2 px-2 pb-2 pt-2">
+                            <div className="flex gap-2 overflow-x-auto pb-1">
                             {files.map((file, idx) => {
                               const status = imageValidationStatus(idx);
                               const isCurrent = idx === currentImageIndex;
@@ -5541,15 +5531,15 @@ export default function BatchProcessor() {
                               }
 
                               const baseClass = isCurrent
-                                ? `grayscale-0 opacity-100 scale-105 ring-4 ${ringClass} ring-offset-2 shadow-lg z-10`
-                                : `grayscale opacity-70 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
+                                ? `grayscale-0 opacity-100 scale-105 ring-2 ${ringClass} ring-offset-2 shadow-md z-10`
+                                : `grayscale opacity-75 hover:grayscale-0 hover:opacity-100 hover:scale-105 ring-1 ${ringClass}`;
 
                               return (
-                                <div key={idx} className="group relative overflow-hidden p-1 py-1 transition-all duration-300 ease-in-out">
+                                <div key={idx} className="group relative overflow-hidden py-1 transition-all duration-300 ease-in-out">
                                   <button
                                     id={`thumbnail-btn-${idx}`}
                                     onClick={() => setCurrentImageIndex(idx)}
-                                    className={`relative h-16 w-24 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${flashAssignedThumbnailIndex === idx ? 'animate-pulse bg-green-200 duration-200' : ''} ${baseClass}`}
+                                    className={`relative h-12 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-slate-200 transition-all duration-300 ease-in-out ${flashAssignedThumbnailIndex === idx ? 'animate-pulse bg-green-200 duration-200' : ''} ${baseClass}`}
                                   >
                                     <img
                                       src={previewUrls[idx]}
@@ -5559,7 +5549,6 @@ export default function BatchProcessor() {
                                     />
                                   </button>
 
-                                  {/* Thumbnail Delete - Explicit X button */}
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -5567,40 +5556,35 @@ export default function BatchProcessor() {
                                       handleRemoveImage(idx);
                                     }}
                                     disabled={removeDisabled}
-                                    className={`absolute right-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-slate-200/90 text-slate-600 shadow-sm transition-all hover:scale-110 hover:bg-red-600 hover:text-white ${isCurrent ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                                    className={`absolute right-1 top-1 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-slate-200/90 text-slate-600 shadow-sm transition-all hover:scale-110 hover:bg-red-600 hover:text-white ${isCurrent ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                                     title="Remove image"
                                   >
                                     <X className="h-3 w-3 hover:stroke-2" />
                                   </button>
 
-                                  {/* Alert Icon for Needs Input */}
                                   {isMissingInput && (
-                                    <div className="pointer-events-none absolute bottom-2 right-2 z-10 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 shadow-sm">
+                                    <div className="pointer-events-none absolute bottom-1 right-1 z-10 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 shadow-sm">
                                       <span className="h-1.5 w-1.5 rounded-full bg-white" />
                                     </div>
                                   )}
 
                                   {!isMissingInput && status === "ok" && (
-                                    <div className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full bg-emerald-500 p-0.5 text-white shadow-sm">
+                                    <div className="pointer-events-none absolute bottom-1 right-1 z-10 rounded-full bg-emerald-500 p-0.5 text-white shadow-sm">
                                       <CheckCircle className="h-3 w-3" />
                                     </div>
                                   )}
                                 </div>
                               );
                             })}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="border-t border-slate-200 bg-white">
-                        <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-8">
-                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                            <div>
-                              <h2 className="text-xl font-semibold tracking-tight text-slate-900">Image Settings</h2>
-                              <p className="mt-1 truncate font-mono text-xs text-slate-500" title={files[currentImageIndex]?.name}>
-                                {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                              </p>
                             </div>
+                          </div>
+                        )}
+
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                            <p className="truncate font-mono text-xs text-slate-500" title={files[currentImageIndex]?.name}>
+                              {files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                            </p>
                             <button
                               onClick={() => {
                                 if (!currentImageId) return;
@@ -5621,10 +5605,10 @@ export default function BatchProcessor() {
                             </button>
                           </div>
 
-                          <div className="space-y-6">
+                          <div className="space-y-4">
                             <section>
-                              <label className="mb-3 block text-xs font-bold uppercase tracking-wider text-slate-400">Scene Type</label>
-                              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-400">Scene Type</label>
+                              <div className="grid grid-cols-2 gap-2">
                                 <button
                                   onClick={() => {
                                     if (!currentImageId) return;
@@ -5634,15 +5618,13 @@ export default function BatchProcessor() {
                                   }}
                                   data-testid={`select-scene-${currentImageIndex}`}
                                   type="button"
-                                  className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all duration-200 ${
+                                  className={`flex items-center justify-center gap-2 rounded-xl border p-3 transition-all duration-200 ${
                                     currentFinalScene === "exterior"
                                       ? "border-action-500 bg-action-50 text-action-700 ring-1 ring-action-500"
                                       : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                   }`}
                                 >
-                                  <div className={`rounded-full p-2 ${currentFinalScene === "exterior" ? "bg-white" : "bg-slate-100"}`}>
-                                    <Home className="h-5 w-5" />
-                                  </div>
+                                  <Home className="h-4 w-4" />
                                   <span className="text-sm font-medium">Exterior</span>
                                 </button>
                                 <button
@@ -5654,15 +5636,13 @@ export default function BatchProcessor() {
                                     setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                                   }}
                                   type="button"
-                                  className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all duration-200 ${
+                                  className={`flex items-center justify-center gap-2 rounded-xl border p-3 transition-all duration-200 ${
                                     currentFinalScene === "interior"
                                       ? "border-action-500 bg-action-50 text-action-700 ring-1 ring-action-500"
                                       : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                                   }`}
                                 >
-                                  <div className={`rounded-full p-2 ${currentFinalScene === "interior" ? "bg-white" : "bg-slate-100"}`}>
-                                    <Armchair className="h-5 w-5" />
-                                  </div>
+                                  <Armchair className="h-4 w-4" />
                                   <span className="text-sm font-medium">Interior</span>
                                 </button>
                               </div>
@@ -5671,8 +5651,36 @@ export default function BatchProcessor() {
                               )}
                             </section>
 
-                            <section className="space-y-4 border-t border-slate-100 pt-2">
-                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">AI Enhancements</h3>
+                            {currentFinalScene === "interior" && (
+                              <section>
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-400">Room Type</label>
+                                <FixedSelect
+                                  value={currentImageId ? imageRoomTypesById[currentImageId] || "" : ""}
+                                  onValueChange={(v) => {
+                                    if (!currentImageId) return;
+                                    setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
+                                    flashAssignedThumbnail(currentImageIndex);
+                                  }}
+                                  placeholder="Select room type..."
+                                  className="w-full"
+                                >
+                                  {INTERIOR_ROOM_TYPES.map((room) => (
+                                    <FixedSelectItem key={room.value} value={room.value}>
+                                      {room.label}
+                                    </FixedSelectItem>
+                                  ))}
+                                </FixedSelect>
+                                {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
+                                  <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
+                                    <p>Open-plan and multi-zone spaces use layout-preserving refresh mode.</p>
+                                    <p>This protects kitchens, islands, and walkways.</p>
+                                  </div>
+                                )}
+                              </section>
+                            )}
+
+                            <section className="space-y-3 border-t border-slate-100 pt-3">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Enhancements</h3>
                               {currentFinalScene === "exterior" && (
                                 <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:border-slate-200">
                                   <div className="flex gap-3">
@@ -5703,34 +5711,6 @@ export default function BatchProcessor() {
                                 </section>
                               )}
                             </section>
-
-                            {currentFinalScene === "interior" && (
-                              <section className="border-t border-slate-100 pt-2">
-                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-400">Room Staging</label>
-                                <FixedSelect
-                                  value={currentImageId ? imageRoomTypesById[currentImageId] || "" : ""}
-                                  onValueChange={(v) => {
-                                    if (!currentImageId) return;
-                                    setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: v }));
-                                    flashAssignedThumbnail(currentImageIndex);
-                                  }}
-                                  placeholder="Select room type..."
-                                  className="w-full"
-                                >
-                                  {INTERIOR_ROOM_TYPES.map((room) => (
-                                    <FixedSelectItem key={room.value} value={room.value}>
-                                      {room.label}
-                                    </FixedSelectItem>
-                                  ))}
-                                </FixedSelect>
-                                {currentImageId && refreshModeOnlyRoomTypes.has(imageRoomTypesById[currentImageId] || "") && (
-                                  <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-700">
-                                    <p>Open-plan and multi-zone spaces use layout-preserving refresh mode.</p>
-                                    <p>This protects kitchens, islands, and walkways.</p>
-                                  </div>
-                                )}
-                              </section>
-                            )}
 
                             {(() => {
                               const sceneNeeds = sceneRequiresInput(currentImageIndex);
@@ -5779,29 +5759,27 @@ export default function BatchProcessor() {
                                 </div>
                               );
                             })()}
-                          </div>
-                        </div>
 
-                        <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
-                          <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-end gap-3">
-                            {isEnhanceCreditBlocked && (
-                              <p className="text-xs text-amber-700" title="Not enough credits">
-                                Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
-                              </p>
-                            )}
-                            {blockingCount > 0 && (
-                              <p className="text-xs text-red-700">Complete required settings for images highlighted in red to continue.</p>
-                            )}
-                            <button
-                              onClick={handleStartEnhance}
-                              disabled={blockingCount > 0 || !files.length}
-                              title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? "" : "s"}.` : undefined}
-                              className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                              data-testid="button-proceed-enhance"
-                              type="button"
-                            >
-                              Start Enhancement ({files.length} {files.length === 1 ? "Image" : "Images"})
-                            </button>
+                            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-3">
+                              {isEnhanceCreditBlocked && (
+                                <p className="text-xs text-amber-700" title="Not enough credits">
+                                  Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
+                                </p>
+                              )}
+                              {blockingCount > 0 && (
+                                <p className="text-xs text-red-700">Complete required settings for images highlighted in red to continue.</p>
+                              )}
+                              <button
+                                onClick={handleStartEnhance}
+                                disabled={blockingCount > 0 || !files.length}
+                                title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? "" : "s"}.` : undefined}
+                                className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                                data-testid="button-proceed-enhance"
+                                type="button"
+                              >
+                                Start Enhancement ({files.length} {files.length === 1 ? "Image" : "Images"})
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
