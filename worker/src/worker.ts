@@ -4755,8 +4755,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       jobId: payload.jobId,
       attempt,
       maxAttempts: STAGE1A_MAX_ATTEMPTS,
-      action: attempt < STAGE1A_MAX_ATTEMPTS ? "retry_from_original" : "exhausted",
+      action: attempt < STAGE1A_MAX_ATTEMPTS ? "retry_with_stage0_reprocess" : "exhausted",
     });
+
+    if (attempt < STAGE1A_MAX_ATTEMPTS) {
+      try {
+        const retryArtifacts = await preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
+          buildArtifacts: true,
+          smallSize: 512,
+          stage1ABorderRetryIndex: attempt,
+        });
+
+        if (retryArtifacts) {
+          jobContext.baseArtifacts = retryArtifacts;
+          jobContext.baseArtifactsCache.set(canonicalPath, retryArtifacts);
+          stageLineage.baseArtifacts = retryArtifacts;
+        }
+        jobContext.canonicalPath = canonicalPath;
+
+        try {
+          const retryMask = await computeStructuralEdgeMask(canonicalPath, retryArtifacts);
+          jobContext.structuralMask = retryMask;
+        } catch (maskErr) {
+          nLog('[STAGE1A_RETRY_PREPROCESS] structural mask recompute failed:', maskErr);
+        }
+
+        nLog("[STAGE1A_RETRY_PREPROCESS]", {
+          jobId: payload.jobId,
+          retryAttemptPrepared: attempt + 1,
+          borderRetryIndex: attempt,
+          status: "ok",
+        });
+      } catch (retryPreprocessErr: any) {
+        nLog("[STAGE1A_RETRY_PREPROCESS]", {
+          jobId: payload.jobId,
+          retryAttemptPrepared: attempt + 1,
+          borderRetryIndex: attempt,
+          status: "error",
+          reason: retryPreprocessErr?.message || String(retryPreprocessErr),
+        });
+      }
+    }
   }
 
   if (stage1ABlackArtifactDetected) {

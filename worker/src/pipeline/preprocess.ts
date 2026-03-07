@@ -157,7 +157,8 @@ async function rotateAndCropSafe(
   image: sharp.Sharp,
   angleDeg: number,
   minApplyDeg: number,
-  maxCorrectionDeg: number
+  maxCorrectionDeg: number,
+  borderRecoveryInsetPx = 0
 ): Promise<{ image: sharp.Sharp; applied: boolean; straightenAngle: number; cropRect: CropRect | null; reason: string }> {
   const absAngle = Math.abs(angleDeg);
   if (absAngle < minApplyDeg) {
@@ -235,7 +236,8 @@ async function rotateAndCropSafe(
     const hasBlackBorder = await detectBlackBorder(buffer);
 
     if (hasBlackBorder) {
-      const inset = 4;
+      // Recovery mode: progressively tighten crop when Stage 1A retries black-border.
+      const inset = Math.max(1, 4 + Math.max(0, borderRecoveryInsetPx));
 
       const tightenedRaw = {
         left: cropRect.left + inset,
@@ -691,7 +693,7 @@ export async function preprocessToCanonical(
   inputPath: string,
   outputPath: string,
   sceneType: string,
-  options: { buildArtifacts?: boolean; smallSize?: number } = {}
+  options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number } = {}
 ): Promise<BaseArtifacts | undefined> {
   let img = sharp(inputPath);
   const inputMeta = await img.metadata();
@@ -706,6 +708,8 @@ export async function preprocessToCanonical(
   const straightenEnabled = process.env.PREPROCESS_GEOMETRIC_STRAIGHTEN !== "0";
   const maxCorrectionDeg = Number(process.env.PREPROCESS_STRAIGHTEN_MAX_DEG ?? 2.0);
   const minApplyDeg = Number(process.env.PREPROCESS_STRAIGHTEN_MIN_APPLY_DEG ?? 0.35);
+  const stage1ABorderRetryIndex = Math.max(0, Number(options.stage1ABorderRetryIndex || 0));
+  const borderRecoveryInsetPx = Math.min(8, stage1ABorderRetryIndex * 2);
   let straightenAngle = 0;
   let straightenCropRect: CropRect | null = null;
   if (straightenEnabled) {
@@ -734,6 +738,7 @@ export async function preprocessToCanonical(
       estimatedRoll,
       minApplyDeg,
       maxCorrectionDeg,
+      borderRecoveryInsetPx,
     );
     img = safeRotate.image;
     straightenAngle = safeRotate.straightenAngle;
