@@ -810,6 +810,107 @@ function shouldEscalateToGeminiStructuralReview(params: {
   );
 }
 
+type Stage1BGeminiResult = Awaited<ReturnType<typeof validateStage1BStructure>>;
+type GeminiVoteDecision = "pass" | "fail";
+
+function toGeminiVoteDecision(result: Stage1BGeminiResult): GeminiVoteDecision {
+  return result?.hardFail === true ? "fail" : "pass";
+}
+
+function pickStage1BConsensusResult(
+  results: Stage1BGeminiResult[],
+  targetDecision: GeminiVoteDecision
+): Stage1BGeminiResult {
+  const matches = results.filter((result) => toGeminiVoteDecision(result) === targetDecision);
+  if (matches.length === 0) return results[0];
+
+  return matches.reduce((best, candidate) => {
+    const bestConfidence = Number.isFinite(best.confidence) ? best.confidence : 0;
+    const candidateConfidence = Number.isFinite(candidate.confidence) ? candidate.confidence : 0;
+    return candidateConfidence > bestConfidence ? candidate : best;
+  }, matches[0]);
+}
+
+async function runStage1BGeminiConsensus(params: {
+  beforeImage: string;
+  afterImage: string;
+  evidence: ValidationEvidence;
+  derivedWarnings: number;
+}): Promise<{
+  result: Stage1BGeminiResult;
+  validatorResults: { v1: GeminiVoteDecision; v2?: GeminiVoteDecision; v3?: GeminiVoteDecision };
+  consensusEnabled: boolean;
+  validatorConfidence: number;
+  derivedWarnings: number;
+}> {
+  const resultA = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+  const validatorResults: { v1: GeminiVoteDecision; v2?: GeminiVoteDecision; v3?: GeminiVoteDecision } = {
+    v1: toGeminiVoteDecision(resultA),
+  };
+
+  const validatorConfidence = Number.isFinite(resultA.confidence) ? resultA.confidence : 0;
+  const consensusEnabled = params.derivedWarnings >= 3 || validatorConfidence < 0.7;
+  if (!consensusEnabled) {
+    return {
+      result: resultA,
+      validatorResults,
+      consensusEnabled,
+      validatorConfidence,
+      derivedWarnings: params.derivedWarnings,
+    };
+  }
+
+  let resultB: Stage1BGeminiResult;
+  try {
+    resultB = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+  } catch (err) {
+    console.warn("[worker] Stage1B Gemini consensus second call failed; falling back to first call", err);
+    return {
+      result: resultA,
+      validatorResults,
+      consensusEnabled,
+      validatorConfidence,
+      derivedWarnings: params.derivedWarnings,
+    };
+  }
+  validatorResults.v2 = toGeminiVoteDecision(resultB);
+
+  if (validatorResults.v1 === validatorResults.v2) {
+    return {
+      result: pickStage1BConsensusResult([resultA, resultB], validatorResults.v1),
+      validatorResults,
+      consensusEnabled,
+      validatorConfidence,
+      derivedWarnings: params.derivedWarnings,
+    };
+  }
+
+  let resultC: Stage1BGeminiResult;
+  try {
+    resultC = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+  } catch (err) {
+    console.warn("[worker] Stage1B Gemini consensus tie-breaker failed; falling back to first call", err);
+    return {
+      result: resultA,
+      validatorResults,
+      consensusEnabled,
+      validatorConfidence,
+      derivedWarnings: params.derivedWarnings,
+    };
+  }
+  validatorResults.v3 = toGeminiVoteDecision(resultC);
+  const failVotes = [resultA, resultB, resultC].filter((result) => result.hardFail).length;
+  const finalDecision: GeminiVoteDecision = failVotes >= 2 ? "fail" : "pass";
+
+  return {
+    result: pickStage1BConsensusResult([resultA, resultB, resultC], finalDecision),
+    validatorResults,
+    consensusEnabled,
+    validatorConfidence,
+    derivedWarnings: params.derivedWarnings,
+  };
+}
+
 function detectBuiltInRemoval(localReasons: string[] | undefined): boolean {
   if (!Array.isArray(localReasons)) return false;
 
@@ -5193,6 +5294,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         openingCountDelta,
       });
 
+      const stage1BSemanticWallDriftPct = (stage1BSemanticSignals?.walls?.driftRatio ?? 0) * 100;
+      const stage1BStructuralDeviationDeg = Number(stage1BStructuralEvidence?.drift?.angleDegrees ?? 0);
+      const stage1BSemanticConsensus = {
+        windowsStatus: stage1BOpeningsBefore !== stage1BOpeningsAfter ? "FAIL" : "PASS",
+        wallDriftStatus: (stage1BSemanticSignals?.walls?.driftRatio ?? 0) >= 0.12 ? "FAIL" : "PASS",
+      };
+      const stage1BMaskedConsensus = {
+        maskedDriftStatus: (stage1BMaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18 ? "FAIL" : "PASS",
+        openingsStatus: stage1BMaskedOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
+      };
+      const stage1BCompositeEvaluation = evaluateCompositeLocalValidator({
+        structuralDeviationDeg: Number.isFinite(stage1BStructuralDeviationDeg)
+          ? stage1BStructuralDeviationDeg
+          : null,
+        maskedDriftPct: stage1BMaskedDriftPct,
+        semanticWallDriftPct: stage1BSemanticWallDriftPct,
+        semanticOpeningsDeltaTotal: openingCountDelta,
+        maskedOpeningsDeltaTotal: stage1BMaskedOpeningsDeltaTotal,
+      });
+      const stage1BConsensusClassification = classifyStructuralConsensusCase({
+        stage: "1B",
+        validationMode: "FULL_STAGE_ONLY",
+        jobId: payload.jobId,
+        semantic: stage1BSemanticConsensus,
+        masked: stage1BMaskedConsensus,
+        composite: {
+          decision: stage1BCompositeEvaluation.failed === true ? "FAIL" : "PASS",
+        },
+      });
+
       let structureResult: Awaited<ReturnType<typeof validateStage1BStructure>>;
       if (stage1BMinorReconstructionSignal) {
         nLog("[STAGE1B_GEMINI_ESCALATION_SKIPPED]", {
@@ -5213,7 +5344,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           openingToleranceReason: "opening_minor_drift",
         };
       } else {
-        structureResult = await validateStage1BStructure(path1A, candidate, stage1BStructuralEvidence);
+        const stage1BGeminiConsensus = await runStage1BGeminiConsensus({
+          beforeImage: path1A,
+          afterImage: candidate,
+          evidence: stage1BStructuralEvidence,
+          derivedWarnings: stage1BConsensusClassification.derivedWarnings,
+        });
+        structureResult = stage1BGeminiConsensus.result;
+        nLog("[STAGE1B_GEMINI_VALIDATOR_RESULTS]", {
+          jobId: payload.jobId,
+          attempt: stage1BAttemptNo,
+          validator_results: stage1BGeminiConsensus.validatorResults,
+          consensusMode: stage1BGeminiConsensus.consensusEnabled,
+          derivedWarnings: stage1BGeminiConsensus.derivedWarnings,
+          validatorConfidence: stage1BGeminiConsensus.validatorConfidence,
+        });
       }
       nLog(
         `[STAGE1B_STRUCTURE_RESULT] hardFail=${structureResult.hardFail} violationType=${structureResult.violationType || "none"}`
@@ -5266,41 +5411,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         suspiciousWallExpansion,
         openingCountDelta,
       });
-
-      const stage1BSemanticWallDriftPct = (stage1BSemanticSignals?.walls?.driftRatio ?? 0) * 100;
-      const stage1BStructuralDeviationDeg = Number(stage1BStructuralEvidence?.drift?.angleDegrees ?? 0);
       const stage1BIsExtremeDeviation =
         Number.isFinite(stage1BStructuralDeviationDeg) && stage1BStructuralDeviationDeg >= 90;
       const stage1BIsExtremeMaskCollapse =
         stage1BMaskedDriftPct >= 95 && stage1BSemanticWallDriftPct >= 95;
-
-      const stage1BSemanticConsensus = {
-        windowsStatus: stage1BOpeningsBefore !== stage1BOpeningsAfter ? "FAIL" : "PASS",
-        wallDriftStatus: (stage1BSemanticSignals?.walls?.driftRatio ?? 0) >= 0.12 ? "FAIL" : "PASS",
-      };
-      const stage1BMaskedConsensus = {
-        maskedDriftStatus: (stage1BMaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18 ? "FAIL" : "PASS",
-        openingsStatus: stage1BMaskedOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
-      };
-      const stage1BCompositeEvaluation = evaluateCompositeLocalValidator({
-        structuralDeviationDeg: Number.isFinite(stage1BStructuralDeviationDeg)
-          ? stage1BStructuralDeviationDeg
-          : null,
-        maskedDriftPct: stage1BMaskedDriftPct,
-        semanticWallDriftPct: stage1BSemanticWallDriftPct,
-        semanticOpeningsDeltaTotal: openingCountDelta,
-        maskedOpeningsDeltaTotal: stage1BMaskedOpeningsDeltaTotal,
-      });
-      const stage1BConsensusClassification = classifyStructuralConsensusCase({
-        stage: "1B",
-        validationMode: "FULL_STAGE_ONLY",
-        jobId: payload.jobId,
-        semantic: stage1BSemanticConsensus,
-        masked: stage1BMaskedConsensus,
-        composite: {
-          decision: stage1BCompositeEvaluation.failed === true ? "FAIL" : "PASS",
-        },
-      });
       const stage1BCatastrophicConsensusBackstop =
         stage1BConsensusClassification.mode === "CATASTROPHIC_BACKSTOP";
       const stage1BExtremeHardFail =

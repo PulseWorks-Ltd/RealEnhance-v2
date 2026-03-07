@@ -91,6 +91,107 @@ export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
   return summary;
 }
 
+type GeminiPassFail = "pass" | "fail";
+
+type GeminiValidatorResults = {
+  v1: GeminiPassFail;
+  v2?: GeminiPassFail;
+  v3?: GeminiPassFail;
+};
+
+type GeminiConsensusResult = {
+  verdict: GeminiSemanticVerdict;
+  validatorResults: GeminiValidatorResults;
+  consensusEnabled: boolean;
+  derivedWarnings: number;
+};
+
+function toGeminiPassFail(verdict: GeminiSemanticVerdict): GeminiPassFail {
+  return verdict.hardFail ? "fail" : "pass";
+}
+
+function pickConsensusVerdict(
+  verdicts: GeminiSemanticVerdict[],
+  targetDecision: GeminiPassFail
+): GeminiSemanticVerdict {
+  const matches = verdicts.filter((verdict) => toGeminiPassFail(verdict) === targetDecision);
+  if (matches.length === 0) return verdicts[0];
+
+  return matches.reduce((best, candidate) => {
+    const bestConfidence = Number.isFinite(best.confidence) ? best.confidence : 0;
+    const candidateConfidence = Number.isFinite(candidate.confidence) ? candidate.confidence : 0;
+    return candidateConfidence > bestConfidence ? candidate : best;
+  }, matches[0]);
+}
+
+async function runGeminiWithConsensus(
+  input: Parameters<typeof runGeminiSemanticValidator>[0],
+  derivedWarnings: number
+): Promise<GeminiConsensusResult> {
+  const resultA = await runGeminiSemanticValidator(input);
+  const validatorResults: GeminiValidatorResults = {
+    v1: toGeminiPassFail(resultA),
+  };
+
+  const validatorConfidence = Number.isFinite(resultA.confidence) ? resultA.confidence : 0;
+  const consensusEnabled = derivedWarnings >= 3 || validatorConfidence < 0.7;
+  if (!consensusEnabled) {
+    return {
+      verdict: resultA,
+      validatorResults,
+      consensusEnabled,
+      derivedWarnings,
+    };
+  }
+
+  let resultB: GeminiSemanticVerdict;
+  try {
+    resultB = await runGeminiSemanticValidator(input);
+  } catch (err) {
+    console.warn("[unified-validator] Gemini consensus second call failed; falling back to first call", err);
+    return {
+      verdict: resultA,
+      validatorResults,
+      consensusEnabled,
+      derivedWarnings,
+    };
+  }
+
+  validatorResults.v2 = toGeminiPassFail(resultB);
+  if (validatorResults.v1 === validatorResults.v2) {
+    return {
+      verdict: pickConsensusVerdict([resultA, resultB], validatorResults.v1),
+      validatorResults,
+      consensusEnabled,
+      derivedWarnings,
+    };
+  }
+
+  let resultC: GeminiSemanticVerdict;
+  try {
+    resultC = await runGeminiSemanticValidator(input);
+  } catch (err) {
+    console.warn("[unified-validator] Gemini consensus tie-breaker failed; using first call", err);
+    return {
+      verdict: resultA,
+      validatorResults,
+      consensusEnabled,
+      derivedWarnings,
+    };
+  }
+
+  validatorResults.v3 = toGeminiPassFail(resultC);
+  const failVotes = [resultA, resultB, resultC].filter((verdict) => verdict.hardFail).length;
+  const finalDecision: GeminiPassFail = failVotes >= 2 ? "fail" : "pass";
+
+  return {
+    verdict: pickConsensusVerdict([resultA, resultB, resultC], finalDecision),
+    validatorResults,
+    consensusEnabled,
+    derivedWarnings,
+  };
+}
+
 function normalizeStagingStyleToken(style?: string): string {
   if (!style) return "nz_standard";
 
@@ -1052,7 +1153,7 @@ export async function runUnifiedValidation(
     nLog(`[validator] escalated=${escalated} earlyExit=${earlyExit}`);
     try {
       nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
-      const geminiResult = await runGeminiSemanticValidator({
+      const geminiConsensus = await runGeminiWithConsensus({
         basePath: originalPath,
         candidatePath: enhancedPath,
         stage,
@@ -1062,8 +1163,10 @@ export async function runUnifiedValidation(
         stage1BValidationMode,
         evidence,
         riskLevel,
-      });
+      }, warnings.length);
+      const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
+      nLog(`[unified-validator] [Gemini] validator_results=${JSON.stringify(geminiConsensus.validatorResults)} consensus=${geminiConsensus.consensusEnabled} derivedWarnings=${geminiConsensus.derivedWarnings}`);
 
       const semantic = summarizeGeminiSemantic(geminiResult);
       const geminiHardFail = semantic.hardFail && geminiMode === "block";
@@ -1078,6 +1181,9 @@ export async function runUnifiedValidation(
           reasons: geminiResult.reasons,
           confidence: geminiResult.confidence,
           mode: geminiMode,
+          validator_results: geminiConsensus.validatorResults,
+          consensusMode: geminiConsensus.consensusEnabled,
+          derivedWarnings: geminiConsensus.derivedWarnings,
           rawText: geminiResult.rawText,
         },
       };
