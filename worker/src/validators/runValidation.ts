@@ -91,6 +91,17 @@ export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
   return summary;
 }
 
+function normalizeStagingStyleToken(style?: string): string {
+  if (!style) return "nz_standard";
+
+  const s = style.trim().toLowerCase();
+  if (["nz_standard", "standard_listing", "standard", "default"].includes(s)) {
+    return "nz_standard";
+  }
+
+  return s;
+}
+
 /**
  * Evidence injection gate - only inject evidence when thresholds indicate HIGH structural risk.
  * 
@@ -239,14 +250,10 @@ export async function runUnifiedValidation(
   let stage2AnchorDirectReasons: string[] = [];
   let stage2AnchorDirectEvents: Array<{ source: "anchor"; confidence: number; reasonCode: string }> = [];
   let stage2LightingAnchorChanged = false;
+  const normalizedStagingStyle = normalizeStagingStyleToken(stagingStyle);
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
-  const isNZStandard = !stagingStyle ||
-    stagingStyle.toLowerCase().includes('standard_listing') ||
-    stagingStyle.toLowerCase().includes('standard listing') ||
-    stagingStyle.toLowerCase().includes('nz_standard_real_estate') ||
-    stagingStyle.toLowerCase().includes('nz_standard') ||
-    stagingStyle.toLowerCase().includes('nz standard');
+  const isNZStandard = normalizedStagingStyle === "nz_standard";
 
   if (isNZStandard) {
     nLog(`[unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection`);
@@ -257,7 +264,7 @@ export async function runUnifiedValidation(
   console.log(`[validator] start jobId=${jobId ?? "unknown"} stage=${stage}`);
   nLog(`[unified-validator] Stage: ${stage}`);
   nLog(`[unified-validator] Scene: ${sceneType}`);
-  nLog(`[unified-validator] Staging Style: ${stagingStyle || 'standard_listing (default)'}`);
+  nLog(`[unified-validator] Staging Style: ${normalizedStagingStyle || 'nz_standard (default)'}`);
   nLog(`[unified-validator] Modes: local=${validatorMode} gemini=${geminiMode}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);

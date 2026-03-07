@@ -269,7 +269,10 @@ export async function runStage2GenerationAttempt(
   const scene = opts.sceneType || "interior";
   const { data, mime } = toBase64(inputForStage2);
   const useTest = process.env.USE_TEST_PROMPTS === "1";
-  const selectedStyle = normalizeStagingStyle(opts.stagingStyle);
+  const selectedStyleRaw = normalizeStagingStyle(opts.stagingStyle);
+  const selectedStyle = ["nz_standard", "standard_listing", "standard", "default"].includes(selectedStyleRaw)
+    ? "nz_standard"
+    : selectedStyleRaw;
 
   let textPrompt = useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
@@ -280,7 +283,7 @@ export async function runStage2GenerationAttempt(
         layoutContext: opts.layoutContext || undefined,
       });
 
-  const styleModifier = STYLE_PROMPT_MODIFIERS[selectedStyle];
+  const styleModifier = selectedStyle === "nz_standard" ? undefined : STYLE_PROMPT_MODIFIERS[selectedStyle];
   if (styleModifier) {
     textPrompt += "\n\nSTYLE CONTEXT:\n" + styleModifier;
   }

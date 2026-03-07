@@ -106,42 +106,16 @@ function normalizeRoomType(raw: unknown): string {
   return aliases[value] || value.replace(/-/g, "_");
 }
 
-function normalizeStagingStyle(raw: unknown): string {
-  const value = String(raw || "").trim().toLowerCase();
-  if (!value) return "standard_listing";
+function normalizeStagingStyle(style?: string): string {
+  if (!style) return "nz_standard";
 
-  const aliases: Record<string, string> = {
-    // Backward compatibility
-    nz_standard: "standard_listing",
-    "nz standard": "standard_listing",
-    "nz standard real estate": "standard_listing",
-    nz_standard_real_estate: "standard_listing",
-    "standard listing": "standard_listing",
+  const s = style.trim().toLowerCase();
 
-    family_home: "family_home",
-    "family home": "family_home",
+  if (["nz_standard", "standard_listing", "standard", "default"].includes(s)) {
+    return "nz_standard";
+  }
 
-    urban_apartment: "urban_apartment",
-    "urban apartment": "urban_apartment",
-
-    high_end_luxury: "high_end_luxury",
-    "high-end luxury": "high_end_luxury",
-    "high end luxury": "high_end_luxury",
-
-    country_lifestyle: "country_lifestyle",
-    "country lifestyle": "country_lifestyle",
-    "country / lifestyle": "country_lifestyle",
-
-    lived_in_rental: "lived_in_rental",
-    "lived in rental": "lived_in_rental",
-    "lived-in rental": "lived_in_rental",
-    "lived-in / rental": "lived_in_rental",
-  };
-
-  const normalized = aliases[value] || value.replace(/-/g, "_").replace(/\s+/g, "_");
-  return ["standard_listing", "family_home", "urban_apartment", "high_end_luxury", "country_lifestyle", "lived_in_rental"].includes(normalized)
-    ? normalized
-    : "standard_listing";
+  return s;
 }
 
 export function uploadRouter() {
@@ -474,9 +448,9 @@ export function uploadRouter() {
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
         opts.manualSceneOverride = true;
       }
-      // Default to Standard Listing (legacy NZ Standard behavior)
+      // Default to canonical NZ standard token.
       if (!opts.stagingStyle || opts.stagingStyle.trim() === '') {
-        opts.stagingStyle = 'standard_listing';
+        opts.stagingStyle = 'nz_standard';
       }
       // Optional tuning propagated from UI per-image meta
       const temp = Number.isFinite(meta.temperature) ? Number(meta.temperature) : undefined;
