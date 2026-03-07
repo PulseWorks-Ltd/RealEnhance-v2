@@ -7,6 +7,7 @@ import {
   EditJobPayload,
   RegionEditJobPayload
 } from "@realenhance/shared/types";
+import { evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
 
 import fs from "fs";
 import sharp from "sharp";
@@ -9944,6 +9945,8 @@ const worker = new Worker(
   async (job: Job) => {
     const payload = job.data as AnyJobPayload;
     const jobId = (payload as any).jobId;
+    const userId = String((payload as any)?.userId || "").trim();
+    let fairSlotAcquired = false;
 
     const existingJob = await getJob(jobId);
     const existingStatus = String((existingJob as any)?.status || "").toLowerCase();
@@ -9962,10 +9965,25 @@ const worker = new Worker(
       return;
     }
 
-    beginBatchForensicForJob(payload as any);
-
-    await safeWriteJobStatus(jobId, { status: "processing" }, "job_start");
     try {
+      if (userId) {
+        const fairDecision = await evaluateFairShare(userId);
+        nLog(
+          `[FAIR-SCHEDULER] userId=${userId} activeUsers=${fairDecision.activeUsers} maxJobsPerUser=${fairDecision.maxJobsPerUser} userActiveJobs=${fairDecision.userActiveJobs}`
+        );
+
+        if (!fairDecision.canStart) {
+          throw new Error("fair-share-limit");
+        }
+
+        await markJobStarted(userId);
+        fairSlotAcquired = true;
+      }
+
+      beginBatchForensicForJob(payload as any);
+
+      await safeWriteJobStatus(jobId, { status: "processing" }, "job_start");
+
       if (typeof payload === "object" && payload && "type" in payload) {
         if (payload.type === "enhance") {
           return await handleEnhanceJob(payload as EnhanceJobPayload);
@@ -10187,6 +10205,16 @@ const worker = new Worker(
         throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
+      if ((err as any)?.message === "fair-share-limit") {
+        nLog("[FAIR-SCHEDULER] delaying job due to per-user share", {
+          jobId,
+          userId,
+          delayMs: 2000,
+        });
+        await job.moveToDelayed(Date.now() + 2000);
+        return;
+      }
+
       nLog("[worker] job failed", err);
       
       // ✅ CHECK 1: Release reservation on job failure to prevent credit leaks
@@ -10205,6 +10233,18 @@ const worker = new Worker(
       await safeWriteJobStatus(jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
       throw err;
     } finally {
+      if (fairSlotAcquired && userId) {
+        try {
+          await markJobFinished(userId);
+        } catch (fairErr) {
+          nLog("[FAIR-SCHEDULER] failed to release active slot (non-blocking)", {
+            jobId,
+            userId,
+            error: (fairErr as any)?.message || String(fairErr),
+          });
+        }
+      }
+
       try {
         if (jobId) {
           await finalizeBatchForensicForJob(jobId, payload as any);

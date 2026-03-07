@@ -4,6 +4,7 @@ export * from "./imageStore";
 export * from "./stageUrlResolver";
 export * from "./jsonStore";
 export * from "./redisClient";
+export * from "./fairScheduler";
 export * from "./types";
 export * from "./usage/types";
 export * from "./usage/usageStore";
