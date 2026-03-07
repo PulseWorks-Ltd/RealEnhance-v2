@@ -5233,14 +5233,14 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full h-screen overflow-hidden flex flex-col bg-slate-100">
-            <div className="w-full border-b border-slate-200 bg-white px-5 py-2">
-              <div className="flex items-center gap-3 text-sm font-medium">
-                <div className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">1. Upload</div>
-                <div className="h-px flex-1 bg-slate-200" />
-                <div className="rounded-full bg-action-100 px-3 py-1 text-action-700">2. Image Preparation</div>
-                <div className="h-px flex-1 bg-slate-200" />
-                <div className="rounded-full bg-slate-100 px-3 py-1 text-slate-500">3. Enhance</div>
+          <div className="w-full h-full overflow-hidden flex flex-col bg-slate-100">
+            <div className="w-full border-b border-slate-200 bg-white px-4 py-1 shrink-0">
+              <div className="flex items-center justify-center gap-2 text-xs font-medium max-w-lg mx-auto">
+                <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
+                <div className="h-0.5 w-8 bg-slate-200 mx-2" />
+                <div className="text-action-700 flex items-center gap-1 font-bold"><span className="w-4 h-4 rounded-full bg-action-100 flex items-center justify-center text-[10px]">2</span> Image Preparation</div>
+                <div className="h-0.5 w-8 bg-slate-200 mx-2" />
+                <div className="text-slate-500 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">3</span> Enhance</div>
               </div>
             </div>
 
@@ -5260,9 +5260,9 @@ export default function BatchProcessor() {
               </div>
             ) : (
               <div className="flex-1 min-h-0 w-full flex overflow-hidden">
-                <aside className="w-80 h-full overflow-hidden bg-white border-r border-slate-200 p-3">
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-2">
+                <aside className="w-80 h-full flex flex-col overflow-hidden bg-white border-r border-slate-200 p-3 pt-0">
+                  <div className="space-y-2 flex-1 overflow-y-auto pr-1 pb-2">
+                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-3 z-10">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
                         <p className="text-xs text-slate-600">Global settings for this batch.</p>
@@ -5368,22 +5368,22 @@ export default function BatchProcessor() {
                   </div>
                 </aside>
 
-                <div className="flex-1 h-full min-h-0 px-5 pt-3 pb-20 bg-slate-50 flex flex-col overflow-hidden">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                <div className="flex-1 h-full min-h-0 px-5 flex flex-col overflow-hidden bg-slate-50">
+                  <div className="flex items-center justify-between gap-3 shrink-0 py-1.5 z-10">
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                       Image {currentImageIndex + 1} of {files.length}
                     </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                       {configuredImagesCount} / {files.length} configured
                     </div>
                   </div>
 
-                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-2">
-                    <div className="relative h-full max-h-[52vh] w-full rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full">
+                    <div className="relative h-full w-full max-h-[50vh] rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="h-full w-full object-contain rounded-2xl"
+                        className="h-full w-full object-contain rounded-2xl p-0.5"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
@@ -5449,7 +5449,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                               }}
-                              className={`px-4 py-1.5 rounded-lg border text-sm font-medium ${sceneType === "exterior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[140px] ${sceneType === "exterior" ? "border-green-500 bg-green-50 shadow-sm" : "border-slate-300 bg-white hover:bg-slate-50"}`}
                             >
                               Exterior
                             </button>
@@ -5462,7 +5462,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                               }}
-                              className={`px-4 py-1.5 rounded-lg border text-sm font-medium ${sceneType === "interior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[140px] ${sceneType === "interior" ? "border-green-500 bg-green-50 shadow-sm" : "border-slate-300 bg-white hover:bg-slate-50"}`}
                             >
                               Interior
                             </button>
@@ -5534,7 +5534,7 @@ export default function BatchProcessor() {
                             <img
                               src={previewUrls[idx]}
                               alt={file.name || `Image ${idx + 1}`}
-                              className="h-16 w-24 object-cover"
+                              className="h-20 w-28 object-cover"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex items-end pointer-events-none">
@@ -5557,9 +5557,9 @@ export default function BatchProcessor() {
             )}
 
             {files.length > 0 && (
-              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white p-3 flex items-center justify-end gap-3">
+              <footer className="h-16 shrink-0 flex items-center justify-end px-6 border-t border-slate-200 bg-white z-40 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                 {isEnhanceCreditBlocked && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700" title="Not enough credits">
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700" title="Not enough credits">
                     Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
                   </p>
                 )}
@@ -5567,13 +5567,13 @@ export default function BatchProcessor() {
                   onClick={handleStartEnhance}
                   disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index)) || isEnhanceCreditBlocked}
                   title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
-                  className="rounded-lg bg-action-600 px-6 py-2.5 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-8 py-2 font-semibold text-white shadow-md transition-all hover:from-action-700 hover:to-indigo-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 text-base flex items-center border border-transparent"
                   data-testid="button-proceed-enhance"
                   type="button"
                 >
                   Start Enhancement ({files.length} images)
                 </button>
-              </div>
+              </footer>
             )}
           </div>
         )}
