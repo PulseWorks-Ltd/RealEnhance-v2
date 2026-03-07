@@ -5233,25 +5233,23 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full flex flex-col h-screen overflow-hidden">
-            <div className="mx-auto w-full max-w-[1800px] h-full flex flex-col px-2 py-3 sm:px-4 lg:px-6">
-              {files.length === 0 ? (
-                <EmptyStateLaunchpad
-                  onFileSelect={triggerFileSelector}
-                  onFileDrop={handleFileDrop}
-                  onSampleSelect={(sampleType) => {
-                    console.log('[BatchProcessor] Sample selected:', sampleType);
-                    toast({
-                      title: "Sample images coming soon",
-                      description: `${sampleType} sample will be available in the next release.`,
-                    });
-                  }}
-                />
-              ) : (
-                <>
-                  <div className="flex flex-1 min-h-0 flex-col overflow-y-auto">
-                    <div className="w-full max-w-[1400px] mx-auto px-6">
-                      <aside className="mx-auto w-full max-w-[700px] mt-4">
+          <div className="w-full max-w-[1200px] mx-auto px-6 py-8">
+            {files.length === 0 ? (
+              <EmptyStateLaunchpad
+                onFileSelect={triggerFileSelector}
+                onFileDrop={handleFileDrop}
+                onSampleSelect={(sampleType) => {
+                  console.log('[BatchProcessor] Sample selected:', sampleType);
+                  toast({
+                    title: "Sample images coming soon",
+                    description: `${sampleType} sample will be available in the next release.`,
+                  });
+                }}
+              />
+            ) : (
+              <>
+                <div className="flex flex-col w-full">
+                  <aside className="max-w-[420px] mx-auto mb-8 w-full">
                         <div className="bg-white border rounded-xl p-4 space-y-4">
                           <div className="flex items-start justify-between gap-2">
                             <div>
@@ -5359,24 +5357,22 @@ export default function BatchProcessor() {
                         </div>
                       </aside>
 
-                      <section className="mt-4">
-                        <div className="bg-white border rounded-xl px-4 sm:px-6 py-4">
-                          <div className="mx-auto flex w-full max-w-[1100px] items-start justify-between gap-2">
-                            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                              Image {currentImageIndex + 1} of {files.length}
-                            </div>
-                            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                              {configuredImagesCount} / {files.length} configured
-                            </div>
-                          </div>
+                      <div className="flex justify-between w-full max-w-[1000px] mx-auto mb-2 px-2">
+                        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          Image {currentImageIndex + 1} of {files.length}
+                        </div>
+                        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {configuredImagesCount} / {files.length} configured
+                        </div>
+                      </div>
 
-                          <div className="flex items-center justify-center py-6">
-                            <div className="relative w-full max-w-[1100px] aspect-[16/9] rounded-2xl overflow-hidden bg-slate-100 shadow-md mx-auto">
-                            <img
-                              src={previewUrls[currentImageIndex]}
-                              alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                              className="h-full w-full object-contain"
-                            />
+                      <div className="w-full flex justify-center mb-6">
+                        <div className="relative w-full max-w-[1000px] aspect-[16/9] rounded-xl overflow-hidden bg-slate-100 shadow-md">
+                          <img
+                            src={previewUrls[currentImageIndex]}
+                            alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
+                            className="h-full w-full object-contain"
+                          />
 
                             <div className="absolute right-4 top-4 z-20">
                               <button
@@ -5420,18 +5416,18 @@ export default function BatchProcessor() {
                                 </button>
                               </>
                             )}
-                            </div>
-                          </div>
+                        </div>
+                      </div>
 
-                          <div className="max-w-[700px] mx-auto mt-6 space-y-3 text-center">
-                            {(() => {
-                              const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
-                              const sceneSelected = Boolean(sceneType);
-                              const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
+                      <div className="flex flex-col items-center gap-3 mb-6">
+                        {(() => {
+                          const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
+                          const sceneSelected = Boolean(sceneType);
+                          const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
 
-                              return (
-                                <>
-                                  <div className="flex justify-center gap-3">
+                          return (
+                            <>
+                              <div className="flex gap-3 justify-center">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -5470,7 +5466,7 @@ export default function BatchProcessor() {
                                         setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
                                         flashAssignedThumbnail(currentImageIndex);
                                       }}
-                                      className="w-[320px] mx-auto mt-2 rounded-lg border px-4 py-3 text-sm bg-slate-800 text-white"
+                                      className="w-[280px] rounded-lg border px-4 py-2 text-sm bg-slate-800 text-white"
                                     >
                                       <option value="">Select room type...</option>
                                       {INTERIOR_ROOM_TYPES.map((room) => (
@@ -5483,61 +5479,57 @@ export default function BatchProcessor() {
                                 </>
                               );
                             })()}
-                          </div>
-                        </div>
-
-                        <div className="max-w-[900px] mx-auto mt-8 flex justify-center gap-3 overflow-x-auto pb-2">
-                          {files.map((file, idx) => {
-                            const isCurrent = idx === currentImageIndex;
-                            const needsRoomType = roomTypeRequiresInput(idx);
-
-                            return (
-                              <button
-                                key={idx}
-                                id={`thumbnail-btn-${idx}`}
-                                type="button"
-                                onClick={() => setCurrentImageIndex(idx)}
-                                className={`relative shrink-0 rounded-lg ${isCurrent ? "ring-2 ring-indigo-500" : ""} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300" : ""}`}
-                              >
-                                {needsRoomType && (
-                                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-                                )}
-                                <img
-                                  src={previewUrls[idx]}
-                                  alt={file.name || `Image ${idx + 1}`}
-                                  className="w-32 h-24 object-cover rounded-lg border"
-                                  loading="lazy"
-                                />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    </div>
-
-                    <footer className="max-w-[1400px] mx-auto px-6 flex justify-end mt-6">
-                      <div className="flex items-center gap-3 pb-4">
-                        {isEnhanceCreditBlocked && (
-                          <p className="text-xs text-amber-700" title="Not enough credits">
-                            Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
-                          </p>
-                        )}
-                        <button
-                          onClick={handleStartEnhance}
-                          disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index)) || isEnhanceCreditBlocked}
-                          title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
-                          className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-                          data-testid="button-proceed-enhance"
-                          type="button"
-                        >
-                          Start Enhancement ({files.length} images)
-                        </button>
                       </div>
-                    </footer>
-                  </div>
-                </>
-              )}
-            </div>
+
+                      <div className="flex justify-center gap-3 mb-6 overflow-x-auto">
+                        {files.map((file, idx) => {
+                          const isCurrent = idx === currentImageIndex;
+                          const needsRoomType = roomTypeRequiresInput(idx);
+
+                          return (
+                            <button
+                              key={idx}
+                              id={`thumbnail-btn-${idx}`}
+                              type="button"
+                              onClick={() => setCurrentImageIndex(idx)}
+                              className={`relative shrink-0 rounded-lg ${isCurrent ? "ring-2 ring-indigo-500" : ""} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300" : ""}`}
+                            >
+                              {needsRoomType && (
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+                              )}
+                              <img
+                                src={previewUrls[idx]}
+                                alt={file.name || `Image ${idx + 1}`}
+                                className="w-28 h-20 object-cover rounded-lg border"
+                                loading="lazy"
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex justify-center mt-4">
+                        <div className="flex items-center gap-3 pb-4">
+                          {isEnhanceCreditBlocked && (
+                            <p className="text-xs text-amber-700" title="Not enough credits">
+                              Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
+                            </p>
+                          )}
+                          <button
+                            onClick={handleStartEnhance}
+                            disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index)) || isEnhanceCreditBlocked}
+                            title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
+                            className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                            data-testid="button-proceed-enhance"
+                            type="button"
+                          >
+                            Start Enhancement ({files.length} images)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
           </div>
         )}
 
