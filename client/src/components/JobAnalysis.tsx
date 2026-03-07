@@ -129,7 +129,7 @@ export function JobAnalysisPanel({ jobId }: JobAnalysisProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Failure Analysis</CardTitle>
+          <CardTitle>AI Failure Analysis</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export function JobAnalysisPanel({ jobId }: JobAnalysisProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Failure Analysis</CardTitle>
+          <CardTitle>AI Failure Analysis</CardTitle>
           <CardDescription>No analysis available for this job</CardDescription>
         </CardHeader>
         <CardContent>
@@ -196,7 +196,7 @@ export function JobAnalysisPanel({ jobId }: JobAnalysisProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Failure Analysis</CardTitle>
+            <CardTitle>AI Failure Analysis</CardTitle>
             <CardDescription>
               Generated {new Date(analysis.createdAt).toLocaleString()}
             </CardDescription>

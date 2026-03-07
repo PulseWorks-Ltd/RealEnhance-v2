@@ -45,8 +45,8 @@ export default function PrivacyPage() {
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-slate-900">Third-Party Services</h2>
               <p>
-                RealEnhance may use third-party infrastructure providers, payment processors, and automated processing
-                services to operate the platform.
+                RealEnhance may use third-party infrastructure providers, payment processors, and AI services to
+                operate the platform.
               </p>
               <p>These providers may process data only as necessary to provide their services.</p>
             </section>

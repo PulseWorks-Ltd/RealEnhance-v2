@@ -28,7 +28,7 @@ export function ModeToggle({ mode, onModeChange }: ModeToggleProps) {
         }`}
         data-testid="button-mode-ai"
       >
-        🤖 Guided
+        🤖 AI-Powered
       </button>
     </div>
   );
