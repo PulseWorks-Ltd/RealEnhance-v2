@@ -5360,17 +5360,18 @@ export default function BatchProcessor() {
                       </aside>
 
                       <section className="mt-4">
-                        <div className="mx-auto flex w-full max-w-[1100px] items-start justify-between gap-2">
-                          <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                            Image {currentImageIndex + 1} of {files.length}
+                        <div className="bg-white border rounded-xl px-4 sm:px-6 py-4">
+                          <div className="mx-auto flex w-full max-w-[1100px] items-start justify-between gap-2">
+                            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                              Image {currentImageIndex + 1} of {files.length}
+                            </div>
+                            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                              {configuredImagesCount} / {files.length} configured
+                            </div>
                           </div>
-                          <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                            {configuredImagesCount} / {files.length} configured
-                          </div>
-                        </div>
 
-                        <div className="flex items-center justify-center py-6">
-                          <div className="relative w-full max-w-[1100px] aspect-[16/9] rounded-2xl overflow-hidden bg-slate-100 shadow-md mx-auto">
+                          <div className="flex items-center justify-center py-6">
+                            <div className="relative w-full max-w-[1100px] aspect-[16/9] rounded-2xl overflow-hidden bg-slate-100 shadow-md mx-auto">
                             <img
                               src={previewUrls[currentImageIndex]}
                               alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -5419,69 +5420,70 @@ export default function BatchProcessor() {
                                 </button>
                               </>
                             )}
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="max-w-[700px] mx-auto mt-6 space-y-3 text-center">
-                          {(() => {
-                            const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
-                            const sceneSelected = Boolean(sceneType);
-                            const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
+                          <div className="max-w-[700px] mx-auto mt-6 space-y-3 text-center">
+                            {(() => {
+                              const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
+                              const sceneSelected = Boolean(sceneType);
+                              const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
 
-                            return (
-                              <>
-                                <div className="flex justify-center gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!currentImageId) return;
-                                      setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                      setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                      setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
-                                      setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
-                                    }}
-                                    className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "exterior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
-                                  >
-                                    Exterior
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!currentImageId) return;
-                                      setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
-                                      setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
-                                      setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
-                                      setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
-                                    }}
-                                    className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "interior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
-                                  >
-                                    Interior
-                                  </button>
-                                </div>
+                              return (
+                                <>
+                                  <div className="flex justify-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!currentImageId) return;
+                                        setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                        setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                        setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                        setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
+                                      }}
+                                      className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "exterior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                                    >
+                                      Exterior
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!currentImageId) return;
+                                        setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                        setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                        setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                        setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
+                                      }}
+                                      className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "interior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                                    >
+                                      Interior
+                                    </button>
+                                  </div>
 
-                                {!sceneSelected ? (
-                                  <p className="mt-2 text-sm text-red-600 font-medium">Select interior or exterior for this image</p>
-                                ) : (
-                                  <select
-                                    value={currentRoomType}
-                                    onChange={(e) => {
-                                      if (!currentImageId) return;
-                                      setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
-                                      flashAssignedThumbnail(currentImageIndex);
-                                    }}
-                                    className="w-[320px] mx-auto mt-2 rounded-lg border px-4 py-3 text-sm bg-slate-800 text-white"
-                                  >
-                                    <option value="">Select room type...</option>
-                                    {INTERIOR_ROOM_TYPES.map((room) => (
-                                      <option key={room.value} value={room.value}>
-                                        {room.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                )}
-                              </>
-                            );
-                          })()}
+                                  {!sceneSelected ? (
+                                    <p className="mt-2 text-sm text-red-600 font-medium">Select interior or exterior for this image</p>
+                                  ) : (
+                                    <select
+                                      value={currentRoomType}
+                                      onChange={(e) => {
+                                        if (!currentImageId) return;
+                                        setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
+                                        flashAssignedThumbnail(currentImageIndex);
+                                      }}
+                                      className="w-[320px] mx-auto mt-2 rounded-lg border px-4 py-3 text-sm bg-slate-800 text-white"
+                                    >
+                                      <option value="">Select room type...</option>
+                                      {INTERIOR_ROOM_TYPES.map((room) => (
+                                        <option key={room.value} value={room.value}>
+                                          {room.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
 
                         <div className="max-w-[900px] mx-auto mt-8 flex justify-center gap-3 overflow-x-auto pb-2">
