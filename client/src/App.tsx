@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { Header } from "@/components/Header";
+import { SiteFooter } from "@/components/SiteFooter";
 import { AppShell } from "@/components/layout/AppShell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAgency } from "@/components/RequireAgency";
@@ -49,6 +50,18 @@ const SecuritySettings = lazyWithRetry(() => import("@/pages/settings/security")
 const BillingSettings = lazyWithRetry(() => import("@/pages/agency"));
 const NotFound       = lazyWithRetry(() => import("@/pages/not-found"));
 const StartTrial     = lazyWithRetry(() => import("@/pages/start-trial"));
+const TermsPage      = lazyWithRetry(() => import("@/pages/terms"));
+const PrivacyPage    = lazyWithRetry(() => import("@/pages/privacy"));
+
+function PublicLayout() {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Header />
+      <Outlet />
+      <SiteFooter />
+    </div>
+  );
+}
 
 function LegacyMyPhotosRedirect() {
   const location = useLocation();
@@ -76,10 +89,12 @@ export default function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public Routes with Header */}
-          <Route element={<><Header /><Outlet /></>}>
+          <Route element={<PublicLayout />}>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/auth/complete" element={<AuthComplete />} />
             <Route path="/start-trial" element={<StartTrial />} />

@@ -5835,6 +5835,9 @@ export default function BatchProcessor() {
                     {isCreditSummaryLoading && (
                       <p className="mt-2 text-xs text-slate-500">Checking available credits…</p>
                     )}
+                    <p className="mt-4 text-xs text-slate-500">
+                      Users are responsible for verifying that generated images accurately represent the property before use in marketing.
+                    </p>
                     <div className="flex justify-center mt-4">
                       <button
                         onClick={() => setActiveTab("images")}
@@ -6495,7 +6498,9 @@ export default function BatchProcessor() {
 
                 {/* Final Actions */}
                 {runState === "done" && !hasInFlightResults && (
-                    <div className="mt-8 flex justify-center gap-4">
+                  <div className="mt-8 flex flex-col items-center gap-3">
+                    <p className="text-xs text-slate-500">Verify images before use in property marketing.</p>
+                    <div className="flex justify-center gap-4">
                          <button 
                             onClick={downloadZip}
                             disabled={isDownloadingZip}
@@ -6510,6 +6515,7 @@ export default function BatchProcessor() {
                         >
                             Start New Batch
                         </button>
+                    </div>
                     </div>
                 )}
                 

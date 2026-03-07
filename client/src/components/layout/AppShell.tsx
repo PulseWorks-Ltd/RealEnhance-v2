@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
+import { SiteFooter } from '@/components/SiteFooter';
 
 // Navigation configuration
 const mainNavItems = [
@@ -231,6 +232,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             {children}
           </div>
         </main>
+        <SiteFooter />
       </div>
     </div>
   );

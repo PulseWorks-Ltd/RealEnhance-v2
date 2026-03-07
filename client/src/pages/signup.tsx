@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +20,7 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [inviteInfo, setInviteInfo] = useState<{ email: string; agencyName: string } | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const { signUpWithEmail, ensureSignedIn } = useAuth();
   const navigate = useNavigate();
@@ -69,6 +70,11 @@ export default function Signup() {
 
     if (password.length < 8) {
       setError("Password must be at least 8 characters");
+      return;
+    }
+
+    if (!acceptedLegal) {
+      setError("You must agree to the Terms of Service and Privacy Policy to create an account.");
       return;
     }
 
@@ -321,6 +327,37 @@ export default function Signup() {
                 >
                   {loading ? "Creating account..." : "Create account"}
                 </Button>
+
+                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <label htmlFor="signup-legal-agreement" className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+                    <input
+                      id="signup-legal-agreement"
+                      type="checkbox"
+                      checked={acceptedLegal}
+                      onChange={(e) => setAcceptedLegal(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      required
+                      disabled={loading}
+                      aria-invalid={submitted && !acceptedLegal}
+                    />
+                    <span>
+                      I agree to the {" "}
+                      <Link to="/terms" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                        Terms of Service
+                      </Link>{" "}
+                      and {" "}
+                      <Link to="/privacy" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                        Privacy Policy
+                      </Link>
+                      .
+                    </span>
+                  </label>
+                  {submitted && !acceptedLegal && (
+                    <p className="text-xs text-rose-600" role="alert">
+                      You must agree to the Terms of Service and Privacy Policy to create an account.
+                    </p>
+                  )}
+                </div>
 
                 <p className="text-xs text-slate-500 text-center">
                   Trusted by real estate agencies and photographers.
