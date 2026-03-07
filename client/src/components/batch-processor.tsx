@@ -5233,8 +5233,8 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full h-[calc(100vh-theme(spacing.navbar))] flex flex-col overflow-hidden bg-slate-100">
-            <div className="w-full border-b border-slate-200 bg-white px-6 py-4">
+          <div className="w-full h-screen overflow-hidden flex flex-col bg-slate-100">
+            <div className="w-full border-b border-slate-200 bg-white px-5 py-2">
               <div className="flex items-center gap-3 text-sm font-medium">
                 <div className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">1. Upload</div>
                 <div className="h-px flex-1 bg-slate-200" />
@@ -5259,8 +5259,8 @@ export default function BatchProcessor() {
                 />
               </div>
             ) : (
-              <div className="flex-1 w-full flex overflow-hidden">
-                <aside className="w-80 h-full overflow-y-auto bg-white border-r border-slate-200 p-6">
+              <div className="flex-1 min-h-0 w-full flex overflow-hidden">
+                <aside className="w-80 h-full overflow-hidden bg-white border-r border-slate-200 p-3">
                   <div className="space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -5368,7 +5368,7 @@ export default function BatchProcessor() {
                   </div>
                 </aside>
 
-                <div className="flex-1 h-full p-8 bg-slate-50 flex flex-col justify-between overflow-hidden">
+                <div className="flex-1 h-full min-h-0 px-5 pt-3 pb-20 bg-slate-50 flex flex-col overflow-hidden">
                   <div className="flex items-center justify-between gap-3">
                     <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                       Image {currentImageIndex + 1} of {files.length}
@@ -5378,12 +5378,12 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="flex-grow min-h-0 flex items-center justify-center py-6">
-                    <div className="relative h-full w-full rounded-xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 py-2">
+                    <div className="relative h-full max-h-[52vh] w-full rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="h-full w-full object-contain max-h-full"
+                        className="h-full w-full object-contain rounded-2xl"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
@@ -5431,7 +5431,7 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-center gap-3 pb-4">
+                  <div className="flex flex-col items-center space-y-2 py-3">
                     {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                       const sceneSelected = Boolean(sceneType);
@@ -5449,7 +5449,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                               }}
-                              className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "exterior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                              className={`px-4 py-1.5 rounded-lg border text-sm font-medium ${sceneType === "exterior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
                             >
                               Exterior
                             </button>
@@ -5462,7 +5462,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                               }}
-                              className={`px-5 py-2 rounded-lg border text-sm font-medium ${sceneType === "interior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
+                              className={`px-4 py-1.5 rounded-lg border text-sm font-medium ${sceneType === "interior" ? "border-green-500 bg-green-50" : "border-slate-300 bg-white"}`}
                             >
                               Interior
                             </button>
@@ -5473,7 +5473,7 @@ export default function BatchProcessor() {
                           ) : sceneType === "exterior" ? (
                             <p className="text-sm text-emerald-600 font-bold">Ready. Move onto next image.</p>
                           ) : (
-                            <div className="flex flex-col items-center gap-2 mt-2">
+                            <div className="flex flex-col items-center gap-2">
                               <select
                                 value={currentRoomType}
                                 onChange={(e) => {
@@ -5481,7 +5481,7 @@ export default function BatchProcessor() {
                                   setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
                                   flashAssignedThumbnail(currentImageIndex);
                                 }}
-                                className="w-[320px] rounded-lg border px-4 py-2 text-sm bg-slate-800 text-white"
+                                className="w-[320px] rounded-lg border px-4 py-1.5 text-sm bg-slate-800 text-white"
                               >
                                 <option value="">Select room type...</option>
                                 {INTERIOR_ROOM_TYPES.map((room) => (
@@ -5502,7 +5502,7 @@ export default function BatchProcessor() {
                     })()}
                   </div>
 
-                  <div className="w-full overflow-x-auto pb-3">
+                  <div className="w-full overflow-x-auto pb-1">
                     <div className="flex w-max min-w-full gap-3 pr-4">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
@@ -5534,7 +5534,7 @@ export default function BatchProcessor() {
                             <img
                               src={previewUrls[idx]}
                               alt={file.name || `Image ${idx + 1}`}
-                              className="w-44 h-24 object-cover"
+                              className="h-16 w-24 object-cover"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex items-end pointer-events-none">
@@ -5557,7 +5557,7 @@ export default function BatchProcessor() {
             )}
 
             {files.length > 0 && (
-              <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white p-3 flex items-center justify-end gap-3">
                 {isEnhanceCreditBlocked && (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700" title="Not enough credits">
                     Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
@@ -5567,7 +5567,7 @@ export default function BatchProcessor() {
                   onClick={handleStartEnhance}
                   disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index)) || isEnhanceCreditBlocked}
                   title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
-                  className="rounded-lg bg-action-600 px-6 py-3 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg bg-action-600 px-6 py-2.5 font-medium text-white shadow-md transition-all hover:bg-action-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                   data-testid="button-proceed-enhance"
                   type="button"
                 >
