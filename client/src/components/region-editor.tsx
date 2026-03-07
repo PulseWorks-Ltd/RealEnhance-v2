@@ -1252,7 +1252,7 @@ export function RegionEditor({
             </CardDescription>
           </div>
           <Badge variant="secondary" className="flex items-center gap-1 border border-action-100 bg-action-50 text-action-700">
-            <Sparkles className="h-4 w-4" /> AI-Assisted Edit
+            <Sparkles className="h-4 w-4" /> Assisted Edit
           </Badge>
         </CardHeader>
       </Card>
@@ -1437,7 +1437,7 @@ export function RegionEditor({
                 data-testid="textarea-instructions"
                 className={`${mode === "edit" && !instructions.trim() ? "border-red-200 focus:border-red-300" : ""} resize-none`}
               />
-              <p className="text-xs text-slate-500">Be specific. The AI preserves walls, doors, and windows.</p>
+              <p className="text-xs text-slate-500">Be specific. The editor preserves walls, doors, and windows.</p>
             </div>
 
             <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">

@@ -321,13 +321,13 @@ export function AIClarification({ professionId, onSubmit, isProcessing }: AIClar
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-6">
             <Sparkles className="w-6 h-6 text-purple-500" />
-            <h3 className="text-2xl font-semibold">AI-Powered Enhancement</h3>
+            <h3 className="text-2xl font-semibold">Guided Enhancement</h3>
           </div>
           
           {currentStep === "goal" && (
             <div className="space-y-6">
               <p className="text-muted-foreground">
-                Describe what you want to achieve with your photos. Our AI will ask follow-up questions to create the perfect enhancement plan.
+                Describe what you want to achieve with your photos. Our assistant will ask follow-up questions to create the perfect enhancement plan.
               </p>
               
               <div className="space-y-2">
@@ -397,7 +397,7 @@ export function AIClarification({ professionId, onSubmit, isProcessing }: AIClar
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4 mr-2" />
-                      Get AI Recommendations
+                      Get Recommendations
                     </>
                   )}
                 </Button>
@@ -528,7 +528,7 @@ export function AIClarification({ professionId, onSubmit, isProcessing }: AIClar
                 <div className="flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-green-600" />
                   <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                    AI Enhancement Plan Ready!
+                    Enhancement Plan Ready!
                   </p>
                 </div>
                 <p className="text-sm text-green-800 dark:text-green-200">

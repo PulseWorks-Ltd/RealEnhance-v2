@@ -30,7 +30,7 @@ export function RegionEditPage() {
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold mb-4">Region Edit Workflow</h1>
           <p className="text-xl text-gray-300">
-            Precisely edit specific regions of your images with AI enhancement and Smart Reinstate
+            Precisely edit specific regions of your images with guided enhancement and Smart Reinstate
           </p>
         </div>
 
