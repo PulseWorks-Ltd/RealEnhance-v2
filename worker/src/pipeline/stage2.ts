@@ -18,6 +18,7 @@ import { buildTightenedPrompt, getTightenLevelFromAttempt, logTighteningInfo, Ti
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
+import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
@@ -209,6 +210,7 @@ export async function runStage2GenerationAttempt(
     tightenLevel?: TightenLevel;
     legacyStrictPrompt?: boolean;
     layoutContext?: LayoutContextResult | null;
+    layoutPlan?: Stage2LayoutPlan | null;
     modelReason?: string;
     structuralRetryContext?: {
       compositeFail: boolean;
@@ -317,6 +319,16 @@ export async function runStage2GenerationAttempt(
 
   if (opts.structuralConstraintBlock && opts.structuralConstraintBlock.trim().length > 0) {
     textPrompt = `${textPrompt}\n\n${opts.structuralConstraintBlock}`;
+  }
+
+  if (opts.layoutPlan) {
+    textPrompt += `
+
+Use the following furniture placement plan exactly.
+Do not place furniture outside the defined zones.
+
+${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
+`;
   }
 
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -469,6 +481,7 @@ export async function runStage2(
     jobId: string;
     /** Validation configuration (local-mode driven) */
     validationConfig?: { localMode?: Mode };
+    layoutPlan?: Stage2LayoutPlan | null;
   }
 ): Promise<Stage2Result> {
   const validationBaseline = opts.stage1APath || basePath;
@@ -523,6 +536,7 @@ export async function runStage2(
     outputPath,
     attempt: 1,
     layoutContext,
+    layoutPlan: opts.layoutPlan,
     modelReason: "stage2_initial_generation",
   });
 

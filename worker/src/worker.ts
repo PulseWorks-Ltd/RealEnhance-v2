@@ -14,6 +14,7 @@ import { randomUUID } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
+import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
 import {
   isStage2RetryableGenerationError,
   resolveStage2MaxAttempts,
@@ -3598,6 +3599,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
   };
 
+  const resolveStage2LayoutPlan = async (ctx: {
+    basePath: string;
+    path: "main" | "stage2_only" | "light_declutter_backstop";
+    promptMode: "full" | "refresh";
+    sourceStage: "1A" | "1B-light" | "1B-stage-ready";
+    isExteriorScene: boolean;
+  }): Promise<Stage2LayoutPlan | null> => {
+    const plannerEnabled = String(process.env.USE_GEMINI_LAYOUT_PLANNER || "1") !== "0";
+    if (!plannerEnabled) return null;
+    if (!ctx.basePath) return null;
+    if (ctx.isExteriorScene) return null;
+
+    try {
+      const plan = await planStage2Layout(ctx.basePath, { jobId: payload.jobId });
+      nLog("[STAGE2_LAYOUT_PLANNER]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        promptMode: ctx.promptMode,
+        sourceStage: ctx.sourceStage,
+        status: plan ? "ready" : "fallback",
+        roomType: plan?.room_type || null,
+        layoutItems: plan?.layout?.length || 0,
+      });
+      return plan;
+    } catch (plannerError: any) {
+      nLog("[STAGE2_LAYOUT_PLANNER]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        promptMode: ctx.promptMode,
+        sourceStage: ctx.sourceStage,
+        status: "failed",
+        error: plannerError?.message || String(plannerError),
+      });
+      return null;
+    }
+  };
+
   const getStage2Context = async () => {
     const latestJob = await getJob(payload.jobId);
     return {
@@ -3850,6 +3888,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         source: "pipeline",
         retryType: "initial",
       });
+      const stage2OnlyLayoutPlan = await resolveStage2LayoutPlan({
+        basePath,
+        path: "stage2_only",
+        promptMode: stage2OnlyRouting.mode,
+        sourceStage: stage2OnlyRouting.sourceStage,
+        isExteriorScene: payload.options.sceneType === "exterior",
+      });
       const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "standard_listing",
         roomType: payload.options.roomType,
@@ -3860,6 +3905,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: stage2OnlyRouting.sourceStage,
         promptMode: stage2OnlyRouting.mode,
         jobId: payload.jobId,
+        layoutPlan: stage2OnlyLayoutPlan,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
           stage2AttemptId = nextAttemptId;
@@ -5965,6 +6011,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   let stage2InputResolved = stage2InputPath ?? "";
   let path2: string = stage2InputResolved;
+  let stage2LayoutPlan: Stage2LayoutPlan | null = null;
   let stage2TimedOut = false; // FIX 4: Track timeout status
   
   try {
@@ -6014,6 +6061,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1BRequested,
           });
         }
+        stage2LayoutPlan = await resolveStage2LayoutPlan({
+          basePath: stage2InputResolved,
+          path: "main",
+          promptMode: stage2PromptMode,
+          sourceStage: stage2SourceStage,
+          isExteriorScene: sceneLabel === "exterior",
+        });
       }
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? runStage2(stage2InputResolved, stage2BaseStage, {
@@ -6031,6 +6085,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sourceStage: stage2SourceStage,
             promptMode: stage2PromptMode,
             jobId: payload.jobId,
+            layoutPlan: stage2LayoutPlan,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -6266,6 +6321,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         source: "pipeline",
         retryType: "light_declutter_backstop",
       });
+      stage2LayoutPlan = await resolveStage2LayoutPlan({
+        basePath: stage2InputResolved,
+        path: "light_declutter_backstop",
+        promptMode: fallbackRouting.mode,
+        sourceStage: fallbackRouting.sourceStage,
+        isExteriorScene: sceneLabel === "exterior",
+      });
       let stage2Outcome: any;
       try {
         stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
@@ -6283,6 +6345,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           sourceStage: fallbackRouting.sourceStage,
           promptMode: fallbackRouting.mode,
           jobId: payload.jobId,
+          layoutPlan: stage2LayoutPlan,
           validationConfig: { localMode: localValidatorMode },
           stage1APath: stage2ValidationBaseline,
           curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -6604,6 +6667,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 failureType: retryFailureType,
                 attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
               },
+            layoutPlan: stage2LayoutPlan,
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
           });
