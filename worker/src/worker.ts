@@ -3937,6 +3937,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           mode: effectiveMode,
           geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
           jobId: payload.jobId,
+          imageId: payload.imageId,
           stagingStyle: payload.options.stagingStyle || "standard_listing",
           stage1APath: validationBaseline,
           sourceStage: stage2OnlyRouting.sourceStage,

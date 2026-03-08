@@ -104,91 +104,99 @@ type GeminiConsensusResult = {
   validatorResults: GeminiValidatorResults;
   consensusEnabled: boolean;
   derivedWarnings: number;
+  flashVerdict: GeminiSemanticVerdict;
+  proVerdict?: GeminiSemanticVerdict;
+  flashConfidence: number;
+  proConfidence?: number;
+  fallbackToFlash: boolean;
+  finalModelUsed: string;
 };
+
+const PRIMARY_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
+const ESCALATION_VALIDATOR_MODEL = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
+const FLASH_ACCEPT_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_FLASH_ACCEPT_CONFIDENCE || 0.7);
+const PRO_MIN_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 
 function toGeminiPassFail(verdict: GeminiSemanticVerdict): GeminiPassFail {
   return verdict.hardFail ? "fail" : "pass";
-}
-
-function pickConsensusVerdict(
-  verdicts: GeminiSemanticVerdict[],
-  targetDecision: GeminiPassFail
-): GeminiSemanticVerdict {
-  const matches = verdicts.filter((verdict) => toGeminiPassFail(verdict) === targetDecision);
-  if (matches.length === 0) return verdicts[0];
-
-  return matches.reduce((best, candidate) => {
-    const bestConfidence = Number.isFinite(best.confidence) ? best.confidence : 0;
-    const candidateConfidence = Number.isFinite(candidate.confidence) ? candidate.confidence : 0;
-    return candidateConfidence > bestConfidence ? candidate : best;
-  }, matches[0]);
 }
 
 async function runGeminiWithConsensus(
   input: Parameters<typeof runGeminiSemanticValidator>[0],
   derivedWarnings: number
 ): Promise<GeminiConsensusResult> {
-  const resultA = await runGeminiSemanticValidator(input);
+  const resultA = await runGeminiSemanticValidator({
+    ...input,
+    modelOverride: PRIMARY_VALIDATOR_MODEL,
+  });
   const validatorResults: GeminiValidatorResults = {
     v1: toGeminiPassFail(resultA),
   };
 
   const validatorConfidence = Number.isFinite(resultA.confidence) ? resultA.confidence : 0;
-  const consensusEnabled = derivedWarnings >= 3 || validatorConfidence < 0.7;
+  const consensusEnabled = derivedWarnings >= 3 || validatorConfidence < FLASH_ACCEPT_CONFIDENCE;
   if (!consensusEnabled) {
     return {
       verdict: resultA,
       validatorResults,
       consensusEnabled,
       derivedWarnings,
+      flashVerdict: resultA,
+      flashConfidence: validatorConfidence,
+      fallbackToFlash: false,
+      finalModelUsed: PRIMARY_VALIDATOR_MODEL,
     };
   }
 
   let resultB: GeminiSemanticVerdict;
   try {
-    resultB = await runGeminiSemanticValidator(input);
+    resultB = await runGeminiSemanticValidator({
+      ...input,
+      modelOverride: ESCALATION_VALIDATOR_MODEL,
+    });
   } catch (err) {
-    console.warn("[unified-validator] Gemini consensus second call failed; falling back to first call", err);
+    console.warn("[unified-validator] Gemini Pro escalation failed; falling back to primary Flash verdict", err);
     return {
       verdict: resultA,
       validatorResults,
       consensusEnabled,
       derivedWarnings,
+      flashVerdict: resultA,
+      flashConfidence: validatorConfidence,
+      fallbackToFlash: true,
+      finalModelUsed: PRIMARY_VALIDATOR_MODEL,
     };
   }
 
   validatorResults.v2 = toGeminiPassFail(resultB);
-  if (validatorResults.v1 === validatorResults.v2) {
-    return {
-      verdict: pickConsensusVerdict([resultA, resultB], validatorResults.v1),
-      validatorResults,
-      consensusEnabled,
-      derivedWarnings,
-    };
-  }
-
-  let resultC: GeminiSemanticVerdict;
-  try {
-    resultC = await runGeminiSemanticValidator(input);
-  } catch (err) {
-    console.warn("[unified-validator] Gemini consensus tie-breaker failed; using first call", err);
+  const proConfidence = Number.isFinite(resultB.confidence) ? resultB.confidence : 0;
+  if (proConfidence < PRO_MIN_CONFIDENCE) {
     return {
       verdict: resultA,
       validatorResults,
       consensusEnabled,
       derivedWarnings,
+      flashVerdict: resultA,
+      proVerdict: resultB,
+      flashConfidence: validatorConfidence,
+      proConfidence,
+      fallbackToFlash: true,
+      finalModelUsed: PRIMARY_VALIDATOR_MODEL,
     };
   }
 
-  validatorResults.v3 = toGeminiPassFail(resultC);
-  const failVotes = [resultA, resultB, resultC].filter((verdict) => verdict.hardFail).length;
-  const finalDecision: GeminiPassFail = failVotes >= 2 ? "fail" : "pass";
-
   return {
-    verdict: pickConsensusVerdict([resultA, resultB, resultC], finalDecision),
+    // Escalation verdict is authoritative unless Pro is low-confidence.
+    verdict: resultB,
     validatorResults,
     consensusEnabled,
     derivedWarnings,
+    flashVerdict: resultA,
+    proVerdict: resultB,
+    flashConfidence: validatorConfidence,
+    proConfidence,
+    fallbackToFlash: false,
+    finalModelUsed: ESCALATION_VALIDATOR_MODEL,
   };
 }
 
@@ -250,6 +258,7 @@ export interface UnifiedValidationParams {
   roomType?: string;
   mode?: "log" | "enforce";
   jobId?: string;
+  imageId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
   /**
    * Stage1A output path for Stage2 validation baseline.
@@ -332,6 +341,7 @@ export async function runUnifiedValidation(
     roomType,
     mode = "log",
     jobId,
+    imageId,
     stagingStyle,
     stage1APath,
     sourceStage,
@@ -1145,12 +1155,11 @@ export async function runUnifiedValidation(
     (geminiPolicy === "on_local_fail" && localFailed);
 
   let escalated = false;
+  let geminiModelUsed: string | undefined;
   if (!shouldRunGemini) {
     nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, localFailed=${localFailed})`);
   } else {
-    escalated = true;
     if (!earlyExit) validatorPath.push("gemini");
-    nLog(`[validator] escalated=${escalated} earlyExit=${earlyExit}`);
     try {
       nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
       const geminiConsensus = await runGeminiWithConsensus({
@@ -1166,7 +1175,24 @@ export async function runUnifiedValidation(
       }, warnings.length);
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
+      escalated = geminiConsensus.consensusEnabled;
+      geminiModelUsed = geminiConsensus.finalModelUsed;
+      nLog(`[validator] escalated=${escalated} earlyExit=${earlyExit}`);
       nLog(`[unified-validator] [Gemini] validator_results=${JSON.stringify(geminiConsensus.validatorResults)} consensus=${geminiConsensus.consensusEnabled} derivedWarnings=${geminiConsensus.derivedWarnings}`);
+      if (geminiConsensus.consensusEnabled) {
+        const escalationImageId = imageId || jobId || "unknown";
+        const flashVerdict = toGeminiPassFail(geminiConsensus.flashVerdict);
+        const proVerdict = geminiConsensus.proVerdict ? toGeminiPassFail(geminiConsensus.proVerdict) : "unavailable";
+        nLog(
+          `[VALIDATOR_ESCALATION] imageId=${escalationImageId} ` +
+          `derivedWarnings=${geminiConsensus.derivedWarnings} ` +
+          `confidence=${geminiConsensus.flashConfidence.toFixed(3)} ` +
+          `flashVerdict=${flashVerdict} ` +
+          `proVerdict=${proVerdict} ` +
+          `proConfidence=${typeof geminiConsensus.proConfidence === "number" ? geminiConsensus.proConfidence.toFixed(3) : "n/a"} ` +
+          `fallbackToFlash=${geminiConsensus.fallbackToFlash}`
+        );
+      }
 
       const semantic = summarizeGeminiSemantic(geminiResult);
       const geminiHardFail = semantic.hardFail && geminiMode === "block";
@@ -1447,9 +1473,7 @@ export async function runUnifiedValidation(
     evidence,
     riskLevel,
     riskTriggers: riskClassification.triggers,
-    modelUsed: riskLevel === "LOW"
-      ? (process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash")
-      : (process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash"),
+    modelUsed: geminiModelUsed,
     earlyExit: earlyExit || undefined,
     escalated: escalated || undefined,
     validatorPath,

@@ -43,8 +43,8 @@ const BUILTIN_HARDFAIL_CONFIDENCE = 0.85;
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
  */
 function getModelForRisk(riskLevel?: RiskLevel): string {
-  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
-  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash";
+  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-pro";
+  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.5-flash";
 
   if (!riskLevel || riskLevel === "LOW") return fastModel;
   return strongModel; // MEDIUM and HIGH → strong model
@@ -136,7 +136,16 @@ function buildAdjudicatorPrompt(
   evidence?: ValidationEvidence,
   riskLevel?: RiskLevel
 ): string {
-  return basePrompt;
+  const structuralFocusRules = `
+
+NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
+- Ignore furniture changes and object movement.
+- Ignore lighting differences.
+- Ignore shadows.
+- Ignore color variation.
+- Only evaluate permanent architectural structure.`;
+
+  return `${basePrompt}${structuralFocusRules}`;
 }
 
 export type GeminiSemanticVerdict = {
@@ -1121,7 +1130,7 @@ export async function validateStage1BStructure(
   const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
   const after = toBase64(afterImage).data;
-  const model = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
+  const model = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
   const jobId = evidence?.jobId;
   const variant = getEvidenceGatingVariant(jobId);
   const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);
@@ -1165,8 +1174,8 @@ export async function validateStage1BStructure(
       model,
       generationConfig: {
         temperature: 0,
-        topP: 0.1,
-        maxOutputTokens: 384,
+        topP: 0,
+        maxOutputTokens: 256,
       },
       contents: [
         { role: "user", parts: [{ text: stage1BPrompt }] },
@@ -1201,8 +1210,8 @@ export async function validateStage1BStructure(
       contents,
       generationConfig: {
         temperature: 0,
-        topP: 0.1,
-        maxOutputTokens: 384,
+        topP: 0,
+        maxOutputTokens: 256,
       },
     } as any);
 
@@ -2606,6 +2615,7 @@ export async function runGeminiSemanticValidator(opts: {
   validationMode?: Stage2ValidationMode;
   stage1BValidationMode?: Stage1BValidationMode;
   promptOverride?: string;
+  modelOverride?: string;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
   deterministicStructureJson?: boolean;
@@ -2625,7 +2635,7 @@ export async function runGeminiSemanticValidator(opts: {
   const prompt = buildAdjudicatorPrompt(basePrompt, opts.evidence, opts.riskLevel);
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
-  const model = getModelForRisk(opts.riskLevel);
+  const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
 
   const contents = [
     { role: "user", parts: [{ text: prompt }] },
@@ -2645,9 +2655,9 @@ export async function runGeminiSemanticValidator(opts: {
       model,
       contents,
       generationConfig: {
-        temperature: deterministicStructureJson ? 0 : 0.2,
-        topP: deterministicStructureJson ? 1 : 0.5,
-        maxOutputTokens: deterministicStructureJson ? 256 : 512,
+        temperature: 0,
+        topP: 0,
+        maxOutputTokens: 256,
         responseMimeType: deterministicStructureJson ? "application/json" : undefined,
       },
     } as any);

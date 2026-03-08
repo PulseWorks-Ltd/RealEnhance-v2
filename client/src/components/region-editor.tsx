@@ -107,6 +107,9 @@ interface RegionEditorProps {
   onJobStarted?: (jobId: string) => void; // Optional: delegate polling to parent
   initialImageUrl?: string;
   originalImageUrl?: string; // URL to original image for pixel-level restoration
+  editSourceUrl?: string;
+  editSourceStage?: "stage2" | "stage1B" | "stage1A";
+  sourceJobId?: string;
   initialGoal?: string;
   initialIndustry?: string;
   initialSceneType?: "auto" | "interior" | "exterior";
@@ -121,6 +124,9 @@ export function RegionEditor({
   onJobStarted,
   initialImageUrl,
   originalImageUrl,
+  editSourceUrl,
+  editSourceStage,
+  sourceJobId,
   initialGoal,
   initialIndustry,
   initialSceneType,
@@ -140,16 +146,19 @@ export function RegionEditor({
   useEffect(() => {
     console.log('[RegionEditor] initialImageUrl:', initialImageUrl);
     console.log('[RegionEditor] originalImageUrl:', originalImageUrl);
-  }, [initialImageUrl, originalImageUrl]);
+    console.log('[RegionEditor] editSourceUrl:', editSourceUrl);
+    console.log('[RegionEditor] editSourceStage:', editSourceStage);
+    console.log('[RegionEditor] sourceJobId:', sourceJobId);
+  }, [initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
   // Quick high-level prop + derived base log for easier debugging of restore flow
   useEffect(() => {
     const derivedFromInitial = !originalImageUrl ? deriveBaseFromInitial(initialImageUrl) : null;
     const derivedBase =
       mode === "restore_original"
         ? (originalImageUrl || derivedFromInitial || "")
-        : (originalImageUrl || initialImageUrl || "");
-    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, derivedFromInitial, derivedBase });
-  }, [mode, initialImageUrl, originalImageUrl]);
+        : (editSourceUrl || initialImageUrl || "");
+    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, derivedFromInitial, derivedBase });
+  }, [mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
 
   // Reset state when a new image/meta is provided (opening editor for another item)
   useEffect(() => {
@@ -1068,25 +1077,29 @@ export function RegionEditor({
       ? deriveBaseFromInitial(initialImageUrl)
       : null;
 
-    // Compute baseImageUrl:
-    // - For restore_original: use originalImageUrl (Stage 1) or derived base, never Stage 2
-    // - For other modes: prefer originalImageUrl, fall back to initialImageUrl
+    // Compute source and base URLs:
+    // - Edit mode: always use currently displayed source image
+    // - Restore mode: use original stage-1 baseline
+    const rawEditSourceUrl = editSourceUrl || initialImageUrl || "";
+    const sanitizedEditSourceUrl = stripTransientQueryParams(rawEditSourceUrl);
     const baseImageUrlRaw =
       mode === "restore_original"
         ? (originalImageUrl || derivedBaseFromInitial || "")
-        : (originalImageUrl || initialImageUrl || "");
-    const sanitizedInitialImageUrl = stripTransientQueryParams(initialImageUrl);
+        : rawEditSourceUrl;
     const baseImageUrl = stripTransientQueryParams(baseImageUrlRaw);
 
     console.log("[region-editor] Mode:", mode);
     console.log("[region-editor] originalImageUrl:", originalImageUrl);
+    console.log("[region-editor] editSourceUrl:", editSourceUrl);
+    console.log("[region-editor] editSourceStage:", editSourceStage);
+    console.log("[region-editor] sourceJobId:", sourceJobId);
     console.log("[region-editor] initialImageUrl:", initialImageUrl);
-    console.log("[region-editor] sanitizedInitialImageUrl:", sanitizedInitialImageUrl);
+    console.log("[region-editor] sanitizedEditSourceUrl:", sanitizedEditSourceUrl);
     console.log("[region-editor] derivedBaseFromInitial:", derivedBaseFromInitial);
     console.log("[region-editor] Final baseImageUrl:", baseImageUrl);
 
     try {
-      if (!selectedFile && !initialImageUrl) {
+      if (!selectedFile && !sanitizedEditSourceUrl) {
         toast({
           title: "No image",
           description: "Please select an image first",
@@ -1153,12 +1166,21 @@ export function RegionEditor({
       const formData = new FormData();
       if (selectedFile) {
         formData.append("image", selectedFile);
-      } else if (sanitizedInitialImageUrl) {
-        formData.append("imageUrl", sanitizedInitialImageUrl);
+      } else if (sanitizedEditSourceUrl) {
+        formData.append("imageUrl", sanitizedEditSourceUrl);
       }
       // Always append baseImageUrl if present
       if (baseImageUrl) {
         formData.append("baseImageUrl", baseImageUrl);
+      }
+      if (sanitizedEditSourceUrl) {
+        formData.append("editSourceUrl", sanitizedEditSourceUrl);
+      }
+      if (editSourceStage) {
+        formData.append("editSourceStage", editSourceStage);
+      }
+      if (sourceJobId) {
+        formData.append("jobId", sourceJobId);
       }
       formData.append("mode", mode);
       if (mode === "edit") {
@@ -1223,6 +1245,9 @@ export function RegionEditor({
     selectedFile,
     initialImageUrl,
     originalImageUrl,
+    editSourceUrl,
+    editSourceStage,
+    sourceJobId,
     maskData,
     instructions,
     industry,

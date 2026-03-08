@@ -74,8 +74,17 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
     const rawImageUrl = body.imageUrl as string | undefined;
     const imageUrl = normalizeLookupUrl(rawImageUrl);
-    if (imageUrl) {
-      const dedupKey = `region-edit:${sessUser.id}:${imageUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
+    const rawEditSourceUrl = body.editSourceUrl as string | undefined;
+    const editSourceUrl = normalizeLookupUrl(rawEditSourceUrl);
+    const sourceLookupUrl = editSourceUrl || imageUrl;
+    const sourceJobId = typeof body.jobId === "string" ? body.jobId : undefined;
+    const rawEditSourceStage = typeof body.editSourceStage === "string" ? body.editSourceStage : undefined;
+    const editSourceStage =
+      rawEditSourceStage === "stage2" || rawEditSourceStage === "stage1B" || rawEditSourceStage === "stage1A"
+        ? rawEditSourceStage
+        : undefined;
+    if (sourceLookupUrl) {
+      const dedupKey = `region-edit:${sessUser.id}:${sourceLookupUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
       const redis = getRedis();
       const exists = await redis.get(dedupKey);
       if (exists) {
@@ -116,6 +125,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     console.log("[region-edit] Request details:", {
       imageUrl: imageUrl ? imageUrl.substring(0, 80) + "..." : "MISSING",
       rawImageUrl: rawImageUrl ? rawImageUrl.substring(0, 80) + "..." : "MISSING",
+      editSourceUrl: editSourceUrl ? editSourceUrl.substring(0, 80) + "..." : "MISSING",
+      rawEditSourceUrl: rawEditSourceUrl ? rawEditSourceUrl.substring(0, 80) + "..." : "MISSING",
+      editSourceStage: editSourceStage || "MISSING",
+      sourceJobId: sourceJobId || "MISSING",
       clientBaseImageUrl: clientBaseImageUrl ? clientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
       rawClientBaseImageUrl: rawClientBaseImageUrl ? rawClientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
       mode,
@@ -127,7 +140,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     });
 
     // ===== VALIDATION =====
-    if (!imageUrl) {
+    if (!sourceLookupUrl) {
       console.error("[region-edit] Missing imageUrl");
       return res.status(400).json({ success: false, error: "missing_imageUrl" });
     }
@@ -154,12 +167,12 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // ===== IMAGE LOOKUP =====
     console.log("[region-edit] Looking up image for user:", sessUser.id);
-    let found = await findByPublicUrl(sessUser.id, imageUrl);
+    let found = await findByPublicUrl(sessUser.id, sourceLookupUrl);
     
     // Fix A: If primary URL not found, try baseImageUrl (client sends both)
     // This handles the case where stageUrls["2"] differs from resultUrl
     // (double S3 upload gives different keys) or Redis data loss
-    if (!found && clientBaseImageUrl && clientBaseImageUrl !== imageUrl) {
+    if (!found && clientBaseImageUrl && clientBaseImageUrl !== sourceLookupUrl) {
       console.warn("[region-edit] Primary URL not found, trying baseImageUrl fallback:", clientBaseImageUrl.substring(0, 80) + "...");
       found = await findByPublicUrl(sessUser.id, clientBaseImageUrl);
       if (found) {
@@ -168,7 +181,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     if (!found) {
-      console.error("[region-edit] Image not found for URL:", imageUrl);
+      console.error("[region-edit] Image not found for URL:", sourceLookupUrl);
       console.error("[region-edit] Also tried baseImageUrl:", clientBaseImageUrl || "N/A");
       return res.status(404).json({ success: false, error: "image_not_found" });
     }
@@ -216,16 +229,11 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     let baseImageUrl: string;
 
     if (mode === "restore_original") {
-      baseImageUrl = clientBaseImageUrl || imageUrl;
+      baseImageUrl = clientBaseImageUrl || sourceLookupUrl;
       console.log("[region-edit] restore_original baseImageUrl:", baseImageUrl ? baseImageUrl.substring(0, 80) + "..." : "MISSING");
     } else {
-      baseImageUrl = imageUrl;
-      if (record && record.latest && record.latest.publicUrl) {
-        baseImageUrl = record.latest.publicUrl;
-        console.log("[region-edit] Using latest version (edit mode):", baseImageUrl.substring(0, 80) + "...");
-      } else {
-        console.log("[region-edit] Using provided URL (edit mode):", baseImageUrl.substring(0, 80) + "...");
-      }
+      baseImageUrl = sourceLookupUrl;
+      console.log("[region-edit] Using provided edit source URL (edit mode):", baseImageUrl.substring(0, 80) + "...");
     }
 
     // ===== PROCESS MASK =====
@@ -305,7 +313,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       ? await findScopedEnhancedImageByUrl({
           agencyId: sessUser.agencyId,
           userId: sessUser.role === 'admin' || sessUser.role === 'owner' ? undefined : sessUser.id,
-          publicUrl: imageUrl,
+          publicUrl: sourceLookupUrl,
         })
       : null;
 
@@ -353,6 +361,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       options: {
         mode: apiMode,
         restoreFromUrl,
+        sourceJobId,
+        editSourceUrl: editSourceUrl || sourceLookupUrl,
+        editSourceStage,
         sceneType,
         roomType,
         allowStaging,
