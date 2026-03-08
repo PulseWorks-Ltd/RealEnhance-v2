@@ -6513,7 +6513,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let pub2Url: string | undefined = undefined;
 
   // ===== STAGE 2 UNIFIED STRUCTURAL RETRY CONTROLLER =====
-  let unifiedValidation: UnifiedValidationResult | undefined = undefined;
+  let unifiedValidation: any = undefined;
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
   const MAX_STAGE2_RETRIES = Math.max(1, stage2MaxAttempts || 1);
   const tVal = Date.now();
@@ -6586,8 +6586,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (payload.options.virtualStage) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
-    let pendingStage2RetryStrategy: "NORMAL" | "REINFORCED" | null = null;
-    let pendingStage2RetryReason: "opening_preservation" | "closet_visibility_risk" | null = null;
+    let pendingStage2RetryStrategy: string | null = null;
+    let pendingStage2RetryReason: string | null = null;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -6844,1805 +6844,274 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
 
-      unifiedValidation = await runUnifiedValidation({
-        originalPath: validationBasePath,
-        enhancedPath: path2,
-        stage: validationStage,
-        sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-        roomType: payload.options.roomType,
-        mode: effectiveValidationMode,
-        geminiPolicy: "never",
-        jobId: payload.jobId,
-        stagingStyle: payload.options.stagingStyle || "standard_listing",
-        stage1APath: validationBasePath,
-        sourceStage: stage2SourceStage,
-        validationMode: stage2ValidationMode,
-        baseArtifacts: stageLineage.baseArtifacts,
-      });
-
-      const validationElapsed = Date.now() - validationStartTime;
-      if (await stopIfCancelled("stage2_post_validation")) return;
-      nLog(`[worker] Unified validation completed in ${validationElapsed}ms`);
-      nLog(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
-
-      if (VALIDATOR_FOCUS && unifiedValidation) {
-        vLog("");
-        logUnifiedValidationCompact(
-          payload.jobId,
-          unifiedValidation,
-          validationStage,
-          sceneLabel === "exterior" ? "exterior" : "interior"
-        );
-      }
-
-      updateJob(payload.jobId, {
-        meta: {
-          ...(sceneLabel ? { ...sceneMeta } : {}),
-          unifiedValidation: {
-            passed: unifiedValidation.passed,
-            hardFail: unifiedValidation.hardFail,
-            score: unifiedValidation.score,
-            reasons: unifiedValidation.reasons,
-            warnings: unifiedValidation.warnings,
-            normalized: unifiedValidation.normalized,
-            modeConfigured: structureValidatorMode,
-            modeEffective: effectiveValidationMode,
-            localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
-            geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
-            riskLevel: unifiedValidation.riskLevel,
-            riskTriggers: unifiedValidation.riskTriggers,
-            modelUsed: unifiedValidation.modelUsed,
-            anchorFlags: unifiedValidation.evidence?.anchorChecks,
-          },
-        },
-      });
-
-      const rawResults = unifiedValidation.raw ? Object.values(unifiedValidation.raw) : [];
-      const anyFailed = rawResults.some((r) => r && r.passed === false);
-      const localNotes = (unifiedValidation.reasons && unifiedValidation.reasons.length)
-        ? unifiedValidation.reasons
-        : (unifiedValidation.warnings && unifiedValidation.warnings.length)
-          ? unifiedValidation.warnings
-          : [];
-      if (anyFailed || localNotes.length) {
-        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED;
-        stage2LocalReasons.push(...localNotes);
-      }
-
-      let stage2SemanticResult: Awaited<ReturnType<typeof runSemanticStructureValidator>> | null = null;
-      let stage2MaskedEdgeResult: Awaited<ReturnType<typeof runMaskedEdgeValidator>> | null = null;
-      let compositeLocalEvaluation: CompositeLocalEvaluation | null = null;
-      let compositeStructuralDeviationDeg: number | null = null;
-      let stage2StructuralDegreeMetric: Stage2StructuralDegreeMetric = {
-        valueDeg: null,
-        source: "none",
-        available: false,
-        reasonIfUnavailable: "not_computed",
-      };
-      let compositeSemanticWallDriftPct = 0;
-      let compositeSemanticOpeningsDeltaTotal = 0;
-      let compositeMaskedDriftPct = 0;
-      let compositeMaskedOpeningsDeltaTotal = 0;
-      const shouldRunCompositeLocalValidator =
-        payload.options.virtualStage === true &&
-        validationStage === "2" &&
-        !!path2 &&
-        !!stage2CandidatePath;
-
-      if (path2 && SHARP_SEMANTIC_ENABLED) {
-        try {
-          nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) mode=${sharpFinalValidatorMode} ═══════════`);
-          stage2SemanticResult = await runSemanticStructureValidator({
-            originalImagePath: path1A,
+      // Stage-2 local catastrophic gate: block obvious structural corruption before Gemini validators.
+      try {
+        const [semanticSignals, maskedSignals] = await Promise.all([
+          runSemanticStructureValidator({
+            originalImagePath: validationBasePath,
             enhancedImagePath: path2,
-            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            scene: sceneLabel as any,
             mode: "log",
-          });
-          const semanticResult = stage2SemanticResult;
-          if (semanticResult && !semanticResult.passed) {
-            stage2LocalReasons.push(
-              `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`
-            );
-          }
-        } catch (semanticError: any) {
-          nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
-        }
-      } else if (path2 && !SHARP_SEMANTIC_ENABLED) {
-        nLog(`[worker] Sharp semantic validator disabled (SHARP_FINAL_VALIDATOR not set)`);
-      }
-
-      if (path2) {
-        try {
-          nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
-          stage2MaskedEdgeResult = await runMaskedEdgeValidator({
-            originalImagePath: path1A,
+          }),
+          runMaskedEdgeValidator({
+            originalImagePath: validationBasePath,
             enhancedImagePath: path2,
-            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            scene: sceneLabel as any,
             mode: "log",
             jobId: payload.jobId,
-          });
+          }),
+        ]);
 
-          const maskedEdgeResult = stage2MaskedEdgeResult;
-          if (maskedEdgeResult) {
-            const maskedDriftPct = maskedEdgeResult.maskedEdgeDrift * 100;
-            const maskedEdgeFailed =
-              maskedEdgeResult.createdOpenings > 0 ||
-              maskedEdgeResult.closedOpenings > 0 ||
-              maskedEdgeResult.maskedEdgeDrift > 0.18;
-            if (maskedEdgeFailed) {
-              stage2LocalReasons.push(
-                `masked_edge_failed: drift ${maskedDriftPct.toFixed(2)}%, openings +${maskedEdgeResult.createdOpenings}/-${maskedEdgeResult.closedOpenings}`
-              );
-            }
-          }
+        const semanticWallDriftPct = Number(((semanticSignals?.walls?.driftRatio ?? 0) * 100).toFixed(2));
+        const semanticOpeningsDeltaTotal =
+          Math.abs(semanticSignals?.windows?.change ?? 0) +
+          Math.abs(semanticSignals?.doors?.change ?? 0) +
+          Math.abs(semanticSignals?.openings?.created ?? 0) +
+          Math.abs(semanticSignals?.openings?.closed ?? 0);
+        const maskedDriftPct = Number(((maskedSignals?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
+        const maskedOpeningsDeltaTotal =
+          Math.abs(maskedSignals?.createdOpenings ?? 0) +
+          Math.abs(maskedSignals?.closedOpenings ?? 0);
 
-          nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
-        } catch (maskedEdgeError: any) {
-          nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
-          nLog(`[worker] Stack:`, maskedEdgeError?.stack);
-        }
-      }
-
-      stage2StructuralDegreeMetric = resolveStage2StructuralDegree(unifiedValidation);
-      if (
-        stage2StructuralDegreeMetric.available &&
-        (typeof unifiedValidation?.evidence?.drift?.angleDegrees !== "number" ||
-          !Number.isFinite(unifiedValidation?.evidence?.drift?.angleDegrees))
-      ) {
-        (unifiedValidation as any).evidence = (unifiedValidation as any).evidence || {};
-        (unifiedValidation as any).evidence.drift = (unifiedValidation as any).evidence.drift || {};
-        (unifiedValidation as any).evidence.drift.angleDegrees = stage2StructuralDegreeMetric.valueDeg;
-      }
-
-      logger.info("STRUCTURAL_DEGREE", {
-        jobId: payload.jobId,
-        stage: "2",
-        attempt,
-        available: stage2StructuralDegreeMetric.available,
-        valueDeg: stage2StructuralDegreeMetric.valueDeg,
-        source: stage2StructuralDegreeMetric.source,
-        unavailableReason: stage2StructuralDegreeMetric.reasonIfUnavailable,
-      });
-
-      if (shouldRunCompositeLocalValidator) {
-        compositeStructuralDeviationDeg = stage2StructuralDegreeMetric.available
-          ? stage2StructuralDegreeMetric.valueDeg
-          : null;
-
-        nLog(
-          `[STRUCTURE_CORRELATION_AUDIT] jobId=${payload.jobId} attempt=${attempt} structuralDegreeSource=${stage2StructuralDegreeMetric.source} structuralDegreeAvailable=${stage2StructuralDegreeMetric.available}`
-        );
-
-        compositeSemanticWallDriftPct = Number(((stage2SemanticResult?.walls?.driftRatio ?? 0) * 100).toFixed(2));
-        compositeSemanticOpeningsDeltaTotal =
-          Math.abs((stage2SemanticResult?.windows?.after ?? 0) - (stage2SemanticResult?.windows?.before ?? 0)) +
-          Math.abs((stage2SemanticResult?.doors?.after ?? 0) - (stage2SemanticResult?.doors?.before ?? 0)) +
-          (stage2SemanticResult?.openings?.created ?? 0) +
-          (stage2SemanticResult?.openings?.closed ?? 0);
-        compositeMaskedDriftPct = Number(((stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
-        compositeMaskedOpeningsDeltaTotal =
-          (stage2MaskedEdgeResult?.createdOpenings ?? 0) +
-          (stage2MaskedEdgeResult?.closedOpenings ?? 0);
-
-        const compositeMetrics: CompositeLocalMetrics = {
-          structuralDeviationDeg: compositeStructuralDeviationDeg,
-          maskedDriftPct: compositeMaskedDriftPct,
-          semanticWallDriftPct: compositeSemanticWallDriftPct,
-          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
-        };
-
-        nLog(
-          `[COMPOSITE_INPUT_AUDIT] jobId=${payload.jobId} attempt=${attempt} maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)} semanticWallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)} openingsChanged=${compositeSemanticOpeningsDeltaTotal !== 0 || compositeMaskedOpeningsDeltaTotal !== 0}`
-        );
-
-        compositeLocalEvaluation = evaluateCompositeLocalValidator(compositeMetrics);
-
-        if (compositeLocalEvaluation.failed) {
-          const compositeReason =
-            `composite_local_advisory: reason=${compositeLocalEvaluation.reason},maskedHigh=${compositeLocalEvaluation.maskedHigh},semanticHigh=${compositeLocalEvaluation.semanticHigh} metrics=` +
-            `structAvailable=${stage2StructuralDegreeMetric.available},masked=${compositeMaskedDriftPct.toFixed(2)}%,` +
-            `wall=${compositeSemanticWallDriftPct.toFixed(2)}%`;
-          stage2LocalReasons.push(compositeReason);
-        }
-
-        nLog("[COMPOSITE_LOCAL_VALIDATOR]", {
-          jobId: payload.jobId,
+        const stage2Consensus = classifyStructuralConsensusCase({
           stage: "2",
-          attempt,
-          mode: COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE,
-          failed: compositeLocalEvaluation.failed,
-          structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
-          structuralDegreeSource: stage2StructuralDegreeMetric.source,
-          maskedDriftPct: compositeMaskedDriftPct,
-          semanticWallDriftPct: compositeSemanticWallDriftPct,
-          semanticOpeningsDeltaTotal: compositeSemanticOpeningsDeltaTotal,
-          maskedOpeningsDeltaTotal: compositeMaskedOpeningsDeltaTotal,
-          maskedHigh: compositeLocalEvaluation.maskedHigh,
-          semanticHigh: compositeLocalEvaluation.semanticHigh,
-          openingsChanged: compositeLocalEvaluation.openingsChanged,
-          action: compositeLocalEvaluation.failed
-            ? "advisory-only"
-            : "none",
-        });
-
-        nLog(
-          `[COMPOSITE_DECISION] jobId=${payload.jobId} masked=${compositeMaskedDriftPct.toFixed(2)} semantic=${compositeSemanticWallDriftPct.toFixed(2)} decision=${compositeLocalEvaluation.failed ? "ADVISORY_SIGNAL" : "NO_SIGNAL"} reason=${compositeLocalEvaluation.reason}`
-        );
-      }
-
-      const stage2LocalStatus = stage2LocalReasons.length ? "needs_confirm" : "pass";
-      nLog(`[LOCAL_VALIDATE] stage=2 status=${stage2LocalStatus} reasons=${JSON.stringify(stage2LocalReasons)}`);
-
-      const semanticConsensus = {
-        windowsStatus:
-          (stage2SemanticResult?.windows?.before ?? 0) !== (stage2SemanticResult?.windows?.after ?? 0)
-            ? "FAIL"
-            : "PASS",
-        wallDriftStatus:
-          (stage2SemanticResult?.walls?.driftRatio ?? 0) >= 0.12
-            ? "FAIL"
-            : "PASS",
-      };
-      const maskedConsensus = {
-        maskedDriftStatus:
-          (stage2MaskedEdgeResult?.maskedEdgeDrift ?? 0) > 0.18
-            ? "FAIL"
-            : "PASS",
-        openingsStatus:
-          ((stage2MaskedEdgeResult?.createdOpenings ?? 0) > 0 || (stage2MaskedEdgeResult?.closedOpenings ?? 0) > 0)
-            ? "FAIL"
-            : "PASS",
-      };
-      const compositeConsensus = {
-        decision: compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS",
-      };
-
-      const consensusClassification = classifyStructuralConsensusCase({
-        stage: validationStage,
-        validationMode: stage2ValidationMode,
-        jobId: payload.jobId,
-        semantic: semanticConsensus,
-        masked: maskedConsensus,
-        composite: compositeConsensus,
-      });
-
-      const derivedWarnings = consensusClassification.derivedWarnings;
-      const softStructuralReviewMode = consensusClassification.mode === "SOFT_STRUCTURAL_REVIEW";
-      const catastrophicConsensusBackstop = consensusClassification.mode === "CATASTROPHIC_BACKSTOP";
-
-      if (consensusClassification.mode === "CATASTROPHIC_BACKSTOP") {
-        stage2ConsensusCaseACount += 1;
-      } else if (consensusClassification.mode === "SOFT_STRUCTURAL_REVIEW") {
-        stage2ConsensusCaseBCount += 1;
-      } else {
-        stage2ConsensusCaseCCount += 1;
-      }
-
-      nLog("[STRUCTURAL_CONSENSUS_BACKSTOP]", {
-        jobId: payload.jobId,
-        triggered: catastrophicConsensusBackstop,
-        derivedWarnings,
-        mode: consensusClassification.mode,
-      });
-
-      if (catastrophicConsensusBackstop) {
-        const failReasons = [
-          "STRUCTURAL_CATASTROPHIC_BACKSTOP",
-          `derivedWarnings=${derivedWarnings}`,
-        ];
-        nLog("[STRUCTURAL_CATASTROPHIC_BACKSTOP]", {
+          validationMode: "FULL_STAGE_ONLY",
           jobId: payload.jobId,
-          attempt,
-          derivedWarnings,
-        });
-
-        setStage2AttemptValidation(path2, "consensus", failReasons);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "structural_consensus",
-            retryTriggered: false,
-            retriesExhausted: true,
-            retryStrategy: "NORMAL",
-            reason: "STRUCTURAL_CATASTROPHIC_BACKSTOP",
+          semantic: {
+            windowsStatus: semanticOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
+            wallDriftStatus: semanticWallDriftPct >= 12 ? "FAIL" : "PASS",
+          },
+          masked: {
+            maskedDriftStatus: maskedDriftPct > 18 ? "FAIL" : "PASS",
+            openingsStatus: maskedOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
+          },
+          composite: {
+            decision: (semanticWallDriftPct >= 90 || maskedDriftPct >= 90) ? "FAIL" : "PASS",
           },
         });
 
-        const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1B;
-        const fallbackPath = fallback1B || path1A;
-        const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+        const extremeLocalFail =
+          stage2Consensus.mode === "CATASTROPHIC_BACKSTOP" ||
+          (semanticWallDriftPct >= 90 && maskedDriftPct >= 90) ||
+          semanticWallDriftPct >= 95 ||
+          maskedDriftPct >= 95;
 
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = "STRUCTURAL_CATASTROPHIC_BACKSTOP immediate_hard_stop";
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        nLog(`[STAGE2_CONSENSUS_HARD_STOP] fallback=${fallbackStage}`);
-        break;
-      }
-
-      const resolvedStructuralDeviationDeg = stage2StructuralDegreeMetric.available
-        ? stage2StructuralDegreeMetric.valueDeg
-        : null;
-      const deviationScore = resolvedStructuralDeviationDeg ?? 0;
-      const catastrophicGeometry = Boolean(
-        (unifiedValidation as any)?.raw?.structureValidator?.details?.catastrophicGeometry ??
-        (unifiedValidation as any)?.raw?.structure?.details?.catastrophicGeometry ??
-        false
-      );
-      const maskedDriftPct = compositeMaskedDriftPct;
-      const semanticWallDriftPct = compositeSemanticWallDriftPct;
-      const windowsBefore = stage2SemanticResult?.windows?.before ?? 0;
-      const windowsAfter = stage2SemanticResult?.windows?.after ?? 0;
-      const doorsBefore = stage2SemanticResult?.doors?.before ?? 0;
-      const doorsAfter = stage2SemanticResult?.doors?.after ?? 0;
-      const openingsCreated = stage2MaskedEdgeResult?.createdOpenings ?? 0;
-      const openingsClosed = stage2MaskedEdgeResult?.closedOpenings ?? 0;
-      const compositeReason = compositeLocalEvaluation?.reason || "none";
-      const compositeDecision = compositeLocalEvaluation?.failed === true ? "FAIL" : "PASS";
-
-      const isExtremeDeviation = resolvedStructuralDeviationDeg !== null && deviationScore >= 90;
-      const isExtremeDrift = maskedDriftPct >= 95 && semanticWallDriftPct >= 95;
-      const stage2Tier: "EXTREME" | "GEMINI" =
-        (catastrophicGeometry || isExtremeDeviation || isExtremeDrift) ? "EXTREME" : "GEMINI";
-      const extremeLocalSuspicion = stage2Tier === "EXTREME";
-
-      const extremeLocalSignals: string[] = [];
-      if (windowsAfter < windowsBefore || doorsAfter < doorsBefore || openingsClosed > 0) {
-        extremeLocalSignals.push("opening_count_drop_detected");
-      }
-      if (catastrophicGeometry || maskedDriftPct >= 70 || semanticWallDriftPct >= 45) {
-        extremeLocalSignals.push("wall_plane_shift");
-      }
-      if (openingsClosed > 0 || maskedDriftPct >= 80) {
-        extremeLocalSignals.push("opening_region_occluded");
-      }
-      if (Math.abs(windowsAfter - windowsBefore) > 0 || Math.abs(doorsAfter - doorsBefore) > 0) {
-        extremeLocalSignals.push("opening_geometry_change");
-      }
-
-      nLog("[STAGE2_TIER_CLASSIFICATION]", {
-        structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
-        structuralDegreeSource: stage2StructuralDegreeMetric.source,
-        maskedDriftPct,
-        semanticWallDriftPct,
-        tier: stage2Tier,
-      });
-
-      nLog("[STAGE2_LOCAL_SIGNALS]", {
-        jobId: payload.jobId,
-        attempt,
-        catastrophicGeometry,
-        structuralDegreeAvailable: stage2StructuralDegreeMetric.available,
-        structuralDegreeSource: stage2StructuralDegreeMetric.source,
-        maskedDriftPct,
-        semanticWallDriftPct,
-        windowsBefore,
-        windowsAfter,
-        doorsBefore,
-        doorsAfter,
-        openingsCreated,
-        openingsClosed,
-        compositeReason,
-      });
-
-      if (extremeLocalSuspicion) {
-        pendingStage2StructuralFailureType = "CATASTROPHIC_ORIENTATION";
-        pendingStage2RetryStrategy = "REINFORCED";
-        pendingStage2RetryReason = null;
-        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED;
-        if (Array.isArray(unifiedValidation?.warnings)) {
-          unifiedValidation.warnings.push(...Array.from(new Set(extremeLocalSignals)));
-        }
-        nLog("[STAGE2_EXTREME_ADVISORY_ESCALATION]", {
+        nLog("[STAGE2_EXTREME_LOCAL_GATE]", {
           jobId: payload.jobId,
           attempt,
-          stage2Tier,
-          catastrophicGeometry,
-          maskedDriftPct,
           semanticWallDriftPct,
-          windowsBefore,
-          windowsAfter,
-          doorsBefore,
-          doorsAfter,
-          openingsClosed,
-          advisorySignals: Array.from(new Set(extremeLocalSignals)),
-        });
-      }
-
-      let topologyResultForEvidence: "PASS" | "FAIL" | undefined;
-      if (validationStage === "2" && shouldRunCompositeLocalValidator && compositeLocalEvaluation?.failed === false) {
-        const topologyThresholdExceeded =
-          compositeSemanticWallDriftPct > 10 ||
-          compositeSemanticOpeningsDeltaTotal > 0 ||
-          compositeMaskedDriftPct > 2;
-
-        if (!topologyThresholdExceeded) {
-          nLog("[topology-validator] skipped (thresholds not exceeded)");
-          nLog("[topology-validator] skipped");
-        } else if (!path1A) {
-          nLog("[topology-validator] skipped (stage1A missing)");
-          nLog("[topology-validator] skipped");
-        } else {
-          const topologyModel = String(unifiedValidation?.modelUsed || process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash");
-          let topologyResult: StructuralTopologyCheckResult;
-          try {
-            topologyResult = await runStructuralTopologyCheck({
-              stage1APath: path1A,
-              stage2Path: path2,
-              model: topologyModel,
-            });
-          } catch (topologyError: any) {
-            topologyResult = {
-              result: "PASS",
-              explanation: `validator_error: ${topologyError?.message || String(topologyError)}`,
-              rawText: topologyError?.message || String(topologyError),
-            };
-          }
-
-          nLog("[topology-validator]", {
-            triggered: true,
-            result: topologyResult.result,
-            explanation: topologyResult.explanation,
-            jobId: payload.jobId,
-            stage: "2",
-            attempt,
-          });
-
-          topologyResultForEvidence = topologyResult.result;
-
-          if (topologyResult.result === "FAIL") {
-            if (attempt < MAX_STAGE2_RETRIES) {
-              emitStage2DecisionBreakdown({
-                extremeLocalFail: false,
-                topologyFail: true,
-                invariantFail: false,
-                compositeDecision,
-                geminiConfirmStatus: "not_run",
-                complianceDecision: "not_run",
-                stage2Blocked,
-                decisionPoint: "retry_schedule",
-                reason: "topology_violation_detected",
-              });
-              nLog(`[topology-validator] FAIL → scheduling retry attempt=${attempt + 1}`);
-              logEvent("STAGE_RETRY", {
-                jobId: payload.jobId,
-                stage: "2",
-                retry: attempt + 1,
-                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-                reason: "topology_violation_detected",
-              });
-              continue;
-            }
-
-            nLog("[topology-validator] FAIL → retries exhausted");
-            emitStage2DecisionBreakdown({
-              extremeLocalFail: false,
-              topologyFail: true,
-              invariantFail: false,
-              compositeDecision,
-              geminiConfirmStatus: "not_run",
-              complianceDecision: "not_run",
-              stage2Blocked,
-              decisionPoint: "final_block",
-              reason: "topology_violation_detected",
-            });
-            stage2LocalReasons.push("topology_violation_detected");
-            setStage2AttemptValidation(path2, "topology_violation_detected", [
-              ...stage2LocalReasons,
-              topologyResult.explanation,
-            ]);
-            mergeAttemptValidation("2", attempt, {
-              final: {
-                result: "FAILED",
-                finalHard: true,
-                finalCategory: "topology_violation_detected",
-                retryTriggered: false,
-                retriesExhausted: true,
-                reason: "topology_violation_detected",
-              },
-            });
-            await safeWriteJobStatus(
-              payload.jobId,
-              {
-                status: "failed",
-                errorMessage: "topology_violation_detected",
-                reason: "topology_violation_detected",
-              },
-              "topology_validator_terminal"
-            );
-            return;
-          }
-        }
-      }
-
-      if (stage2GeminiPolicy !== "never") {
-        unifiedValidation = await runUnifiedValidation({
-          originalPath: validationBasePath,
-          enhancedPath: path2,
-          stage: validationStage,
-          sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
-          roomType: payload.options.roomType,
-          mode: effectiveValidationMode,
-          geminiPolicy: stage2GeminiPolicy,
-          jobId: payload.jobId,
-          stagingStyle: payload.options.stagingStyle || "standard_listing",
-          stage1APath: validationBasePath,
-          sourceStage: stage2SourceStage,
-          validationMode: stage2ValidationMode,
-          baseArtifacts: stageLineage.baseArtifacts,
-          topologyResult: topologyResultForEvidence,
-        });
-      }
-
-      const closetDoorsBefore = (stage2SemanticResult as any)?.closetDoors?.before ?? null;
-      const closetDoorsAfter = (stage2SemanticResult as any)?.closetDoors?.after ?? null;
-      const builtInRemovalDetected = detectBuiltInRemoval(stage2LocalReasons);
-      const wallDriftPct = semanticWallDriftPct;
-      const maskedEdgeDriftPct = maskedDriftPct;
-
-      const normalizeCount = (value?: number | null) =>
-        typeof value === "number" && Number.isFinite(value) ? value : 0;
-
-      const totalOpeningsBefore =
-        normalizeCount(windowsBefore) +
-        normalizeCount(doorsBefore) +
-        normalizeCount(closetDoorsBefore);
-
-      const totalOpeningsAfter =
-        normalizeCount(windowsAfter) +
-        normalizeCount(doorsAfter) +
-        normalizeCount(closetDoorsAfter);
-
-      const escalateStructuralInvariant = shouldEscalateToGeminiStructuralReview({
-        windowsBefore,
-        windowsAfter,
-        doorsBefore,
-        doorsAfter,
-        closetDoorsBefore,
-        closetDoorsAfter,
-        builtInRemovalDetected,
-        wallDriftPct,
-        maskedEdgeDriftPct,
-      });
-
-      logger.info(
-        `[STRUCTURAL_INVARIANT_AUDIT] windowsBefore=${windowsBefore} windowsAfter=${windowsAfter} doorsBefore=${doorsBefore} doorsAfter=${doorsAfter} closetDoorsBefore=${closetDoorsBefore} closetDoorsAfter=${closetDoorsAfter} totalOpeningsBefore=${totalOpeningsBefore} totalOpeningsAfter=${totalOpeningsAfter} builtInRemovalDetected=${builtInRemovalDetected} wallDriftPct=${wallDriftPct} maskedEdgeDriftPct=${maskedEdgeDriftPct}`
-      );
-
-      let invariantHints = buildInvariantHints({
-        windowsBefore,
-        windowsAfter,
-        doorsBefore,
-        doorsAfter,
-        closetDoorsBefore,
-        closetDoorsAfter,
-        builtInRemovalDetected,
-        wallDriftPct,
-        maskedEdgeDriftPct,
-      });
-
-      if (extremeLocalSuspicion) {
-        invariantHints.push(
-          "Local validators detected extreme structural drift.",
-          "Carefully verify that no walls, windows, doors, or architectural openings have been removed, added, relocated, resized, or partially occluded.",
-          "Treat this as high suspicion and confirm against the Stage-1A baseline while avoiding furniture-only false positives."
-        );
-      }
-
-      logger.info(
-        `[STRUCTURAL_INVARIANT_ESCALATION] escalate=${escalateStructuralInvariant} alwaysRun=true hints=${JSON.stringify(invariantHints)}`
-      );
-
-      let structuralInvariantResult: { fail: boolean } | null = null;
-      let openingValidationResult: Awaited<ReturnType<typeof validateOpeningPreservation>> | null = null;
-
-      if (!structuralBaseline && structuralBaselinePromise) {
-        try {
-          structuralBaseline = await structuralBaselinePromise;
-          jobContext.structuralBaseline = structuralBaseline;
-          nLog(
-            `[STRUCTURAL_BASELINE_READY_FOR_STAGE2] jobId=${payload.jobId} openings=${structuralBaseline?.openings?.length ?? 0}`
-          );
-        } catch (baselineAwaitErr: any) {
-          nLog(
-            `[STRUCTURAL_BASELINE_AWAIT_ERROR] jobId=${payload.jobId} reason=${baselineAwaitErr?.message || baselineAwaitErr}`
-          );
-        }
-      }
-
-      // Inject Stage-1A opening baseline hints for Gemini verification
-      if (structuralBaseline?.openings?.length) {
-        const openingHints = structuralBaseline.openings
-          .slice(0, 4)
-          .map((o: any, i: number) => {
-            const normalizedType = normalizeOpeningTypeForComparison(o?.type);
-            const displayType = normalizedType === "closet_door"
-              ? "closet_door"
-              : normalizedType === "walkthrough"
-                ? "walkthrough"
-                : (normalizedType || "opening");
-            const wall = String(o?.wallPosition || o?.wall || "wall").replace(/_/g, " ");
-            const horizontal = String(o?.horizontalBand || o?.relativeHorizontalPosition || "center").replace(/_/g, "-");
-            const areaPct = Number.isFinite(Number(o?.area_pct)) ? Number(o.area_pct) : 0;
-            return [
-              `Opening ${i + 1}:`,
-              `type: ${displayType}`,
-              `location: ${horizontal} ${wall}`,
-              `area: ${Math.round(areaPct)}% of image`,
-            ].join("\n");
-          });
-
-        invariantHints.push(
-          "The original image contained architectural openings:",
-          ...openingHints,
-          "Architectural openings include:",
-          "- windows",
-          "- doors",
-          "- closet doors",
-          "- sliding wardrobe doors",
-          "- walk-through openings between rooms",
-          "Verify these openings remain present and structurally unchanged in the edited image.",
-          "They may be partially occluded by staging furniture but must not be removed, resized, or replaced by a wall surface.",
-          "Do not assume occlusion. Confirm the wall plane has not become continuous where an opening previously existed."
-        );
-
-        const hintLogPayload = structuralBaseline.openings.slice(0, 4).map((opening: any) => ({
-          opening_type: normalizeOpeningTypeForComparison(opening?.type),
-          bbox: Array.isArray(opening?.bbox) ? opening.bbox : null,
-          area_delta: 0,
-        }));
-        nLog(`[OPENING_BASELINE_HINTS] job_id=${payload.jobId} count=${openingHints.length} openings=${JSON.stringify(hintLogPayload)}`);
-      }
-
-      if (stage2CandidatePath && !structuralBaseline) {
-        const failReason = "baseline_unavailable_block";
-        nLog(`[OPENING_VALIDATION_FAIL] reason=${failReason}`);
-        setStage2AttemptValidation(path2, "opening_preservation", [failReason]);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "opening_preservation",
-            retryTriggered: false,
-            retriesExhausted: false,
-            retryStrategy: "NORMAL",
-            reason: failReason,
-          },
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: unifiedValidation.passed === true,
-          geminiPass: false,
-          confirmPass: false,
-          finalPass: false,
-          violationType: failReason,
-          retryStrategy: "NORMAL",
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+          semanticOpeningsDeltaTotal,
+          maskedDriftPct,
+          maskedOpeningsDeltaTotal,
+          consensusMode: stage2Consensus.mode,
+          derivedWarnings: stage2Consensus.derivedWarnings,
+          extremeLocalFail,
         });
 
-        stage2Blocked = true;
-        stage2FallbackStage = "1A";
-        stage2BlockedReason = failReason;
-        fallbackUsed = "stage2_structure_fallback_1a";
-        path2 = path1A;
-        stage2CandidatePath = path1A;
+        if (extremeLocalFail) {
+          stage2LocalReasons.push("extreme_local_validator_fail");
+          pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+          pendingStage2RetryStrategy = "NORMAL";
+          pendingStage2RetryReason = "extreme_local_validator_fail";
 
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: false,
-          topologyFail: false,
-          invariantFail: true,
-          compositeDecision,
-          geminiConfirmStatus: "not_run",
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "final_block",
-          reason: failReason,
-        });
-
-        nLog(`[FALLBACK_TO_STAGE1A] reason=${failReason}`);
-        nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=${failReason}`);
-        break;
-      }
-
-      if (stage2CandidatePath && structuralBaseline) {
-        try {
-          openingValidationResult = await validateOpeningPreservation(
-            structuralBaseline,
-            stage2CandidatePath
-          );
-
-          const violations = openingValidationResult.results.filter((result) => {
-            if (result.sealed === true) return true;
-            if (result.relocated === true) return true;
-            if (result.present === false && result.outOfFrame !== true) return true;
-            return false;
-          });
-          // Detect large geometry change in preserved openings (advisory only)
-          const metrics = (openingValidationResult?.summary ?? {}) as any;
-          const geometryDriftDetected =
-            Math.abs(metrics.semanticOpeningAreaDeltaPct ?? 0) > 0.40 ||
-            Math.abs(metrics.semanticOpeningAspectRatioDelta ?? 0) > 0.40;
-
-          const representativeOpening = (structuralBaseline.openings || [])[0] as any;
-          const representativeType = normalizeOpeningTypeForComparison(representativeOpening?.type || "opening");
-          const representativeBbox = normalizeBboxCandidate(representativeOpening?.bbox);
-          const representativeAreaDelta = Number(metrics.semanticOpeningAreaDeltaPct ?? 0);
-
-          let floorlineBreakSignal: FloorlineBreakSignal = {
-            detected: false,
-            floorY: null,
-            baselineMaxGapPx: 0,
-            candidateMaxGapPx: 0,
-            gapDeltaPx: 0,
-            openingBbox: null,
-          };
-
-          try {
-            floorlineBreakSignal = await detectFloorlineBreakSignal(path1A, stage2CandidatePath);
-          } catch (floorlineErr: any) {
-            nLog(`[FLOORLINE_BREAK] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} error=${floorlineErr?.message || floorlineErr}`);
-          }
-
-          if (floorlineBreakSignal.detected) {
-            nLog(
-              `[FLOORLINE_BREAK] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(floorlineBreakSignal.openingBbox || representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} gap_width=${floorlineBreakSignal.candidateMaxGapPx} baseline_gap=${floorlineBreakSignal.baselineMaxGapPx} gap_delta=${floorlineBreakSignal.gapDeltaPx}`
-            );
-          } else {
-            nLog(
-              `[FLOORLINE_BREAK] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} gap_width=${floorlineBreakSignal.candidateMaxGapPx} baseline_gap=${floorlineBreakSignal.baselineMaxGapPx} gap_delta=${floorlineBreakSignal.gapDeltaPx}`
-            );
-          }
-
-          let cornerRectangleSignal: CornerRectangleSignal = {
-            lost: false,
-            baselineRectangles: 0,
-            candidateRectangles: 0,
-            representativeBbox: null,
-          };
-
-          try {
-            cornerRectangleSignal = await detectCornerRectangleLossSignal(path1A, stage2CandidatePath);
-          } catch (cornerErr: any) {
-            nLog(`[OPENING_RECTANGLE_LOST] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} error=${cornerErr?.message || cornerErr}`);
-          }
-
-          if (cornerRectangleSignal.lost) {
-            nLog(
-              `[OPENING_RECTANGLE_LOST] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(cornerRectangleSignal.representativeBbox || representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} rectangles_before=${cornerRectangleSignal.baselineRectangles} rectangles_after=${cornerRectangleSignal.candidateRectangles}`
-            );
-          } else {
-            nLog(
-              `[OPENING_RECTANGLE_LOST] detected=false job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} rectangles_before=${cornerRectangleSignal.baselineRectangles} rectangles_after=${cornerRectangleSignal.candidateRectangles}`
-            );
-          }
-
-          if (geometryDriftDetected) {
-            invariantHints.push(
-              "One of the architectural openings appears significantly resized or altered. Confirm whether the opening structure was modified.",
-              "An architectural opening may have changed geometry. Verify that no windows, doors, or openings were resized, truncated, partially walled over, or otherwise altered. Furniture occlusion is allowed, but the original opening geometry must remain intact."
-            );
-          }
-          const relocationDetected = detectRelocation(
-            structuralBaseline,
-            openingValidationResult.detectedOpenings
-          );
-          const openingResized = openingValidationResult.summary.openingResized === true;
-          const openingClassMismatch = openingValidationResult.summary.openingClassMismatch === true;
-          const openingBandMismatch = openingValidationResult.summary.openingBandMismatch === true;
-          function detectStructuralMaskFailure(raw: any): boolean {
-            if (!raw || typeof raw !== "object") return false;
-
-            const candidates = [
-              raw?.structuralMask,
-              raw?.structure,
-              raw?.structureValidator,
-              raw?.maskValidator,
-            ];
-
-            return candidates.some(
-              (c) => c && typeof c === "object" && c.passed === false
-            );
-          }
-          const structuralDegree = Number(stage2StructuralDegreeMetric?.valueDeg ?? 0);
-          const structuralMaskFailure = detectStructuralMaskFailure(
-            (unifiedValidation as any)?.raw
-          );
-          const geminiStructuredCategory = String((unifiedValidation as any)?.raw?.geminiSemantic?.details?.category ?? "");
-          const geminiStructuredConfidence = Number((unifiedValidation as any)?.raw?.geminiSemantic?.details?.confidence ?? 0);
-          const geminiStructuredHighConfidence =
-            geminiStructuredCategory === "structure" &&
-            geminiStructuredConfidence >= 0.9;
-
-          const windowsBeforePolicy = Number(stage2SemanticResult?.windows?.before ?? 0);
-          const windowsAfterPolicy = Number(stage2SemanticResult?.windows?.after ?? 0);
-          const doorsBeforePolicy = Number(stage2SemanticResult?.doors?.before ?? 0);
-          const doorsAfterPolicy = Number(stage2SemanticResult?.doors?.after ?? 0);
-
-          const openingProfile = determineOpeningProfile(payload);
-          const openingPolicySignals: OpeningPolicySignals = {
-            structuralDegree,
-            maskedDriftPct: compositeMaskedDriftPct,
-            semanticWallDriftPct: compositeSemanticWallDriftPct,
-            structuralMaskFailure,
-            geminiStructuredHighConfidence,
-            windowsBefore: windowsBeforePolicy,
-            windowsAfter: windowsAfterPolicy,
-            doorsBefore: doorsBeforePolicy,
-            doorsAfter: doorsAfterPolicy,
-          };
-
-          const openingPolicyDecision =
-            openingProfile === "declutter_to_stage"
-              ? applyDeclutterOpeningPolicy(openingPolicySignals)
-              : applyEmptyOpeningPolicy(openingPolicySignals);
-
-          const openingPolicyHardFail = openingPolicyDecision.hardFail;
-          const openingAdvisoryOnly =
-            !openingPolicyHardFail &&
-            (openingResized || openingBandMismatch || relocationDetected || violations.length > 0);
-
-          const detectedOpenings = Array.isArray(openingValidationResult.detectedOpenings)
-            ? openingValidationResult.detectedOpenings
-            : [];
-
-          const countByType = (arr: Array<{ type?: string }>, type: string) =>
-            arr.reduce((sum, item) => sum + (normalizeOpeningTypeForComparison(item?.type) === type ? 1 : 0), 0);
-
-          const doorsBeforeDetected = countByType(structuralBaseline.openings as any[], "door");
-          const doorsAfterDetected = countByType(detectedOpenings as any[], "door");
-          const windowsBeforeDetected = countByType(structuralBaseline.openings as any[], "window");
-          const windowsAfterDetected = countByType(detectedOpenings as any[], "window");
-          const closetsBeforeDetected = countByType(structuralBaseline.openings as any[], "closet_door");
-          const closetsAfterDetected = countByType(detectedOpenings as any[], "closet_door");
-          const openingsBeforeDetected = structuralBaseline.openings.length;
-          const openingsAfterDetected = detectedOpenings.length;
-          const hasBaselineClosetDoors = closetsBeforeDetected > 0;
-          const wallDriftHighForClosetRisk =
-            compositeSemanticWallDriftPct >= 35 ||
-            compositeMaskedDriftPct >= 35;
-
-          if (geometryDriftDetected) {
-            nLog(
-              `[OPENING_GEOMETRY_HINT] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)}`
-            );
-          }
-
-          openingIdentityWarnings = [];
-          if (doorsAfterDetected < doorsBeforeDetected) {
-            openingIdentityWarnings.push("door_count_decrease");
-            nLog(`[OPENING][stage2] door count decrease detected (${doorsBeforeDetected} → ${doorsAfterDetected})`);
-          }
-          if (windowsAfterDetected < windowsBeforeDetected) {
-            openingIdentityWarnings.push("window_count_decrease");
-            nLog(`[OPENING][stage2] window count decrease detected (${windowsBeforeDetected} → ${windowsAfterDetected})`);
-          }
-          if (closetsAfterDetected < closetsBeforeDetected) {
-            openingIdentityWarnings.push("closet_door_missing");
-            nLog(`[OPENING][stage2] closet door missing detected (${closetsBeforeDetected} → ${closetsAfterDetected})`);
-          }
-          if (openingsAfterDetected < openingsBeforeDetected) {
-            openingIdentityWarnings.push("opening_count_decrease");
-            nLog(`[OPENING][stage2] opening count decrease detected (${openingsBeforeDetected} → ${openingsAfterDetected})`);
-          }
-          if (hasBaselineClosetDoors && wallDriftHighForClosetRisk) {
-            openingIdentityWarnings.push("closet_visibility_risk");
-            nLog(
-              `[CLOSET][stage2] closet visibility risk detected (closetsBefore=${closetsBeforeDetected}, wallDriftPct=${compositeSemanticWallDriftPct.toFixed(2)}, maskedDriftPct=${compositeMaskedDriftPct.toFixed(2)})`
-            );
-          }
-
-          const openingObstructed =
-            openingValidationResult.summary.openingSealed === true ||
-            violations.some((result) => result.sealed === true);
-          if (openingObstructed) {
-            openingIdentityWarnings.push("opening_obstructed");
-            nLog("[OPENING][stage2] opening obstruction warning");
-          }
-
-          const OPENING_AREA_DROP_THRESHOLD = 0.50;
-          const DECOR_TYPES = new Set([
-            "mirror",
-            "painting",
-            "artwork",
-            "wall_art",
-            "wall_decor",
-            "picture_frame",
-          ]);
-
-          const geminiDetails = (unifiedValidation as any)?.raw?.geminiSemantic?.details;
-          const detectedObjects = extractDecorObjectCandidates(geminiDetails);
-
-          let decorReplacementDetected = false;
-          let replacementOpeningType = "opening";
-          let replacementAreaDelta = 0;
-          let replacementDetectedObjectType = "unknown";
-          let replacementBbox: [number, number, number, number] | null = null;
-
-          for (const baselineOpening of structuralBaseline.openings as any[]) {
-            const baselineBbox = normalizeBboxCandidate(baselineOpening?.bbox);
-            if (!baselineBbox) continue;
-
-            const baselineArea = Math.max(0.01, Number(baselineOpening?.area_pct ?? 0));
-            const matchedOpening = detectedOpenings.find((candidate: any) => {
-              const idMatch = String(candidate?.id || "") === String(baselineOpening?.id || "");
-              if (idMatch) return true;
-              const sameType = normalizeOpeningTypeForComparison(candidate?.type) === normalizeOpeningTypeForComparison(baselineOpening?.type);
-              const sameWall = Number(candidate?.wallIndex) === Number(baselineOpening?.wallIndex);
-              const sameBand = String(candidate?.horizontalBand || "") === String(baselineOpening?.horizontalBand || "");
-              return sameType && sameWall && sameBand;
-            });
-
-            const detectedArea = matchedOpening
-              ? Math.max(0.01, Number((matchedOpening as any)?.area_pct ?? 0))
-              : 0;
-            const openingAreaDelta = matchedOpening
-              ? Math.max(0, (baselineArea - detectedArea) / baselineArea)
-              : 1;
-
-            if (openingAreaDelta <= OPENING_AREA_DROP_THRESHOLD) continue;
-
-            const matchedDecorObject = detectedObjects.find((obj) => {
-              const normalizedType = normalizeDecorObjectType(obj.type);
-              if (!DECOR_TYPES.has(normalizedType)) return false;
-              if (!obj.bbox) return false;
-              return bboxOverlapRatio(baselineBbox, obj.bbox) >= 0.15;
-            });
-
-            if (!matchedDecorObject) continue;
-
-            decorReplacementDetected = true;
-            replacementOpeningType = normalizeOpeningTypeForComparison(baselineOpening?.type || "opening");
-            replacementAreaDelta = openingAreaDelta;
-            replacementDetectedObjectType = normalizeDecorObjectType(matchedDecorObject.type);
-            replacementBbox = baselineBbox;
-            break;
-          }
-
-          if (decorReplacementDetected) {
-            openingIdentityWarnings.push("possible_opening_replacement");
-            if (Array.isArray(unifiedValidation?.warnings)) {
-              unifiedValidation.warnings.push("possible_opening_replaced_by_wall_decor");
-            }
-            invariantHints.push(
-              "A decorative wall object appears in the location where an architectural opening existed. Confirm that the opening was not removed or replaced with a wall surface."
-            );
-            nLog(
-              `[OPENING_DECOR_REPLACEMENT] detected=true job_id=${payload.jobId} attempt=${attempt} opening_type=${replacementOpeningType} bbox=${JSON.stringify(replacementBbox)} area_delta=${replacementAreaDelta.toFixed(3)} detected_object_type=${replacementDetectedObjectType}`
-            );
-          }
-
-          const geometrySignal = geometryDriftDetected ? 1 : 0;
-          const floorlineBreakSignalValue = floorlineBreakSignal.detected ? 1 : 0;
-          const cornerRectangleLostSignal = cornerRectangleSignal.lost ? 1 : 0;
-          const decorReplacementSignal = decorReplacementDetected ? 1 : 0;
-          const openingSignalScore =
-            geometrySignal +
-            floorlineBreakSignalValue +
-            cornerRectangleLostSignal +
-            decorReplacementSignal;
-
-          const openingSignalSeverity =
-            openingSignalScore >= 3
-              ? "high"
-              : openingSignalScore >= 2
-                ? "medium"
-                : openingSignalScore >= 1
-                  ? "advisory"
-                  : "ignore";
-
-          nLog(
-            `[OPENING_SIGNAL_FUSION] job_id=${payload.jobId} attempt=${attempt} opening_type=${representativeType} bbox=${JSON.stringify(representativeBbox)} area_delta=${representativeAreaDelta.toFixed(3)} score=${openingSignalScore} severity=${openingSignalSeverity} geometry_drift=${geometrySignal} floorline_break=${floorlineBreakSignalValue} corner_rectangle_lost=${cornerRectangleLostSignal} decor_replacement=${decorReplacementSignal}`
-          );
-
-          if (openingSignalSeverity === "medium" || openingSignalSeverity === "high") {
-            invariantHints.push(
-              "Multiple structural signals suggest an architectural opening may have been removed. Verify that windows, doors, closet doors, and walk-through openings remain present."
-            );
-          }
-
-          if (openingSignalSeverity === "high") {
-            invariantHints.push(
-              "Several local signals strongly indicate that an architectural opening may have been replaced by a wall surface or decoration. Confirm whether the opening was removed."
-            );
-          }
-
-          nLog(
-            `[OPENING_AUDIT] job_id=${payload.jobId} attempt=${attempt} baseline_openings=${structuralBaseline.openings.length} geometry_flags=${geometryDriftDetected ? 1 : 0} floorline_break=${floorlineBreakSignal.detected ? 1 : 0} corner_rectangle_lost=${cornerRectangleSignal.lost ? 1 : 0} decor_replacement=${decorReplacementDetected ? 1 : 0}`
-          );
-
-          const stage2FurnitureAgainstWall = detectFurnitureAgainstWallSignal({
-            localReasons: stage2LocalReasons,
-            warnings: Array.isArray(unifiedValidation?.warnings)
-              ? unifiedValidation.warnings
-              : [],
-            geminiDetails: (unifiedValidation as any)?.raw?.geminiSemantic?.details,
-          });
-          const doorwayContinuitySuspicion =
-            stage2FurnitureAgainstWall === true &&
-            structuralBaseline.openings.length === 0 &&
-            compositeSemanticWallDriftPct > 35;
-
-          if (doorwayContinuitySuspicion) {
-            openingIdentityWarnings.push("possible_hidden_opening_removed");
-            nLog("[OPENING][stage2] doorway continuity suspicion triggered");
-          }
-
-          if (openingIdentityWarnings.length > 0) {
-            const dedupedWarnings = Array.from(new Set(openingIdentityWarnings));
-            openingIdentityWarnings = dedupedWarnings;
-            if (Array.isArray(unifiedValidation?.warnings)) {
-              unifiedValidation.warnings.push(...dedupedWarnings.map((code) => `opening_identity_warning:${code}`));
-            }
-            invariantHints = [
-              ...invariantHints,
-              `opening_identity_warning: ${dedupedWarnings.join(", ")}`,
-            ];
-            if (dedupedWarnings.includes("possible_hidden_opening_removed")) {
-              invariantHints = [
-                ...invariantHints,
-                "Large furniture is positioned against a wall plane. Confirm that this wall did not previously contain a doorway or open passage that has been filled or hidden.",
-              ];
-            }
-            if (dedupedWarnings.includes("closet_visibility_risk")) {
-              const closetRegions = collectClosetRegionDescriptors(structuralBaseline)
-                .map((region) => `${region.id}:${region.wallPosition}/${region.horizontalBand}/${region.verticalBand}`)
-                .slice(0, 4);
-              invariantHints = [
-                ...invariantHints,
-                `Closet-door visibility risk detected. Confirm closet openings remain visible and operable; avoid large furniture against closet-door wall regions${closetRegions.length ? ` (${closetRegions.join(", ")})` : ""}.`,
-              ];
-            }
-            nLog(`[OPENING][stage2] opening_identity_warning=${dedupedWarnings.join(",")}`);
-          }
-
-          nLog("[STAGE2_PROFILE_OPENING_GATE]", {
-            jobId: payload.jobId,
-            attempt,
-            profile: openingProfile,
-            hardFail: openingPolicyHardFail,
-            reasons: openingPolicyDecision.reasons,
-            structuralDegree,
-            maskedDriftPct: compositeMaskedDriftPct,
-            semanticWallDriftPct: compositeSemanticWallDriftPct,
-            structuralMaskFailure,
-            geminiStructuredHighConfidence,
-            windowsBefore: windowsBeforePolicy,
-            windowsAfter: windowsAfterPolicy,
-            doorsBefore: doorsBeforePolicy,
-            doorsAfter: doorsAfterPolicy,
-          });
-
-          if (openingClassMismatch) {
-            logger.warn({
-              event: "STRUCTURAL_CLASS_MISMATCH",
-              jobId: payload.jobId,
-              attempt,
-            });
-          }
-
-          if (openingPolicyHardFail) {
-            logger.warn({
-              event: "SPATIAL_OPENING_VIOLATION",
-              jobId: payload.jobId,
-              attempt,
-              violations,
-              relocationDetected,
-              openingResized,
-              openingClassMismatch,
-              openingBandMismatch,
-              outOfFrameOpenings: openingValidationResult.summary.outOfFrameOpenings,
-              validation: openingValidationResult.summary,
-            });
-
-            nLog(
-              `[OPENING_VALIDATION_ADVISORY] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
-            );
-
-            const advisoryReasons = [
-              "opening_preservation",
-              `violations=${violations.length}`,
-              `openingRemoved=${openingValidationResult.summary.openingRemoved}`,
-              `openingSealed=${openingValidationResult.summary.openingSealed}`,
-              `openingRelocated=${openingValidationResult.summary.openingRelocated}`,
-              `openingResized=${openingValidationResult.summary.openingResized}`,
-              `openingClassMismatch=${openingValidationResult.summary.openingClassMismatch}`,
-              `openingBandMismatch=${openingValidationResult.summary.openingBandMismatch}`,
-              `relocationDetected=${relocationDetected}`,
-              `profile=${openingProfile}`,
-              ...openingPolicyDecision.reasons,
-            ];
-
-            if (Array.isArray(unifiedValidation?.warnings)) {
-              unifiedValidation.warnings.push(...advisoryReasons);
-            }
-
-            stage2NeedsConfirm = true;
-            console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
-              jobId: payload.jobId,
-              reason: "opening_preservation",
-              profile: openingProfile,
-              advisoryReasons,
-              structuralDegree,
-              maskedDriftPct: compositeMaskedDriftPct,
-              semanticWallDriftPct: compositeSemanticWallDriftPct,
-              structuralMaskFailure,
-              geminiStructuredHighConfidence,
-              windowsBefore: windowsBeforePolicy,
-              windowsAfter: windowsAfterPolicy,
-              doorsBefore: doorsBeforePolicy,
-              doorsAfter: doorsAfterPolicy,
-            });
-          } else {
-            const advisoryReason = "stage2_profile_opening_advisory";
-            if (Array.isArray(unifiedValidation?.warnings)) {
-              unifiedValidation.warnings.push(advisoryReason);
-            }
-            console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
-              jobId: payload.jobId,
-              reason: advisoryReason,
-              profile: openingProfile,
-              structuralDegree,
-              maskedDriftPct: compositeMaskedDriftPct,
-              semanticWallDriftPct: compositeSemanticWallDriftPct,
-              structuralMaskFailure,
-              geminiStructuredHighConfidence,
-              windowsBefore: windowsBeforePolicy,
-              windowsAfter: windowsAfterPolicy,
-              doorsBefore: doorsBeforePolicy,
-              doorsAfter: doorsAfterPolicy,
-            });
-          }
-
-          if (openingAdvisoryOnly) {
-            logger.info({
-              event: "SPATIAL_OPENING_ADVISORY",
-              jobId: payload.jobId,
-              attempt,
-              violations,
-              relocationDetected,
-              openingResized,
-              openingClassMismatch,
-              openingBandMismatch,
-              outOfFrameOpenings: openingValidationResult.summary.outOfFrameOpenings,
-              validation: openingValidationResult.summary,
-            });
-
-            nLog(
-              `[OPENING_VALIDATION_ADVISORY] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected} confidence=${openingValidationResult.summary.confidence}`
-            );
-          }
-
-          logger.info({
-            event: "OPENING_VALIDATION_PASS",
-            jobId: payload.jobId,
-          });
-
-          nLog(
-            `[OPENING_VALIDATION_PASS] openingRemoved=${openingValidationResult.summary.openingRemoved} openingSealed=${openingValidationResult.summary.openingSealed} openingRelocated=${openingValidationResult.summary.openingRelocated} openingResized=${openingValidationResult.summary.openingResized} openingClassMismatch=${openingValidationResult.summary.openingClassMismatch} openingBandMismatch=${openingValidationResult.summary.openingBandMismatch} relocationDetected=${relocationDetected}`
-          );
-        } catch (openingValidationErr: any) {
-          nLog(`[OPENING_VALIDATION_ERROR] jobId=${payload.jobId} reason=${openingValidationErr?.message || openingValidationErr}`);
-        }
-      } else if (!stage2CandidatePath) {
-        nLog(
-          `[OPENING_VALIDATION_SKIPPED] baseline=${structuralBaseline ? "present" : "missing"} candidate=missing`
-        );
-      }
-
-      if (stage2CandidatePath) {
-        const openingsDrop = totalOpeningsAfter < totalOpeningsBefore;
-        const highWallDrift =
-          typeof wallDriftPct === "number" &&
-          wallDriftPct > 55;
-        const deterministicGuardTriggered = false;
-
-        logger.info(
-          `[STRUCTURAL_GUARD_EVAL] openingsDrop=${openingsDrop} highWallDrift=${highWallDrift} builtInRemovalDetected=${builtInRemovalDetected} deterministicGuardTriggered=${deterministicGuardTriggered}`
-        );
-
-        const invariantResult = await runStructuralInvariantGeminiCheck(
-          path1A,
-          stage2CandidatePath,
-          invariantHints
-        );
-        structuralInvariantResult = invariantResult;
-
-        logger.info(
-          `[STRUCTURAL_INVARIANT_RESULT] fail=${invariantResult.fail} confidence=${invariantResult.confidence} reason=${invariantResult.reason}`
-        );
-
-        logger.info(
-          `[STRUCTURAL_GEMINI_DECISION] openingViolationDetected=${invariantResult.openingViolationDetected} hardFail=${invariantResult.fail} downgradeApplied=false violationType=${invariantResult.violationType || "other"}`
-        );
-
-        if (invariantResult.fail) {
-          logger.warn(
-            `[STRUCTURAL_INVARIANT_HARD_FAIL] reason=${invariantResult.reason}`
-          );
-
-          const failReasons = [
-            "structural_invariant",
-            `invariantConfidence=${invariantResult.confidence.toFixed(3)}`,
-            `invariantReason=${invariantResult.reason}`,
-            `invariantViolationType=${invariantResult.violationType || "other"}`,
-          ];
-
-          setStage2AttemptValidation(path2, "structural_invariant", failReasons);
           mergeAttemptValidation("2", attempt, {
             final: {
               result: "FAILED",
               finalHard: true,
-              finalCategory: "structural_invariant",
+              finalCategory: "local_catastrophic",
               retryTriggered: attempt < MAX_STAGE2_RETRIES,
               retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
               retryStrategy: "NORMAL",
-              reason: invariantResult.reason,
+              reason: "extreme_local_validator_fail",
             },
           });
-          logEvent("VALIDATION_RESULT", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempt,
-            localPass: unifiedValidation.passed === true,
-            geminiPass: false,
-            confirmPass: null,
-            finalPass: false,
-            violationType: "structural_invariant",
-            retryStrategy: "NORMAL",
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          });
 
-          if (attempt >= MAX_STAGE2_RETRIES) {
-            const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-              ? stageLineage.stage1B.output
-              : path1B;
-            const fallbackPath = fallback1B || path1A;
-            const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
+          nLog(
+            `[VALIDATOR_FAIL] validator=local_catastrophic reason=extreme_local_validator_fail drift_semantic=${semanticWallDriftPct.toFixed(2)} drift_masked=${maskedDriftPct.toFixed(2)}`
+          );
 
-            stage2Blocked = true;
-            stage2FallbackStage = fallbackStage;
-            stage2BlockedReason = `stage2_structural_invariant_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
-            fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-            path2 = fallbackPath;
-            stage2CandidatePath = fallbackPath;
-            nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
-            logEvent("FATAL_RETRY_EXHAUSTION", {
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logEvent("STAGE_RETRY", {
               jobId: payload.jobId,
               stage: "2",
-              attempts: attempt,
-              blockedBy: "structural_invariant",
-              reason: stage2BlockedReason,
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: "extreme_local_validator_fail",
             });
-            emitStage2DecisionBreakdown({
-              extremeLocalFail: false,
-              topologyFail: false,
-              invariantFail: true,
-              compositeDecision,
-              geminiConfirmStatus: "not_run",
-              complianceDecision: "not_run",
-              stage2Blocked,
-              decisionPoint: "final_block",
-              reason: "structural_invariant",
-            });
-            nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-            nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_invariant retries=${attempt - 1}`);
-            break;
+            continue;
           }
 
-          const invariantFailureType: StructuralFailureType =
-            invariantResult.violationType === "opening_removed" ||
-            invariantResult.violationType === "opening_relocated" ||
-            invariantResult.violationType === "opening_infilled" ||
-            invariantResult.violationType === "other"
-              ? invariantResult.violationType
-              : "STRUCTURAL_INVARIANT";
-          pendingStage2StructuralFailureType = invariantFailureType;
-          pendingStage2RetryStrategy = "NORMAL";
-          pendingStage2RetryReason = null;
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = "extreme_local_validator_fail_exhausted";
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          break;
+        }
+      } catch (localGateErr: any) {
+        nLog("[STAGE2_EXTREME_LOCAL_GATE_ERROR]", {
+          jobId: payload.jobId,
+          attempt,
+          error: localGateErr?.message || String(localGateErr),
+        });
+      }
 
-          emitStage2DecisionBreakdown({
-            extremeLocalFail: false,
-            topologyFail: false,
-            invariantFail: true,
-            compositeDecision,
-            geminiConfirmStatus: "not_run",
-            complianceDecision: "not_run",
-            stage2Blocked,
-            decisionPoint: "retry_schedule",
-            reason: "structural_invariant",
-          });
-          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
+
+      // BEGIN NEW SEQUENTIAL VALIDATORS
+      let seqPass = true;
+      let failMessage = "";
+      let failValidator: "envelope" | "openings" | "fixtures" | "unknown" = "unknown";
+      let validatorErrored = false;
+      const normalizeValidatorReason = (reason: string): string => {
+        const normalized = String(reason || "unknown")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "");
+        return normalized || "unknown";
+      };
+      
+      try {
+        const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
+        const { runOpeningValidator } = await import("./validators/openingValidator.js");
+        const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+
+        failValidator = "envelope";
+        const envRes = await runEnvelopeValidator(validationBasePath, path2);
+        if (envRes.status === "fail") {
+          seqPass = false;
+          failMessage = envRes.reason;
+          nLog(`[VALIDATOR_FAIL] validator=envelope reason=${normalizeValidatorReason(failMessage)}`);
+        } else {
+          nLog(`[VALIDATOR_ENVELOPE_PASS]`);
+          
+          failValidator = "openings";
+          const opRes = await runOpeningValidator(validationBasePath, path2);
+          if (opRes.status === "fail") {
+            seqPass = false;
+            failMessage = opRes.reason;
+            nLog(`[VALIDATOR_FAIL] validator=openings reason=${normalizeValidatorReason(failMessage)}`);
+          } else {
+            nLog(`[VALIDATOR_OPENINGS_PASS]`);
+            
+            failValidator = "fixtures";
+            const fixRes = await runFixtureValidator(validationBasePath, path2);
+            if (fixRes.status === "fail") {
+              seqPass = false;
+              failMessage = fixRes.reason;
+              nLog(`[VALIDATOR_FAIL] validator=fixtures reason=${normalizeValidatorReason(failMessage)}`);
+            } else {
+              nLog(`[VALIDATOR_FIXTURES_PASS]`);
+            }
+          }
+        }
+
+        if (!seqPass) {
+            const retryReason = validatorErrored
+              ? `validator_error_${failValidator}`
+              : "sequential_validator_failed";
+            stage2LocalReasons.push(retryReason);
+            pendingStage2StructuralFailureType = validatorErrored ? null : "STRUCTURAL_INVARIANT";
+            pendingStage2RetryStrategy = "NORMAL";
+            pendingStage2RetryReason = retryReason;
+
+            mergeAttemptValidation("2", attempt, {
+                final: {
+                    result: "FAILED",
+                    finalHard: true,
+                    finalCategory: validatorErrored ? "validator_error" : "sequential_validator_failed",
+                    retryTriggered: attempt < MAX_STAGE2_RETRIES,
+                    retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+                    retryStrategy: "NORMAL",
+                    reason: validatorErrored ? retryReason : failMessage,
+                }
+            });
+
+            if (attempt < MAX_STAGE2_RETRIES) {
+                logEvent("STAGE_RETRY", {
+                    jobId: payload.jobId,
+                    stage: "2",
+                    retry: attempt + 1,
+                    retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+                    reason: validatorErrored ? retryReason : failMessage,
+                });
+                continue;
+            } else {
+                const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
+                const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+                stage2Blocked = true;
+                stage2FallbackStage = fallbackStage;
+                stage2BlockedReason = validatorErrored ? "validator_error_exhausted" : "sequential_validators_exhausted";
+                fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+                path2 = fallbackPath;
+                stage2CandidatePath = fallbackPath;
+                break;
+            }
+        }
+      } catch (err: any) {
+        validatorErrored = true;
+        seqPass = false;
+        failMessage = err?.message || String(err);
+        const retryReason = `validator_error_${failValidator}`;
+        nLog(`[VALIDATOR_ERROR] validator=${failValidator} reason=${normalizeValidatorReason(failMessage)}`);
+        stage2LocalReasons.push(retryReason);
+        pendingStage2StructuralFailureType = null;
+        pendingStage2RetryStrategy = "NORMAL";
+        pendingStage2RetryReason = retryReason;
+
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "validator_error",
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryStrategy: "NORMAL",
+            reason: retryReason,
+          }
+        });
+
+        if (attempt < MAX_STAGE2_RETRIES) {
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
             stage: "2",
             retry: attempt + 1,
             retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: "structural_invariant",
+            reason: retryReason,
           });
           continue;
         }
-      }
 
-      let lastGeminiConfirm: any = null;
-      if (stage2CandidatePath) {
-        nLog(`[GEMINI_CONFIRM] stage=2 skipped reason=opening_preservation_validator_active`);
-      }
-
-      const geminiRaw = (unifiedValidation.raw?.geminiSemantic as any)?.details || {};
-      mergeAttemptValidation("2", attempt, {
-        local: {
-          passed: unifiedValidation.passed,
-          hardFail: unifiedValidation.hardFail,
-          score: unifiedValidation.score,
-          reasons: unifiedValidation.reasons,
-          warnings: unifiedValidation.warnings,
-          wallPercent: unifiedValidation.evidence?.drift?.wallPercent,
-          maskedEdgePercent: unifiedValidation.evidence?.drift?.maskedEdgePercent,
-          angleDegrees: unifiedValidation.evidence?.drift?.angleDegrees,
-          openingsChanged: (() => {
-            const e = unifiedValidation.evidence;
-            if (!e) return false;
-            return e.openings.windowsBefore !== e.openings.windowsAfter || e.openings.doorsBefore !== e.openings.doorsAfter;
-          })(),
-          anchorsChanged: (() => {
-            const a = unifiedValidation.evidence?.anchorChecks;
-            if (!a) return false;
-            return !!(a.islandChanged || a.hvacChanged || a.cabinetryChanged || a.lightingChanged);
-          })(),
-        },
-        gemini: {
-          category: geminiRaw.category || "unknown",
-          violationType: geminiRaw.violationType || "other",
-          hardFail: geminiRaw.hardFail === true,
-          confidence: Number.isFinite(geminiRaw.confidence) ? geminiRaw.confidence : 0,
-          builtInDetected: geminiRaw.builtInDetected ?? false,
-          structuralAnchorCount: geminiRaw.structuralAnchorCount ?? 0,
-          builtInLowConfidence: geminiRaw.builtInLowConfidence ?? false,
-          builtInDowngradeAllowed: geminiRaw.builtInDowngradeAllowed ?? false,
-        },
-        confirm: lastGeminiConfirm
-          ? {
-              confirmedFail: lastGeminiConfirm.confirmedFail === true,
-              uncertain: lastGeminiConfirm.uncertain === true,
-              confirmedViolationsCount: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons.length : 0,
-              confirmedViolationTypes: Array.isArray(lastGeminiConfirm.reasons) ? lastGeminiConfirm.reasons : [],
-              confirmedConfidence: typeof lastGeminiConfirm.confidence === "number" ? lastGeminiConfirm.confidence : 0,
-            }
-          : null,
-      });
-
-      const windowDecrease =
-        typeof windowsBefore === "number" &&
-        typeof windowsAfter === "number" &&
-        windowsAfter < windowsBefore;
-      const doorDecrease =
-        typeof doorsBefore === "number" &&
-        typeof doorsAfter === "number" &&
-        doorsAfter < doorsBefore;
-      const geminiClassification = lastGeminiConfirm?.confirmedFail === true ? "FAIL" : "PASS";
-      const geminiConfidence =
-        typeof lastGeminiConfirm?.confidence === "number" && Number.isFinite(lastGeminiConfirm.confidence)
-          ? lastGeminiConfirm.confidence
-          : null;
-      const geminiStrongFail =
-        geminiClassification === "FAIL" &&
-        typeof geminiConfidence === "number" &&
-        geminiConfidence >= 0.9;
-      const geminiConfirmStatus = lastGeminiConfirm?.status || (lastGeminiConfirm?.confirmedFail === true ? "confirmed_fail" : "pass");
-      const geminiConfirmUncertain = lastGeminiConfirm?.uncertain === true;
-
-      if (validationStage === "2" && geminiConfirmUncertain && attempt < MAX_STAGE2_RETRIES) {
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: false,
-          topologyFail: false,
-          invariantFail: false,
-          compositeDecision,
-          geminiConfirmStatus,
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "retry_schedule",
-          reason: "gemini_confirm_uncertain",
-        });
-        nLog(`[STAGE2_GEMINI_UNCERTAIN_RETRY] attempt=${attempt + 1}`);
-        logEvent("STAGE_RETRY", {
-          jobId: payload.jobId,
-          stage: "2",
-          retry: attempt + 1,
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          reason: "gemini_confirm_uncertain",
-        });
-        continue;
-      }
-
-      // ----- Structural Uncertain Resolution Refinement -----
-      // If confirm is uncertain after retries exhausted,
-      // only fallback if invariant OR drift suggests real structural risk.
-      // Otherwise accept when deterministic evidence is clean.
-      if (validationStage === "2" && geminiConfirmStatus === "uncertain" && attempt >= MAX_STAGE2_RETRIES) {
-        const invariantClean =
-          structuralInvariantResult &&
-          structuralInvariantResult.fail === false;
-
-        const lowDrift =
-          typeof maskedDriftPct === "number" &&
-          typeof semanticWallDriftPct === "number" &&
-          maskedDriftPct < 10 &&
-          semanticWallDriftPct < 10;
-
-        const compositeResult = compositeLocalEvaluation;
-        const noOpeningDelta =
-          compositeResult &&
-          compositeResult.openingsChanged === false;
-
-        if (invariantClean && lowDrift && noOpeningDelta) {
-          logger.info("[STAGE2] Accepting due to clean invariant + low drift despite confirm uncertainty");
-
-          setStage2AttemptValidation(path2, "pass", ["uncertain_but_structurally_clean"]);
-
-          break; // Accept
-        }
-
-        logger.warn("[STAGE2] Rejecting due to structural uncertainty after retries exhausted");
-
-        setStage2AttemptValidation(path2, "guard", ["structural_uncertain_exhausted"]);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "structural_uncertain_exhausted",
-            retryTriggered: false,
-            retriesExhausted: true,
-            retryStrategy: "NORMAL",
-            reason: "structural_uncertain_exhausted",
-          },
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: unifiedValidation.passed === true,
-          geminiPass: false,
-          confirmPass: false,
-          finalPass: false,
-          violationType: "structural_uncertain_exhausted",
-          retryStrategy: "NORMAL",
-          retriesRemaining: 0,
-        });
-
-        const fallbackPath = path1A;
-        const fallbackStage: "1A" = "1A";
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
         stage2Blocked = true;
         stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = "structural_uncertain_exhausted";
-        fallbackUsed = "stage2_uncertain_fallback_1a";
+        stage2BlockedReason = "validator_error_exhausted";
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallbackPath;
         stage2CandidatePath = fallbackPath;
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: false,
-          topologyFail: false,
-          invariantFail: false,
-          compositeDecision,
-          geminiConfirmStatus,
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "final_block",
-          reason: "structural_uncertain_exhausted",
-        });
-        nLog("[STAGE2_UNCERTAIN_EXHAUSTED] fallback=1A");
-        nLog("[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structural_uncertain_exhausted retries=" + (attempt - 1));
         break;
       }
 
-      if (validationStage === "2" && (windowDecrease || doorDecrease) && geminiStrongFail) {
-        const failReasons = [
-          "opening_removal",
-          `windowsBefore=${windowsBefore}`,
-          `windowsAfter=${windowsAfter}`,
-          `doorsBefore=${doorsBefore}`,
-          `doorsAfter=${doorsAfter}`,
-          `geminiClassification=${geminiClassification}`,
-          `geminiConfidence=${geminiConfidence.toFixed(3)}`,
-        ];
+      // Mock unifiedValidation for downstream compliance logic
+      unifiedValidation = { passed: seqPass, hardFail: !seqPass, score: seqPass ? 100 : 0, reasons: seqPass ? [] : [failMessage], warnings: [], evidence: { anchorChecks: {} } } as any;
 
-        nLog(
-          `[VALIDATE_FINAL][stage=2] Hard structural invariant triggered: opening removal confirmed by Gemini (confidence ${geminiConfidence.toFixed(3)}).`
-        );
-
-        setStage2AttemptValidation(path2, "opening_removal", failReasons);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "opening_removal",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "NORMAL",
-            reason: "opening_removal",
-          },
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: unifiedValidation.passed === true,
-          geminiPass: false,
-          confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
-          finalPass: false,
-          violationType: "opening_removal",
-          retryStrategy: "NORMAL",
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-        });
-
-        if (attempt >= MAX_STAGE2_RETRIES) {
-          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1B;
-          const fallbackPath = fallback1B || path1A;
-          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `stage2_opening_removal_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
-          logEvent("FATAL_RETRY_EXHAUSTION", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempts: attempt,
-            blockedBy: "opening_removal",
-            reason: stage2BlockedReason,
-          });
-          emitStage2DecisionBreakdown({
-            extremeLocalFail: false,
-            topologyFail: false,
-            invariantFail: true,
-            compositeDecision,
-            geminiConfirmStatus,
-            complianceDecision: "not_run",
-            stage2Blocked,
-            decisionPoint: "final_block",
-            reason: "opening_removal",
-          });
-          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=opening_removal retries=${attempt - 1}`);
-          break;
-        }
-
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: false,
-          topologyFail: false,
-          invariantFail: true,
-          compositeDecision,
-          geminiConfirmStatus,
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "retry_schedule",
-          reason: "opening_removal",
-        });
-        if (attempt >= 2 && openingIdentityWarnings.length > 0) {
-          pendingStage2RetryReason = openingIdentityWarnings.includes("closet_visibility_risk")
-            ? "closet_visibility_risk"
-            : "opening_preservation";
-        }
-        nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
-        logEvent("STAGE_RETRY", {
-          jobId: payload.jobId,
-          stage: "2",
-          retry: attempt + 1,
-          retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-          reason: "opening_removal",
-        });
-        continue;
+      if (!seqPass) {
+         continue; 
       }
-
-      const unifiedHardFail = unifiedValidation.hardFail === true;
-      const geminiSemanticHardFail = hasStage2GeminiSemanticHardFail(unifiedValidation);
-      const confirmHardFail = lastGeminiConfirm?.confirmedFail === true;
-      const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(unifiedValidation);
-      const structuralFailDetected =
-        confirmHardFail ||
-        (primaryStructuralViolationDetected && (unifiedHardFail || geminiSemanticHardFail));
-
-      if (structuralFailDetected) {
-        const blockedBy = confirmHardFail
-          ? "gemini"
-          : (unifiedValidation.blockSource || "gemini");
-        const activeMaxAttempts = MAX_STAGE2_RETRIES;
-        const retriesExhausted = attempt >= activeMaxAttempts;
-        const failReasons = [
-          ...(unifiedValidation.reasons || []),
-          ...(lastGeminiConfirm?.reasons || []),
-        ];
-
-        // --- NEW FIXTURE VALIDATOR TIE-BREAKER (Condition C) ---
-        let fixtureTieBreakerOverturned = false;
-        const fixtureKeywords = ["fan", "ceiling", "light", "fixture", "downlight", "vent"];
-        const reasonsString = failReasons.join(" ").toLowerCase();
-        const hasFixtureKeyword = fixtureKeywords.some((kw) => reasonsString.includes(kw));
-
-        if (hasFixtureKeyword && !retriesExhausted) {
-          nLog(`[FIXTURE_VALIDATOR_TRIGGER] reason=ceiling_fail_signal job_id=${payload.jobId}`);
-          try {
-            const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
-            let passCandidateBase64 = "";
-            let passBaselineBase64 = "";
-            try {
-               passCandidateBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path2)).toString("base64")}`;
-               passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1A)).toString("base64")}`;
-            } catch (err) {
-               console.warn("Could not read base64 for fixture validator tiebreaker");
-            }
-            if (passCandidateBase64 && passBaselineBase64) {
-               const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
-               if (fixtureResult.ok) {
-                 nLog(`[FIXTURE_VALIDATOR_PASS] tie-breaker overturned structural fail`);
-                 fixtureTieBreakerOverturned = true;
-               } else {
-                 nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.detected_changes)}`);
-               }
-            }
-          } catch (fixtureErr) {
-            nLog(`[FIXTURE_VALIDATOR_ERROR] ${fixtureErr}`);
-          }
-        }
-
-        if (fixtureTieBreakerOverturned) {
-           nLog(`[STAGE2_TIE_BREAKER] Structural fail was overturned by fixture validator!`);
-           // Do not break or continue, let it fall through to compliance check or success
-        } else {
-          setStage2AttemptValidation(path2, blockedBy, failReasons);
-          mergeAttemptValidation("2", attempt, {
-            final: {
-              result: "FAILED",
-              finalHard: true,
-              finalCategory: blockedBy || "structure",
-              retryTriggered: !retriesExhausted,
-              retriesExhausted,
-              retryStrategy: "NORMAL",
-              reason: failReasons[0] || blockedBy || "structure",
-            },
-          });
-          logEvent("VALIDATION_RESULT", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempt,
-            localPass: unifiedValidation.passed === true,
-            geminiPass: !(geminiSemanticHardFail || confirmHardFail),
-            confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
-            finalPass: false,
-            violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
-            retryStrategy: "NORMAL",
-            retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
-          });
-
-          // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
-        if (
-          stage2ValidationMode === "FULL_STAGE_ONLY" &&
-          unifiedValidation.hardFail === true &&
-          process.env.DEBUG_SAVE_FAILED_STAGE2_FULL === "1"
-        ) {
-          try {
-            const debugKey = `debug/stage2-full-failed/${payload.jobId}-${attempt}.png`;
-            const afterImageBuffer = await fs.promises.readFile(path2);
-            const bucket = process.env.S3_BUCKET!;
-            const rawRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
-            const region = rawRegion.match(/([a-z]{2}-[a-z0-9-]+-\d)/i)?.[1]?.toLowerCase() ?? rawRegion.toLowerCase();
-            const importer: any = new Function("p", "return import(p)");
-            const s3Mod: any = await importer("@aws-sdk/client-s3");
-            const presignMod: any = await importer("@aws-sdk/s3-request-presigner");
-            const { S3Client, PutObjectCommand, GetObjectCommand } = s3Mod;
-            const { getSignedUrl } = presignMod;
-            const clientConfig: any = { region };
-            if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-              clientConfig.credentials = {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-              };
-            }
-            const s3Debug = new S3Client(clientConfig);
-            await s3Debug.send(
-              new PutObjectCommand({
-                Bucket: bucket,
-                Key: debugKey,
-                Body: afterImageBuffer,
-                ContentType: "image/png",
-              })
-            );
-            const signedUrl = await getSignedUrl(
-              s3Debug,
-              new GetObjectCommand({ Bucket: bucket, Key: debugKey }),
-              { expiresIn: 60 * 60 * 24 }
-            );
-            if (!VALIDATOR_LOGS_FOCUS) {
-              console.log("DEBUG Stage2 Full Failed Attempt URL:", signedUrl);
-            }
-          } catch (debugErr) {
-            console.warn("DEBUG_SAVE_FAILED_STAGE2_FULL failed:", debugErr);
-          }
-        }
-        // ─────────────────────────────────────────────────────────────────────
-
-        if (retriesExhausted) {
-          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1B;
-          const fallbackPath = fallback1B || path1A;
-          const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = softStructuralReviewMode
-            ? `stage2_soft_structural_review_exhausted after ${activeMaxAttempts} attempts`
-            : `stage2_structural_exhausted after ${activeMaxAttempts} attempts`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${activeMaxAttempts} fallback=${fallbackStage}`);
-          logEvent("FATAL_RETRY_EXHAUSTION", {
-            jobId: payload.jobId,
-            stage: "2",
-            attempts: attempt,
-            blockedBy: "structure",
-            reason: stage2BlockedReason,
-          });
-          emitStage2DecisionBreakdown({
-            extremeLocalFail: false,
-            topologyFail: false,
-            invariantFail: false,
-            compositeDecision,
-            geminiConfirmStatus,
-            complianceDecision: "not_run",
-            stage2Blocked,
-            decisionPoint: "final_block",
-            reason: "structure",
-          });
-          nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-          nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=structure retries=${attempt - 1}`);
-          break;
-        }
-
-        emitStage2DecisionBreakdown({
-          extremeLocalFail: false,
-          topologyFail: false,
-          invariantFail: false,
-          compositeDecision,
-          geminiConfirmStatus,
-          complianceDecision: "not_run",
-          stage2Blocked,
-          decisionPoint: "retry_schedule",
-          reason: failReasons[0] || "structure",
-        });
-        if (attempt >= 2 && openingIdentityWarnings.length > 0) {
-          pendingStage2RetryReason = openingIdentityWarnings.includes("closet_visibility_risk")
-            ? "closet_visibility_risk"
-            : "opening_preservation";
-        }
-        if (softStructuralReviewMode) {
-          nLog(`[STAGE2_SOFT_STRUCTURAL_RETRY] attempt=${attempt + 1} max=${activeMaxAttempts} prompt=ARCHITECTURAL_CONSISTENCY_VERIFICATION`);
-        } else {
-          nLog(`[STAGE2_STRUCTURE_RETRY] attempt=${attempt + 1}`);
-        }
-        logEvent("STAGE_RETRY", {
-          jobId: payload.jobId,
-          stage: "2",
-          retry: attempt + 1,
-          retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
-          reason: failReasons[0] || "structure",
-        });
-        continue;
-        } // close else block for fixtureTieBreakerOverturned
-      }
-
+      
+      let compositeDecision = "pass";
+      let complianceDecision = "not_run";
+      let geminiConfirmStatus = "not_run";
+      let derivedWarnings = 0;
+      // END NEW SEQUENTIAL VALIDATORS
       // Compliance gate is part of Stage 2 retry flow.
       // A blocking compliance verdict triggers retry; it does not fail the job directly.
       const finalConfirmMode: "block" | "log" = geminiSemanticValidatorMode === "log" ? "log" : "block";
@@ -8843,7 +7312,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const conditionA = typeof derivedWarnings === "number" && derivedWarnings >= 3 && derivedWarnings < 5;
       const conditionB = hasCeilingDrift;
 
-      if (conditionA || conditionB) {
+      if (false && (conditionA || conditionB)) {
         nLog(`[FIXTURE_VALIDATOR_TRIGGER] reason=${conditionA ? "uncertain_drift" : "ceiling_drift"} job_id=${payload.jobId}`);
         try {
           const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
@@ -8855,8 +7324,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           } catch (err) {}
           if (passCandidateBase64 && passBaselineBase64) {
              const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
-             if (!fixtureResult.ok) {
-               nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.detected_changes)}`);
+             if (fixtureResult.status === "fail") {
+               nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.reason)}`);
                
                const failReasons = ["fixture_validator_fail", fixtureResult.reason];
                setStage2AttemptValidation(path2, "fixture", failReasons);
@@ -8941,7 +7410,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         attempt,
         localPass: unifiedValidation.passed === true,
         geminiPass: true,
-        confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
+        confirmPass: null,
         finalPass: true,
         violationType: null,
         retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
@@ -8950,7 +7419,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         meta: {
           ...sceneMeta,
           stage2LocalReasons,
-          geminiConfirm: lastGeminiConfirm,
+          geminiConfirm: null,
         }
       });
       nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none retries=${attempt - 1}`);

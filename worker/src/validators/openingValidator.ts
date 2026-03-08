@@ -1,13 +1,13 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 
-export type FixtureValidatorResult = {
+export type OpeningValidatorResult = {
   status: "pass" | "fail";
   reason: string;
   confidence: number;
 };
 
-function parseFixtureResult(rawText: string): FixtureValidatorResult {
+function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: any;
@@ -23,7 +23,7 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
 
   const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
     ? parsed.reason.trim()
-    : parsed.ok ? "fixtures_preserved" : "fixtures_changed";
+    : parsed.ok ? "openings_preserved" : "openings_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
 
   return {
@@ -33,10 +33,10 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
   };
 }
 
-export async function runFixtureValidator(
+export async function runOpeningValidator(
   beforeImageUrl: string,
   afterImageUrl: string
-): Promise<FixtureValidatorResult> {
+): Promise<OpeningValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
@@ -45,13 +45,11 @@ export async function runFixtureValidator(
 
 Compare the baseline image and the staged image.
 
-Set ok=false ONLY if any of these fixed ceiling fixture violations are visible:
-* ceiling fan removed or relocated
-* pendant lights added or removed
-* recessed lights removed
-* ceiling vents moved or removed
-* smoke detectors removed
-* curtain rails removed or moved
+Set ok=false ONLY if any of these opening or built-in violations are visible:
+* windows resized, removed, sealed, or added
+* doors resized, removed, or relocated
+* built-in cabinetry altered
+* kitchen islands moved or resized
 
 Ignore furniture, decor, styling, lighting changes, and minor rendering differences.
 
@@ -60,7 +58,7 @@ Return JSON only:
 
   try {
     const response = await (ai as any).models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-pro",
       contents: [
         { role: "user", parts: [{ text: prompt }] },
         {
@@ -78,8 +76,8 @@ Return JSON only:
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseFixtureResult(text);
+    return parseOpeningResult(text);
   } catch (error: any) {
-    throw new Error(`validator_error_fixture:${error?.message || String(error)}`);
+    throw new Error(`validator_error_opening:${error?.message || String(error)}`);
   }
 }

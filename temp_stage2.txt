@@ -1,0 +1,400 @@
+    for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
+      nLog(`[STAGE2_ATTEMPT] job=${payload.jobId} image=${imageLabel} attempt=${attempt} stagingStyle=${normalizeForensicStagingStyle(stagingStyleNorm)}`);
+      const emitStage2DecisionBreakdown = (params: {
+        extremeLocalFail: boolean;
+        topologyFail: boolean;
+        invariantFail: boolean;
+        compositeDecision: string;
+        geminiConfirmStatus: string;
+        complianceDecision: string;
+        stage2Blocked: boolean;
+        decisionPoint: "retry_schedule" | "final_block";
+        reason: string;
+      }) => {
+        logger.info("STAGE2_DECISION_BREAKDOWN", {
+          jobId: payload.jobId,
+          imageurl: stage2DecisionImageUrl,
+          attempt,
+          extremeLocalFail: params.extremeLocalFail,
+          topologyFail: params.topologyFail,
+          invariantFail: params.invariantFail,
+          compositeDecision: params.compositeDecision,
+          geminiConfirmStatus: params.geminiConfirmStatus,
+          complianceDecision: params.complianceDecision,
+          stage2Blocked: params.stage2Blocked,
+          decisionPoint: params.decisionPoint,
+          reason: params.reason,
+        });
+      };
+
+      logger.info("[STAGE2_RETRY_CONTEXT]", {
+        jobId: payload.jobId,
+        attempt,
+        stagingStyle: normalizeForensicStagingStyle(stagingStyleNorm),
+        failureType: pendingStage2StructuralFailureType,
+        retryStrategy: pendingStage2RetryStrategy,
+      });
+
+      if (await stopIfCancelled("stage2_validation_loop")) return;
+      if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
+        logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: Date.now() - t2 });
+        stage2Blocked = true;
+        stage2BlockedReason = "stage2_runtime_exceeded";
+        await safeWriteJobStatus(
+          payload.jobId,
+          {
+            status: "failed",
+            errorMessage: "stage2_runtime_exceeded",
+            reason: "stage2_runtime_exceeded",
+          },
+          "stage2_runtime_exceeded_terminal"
+        );
+        return;
+      }
+
+      if (attempt > 1) {
+        const retryFailureType = pendingStage2StructuralFailureType;
+        const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
+        let structuralConstraintBlock = "";
+        if (pendingStage2RetryReason && structuralBaseline && attempt >= 3) {
+          const mode: "soft" | "hard" = attempt === 3 ? "soft" : "hard";
+          const openingConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
+          const closetConstraint = buildClosetSurfaceExclusionConstraintBlock(structuralBaseline, mode);
+          structuralConstraintBlock = [openingConstraintBlock, closetConstraint.block]
+            .filter((part) => typeof part === "string" && part.trim().length > 0)
+            .join("\n\n");
+
+          if (structuralConstraintBlock) {
+            logger.info({
+              event: "STRUCTURAL_CONSTRAINT_INJECTED",
+              jobId: payload.jobId,
+              attempt,
+              mode,
+              retryReason: pendingStage2RetryReason,
+              closetRegionCount: closetConstraint.regionCount,
+            });
+          }
+
+          if (closetConstraint.regionCount > 0) {
+            nLog(
+              `[CLOSET][stage2] surface excluded – closet door region(s)=${closetConstraint.regionCount} attempt=${attempt} mode=${mode}`
+            );
+          }
+        }
+        if (useReinforcedRetry) {
+          console.log("[STAGE2] Retry-1 using reinforced structural prompt");
+        } else {
+          console.log("[STAGE2] Retry using corrective structural prompt");
+        }
+        if (await stopIfCancelled("stage2_pre_retry_generation")) return;
+        const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
+        // IMPORTANT:
+        // Retry-1 must remain identical to initial Stage-2 generation.
+        // It exists purely as a stochastic second attempt.
+        // Do not introduce modified structural or eligibility behavior here.
+        nLog("[STAGE2_PROMPT_SOURCE]", {
+          source: "pipeline",
+          retryType: "validator_forced_retry",
+        });
+        let retryStage2Path: string;
+        try {
+          retryStage2Path = await runStage2GenerationAttempt(stage2InputResolved, {
+            roomType: payload.options.roomType,
+            sceneType: sceneLabel as any,
+            profile,
+            referenceImagePath: undefined,
+            stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
+            stagingStyle: payload.options.stagingStyle || "standard_listing",
+            sourceStage: stage2SourceStage,
+            promptMode: stage2PromptMode,
+            curtainRailLikely: jobContext.curtainRailLikely,
+            jobId: payload.jobId,
+            outputPath: retryOutputPath,
+            attempt,
+            structuralRetryContext: {
+                compositeFail: useReinforcedRetry,
+                failureType: retryFailureType,
+                attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
+              },
+            layoutPlan: stage2LayoutPlan,
+            structuralConstraintBlock,
+            modelReason: `stage2 unified retry ${attempt - 1}`,
+          });
+        } catch (retryGenerationErr: any) {
+          if (!isStage2RetryableGenerationError(retryGenerationErr)) {
+            throw retryGenerationErr;
+          }
+          nLog("[STAGE2_GENERATION_RETRYABLE]", {
+            jobId: payload.jobId,
+            attempt,
+            reason: retryGenerationErr?.code || retryGenerationErr?.message || String(retryGenerationErr),
+          });
+          stage2LocalReasons.push(retryGenerationErr?.code || "stage2_generation_retryable");
+          pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+          pendingStage2RetryStrategy = "NORMAL";
+          pendingStage2RetryReason = "opening_preservation";
+          if (attempt < MAX_STAGE2_RETRIES) {
+            nLog(`[STAGE2_RETRY] reason=stage2_generation_retryable next_attempt=${attempt + 1}`);
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = retryGenerationErr?.code || "stage2_generation_retryable_exhausted";
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          break;
+        }
+        if (useReinforcedRetry) {
+          stage2ReinforcedRetryUsed = true;
+        }
+        pendingStage2StructuralFailureType = null;
+        pendingStage2RetryStrategy = null;
+        pendingStage2RetryReason = null;
+        recordStage2AttemptOutput(attempt - 1, retryStage2Path);
+        stage2CandidatePath = retryStage2Path;
+        path2 = retryStage2Path;
+        commitStageOutput("2", retryStage2Path);
+      }
+
+      stage2AttemptsUsed = Math.max(stage2AttemptsUsed, attempt);
+      stage2LocalReasons = [];
+      let openingIdentityWarnings: string[] = [];
+      stage2NeedsConfirm = false;
+
+      const validationStartTime = Date.now();
+      const validationStage: "1A" | "1B" | "2" = "2";
+      const validationBasePath = stage2ValidationBaseline;
+
+      nLog(`[STAGE2_VALIDATION_BASELINE]`, {
+        jobId: payload.jobId,
+        stage2InputPath: stage2InputResolved.substring(stage2InputResolved.length - 40),
+        validationBasePath: validationBasePath.substring(validationBasePath.length - 40),
+        stage2BaseStage,
+        declutterEnabled: payload.options.declutter,
+        path1BExists: !!path1B,
+      });
+
+      nLog(`[worker] ═══════════ Running Unified Structural Validation (attempt ${attempt}/${MAX_STAGE2_RETRIES}) ═══════════`);
+
+      try {
+        await logBaselineImageUrl({
+          stage: "2",
+          jobId: payload.jobId,
+          localPath: validationBasePath,
+        });
+      } catch (baselineSignErr: any) {
+        nLog("[BASELINE_IMAGE_URL] sign failed", {
+          jobId: payload.jobId,
+          stage: "2",
+          error: baselineSignErr?.message || String(baselineSignErr),
+        });
+      }
+
+      nLog(`[VALIDATOR_INPUT] stage=2 attempt=${attempt} base=${validationBasePath} candidate=${path2}`);
+
+      if (path2 === validationBasePath) {
+        console.warn("[STAGE2_ERROR] Candidate equals baseline — Stage-2 output missing", {
+          jobId: payload.jobId,
+          attempt,
+          base: validationBasePath,
+          candidate: path2,
+        });
+        stage2LocalReasons.push("stage2_candidate_equals_baseline");
+        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+        pendingStage2RetryStrategy = "NORMAL";
+        pendingStage2RetryReason = "opening_preservation";
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          nLog(`[STAGE2_RETRY] reason=stage2_candidate_equals_baseline next_attempt=${attempt + 1}`);
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = "stage2_candidate_equals_baseline";
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=stage2_candidate_equals_baseline`);
+        break;
+      }
+
+      effectiveValidationMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
+      const stage2GeminiPolicy: "never" | "on_local_fail" = VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail";
+      nLog(`[worker] Unified validation mode: configured=${structureValidatorMode} effective=${effectiveValidationMode} blocking=${VALIDATION_BLOCKING_ENABLED ? "ON" : "OFF (advisory)"}`);
+
+      const stage2OutputCheck = checkStageOutput(path2, "2", payload.jobId);
+      if (!stage2OutputCheck.readable) {
+        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
+        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
+        return;
+      }
+
+      try {
+        const stage2AttemptSigned = await captureSignedStageOutput("2", attempt, path2);
+        annotateAttemptSignedUrl("2", attempt, stage2AttemptSigned);
+      } catch (signErr) {
+        nLog("[STAGE_OUTPUT_SIGNED] stage=2 prevalidation sign failed", {
+          jobId: payload.jobId,
+          attempt,
+          error: (signErr as any)?.message || String(signErr),
+        });
+      }
+
+      unifiedValidation = await runUnifiedValidation({
+        originalPath: validationBasePath,
+        enhancedPath: path2,
+        stage: validationStage,
+        sceneType: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+        roomType: payload.options.roomType,
+        mode: effectiveValidationMode,
+        geminiPolicy: "never",
+        jobId: payload.jobId,
+        stagingStyle: payload.options.stagingStyle || "standard_listing",
+        stage1APath: validationBasePath,
+        sourceStage: stage2SourceStage,
+        validationMode: stage2ValidationMode,
+        baseArtifacts: stageLineage.baseArtifacts,
+      });
+
+      const validationElapsed = Date.now() - validationStartTime;
+      if (await stopIfCancelled("stage2_post_validation")) return;
+      nLog(`[worker] Unified validation completed in ${validationElapsed}ms`);
+      nLog(`[worker] Validation result: ${unifiedValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedValidation.score})`);
+
+      if (VALIDATOR_FOCUS && unifiedValidation) {
+        vLog("");
+        logUnifiedValidationCompact(
+          payload.jobId,
+          unifiedValidation,
+          validationStage,
+          sceneLabel === "exterior" ? "exterior" : "interior"
+        );
+      }
+
+      updateJob(payload.jobId, {
+        meta: {
+          ...(sceneLabel ? { ...sceneMeta } : {}),
+          unifiedValidation: {
+            passed: unifiedValidation.passed,
+            hardFail: unifiedValidation.hardFail,
+            score: unifiedValidation.score,
+            reasons: unifiedValidation.reasons,
+            warnings: unifiedValidation.warnings,
+            normalized: unifiedValidation.normalized,
+            modeConfigured: structureValidatorMode,
+            modeEffective: effectiveValidationMode,
+            localBlockingEnabled: VALIDATION_BLOCKING_ENABLED,
+            geminiConfirmationEnabled: GEMINI_CONFIRMATION_ENABLED,
+            riskLevel: unifiedValidation.riskLevel,
+            riskTriggers: unifiedValidation.riskTriggers,
+            modelUsed: unifiedValidation.modelUsed,
+            anchorFlags: unifiedValidation.evidence?.anchorChecks,
+          },
+        },
+      });
+
+      const rawResults = unifiedValidation.raw ? Object.values(unifiedValidation.raw) : [];
+      const anyFailed = rawResults.some((r) => r && r.passed === false);
+      const localNotes = (unifiedValidation.reasons && unifiedValidation.reasons.length)
+        ? unifiedValidation.reasons
+        : (unifiedValidation.warnings && unifiedValidation.warnings.length)
+          ? unifiedValidation.warnings
+          : [];
+      if (anyFailed || localNotes.length) {
+        stage2NeedsConfirm = GEMINI_CONFIRMATION_ENABLED;
+        stage2LocalReasons.push(...localNotes);
+      }
+
+      let stage2SemanticResult: Awaited<ReturnType<typeof runSemanticStructureValidator>> | null = null;
+      let stage2MaskedEdgeResult: Awaited<ReturnType<typeof runMaskedEdgeValidator>> | null = null;
+      let compositeLocalEvaluation: CompositeLocalEvaluation | null = null;
+      let compositeStructuralDeviationDeg: number | null = null;
+      let stage2StructuralDegreeMetric: Stage2StructuralDegreeMetric = {
+        valueDeg: null,
+        source: "none",
+        available: false,
+        reasonIfUnavailable: "not_computed",
+      };
+      let compositeSemanticWallDriftPct = 0;
+      let compositeSemanticOpeningsDeltaTotal = 0;
+      let compositeMaskedDriftPct = 0;
+      let compositeMaskedOpeningsDeltaTotal = 0;
+      const shouldRunCompositeLocalValidator =
+        payload.options.virtualStage === true &&
+        validationStage === "2" &&
+        !!path2 &&
+        !!stage2CandidatePath;
+
+      if (path2 && SHARP_SEMANTIC_ENABLED) {
+        try {
+          nLog(`[worker] ═══════════ Running Semantic Structure Validator (Stage-2) mode=${sharpFinalValidatorMode} ═══════════`);
+          stage2SemanticResult = await runSemanticStructureValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: path2,
+            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            mode: "log",
+          });
+          const semanticResult = stage2SemanticResult;
+          if (semanticResult && !semanticResult.passed) {
+            stage2LocalReasons.push(
+              `semantic_validator_failed: windows ${semanticResult.windows.before}→${semanticResult.windows.after}, doors ${semanticResult.doors.before}→${semanticResult.doors.after}, wall_drift ${(semanticResult.walls.driftRatio * 100).toFixed(2)}%, openings +${semanticResult.openings.created}/-${semanticResult.openings.closed}`
+            );
+          }
+        } catch (semanticError: any) {
+          nLog(`[worker] Semantic validation error (non-fatal):`, semanticError);
+        }
+      } else if (path2 && !SHARP_SEMANTIC_ENABLED) {
+        nLog(`[worker] Sharp semantic validator disabled (SHARP_FINAL_VALIDATOR not set)`);
+      }
+
+      if (path2) {
+        try {
+          nLog(`[worker] ═══════════ Running Masked Edge Geometry Validator (Stage-2) ═══════════`);
+          stage2MaskedEdgeResult = await runMaskedEdgeValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: path2,
+            scene: (sceneLabel === "exterior" ? "exterior" : "interior") as any,
+            mode: "log",
+            jobId: payload.jobId,
+          });
+
+          const maskedEdgeResult = stage2MaskedEdgeResult;
+          if (maskedEdgeResult) {
+            const maskedDriftPct = maskedEdgeResult.maskedEdgeDrift * 100;
+            const maskedEdgeFailed =
+              maskedEdgeResult.createdOpenings > 0 ||
+              maskedEdgeResult.closedOpenings > 0 ||
+              maskedEdgeResult.maskedEdgeDrift > 0.18;
+            if (maskedEdgeFailed) {
+              stage2LocalReasons.push(
+                `masked_edge_failed: drift ${maskedDriftPct.toFixed(2)}%, openings +${maskedEdgeResult.createdOpenings}/-${maskedEdgeResult.closedOpenings}`
+              );
+            }
+          }
+
+          nLog(`[worker] Masked edge validation completed (log-only, non-blocking)`);
+        } catch (maskedEdgeError: any) {
+          nLog(`[worker] Masked edge validation error (non-fatal):`, maskedEdgeError);
+          nLog(`[worker] Stack:`, maskedEdgeError?.stack);
+        }
+      }
+
+      stage2StructuralDegreeMetric = resolveStage2StructuralDegree(unifiedValidation);
+      if (
+        stage2StructuralDegreeMetric.available &&
+        (typeof unifiedValidation?.evidence?.drift?.angleDegrees !== "number" ||
+          !Number.isFinite(unifiedValidation?.evidence?.drift?.angleDegrees))
+      ) {
+        (unifiedValidation as any).evidence = (unifiedValidation as any).evidence || {};
+        (unifiedValidation as any).evidence.drift = (unifiedValidation as any).evidence.drift || {};
