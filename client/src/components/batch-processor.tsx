@@ -5232,7 +5232,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full h-full overflow-hidden flex flex-col bg-slate-100">
+          <div className="w-full h-screen overflow-hidden flex flex-col bg-slate-100">
             <div className="w-full border-b border-slate-200 bg-white px-4 py-1 shrink-0 mb-0">
               <div className="flex items-center justify-center gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
@@ -5429,7 +5429,7 @@ export default function BatchProcessor() {
                       )}
                     </div>
 
-                    <div className="flex flex-col items-center space-y-2 mt-4 shrink-0">
+                    <div className="flex flex-col items-center space-y-2 mt-2 shrink-0">
                       {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                       const sceneSelected = Boolean(sceneType);
@@ -5501,7 +5501,7 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="w-full overflow-x-auto pb-2 snap-x scroll-smooth">
+                  <div className="w-full max-w-full overflow-x-auto pb-2 snap-x scroll-smooth">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
