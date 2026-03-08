@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles } from "lucide-react";
+import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2 } from "lucide-react";
 
 /**
  * Derive the Stage 1 base image URL from a Stage 2 filename.
@@ -100,6 +100,7 @@ interface RegionEditorProps {
     originalUrl: string;
     maskUrl: string;
     mode?: string;
+    shouldAutoClose?: boolean;
   }) => void;
   onCancel?: () => void;
   onStart?: () => void; // Called when processing starts (for immediate UI feedback)
@@ -1081,7 +1082,7 @@ export function RegionEditor({
     const rawEditSourceUrl = editSourceUrl || initialImageUrl || "";
     const sanitizedEditSourceUrl = stripTransientQueryParams(rawEditSourceUrl);
     const baseImageUrlRaw =
-      mode === "restore_original"
+      (mode as string) === "restore_original"
         ? (originalImageUrl || derivedBaseFromInitial || "")
         : rawEditSourceUrl;
     const baseImageUrl = stripTransientQueryParams(baseImageUrlRaw);
