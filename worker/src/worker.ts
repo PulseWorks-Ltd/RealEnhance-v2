@@ -4619,6 +4619,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const baseArtifacts = await preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
       buildArtifacts: true,
       smallSize: 512,
+      jobId: payload.jobId,
     });
     if (baseArtifacts) {
       jobContext.baseArtifacts = baseArtifacts;
@@ -4764,6 +4765,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           buildArtifacts: true,
           smallSize: 512,
           stage1ABorderRetryIndex: attempt,
+          jobId: payload.jobId,
         });
 
         if (retryArtifacts) {

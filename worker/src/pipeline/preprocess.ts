@@ -65,6 +65,92 @@ async function detectBlackBorder(imageBuffer: Buffer): Promise<boolean> {
   }
 }
 
+async function progressiveEdgeCropRecovery(
+  imageBuffer: Buffer,
+  jobId: string | undefined
+): Promise<Buffer> {
+  const MAX_CROP_RECOVERY_ATTEMPTS = 3;
+  let currentBuffer = imageBuffer;
+
+  for (let attempt = 1; attempt <= MAX_CROP_RECOVERY_ATTEMPTS; attempt++) {
+    const baseImage = sharp(currentBuffer);
+    const raw = await baseImage.clone().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    
+    const width = raw.info.width || 0;
+    const height = raw.info.height || 0;
+    const channels = raw.info.channels || 4;
+
+    if (width === 0 || height === 0) return currentBuffer;
+
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    // Expand search criteria slightly on subsequent retries
+    const darkThreshold = 20 + (attempt - 1) * 4; 
+    const alphaThreshold = 24 + (attempt - 1) * 8;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * channels;
+        const r = raw.data[idx];
+        const g = raw.data[idx + 1];
+        const b = raw.data[idx + 2];
+        const a = raw.data[idx + 3];
+        
+        const isDark = a <= alphaThreshold || (r <= darkThreshold && g <= darkThreshold && b <= darkThreshold);
+        if (!isDark) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    // If entirely black or bounds are inverted
+    if (maxX < minX || maxY < minY) {
+       console.log(`[BLACK_EDGE_RECOVERY_FAILED] jobId=${jobId || 'unknown'} attempt=${attempt} - Image is entirely black`);
+       throw new Error("BLACK_BORDER_STAGE1A_FATAL");
+    }
+
+    // Inset safely by progressive pixels to aggressively remove anti-aliased edge artifacts
+    const safeInset = attempt * 2;
+    let cropX = minX + safeInset;
+    let cropY = minY + safeInset;
+    let cropW = (maxX - minX + 1) - safeInset * 2;
+    let cropH = (maxY - minY + 1) - safeInset * 2;
+
+    if (cropW <= 0 || cropH <= 0 || cropW < width * 0.5 || cropH < height * 0.5) {
+       console.log(`[BLACK_EDGE_RECOVERY_FAILED] jobId=${jobId || 'unknown'} attempt=${attempt} - Crop area too small or invalid: ${cropW}x${cropH}`);
+       throw new Error("BLACK_BORDER_STAGE1A_FATAL");
+    }
+
+    const cropRect = {
+        left: Math.max(0, cropX),
+        top: Math.max(0, cropY),
+        width: Math.min(width - cropX, cropW),
+        height: Math.min(height - cropY, cropH)
+    };
+
+    console.log(`[BLACK_EDGE_CROP_ATTEMPT] jobId=${jobId || 'unknown'} attempt=${attempt} exact crop=left:${cropRect.left},top:${cropRect.top},width:${cropRect.width},height:${cropRect.height}`);
+
+    const cropped = baseImage.extract(cropRect);
+    currentBuffer = await cropped.toBuffer();
+
+    const hasBlackBorder = await detectBlackBorder(currentBuffer);
+
+    if (!hasBlackBorder) {
+      console.log(`[BLACK_EDGE_RECOVERY_SUCCESS] jobId=${jobId || 'unknown'} resolved on attempt ${attempt}`);
+      return currentBuffer;
+    }
+  }
+
+  console.log(`[BLACK_EDGE_RECOVERY_EXHAUSTED] jobId=${jobId || 'unknown'} - Still has black edges after ${MAX_CROP_RECOVERY_ATTEMPTS} exact crop attempts!`);
+  throw new Error("BLACK_BORDER_STAGE1A_FATAL");
+}
+
 function parseByteThreshold(raw: string | undefined, fallback: number): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
@@ -232,41 +318,6 @@ async function rotateAndCropSafe(
 
     let cropped = rotated.extract(cropRect);
     let buffer = await cropped.toBuffer();
-
-    const hasBlackBorder = await detectBlackBorder(buffer);
-
-    if (hasBlackBorder) {
-      // Recovery mode: progressively tighten crop when Stage 1A retries black-border.
-      const inset = Math.max(1, 4 + Math.max(0, borderRecoveryInsetPx));
-
-      const tightenedRaw = {
-        left: cropRect.left + inset,
-        top: cropRect.top + inset,
-        width: cropRect.width - inset * 2,
-        height: cropRect.height - inset * 2,
-      };
-      const tightened = sanitizeCropRect(tightenedRaw, rotatedWidth, rotatedHeight);
-      if (!tightened) {
-        throw new Error("BLACK_BORDER_STAGE1A_FATAL");
-      }
-
-      cropped = rotated.extract(tightened);
-      buffer = await cropped.toBuffer();
-
-      const stillBlack = await detectBlackBorder(buffer);
-
-      if (stillBlack) {
-        throw new Error("BLACK_BORDER_STAGE1A_FATAL");
-      }
-
-      return {
-        image: sharp(buffer),
-        applied: true,
-        straightenAngle: -angleDeg,
-        cropRect: tightened,
-        reason: "rotated_and_cropped",
-      };
-    }
 
     return {
       image: sharp(buffer),
@@ -693,7 +744,7 @@ export async function preprocessToCanonical(
   inputPath: string,
   outputPath: string,
   sceneType: string,
-  options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number } = {}
+  options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number; jobId?: string } = {}
 ): Promise<BaseArtifacts | undefined> {
   let img = sharp(inputPath);
   const inputMeta = await img.metadata();
@@ -762,6 +813,15 @@ export async function preprocessToCanonical(
       img = img.modulate({ brightness: 1.12, saturation: 1.05 });
     }
   }
+
+  let stage0ResultBuffer = await img.toBuffer();
+  if (await detectBlackBorder(stage0ResultBuffer)) {
+    console.log(`[BLACK_EDGE_RECOVERY_START] jobId=${options.jobId || 'unknown'} reason=black_edges_after_stage0`);
+    const recoveredImage = await progressiveEdgeCropRecovery(stage0ResultBuffer, options.jobId);
+    console.log(`[BLACK_EDGE_RECOVERY_COMPLETE] jobId=${options.jobId || 'unknown'}`);
+    img = sharp(recoveredImage);
+  }
+
   const buildArtifacts = options.buildArtifacts === true;
   const smallSize = Number.isFinite(options.smallSize) ? Number(options.smallSize) : 512;
 
