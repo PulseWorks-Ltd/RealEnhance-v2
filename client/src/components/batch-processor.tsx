@@ -5378,7 +5378,7 @@ export default function BatchProcessor() {
                   </div>
 
                   <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full pb-2">
-                    <div className="flex-1 min-h-0 w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                    <div className="flex-1 min-h-0 max-h-[65vh] w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -5570,7 +5570,7 @@ export default function BatchProcessor() {
                   data-testid="button-proceed-enhance"
                   type="button"
                 >
-                  Start Enhancement ({files.length} images)
+                  Start Enhancement
                 </button>
               </footer>
             )}
