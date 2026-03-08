@@ -200,7 +200,6 @@ export function RegionEditor({
     if (!previewUrl) return;
     setImageLoading(true);
     const img = new window.Image();
-    img.crossOrigin = "anonymous";
     img.onload = () => {
       setImageLoading(false);
       const canvas = canvasRef.current;
@@ -328,7 +327,6 @@ export function RegionEditor({
 
       const loadImage = () => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
 
         img.onload = () => {
           console.log(
