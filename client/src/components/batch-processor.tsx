@@ -617,34 +617,38 @@ const MESSAGE_ROTATION_MS = 10_000;
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
-    "Optimizing lighting",
-    "Improving image clarity",
     "Balancing exposure",
-    "Enhancing details",
+    "Enhancing clarity",
+    "Improving color balance",
+    "Reducing noise",
+    "Optimizing lighting",
+    "Refining image detail"
   ],
   stage1b: [
     "Removing distractions",
     "Tidying the room",
     "Simplifying the space",
-    "Cleaning visual noise",
+    "Cleaning visual noise"
   ],
   stage2: [
-    "Placing furniture",
-    "Designing the layout",
-    "Finalizing staging",
-    "Styling the space",
+    "Preparing the space",
+    "Arranging furniture layout",
+    "Designing the room",
+    "Optimizing room composition",
+    "Adding interior styling",
+    "Finalizing presentation"
   ],
   validator: [
-    "Reviewing Image",
-    "Checking Structural Integrity",
-    "Ensuring Furniture Scale",
-    "Checking Minor Items",
+    "Reviewing visual quality",
+    "Checking composition",
+    "Verifying layout",
+    "Finalizing details"
   ],
   retry: [
-    "Improving Layout",
-    "Proposing New Room Design",
-    "Selecting Additional Furniture",
-    "Refining Furniture Layout",
+    "Improving styling",
+    "Adjusting composition",
+    "Refining layout",
+    "Updating presentation"
   ],
 };
 
@@ -689,11 +693,11 @@ const STAGE_PROGRESS: Record<string, number> = {
 };
 
 const STAGE_TITLES: Record<string, string> = {
-  uploading: "Upload — Preparing Image",
-  stage1a: "Stage 1A — Enhancing Image",
-  stage1b: "Stage 1B — Decluttering",
-  stage2: "Stage 2 — Active Staging",
-  validator: "Validator — Quality Review",
+  uploading: "Preparing Image",
+  stage1a: "Enhancing Parameters",
+  stage1b: "Simplifying Space",
+  stage2: "Applying Design",
+  validator: "Quality Review",
   retry: "Layout Refinement",
   completed: "Enhancement Complete",
 };
@@ -730,7 +734,7 @@ export default function BatchProcessor() {
   const [runState, setRunState] = useState<RunState>("idle");
   const [results, setResults] = useState<any[]>([]);
   const [messageIndexByImage, setMessageIndexByImage] = useState<Record<number, number>>({});
-  const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setInterval>>>({});
+  const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
@@ -784,7 +788,7 @@ export default function BatchProcessor() {
     const clearMessageTimer = (index: number) => {
       const timer = messageTimerByImageRef.current[index];
       if (timer) {
-        clearInterval(timer);
+        clearTimeout(timer);
         delete messageTimerByImageRef.current[index];
       }
       delete messageStageByImageRef.current[index];
@@ -820,12 +824,17 @@ export default function BatchProcessor() {
         setMessageIndexByImage((prev) => ({ ...prev, [index]: randomStart }));
         messageStageByImageRef.current[index] = messageStage;
 
-        messageTimerByImageRef.current[index] = setInterval(() => {
+        const rotateMessage = () => {
           setMessageIndexByImage((prev) => ({
             ...prev,
             [index]: ((prev[index] ?? randomStart) + 1) % Math.max(1, messages.length),
           }));
-        }, MESSAGE_ROTATION_MS);
+          const nextInterval = 10000 + Math.random() * 5000;
+          messageTimerByImageRef.current[index] = setTimeout(rotateMessage, nextInterval);
+        };
+
+        const initialDelay = Math.random() * 3000;
+        messageTimerByImageRef.current[index] = setTimeout(rotateMessage, initialDelay);
       }
     });
 
@@ -836,7 +845,7 @@ export default function BatchProcessor() {
       Object.keys(messageTimerByImageRef.current).forEach((key) => {
         const index = Number(key);
         const timer = messageTimerByImageRef.current[index];
-        if (timer) clearInterval(timer);
+        if (timer) clearTimeout(timer);
       });
       messageTimerByImageRef.current = {};
       messageStageByImageRef.current = {};
@@ -3995,7 +4004,7 @@ export default function BatchProcessor() {
             markRetryFailed(imageIndex, err?.message || "Retry requires Stage 2 with a valid baseline policy.");
             toast({
               title: "Retry requires staging baseline",
-              description: err?.message || "Retry supports Stage 2 only with Stage 1B baseline, or Stage 1A when decluttering was not required.",
+              description: err?.message || "Retry requires an earlier processing stage to be available as a baseline.",
               variant: "destructive"
             });
             return;
@@ -5968,12 +5977,12 @@ export default function BatchProcessor() {
                           ? STAGE_TITLES.completed
                           : (STAGE_TITLES[displayStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = (() => {
-                          if (currentStage.includes("2")) return "Staging image...";
-                          if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
-                          if (currentStage.includes("1a")) return "Enhancing image...";
-                          if (stage2Expected && requestedStage2) return "Staging image...";
-                          if (declutterRequested) return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
-                          return "Enhancing image...";
+                          if (currentStage.includes("2")) return "Applying design...";
+                          if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Simplifying space...";
+                          if (currentStage.includes("1a")) return "Enhancing parameters...";
+                          if (stage2Expected && requestedStage2) return "Applying design...";
+                          if (declutterRequested) return furnitureReplacement ? "Removing furniture..." : "Simplifying space...";
+                          return "Enhancing parameters...";
                         })();
                         const displayStatus = isError
                           ? "Enhancement Failed"
@@ -6123,7 +6132,6 @@ export default function BatchProcessor() {
                               {isProcessing && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm">
                                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent [background-size:200%_100%] animate-[shimmer_2s_infinite]" />
-                                  <Loader2 className="relative z-10 w-6 h-6 text-blue-600 animate-spin" />
                                 </div>
                               )}
                               {!isProcessing && isUiComplete && (
@@ -6135,77 +6143,67 @@ export default function BatchProcessor() {
 
                             {/* Info Column */}
                             <div className="space-y-2">
-                              <div className="flex justify-between items-center gap-3">
-                                <h3 className="font-semibold text-sm text-slate-900 truncate">{file.name}</h3>
-                                <span className="text-xs font-mono text-slate-500">
-                                  {`${stageProgressValue}%`}
-                                </span>
-                              </div>
-                              <p className="text-xs font-medium text-slate-700">{stageTitle}</p>
-                              
-                              {/* Status Badges */}
-                              <div className="flex items-center gap-3 mt-1.5 h-7">
-                                  {isProcessing ? (
-                                   <div className="flex items-center gap-2">
-                                     {isRetryActive ? (
-                                       <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-600 text-white ring-1 ring-blue-300/60 shadow-sm">
-                                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                         Retrying...
-                                       </span>
-                                     ) : isEditing ? (
-                                       <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-600 text-white ring-1 ring-blue-300/60 shadow-sm">
-                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                         Editing...
-                                       </span>
-                                     ) : (
-                                       <StatusBadge
-                                         status="processing"
-                                         label={undefined}
-                                         className={undefined}
-                                       />
-                                     )}
-                                   </div>
-                                ) : isError ? (
-                                    <div className="flex items-center gap-3">
-                                      <StatusBadge status="failed" />
-                                      <button
-                                        onClick={() => handleOpenRetryDialog(i)}
-                                        disabled={retryingImages.has(i)}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-sm"
-                                        title="Retry this image"
-                                      >
-                                        <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
-                                        Retry
-                                      </button>
-                                      {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
-                                    </div>
-                                ) : (isUiComplete || isEditComplete) ? (
-                                   <div className="flex items-center gap-2">
-                                     <StatusBadge status="completed" label={isEditComplete ? "Edit Complete" : "Enhancement Complete"} />
-                                   </div>
-                                ) : (
-                                  <StatusBadge status="queued" />
-                                )}
-                              </div>
-                              <p className="text-xs text-slate-500">
-                                {displayStatus}
-                              </p>
-                              {isProcessing && !isError && (
-                                <p className="text-xs text-slate-500">{rotatingMessage}</p>
-                              )}
-                              {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
-                                <p className="mt-1 text-xs text-rose-600">
-                                  {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
-                                </p>
-                              )}
-                              {autoInsertedStage1B && (
-                                <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
-                                  <Info className="mt-0.5 h-3.5 w-3.5 text-amber-600" />
-                                  <div>
-                                    <p>Furniture was automatically detected and removed before staging.</p>
-                                    <p>An additional processing step was required, so 1 extra image credit was used.</p>
-                                  </div>
+                              {isProcessing && !isError ? (
+                                <div className="flex flex-col items-center justify-center mt-0 pt-2 pb-1">
+                                  <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                                  <p className="mt-1 text-base font-medium text-slate-700 text-center">
+                                    {rotatingMessage}
+                                  </p>
                                 </div>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-center gap-3">
+                                    <h3 className="font-semibold text-sm text-slate-900 truncate">{file.name}</h3>
+                                    <span className="text-xs font-mono text-slate-500">
+                                      {`${stageProgressValue}%`}
+                                    </span>
+                                  </div>
+                                  {!isProcessing && stageTitle !== "Enhancement Complete" && !isUiComplete && (
+                                    <p className="text-xs font-medium text-slate-700">{stageTitle}</p>
+                                  )}
+                                  
+                                  {/* Status Badges */}
+                                  <div className="flex items-center gap-3 mt-1.5 h-7">
+                                    {isError ? (
+                                        <div className="flex items-center gap-3">
+                                          <StatusBadge status="failed" />
+                                          <button
+                                            onClick={() => handleOpenRetryDialog(i)}
+                                            disabled={retryingImages.has(i)}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-sm"
+                                            title="Retry this image"
+                                          >
+                                            <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
+                                            Retry
+                                          </button>
+                                          {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
+                                        </div>
+                                    ) : (isUiComplete || isEditComplete) ? (
+                                       <div className="flex items-center gap-2">
+                                         <StatusBadge status="completed" label={isEditComplete ? "Edit Complete" : "Enhancement Complete"} />
+                                       </div>
+                                    ) : (
+                                      <StatusBadge status="queued" />
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500">
+                                    {displayStatus}
+                                  </p>
+                                  {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
+                                    <p className="mt-1 text-xs text-rose-600">
+                                      {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
+                                    </p>
+                                  )}
+                                  {autoInsertedStage1B && (
+                                    <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                                      <Info className="mt-0.5 h-3.5 w-3.5 text-amber-600" />
+                                      <div>
+                                        <p>Furniture was automatically detected and removed before staging.</p>
+                                        <p>An additional processing step was required, so 1 extra image credit was used.</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
                               )}
 
                               <div className="space-y-1.5">
