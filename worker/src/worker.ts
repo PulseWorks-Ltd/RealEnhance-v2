@@ -8461,32 +8461,69 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...(unifiedValidation.reasons || []),
           ...(lastGeminiConfirm?.reasons || []),
         ];
-        setStage2AttemptValidation(path2, blockedBy, failReasons);
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: blockedBy || "structure",
-            retryTriggered: !retriesExhausted,
-            retriesExhausted,
-            retryStrategy: "NORMAL",
-            reason: failReasons[0] || blockedBy || "structure",
-          },
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt,
-          localPass: unifiedValidation.passed === true,
-          geminiPass: !(geminiSemanticHardFail || confirmHardFail),
-          confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
-          finalPass: false,
-          violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
-          retryStrategy: "NORMAL",
-          retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
-        });
 
-        // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
+        // --- NEW FIXTURE VALIDATOR TIE-BREAKER (Condition C) ---
+        let fixtureTieBreakerOverturned = false;
+        const fixtureKeywords = ["fan", "ceiling", "light", "fixture", "downlight", "vent"];
+        const reasonsString = failReasons.join(" ").toLowerCase();
+        const hasFixtureKeyword = fixtureKeywords.some((kw) => reasonsString.includes(kw));
+
+        if (hasFixtureKeyword && !retriesExhausted) {
+          nLog(`[FIXTURE_VALIDATOR_TRIGGER] reason=ceiling_fail_signal job_id=${payload.jobId}`);
+          try {
+            const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+            let passCandidateBase64 = "";
+            let passBaselineBase64 = "";
+            try {
+               passCandidateBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path2)).toString("base64")}`;
+               passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1B || path1A)).toString("base64")}`;
+            } catch (err) {
+               console.warn("Could not read base64 for fixture validator tiebreaker");
+            }
+            if (passCandidateBase64 && passBaselineBase64) {
+               const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
+               if (fixtureResult.ok) {
+                 nLog(`[FIXTURE_VALIDATOR_PASS] tie-breaker overturned structural fail`);
+                 fixtureTieBreakerOverturned = true;
+               } else {
+                 nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.detected_changes)}`);
+               }
+            }
+          } catch (fixtureErr) {
+            nLog(`[FIXTURE_VALIDATOR_ERROR] ${fixtureErr}`);
+          }
+        }
+
+        if (fixtureTieBreakerOverturned) {
+           nLog(`[STAGE2_TIE_BREAKER] Structural fail was overturned by fixture validator!`);
+           // Do not break or continue, let it fall through to compliance check or success
+        } else {
+          setStage2AttemptValidation(path2, blockedBy, failReasons);
+          mergeAttemptValidation("2", attempt, {
+            final: {
+              result: "FAILED",
+              finalHard: true,
+              finalCategory: blockedBy || "structure",
+              retryTriggered: !retriesExhausted,
+              retriesExhausted,
+              retryStrategy: "NORMAL",
+              reason: failReasons[0] || blockedBy || "structure",
+            },
+          });
+          logEvent("VALIDATION_RESULT", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempt,
+            localPass: unifiedValidation.passed === true,
+            geminiPass: !(geminiSemanticHardFail || confirmHardFail),
+            confirmPass: lastGeminiConfirm ? lastGeminiConfirm.confirmedFail !== true : null,
+            finalPass: false,
+            violationType: (unifiedValidation as any)?.blockType || failReasons[0] || "structure",
+            retryStrategy: "NORMAL",
+            retriesRemaining: Math.max(0, activeMaxAttempts - attempt),
+          });
+
+          // ─── DEBUG: save failed Stage 2 Full attempt to S3 ───────────────────
         if (
           stage2ValidationMode === "FULL_STAGE_ONLY" &&
           unifiedValidation.hardFail === true &&
@@ -8601,6 +8638,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reason: failReasons[0] || "structure",
         });
         continue;
+        } // close else block for fixtureTieBreakerOverturned
       }
 
       // Compliance gate is part of Stage 2 retry flow.
@@ -8790,6 +8828,93 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
         } catch (e: any) {
           nLog("[worker] compliance check skipped or error:", e?.message || e);
+        }
+      }
+
+      // --- NEW FIXTURE VALIDATOR (Conditions A & B) ---
+      const hasCeilingDrift = Array.isArray(unifiedValidation.warnings) && 
+        unifiedValidation.warnings.some(w => w.toLowerCase().includes("ceiling") || w.toLowerCase().includes("top"));
+      const conditionA = typeof derivedWarnings === "number" && derivedWarnings >= 3 && derivedWarnings < 5;
+      const conditionB = hasCeilingDrift;
+
+      if (conditionA || conditionB) {
+        nLog(`[FIXTURE_VALIDATOR_TRIGGER] reason=${conditionA ? "uncertain_drift" : "ceiling_drift"} job_id=${payload.jobId}`);
+        try {
+          const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+          let passCandidateBase64 = "";
+          let passBaselineBase64 = "";
+          try {
+             passCandidateBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path2)).toString("base64")}`;
+             passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1B || path1A)).toString("base64")}`;
+          } catch (err) {}
+          if (passCandidateBase64 && passBaselineBase64) {
+             const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
+             if (!fixtureResult.ok) {
+               nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.detected_changes)}`);
+               
+               const failReasons = ["fixture_validator_fail", fixtureResult.reason];
+               setStage2AttemptValidation(path2, "fixture", failReasons);
+               mergeAttemptValidation("2", attempt, {
+                 final: {
+                   result: "FAILED",
+                   finalHard: true,
+                   finalCategory: "fixture",
+                   retryTriggered: attempt < MAX_STAGE2_RETRIES,
+                   retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+                   retryStrategy: "NORMAL",
+                   reason: fixtureResult.reason,
+                 },
+               });
+               
+               if (attempt < MAX_STAGE2_RETRIES) {
+                 emitStage2DecisionBreakdown({
+                   extremeLocalFail: false,
+                   topologyFail: false,
+                   invariantFail: false,
+                   compositeDecision,
+                   geminiConfirmStatus,
+                   complianceDecision: "not_run",
+                   stage2Blocked: false,
+                   decisionPoint: "retry_schedule",
+                   reason: "fixture_validator_fail",
+                 });
+                 logEvent("STAGE_RETRY", {
+                   jobId: payload.jobId,
+                   stage: "2",
+                   retry: attempt + 1,
+                   retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+                   reason: "fixture_validation_fail",
+                 });
+                 continue;
+               } else {
+                 const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+                 const fallbackStage = fallback1B ? "1B" : "1A";
+                 stage2Blocked = true;
+                 stage2FallbackStage = fallbackStage;
+                 stage2BlockedReason = `stage2_fixture_exhausted after ${MAX_STAGE2_RETRIES} attempts`;
+                 fallbackUsed = fallbackStage === "1B" ? "stage2_fixture_fallback_1b" : "stage2_fixture_fallback_1a";
+                 path2 = fallback1B || path1A;
+                 stage2CandidatePath = path2;
+                 emitStage2DecisionBreakdown({
+                   extremeLocalFail: false,
+                   topologyFail: false,
+                   invariantFail: false,
+                   compositeDecision,
+                   geminiConfirmStatus,
+                   complianceDecision: "not_run",
+                   stage2Blocked,
+                   decisionPoint: "final_block",
+                   reason: "fixture_validator_fail",
+                 });
+                 nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=fixture retries=${attempt - 1}`);
+                 break;
+               }
+             } else {
+               nLog(`[FIXTURE_VALIDATOR_PASS]`);
+             }
+          }
+        } catch (e) {
+           nLog(`[FIXTURE_VALIDATOR_ERROR] ${e}`);
         }
       }
 

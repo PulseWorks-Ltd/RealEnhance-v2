@@ -4482,7 +4482,6 @@ export default function BatchProcessor() {
     // Clear persisted batch job state
     clearBatchJobState();
     
-    toast({ title: "Restarted", description: "Ready for new batch processing." });
   };
 
   // Cancel batch request
