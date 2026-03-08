@@ -43,157 +43,7 @@ function computeMaxInscribedRect(
   };
 }
 
-async function detectBlackBorder(imageBuffer: Buffer): Promise<boolean> {
-  const tempPath = `/tmp/preprocess-black-border-${randomUUID()}.webp`;
-  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
-  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
-  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
 
-  try {
-    await fs.writeFile(tempPath, imageBuffer);
-    await assertNoDarkBorder(tempPath, borderPx, threshold, maxDarkRatio);
-    return false;
-  } catch (error: any) {
-    if (error?.code === "BLACK_BORDER_DETECTED") {
-      return true;
-    }
-    throw error;
-  } finally {
-    try {
-      await fs.unlink(tempPath);
-    } catch {}
-  }
-}
-
-async function cleanupBlackEdgeResiduals(
-  imageBuffer: Buffer,
-  jobId: string | undefined
-): Promise<Buffer> {
-  console.log(`[BLACK_EDGE_CLEANUP_START] jobId=${jobId || 'unknown'} reason=black_edges_after_stage0`);
-  let currentBuffer = imageBuffer;
-
-  // STEP 3: Residual edge cleanup
-  const baseImage = sharp(currentBuffer);
-  const raw = await baseImage.clone().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  
-  const width = raw.info.width || 0;
-  const height = raw.info.height || 0;
-  const channels = raw.info.channels || 4;
-
-  if (width === 0 || height === 0) return currentBuffer;
-
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-
-  // Scan outer 5px
-  const scanInset = 5;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (x >= scanInset && x < width - scanInset && y >= scanInset && y < height - scanInset) {
-        // Assume inner pixels are fine for this perimeter check
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-        continue;
-      }
-
-      const idx = (y * width + x) * channels;
-      const r = raw.data[idx];
-      const g = raw.data[idx + 1];
-      const b = raw.data[idx + 2];
-      
-      // brightness < 10 threshold
-      const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (brightness >= 10) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  let topEdgeTrim = minY > 0 ? minY : 0;
-  let bottomEdgeTrim = maxY < height - 1 ? (height - 1 - maxY) : 0;
-  let leftEdgeTrim = minX > 0 ? minX : 0;
-  let rightEdgeTrim = maxX < width - 1 ? (width - 1 - maxX) : 0;
-
-  if (topEdgeTrim > 0 || bottomEdgeTrim > 0 || leftEdgeTrim > 0 || rightEdgeTrim > 0) {
-    const cropW = width - leftEdgeTrim - rightEdgeTrim;
-    const cropH = height - topEdgeTrim - bottomEdgeTrim;
-    
-    if (cropW > width * 0.5 && cropH > height * 0.5) { // safety bounds
-      console.log(`[BLACK_EDGE_RESIDUAL_TRIM] jobId=${jobId || 'unknown'} trimPixels=T:${topEdgeTrim},B:${bottomEdgeTrim},L:${leftEdgeTrim},R:${rightEdgeTrim}`);
-      currentBuffer = await sharp(currentBuffer).extract({
-        left: leftEdgeTrim,
-        top: topEdgeTrim,
-        width: cropW,
-        height: cropH,
-      }).toBuffer();
-    }
-  }
-
-  // Check if fixed
-  let stillHasBorder = await detectBlackBorder(currentBuffer);
-  if (!stillHasBorder) {
-    // Stage 5 Final Safety Trim anyway
-    console.log(`[BLACK_EDGE_FINAL_TRIM] jobId=${jobId || 'unknown'} reason=final_safety_trim_after_success`);
-    const finalMeta = await sharp(currentBuffer).metadata();
-    currentBuffer = await sharp(currentBuffer).extract({
-      left: 2, top: 2, width: (finalMeta.width || 0) - 4, height: (finalMeta.height || 0) - 4
-    }).toBuffer();
-    console.log(`[BLACK_EDGE_RECOVERY_SUCCESS] jobId=${jobId || 'unknown'}`);
-    return currentBuffer;
-  }
-
-  // STEP 4: Progressive crop fallback
-  const CROP_RECOVERY_STEPS = [0.005, 0.01, 0.02];
-  
-  for (let i = 0; i < CROP_RECOVERY_STEPS.length; i++) {
-    const step = CROP_RECOVERY_STEPS[i];
-    const stepMeta = await sharp(currentBuffer).metadata();
-    const sw = stepMeta.width || 0;
-    const sh = stepMeta.height || 0;
-    
-    const cropX = Math.floor(sw * step);
-    const cropY = Math.floor(sh * step);
-    
-    console.log(`[BLACK_EDGE_PROGRESSIVE_CROP] jobId=${jobId || 'unknown'} attempt=${i + 1} cropPercent=${step}`);
-    
-    const tryCropped = await sharp(currentBuffer).extract({
-      left: cropX,
-      top: cropY,
-      width: sw - cropX * 2,
-      height: sh - cropY * 2
-    }).toBuffer();
-
-    stillHasBorder = await detectBlackBorder(tryCropped);
-    if (!stillHasBorder) {
-      currentBuffer = tryCropped;
-      break;
-    }
-  }
-
-  // STEP 5: Final safety trim
-  console.log(`[BLACK_EDGE_FINAL_TRIM] jobId=${jobId || 'unknown'} reason=final_safety_trim_enforced`);
-  const finalMeta2 = await sharp(currentBuffer).metadata();
-  currentBuffer = await sharp(currentBuffer).extract({
-    left: 2, top: 2, width: (finalMeta2.width || 0) - 4, height: (finalMeta2.height || 0) - 4
-  }).toBuffer();
-
-  // FINAL VALIDATION (STEP 7)
-  const finalValidationFailed = await detectBlackBorder(currentBuffer);
-  if (finalValidationFailed) {
-    console.log(`[BLACK_EDGE_RECOVERY_FAILED] jobId=${jobId || 'unknown'} reason=failed_after_cleanup`);
-    throw new Error("BLACK_BORDER_STAGE1A_FATAL");
-  }
-
-  console.log(`[BLACK_EDGE_RECOVERY_SUCCESS] jobId=${jobId || 'unknown'}`);
-  return currentBuffer;
-}
 
 function parseByteThreshold(raw: string | undefined, fallback: number): number {
   const parsed = Number(raw);
@@ -281,6 +131,38 @@ function sanitizeCropRect(rect: CropRect, imageW: number, imageH: number): CropR
   const height = Math.max(1, Math.min(remainingH, requestedH));
 
   return { left, top, width, height };
+}
+
+
+async function detectBlackBorders(imageBuffer: Buffer): Promise<boolean> {
+  const img = sharp(imageBuffer);
+  const { width, height, channels } = await img.metadata();
+  if (!width || !height || channels === undefined) return false;
+  
+  const raw = await img.raw().toBuffer();
+  
+  const BAND_PX = 10;
+  let darkCount = 0;
+  let totalEdgePixels = 0;
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (y < BAND_PX || y >= height - BAND_PX || x < BAND_PX || x >= width - BAND_PX) {
+        totalEdgePixels++;
+        const idx = (y * width + x) * channels;
+        const r = raw[idx];
+        const g = raw[idx + 1];
+        const b = raw[idx + 2];
+        
+        if (r < 10 && g < 10 && b < 10) {
+          darkCount++;
+        }
+      }
+    }
+  }
+  
+  const ratio = darkCount / (totalEdgePixels || 1);
+  return ratio > 0.015;
 }
 
 async function rotateAndCropSafe(
@@ -371,9 +253,6 @@ async function rotateAndCropSafe(
       reason: "rotated_and_cropped",
     };
   } catch (error: any) {
-    if (error?.message === "BLACK_BORDER_STAGE1A_FATAL") {
-      throw error;
-    }
     return {
       image,
       applied: false,
@@ -859,9 +738,33 @@ export async function preprocessToCanonical(
   }
 
   let stage0ResultBuffer = await img.toBuffer();
-  if (await detectBlackBorder(stage0ResultBuffer)) {
-    const recoveredImage = await cleanupBlackEdgeResiduals(stage0ResultBuffer, options.jobId);
-    img = sharp(recoveredImage);
+  console.log(`[STRAIGHTEN_ATTEMPT] jobId=${options.jobId || 'unknown'}`);
+  if (await detectBlackBorders(stage0ResultBuffer)) {
+    console.log(`[BLACK_BORDER_DETECTED] jobId=${options.jobId || 'unknown'}`);
+    let fixed = false;
+    let currentBuffer = stage0ResultBuffer;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      console.log(`[CROP_RETRY_${attempt}] jobId=${options.jobId || 'unknown'}`);
+      const meta = await sharp(currentBuffer).metadata();
+      const w = meta.width || 0;
+      const h = meta.height || 0;
+      if (w < 10 || h < 10) break;
+      const cropW = Math.max(1, w - 4);
+      const cropH = Math.max(1, h - 4);
+      currentBuffer = await sharp(currentBuffer).extract({ left: 2, top: 2, width: cropW, height: cropH }).toBuffer();
+      if (!(await detectBlackBorders(currentBuffer))) {
+        fixed = true;
+        break;
+      }
+    }
+    if (fixed) {
+      img = sharp(currentBuffer);
+    } else {
+      console.log(`[STRAIGHTEN_FALLBACK_ORIGINAL] jobId=${options.jobId || 'unknown'} reason=black_edges_after_stage0_rescue`);
+      console.log(`[STRAIGHTEN_SKIPPED] jobId=${options.jobId || 'unknown'}`);
+      img = sharp(inputPath);
+      img = img.rotate();
+    }
   }
 
   const buildArtifacts = options.buildArtifacts === true;

@@ -2301,43 +2301,12 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
     }
   }
 
-  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
-  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
-  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
-  await assertNoDarkBorder(localPath, borderPx, threshold, maxDarkRatio);
+  // Removed assertNoDarkBorder as per user request
   return publishImage(localPath);
 }
 
 async function detectStage1ABorderOrCornerArtifact(imagePath: string): Promise<boolean> {
-  const borderPx = Math.max(1, Number(process.env.BLACK_BORDER_CHECK_PX || 3));
-  const threshold = Math.max(0, Number(process.env.BLACK_BORDER_THRESHOLD || 5));
-  const maxDarkRatio = Math.max(0, Math.min(1, Number(process.env.BLACK_BORDER_MAX_DARK_RATIO || 0.02)));
-
-  try {
-    await assertNoDarkBorder(imagePath, borderPx, threshold, maxDarkRatio);
-  } catch (error: any) {
-    if (error?.code === "BLACK_BORDER_DETECTED") {
-      return true;
-    }
-    throw error;
-  }
-
-  const cornerScan = await detectBlackCornerArtifact(imagePath);
-  return cornerScan.detected;
-}
-
-async function markJobFailed(jobId: string, reason: string, meta: Record<string, any> = {}): Promise<void> {
-  await safeWriteJobStatus(
-    jobId,
-    {
-      status: "failed",
-      errorMessage: reason,
-      currentStage: "1A",
-      stage: "1A",
-      ...(Object.keys(meta).length ? { meta } : {}),
-    },
-    "stage1a_fatal_black_border"
-  );
+  return false; // Disabled by user request
 }
 
 function computeCurtainRailFeatures(mask?: { width: number; height: number; data: Uint8Array }) {
@@ -4637,11 +4606,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog('[WORKER] Failed to compute structural mask:', e);
     }
   } catch (e: any) {
-    if (e?.message === "BLACK_BORDER_STAGE1A_FATAL") {
-      nLog("[STAGE1A_FATAL_BLACK_BORDER]");
-      await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A");
-      return;
-    }
     nLog('[WORKER] Canonical preprocess failed; falling back to original for stages', e);
     canonicalPath = origPath; // fallback
     jobContext.canonicalPath = canonicalPath;
@@ -4721,97 +4685,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Determine sky mode from scene detection results (already force-safe applied in detection block)
   const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
-  let stage1ABlackArtifactDetected = false;
-  for (let attempt = 1; attempt <= STAGE1A_MAX_ATTEMPTS; attempt += 1) {
-    path1A = await runStage1A(canonicalPath, {
-      replaceSky: safeReplaceSky,
-      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-      sceneType: sceneLabel,
-      interiorProfile: ((): any => {
-        const p = (payload.options as any)?.interiorProfile;
-        if (p === 'nz_high_end' || p === 'nz_standard') return p;
-        return undefined;
-      })(),
-      skyMode: skyModeForStage1A,
-      jobId: payload.jobId,
-      roomType: payload.options.roomType,
-      baseArtifacts: jobContext.baseArtifacts,
-      baseArtifactsCache: jobContext.baseArtifactsCache,
-      jobSampling: jobContext.jobSampling,
-    });
-
-    stage1ABlackArtifactDetected = await detectStage1ABorderOrCornerArtifact(path1A);
-    if (!stage1ABlackArtifactDetected) {
-      if (attempt > 1) {
-        nLog("[STAGE1A_RETRY_RECOVERED]", {
-          jobId: payload.jobId,
-          attempt,
-          maxAttempts: STAGE1A_MAX_ATTEMPTS,
-        });
-      }
-      break;
-    }
-
-    nLog("[STAGE1A_BLACK_CORNER_RETRY]", {
-      jobId: payload.jobId,
-      attempt,
-      maxAttempts: STAGE1A_MAX_ATTEMPTS,
-      action: attempt < STAGE1A_MAX_ATTEMPTS ? "retry_with_stage0_reprocess" : "exhausted",
-    });
-
-    if (attempt < STAGE1A_MAX_ATTEMPTS) {
-      try {
-        const retryArtifacts = await preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
-          buildArtifacts: true,
-          smallSize: 512,
-          stage1ABorderRetryIndex: attempt,
-          jobId: payload.jobId,
-        });
-
-        if (retryArtifacts) {
-          jobContext.baseArtifacts = retryArtifacts;
-          jobContext.baseArtifactsCache.set(canonicalPath, retryArtifacts);
-          stageLineage.baseArtifacts = retryArtifacts;
-        }
-        jobContext.canonicalPath = canonicalPath;
-
-        try {
-          const retryMask = await computeStructuralEdgeMask(canonicalPath, retryArtifacts);
-          jobContext.structuralMask = retryMask;
-        } catch (maskErr) {
-          nLog('[STAGE1A_RETRY_PREPROCESS] structural mask recompute failed:', maskErr);
-        }
-
-        nLog("[STAGE1A_RETRY_PREPROCESS]", {
-          jobId: payload.jobId,
-          retryAttemptPrepared: attempt + 1,
-          borderRetryIndex: attempt,
-          status: "ok",
-        });
-      } catch (retryPreprocessErr: any) {
-        nLog("[STAGE1A_RETRY_PREPROCESS]", {
-          jobId: payload.jobId,
-          retryAttemptPrepared: attempt + 1,
-          borderRetryIndex: attempt,
-          status: "error",
-          reason: retryPreprocessErr?.message || String(retryPreprocessErr),
-        });
-      }
-    }
-  }
-
-  if (stage1ABlackArtifactDetected) {
-    nLog("[STAGE1A_FATAL_BLACK_BORDER]");
-    flushStage1AFailureForensicSnapshot("black_corner_or_border_detected");
-    await markJobFailed(payload.jobId, "BLACK_BORDER_STAGE1A", {
-      stage1ATainted: true,
-      stage1ATaintReason: "black_corner_or_border_detected",
-      stage1AAttemptsUsed: STAGE1A_MAX_ATTEMPTS,
-      stage1AAttemptsMax: STAGE1A_MAX_ATTEMPTS,
-      retrySourceRequired: "upload_original",
-    });
-    return;
-  }
+  path1A = await runStage1A(canonicalPath, {
+    replaceSky: safeReplaceSky,
+    declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
+    sceneType: sceneLabel,
+    interiorProfile: ((): any => {
+      const p = (payload.options as any)?.interiorProfile;
+      if (p === 'nz_high_end' || p === 'nz_standard') return p;
+      return undefined;
+    })(),
+    skyMode: skyModeForStage1A,
+    jobId: payload.jobId,
+    roomType: payload.options.roomType,
+    baseArtifacts: jobContext.baseArtifacts,
+    baseArtifactsCache: jobContext.baseArtifactsCache,
+    jobSampling: jobContext.jobSampling,
+  });
 
   if (structuralBaseline) {
     nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=already_hydrated`);
