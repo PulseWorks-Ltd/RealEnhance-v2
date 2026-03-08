@@ -4260,6 +4260,7 @@ export default function BatchProcessor() {
                 toDisplayUrl(jobStageUrls?.["1A"]) ||
                 null;
               const hasCompletedOutput = !!completedOutputUrl;
+              const hasRecoverableFallback = isJobFailed && hasCompletedOutput;
 
               if (job && isJobCompleted && hasCompletedOutput) {
                 // ✅ Clear timeout on success (spinner stays until onLoad)
@@ -4356,6 +4357,81 @@ export default function BatchProcessor() {
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry complete! Enhanced image is ready.");
 
+                return;
+              } else if (job && hasRecoverableFallback) {
+                if (retryTimeoutRef.current) {
+                  clearTimeout(retryTimeoutRef.current);
+                  retryTimeoutRef.current = null;
+                }
+
+                const stamp = Date.now();
+                const stageUrls = jobStageUrls || null;
+                const imageIdFromJob = job.imageId || job.image_id || null;
+                const preservedOriginalUrl =
+                  results[imageIndex]?.result?.originalImageUrl ||
+                  results[imageIndex]?.result?.originalUrl ||
+                  results[imageIndex]?.originalImageUrl ||
+                  results[imageIndex]?.originalUrl;
+                const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
+                const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
+                  ? results[imageIndex].retryHistory
+                  : [];
+
+                setResults(prev => prev.map((r, i) =>
+                  i === imageIndex ? {
+                    ...r,
+                    image: completedOutputUrl,
+                    imageUrl: completedOutputUrl,
+                    resultUrl: completedOutputUrl,
+                    version: stamp,
+                    mode: job.mode || "staged",
+                    originalImageUrl: preservedOriginalUrl,
+                    qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                    stageUrls: r?.stageUrls || stageUrls || null,
+                    imageId: imageIdFromJob || r?.imageId,
+                    retryLatestUrl: completedOutputUrl,
+                    retryHistory: [
+                      ...existingRetryHistory,
+                      {
+                        url: completedOutputUrl,
+                        ts: stamp,
+                        stage: retryStage || null,
+                        jobId,
+                      },
+                    ],
+                    status: "completed",
+                    uiStatus: "warning",
+                    currentStage: null,
+                    retryInFlight: undefined,
+                    retryStage: undefined,
+                    resultStage: (job.resultStage || job.finalStage || retryStage || r?.resultStage || null) as StageKey | null,
+                    finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
+                    warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.warnings || []),
+                    result: {
+                      ...(r?.result || {}),
+                      image: completedOutputUrl,
+                      imageUrl: completedOutputUrl,
+                      resultUrl: completedOutputUrl,
+                      originalImageUrl: preservedOriginalUrl,
+                      stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls,
+                      imageId: imageIdFromJob || r?.result?.imageId,
+                      qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                      retryLatestUrl: completedOutputUrl,
+                      warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.result?.warnings || []),
+                    },
+                    error: null,
+                  } : r
+                ));
+
+                setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: completedOutputUrl }));
+                clearRetryFlags(imageIndex);
+
+                toast({
+                  title: "Retry completed with fallback",
+                  description: (Array.isArray(job?.warnings) && job.warnings[0]) || "A best-available result was returned after validation fallback.",
+                  variant: "default"
+                });
                 return;
               } else if (job && isJobFailed) {
                 // ✅ Clear timeout on failure
