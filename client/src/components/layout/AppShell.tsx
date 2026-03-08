@@ -220,9 +220,9 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         {/* Main content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className={cn("flex-1", isEnhanceRoute ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
           <div className={cn(
-            "py-6 lg:py-8",
+            isEnhanceRoute ? "py-1 flex-1 flex flex-col min-h-0" : "py-6 lg:py-8",
             isEnhanceRoute
               ? "w-full"
               : isGalleryRoute

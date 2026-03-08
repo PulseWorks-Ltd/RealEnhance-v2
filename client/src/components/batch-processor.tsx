@@ -5090,7 +5090,7 @@ export default function BatchProcessor() {
 
       {/* Tab Content */}
   <div
-    className="relative w-full min-h-screen bg-white px-8 py-6 font-sans text-slate-900"
+    className={`relative w-full h-full overflow-hidden bg-white flex flex-col font-sans text-slate-900 ${activeTab === 'upload' ? 'px-8 py-6' : ''}`}
     style={{
       backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.05) 1px, transparent 1px)",
       backgroundSize: "24px 24px",
@@ -5232,9 +5232,9 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full h-screen overflow-hidden flex flex-col bg-slate-100">
-            <div className="w-full border-b border-slate-200 bg-white px-4 py-1 shrink-0 mb-0">
-              <div className="flex items-center justify-center gap-2 text-xs font-medium max-w-lg mx-auto">
+          <div className="w-full h-full overflow-hidden flex flex-col bg-slate-100">
+            <div className="w-full border-b border-slate-200 bg-white h-10 shrink-0 mb-0">
+              <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
                 <div className="h-0.5 w-8 bg-slate-200 mx-2" />
                 <div className="text-indigo-700 flex items-center gap-1 font-bold"><span className="w-4 h-4 rounded-full bg-indigo-100 flex items-center justify-center text-[10px]">2</span> Image Preparation</div>
@@ -5261,7 +5261,7 @@ export default function BatchProcessor() {
               <div className="flex-1 min-h-0 w-full flex overflow-hidden">
                 <aside className="w-80 h-full flex flex-col overflow-hidden bg-white border-r border-slate-200 p-3 pt-0">
                   <div className="space-y-3 flex-1 overflow-y-auto pr-1 pb-2">
-                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-3 z-10">
+                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-2 z-10">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
                         <p className="text-xs text-slate-600">Global settings for this batch.</p>
@@ -5378,7 +5378,7 @@ export default function BatchProcessor() {
                   </div>
 
                   <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full mb-0">
-                    <div className="flex-1 min-h-0 w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                    <div className="flex-1 min-h-0 max-h-[65vh] w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -5579,7 +5579,7 @@ export default function BatchProcessor() {
 
         {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
-          <div className="min-h-screen bg-slate-50 relative pointer-events-auto overflow-x-hidden">
+          <div className="h-full bg-slate-50 relative pointer-events-auto overflow-x-hidden flex flex-col min-h-0">
             <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
             <div
               className="absolute inset-0 opacity-40"
