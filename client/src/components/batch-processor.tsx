@@ -5698,15 +5698,15 @@ export default function BatchProcessor() {
                           }).length;
                           const total = files.length || 0;
                           const remaining = Math.max(total - completedCount, 0);
-                          const isComplete = runState === 'done' && remaining === 0;
-                          const title = isComplete ? "Enhancement Complete" : `Processing ${files.length} Images`;
+                          const isComplete = runState === 'done';
+                          const title = isComplete ? "Image Enhancement Complete" : `Processing ${files.length} Images`;
                           const subtitle = isComplete
-                            ? "Please review and download your images."
+                            ? null
                             : `${remaining} image${remaining === 1 ? '' : 's'} remaining`;
                           return (
                             <>
                               <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">{title}</h1>
-                              <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+                              {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
                             </>
                           );
                         })()}
@@ -6254,7 +6254,7 @@ export default function BatchProcessor() {
                                   >
                                     Edit
                                   </button>
-                                  {(isUiComplete || isEditComplete) ? (
+                                  {(isUiComplete || isEditComplete) && (
                                     <a
                                       href={enhancedUrl || previewUrl || "#"}
                                       target="_blank"
@@ -6263,16 +6263,15 @@ export default function BatchProcessor() {
                                     >
                                       Download
                                     </a>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleOpenRetryDialog(i)}
-                                      disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
-                                      className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
-                                      data-testid={`button-retry-${i}`}
-                                    >
-                                      {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
-                                    </button>
                                   )}
+                                  <button
+                                    onClick={() => handleOpenRetryDialog(i)}
+                                    disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
+                                    className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                                    data-testid={`button-retry-${i}`}
+                                  >
+                                    {result?.retryInFlight || retryingImages.has(i) ? "Retrying..." : "Retry"}
+                                  </button>
                                 </>
                               )}
                             </div>
