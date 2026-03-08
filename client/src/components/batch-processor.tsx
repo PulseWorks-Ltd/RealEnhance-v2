@@ -5144,7 +5144,7 @@ export default function BatchProcessor() {
                     🔢 Set angle order…
                   </button>
                   <button 
-                    className="rounded-md border border-red-600 px-3 py-1 text-sm text-white bg-red-900 hover:bg-red-800" 
+                    className="rounded-md border border-slate-600 px-3 py-1 text-sm text-white bg-slate-800 hover:bg-slate-700 transition" 
                     onClick={clearAllFiles}
                     data-testid="button-clear-all"
                   >
@@ -5179,7 +5179,7 @@ export default function BatchProcessor() {
                           e.stopPropagation();
                           removeFile(i);
                         }}
-                        className="absolute top-1 right-1 w-6 h-6 bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 z-10"
+                        className="absolute top-1 right-1 w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-700 z-10"
                         data-testid={`button-remove-${i}`}
                         title="Remove image"
                       >
@@ -5205,7 +5205,7 @@ export default function BatchProcessor() {
                           </span>
                         )}
                         {metaByIndex[i]?.angleOrder && (
-                          <span className="inline-block rounded-full bg-orange-600 text-white px-2 py-0.5 text-[10px] font-medium">
+                          <span className="inline-block rounded-full bg-slate-600 text-white px-2 py-0.5 text-[10px] font-medium">
                             Angle {metaByIndex[i]?.angleOrder}
                           </span>
                         )}
@@ -5234,11 +5234,11 @@ export default function BatchProcessor() {
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
           <div className="w-full h-full overflow-hidden flex flex-col bg-slate-100">
-            <div className="w-full border-b border-slate-200 bg-white px-4 py-1 shrink-0">
+            <div className="w-full border-b border-slate-200 bg-white px-4 py-1 shrink-0 mb-0">
               <div className="flex items-center justify-center gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
                 <div className="h-0.5 w-8 bg-slate-200 mx-2" />
-                <div className="text-action-700 flex items-center gap-1 font-bold"><span className="w-4 h-4 rounded-full bg-action-100 flex items-center justify-center text-[10px]">2</span> Image Preparation</div>
+                <div className="text-indigo-700 flex items-center gap-1 font-bold"><span className="w-4 h-4 rounded-full bg-indigo-100 flex items-center justify-center text-[10px]">2</span> Image Preparation</div>
                 <div className="h-0.5 w-8 bg-slate-200 mx-2" />
                 <div className="text-slate-500 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">3</span> Enhance</div>
               </div>
@@ -5261,7 +5261,7 @@ export default function BatchProcessor() {
             ) : (
               <div className="flex-1 min-h-0 w-full flex overflow-hidden">
                 <aside className="w-80 h-full flex flex-col overflow-hidden bg-white border-r border-slate-200 p-3 pt-0">
-                  <div className="space-y-2 flex-1 overflow-y-auto pr-1 pb-2">
+                  <div className="space-y-3 flex-1 overflow-y-auto pr-1 pb-2">
                     <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-3 z-10">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
@@ -5379,11 +5379,11 @@ export default function BatchProcessor() {
                   </div>
 
                   <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full">
-                    <div className="relative h-full w-full max-h-[50vh] rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
+                    <div className="relative h-full w-full max-h-[55vh] flex-grow rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="h-full w-full object-contain rounded-2xl p-0.5"
+                        className="h-full w-auto object-contain rounded-2xl p-0.5"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
@@ -5391,7 +5391,7 @@ export default function BatchProcessor() {
                           type="button"
                           onClick={() => handleRemoveImage(currentImageIndex)}
                           disabled={removeDisabled}
-                          className="group flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-slate-200/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="group flex h-8 w-8 items-center justify-center rounded-full border border-white/40 bg-slate-200/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                           title="Remove image"
                         >
                           <X className="h-4 w-4 text-slate-600 transition-transform group-hover:scale-110 group-hover:stroke-2 group-hover:text-white" />
@@ -5429,10 +5429,9 @@ export default function BatchProcessor() {
                         </>
                       )}
                     </div>
-                  </div>
 
-                  <div className="flex flex-col items-center space-y-2 py-3">
-                    {(() => {
+                    <div className="flex flex-col items-center space-y-2 mt-4 shrink-0">
+                      {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                       const sceneSelected = Boolean(sceneType);
                       const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
@@ -5449,7 +5448,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                               }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[140px] ${sceneType === "exterior" ? "border-green-500 bg-green-50 shadow-sm" : "border-slate-300 bg-white hover:bg-slate-50"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[160px] transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                             >
                               Exterior
                             </button>
@@ -5462,14 +5461,14 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                               }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[140px] ${sceneType === "interior" ? "border-green-500 bg-green-50 shadow-sm" : "border-slate-300 bg-white hover:bg-slate-50"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[160px] transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                             >
                               Interior
                             </button>
                           </div>
 
                           {!sceneSelected ? (
-                            <p className="text-sm text-red-600 font-bold">Select interior or exterior for this image</p>
+                            <p className="text-sm text-indigo-600 font-bold">Select interior or exterior for this image</p>
                           ) : sceneType === "exterior" ? (
                             <p className="text-sm text-emerald-600 font-bold">Ready. Move onto next image.</p>
                           ) : (
@@ -5491,7 +5490,7 @@ export default function BatchProcessor() {
                                 ))}
                               </select>
                               {!currentRoomType ? (
-                                <p className="text-sm text-red-600 font-bold">*Select room type to continue</p>
+                                <p className="text-sm text-indigo-600 font-bold">*Select room type to continue</p>
                               ) : (
                                 <p className="text-sm text-emerald-600 font-bold">Ready. Move onto next image.</p>
                               )}
@@ -5500,10 +5499,11 @@ export default function BatchProcessor() {
                         </>
                       );
                     })()}
+                    </div>
                   </div>
 
-                  <div className="w-full overflow-x-auto pb-1">
-                    <div className="flex w-max min-w-full gap-3 pr-4">
+                  <div className="w-full max-w-[1236px] mx-auto overflow-x-auto pb-2 snap-x scroll-smooth">
+                    <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
                         const needsRoomType = roomTypeRequiresInput(idx);
@@ -5534,12 +5534,12 @@ export default function BatchProcessor() {
                             <img
                               src={previewUrls[idx]}
                               alt={file.name || `Image ${idx + 1}`}
-                              className="h-20 w-28 object-cover"
+                              className="h-24 w-36 object-cover"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex items-end pointer-events-none">
                               <div className="w-full bg-gradient-to-t from-black/95 via-black/60 to-transparent px-2 py-2 text-left leading-tight">
-                                <span className={`block text-[12px] font-semibold tracking-wide drop-shadow-md ${needsRoomType ? "text-red-300" : "text-slate-50"}`}>
+                                <span className={`block text-[12px] font-semibold tracking-wide drop-shadow-md ${needsRoomType ? "text-indigo-300" : "text-slate-50"}`}>
                                   {label}
                                 </span>
                                 <span className="block text-[10px] uppercase tracking-[0.08em] text-slate-200/90">
@@ -5557,7 +5557,7 @@ export default function BatchProcessor() {
             )}
 
             {files.length > 0 && (
-              <footer className="h-16 shrink-0 flex items-center justify-end px-6 border-t border-slate-200 bg-white z-40 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+              <footer className="mt-auto py-4 border-t border-slate-200 bg-white flex items-center justify-end px-8 z-40 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
                 {isEnhanceCreditBlocked && (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700" title="Not enough credits">
                     Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
