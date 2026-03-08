@@ -8476,7 +8476,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             let passBaselineBase64 = "";
             try {
                passCandidateBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path2)).toString("base64")}`;
-               passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1B || path1A)).toString("base64")}`;
+               passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1A)).toString("base64")}`;
             } catch (err) {
                console.warn("Could not read base64 for fixture validator tiebreaker");
             }
@@ -8832,8 +8832,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       // --- NEW FIXTURE VALIDATOR (Conditions A & B) ---
+      const fixtureKeywordsAB = ["ceiling", "fan", "light", "fixture", "downlight", "vent", "smoke"];
       const hasCeilingDrift = Array.isArray(unifiedValidation.warnings) && 
-        unifiedValidation.warnings.some(w => w.toLowerCase().includes("ceiling") || w.toLowerCase().includes("top"));
+        unifiedValidation.warnings.some(w => {
+          const lowerW = w.toLowerCase();
+          return fixtureKeywordsAB.some((kw) => lowerW.includes(kw));
+        });
       const conditionA = typeof derivedWarnings === "number" && derivedWarnings >= 3 && derivedWarnings < 5;
       const conditionB = hasCeilingDrift;
 
@@ -8845,7 +8849,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           let passBaselineBase64 = "";
           try {
              passCandidateBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path2)).toString("base64")}`;
-             passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1B || path1A)).toString("base64")}`;
+             passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1A)).toString("base64")}`;
           } catch (err) {}
           if (passCandidateBase64 && passBaselineBase64) {
              const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
