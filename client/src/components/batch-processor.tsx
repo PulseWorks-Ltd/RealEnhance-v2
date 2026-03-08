@@ -5379,7 +5379,7 @@ export default function BatchProcessor() {
                   </div>
 
                   <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full">
-                    <div className="relative h-full w-full max-h-[55vh] flex-grow rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
+                    <div className="flex-grow flex items-center justify-center w-full max-h-[55vh] relative rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm shrink-0">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -5448,7 +5448,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                               }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[160px] transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[180px] transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                             >
                               Exterior
                             </button>
@@ -5461,7 +5461,7 @@ export default function BatchProcessor() {
                                 setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                 setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                               }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[160px] transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[180px] transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                             >
                               Interior
                             </button>
@@ -5502,7 +5502,7 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="w-full max-w-[1236px] mx-auto overflow-x-auto pb-2 snap-x scroll-smooth">
+                  <div className="w-full overflow-x-auto pb-2 snap-x scroll-smooth">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
