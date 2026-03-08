@@ -5377,8 +5377,8 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full">
-                    <div className="flex-grow flex items-center justify-center w-full max-h-[55vh] relative rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm shrink-0">
+                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full pb-2">
+                    <div className="flex-1 min-h-0 w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -5501,7 +5501,7 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="w-full max-w-full overflow-x-auto pb-2 snap-x scroll-smooth">
+                  <div className="w-full max-w-full overflow-x-auto pb-4 snap-x scroll-smooth shrink-0">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
@@ -5533,7 +5533,7 @@ export default function BatchProcessor() {
                             <img
                               src={previewUrls[idx]}
                               alt={file.name || `Image ${idx + 1}`}
-                              className="h-24 w-36 object-cover"
+                              className="h-28 w-40 object-cover"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 flex items-end pointer-events-none">
@@ -5556,7 +5556,7 @@ export default function BatchProcessor() {
             )}
 
             {files.length > 0 && (
-              <footer className="mt-auto py-4 border-t border-slate-200 bg-white flex items-center justify-end px-8 z-40 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
+              <footer className="sticky bottom-0 mt-auto py-3 border-t border-slate-200 bg-white flex items-center justify-end px-8 z-50 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
                 {isEnhanceCreditBlocked && (
                   <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700" title="Not enough credits">
                     Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
