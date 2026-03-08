@@ -6544,7 +6544,7 @@ export default function BatchProcessor() {
 
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && (
-        <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="max-w-5xl">
+        <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="max-w-5xl h-[90vh] p-0 overflow-hidden" className="h-full m-0">
           <RegionEditor
             initialImageUrl={(() => {
               if (activeEditSource?.url) return activeEditSource.url;

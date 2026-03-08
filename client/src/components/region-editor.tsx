@@ -1265,7 +1265,7 @@ export function RegionEditor({
     (mode === "restore_original" && hasMask);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg overflow-hidden">
+    <div className="flex h-full min-h-[70vh] flex-col bg-white rounded-lg overflow-hidden">
       {/* Header */}
       <div className="flex flex-col gap-2 p-6 pb-4">
         <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
@@ -1275,7 +1275,7 @@ export function RegionEditor({
       </div>
 
       {/* Main Image Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 overflow-hidden">
         {!initialImageUrl && (
           <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 w-full max-w-md">
             <Label htmlFor="image-upload" className="text-sm font-medium text-slate-700">Select Image</Label>
@@ -1291,8 +1291,8 @@ export function RegionEditor({
         )}
 
         {previewUrl && (
-          <div className="w-full h-full flex flex-col">
-            <div className="relative flex-1 overflow-hidden w-full flex items-center justify-center bg-slate-50 rounded-lg shadow-sm border border-slate-200">
+          <div className="w-full h-full min-h-[420px] flex flex-col">
+            <div className="relative flex-1 min-h-[360px] overflow-hidden w-full flex items-center justify-center bg-slate-50 rounded-lg shadow-sm border border-slate-200">
               {/* Floating toolbar */}
               <div className="absolute left-4 top-4 z-10 flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
