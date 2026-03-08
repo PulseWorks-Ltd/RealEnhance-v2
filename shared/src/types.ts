@@ -267,7 +267,7 @@ export interface EnhancementAttempt {
   attemptNumber: number;
 
   // Model & prompt tracking
-  modelUsed?: string; // e.g., "gemini-1.5-flash-002"
+  modelUsed?: string; // e.g., "gemini-2.5-flash"
   promptVersion?: string; // e.g., "v2.1" or hash
 
   // Validator results (INTERNAL ONLY)
