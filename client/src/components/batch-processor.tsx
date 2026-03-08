@@ -614,30 +614,29 @@ type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
 type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
 
-const MESSAGE_ROTATION_MS = 10_000;
+const MESSAGE_ROTATION_MS = 2_500;
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
-    "Balancing exposure",
-    "Enhancing clarity",
     "Improving color balance",
-    "Reducing noise",
-    "Optimizing lighting",
-    "Refining image detail"
+    "Enhancing lighting",
+    "Correcting white balance",
+    "Sharpening image details",
+    "Optimizing exposure",
   ],
   stage1b: [
-    "Removing distractions",
-    "Tidying the room",
-    "Simplifying the space",
-    "Cleaning visual noise"
+    "Detecting removable furniture",
+    "Decluttering room layout",
+    "Removing temporary objects",
+    "Cleaning visual distractions",
+    "Preparing room for staging",
   ],
   stage2: [
-    "Preparing the space",
-    "Arranging furniture layout",
-    "Designing the room",
+    "Designing staged layout",
+    "Placing furniture",
     "Optimizing room composition",
-    "Adding interior styling",
-    "Finalizing presentation"
+    "Adding realistic staging elements",
+    "Finalizing staged presentation",
   ],
   validator: [
     "Reviewing visual quality",
@@ -668,10 +667,29 @@ function resolveDisplayStageKey(params: {
   if (isDone) return "completed";
   if (isRetryActive) return "retry";
   if (isUploading || status === "queued" || status === "waiting") return "uploading";
-  if (currentStage.includes("1b")) return "stage1b";
-  if (currentStage.includes("2")) return "stage2";
-  if (currentStage.includes("valid")) return "validator";
-  if (currentStage.includes("1a") || currentStage.includes("upload")) return "stage1a";
+  if (
+    currentStage.includes("1b") ||
+    currentStage.includes("stage1b") ||
+    currentStage.includes("declutter")
+  ) return "stage1b";
+  if (
+    currentStage.includes("2") ||
+    currentStage.includes("stage2") ||
+    currentStage.includes("staging") ||
+    currentStage.includes("design")
+  ) return "stage2";
+  if (
+    currentStage.includes("valid") ||
+    currentStage.includes("review") ||
+    currentStage.includes("compliance")
+  ) return "validator";
+  if (
+    currentStage.includes("1a") ||
+    currentStage.includes("stage1a") ||
+    currentStage.includes("enhanc") ||
+    currentStage.includes("upload") ||
+    currentStage.includes("preprocess")
+  ) return "stage1a";
   return "stage1a";
 }
 
@@ -821,21 +839,18 @@ export default function BatchProcessor() {
         clearMessageTimer(index);
 
         const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
-        const randomStart = Math.floor(Math.random() * Math.max(1, messages.length));
-        setMessageIndexByImage((prev) => ({ ...prev, [index]: randomStart }));
+        setMessageIndexByImage((prev) => ({ ...prev, [index]: 0 }));
         messageStageByImageRef.current[index] = messageStage;
 
         const rotateMessage = () => {
           setMessageIndexByImage((prev) => ({
             ...prev,
-            [index]: ((prev[index] ?? randomStart) + 1) % Math.max(1, messages.length),
+            [index]: ((prev[index] ?? 0) + 1) % Math.max(1, messages.length),
           }));
-          const nextInterval = 10000 + Math.random() * 5000;
-          messageTimerByImageRef.current[index] = setTimeout(rotateMessage, nextInterval);
+          messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
         };
 
-        const initialDelay = Math.random() * 3000;
-        messageTimerByImageRef.current[index] = setTimeout(rotateMessage, initialDelay);
+        messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
       }
     });
 
@@ -2655,10 +2670,22 @@ export default function BatchProcessor() {
                 mergedMeta.allowStaging = allowStaging;
               }
               const isTerminalStatusForRetry = status === "completed" || status === "failed";
+              const polledCurrentStage = normalizeCurrentStage(
+                it?.currentStage ||
+                it?.current_stage ||
+                it?.processingStage ||
+                it?.processing_stage ||
+                it?.stage ||
+                it?.meta?.currentStage ||
+                it?.meta?.current_stage ||
+                existing.currentStage ||
+                existing.result?.currentStage
+              );
               copy[idx] = {
                 ...existing,
                 status,
                 progress,
+                currentStage: polledCurrentStage || existing.currentStage || null,
                 resultStage: resultStage ?? existing.resultStage ?? existing.result?.resultStage ?? null,
                 resultUrl: mergedResultUrl,
                 stageUrls: mergedStageUrls,
@@ -2689,6 +2716,7 @@ export default function BatchProcessor() {
                   requestedStages: mergedRequestedStages,
                   meta: mergedMeta,
                   status,
+                  currentStage: polledCurrentStage || existing.result?.currentStage || existing.currentStage || null,
                   resultStage: resultStage ?? existing.result?.resultStage ?? existing.resultStage ?? null,
                   progress,
                   warnings: warningList,
