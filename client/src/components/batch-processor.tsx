@@ -3653,19 +3653,25 @@ export default function BatchProcessor() {
         stageMap?.stage1A ||
         null;
 
+      const requestedStagesList: StageKey[] = (() => {
+        const out: StageKey[] = [];
+        if (requestedStages?.stage1a === true || requestedStages?.stage1a === "true") out.push("1A");
+        if (requestedStages?.stage1b) out.push("1B");
+        if (requestedStages?.stage2 === true || requestedStages?.stage2 === "true") out.push("2");
+        return out;
+      })();
+
       const hasAnyStageBaseline = !!(stage1BBaseline || stage1ABaseline);
       const isFullPipelineFallback = !hasAnyStageBaseline;
 
-      // Retry-single backend remains deterministic Stage-2-only when baseline exists.
-      // When baseline is missing, let backend fallback restart full pipeline from original upload.
-      const effectiveStagesToRun = ["2"] as StageKey[];
-      const effectiveAllowStaging = true;
-      const effectiveSourceUrl = stage1BBaseline || stage1ABaseline;
-      const effectiveSourceStageLabel = stage1BBaseline
-        ? "stage1b"
-        : stage1ABaseline
-          ? "stage1a"
-          : "original";
+      // Preserve pipeline intent for retry: compute remaining stages from baseline context.
+      // If Stage 2 was originally requested but no stage baseline exists, restart the full requested pipeline.
+      const effectiveStagesToRun: StageKey[] = forceStage2Retry && !hasAnyStageBaseline
+        ? (requestedStagesList.length ? requestedStagesList : ["1A", "1B", "2"])
+        : baseline.stagesToRun;
+      const effectiveAllowStaging = effectiveStagesToRun.includes("2") || baseline.allowStaging;
+      const effectiveSourceUrl = baseline.sourceUrl;
+      const effectiveSourceStageLabel = baseline.sourceStageLabel;
       
       console.log("[RETRY] Context-aware retry:", {
         imageIndex,
@@ -3720,7 +3726,10 @@ export default function BatchProcessor() {
         highestStage, // retryStage: tells the server which stage to produce
         effectiveSourceUrl, // baselineUrl: correct upstream image
         effectiveSourceStageLabel, // sourceStageLabel: for server metadata
-        stage1BWasRequested // backend needs this to validate stage2-only retry policy
+        stage1BWasRequested, // backend needs this to validate stage2-only retry policy
+        effectiveStagesToRun,
+        requestedStagesList,
+        baseline.baselineStage
       );
     } catch (error) {
       // Error is already handled in handleRetryImage
@@ -3904,7 +3913,7 @@ export default function BatchProcessor() {
     setRegionEditorOpen(true);
   };
 
-  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean) => {
+  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B") => {
     // ✅ Prevent double retry on same image
     if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
 
@@ -4057,7 +4066,11 @@ export default function BatchProcessor() {
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
       fd.append("stage1BWasRequested", String(Boolean(stage1BWasRequested)));
-      fd.append("requestedStage", "2");
+      if (baselineStage) fd.append("baselineStage", baselineStage);
+      if (baselineUrl) fd.append("baselineUrl", baselineUrl);
+      if (stagesToRun?.length) fd.append("stagesToRun", JSON.stringify(stagesToRun));
+      if (requestedStagesList?.length) fd.append("requestedStages", JSON.stringify(requestedStagesList));
+      fd.append("requestedStage", (retryStage || "2") as StageKey);
 
       try {
         // AUDIT FIX: added timeout to prevent hung retry requests

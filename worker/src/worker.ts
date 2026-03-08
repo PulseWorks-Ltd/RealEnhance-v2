@@ -3712,8 +3712,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return true;
   };
   const isManualRetry = (payload as any).retryType === "manual_retry";
+  const retryStagesToRunRaw = Array.isArray((payload as any).retryStagesToRun)
+    ? ((payload as any).retryStagesToRun as string[])
+    : [];
+  const retryStagesToRun = Array.from(
+    new Set(
+      retryStagesToRunRaw
+        .map((stage) => String(stage || "").trim().toUpperCase())
+        .filter((stage): stage is "1A" | "1B" | "2" => stage === "1A" || stage === "1B" || stage === "2")
+    )
+  );
+  const retryPlanIsStage2Only = retryStagesToRun.length
+    ? (retryStagesToRun.length === 1 && retryStagesToRun[0] === "2")
+    : true;
 
-  if (isManualRetry) {
+  if (isManualRetry && retryPlanIsStage2Only) {
     const stage2OnlyBaseStage = ((payload.stage2OnlyMode as any)?.baseStage === "1A") ? "1A" : "1B";
     const hasValidRetryBaseline = stage2OnlyBaseStage === "1A"
       ? (!!(payload.stage2OnlyMode as any)?.base1AUrl && !(payload as any).retryStage1BWasRequested)
@@ -3758,7 +3771,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2OnlyBaseSourceUrl = stage2OnlyBaseStage === "1A"
     ? ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined)
     : (payload.stage2OnlyMode?.base1BUrl as string | undefined);
-  if (isManualRetry && stage2Requested && payload.stage2OnlyMode?.enabled && !!stage2OnlyBaseSourceUrl) {
+  if (isManualRetry && retryPlanIsStage2Only && stage2Requested && payload.stage2OnlyMode?.enabled && !!stage2OnlyBaseSourceUrl) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-${stage2OnlyBaseStage} output: ${stage2OnlyBaseSourceUrl}`);
 

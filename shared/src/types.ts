@@ -163,6 +163,10 @@ export interface EnhanceJobPayload {
   retrySourceStage?: string | null;
   retrySourceUrl?: string | null;
   retrySourceKey?: string | null;
+  retryBaselineStage?: string | null;
+  retryBaselineUrl?: string | null;
+  retryRequestedStages?: Array<"1A" | "1B" | "2">;
+  retryStagesToRun?: Array<"1A" | "1B" | "2">;
   retryParentImageId?: string | null;
   retryParentJobId?: string | null;
   retryClientBatchId?: string | null;

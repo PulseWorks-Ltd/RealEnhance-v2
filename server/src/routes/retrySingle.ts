@@ -63,6 +63,39 @@ function parseNumber(v: any): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function parseStageList(raw: unknown): Array<"1A" | "1B" | "2"> {
+  if (!raw) return [];
+  const toCanonical = (stage: unknown): "1A" | "1B" | "2" | null => {
+    const s = String(stage || "").trim().toUpperCase();
+    if (s === "1A" || s === "1B" || s === "2") return s;
+    return null;
+  };
+
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed)) {
+      const out = parsed.map(toCanonical).filter(Boolean) as Array<"1A" | "1B" | "2">;
+      return Array.from(new Set(out));
+    }
+  } catch {
+    // Fallback for comma-separated legacy format.
+  }
+
+  const csv = String(raw)
+    .split(",")
+    .map((v) => toCanonical(v))
+    .filter(Boolean) as Array<"1A" | "1B" | "2">;
+  return Array.from(new Set(csv));
+}
+
+function highestStageFrom(stages: Array<"1A" | "1B" | "2">): "1A" | "1B" | "2" | null {
+  if (!stages.length) return null;
+  if (stages.includes("2")) return "2";
+  if (stages.includes("1B")) return "1B";
+  if (stages.includes("1A")) return "1A";
+  return null;
+}
+
 async function isRetrySourceReachable(url: string): Promise<boolean> {
   try {
     const head = await fetch(url, { method: "HEAD" });
@@ -359,7 +392,18 @@ export function retrySingleRouter() {
       const parentImageId = body.imageId || body.retryParentImageId || null;
       const parentJobId = body.parentJobId || body.retryParentJobId || null;
       const clientBatchId = body.clientBatchId || body.batchId || null;
-      const requestedStage = String(body.requestedStage || '').trim().toUpperCase();
+      const stagesToRun = parseStageList(body.stagesToRun);
+      const requestedStagesList = parseStageList(body.requestedStages);
+      const payloadBaselineStage = String(body.baselineStage || "").trim().toUpperCase();
+      const payloadBaselineUrl = typeof body.baselineUrl === "string" ? body.baselineUrl.trim() : "";
+      const requestedStageFromPayload = String(body.requestedStage || '').trim().toUpperCase();
+      const requestedStage = highestStageFrom(stagesToRun) || (requestedStageFromPayload as "1A" | "1B" | "2" | "") || "2";
+      const stagePlanIncludes1A = stagesToRun.includes("1A");
+      const stagePlanIncludes1B = stagesToRun.includes("1B");
+      const stagePlanIncludes2 = stagesToRun.includes("2");
+      const stage2OnlyRequested = stagesToRun.length > 0
+        ? (stagePlanIncludes2 && !stagePlanIncludes1A && !stagePlanIncludes1B)
+        : requestedStage === "2";
       const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
       const useStageSource = !!sourceUrlRaw;
 
@@ -486,7 +530,7 @@ export function retrySingleRouter() {
             console.log(`[RETRY_FALLBACK_FULL_PIPELINE] job=${parentJobId} reason=no_stage1_baseline source=original_upload`);
           }
 
-          if (requestedStage === "2" && retryMode !== "full_pipeline_restart") {
+          if (stage2OnlyRequested && retryMode !== "full_pipeline_restart") {
             const hasStage1BBaseline =
               !!selectedSourceStage &&
               (selectedSourceStage === "1B" ||
@@ -759,7 +803,7 @@ export function retrySingleRouter() {
         ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
         undefined;
       const stage2OnlyMode =
-        requestedStage === '2' && selectedSourceUrl && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart"
+        stage2OnlyRequested && selectedSourceUrl && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart"
           ? {
               enabled: true,
               baseStage: stage2OnlyBaseStage,
@@ -776,7 +820,7 @@ export function retrySingleRouter() {
           : !!stage2OnlyMode.base1BUrl
       );
 
-      if (requestedStage === "2" && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !hasValidStage2OnlyPayload) {
+      if (stage2OnlyRequested && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !hasValidStage2OnlyPayload) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_stage2only_payload_invalid",
@@ -891,6 +935,10 @@ export function retrySingleRouter() {
           sourceUrl: retrySourceUrl,
           sourceKey: retrySourceKey,
           stage1BWasRequested,
+          baselineStage: payloadBaselineStage || selectedSourceStage || null,
+          baselineUrl: payloadBaselineUrl || selectedSourceUrl || null,
+          requestedStages: requestedStagesList,
+          stagesToRun,
           parentImageId,
           parentJobId,
           clientBatchId,

@@ -47,18 +47,29 @@ export async function runEnvelopeValidator(
 
   const prompt = `You are validating whether two images represent the same physical room.
 
-Compare the baseline image and the staged image.
+Compare the BASELINE image and the STAGED image.
 
-Set ok=false ONLY if any of these architectural envelope violations are visible:
-* walls moved, reshaped, or added
-* ceiling plane altered
-* room footprint changed
-* camera viewpoint significantly changed
-* perspective changed so wall intersections shift
+Your task is to verify that the architectural envelope of the room is identical.
 
-Ignore furniture, decor, styling, lighting changes, and minor rendering differences.
+Set ok=false ONLY if any of these are visible:
+
+* a wall was added, removed, extended, shortened, or shifted
+* a new partial wall, partition, column, or divider appears
+* the room boundaries change shape or size
+* the number or positions of wall corners change
+* wall intersections occur in different locations
+* the ceiling plane or wall height changes
+* the camera viewpoint shifts so the geometry of the room changes
+
+Focus on the shape and boundaries of the room itself, not the objects inside it.
+
+Ignore:
+furniture changes, decor changes, staging items, lighting differences, rugs, reflections, or minor rendering differences.
+
+The staged image must represent the exact same room boundaries and wall layout as the baseline image.
 
 Return JSON only:
+
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
 
   const runWithModel = async (model: string): Promise<EnvelopeValidatorResult> => {

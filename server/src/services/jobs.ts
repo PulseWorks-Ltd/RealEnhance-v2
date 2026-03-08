@@ -83,6 +83,10 @@ function buildEnhanceArtifacts(params: {
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
+    baselineStage?: string | null;
+    baselineUrl?: string | null;
+    requestedStages?: Array<"1A" | "1B" | "2">;
+    stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
@@ -177,6 +181,10 @@ function buildEnhanceArtifacts(params: {
     retrySourceUrl: params.retryInfo?.sourceUrl,
     retrySourceKey: params.retryInfo?.sourceKey,
     retryStage1BWasRequested: params.retryInfo?.stage1BWasRequested,
+    retryBaselineStage: params.retryInfo?.baselineStage,
+    retryBaselineUrl: params.retryInfo?.baselineUrl,
+    retryRequestedStages: params.retryInfo?.requestedStages,
+    retryStagesToRun: params.retryInfo?.stagesToRun,
     retryParentImageId: params.retryInfo?.parentImageId,
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,
@@ -200,6 +208,10 @@ export async function enqueueEnhanceJob(params: {
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
+    baselineStage?: string | null;
+    baselineUrl?: string | null;
+    requestedStages?: Array<"1A" | "1B" | "2">;
+    stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
@@ -273,6 +285,10 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
+    baselineStage?: string | null;
+    baselineUrl?: string | null;
+    requestedStages?: Array<"1A" | "1B" | "2">;
+    stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
