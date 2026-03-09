@@ -119,7 +119,7 @@ import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
-import { finalizeImageChargeFromWorker } from "./utils/billingFinalization.js";
+import { finalizeImageChargeFromWorker, startBillingFinalizationRetryLoop } from "./utils/billingFinalization.js";
 import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact } from "./utils/finalBlackEdgeGuard";
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 
@@ -8573,6 +8573,9 @@ if (process.env.DEBUG_INVARIANT_REPLAY === "true") {
 // Log validator configuration on startup
 logValidationModes();
 nLog('\n'); // Force flush
+
+// Keep billing eventually consistent via non-blocking ledger retries.
+startBillingFinalizationRetryLoop();
 
 // BullMQ worker
 const worker = new Worker(
