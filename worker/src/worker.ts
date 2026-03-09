@@ -90,6 +90,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
+const STRUCTURAL_REVIEW_PRO_MODEL = String(process.env.STRUCTURAL_REVIEW_PRO_MODEL || "gemini-2.5-pro");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
     ? "block"
@@ -810,6 +811,66 @@ function shouldEscalateToGeminiStructuralReview(params: {
     builtInRemovalDetected === true ||
     extremeEnvelopeContraction
   );
+}
+
+async function runGeminiStructuralReviewPro(
+  beforeImageUrl: string,
+  afterImageUrl: string
+): Promise<{ result: "PASS" | "FAIL"; explanation: string; rawText: string }> {
+  const ai = getGeminiClient();
+  const before = toBase64(beforeImageUrl).data;
+  const after = toBase64(afterImageUrl).data;
+
+  const prompt = `You are verifying whether two images represent the same physical room.
+
+Image A: original room (Stage-1A baseline)
+Image B: staged room (Stage-2 candidate)
+
+Determine whether the architectural structure is identical.
+
+Reject if any of the following occurred:
+- walls moved
+- room shape changed
+- windows moved or resized
+- doors moved
+- camera perspective changed
+- room layout or orientation changed
+
+Furniture differences are allowed.
+Only architectural structure matters.
+
+Return PASS or FAIL.`;
+
+  const response = await (ai as any).models.generateContent({
+    model: STRUCTURAL_REVIEW_PRO_MODEL,
+    contents: [
+      { role: "user", parts: [{ text: prompt }] },
+      {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: "image/webp", data: before } },
+          { inlineData: { mimeType: "image/webp", data: after } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      topP: 0,
+      maxOutputTokens: 256,
+    },
+  });
+
+  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const normalized = String(rawText).replace(/\s+/g, " ").trim();
+  const firstToken = (normalized.match(/^\s*(PASS|FAIL)\b/i)?.[1] || "PASS").toUpperCase();
+  const result: "PASS" | "FAIL" = firstToken === "FAIL" ? "FAIL" : "PASS";
+  const explanation = normalized.replace(/^\s*(PASS|FAIL)\s*[:\-]?\s*/i, "").trim();
+
+  return {
+    result,
+    explanation: explanation || (result === "PASS" ? "No structural change detected." : "Structural change detected."),
+    rawText: normalized,
+  };
 }
 
 type Stage1BGeminiResult = Awaited<ReturnType<typeof validateStage1BStructure>>;
@@ -6739,6 +6800,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       // Stage-2 local catastrophic gate: block obvious structural corruption before Gemini validators.
+      let stage2MaskDrift = 0;
+      let stage2WallDrift = 0;
+      let stage2StructuralAngleChange = 0;
+      let stage2ExistingEscalationCondition = false;
       try {
         const [semanticSignals, maskedSignals] = await Promise.all([
           runSemanticStructureValidator({
@@ -6766,6 +6831,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const maskedOpeningsDeltaTotal =
           Math.abs(maskedSignals?.createdOpenings ?? 0) +
           Math.abs(maskedSignals?.closedOpenings ?? 0);
+
+        stage2MaskDrift = Number(maskedSignals?.maskedEdgeDrift ?? 0);
+        stage2WallDrift = Number(semanticSignals?.walls?.driftRatio ?? 0);
+        const structuralAngleCandidates = [
+          (semanticSignals as any)?.walls?.angleChangeDeg,
+          (semanticSignals as any)?.angleChangeDeg,
+          (maskedSignals as any)?.angleChangeDeg,
+          (maskedSignals as any)?.perspectiveDeltaDeg,
+          (maskedSignals as any)?.wallAngleDeltaDeg,
+        ]
+          .filter((value) => typeof value === "number" && Number.isFinite(value))
+          .map((value) => Math.abs(Number(value)));
+        stage2StructuralAngleChange = structuralAngleCandidates.length > 0
+          ? Math.max(...structuralAngleCandidates)
+          : 0;
+        stage2ExistingEscalationCondition = shouldEscalateToGeminiStructuralReview({
+          windowsBefore: semanticSignals?.windows?.before,
+          windowsAfter: semanticSignals?.windows?.after,
+          doorsBefore: semanticSignals?.doors?.before,
+          doorsAfter: semanticSignals?.doors?.after,
+          closetDoorsBefore: null,
+          closetDoorsAfter: null,
+          builtInRemovalDetected: false,
+          wallDriftPct: semanticWallDriftPct,
+          maskedEdgeDriftPct: maskedDriftPct,
+        });
 
         const stage2Consensus = classifyStructuralConsensusCase({
           stage: "2",
@@ -6859,7 +6950,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // BEGIN NEW SEQUENTIAL VALIDATORS
       let seqPass = true;
       let failMessage = "";
-      let failValidator: "envelope" | "openings" | "fixtures" | "unknown" = "unknown";
+      let failValidator: "envelope" | "structural_review" | "openings" | "fixtures" | "unknown" = "unknown";
       let validatorErrored = false;
       const normalizeValidatorReason = (reason: string): string => {
         const normalized = String(reason || "unknown")
@@ -6883,6 +6974,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog(`[VALIDATOR_FAIL] validator=envelope reason=${normalizeValidatorReason(failMessage)}`);
         } else {
           nLog(`[VALIDATOR_ENVELOPE_PASS]`);
+
+          const shouldEscalateStructuralReview =
+            stage2MaskDrift > 0.5 ||
+            stage2WallDrift > 0.5 ||
+            stage2StructuralAngleChange > 50;
+          const escalateStructuralReview = shouldEscalateStructuralReview || stage2ExistingEscalationCondition;
+
+          if (escalateStructuralReview) {
+            failValidator = "structural_review";
+            nLog(
+              `[STRUCTURAL_ESCALATION_TRIGGER] maskDrift=${stage2MaskDrift.toFixed(3)} wallDrift=${stage2WallDrift.toFixed(3)} structuralAngleChange=${stage2StructuralAngleChange.toFixed(2)}`
+            );
+            nLog(
+              `[STRUCTURAL_REVIEW_PRO] model=${STRUCTURAL_REVIEW_PRO_MODEL}`
+            );
+            const structuralReview = await runGeminiStructuralReviewPro(path1A, path2);
+            if (structuralReview.result === "FAIL") {
+              seqPass = false;
+              failMessage = structuralReview.explanation || "structural_review_fail";
+              nLog(
+                `[STRUCTURAL_REVIEW_FAIL] reason=${normalizeValidatorReason(structuralReview.explanation || "structural_review_fail")}`
+              );
+            } else {
+              nLog(`[STRUCTURAL_REVIEW_PASS]`);
+            }
+          }
+
+          if (!seqPass) {
+            // Structural review fail forces the existing retry/fallback flow.
+          } else {
           
           failValidator = "openings";
           const opRes = await runOpeningValidator(validationBasePath, path2);
@@ -6903,6 +7024,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               nLog(`[VALIDATOR_FIXTURES_PASS]`);
             }
           }
+            }
         }
 
         if (!seqPass) {

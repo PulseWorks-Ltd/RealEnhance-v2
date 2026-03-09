@@ -41,20 +41,7 @@ If seating already exists in the input image, you may restyle or repaint it, but
 `.trim();
 
 const ROOM_PROGRAM_EXCLUSIVITY_REFRESH = `
-ROOM PROGRAM EXCLUSIVITY — HARD RULES
-
-Only add or restyle furniture that is valid for the selected room type(s).
-
-- kitchen_living (kitchen + living):
-  Forbidden additions: dining table, dining chairs, dining bench, dining set, breakfast banquette.
-
-- living_room:
-  Forbidden additions: dining table/chairs and office desk/task-chair program.
-
-- kitchen_dining:
-  Forbidden additions: living/lounge program (e.g., sofa + coffee table grouping).
-
-Do not add non-selected room-function furniture.
+Do not introduce furniture belonging to another room program.
 `.trim();
 
 export function buildStage2RefreshPromptNZ(roomType: string): string {

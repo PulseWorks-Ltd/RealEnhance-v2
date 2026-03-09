@@ -52,31 +52,61 @@ Existing fixture count, type, and position must remain identical.
 If staging includes a dining table, do NOT add a new pendant or ceiling light above it unless a pendant already exists in that position in the input image.
 If curtains or drapes are visible in the input image, they must remain present.
 Do NOT remove window fabric coverings during staging.
-Do NOT introduce new functional zones beyond the user-selected room type.
-If the selected room type is "kitchen + living" or "kitchen_living", do NOT add dining furniture.
-If the selected room type is "living" or "living_room", do NOT add office or dining furniture.
-Stage only the explicitly selected room type(s).
-Do not expand room function.
 `;
 
-const ROOM_PROGRAM_EXCLUSIVITY_BLOCK = `
-ROOM PROGRAM EXCLUSIVITY — HARD RULES
+const WINDOW_GEOMETRY_PROTECTION_BLOCK = `
+WINDOW GEOMETRY PROTECTION
 
-Only add furniture that is valid for the selected room type(s).
+Do NOT modify wall returns, wall angles, corner geometry, window side margins, or window height for aesthetic balance.
+Do NOT adjust sill height or window proportions to accommodate furniture.
+If furniture conflicts with architecture, reposition or resize the furniture instead.
+Furniture must adapt to the room. The room must never adapt to furniture.
+`.trim();
 
-- kitchen_living (kitchen + living):
-  Allowed: living/lounge seating program and kitchen-compatible accessories only.
-  Forbidden: dining table, dining chairs, dining bench, dining set, breakfast banquette.
+const ROOM_PROGRAM_CONSTRAINTS_BLOCK = `
+ROOM PROGRAM CONSTRAINTS
 
-- living_room:
-  Allowed: living/lounge seating program only.
-  Forbidden: dining table/chairs, office desk/task-chair program.
+The selected room type strictly determines the furniture program.
 
-- kitchen_dining:
-  Allowed: kitchen + dining program only.
-  Forbidden: lounge/living seating program (e.g., sofa + coffee-table vignette).
+Do not introduce furniture that implies a different room function.
 
-If any forbidden furniture appears in the draft plan, remove it and keep only applicable furniture.
+kitchen_living
+Allowed:
+• lounge seating
+• coffee table
+Forbidden:
+• dining table
+• dining chairs
+
+living_room
+Allowed:
+• lounge seating only
+Forbidden:
+• dining furniture
+• office furniture
+
+kitchen_dining
+Allowed:
+• dining table
+• dining seating
+Forbidden:
+• sofas
+• lounge seating
+
+living_dining
+Allowed:
+• lounge seating
+• dining table
+
+Guideline:
+Create two zones: a dining zone and a lounge zone.
+
+multiple_living
+Allowed:
+• multiple lounge seating areas
+• reading chairs
+Forbidden:
+• dining tables unless a dining zone is clearly present.
 `.trim();
 
 const FURNITURE_ADDITION_CONSTRAINTS_FULL = `
@@ -108,31 +138,32 @@ ${STRUCTURAL_IDENTITY_LOCK_BLOCK}
 
 ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
-FULL-SYNTHESIS LOGIC — MANDATORY
+${WINDOW_GEOMETRY_PROTECTION_BLOCK}
+
+FULL SYNTHESIS MODE LOGIC
+- This is stage-from-empty synthesis.
+- Build a complete, realistic furniture composition for the selected room type.
+
+${ROOM_PROGRAM_CONSTRAINTS_BLOCK}
+
+STAGING / LAYOUT LOGIC
+- Room-type target: ${room}
 - Create a layout from scratch from visible geometry.
 - Establish anchor hierarchy and focal composition.
 - Define circulation flow first, then place primary furniture.
 - Choose furniture scale relative to room size and camera depth.
 - Populate empty planes with coherent, room-appropriate staging.
-
-ROOM-TYPE TARGET
-Stage as: ${room}
-Selected room type is authoritative for furniture program.
-
-${layoutContextBlock}
-
-FULL-SPECIFIC RULES
 - Do not leave core target zone unstaged.
 - Preserve access to doors/windows/openings and traffic flow.
 - Keep built-ins/fixed fixtures unchanged and unobstructed.
 - Use realistic furniture footprints and contact shadows.
 - Prefer coherent full composition over sparse accessory-only staging.
 
+${layoutContextBlock}
+
 ${FURNITURE_ADDITION_CONSTRAINTS_FULL}
 
-${ROOM_PROGRAM_EXCLUSIVITY_BLOCK}
-
-STYLE PROFILE
+STYLE MODIFIERS
 NZ Contemporary / Scandi Minimalist.
 Neutral palette, natural textures, listing-safe realism.
 
