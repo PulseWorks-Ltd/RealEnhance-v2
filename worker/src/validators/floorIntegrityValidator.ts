@@ -1,13 +1,13 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 
-export type FixtureValidatorResult = {
+export type FloorIntegrityValidatorResult = {
   status: "pass" | "fail";
   reason: string;
   confidence: number;
 };
 
-function parseFixtureResult(rawText: string): FixtureValidatorResult {
+function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: any;
@@ -23,7 +23,7 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
 
   const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
     ? parsed.reason.trim()
-    : parsed.ok ? "fixtures_preserved" : "fixtures_changed";
+    : parsed.ok ? "floor_integrity_preserved" : "floor_integrity_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
 
   return {
@@ -33,35 +33,27 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
   };
 }
 
-export async function runFixtureValidator(
+export async function runFloorIntegrityValidator(
   beforeImageUrl: string,
   afterImageUrl: string
-): Promise<FixtureValidatorResult> {
+): Promise<FloorIntegrityValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
-  const prompt = `You are validating whether two images represent the same physical room.
+  const prompt = `You are validating floor structural integrity between a baseline room image and a staged room image.
 
-Compare the baseline image and the staged image.
+Set ok=false ONLY if the underlying floor structure changes:
+* floor material changes (carpet <-> wood <-> tile/stone/concrete)
+* tile or grid pattern changes
+* plank orientation changes
+* floor perspective grid/vanishing geometry changes
 
-Set ok=false ONLY if these major fixed fixtures are clearly added, removed, or relocated:
-* HVAC systems (wall-mounted split units, fixed air-conditioning units)
-* ceiling fans
-* pendant lights
-* recessed lights
-* ceiling vents
-* smoke detectors
-
-Do NOT fail for small wall fixtures unless clearly removed.
-
-Examples that should NOT fail:
-* light switches hidden behind furniture
-* outlets no longer visible due to camera angle
-* small fixtures occluded by staging objects
-* curtain rails added
-
-Ignore furniture, decor, styling, lighting changes, and minor rendering differences.
+Ignore these non-structural differences:
+* rugs
+* furniture
+* shadows
+* lighting/color grading
 
 Return JSON only:
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
@@ -86,8 +78,8 @@ Return JSON only:
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseFixtureResult(text);
+    return parseFloorIntegrityResult(text);
   } catch (error: any) {
-    throw new Error(`validator_error_fixture:${error?.message || String(error)}`);
+    throw new Error(`validator_error_floor_integrity:${error?.message || String(error)}`);
   }
 }

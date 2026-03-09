@@ -54,6 +54,9 @@ Set ok=false ONLY if any of these opening or built-in violations are visible:
 * doors resized, removed, or relocated
 * built-in cabinetry altered
 * kitchen islands moved or resized
+* window panes change from clear/transparent to opaque/frosted/blocked
+* opaque windows become transparent and reveal new exterior scenery/content
+* windows are blocked, sealed, infilled, or replaced with wall surface
 
 Ignore furniture, decor, styling, lighting changes, and minor rendering differences.
 

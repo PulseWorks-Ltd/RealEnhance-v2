@@ -53,18 +53,18 @@ Your task is to verify that the architectural envelope of the room is identical.
 
 Set ok=false ONLY if any of these are visible:
 
-* a wall was added, removed, extended, shortened, or shifted
-* a new partial wall, partition, column, or divider appears
-* the room boundaries change shape or size
-* the number or positions of wall corners change
-* wall intersections occur in different locations
-* the ceiling plane or wall height changes
-* the camera viewpoint shifts so the geometry of the room changes
+* walls were added, removed, reshaped, extended, shortened, or shifted
+* room segmentation changes (new/removed partitions, dividers, enclosed areas)
+* ceiling plane geometry is altered
+* room footprint changes shape or size
+* major wall intersections appear or disappear
+* a new structural wall plane appears that intersects floor and ceiling and alters room segmentation
+* the number of visible major room corner intersections increases or decreases, indicating room geometry changed
 
 Focus on the shape and boundaries of the room itself, not the objects inside it.
 
 Ignore:
-furniture changes, decor changes, staging items, lighting differences, rugs, reflections, or minor rendering differences.
+furniture changes, decor changes, staging items, lighting differences, rugs, reflections, minor rendering differences, small camera shifts, minor perspective corrections, or cropping differences.
 
 The staged image must represent the exact same room boundaries and wall layout as the baseline image.
 

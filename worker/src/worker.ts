@@ -18,7 +18,7 @@ import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
 import {
   isStage2RetryableGenerationError,
-  runFinalStage2ParallelChecks,
+  runGeminiStructuralReviewPro,
   resolveStage2MaxAttempts,
   resolveStage2Model,
   runStage2,
@@ -6872,7 +6872,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // BEGIN NEW SEQUENTIAL VALIDATORS
       let seqPass = true;
       let failMessage = "";
-      let failValidator: "envelope" | "openings" | "fixtures" | "unknown" = "unknown";
+      let failValidator: "envelope" | "openings" | "fixtures" | "floor" | "unknown" = "unknown";
       let validatorErrored = false;
       const normalizeValidatorReason = (reason: string): string => {
         const normalized = String(reason || "unknown")
@@ -6887,6 +6887,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+        const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
         failValidator = "envelope";
         const envRes = await runEnvelopeValidator(validationBasePath, path2);
@@ -6914,6 +6915,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               nLog(`[VALIDATOR_FAIL] validator=fixtures reason=${normalizeValidatorReason(failMessage)}`);
             } else {
               nLog(`[VALIDATOR_FIXTURES_PASS]`);
+
+              failValidator = "floor";
+              const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
+              if (floorRes.status === "fail") {
+                seqPass = false;
+                failMessage = floorRes.reason;
+                nLog(`[VALIDATOR_FAIL] validator=floor reason=${normalizeValidatorReason(failMessage)}`);
+              } else {
+                nLog(`[VALIDATOR_FLOOR_PASS]`);
+              }
             }
           }
         }
@@ -7300,25 +7311,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }
 
-      // Final pre-publish identity gate (parallel): fixture validator + Gemini 2.5 Pro structural review.
+      // Final pre-publish identity gate: Gemini structural review runs last.
       let seePass = true;
-      let finalFailValidator: "final_fixture" | "structural_review" | "unknown" = "unknown";
+      let finalFailValidator: "structural_review" | "unknown" = "unknown";
       let finalFailReason = "";
 
       try {
         nLog("[STRUCTURAL_REVIEW_PRO_START]");
-        const { fixtureResult, structuralReview } = await runFinalStage2ParallelChecks(
-          validationBasePath,
-          path2,
-          { enableStructuralReview: ENABLE_FINAL_STRUCTURAL_REVIEW }
-        );
-
-        if (fixtureResult.status === "fail") {
-          finalFailValidator = "final_fixture";
-          seePass = false;
-          finalFailReason = fixtureResult.reason || "final_fixture_failed";
-          nLog(`[VALIDATOR_FAIL] validator=final_fixture reason=${finalFailReason}`);
-        }
+        const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
+          ? await runGeminiStructuralReviewPro(validationBasePath, path2)
+          : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
 
         if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
           if (structuralReview.result === "FAIL") {
@@ -7343,9 +7345,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "_")
           .replace(/^_+|_+$/g, "") || "final_identity_review_failed";
-        const retryReason = finalFailValidator === "final_fixture"
-          ? "final_fixture_failed"
-          : "structural_review_failed";
+        const retryReason = "structural_review_failed";
 
         stage2LocalReasons.push(retryReason);
         setStage2AttemptValidation(path2, finalFailValidator, [retryReason, normalizedFinalReason]);

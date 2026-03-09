@@ -22,7 +22,6 @@ import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layout
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
-import { runFixtureValidator, type FixtureValidatorResult } from "../validators/fixtureValidator";
 
 const logger = console;
 
@@ -42,13 +41,14 @@ export type StructuralReviewProResult = {
   explanation: string;
 };
 
-export type FinalStage2ParallelReviewResult = {
-  fixtureResult: FixtureValidatorResult;
-  structuralReview: StructuralReviewProResult;
-};
-
 export const STRUCTURAL_IDENTITY_REVIEW_PROMPT = `ROLE
 You are an architectural comparison inspector reviewing two photographs of an interior room.
+
+The staged image must clearly represent the same physical room as the baseline image.
+
+Minor differences in camera position, perspective,
+or cropping are acceptable if the architectural
+structure remains the same.
 
 TASK
 Determine whether Image B still represents the same physical room as Image A.
@@ -167,29 +167,6 @@ export async function runGeminiStructuralReviewPro(
     : "no_explanation";
 
   return { result, confidence, explanation };
-}
-
-export async function runFinalStage2ParallelChecks(
-  originalImagePath: string,
-  stagedImagePath: string,
-  opts?: { enableStructuralReview?: boolean }
-): Promise<FinalStage2ParallelReviewResult> {
-  const enableStructuralReview = opts?.enableStructuralReview !== false;
-  const [fixtureResult, structuralReview] = await Promise.all([
-    runFixtureValidator(originalImagePath, stagedImagePath),
-    enableStructuralReview
-      ? runGeminiStructuralReviewPro(originalImagePath, stagedImagePath)
-      : Promise.resolve({
-          result: "PASS" as const,
-          confidence: 100,
-          explanation: "final_structural_review_disabled",
-        }),
-  ]);
-
-  return {
-    fixtureResult,
-    structuralReview,
-  };
 }
 
 function isStructuralRetryReason(reason: Stage2RetryReason): boolean {
