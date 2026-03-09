@@ -3,7 +3,7 @@ import { Queue } from "bullmq";
 import { createClient } from "redis";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
-import { deleteBatchState, getJob, listBatchJobIds, updateJob } from "../services/jobs.js";
+import { deleteBatchState, getJob, listBatchJobIds, listBatchJobIdsForUser, updateJob } from "../services/jobs.js";
 
 const cancelKey = (id: string) => `re:cancel:${id}`;
 
@@ -54,6 +54,11 @@ export function cancelRouter() {
     }
 
     const { id } = req.params;
+    const record = await getJob(id);
+    if (!record || String(record.userId || "") !== String(sessUser.id)) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
     const redis = createClient({ url: REDIS_URL });
     const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
     try {
@@ -78,6 +83,12 @@ export function cancelRouter() {
     }
 
     const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const records = await Promise.all(ids.map((id) => getJob(String(id))));
+    const hasForbidden = records.some((record) => !record || String(record.userId || "") !== String(sessUser.id));
+    if (hasForbidden) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
     try {
       await cancelJobIds(ids);
       console.log("[BATCH_CANCELLED]", { userId: sessUser.id, count: ids.length, mode: "ids" });
@@ -100,7 +111,14 @@ export function cancelRouter() {
     }
 
     try {
-      const ids = await listBatchJobIds(batchId);
+      const allBatchIds = await listBatchJobIds(batchId);
+      const ids = await listBatchJobIdsForUser(batchId, String(sessUser.id));
+
+      // Require full batch ownership to prevent cancelling or clearing another user's batch state.
+      if (!allBatchIds.length || ids.length !== allBatchIds.length) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
       if (ids.length) {
         await cancelJobIds(ids);
       }

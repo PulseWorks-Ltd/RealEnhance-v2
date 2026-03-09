@@ -102,6 +102,33 @@ export async function listBatchJobIds(batchId: string): Promise<string[]> {
   return [...found];
 }
 
+export async function listBatchJobIdsForUser(batchId: string, userId: string): Promise<string[]> {
+  const normalizedUserId = String(userId || "").trim();
+  if (!normalizedUserId) return [];
+
+  const ids = await listBatchJobIds(batchId);
+  if (!ids.length) return [];
+
+  const keys = ids.map((id) => `jobs:${id}`);
+  const values = await redisClient.mGet(keys);
+
+  const ownedIds: string[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const raw = values[i];
+    if (!raw) continue;
+    try {
+      const rec: any = JSON.parse(raw);
+      if (String(rec?.userId || "").trim() === normalizedUserId) {
+        ownedIds.push(ids[i]);
+      }
+    } catch {
+      // Ignore malformed records.
+    }
+  }
+
+  return ownedIds;
+}
+
 export async function deleteBatchState(batchId: string) {
   const normalizedBatchId = String(batchId || "").trim();
   if (!normalizedBatchId) return;
