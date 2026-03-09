@@ -228,11 +228,9 @@ export async function runStage2GenerationAttempt(
     ? "multiple_living"
     : normalizedRoomType;
 
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedPromptMode: "full" | "refresh" = opts.promptMode
     ? opts.promptMode
-    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+    : (opts.sourceStage === "1A" ? "full" : "refresh");
 
   let inputForStage2 = basePath;
   let stagingMaskBuffer: Buffer | null = null;
@@ -533,11 +531,9 @@ export async function runStage2(
     ? "multiple_living"
     : normalizedRoomType;
 
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedPromptMode: "full" | "refresh" = opts.promptMode
     ? opts.promptMode
-    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+    : (opts.sourceStage === "1A" ? "full" : "refresh");
 
   let layoutContext: LayoutContextResult | null = null;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";

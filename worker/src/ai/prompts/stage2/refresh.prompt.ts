@@ -40,6 +40,23 @@ Do NOT add any seating of any type (bar stools, chairs, benches) to or around ki
 If seating already exists in the input image, you may restyle or repaint it, but its position and count must remain unchanged.
 `.trim();
 
+const ROOM_PROGRAM_EXCLUSIVITY_REFRESH = `
+ROOM PROGRAM EXCLUSIVITY — HARD RULES
+
+Only add or restyle furniture that is valid for the selected room type(s).
+
+- kitchen_living (kitchen + living):
+  Forbidden additions: dining table, dining chairs, dining bench, dining set, breakfast banquette.
+
+- living_room:
+  Forbidden additions: dining table/chairs and office desk/task-chair program.
+
+- kitchen_dining:
+  Forbidden additions: living/lounge program (e.g., sofa + coffee table grouping).
+
+Do not add non-selected room-function furniture.
+`.trim();
+
 export function buildStage2RefreshPromptNZ(roomType: string): string {
   const room = roomType || "room";
 
@@ -74,6 +91,8 @@ REFRESH-SPECIFIC RULES
 - Avoid over-staging; refine existing composition.
 
 ${FURNITURE_ADDITION_CONSTRAINTS_REFRESH}
+
+${ROOM_PROGRAM_EXCLUSIVITY_REFRESH}
 
 STYLE PROFILE
 NZ Contemporary / Scandi Minimalist.

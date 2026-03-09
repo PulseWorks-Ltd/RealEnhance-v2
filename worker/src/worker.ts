@@ -3499,7 +3499,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
   let stage2AttemptId: string | undefined;
-  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const STAGE2_MULTI_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const canonicalizeStage2RoomType = (rawRoomType: unknown) => {
     const normalizedRoomType = String(rawRoomType || "")
@@ -3519,7 +3519,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     sourceStageHint?: "1A" | "1B-light" | "1B-stage-ready" | null;
   }) => {
     const canonicalRoomType = canonicalizeStage2RoomType(ctx.roomType);
-    const forceRefresh = STAGE2_FORCE_REFRESH_ROOM_TYPES.has(canonicalRoomType);
 
     let sourceStage: "1A" | "1B-light" | "1B-stage-ready" = "1A";
     let reason = "default_1a";
@@ -3538,13 +3537,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const mode: "refresh" | "full" = ctx.isExteriorScene
       ? "refresh"
       : (sourceStage === "1A" ? "full" : "refresh");
-    if (forceRefresh && sourceStage === "1A") {
-      reason = `${reason}+force_refresh_room_type`;
-    }
 
     return {
       canonicalRoomType,
-      forceRefresh,
       sourceStage,
       mode,
       reason,
@@ -3557,7 +3552,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     sourceStage: "1A" | "1B-light" | "1B-stage-ready";
     enforced: boolean;
   }) => {
-    if (STAGE2_FORCE_REFRESH_ROOM_TYPES.has(ctx.canonicalRoomType) && ctx.sourceStage === "1A") {
+    if (STAGE2_MULTI_ROOM_TYPES.has(ctx.canonicalRoomType) && ctx.sourceStage === "1A") {
       nLog("[MULTI_ZONE_FULL_MODE]", {
         jobId: payload.jobId,
         imageId: payload.imageId,
@@ -3843,7 +3838,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BMode: stage2OnlyMeta.stage1BMode || null,
         roomType: payload.options.roomType,
         canonicalRoomType: stage2OnlyRouting.canonicalRoomType,
-        forceRefresh: stage2OnlyRouting.forceRefresh,
         sourceStage: stage2OnlyRouting.sourceStage,
         finalMode: stage2OnlyRouting.mode,
         reason: stage2OnlyRouting.reason,
@@ -5882,7 +5876,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2SourceStage = stage2Routing.sourceStage;
   
   const canonicalRoomTypeForStage2 = stage2Routing.canonicalRoomType;
-  const forceRefreshPromptMode = stage2Routing.forceRefresh;
+  const isMultiRoomTypeForStage2 = STAGE2_MULTI_ROOM_TYPES.has(canonicalRoomTypeForStage2);
   // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
   // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
   const stage2ValidationBaseline = path1A;
@@ -5905,14 +5899,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // 📊 STRUCTURED ROUTING LOG - Stage 2
   nLog(`[PIPELINE_ROUTING] Stage 2 routing:`, {
     roomType: canonicalRoomTypeForStage2,
-    isMultiRoom: forceRefreshPromptMode,
+    isMultiRoom: isMultiRoomTypeForStage2,
     hasStage1BOutput,
     stage2InputUsing,
     stage1BModeRecorded: recordedStage1BMode || null,
     stage1BModeEffective: stage2BaseStage === "1B" ? effectiveStage1BMode : null,
     sourceStage: stage2SourceStage,
     promptMode: stage2PromptMode,
-    forceRefresh: forceRefreshPromptMode,
     reason: stage2Routing.reason,
   });
   nLog("[STAGE2_ROUTING_DECISION]", {
@@ -5923,7 +5916,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BMode: stage2BaseStage === "1B" ? effectiveStage1BMode : null,
     roomType: payload.options.roomType,
     canonicalRoomType: canonicalRoomTypeForStage2,
-    forceRefresh: forceRefreshPromptMode,
     sourceStage: stage2SourceStage,
     finalMode: stage2PromptMode,
     reason: stage2Routing.reason,
@@ -6232,7 +6224,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BMode: "light",
         roomType: payload.options.roomType,
         canonicalRoomType: fallbackRouting.canonicalRoomType,
-        forceRefresh: fallbackRouting.forceRefresh,
         sourceStage: fallbackRouting.sourceStage,
         finalMode: fallbackRouting.mode,
         reason: fallbackRouting.reason,

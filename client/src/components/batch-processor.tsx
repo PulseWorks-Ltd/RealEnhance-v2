@@ -614,7 +614,13 @@ type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
 type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
 
-const MESSAGE_ROTATION_MS = 2_500;
+const MESSAGE_ROTATION_MIN_MS = 7_000;
+const MESSAGE_ROTATION_MAX_MS = 10_000;
+
+const getRandomMessageRotationMs = () =>
+  Math.floor(
+    Math.random() * (MESSAGE_ROTATION_MAX_MS - MESSAGE_ROTATION_MIN_MS + 1),
+  ) + MESSAGE_ROTATION_MIN_MS;
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
@@ -839,7 +845,8 @@ export default function BatchProcessor() {
         clearMessageTimer(index);
 
         const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
-        setMessageIndexByImage((prev) => ({ ...prev, [index]: 0 }));
+        const initialMessageIndex = Math.floor(Math.random() * Math.max(1, messages.length));
+        setMessageIndexByImage((prev) => ({ ...prev, [index]: initialMessageIndex }));
         messageStageByImageRef.current[index] = messageStage;
 
         const rotateMessage = () => {
@@ -847,10 +854,16 @@ export default function BatchProcessor() {
             ...prev,
             [index]: ((prev[index] ?? 0) + 1) % Math.max(1, messages.length),
           }));
-          messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
+          messageTimerByImageRef.current[index] = setTimeout(
+            rotateMessage,
+            getRandomMessageRotationMs(),
+          );
         };
 
-        messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
+        messageTimerByImageRef.current[index] = setTimeout(
+          rotateMessage,
+          getRandomMessageRotationMs(),
+        );
       }
     });
 

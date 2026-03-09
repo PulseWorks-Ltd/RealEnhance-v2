@@ -1615,11 +1615,9 @@ export function buildStage2PromptNZStyle(
 
   const sourceStage = opts?.sourceStage || "1A";
   const explicitMode = opts?.mode;
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedMode: "full" | "refresh" = explicitMode
     ? explicitMode
-    : (sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+    : (sourceStage === "1A" ? "full" : "refresh");
 
   const layoutContextBlock = resolvedMode === "full" && opts?.layoutContext
     ? `

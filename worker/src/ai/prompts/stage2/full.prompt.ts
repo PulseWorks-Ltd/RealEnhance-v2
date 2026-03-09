@@ -53,11 +53,31 @@ If staging includes a dining table, do NOT add a new pendant or ceiling light ab
 If curtains or drapes are visible in the input image, they must remain present.
 Do NOT remove window fabric coverings during staging.
 Do NOT introduce new functional zones beyond the user-selected room type.
-If the selected room type is "kitchen + living", do NOT add dining.
-If the selected room type is "living", do NOT add office or dining.
+If the selected room type is "kitchen + living" or "kitchen_living", do NOT add dining furniture.
+If the selected room type is "living" or "living_room", do NOT add office or dining furniture.
 Stage only the explicitly selected room type(s).
 Do not expand room function.
 `;
+
+const ROOM_PROGRAM_EXCLUSIVITY_BLOCK = `
+ROOM PROGRAM EXCLUSIVITY — HARD RULES
+
+Only add furniture that is valid for the selected room type(s).
+
+- kitchen_living (kitchen + living):
+  Allowed: living/lounge seating program and kitchen-compatible accessories only.
+  Forbidden: dining table, dining chairs, dining bench, dining set, breakfast banquette.
+
+- living_room:
+  Allowed: living/lounge seating program only.
+  Forbidden: dining table/chairs, office desk/task-chair program.
+
+- kitchen_dining:
+  Allowed: kitchen + dining program only.
+  Forbidden: lounge/living seating program (e.g., sofa + coffee-table vignette).
+
+If any forbidden furniture appears in the draft plan, remove it and keep only applicable furniture.
+`.trim();
 
 const FURNITURE_ADDITION_CONSTRAINTS_FULL = `
 FURNITURE ADDITION CONSTRAINTS
@@ -109,6 +129,8 @@ FULL-SPECIFIC RULES
 - Prefer coherent full composition over sparse accessory-only staging.
 
 ${FURNITURE_ADDITION_CONSTRAINTS_FULL}
+
+${ROOM_PROGRAM_EXCLUSIVITY_BLOCK}
 
 STYLE PROFILE
 NZ Contemporary / Scandi Minimalist.
