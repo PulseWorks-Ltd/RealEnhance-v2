@@ -3,7 +3,7 @@ import { Queue } from "bullmq";
 import { createClient } from "redis";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
-import { getJob, updateJob } from "../services/jobs.js";
+import { deleteBatchState, getJob, listBatchJobIds, updateJob } from "../services/jobs.js";
 
 const cancelKey = (id: string) => `re:cancel:${id}`;
 
@@ -27,6 +27,25 @@ async function markCancellingIfActive(jobId: string) {
 
 export function cancelRouter() {
   const r = Router();
+
+  const cancelJobIds = async (ids: string[]) => {
+    const redis = createClient({ url: REDIS_URL });
+    const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+    try {
+      await redis.connect();
+      for (const id of ids) {
+        await redis.set(cancelKey(id), "1", { EX: 60 * 60 });
+        await markCancellingIfActive(id);
+        const job = await q.getJob(id);
+        if (job) {
+          const st = await job.getState();
+          if (st === "waiting" || st === "delayed") await job.remove();
+        }
+      }
+    } finally {
+      await Promise.allSettled([redis.quit(), q.close()]);
+    }
+  };
 
   r.post("/api/jobs/:id/cancel", async (req, res) => {
     const sessUser = (req.session as any)?.user;
@@ -59,23 +78,41 @@ export function cancelRouter() {
     }
 
     const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
-    const redis = createClient({ url: REDIS_URL });
-    const q = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
     try {
-      await redis.connect();
-      for (const id of ids) {
-        await redis.set(cancelKey(id), "1", { EX: 60 * 60 });
-        await markCancellingIfActive(id);
-        const job = await q.getJob(id);
-        if (job) {
-          const st = await job.getState();
-          if (st === "waiting" || st === "delayed") await job.remove();
-        }
-      }
-    } finally {
-      await Promise.allSettled([redis.quit(), q.close()]);
+      await cancelJobIds(ids);
+      console.log("[BATCH_CANCELLED]", { userId: sessUser.id, count: ids.length, mode: "ids" });
+    } catch (err) {
+      console.error("[BATCH_CANCELLED] failed", { userId: sessUser.id, count: ids.length, mode: "ids", error: (err as any)?.message || String(err) });
+      return res.status(500).json({ error: "cancel_failed" });
     }
     res.json({ ok: true, count: ids.length });
+  });
+
+  r.post("/api/batch/cancel", async (req, res) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: "not_authenticated" });
+    }
+
+    const batchId = String(req.body?.batchId || "").trim();
+    if (!batchId) {
+      return res.status(400).json({ error: "missing_batch_id" });
+    }
+
+    try {
+      const ids = await listBatchJobIds(batchId);
+      if (ids.length) {
+        await cancelJobIds(ids);
+      }
+
+      await deleteBatchState(batchId);
+      console.log("[BATCH_CANCELLED]", { userId: sessUser.id, batchId, count: ids.length, mode: "batchId" });
+      console.log("[BATCH_STATE_CLEARED]", { userId: sessUser.id, batchId });
+      res.json({ ok: true, batchId, count: ids.length });
+    } catch (err) {
+      console.error("[BATCH_CANCELLED] failed", { userId: sessUser.id, batchId, mode: "batchId", error: (err as any)?.message || String(err) });
+      return res.status(500).json({ error: "cancel_failed" });
+    }
   });
 
   return r;

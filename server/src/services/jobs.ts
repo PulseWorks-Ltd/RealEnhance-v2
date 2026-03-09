@@ -36,6 +36,78 @@ function queue() {
   });
 }
 
+function batchJobsKey(batchId: string) {
+  return `batch:${batchId}:jobs`;
+}
+
+export async function addJobToBatchIndex(batchId: string, jobId: string) {
+  const normalizedBatchId = String(batchId || "").trim();
+  const normalizedJobId = String(jobId || "").trim();
+  if (!normalizedBatchId || !normalizedJobId) return;
+  await redisClient.sAdd(batchJobsKey(normalizedBatchId), normalizedJobId);
+  // Keep batch index bounded in case a client never explicitly clears it.
+  await redisClient.expire(batchJobsKey(normalizedBatchId), 60 * 60 * 24 * 7);
+}
+
+export async function listBatchJobIds(batchId: string): Promise<string[]> {
+  const normalizedBatchId = String(batchId || "").trim();
+  if (!normalizedBatchId) return [];
+
+  const indexedIds = await redisClient.sMembers(batchJobsKey(normalizedBatchId));
+  if (indexedIds.length) {
+    return Array.from(new Set(indexedIds.map((id) => String(id).trim()).filter(Boolean)));
+  }
+
+  // Backfill fallback for batches created before index support.
+  const found = new Set<string>();
+  let cursor = "0";
+  do {
+    const scanRes: any = await (redisClient as any).scan(cursor, {
+      MATCH: "jobs:*",
+      COUNT: 200,
+    });
+    cursor = String(scanRes?.cursor || "0");
+    const keys: string[] = Array.isArray(scanRes?.keys) ? scanRes.keys : [];
+    if (!keys.length) continue;
+
+    const values = await redisClient.mGet(keys);
+    for (let i = 0; i < keys.length; i++) {
+      const raw = values[i];
+      if (!raw) continue;
+      try {
+        const rec: any = JSON.parse(raw);
+        const recBatchId = String(
+          rec?.clientBatchId ||
+          rec?.payload?.clientBatchId ||
+          rec?.metadata?.clientBatchId ||
+          rec?.payload?.metadata?.clientBatchId ||
+          ""
+        ).trim();
+        if (recBatchId !== normalizedBatchId) continue;
+
+        const jobId = String(rec?.jobId || rec?.id || keys[i].replace(/^jobs:/, "")).trim();
+        if (!jobId) continue;
+        found.add(jobId);
+      } catch {
+        // Ignore malformed records.
+      }
+    }
+  } while (cursor !== "0");
+
+  if (found.size) {
+    await redisClient.sAdd(batchJobsKey(normalizedBatchId), [...found]);
+    await redisClient.expire(batchJobsKey(normalizedBatchId), 60 * 60 * 24 * 7);
+  }
+
+  return [...found];
+}
+
+export async function deleteBatchState(batchId: string) {
+  const normalizedBatchId = String(batchId || "").trim();
+  if (!normalizedBatchId) return;
+  await redisClient.del(batchJobsKey(normalizedBatchId));
+}
+
 // Redis-based job record helpers
 export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record<string, any>) {
   const key = `jobs:${jobId}`;
@@ -75,6 +147,7 @@ function buildEnhanceArtifacts(params: {
   imageId: ImageId;
   agencyId?: string | null;
   propertyId?: string | null;
+  clientBatchId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -159,6 +232,7 @@ function buildEnhanceArtifacts(params: {
     type: "enhance",
     agencyId: params.agencyId,
     propertyId: params.propertyId,
+    clientBatchId: params.clientBatchId || undefined,
     options: params.options,
     createdAt: now,
     remoteOriginalUrl: params.remoteOriginalUrl as any,
@@ -200,6 +274,7 @@ export async function enqueueEnhanceJob(params: {
   imageId: ImageId;
   agencyId?: string | null;
   propertyId?: string | null;
+  clientBatchId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -265,10 +340,14 @@ export async function enqueueEnhanceJob(params: {
       imageId: params.imageId,
       status: "queued",
       payload,
+      clientBatchId: params.clientBatchId || undefined,
       metadata: jobMeta,
       createdAt: payload.createdAt,
     }),
   ]);
+  if (params.clientBatchId) {
+    await addJobToBatchIndex(params.clientBatchId, jobId);
+  }
   return { jobId };
 }
 
@@ -277,6 +356,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   imageId: ImageId;
   agencyId?: string | null;
   propertyId?: string | null;
+  clientBatchId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -341,10 +421,15 @@ export async function createAwaitingPaymentEnhanceJob(params: {
       imageId: params.imageId,
       status: "awaiting_payment",
       payload,
+      clientBatchId: params.clientBatchId || undefined,
       metadata: jobMeta,
       createdAt: payload.createdAt,
     }),
   ]);
+
+  if (params.clientBatchId) {
+    await addJobToBatchIndex(params.clientBatchId, jobId);
+  }
 
   return { jobId };
 }

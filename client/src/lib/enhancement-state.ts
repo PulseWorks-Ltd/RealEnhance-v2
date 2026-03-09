@@ -31,9 +31,16 @@ export function clearEnhancementStateStorage(userId?: string | null) {
     localStorage.removeItem(makeBatchKey(userId));
     localStorage.removeItem(makeActiveKey(userId));
     localStorage.removeItem("activeJobId");
+    localStorage.removeItem("currentBatch");
     // Always clear legacy keys to prevent rehydration from old data.
     localStorage.removeItem(LEGACY_BATCH_KEY);
     localStorage.removeItem(LEGACY_ACTIVE_KEY);
+
+    // Compatibility cleanup for older/session-scoped batch cache keys.
+    sessionStorage.removeItem(makeBatchKey(userId));
+    sessionStorage.removeItem(makeActiveKey(userId));
+    sessionStorage.removeItem("activeJobId");
+    sessionStorage.removeItem("currentBatch");
   } catch (err) {
     console.warn("[BATCH_CLEAR_STORAGE] failed", err);
   }

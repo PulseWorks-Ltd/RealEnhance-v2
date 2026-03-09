@@ -183,6 +183,7 @@ export interface EnhanceJobPayload {
   type: "enhance";
   agencyId?: string | null;          // Usage/billing context
   propertyId?: string | null;
+  clientBatchId?: string | null;
   listingId?: string;                // Optional grouping across listings
   manualSceneOverride?: boolean;     // Top-level override flag (legacy support)
   options: {

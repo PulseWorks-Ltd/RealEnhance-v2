@@ -1900,28 +1900,77 @@ export default function BatchProcessor() {
   // Listen for global clear requests (logout or manual clear) to reset component state and abort polling
   useEffect(() => {
     const handler = () => {
-      if (abortController) {
-        abortController.abort();
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
         setAbortController(null);
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
       queueRef.current = [];
       processedSetRef.current = new Set();
       jobIdToIndexRef.current = {};
       imageIdToIndexRef.current = {};
       jobIdToImageIdRef.current = {};
+      regionEditJobIdsRef.current = new Set();
+      strictNotifiedRef.current = new Set();
+      statusUnknownLoggedRef.current = new Set();
+      idxMissingLoggedRef.current = new Set();
+      statusHasUrlLoggedRef.current = new Set();
+      statusTargetNotReachedLoggedRef.current = new Set();
+      retryChildMappingLoggedRef.current = new Set();
+      autoFurnitureNoticeLoggedRef.current = new Set();
+      sceneDetectCacheRef.current = {};
+      scenePredictionsByIdRef.current = {};
+      clientBatchIdRef.current = null;
+      previousFileCountRef.current = 0;
       setJobId("");
       setJobIds([]);
+      setCancelIds([]);
+      setClientBatchId(null);
       setResults([]);
       setProcessedImages([]);
       setProcessedImagesByIndex({});
-      setRunState("idle");
+      setRetryingImages(new Set());
+      setRetryLoadingImages(new Set());
+      setEditingImages(new Set());
+      setEditCompletedImages(new Set());
+      setDisplayStageByIndex({});
+      setStrictRetryingIndices(new Set());
       setProgressText("");
+      setMessageIndexByImage({});
+      setAiSteps({});
+      setIsUploading(false);
+      setIsBatchRefining(false);
+      setHasRefinedImages(false);
+      setSelection(new Set());
+      setMetaByIndex({});
+      setImageRoomTypesById({});
+      setImageSceneTypesById({});
+      setManualSceneTypesById({});
+      setManualSceneOverrideById({});
+      setImageSkyReplacementById({});
+      setScenePredictionsById({});
+      setGlobalGoal("");
+      setPropertyAddress("");
+      setPreserveStructure(true);
+      setLinkImages(false);
+      setSelectedImageId(null);
+      setCurrentImageIndex(0);
+      setShowSpecificRequirements(false);
+      setPreviewImage(null);
+      setEditingImageIndex(null);
+      setActiveEditSource(null);
+      setRegionEditorOpen(false);
+      setRunState("idle");
       setFiles([]);
-      setActiveTab("upload");
+      setActiveTab("images");
+      console.log("[BATCH_STATE_CLEARED]", { source: "clear-event" });
     };
     window.addEventListener(CLEAR_EVENT, handler);
     return () => window.removeEventListener(CLEAR_EVENT, handler);
-  // AUDIT FIX: abortController is now a ref, no need in deps
+  // Uses refs for in-flight controllers/timers to avoid stale closures.
   }, []);
 
   // Auto-save state when key values change
@@ -3087,13 +3136,18 @@ export default function BatchProcessor() {
 
   // Cancel entire batch: abort client polling and notify server to cancel queued jobs
   const cancelBatchProcessing = async () => {
+    const activeClientBatchId = clientBatchIdRef.current || clientBatchId || undefined;
+    const ids = cancelIds.length ? cancelIds : jobIds;
     try {
-      if (abortController) {
-        abortController.abort();
-        setAbortController(null);
-      }
-      const ids = cancelIds;
-      if (ids.length) {
+      if (activeClientBatchId) {
+        await fetch(api('/api/batch/cancel'), withDevice({
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batchId: activeClientBatchId }),
+          signal: AbortSignal.timeout(15_000)
+        }));
+      } else if (ids.length) {
         // AUDIT FIX: added timeout to prevent hung cancel requests
         await fetch(api('/api/jobs/cancel-batch'), withDevice({
           method: 'POST',
@@ -3103,13 +3157,13 @@ export default function BatchProcessor() {
           signal: AbortSignal.timeout(15_000)
         }));
       }
-      setRunState("idle");
-      setProgressText("Cancelled");
-      clearBatchJobState(currentUserId, { resetUI: true });
+      console.log('[BATCH_CANCELLED]', { batchId: activeClientBatchId || null, ids: ids.length });
+      resetBatchState('images');
       toast({ title: 'Enhancement cancelled', description: ids.length ? `Requested cancel for ${ids.length} job(s).` : 'Stopped polling.' });
     } catch (e: any) {
       // Even if server cancel fails, clear local state to avoid stuck UI
-      clearBatchJobState(currentUserId, { resetUI: true });
+      console.warn('[BATCH_CANCELLED] server cancel failed', e);
+      resetBatchState('images');
       toast({ title: 'Cancelled locally; some jobs may still complete', description: e?.message || 'Unable to cancel batch on server', variant: 'destructive' });
     }
   };
@@ -4637,50 +4691,107 @@ export default function BatchProcessor() {
     }
   };
 
-  const handleRestart = () => {
-    // Clear all state to start fresh
+  function resetBatchState(nextTab: "upload" | "images" = "images") {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setAbortController(null);
+    }
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    if (flashAssignedTimerRef.current) {
+      clearTimeout(flashAssignedTimerRef.current);
+      flashAssignedTimerRef.current = null;
+    }
+    Object.keys(messageTimerByImageRef.current).forEach((key) => {
+      const index = Number(key);
+      const timer = messageTimerByImageRef.current[index];
+      if (timer) clearTimeout(timer);
+    });
+    messageTimerByImageRef.current = {};
+    messageStageByImageRef.current = {};
+    Object.values(editFallbackTimersRef.current).forEach((t) => clearTimeout(t));
+    editFallbackTimersRef.current = {};
+
+    queueRef.current = [];
+    processedSetRef.current = new Set();
+    jobIdToIndexRef.current = {};
+    imageIdToIndexRef.current = {};
+    jobIdToImageIdRef.current = {};
+    regionEditJobIdsRef.current = new Set();
+    strictNotifiedRef.current = new Set();
+    statusUnknownLoggedRef.current = new Set();
+    idxMissingLoggedRef.current = new Set();
+    statusHasUrlLoggedRef.current = new Set();
+    statusTargetNotReachedLoggedRef.current = new Set();
+    retryChildMappingLoggedRef.current = new Set();
+    autoFurnitureNoticeLoggedRef.current = new Set();
+    sceneDetectCacheRef.current = {};
+    scenePredictionsByIdRef.current = {};
+    clientBatchIdRef.current = null;
+    previousFileCountRef.current = 0;
+
     setFiles([]);
     setGlobalGoal("");
     setPropertyAddress("");
     setPreserveStructure(true);
+    setIsUploading(false);
     setRunState("idle");
     setJobId("");
-  setJobIds([]);
+    setJobIds([]);
+    setCancelIds([]);
+    setClientBatchId(null);
     setResults([]);
     setProgressText("");
     setProcessedImages([]);
     setProcessedImagesByIndex({});
-    setActiveTab("images"); // Reset to images tab to show the new launchpad
-    // Cancel any ongoing processing
-    if (abortController) {
-      abortController.abort();
-      setAbortController(null);
-    }
-    
-    // Reset refine states
+    setDisplayStageByIndex({});
+    setRetryingImages(new Set());
+    setRetryLoadingImages(new Set());
+    setEditingImages(new Set());
+    setEditCompletedImages(new Set());
+    setStrictRetryingIndices(new Set());
+    setMessageIndexByImage({});
+    setAiSteps({});
+    setLastDetected(null);
+    setFlashAssignedThumbnailIndex(null);
+    setPreviewImage(null);
+    setEditingImageIndex(null);
+    setActiveEditSource(null);
+    setRegionEditorOpen(false);
+    setEditingImage(null);
+    setIsEditingInProgress(false);
+    setRetryDialog({ isOpen: false, imageIndex: null });
+
     setIsBatchRefining(false);
     setHasRefinedImages(false);
-    
-    // Clear room linking state
+
     setSelection(new Set());
     setMetaByIndex({});
-
-    // Reset per-batch image-level selections
     setImageRoomTypesById({});
     setImageSceneTypesById({});
     setManualSceneTypesById({});
     setManualSceneOverrideById({});
     setImageSkyReplacementById({});
     setLinkImages(false);
-
-    // Clear client-side scene prediction state/caches to avoid cross-batch reuse
     setScenePredictionsById({});
-    scenePredictionsByIdRef.current = {};
-    sceneDetectCacheRef.current = {};
-    
-    // Clear persisted batch job state
-    clearBatchJobState();
-    
+    setSelectedImageId(null);
+    setShowSpecificRequirements(false);
+    setActiveTab(nextTab);
+
+    clearBatchJobState(currentUserId);
+    clearEnhancementStateStorage(currentUserId);
+    clearEnhancementStateStorage(undefined);
+    localStorage.removeItem("currentBatch");
+    sessionStorage.removeItem("currentBatch");
+
+    console.log('[BATCH_STATE_CLEARED]', { tab: nextTab, userId: currentUserId || null });
+    console.log('[BATCH_RESET]', { tab: nextTab, userId: currentUserId || null });
+  }
+
+  const handleRestart = () => {
+    resetBatchState("images");
   };
 
   // Cancel batch request
@@ -5908,7 +6019,7 @@ export default function BatchProcessor() {
                             size="sm"
                             onClick={cancelBatchProcessing}
                           >
-                            Cancel enhancement
+                            Cancel Current Batch
                           </Button>
                         )}
                         {(runState === 'running' || isUploading) && (

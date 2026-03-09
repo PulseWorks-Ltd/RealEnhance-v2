@@ -143,6 +143,7 @@ export function uploadRouter() {
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     const propertyAddressRaw = String((req.body as any)?.propertyAddress || '').trim();
+    const clientBatchId = String((req.body as any)?.clientBatchId || '').trim() || undefined;
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s stage2Variant=%s furnishedState=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode, (req.body as any)?.stage2Variant, (req.body as any)?.furnishedState);
       console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s stage2VariantForm=%s furnishedStateForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm), stage2VariantForm || 'unset', furnishedStateForm || 'unset');
@@ -699,6 +700,7 @@ export function uploadRouter() {
       const jobPayload = {
         userId: sessUser.id,
         imageId,
+        clientBatchId,
         remoteOriginalUrl,
         remoteOriginalKey,
         agencyId,
