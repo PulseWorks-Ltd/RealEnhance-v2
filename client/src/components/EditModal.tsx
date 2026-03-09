@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 export interface EditModalProps {
   isOpen: boolean;
   onClose: () => void;
+  displayedImage?: string;
   originalImage: string;
   enhancedImage?: string;
   onSubmit: (roiData: null, instructions?: string) => void;
@@ -21,6 +22,7 @@ export interface EditModalProps {
 export function EditModal({
   isOpen,
   onClose,
+  displayedImage,
   originalImage,
   enhancedImage,
   onSubmit,
@@ -30,6 +32,7 @@ export function EditModal({
   "data-testid": testId = "edit-modal"
 }: EditModalProps) {
   const [instructions, setInstructions] = useState("");
+  const editBaseline = displayedImage || enhancedImage || originalImage;
 
   // Clear instructions when modal opens/closes
   useEffect(() => {
@@ -57,11 +60,11 @@ export function EditModal({
         <div className="space-y-2">
           <Label className="text-sm font-medium">Before vs After:</Label>
           <CompareSlider
-            originalImage={originalImage}
-            enhancedImage={enhancedImage || originalImage}
+            originalImage={editBaseline}
+            enhancedImage={enhancedImage || editBaseline}
             height={400}
             showLabels={true}
-            originalLabel="Before"
+            originalLabel="Current"
             enhancedLabel={enhancedImage ? "After ✨" : "Original"}
             data-testid={`${testId}-comparison`}
           />

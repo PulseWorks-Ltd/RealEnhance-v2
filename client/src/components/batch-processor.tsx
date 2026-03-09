@@ -942,7 +942,7 @@ export default function BatchProcessor() {
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: EditSourceStage; jobId: string | null } | null>(null);
+  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: EditSourceStage | null; jobId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
@@ -3878,35 +3878,11 @@ export default function BatchProcessor() {
     return { stage: null, url: null };
   };
 
-  const resolveEditSource = (
-    result: any,
-    selectedStage?: StageKey | null
-  ): { url: string | null; stage: EditSourceStage | null } => {
-    const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-    const stage2Url =
-      toDisplayUrl(stageMap?.["2"]) ||
-      toDisplayUrl(stageMap?.[2]) ||
-      toDisplayUrl(stageMap?.stage2) ||
-      toDisplayUrl(result?.stage2Url) ||
-      toDisplayUrl(result?.result?.stage2Url) ||
-      null;
-    const stage1BUrl =
-      toDisplayUrl(stageMap?.["1B"]) ||
-      toDisplayUrl(stageMap?.["1b"]) ||
-      toDisplayUrl(stageMap?.stage1B) ||
-      null;
-    const stage1AUrl =
-      toDisplayUrl(stageMap?.["1A"]) ||
-      toDisplayUrl(stageMap?.["1a"]) ||
-      toDisplayUrl(stageMap?.["1"]) ||
-      toDisplayUrl(stageMap?.stage1A) ||
-      null;
-
-    if (selectedStage === "2" && stage2Url) return { url: stage2Url, stage: "stage2" };
-    if (selectedStage === "1B" && stage1BUrl) return { url: stage1BUrl, stage: "stage1B" };
-    if (selectedStage === "1A" && stage1AUrl) return { url: stage1AUrl, stage: "stage1A" };
-
-    return { url: null, stage: null };
+  const mapStageToEditSource = (stage: StageKey | null | undefined): EditSourceStage | null => {
+    if (stage === "2") return "stage2";
+    if (stage === "1B") return "stage1B";
+    if (stage === "1A") return "stage1A";
+    return null;
   };
 
   const resolveDisplayedStageForEdit = useCallback((imageIndex: number): StageKey | null => {
@@ -3945,12 +3921,19 @@ export default function BatchProcessor() {
   const getEditSourceForIndex = useCallback((imageIndex: number) => {
     const item = results[imageIndex];
     if (!item) return { url: null, stage: null } as const;
+
+    // Edit baseline must match the exact artifact currently rendered in UI.
+    const displayed = buildPreviewImage(imageIndex);
+    const displayedUrl = toDisplayUrl(displayed?.url);
     const displayedStage = resolveDisplayedStageForEdit(imageIndex);
-    return resolveEditSource(item, displayedStage);
-  }, [resolveDisplayedStageForEdit, results]);
+    return {
+      url: displayedUrl || null,
+      stage: mapStageToEditSource(displayedStage),
+    } as const;
+  }, [buildPreviewImage, resolveDisplayedStageForEdit, results]);
 
   // Handle edit image - resolve URL before opening editor
-  const handleEditImage = (imageIndex: number) => {
+  const handleEditImage = (imageIndex: number, displayedUrlOverride?: string | null) => {
     const item = results[imageIndex];
     if (!item) {
       console.error('[EDIT][load_source] No result data for index:', imageIndex);
@@ -3973,17 +3956,19 @@ export default function BatchProcessor() {
     };
 
     const resolvedEditSource = getEditSourceForIndex(imageIndex);
-    const imageUrl = resolvedEditSource.url;
+    const imageUrl =
+      toDisplayUrl(displayedUrlOverride) ||
+      resolvedEditSource.url;
     const urlSource = resolvedEditSource.stage;
     const imageId = item?.imageId || item?.result?.imageId || null;
     const sourceJobId = item?.jobId || item?.result?.jobId || null;
 
     // ✅ Verify URL is non-null before opening editor
-    if (!imageUrl || !urlSource) {
+    if (!imageUrl) {
       console.error('[EDIT][load_source] No valid URL found', {
         imageId,
         imageIndex,
-        urlSource: 'none',
+        urlSource: urlSource || 'displayed',
         item: {
           stageUrls: item?.stageUrls || null,
           resultUrl: item?.resultUrl || null,
@@ -4002,7 +3987,7 @@ export default function BatchProcessor() {
     console.log('[edit] resolved image URL', {
       imageId,
       imageIndex,
-      stage: urlSource,
+      stage: urlSource || 'displayed',
       url: imageUrl,
       completionSource: item?.completionSource || null,
       stageUrls: item?.stageUrls || item?.result?.stageUrls || null,
@@ -4010,7 +3995,7 @@ export default function BatchProcessor() {
     });
 
     // ✅ Store completion source in editor state for reference
-    setActiveEditSource({ url: imageUrl, stage: urlSource, jobId: sourceJobId });
+    setActiveEditSource({ url: imageUrl, stage: urlSource || null, jobId: sourceJobId });
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
   };
@@ -6421,11 +6406,7 @@ export default function BatchProcessor() {
                           : canUseRemotePreview
                             ? (enhancedUrl || previewUrls[i] || null)
                             : (previewUrls[i] || null);
-                        const editSource = resolveEditSource(
-                          result,
-                          selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A" ? selectedStage : null
-                        );
-                        const canEditFromDisplayedOutput = !!editSource.url;
+                        const canEditFromDisplayedOutput = !!previewUrl;
 
                         const stageBadgeLabel = (() => {
                           const artifactFinalLabel = stage2Url
@@ -6608,7 +6589,7 @@ export default function BatchProcessor() {
                                     Preview
                                   </button>
                                   <button 
-                                    onClick={() => handleEditImage(i)}
+                                    onClick={() => handleEditImage(i, previewUrl)}
                                     disabled={result?.retryInFlight || editingImages.has(i) || !canEditFromDisplayedOutput}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
@@ -6689,7 +6670,7 @@ export default function BatchProcessor() {
         <Modal isOpen={true} onClose={() => setPreviewImage(null)} maxWidth="full" contentClassName="max-w-7xl">
           {(() => {
             const previewEditSource = getEditSourceForIndex(previewImage.index);
-            const canEditFromPreview = !!previewEditSource.url;
+            const canEditFromPreview = !!toDisplayUrl(previewImage.url) || !!previewEditSource.url;
             return (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
@@ -6703,7 +6684,7 @@ export default function BatchProcessor() {
                   onClick={() => {
                     const index = previewImage.index;
                     setPreviewImage(null);
-                    handleEditImage(index);
+                    handleEditImage(index, previewImage.url);
                   }}
                   disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index) || !canEditFromPreview}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
