@@ -97,27 +97,10 @@ export interface ImageRecord {
 export type JobStatus =
   | "queued"
   | "awaiting_payment"
-  | "enhance"
-  | "edit"
-  | "region-edit"
-  | "diagnosis"
-  | "classification"
-  | "credit-purchase"
-  | "credit-grant"
-  | "credit-revoke"
-  | "credit-refund"
-  | "credit-adjust"
-  | "credit-expire"
-  | "credit-restore"
-  | "credit-transfer"
-  | "credit-batch-grant"
-  | "credit-batch-revoke"
-  | "credit-batch-refund"
-  | "credit-batch-adjust"
-  | "credit-batch-expire"
-  | "credit-batch-restore"
-  | "credit-batch-transfer"
-  | "credit-batch-purchase";
+  | "processing"
+  | "complete"
+  | "error"
+  | "failed";
 
 // Declutter mode tuning for Stage 1B (stage-ready token retained for compatibility)
 export type DeclutterMode = "light" | "stage-ready";
