@@ -23,6 +23,7 @@ type StatusItem = {
   queueStatus: QueueStatus;             // raw BullMQ state (legacy)
   success: boolean;
   imageId: string | null;
+  finalOutputUrl: string | null;
   imageUrl: string | null;
   originalUrl: string | null;
   maskUrl: string | null;
@@ -181,12 +182,15 @@ export function statusRouter() {
         const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
         const allowLocalImageUrl = localCompleted || queueCompleted || queueFailed;
 
-        // Resolve URLs from BullMQ returnvalue first, then Redis job record
-        const resultUrl: string | null =
+        // Canonical final artifact URL: all output aliases derive from this.
+        const finalOutputUrl: string | null =
+          (rv && rv.finalOutputUrl) ||
+          local.finalOutputUrl ||
           (rv && rv.resultUrl) ||
           local.resultUrl ||
           (allowLocalImageUrl ? local.imageUrl : null) ||
           null;
+        const resultUrl: string | null = finalOutputUrl;
 
         const stageUrlsRaw: Record<string, string> | null =
           ((local.stageUrls || rv?.stageUrls)
@@ -501,6 +505,7 @@ export function statusRouter() {
           queueStatus,
           success,
           imageId,
+          finalOutputUrl: resolvedResultUrl,
           imageUrl: resolvedResultUrl,
           originalUrl,
           maskUrl,
@@ -583,6 +588,7 @@ export function statusRouter() {
               );
         const j = items[0];
         base.jobId = j.id;
+        base.finalOutputUrl = j.finalOutputUrl;
         base.imageUrl = j.imageUrl;
         base.originalUrl = j.originalUrl;
         base.stageUrls = j.stageUrls;
@@ -660,11 +666,14 @@ export function statusRouter() {
       })();
       const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
       const allowLocalImageUrl = localCompleted || stateNormalized === "completed" || stateNormalized === "failed";
-      const resultUrl: string | null =
+      const finalOutputUrl: string | null =
+        (rv && rv.finalOutputUrl) ||
+        local.finalOutputUrl ||
         (rv && rv.resultUrl) ||
         local.resultUrl ||
         (allowLocalImageUrl ? local.imageUrl : null) ||
         null;
+      const resultUrl: string | null = finalOutputUrl;
       const originalUrl: string | null =
         (rv && rv.originalUrl) || local.originalUrl || null;
       const maskUrl: string | null =
@@ -839,6 +848,7 @@ export function statusRouter() {
         queueStatus,
         success,
         imageId,
+        finalOutputUrl,
         imageUrl: resultUrl,
         originalUrl,
         maskUrl,
@@ -864,6 +874,7 @@ export function statusRouter() {
         completed: success ? 1 : 0,
         total: 1,
         jobId: item.id,
+        finalOutputUrl: item.finalOutputUrl,
         imageUrl: item.imageUrl,
         originalUrl: item.originalUrl,
         stageUrls: item.stageUrls,
@@ -910,6 +921,7 @@ export function debugStatusRouter() {
         payload: { imageId: data.imageId, type: data.type },
         returnvalue: rv
           ? {
+              finalOutputUrl: rv.finalOutputUrl || rv.resultUrl || null,
               resultUrl: rv.resultUrl,
               originalUrl: rv.originalUrl,
               stageUrls: rv.stageUrls,

@@ -399,7 +399,7 @@ async function finalizeBatchForensicForJob(jobId: string, payload: any) {
       warningsCount: warnings.length,
       hardFail: validation?.hardFail === true || status === "failed",
       completionGuard,
-      finalOutputUrl: (current as any)?.resultUrl || (current as any)?.imageUrl || null,
+      finalOutputUrl: (current as any)?.finalOutputUrl || (current as any)?.resultUrl || (current as any)?.imageUrl || null,
     });
   } catch {
     // Non-blocking forensic path.
@@ -2455,6 +2455,7 @@ async function completePartialJob(params: {
     currentStage: "finalizing",
     finalStage: finalStage,
     resultStage: finalStage,
+    finalOutputUrl: resultUrl,
     resultUrl,
     imageUrl: resultUrl,
     message: userMessage,
@@ -4207,6 +4208,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       await safeWriteJobStatus(payload.jobId, {
         status: "complete",
+        finalOutputUrl: pub2Url,
         resultUrl: pub2Url,
         stageUrls: {
           "1A": stage2OnlyBaseStage === "1A" ? ((payload.stage2OnlyMode as any)?.base1AUrl || null) : ((payload.stage2OnlyMode as any)?.base1AUrl || null),
@@ -8070,6 +8072,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     
     // URLs (all written together, no partial state possible)
     originalUrl: publishedOriginal?.url,
+    finalOutputUrl: committedResultUrl,
     resultUrl: committedResultUrl,
     imageUrl: committedResultUrl,
     stageUrls: {
@@ -8375,6 +8378,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     jobId: payload.jobId,
     finalPath: finalBasePath,
     originalUrl: publishedOriginal?.url || null,
+    finalOutputUrl: pubFinalUrl || null,
     resultUrl: pubFinalUrl || null,
     stageUrls: {
       "1A": pub1AUrl || null,
@@ -8527,6 +8531,8 @@ async function handleEditJob(payload: any) {
     {
       status: "complete",
       success: true,
+      finalOutputUrl: pub.url,
+      resultUrl: pub.url,
       imageUrl: pub.url,
       meta: {
         ...payload,
@@ -8838,6 +8844,7 @@ const worker = new Worker(
             {
               status: "complete",
               success: true,
+              finalOutputUrl: pub.url,
               resultUrl: pub.url, // Primary result URL (checked by status endpoint)
               imageUrl: pub.url, // Fallback field
               originalUrl: baseImageUrl, // Return the original input URL
