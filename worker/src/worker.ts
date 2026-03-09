@@ -123,6 +123,8 @@ import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuil
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
+// Temporary hard-disable until fairness flow is redesigned for BullMQ active-claim semantics.
+const FAIR_SCHEDULER_ENABLED = false;
 const logger = console;
 
 function shouldLog(eventType?: string): boolean {
@@ -8508,7 +8510,7 @@ const worker = new Worker(
     }
 
     try {
-      if (userId) {
+      if (FAIR_SCHEDULER_ENABLED && userId) {
         const fairDecision = await evaluateFairShare(userId);
         nLog(
           `[FAIR-SCHEDULER] userId=${userId} activeUsers=${fairDecision.activeUsers} maxJobsPerUser=${fairDecision.maxJobsPerUser} userActiveJobs=${fairDecision.userActiveJobs}`
@@ -8747,7 +8749,7 @@ const worker = new Worker(
         throw new Error("Job payload missing 'type' property or is not an object");
       }
     } catch (err: any) {
-      if ((err as any)?.message === "fair-share-limit") {
+      if (FAIR_SCHEDULER_ENABLED && (err as any)?.message === "fair-share-limit") {
         nLog("[FAIR-SCHEDULER] delaying job due to per-user share", {
           jobId,
           userId,
