@@ -17,6 +17,21 @@ const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "red
 const redisClient = createClient({ url: REDIS_URL });
 redisClient.connect().catch(() => {});
 
+const DEFAULT_JOB_ATTEMPTS = Math.max(1, Number(process.env.JOB_ATTEMPTS || 3));
+const DEFAULT_JOB_BACKOFF_DELAY_MS = Math.max(100, Number(process.env.JOB_BACKOFF_DELAY_MS || 1000));
+const STUCK_PROCESSING_RECOVERY_MS = Math.max(60_000, Number(process.env.STUCK_PROCESSING_RECOVERY_MS || 20 * 60 * 1000));
+
+function buildQueueJobOptions(jobId: string) {
+  return {
+    jobId,
+    attempts: DEFAULT_JOB_ATTEMPTS,
+    backoff: {
+      type: "exponential" as const,
+      delay: DEFAULT_JOB_BACKOFF_DELAY_MS,
+    },
+  };
+}
+
 function awaitingUserKey(userId: string) {
   return `user:${userId}:jobs:awaiting_payment`;
 }
@@ -357,7 +372,7 @@ export async function enqueueEnhanceJob(params: {
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
 
   await Promise.all([
-    queue().add(JOB_QUEUE_NAME, payload, { jobId }),
+    queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId)),
     saveJobMetadata(jobMeta),
     updateJob(jobId, {
       id: jobId,
@@ -468,14 +483,79 @@ export async function enqueueStoredEnhanceJob(jobId: string): Promise<{ enqueued
     return { enqueued: false };
   }
 
+  return enqueueStoredJob(jobId);
+}
+
+export async function enqueueStoredJob(jobId: string): Promise<{ enqueued: boolean }> {
+  const rec = await getJob(jobId);
+  const payload = (rec as any)?.payload;
+  if (!payload || typeof payload !== "object") {
+    return { enqueued: false };
+  }
+
   const q = queue();
   const existing = await q.getJob(jobId);
   if (!existing) {
-    await q.add(JOB_QUEUE_NAME, payload, { jobId });
+    await q.add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId));
   }
 
   await updateJob(jobId, { status: "queued" });
   return { enqueued: true };
+}
+
+export async function scanAndRecoverStuckJobs(): Promise<{ scanned: number; recovered: number }> {
+  let scanned = 0;
+  let recovered = 0;
+  const now = Date.now();
+  let cursor = "0";
+
+  do {
+    const scanRes: any = await (redisClient as any).scan(cursor, {
+      MATCH: "jobs:*",
+      COUNT: 200,
+    });
+
+    cursor = String(scanRes?.cursor || "0");
+    const keys: string[] = Array.isArray(scanRes?.keys) ? scanRes.keys : [];
+    if (!keys.length) continue;
+
+    const values = await redisClient.mGet(keys);
+    for (let i = 0; i < keys.length; i++) {
+      const raw = values[i];
+      if (!raw) continue;
+
+      scanned += 1;
+      try {
+        const rec: any = JSON.parse(raw);
+        const status = String(rec?.status || "").toLowerCase();
+        if (status !== "processing") continue;
+
+        const updatedAtMs = Date.parse(String(rec?.updatedAt || rec?.updated_at || rec?.createdAt || rec?.payload?.createdAt || ""));
+        if (!Number.isFinite(updatedAtMs)) continue;
+        if (now - updatedAtMs <= STUCK_PROCESSING_RECOVERY_MS) continue;
+
+        const jobId = String(rec?.jobId || rec?.id || keys[i].replace(/^jobs:/, "")).trim();
+        if (!jobId) continue;
+
+        await updateJob(jobId as any, {
+          status: "failed",
+          retryable: true,
+          errorMessage: "stuck_processing_timeout",
+          stuckDetectedAt: new Date().toISOString(),
+        });
+
+        const requeue = await enqueueStoredJob(jobId);
+        if (requeue.enqueued) {
+          recovered += 1;
+          console.warn("[STUCK_JOB_RECOVERED]", { jobId, ageMs: now - updatedAtMs });
+        }
+      } catch {
+        // Ignore malformed records
+      }
+    }
+  } while (cursor !== "0");
+
+  return { scanned, recovered };
 }
 
 export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Array<{ jobId: string; createdAt: string; payload: any }>> {
@@ -605,7 +685,7 @@ export async function enqueueEditJob(params: {
     ...(params.stagingStyle ? { stagingStyle: params.stagingStyle } : {}),
   } as any;
 
-  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  await queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId));
   return { jobId };
 }
 
@@ -645,6 +725,6 @@ export async function enqueueRegionEditJob(params: {
     createdAt: now,
   } as any;
 
-  await queue().add(JOB_QUEUE_NAME, payload, { jobId });
+  await queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId));
   return { jobId };
 }

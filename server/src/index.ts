@@ -31,6 +31,7 @@ import { profileRouter } from "./routes/profile.js";
 import adminUsageRouter from "./routes/adminUsage.js";
 import agencyRouter from "./routes/agency.js";
 import { usageRouter } from "./routes/usage.js";
+import { scanAndRecoverStuckJobs } from "./services/jobs.js";
 import stripeRouter from "./routes/stripe.js";
 import adminSubscriptionRouter from "./routes/adminSubscription.js";
 import { myImagesRouter } from "./routes/myImages.js";
@@ -166,6 +167,9 @@ async function initializeAsyncServices(): Promise<void> {
 }
 
 async function main() {
+  const STUCK_RECOVERY_SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.STUCK_RECOVERY_SCAN_INTERVAL_MS || 5 * 60 * 1000));
+  let stuckRecoveryTimer: NodeJS.Timeout | null = null;
+
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });
   redisClient.on("error", (err) => console.error("[redis] error", err));
@@ -360,6 +364,23 @@ async function main() {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
     void ensureSchemaCompatibilityWithRetry();
     void initializeAsyncServices();
+
+    const runStuckRecovery = async () => {
+      try {
+        const summary = await scanAndRecoverStuckJobs();
+        if (summary.recovered > 0) {
+          console.warn("[STUCK_RECOVERY] recovered jobs", summary);
+        }
+      } catch (err) {
+        console.error("[STUCK_RECOVERY] scan failed", err);
+      }
+    };
+
+    void runStuckRecovery();
+    stuckRecoveryTimer = setInterval(() => {
+      void runStuckRecovery();
+    }, STUCK_RECOVERY_SCAN_INTERVAL_MS);
+    stuckRecoveryTimer.unref?.();
   });
 
   let shuttingDown = false;
@@ -382,6 +403,11 @@ async function main() {
           resolve();
         });
       });
+
+      if (stuckRecoveryTimer) {
+        clearInterval(stuckRecoveryTimer);
+        stuckRecoveryTimer = null;
+      }
 
       if (REDIS_URL) {
         await redisClient.quit();

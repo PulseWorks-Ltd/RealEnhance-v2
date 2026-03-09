@@ -13,7 +13,7 @@ type UiStatus = "ok" | "warning" | "error";
 type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
 type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "unknown";
 
-const STUCK_TERMINAL_MS = 10 * 60 * 1000; // 10 minutes
+const STUCK_PROCESSING_MS = 15 * 60 * 1000; // 15 minutes
 
 type StatusItem = {
   id: string;
@@ -416,7 +416,7 @@ export function statusRouter() {
           warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
         }
         const isInformationalExteriorNote = requestedStage2 === true && isExteriorScene && !stage2Present;
-        const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
+        const isStuck = isProcessingLike && updatedAtMs && (Date.now() - updatedAtMs > STUCK_PROCESSING_MS);
         if (isStuck) {
           pipelineStatus = "failed";
           warningSet.add("Processing took longer than expected. The best available result is shown.");
@@ -805,7 +805,7 @@ export function statusRouter() {
       }
 
       const isProcessingLike = stateOut === "processing" || stateOut === "queued" || stateOut === "awaiting_payment";
-      const isStuck = isProcessingLike && hasOutputs && updatedAtMs && (Date.now() - updatedAtMs > STUCK_TERMINAL_MS);
+      const isStuck = isProcessingLike && updatedAtMs && (Date.now() - updatedAtMs > STUCK_PROCESSING_MS);
       if (isStuck) {
         stateOut = "failed";
         warningSet.add("Processing took longer than expected. The best available result is shown.");

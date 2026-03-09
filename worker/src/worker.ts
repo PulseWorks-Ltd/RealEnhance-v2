@@ -1,5 +1,7 @@
 import type { ComplianceVerdict } from "./ai/compliance";
 import { Worker, Job } from "bullmq";
+import { Queue, QueueEvents } from "bullmq";
+import * as BullMQ from "bullmq";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import {
   AnyJobPayload,
@@ -2586,6 +2588,8 @@ process.on('unhandledRejection', (reason, promise) => {
 // Module-level ref so shutdown handlers can access the BullMQ worker
 // (assigned after the Worker constructor at the bottom of the file)
 let _workerRef: import('bullmq').Worker | null = null;
+let _queueEventsRef: QueueEvents | null = null;
+let _queueSchedulerRef: { close?: () => Promise<void> } | null = null;
 
 async function gracefulShutdown(signal: string) {
   logEvent("SYSTEM_START", { phase: "shutdown", signal });
@@ -2598,6 +2602,14 @@ async function gracefulShutdown(signal: string) {
   forceTimer.unref();
 
   try {
+    if (_queueEventsRef) {
+      await _queueEventsRef.close();
+      _queueEventsRef = null;
+    }
+    if (_queueSchedulerRef?.close) {
+      await _queueSchedulerRef.close();
+      _queueSchedulerRef = null;
+    }
     if (_workerRef) {
       await _workerRef.close();
       logEvent("SYSTEM_START", { phase: "shutdown_complete" });
@@ -8576,6 +8588,31 @@ nLog('\n'); // Force flush
 
 // Keep billing eventually consistent via non-blocking ledger retries.
 startBillingFinalizationRetryLoop();
+
+// BullMQ stalled detection instrumentation.
+_queueEventsRef = new QueueEvents(JOB_QUEUE_NAME, {
+  connection: { url: REDIS_URL },
+});
+_queueEventsRef.on("stalled", ({ jobId }) => {
+  nLog(`[BULLMQ_STALLED] jobId=${jobId || "unknown"}`);
+  logEvent("SYSTEM_ERROR", { phase: "bullmq_stalled", jobId: jobId || null });
+});
+_queueEventsRef.on("error", (err) => {
+  nLog("[BULLMQ_QUEUE_EVENTS_ERROR]", (err as any)?.message || String(err));
+});
+
+// QueueScheduler is available in BullMQ v4; BullMQ v5 handles stalled checks within Worker.
+const QueueSchedulerCtor = (BullMQ as any).QueueScheduler;
+if (typeof QueueSchedulerCtor === "function") {
+  _queueSchedulerRef = new QueueSchedulerCtor(JOB_QUEUE_NAME, {
+    connection: { url: REDIS_URL },
+  });
+} else {
+  // Best-effort compatibility bootstrap for BullMQ v5.
+  const schedulerCompatQueue = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+  _queueSchedulerRef = schedulerCompatQueue as any;
+  nLog("[BULLMQ] QueueScheduler not exported by this BullMQ version; using Worker stalled recovery.");
+}
 
 // BullMQ worker
 const worker = new Worker(
