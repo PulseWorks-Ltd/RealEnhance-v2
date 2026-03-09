@@ -18,6 +18,7 @@ import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
 import {
   isStage2RetryableGenerationError,
+  runFinalStage2ParallelChecks,
   resolveStage2MaxAttempts,
   resolveStage2Model,
   runStage2,
@@ -94,6 +95,7 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
     ? "block"
     : "log";
+const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
@@ -7296,6 +7298,95 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } catch (e) {
            nLog(`[FIXTURE_VALIDATOR_ERROR] ${e}`);
         }
+      }
+
+      // Final pre-publish identity gate (parallel): fixture validator + Gemini 2.5 Pro structural review.
+      let seePass = true;
+      let finalFailValidator: "final_fixture" | "structural_review" | "unknown" = "unknown";
+      let finalFailReason = "";
+
+      try {
+        nLog("[STRUCTURAL_REVIEW_PRO_START]");
+        const { fixtureResult, structuralReview } = await runFinalStage2ParallelChecks(
+          validationBasePath,
+          path2,
+          { enableStructuralReview: ENABLE_FINAL_STRUCTURAL_REVIEW }
+        );
+
+        if (fixtureResult.status === "fail") {
+          finalFailValidator = "final_fixture";
+          seePass = false;
+          finalFailReason = fixtureResult.reason || "final_fixture_failed";
+          nLog(`[VALIDATOR_FAIL] validator=final_fixture reason=${finalFailReason}`);
+        }
+
+        if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
+          if (structuralReview.result === "FAIL") {
+            finalFailValidator = "structural_review";
+            seePass = false;
+            finalFailReason = structuralReview.explanation || "structural_review_failed";
+            nLog(`[STRUCTURAL_REVIEW_PRO_FAIL] confidence=${structuralReview.confidence} explanation=${structuralReview.explanation}`);
+          } else {
+            nLog(`[STRUCTURAL_REVIEW_PRO_PASS] confidence=${structuralReview.confidence} explanation=${structuralReview.explanation}`);
+          }
+        }
+      } catch (finalGateErr: any) {
+        finalFailValidator = finalFailValidator === "unknown" ? "structural_review" : finalFailValidator;
+        seePass = false;
+        finalFailReason = finalGateErr?.message || String(finalGateErr);
+        nLog(`[STRUCTURAL_REVIEW_PRO_FAIL] confidence=0 explanation=${finalFailReason}`);
+      }
+
+      if (!seePass) {
+        const normalizedFinalReason = String(finalFailReason || "final_identity_review_failed")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "") || "final_identity_review_failed";
+        const retryReason = finalFailValidator === "final_fixture"
+          ? "final_fixture_failed"
+          : "structural_review_failed";
+
+        stage2LocalReasons.push(retryReason);
+        setStage2AttemptValidation(path2, finalFailValidator, [retryReason, normalizedFinalReason]);
+        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+        pendingStage2RetryStrategy = "NORMAL";
+        pendingStage2RetryReason = retryReason;
+
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: finalFailValidator,
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryStrategy: "NORMAL",
+            reason: `${retryReason}:${normalizedFinalReason}`,
+          },
+        });
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          nLog(`[VALIDATE_FINAL] stage=2 decision=retry blockedBy=${finalFailValidator} retries=${attempt}`);
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: `${retryReason}:${normalizedFinalReason}`,
+          });
+          continue;
+        }
+
+        const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+        const fallbackStage = fallback1B ? "1B" : "1A";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `${retryReason}_exhausted`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallback1B || path1A;
+        stage2CandidatePath = path2;
+        nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=${finalFailValidator} retries=${attempt - 1}`);
+        break;
       }
 
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);

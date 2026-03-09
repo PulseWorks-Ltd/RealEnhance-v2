@@ -22,6 +22,7 @@ import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layout
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
+import { runFixtureValidator, type FixtureValidatorResult } from "../validators/fixtureValidator";
 
 const logger = console;
 
@@ -34,6 +35,162 @@ type Stage2GenerationPlan = {
   topK: number;
   escalated: boolean;
 };
+
+export type StructuralReviewProResult = {
+  result: "PASS" | "FAIL";
+  confidence: number;
+  explanation: string;
+};
+
+export type FinalStage2ParallelReviewResult = {
+  fixtureResult: FixtureValidatorResult;
+  structuralReview: StructuralReviewProResult;
+};
+
+export const STRUCTURAL_IDENTITY_REVIEW_PROMPT = `ROLE
+You are an architectural comparison inspector reviewing two photographs of an interior room.
+
+TASK
+Determine whether Image B still represents the same physical room as Image A.
+
+The staged image may contain new furniture, lighting, or decor.
+These changes are allowed and should be ignored.
+
+Your task is ONLY to evaluate whether the underlying room architecture is the same.
+
+ARCHITECTURAL ELEMENTS TO COMPARE
+
+Evaluate whether the following elements remain consistent between the two images:
+
+* wall positions and angles
+* room proportions and depth
+* window count and window placement
+* door count and door placement
+* openings between spaces
+* ceiling geometry and height
+* major architectural structures (columns, beams, half-walls)
+* camera viewpoint and perspective
+
+ACCEPTABLE DIFFERENCES
+
+Ignore differences in:
+
+* furniture
+* decorations
+* lighting fixtures added for staging
+* rugs, curtains, artwork, plants
+* color grading or brightness
+* minor perspective normalization
+
+UNACCEPTABLE DIFFERENCES
+
+Fail the review if any of the following appear:
+
+* walls moved, extended, or removed
+* room size or shape changed
+* windows moved or swapped to another wall
+* doors moved or removed
+* new architectural openings created
+* camera viewpoint shifted significantly
+* the room appears to be a different physical space
+
+DECISION RULE
+
+Ask yourself:
+
+"Would a reasonable property buyer clearly recognize this as the same room?"
+
+If YES -> PASS
+If NO -> FAIL
+
+OUTPUT FORMAT
+
+Return JSON only.
+
+{
+  "result": "PASS" | "FAIL",
+  "confidence": 0-100,
+  "explanation": "short explanation of the decision"
+}`;
+
+export async function runGeminiStructuralReviewPro(
+  originalImagePath: string,
+  stagedImagePath: string
+): Promise<StructuralReviewProResult> {
+  const ai = getGeminiClient();
+  const original = toBase64(originalImagePath);
+  const staged = toBase64(stagedImagePath);
+
+  const response = await (ai as any).models.generateContent({
+    model: "gemini-2.5-pro",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: STRUCTURAL_IDENTITY_REVIEW_PROMPT },
+          { text: "Image A (original uploaded room):" },
+          { inlineData: { mimeType: original.mime, data: original.data } },
+          { text: "Image B (staged output):" },
+          { inlineData: { mimeType: staged.mime, data: staged.data } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const text = String(response?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
+  const cleaned = text.replace(/```json|```/gi, "").trim();
+  const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
+
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(jsonCandidate);
+  } catch {
+    return {
+      result: "FAIL",
+      confidence: 0,
+      explanation: "invalid_json_from_structural_review",
+    };
+  }
+
+  const rawResult = String(parsed?.result || "").toUpperCase();
+  const result: "PASS" | "FAIL" = rawResult === "PASS" ? "PASS" : "FAIL";
+  const confidenceRaw = Number(parsed?.confidence);
+  const confidence = Number.isFinite(confidenceRaw)
+    ? Math.max(0, Math.min(100, confidenceRaw))
+    : 0;
+  const explanation = typeof parsed?.explanation === "string" && parsed.explanation.trim().length > 0
+    ? parsed.explanation.trim()
+    : "no_explanation";
+
+  return { result, confidence, explanation };
+}
+
+export async function runFinalStage2ParallelChecks(
+  originalImagePath: string,
+  stagedImagePath: string,
+  opts?: { enableStructuralReview?: boolean }
+): Promise<FinalStage2ParallelReviewResult> {
+  const enableStructuralReview = opts?.enableStructuralReview !== false;
+  const [fixtureResult, structuralReview] = await Promise.all([
+    runFixtureValidator(originalImagePath, stagedImagePath),
+    enableStructuralReview
+      ? runGeminiStructuralReviewPro(originalImagePath, stagedImagePath)
+      : Promise.resolve({
+          result: "PASS" as const,
+          confidence: 100,
+          explanation: "final_structural_review_disabled",
+        }),
+  ]);
+
+  return {
+    fixtureResult,
+    structuralReview,
+  };
+}
 
 function isStructuralRetryReason(reason: Stage2RetryReason): boolean {
   return reason === "structural_violation" || reason === "opening_removed";
