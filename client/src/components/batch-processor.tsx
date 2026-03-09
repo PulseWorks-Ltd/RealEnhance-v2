@@ -273,6 +273,31 @@ function toDisplayUrl(value: unknown): string | null {
   return null;
 }
 
+function normalizeVersionToTimestamp(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric;
+    }
+    const parsed = Number(new Date(trimmed));
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  if (value instanceof Date) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // FIX 2: Filter backend warnings and errors for user-friendly display
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2684,8 +2709,12 @@ export default function BatchProcessor() {
               const existing = copy[idx] || {};
               
               // ✅ PATCH 5: Version timestamp race guard - only accept newer updates
-              const incomingVersion = it?.version || it?.updatedAt || it?.updated_at || Date.now();
-              const existingVersion = existing.version || existing.updatedAt || 0;
+              const incomingVersion = normalizeVersionToTimestamp(
+                it?.version ?? it?.updatedAt ?? it?.updated_at
+              );
+              const existingVersion = normalizeVersionToTimestamp(
+                existing.version ?? existing.updatedAt
+              );
               
               if (incomingVersion < existingVersion) {
                 // Stale update - ignore it
@@ -2754,7 +2783,7 @@ export default function BatchProcessor() {
                 completionSource: completionSourceResolved,
                 retryLatestUrl: (isRetryChildJob && completedFinal ? (displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
                 editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.editLatestUrl ?? null) : (existing.editLatestUrl ?? null),
-                version: incomingVersion, // ✅ Update version timestamp
+                version: Math.max(incomingVersion, existingVersion), // ✅ Store normalized numeric timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
                 jobId: polledId || parentJobId || existing.jobId,
