@@ -597,14 +597,15 @@ export function retrySingleRouter() {
           selectedSourceStage !== "original_upload" &&
           selectedSourceUrl
         ) {
+          // Reachability probes against signed URLs can return false negatives.
+          // Keep the computed stage baseline and let copy/download be the source of truth.
           const baselineReachable = await isRetrySourceReachable(selectedSourceUrl);
-          if (!baselineReachable && originalUploadUrlCandidate) {
-            selectedSourceStage = "original_upload";
-            selectedSourceUrl = originalUploadUrlCandidate;
-            retryFromStage = "1A";
-            stage2OnlyDisabled = true;
-            retryMode = "full_pipeline_restart";
-            console.log(`[RETRY_FALLBACK_FULL_PIPELINE] job=${parentJobId || "unknown"} reason=baseline_url_unreachable source=original_upload`);
+          if (!baselineReachable) {
+            console.warn("[RETRY_BASELINE_UNREACHABLE_PROBE] preserving selected baseline despite failed HEAD probe", {
+              parentJobId: parentJobId || null,
+              selectedSourceStage,
+              selectedSourceUrl,
+            });
           }
         }
 
@@ -963,6 +964,32 @@ export function retrySingleRouter() {
         });
       }
 
+      const effectiveRetrySourceStage =
+        retrySourceStage || normalizeStageLabel(selectedSourceStage || "") || selectedSourceStage || null;
+      const effectiveRetrySourceUrl = retrySourceUrl || selectedSourceUrl || null;
+      const effectiveRetryParentJobId = parentJobId || null;
+
+      if (!effectiveRetrySourceStage || !effectiveRetrySourceUrl || !effectiveRetryParentJobId) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_contract_invalid",
+          message: "Manual retry requires retryType, sourceStage, sourceUrl, and parentJobId",
+          details: {
+            retryType: "manual_retry",
+            sourceStagePresent: !!effectiveRetrySourceStage,
+            sourceUrlPresent: !!effectiveRetrySourceUrl,
+            parentJobIdPresent: !!effectiveRetryParentJobId,
+          },
+        });
+      }
+
+      const effectiveBaselineStage = payloadBaselineStage || effectiveRetrySourceStage;
+      const effectiveBaselineUrl = payloadBaselineUrl || effectiveRetrySourceUrl;
+      console.log("[RETRY_BASELINE]", {
+        baselineStage: effectiveBaselineStage,
+        baselineUrl: effectiveBaselineUrl,
+      });
+
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId: (rec as any).imageId,
@@ -973,16 +1000,16 @@ export function retrySingleRouter() {
         stage2OnlyMode: effectiveStage2OnlyMode,
         retryInfo: {
           retryType: "manual_retry",
-          sourceStage: retrySourceStage,
-          sourceUrl: retrySourceUrl,
+          sourceStage: effectiveRetrySourceStage,
+          sourceUrl: effectiveRetrySourceUrl,
           sourceKey: retrySourceKey,
           stage1BWasRequested,
-          baselineStage: payloadBaselineStage || selectedSourceStage || null,
-          baselineUrl: payloadBaselineUrl || selectedSourceUrl || null,
+          baselineStage: effectiveBaselineStage,
+          baselineUrl: effectiveBaselineUrl,
           requestedStages: effectiveRequestedStages,
           stagesToRun: effectiveStagesToRun,
           parentImageId,
-          parentJobId,
+          parentJobId: effectiveRetryParentJobId,
           clientBatchId,
         }
       }, jobId);  // Pass pre-generated jobId for billing
