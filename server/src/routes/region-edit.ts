@@ -7,6 +7,7 @@ import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
+import { consumeFreeEditCount } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -190,17 +191,21 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const baseVersionId = found.versionId;
 
     const editCounterJobId = `edit_counter:${record.imageId || record.id}`;
-    const editMeta = await getJobMetadata(editCounterJobId);
-    const editCount = Math.max(0, Number(editMeta?.editCount || 0));
-    if (editCount >= 2) {
+    const editUse = await consumeFreeEditCount({
+      imageId: String(record.imageId || record.id),
+      userId: sessUser.id,
+    });
+    if (!editUse.allowed) {
       return res.status(429).json({
         success: false,
         error: "edit_limit_reached",
         code: "EDIT_LIMIT_REACHED",
-        editCount,
+        editCount: editUse.count,
         message: "You have reached the maximum allowed free edits for this image. Please submit a new enhancement.",
       });
     }
+
+    const editMeta = await getJobMetadata(editCounterJobId);
 
     const baseEditMeta = editMeta && editMeta.jobId
       ? editMeta
@@ -213,7 +218,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     await saveJobMetadata({
       ...baseEditMeta,
-      editCount: editCount + 1,
+      freeEditCount: editUse.count,
+      freeEditLimit: editUse.limit,
+      editCount: editUse.count,
       lastEditAt: new Date().toISOString(),
     } as any);
 

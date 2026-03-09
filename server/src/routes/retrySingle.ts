@@ -13,7 +13,7 @@ import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore"
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
-import { reserveAllowance } from "../services/usageLedger.js";
+import { consumeFreeRetryCount, reserveAllowance } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -888,17 +888,22 @@ export function retrySingleRouter() {
       // Enforce one free retry via parent job metadata.
       if (parentJobId) {
         try {
-          if (!parentMeta) {
-            parentMeta = await getJobMetadata(parentJobId);
-          }
+          const retryUse = await consumeFreeRetryCount({
+            parentJobId,
+            userId: sessUser.id,
+          });
 
-          if (parentMeta?.freeRetryUsed === true) {
+          if (!retryUse.allowed) {
             return res.status(429).json({
               success: false,
               error: "free_retry_exhausted",
               code: "FREE_RETRY_EXHAUSTED",
               message: "The free retry has already been used for this image. Please submit a new enhancement.",
             });
+          }
+
+          if (!parentMeta) {
+            parentMeta = await getJobMetadata(parentJobId);
           }
 
           const baseMeta = parentMeta && parentMeta.jobId
@@ -912,7 +917,9 @@ export function retrySingleRouter() {
 
           await saveJobMetadata({
             ...baseMeta,
-            freeRetryUsed: true,
+            freeRetryCount: retryUse.count,
+            freeRetryLimit: retryUse.limit,
+            freeRetryUsed: retryUse.count >= 1,
             freeRetryUsedAt: new Date().toISOString(),
           } as any);
         } catch (err: any) {

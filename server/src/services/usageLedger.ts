@@ -4,6 +4,7 @@ import { getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 import { getTotalBundleRemaining, consumeBundleImages } from "@realenhance/shared/usage/imageBundles.js";
 import { PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import { getAgency } from "@realenhance/shared/agencies.js";
+import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 
 export type ReservationStatus = "reserved" | "consumed" | "released" | "partially_released";
@@ -23,6 +24,83 @@ export interface ReservationResult extends UsageSnapshot {
   jobId: string;
   status: ReservationStatus;
   reservedImages: number;
+}
+
+const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 1));
+const FREE_EDIT_LIMIT = Math.max(0, Number(process.env.FREE_EDIT_LIMIT || 2));
+const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
+
+type FreeCounterConsumeResult = {
+  allowed: boolean;
+  count: number;
+  limit: number;
+};
+
+async function atomicConsumeCounter(key: string, limit: number): Promise<FreeCounterConsumeResult> {
+  const redis = getRedis();
+  const redisAny = redis as any;
+
+  if (typeof redisAny.eval !== "function") {
+    // Fallback for in-memory test/mock clients that don't implement Lua.
+    const current = Number((await redis.get(key)) || 0);
+    if (current >= limit) {
+      return { allowed: false, count: current, limit };
+    }
+    const next = current + 1;
+    await redis.set(key, String(next));
+    if (next === 1 && typeof redisAny.expire === "function") {
+      await redisAny.expire(key, FREE_COUNTER_TTL_SECONDS);
+    }
+    return { allowed: true, count: next, limit };
+  }
+
+  const script = `
+    local key = KEYS[1]
+    local limit = tonumber(ARGV[1])
+    local ttl = tonumber(ARGV[2])
+    local value = redis.call('INCR', key)
+    if ttl > 0 and value == 1 then
+      redis.call('EXPIRE', key, ttl)
+    end
+    if value > limit then
+      redis.call('DECR', key)
+      return {0, value - 1}
+    end
+    return {1, value}
+  `;
+
+  const evalRes = await redisAny.eval(script, {
+    keys: [key],
+    arguments: [String(limit), String(FREE_COUNTER_TTL_SECONDS)],
+  });
+
+  const arr = Array.isArray(evalRes) ? evalRes : [0, 0];
+  const allowed = Number(arr[0] || 0) === 1;
+  const count = Math.max(0, Number(arr[1] || 0));
+
+  return { allowed, count, limit };
+}
+
+export async function consumeFreeRetryCount(params: {
+  parentJobId: string;
+  userId?: string;
+}): Promise<FreeCounterConsumeResult> {
+  const parentJobId = String(params.parentJobId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!parentJobId) return { allowed: false, count: 0, limit: FREE_RETRY_LIMIT };
+  const key = `usage:free-retry:${userId || "anon"}:${parentJobId}`;
+  return atomicConsumeCounter(key, FREE_RETRY_LIMIT);
+}
+
+export async function consumeFreeEditCount(params: {
+  imageId: string;
+  userId?: string;
+}): Promise<FreeCounterConsumeResult> {
+  const imageId = String(params.imageId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!imageId) return { allowed: false, count: 0, limit: FREE_EDIT_LIMIT };
+  const key = `usage:free-edit:${userId || "anon"}:${imageId}`;
+  return atomicConsumeCounter(key, FREE_EDIT_LIMIT);
 }
 
 async function getPlanLimitForAgency(agencyId: string): Promise<number> {
