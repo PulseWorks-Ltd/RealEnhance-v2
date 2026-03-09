@@ -438,62 +438,90 @@ interface PersistedBatchJob {
   industry: string;
   settings: {
     preserveStructure: boolean;
+    latest?: {
+      retryLatestUrl?: string | null;
+      editLatestUrl?: string | null;
+      originalUploadUrl?: string | null;
+    },
     allowStaging: boolean;
-    allowRetouch: boolean;
+    baselineStage: "original" | "1A" | "1B" | "latest";
     outdoorStaging: string;
     furnitureReplacement: boolean;
     declutter: boolean;
     stagingStyle: string;
     propertyAddress?: string;
+    void viewingStage;
+
+    const retryLatestUrl = toDisplayUrl(latest?.retryLatestUrl) || null;
+    const editLatestUrl = toDisplayUrl(latest?.editLatestUrl) || null;
   };
   fileMetadata: PersistedFileMetadata[];
   jobIdToIndex: Record<string, number>;
+    const originalUploadUrl = toDisplayUrl(latest?.originalUploadUrl) || null;
+
+    // Latest successful artifact order:
+    // retryLatestUrl -> editLatestUrl -> stage2 -> stage1B -> stage1A -> original_upload
+    if (retryLatestUrl) {
+      return {
+        baselineStage: "latest",
+        stagesToRun: ["2"],
+        allowStaging: true,
+        sourceUrl: retryLatestUrl,
+        sourceStageLabel: "retry_latest",
+      };
+    }
+
+    if (editLatestUrl) {
+      return {
+        baselineStage: "latest",
+        stagesToRun: ["2"],
+        allowStaging: true,
+        sourceUrl: editLatestUrl,
+        sourceStageLabel: "edit_latest",
+      };
+    }
+
+    if (stage2Url) {
+      return {
+        baselineStage: "1B",
+        stagesToRun: ["2"],
+        allowStaging: true,
+        sourceUrl: stage2Url,
+        sourceStageLabel: "stage2",
+      };
+    }
+
+    if (stage1BUrl) {
+      return {
+        baselineStage: "1B",
+        stagesToRun: ["2"],
+        allowStaging: true,
+        sourceUrl: stage1BUrl,
+        sourceStageLabel: "stage1b",
+      };
+    }
+
+    if (stage1AUrl) {
+      return {
+        baselineStage: "1A",
+        stagesToRun: ["1B", "2"],
+        allowStaging: true,
+        sourceUrl: stage1AUrl,
+        sourceStageLabel: "stage1a",
+      };
+    }
+
+    if (originalUploadUrl) {
+      return {
+        baselineStage: "original",
+        stagesToRun: ["1A", "1B", "2"],
+        allowStaging: true,
+        sourceUrl: originalUploadUrl,
+        sourceStageLabel: "original_upload",
+      };
+    }
   imageIdToIndex?: Record<string, number>;
-}
-
-type StagingStyle =
-  | "standard_listing"
-  | "family_home"
-  | "urban_apartment"
-  | "high_end_luxury"
-  | "country_lifestyle"
-  | "lived_in_rental";
-
-const JOB_EXPIRY_HOURS = 24; // Jobs expire after 24 hours
-const STUCK_UI_MS = 10 * 60 * 1000; // 10 minutes
-const EDIT_COMPLETE_FALLBACK_MS = (() => {
-  const raw = Number((import.meta as any).env?.VITE_EDIT_COMPLETE_FALLBACK_MS);
-  if (!Number.isFinite(raw) || raw < 3000) return 12000;
-  return Math.min(120000, Math.round(raw));
-})();
-
-/**
- * Context-aware baseline selection for retry.
- * 
- * Rules (authoritative):
- *   - Retry from Stage 2 view → baseline = Stage 1B, run Stage 2 only
- *   - Retry from Stage 1B view (Stage 2 exists) → baseline = Stage 1A, run 1B + 2
- *   - Retry from Stage 1B view (no Stage 2) → baseline = Stage 1A, run 1B only
- *   - Retry from Stage 1A / original → baseline = original file, run full pipeline
- * 
- * This ensures:
- *   - Stage 2 output is NEVER fed back into Stage 2 (no compounding)
- *   - Each retry uses the correct upstream stage as its baseline
- */
-function computeRetryBaseline(
-  viewingStage: StageKey | null,
-  stageUrls: Record<string, string | null>,
-): {
-  baselineStage: "original" | "1A" | "1B";
-  stagesToRun: StageKey[];
-  allowStaging: boolean;
-  sourceUrl: string | null;
-  sourceStageLabel: string;
-} {
-  const stage2Url = stageUrls?.['2'] || stageUrls?.stage2 || null;
-  const stage1BUrl = stageUrls?.['1B'] || stageUrls?.['1b'] || stageUrls?.stage1B || null;
-  const stage1AUrl = stageUrls?.['1A'] || stageUrls?.['1a'] || stageUrls?.['1'] || stageUrls?.stage1A || null;
-
+    // Final fallback: full pipeline from original file upload.
   // Case A: Viewing Stage 2 → re-stage from Stage 1B
   if (viewingStage === "2" && stage1BUrl) {
     return {
@@ -3730,8 +3758,27 @@ export default function BatchProcessor() {
       const hasStage1BBaseline = !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
       const hasStage1ABaseline = !!(stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A);
       
-      // Compute baseline and stages using the new context-aware logic
-      const baseline = computeRetryBaseline(retryContextStage, stageMap);
+      const retryLatestUrl =
+        toDisplayUrl(res?.retryLatestUrl) ||
+        toDisplayUrl(res?.result?.retryLatestUrl) ||
+        null;
+      const editLatestUrl =
+        toDisplayUrl(res?.editLatestUrl) ||
+        toDisplayUrl(res?.result?.editLatestUrl) ||
+        null;
+      const originalUploadUrl =
+        toDisplayUrl(res?.originalImageUrl) ||
+        toDisplayUrl(res?.result?.originalImageUrl) ||
+        toDisplayUrl(res?.originalUrl) ||
+        toDisplayUrl(res?.result?.originalUrl) ||
+        null;
+
+      // Compute baseline and stages using latest successful artifact order.
+      const baseline = computeRetryBaseline(retryContextStage, stageMap, {
+        retryLatestUrl,
+        editLatestUrl,
+        originalUploadUrl,
+      });
 
       // Backend contract: if Stage 1B was part of the requested pipeline, Stage 2 retry requires Stage 1B baseline.
       // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
@@ -4117,7 +4164,7 @@ export default function BatchProcessor() {
       // Use the baseline URL provided by computeRetryBaseline (context-aware)
       // Falls back to original file when baselineUrl is null (full pipeline retry)
       const retrySource = {
-        stage: (sourceStageLabel || "original") as "original" | "stage1a" | "stage1b" | "stage2",
+        stage: sourceStageLabel || "original_upload",
         url: baselineUrl || originalFromStoreUrl || null,
       };
       const parentJobId = results[imageIndex]?.jobId || jobIds[imageIndex] || null;

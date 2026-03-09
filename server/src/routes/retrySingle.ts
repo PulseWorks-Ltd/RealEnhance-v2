@@ -217,6 +217,8 @@ function resolveRetryBaseline(params: {
   sourceStageRaw: string;
   sourceUrlRaw: string;
   stageUrls: Record<string, string | null>;
+  retryLatestUrl?: string;
+  editLatestUrl?: string;
   stage1BWasRequested: boolean;
   stage1ATainted?: boolean;
   originalUploadUrl?: string;
@@ -228,7 +230,18 @@ function resolveRetryBaseline(params: {
   retryMode: "stage_resume" | "full_pipeline_restart";
   hardFail: { code: string; message: string } | null;
 } {
-  const { jobId, requestedStage, sourceStageRaw, sourceUrlRaw, stageUrls, stage1BWasRequested, stage1ATainted, originalUploadUrl } = params;
+  const {
+    jobId,
+    requestedStage,
+    sourceStageRaw,
+    sourceUrlRaw,
+    stageUrls,
+    retryLatestUrl,
+    editLatestUrl,
+    stage1BWasRequested,
+    stage1ATainted,
+    originalUploadUrl,
+  } = params;
 
   let selectedSourceStage: string | null = null;
   let selectedSourceUrl: string | null = null;
@@ -248,92 +261,41 @@ function resolveRetryBaseline(params: {
       logger: captureKey,
     });
 
-  if (requestedStage === "1A") {
-    if (stage1ATainted) {
-      hardFail = {
-        code: "stage1a_tainted_requires_upload",
-        message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
-      };
-    }
-    selectedSourceStage = "1A";
-    selectedSourceUrl = resolve("1A");
-  } else if (requestedStage === "1B") {
-    if (stage1ATainted) {
-      hardFail = {
-        code: "stage1a_tainted_requires_upload",
-        message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
-      };
-    }
-    selectedSourceStage = "1A-stage-ready";
-    selectedSourceUrl = resolve("1A");
-    retryFromStage = "1B";
-    if (!selectedSourceUrl) {
-      hardFail = {
-        code: "missing_stage1a_baseline",
-        message: "Stage 1A baseline is required for Stage 1B retry but was not found",
-      };
-      selectedSourceStage = null;
-    }
-  } else if (requestedStage === "2") {
-    selectedSourceStage = "1B-stage-ready";
-    selectedSourceUrl = resolve("1B");
-    if (!selectedSourceUrl) {
-      selectedSourceStage = "1A";
-      selectedSourceUrl = resolve("1A");
-      stage2OnlyDisabled = true;
-      retryFromStage = "1B";
+  const stage2Url = resolve("2");
+  const stage1BUrl = resolve("1B");
+  const stage1AUrl = resolve("1A");
 
-      if (!selectedSourceUrl) {
-        const fallbackOriginalUploadUrl = originalUploadUrl || sourceUrlRaw || null;
-        if (fallbackOriginalUploadUrl) {
-          selectedSourceStage = "original_upload";
-          selectedSourceUrl = fallbackOriginalUploadUrl;
-          retryFromStage = "1A";
-          stage2OnlyDisabled = true;
-          retryMode = "full_pipeline_restart";
-        } else {
-          hardFail = {
-            code: "missing_stage1a_baseline",
-            message: "Stage 1A baseline is required to rebuild Stage 1B before Stage 2 retry but was not found",
-          };
-          selectedSourceStage = null;
-          stage2OnlyDisabled = false;
-        }
-      } else if (stage1ATainted) {
-        hardFail = {
-          code: "stage1a_tainted_requires_upload",
-          message: "Stage 1A output is flagged as tainted. Retry must start from the original upload image.",
-        };
-        selectedSourceStage = null;
-        selectedSourceUrl = null;
-        stage2OnlyDisabled = false;
-      }
-    }
-  } else if (sourceUrlRaw) {
-    selectedSourceStage = normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "stage2";
-    selectedSourceUrl = sourceUrlRaw;
-  } else {
-    const stage2Url = resolve("2");
-    const stage1BUrl = resolve("1B");
-    const stage1AUrl = resolve("1A");
-    if (stage2Url && stage1BUrl) {
-      selectedSourceStage = "1B-stage-ready";
-      selectedSourceUrl = stage1BUrl;
-    } else if (stage1BUrl) {
-      selectedSourceStage = "1B-stage-ready";
-      selectedSourceUrl = stage1BUrl;
-    } else if (stage1AUrl) {
-      selectedSourceStage = "1A";
-      selectedSourceUrl = stage1AUrl;
-    }
-    const fallbackOriginalUploadUrl = originalUploadUrl || sourceUrlRaw || null;
-    if (!selectedSourceUrl && fallbackOriginalUploadUrl) {
-      selectedSourceStage = "original_upload";
-      selectedSourceUrl = fallbackOriginalUploadUrl;
-      retryFromStage = "1A";
-      stage2OnlyDisabled = true;
-      retryMode = "full_pipeline_restart";
-    }
+  const orderedCandidates: Array<{ stage: string; url: string | null | undefined }> = [
+    { stage: normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "manual_source", url: sourceUrlRaw || null },
+    { stage: "retry_latest", url: retryLatestUrl || null },
+    { stage: "edit_latest", url: editLatestUrl || null },
+    { stage: "2", url: stage2Url },
+    { stage: "1B-stage-ready", url: stage1BUrl },
+    { stage: "1A", url: stage1ATainted ? null : stage1AUrl },
+    { stage: "original_upload", url: originalUploadUrl || null },
+  ];
+
+  const selected = orderedCandidates.find((entry) => typeof entry.url === "string" && entry.url.trim().length > 0) || null;
+
+  if (selected) {
+    selectedSourceStage = selected.stage;
+    selectedSourceUrl = selected.url as string;
+  }
+
+  if (!selectedSourceUrl) {
+    hardFail = {
+      code: "retry_baseline_not_found",
+      message: "Unable to resolve retry baseline from latest successful artifacts",
+    };
+  }
+
+  if (selectedSourceStage === "original_upload") {
+    retryFromStage = "1A";
+    stage2OnlyDisabled = true;
+    retryMode = "full_pipeline_restart";
+  } else if (selectedSourceStage === "1A" && requestedStage === "2") {
+    retryFromStage = "1B";
+    stage2OnlyDisabled = true;
   }
 
   const keysFound = Object.keys(stageUrls).filter((key) => {
@@ -488,6 +450,16 @@ export function retrySingleRouter() {
 
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
           const metaStageUrls = parentMeta?.stageUrls;
+          const retryLatestUrl =
+            (parentJob as any)?.retryLatestUrl ||
+            (parentMeta as any)?.retryLatestUrl ||
+            (parentMeta as any)?.result?.retryLatestUrl ||
+            null;
+          const editLatestUrl =
+            (parentJob as any)?.editLatestUrl ||
+            (parentMeta as any)?.editLatestUrl ||
+            (parentMeta as any)?.result?.editLatestUrl ||
+            null;
           const originalUploadUrl =
             (parentJob as any)?.payload?.remoteOriginalUrl ||
             (parentJob as any)?.remoteOriginalUrl ||
@@ -507,6 +479,8 @@ export function retrySingleRouter() {
             sourceStageRaw,
             sourceUrlRaw,
             stageUrls: allStageUrls,
+            retryLatestUrl: retryLatestUrl || undefined,
+            editLatestUrl: editLatestUrl || undefined,
             stage1BWasRequested,
             stage1ATainted: isStage1ATainted(parentJob, parentMeta),
             originalUploadUrl: originalUploadUrl || undefined,
@@ -534,6 +508,9 @@ export function retrySingleRouter() {
             const hasStage1BBaseline =
               !!selectedSourceStage &&
               (selectedSourceStage === "1B" ||
+                selectedSourceStage === "2" ||
+                selectedSourceStage === "retry_latest" ||
+                selectedSourceStage === "edit_latest" ||
                 selectedSourceStage === "1B-light" ||
                 selectedSourceStage === "1B-stage-ready" ||
                 selectedSourceStage.toLowerCase().startsWith("1b"));
@@ -561,9 +538,8 @@ export function retrySingleRouter() {
             stage1BWasRequested = true;
           }
           
-          // Never allow edit stages as baseline
-          if (!selectedSourceUrl || !selectedSourceStage || selectedSourceStage.toLowerCase().startsWith('edit')) {
-            return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline - edit stages not allowed' });
+          if (!selectedSourceUrl || !selectedSourceStage) {
+            return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline' });
           }
           
           console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
