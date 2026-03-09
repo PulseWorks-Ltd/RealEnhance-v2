@@ -415,7 +415,8 @@ export async function finalizeReservation(params: {
  * 
  * This function is ONLY called by:
  * - /api/batch/retry-single (manual retry route)
- * - /api/retry (legacy manual retry route)
+ *
+ * Legacy /api/retry is deprecated and disabled.
  * 
  * NOT called by:
  * - validator_retry (auto-retry after false positive) - FREE
