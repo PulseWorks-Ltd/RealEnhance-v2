@@ -235,6 +235,7 @@ export async function runStage2GenerationAttempt(
     : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
 
   let inputForStage2 = basePath;
+  let stagingMaskBuffer: Buffer | null = null;
   if (opts.stagingRegion) {
     try {
       const meta = await sharp(basePath).metadata();
@@ -262,6 +263,22 @@ export async function runStage2GenerationAttempt(
         jobId: opts.jobId,
         localPath: guidedPath,
       });
+      // Build a strict binary mask (white inside region, transparent outside)
+      try {
+        const whiteRect = await sharp({ create: { width: w, height: h, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).png().toBuffer();
+        const maskBuf = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+          .composite([{ input: whiteRect, left: x, top: y }])
+          .png()
+          .toBuffer();
+        stagingMaskBuffer = maskBuf;
+        const maskPath = siblingOutPath(basePath, "-staging-mask", ".png");
+        await sharp(maskBuf).toFile(maskPath);
+        await logImageAttemptUrl({ stage: "2", attempt: Math.max(1, opts.attempt ?? 1), jobId: opts.jobId, localPath: maskPath });
+        focusLog("STAGE2_MASK", "[stage2] Built explicit staging mask", { jobId: opts.jobId, width: W, height: H, x, y, w, h });
+      } catch (e) {
+        focusLog("STAGE2_MASK", "[stage2] Failed to build explicit staging mask; continuing without it", { error: String(e), jobId: opts.jobId });
+        stagingMaskBuffer = null;
+      }
       inputForStage2 = guidedPath;
     } catch (e) {
       focusLog("TEMP_FILE", "[stage2] Failed to build guided staging input; proceeding with original base image", e);
@@ -284,6 +301,11 @@ export async function runStage2GenerationAttempt(
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
       });
+
+  // If we have a staging region, strongly insist edits are limited to the provided mask.
+  if (opts.stagingRegion) {
+    textPrompt = `ONLY EDIT INSIDE MASK: An explicit mask image is supplied as a separate part. You MUST only modify pixels inside the mask region. Do NOT alter any pixels, architecture, openings, windows, doors, floors, or lighting outside the provided mask. If the mask is empty, return the input image unchanged.` + "\n\n" + textPrompt;
+  }
 
   const styleModifier = selectedStyle === "nz_standard" ? undefined : STYLE_PROMPT_MODIFIERS[selectedStyle];
   if (styleModifier) {
@@ -378,12 +400,21 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   const requestParts: any[] = [];
+  // Preferred ordering: text prompt first, then base image(s), then explicit mask (if available)
+  requestParts.push({ text: textPrompt });
   requestParts.push({ inlineData: { mimeType: mime, data } });
   if (opts.referenceImagePath) {
     const ref = toBase64(opts.referenceImagePath);
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
   }
-  requestParts.push({ text: textPrompt });
+  if (stagingMaskBuffer) {
+    try {
+      const maskB64 = stagingMaskBuffer.toString("base64");
+      requestParts.push({ inlineData: { mimeType: "image/png", data: maskB64 } });
+    } catch (e) {
+      focusLog("STAGE2_MASK", "[stage2] Failed to attach mask to requestParts", { error: String(e), jobId: opts.jobId });
+    }
+  }
 
   logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
   const generationConfig: any = {

@@ -814,11 +814,53 @@ export function retrySingleRouter() {
             }
           : undefined;
 
-      const hasValidStage2OnlyPayload = !!stage2OnlyMode?.enabled && (
-        stage2OnlyMode.baseStage === "1A"
-          ? (!!stage2OnlyMode.base1AUrl && !stage1BWasRequested)
-          : !!stage2OnlyMode.base1BUrl
+      // Defensive fallback: if this is a Stage-2 retry with a valid selected baseline,
+      // infer Stage-2-only mode even when client flags are incomplete.
+      const normalizedSelectedSourceStage = String(selectedSourceStage || "").trim().toLowerCase();
+      const inferredBaseStage: "1A" | "1B" = normalizedSelectedSourceStage.startsWith("1a") ? "1A" : "1B";
+      const inferredSourceStage: "1A" | "1B-light" | "1B-stage-ready" =
+        inferredBaseStage === "1A"
+          ? "1A"
+          : (normalizedSelectedSourceStage === "1b-light" ? "1B-light" : "1B-stage-ready");
+
+      const effectiveStage2OnlyMode = stage2OnlyMode || (
+        requestedStage === "2" &&
+        !!selectedSourceUrl &&
+        !stage2OnlyDisabled &&
+        retryMode !== "full_pipeline_restart"
+          ? {
+              enabled: true,
+              baseStage: inferredBaseStage,
+              base1BUrl: inferredBaseStage === "1B" ? selectedSourceUrl : undefined,
+              base1AUrl: inferredBaseStage === "1A" ? selectedSourceUrl : stage1AFromParent,
+              sourceStage: inferredSourceStage,
+              stage1BMode: stage2OnlyStage1BMode,
+            }
+          : undefined
       );
+
+      const hasValidStage2OnlyPayload = !!effectiveStage2OnlyMode?.enabled && (
+        effectiveStage2OnlyMode.baseStage === "1A"
+          ? (!!effectiveStage2OnlyMode.base1AUrl && !stage1BWasRequested)
+          : !!effectiveStage2OnlyMode.base1BUrl
+      );
+
+      // Ensure worker receives an explicit execution plan.
+      // Without this, manual retries can be interpreted as Stage-2-only by default.
+      const effectiveStagesToRun: Array<"1A" | "1B" | "2"> = stagesToRun.length > 0
+        ? stagesToRun
+        : (requestedStage === "2"
+            ? ((retryMode === "full_pipeline_restart" || stage2OnlyDisabled)
+                ? ["1A", "1B", "2"]
+                : ["2"])
+            : []);
+      const effectiveRequestedStages: Array<"1A" | "1B" | "2"> = requestedStagesList.length > 0
+        ? requestedStagesList
+        : effectiveStagesToRun;
+
+      if (effectiveStagesToRun.includes("1B")) {
+        stage1BWasRequested = true;
+      }
 
       if (stage2OnlyRequested && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !hasValidStage2OnlyPayload) {
         return res.status(409).json({
@@ -829,7 +871,7 @@ export function retrySingleRouter() {
       }
 
       if (retryFromStage) {
-        console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!stage2OnlyMode}`);
+        console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!effectiveStage2OnlyMode} stagesToRun=${effectiveStagesToRun.join(",") || "none"}`);
       }
 
       // Free retry contract: exactly one free retry per parent image.
@@ -928,7 +970,7 @@ export function retrySingleRouter() {
         remoteOriginalUrl,
         remoteOriginalKey,
         options,
-        stage2OnlyMode,
+        stage2OnlyMode: effectiveStage2OnlyMode,
         retryInfo: {
           retryType: "manual_retry",
           sourceStage: retrySourceStage,
@@ -937,8 +979,8 @@ export function retrySingleRouter() {
           stage1BWasRequested,
           baselineStage: payloadBaselineStage || selectedSourceStage || null,
           baselineUrl: payloadBaselineUrl || selectedSourceUrl || null,
-          requestedStages: requestedStagesList,
-          stagesToRun,
+          requestedStages: effectiveRequestedStages,
+          stagesToRun: effectiveStagesToRun,
           parentImageId,
           parentJobId,
           clientBatchId,
