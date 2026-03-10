@@ -100,6 +100,7 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
+import { runUnifiedValidator, type Stage2LocalSignals } from "./validators/unifiedValidator";
 import { detectCurtainRail } from "./validators/curtainRailDetector";
 import {
   detectRelocation,
@@ -6818,7 +6819,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
 
-      // Stage-2 local catastrophic gate: block obvious structural corruption before Gemini validators.
+      const normalizeValidatorReason = (reason: string): string => {
+        const normalized = String(reason || "unknown")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "");
+        return normalized || "unknown";
+      };
+
+      const clamp01 = (value: number): number => {
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.min(1, value));
+      };
+
+      let semanticWallDriftNorm = 0;
+      let semanticOpeningsDeltaNorm = 0;
+      let maskedEdgeDriftNorm = 0;
+      let edgeOpeningRiskNorm = 0;
+
       try {
         const [semanticSignals, maskedSignals] = await Promise.all([
           runSemanticStructureValidator({
@@ -6836,106 +6855,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }),
         ]);
 
-        const semanticWallDriftPct = Number(((semanticSignals?.walls?.driftRatio ?? 0) * 100).toFixed(2));
-        const semanticOpeningsDeltaTotal =
+        semanticWallDriftNorm = clamp01(Number(semanticSignals?.walls?.driftRatio ?? 0));
+        semanticOpeningsDeltaNorm = clamp01(
           Math.abs(semanticSignals?.windows?.change ?? 0) +
           Math.abs(semanticSignals?.doors?.change ?? 0) +
           Math.abs(semanticSignals?.openings?.created ?? 0) +
-          Math.abs(semanticSignals?.openings?.closed ?? 0);
-        const maskedDriftPct = Number(((maskedSignals?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
-        const maskedOpeningsDeltaTotal =
-          Math.abs(maskedSignals?.createdOpenings ?? 0) +
-          Math.abs(maskedSignals?.closedOpenings ?? 0);
+          Math.abs(semanticSignals?.openings?.closed ?? 0)
+        );
+        maskedEdgeDriftNorm = clamp01(Number(maskedSignals?.maskedEdgeDrift ?? 0));
+        edgeOpeningRiskNorm = clamp01(Number(maskedSignals?.edgeOpeningRisk ?? 0));
 
-        const stage2Consensus = classifyStructuralConsensusCase({
-          stage: "2",
-          validationMode: "FULL_STAGE_ONLY",
-          jobId: payload.jobId,
-          semantic: {
-            windowsStatus: semanticOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
-            wallDriftStatus: semanticWallDriftPct >= 12 ? "FAIL" : "PASS",
-          },
-          masked: {
-            maskedDriftStatus: maskedDriftPct > 18 ? "FAIL" : "PASS",
-            openingsStatus: maskedOpeningsDeltaTotal > 0 ? "FAIL" : "PASS",
-          },
-          composite: {
-            decision: (semanticWallDriftPct >= 90 || maskedDriftPct >= 90) ? "FAIL" : "PASS",
-          },
-        });
-
-        const extremeLocalFail =
-          stage2Consensus.mode === "CATASTROPHIC_BACKSTOP" ||
-          (semanticWallDriftPct >= 90 && maskedDriftPct >= 90) ||
-          semanticWallDriftPct >= 95 ||
-          maskedDriftPct >= 95;
-
-        nLog("[STAGE2_EXTREME_LOCAL_GATE]", {
+        nLog("[STAGE2_LOCAL_SIGNALS]", {
           jobId: payload.jobId,
           attempt,
-          semanticWallDriftPct,
-          semanticOpeningsDeltaTotal,
-          maskedDriftPct,
-          maskedOpeningsDeltaTotal,
-          consensusMode: stage2Consensus.mode,
-          derivedWarnings: stage2Consensus.derivedWarnings,
-          extremeLocalFail,
+          semanticWallDrift: semanticWallDriftNorm,
+          semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+          maskedEdgeDrift: maskedEdgeDriftNorm,
+          edgeOpeningRisk: edgeOpeningRiskNorm,
         });
-
-        if (extremeLocalFail) {
-          stage2LocalReasons.push("extreme_local_validator_fail");
-          pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
-          pendingStage2RetryStrategy = "NORMAL";
-          pendingStage2RetryReason = "extreme_local_validator_fail";
-
-          mergeAttemptValidation("2", attempt, {
-            final: {
-              result: "FAILED",
-              finalHard: true,
-              finalCategory: "local_catastrophic",
-              retryTriggered: attempt < MAX_STAGE2_RETRIES,
-              retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-              retryStrategy: "NORMAL",
-              reason: "extreme_local_validator_fail",
-            },
-          });
-
-          logValidatorResult({
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            validator: "localCatastrophicGate",
-            result: "FAIL",
-            reason: `extreme_local_validator_fail_drift_semantic_${semanticWallDriftPct.toFixed(2)}_drift_masked_${maskedDriftPct.toFixed(2)}`,
-          });
-
-          if (attempt < MAX_STAGE2_RETRIES) {
-            logValidateFinal(attempt, "retry", attempt);
-            logStage2Retry(attempt, "extreme_local_validator_fail");
-            logEvent("STAGE_RETRY", {
-              jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              reason: "extreme_local_validator_fail",
-            });
-            continue;
-          }
-
-          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1A;
-          const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = "extreme_local_validator_fail_exhausted";
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          break;
-        }
       } catch (localGateErr: any) {
-        nLog("[STAGE2_EXTREME_LOCAL_GATE_ERROR]", {
+        nLog("[STAGE2_LOCAL_SIGNALS_ERROR]", {
           jobId: payload.jobId,
           attempt,
           error: localGateErr?.message || String(localGateErr),
@@ -6943,31 +6882,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
 
-      // BEGIN NEW SEQUENTIAL VALIDATORS
+      // Local validators are sensors, not judges. Collect outcomes first, then escalate via unified validator.
       let seqPass = true;
       let failMessage = "";
       let failValidator: "envelope" | "openings" | "fixtures" | "floor" | "unknown" = "unknown";
-      let validatorErrored = false;
-      const normalizeValidatorReason = (reason: string): string => {
-        const normalized = String(reason || "unknown")
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_+|_+$/g, "");
-        return normalized || "unknown";
-      };
-      
+
+      let envelopePass = true;
+      let openingPass = true;
+      let fixturePass = true;
+      let floorPass = true;
+
       try {
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        failValidator = "envelope";
         const envRes = await runEnvelopeValidator(validationBasePath, path2);
+        envelopePass = envRes.status !== "fail";
         if (envRes.status === "fail") {
           seqPass = false;
           failMessage = envRes.reason;
+          failValidator = "envelope";
           logValidatorResult({
             jobId: payload.jobId,
             imageId: payload.imageId,
@@ -6985,139 +6921,143 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             result: "PASS",
             reason: "none",
           });
-          
-          failValidator = "openings";
-          const opRes = await runOpeningValidator(validationBasePath, path2);
-          if (opRes.status === "fail") {
-            seqPass = false;
-            failMessage = opRes.reason;
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "openingValidator",
-              result: "FAIL",
-              reason: normalizeValidatorReason(failMessage),
-            });
-          } else {
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "openingValidator",
-              result: "PASS",
-              reason: "none",
-            });
-            
-            failValidator = "fixtures";
-            const fixRes = await runFixtureValidator(validationBasePath, path2);
-            if (fixRes.status === "fail") {
-              seqPass = false;
-              failMessage = fixRes.reason;
-              logValidatorResult({
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt,
-                validator: "fixtureValidator",
-                result: "FAIL",
-                reason: normalizeValidatorReason(failMessage),
-              });
-            } else {
-              logValidatorResult({
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt,
-                validator: "fixtureValidator",
-                result: "PASS",
-                reason: "none",
-              });
-
-              failValidator = "floor";
-              const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
-              if (floorRes.status === "fail") {
-                seqPass = false;
-                failMessage = floorRes.reason;
-                logValidatorResult({
-                  jobId: payload.jobId,
-                  imageId: payload.imageId,
-                  attempt,
-                  validator: "floorIntegrityValidator",
-                  result: "FAIL",
-                  reason: normalizeValidatorReason(failMessage),
-                });
-              } else {
-                logValidatorResult({
-                  jobId: payload.jobId,
-                  imageId: payload.imageId,
-                  attempt,
-                  validator: "floorIntegrityValidator",
-                  result: "PASS",
-                  reason: "none",
-                });
-              }
-            }
-          }
         }
 
-        if (!seqPass) {
-            const retryReason = validatorErrored
-              ? `validator_error_${failValidator}`
-              : "sequential_validator_failed";
-            stage2LocalReasons.push(retryReason);
-            pendingStage2StructuralFailureType = validatorErrored ? null : "STRUCTURAL_INVARIANT";
-            pendingStage2RetryStrategy = "NORMAL";
-            pendingStage2RetryReason = retryReason;
+        const opRes = await runOpeningValidator(validationBasePath, path2);
+        openingPass = opRes.status !== "fail";
+        if (opRes.status === "fail") {
+          seqPass = false;
+          if (!failMessage) {
+            failMessage = opRes.reason;
+            failValidator = "openings";
+          }
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openingValidator",
+            result: "FAIL",
+            reason: normalizeValidatorReason(opRes.reason),
+          });
+        } else {
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openingValidator",
+            result: "PASS",
+            reason: "none",
+          });
+        }
 
-            mergeAttemptValidation("2", attempt, {
-                final: {
-                    result: "FAILED",
-                    finalHard: true,
-                    finalCategory: validatorErrored ? "validator_error" : "sequential_validator_failed",
-                    retryTriggered: attempt < MAX_STAGE2_RETRIES,
-                    retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-                    retryStrategy: "NORMAL",
-                    reason: validatorErrored ? retryReason : failMessage,
-                }
-            });
+        const fixRes = await runFixtureValidator(validationBasePath, path2);
+        fixturePass = fixRes.status !== "fail";
+        if (fixRes.status === "fail") {
+          seqPass = false;
+          if (!failMessage) {
+            failMessage = fixRes.reason;
+            failValidator = "fixtures";
+          }
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "fixtureValidator",
+            result: "FAIL",
+            reason: normalizeValidatorReason(fixRes.reason),
+          });
+        } else {
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "fixtureValidator",
+            result: "PASS",
+            reason: "none",
+          });
+        }
 
-            if (attempt < MAX_STAGE2_RETRIES) {
-              logValidateFinal(attempt, "retry", attempt);
-              logStage2Retry(attempt, normalizeValidatorReason(validatorErrored ? retryReason : failMessage));
-                logEvent("STAGE_RETRY", {
-                    jobId: payload.jobId,
-                    stage: "2",
-                    retry: attempt + 1,
-                    retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-                    reason: validatorErrored ? retryReason : failMessage,
-                });
-                continue;
-            } else {
-                const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
-                const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-                stage2Blocked = true;
-                stage2FallbackStage = fallbackStage;
-                stage2BlockedReason = validatorErrored ? "validator_error_exhausted" : "sequential_validators_exhausted";
-                fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-                path2 = fallbackPath;
-                stage2CandidatePath = fallbackPath;
-                break;
-            }
+        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
+        floorPass = floorRes.status !== "fail";
+        if (floorRes.status === "fail") {
+          seqPass = false;
+          if (!failMessage) {
+            failMessage = floorRes.reason;
+            failValidator = "floor";
+          }
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "floorIntegrityValidator",
+            result: "FAIL",
+            reason: normalizeValidatorReason(floorRes.reason),
+          });
+        } else {
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "floorIntegrityValidator",
+            result: "PASS",
+            reason: "none",
+          });
         }
       } catch (err: any) {
-        validatorErrored = true;
         seqPass = false;
         failMessage = err?.message || String(err);
-        const retryReason = `validator_error_${failValidator}`;
         logValidatorResult({
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          validator: `${failValidator}Validator`,
+          validator: `${failValidator || "unknown"}Validator`,
           result: "FAIL",
           reason: normalizeValidatorReason(failMessage),
         });
+        envelopePass = false;
+        openingPass = false;
+        fixturePass = false;
+        floorPass = false;
+      }
+
+      const localSignals: Stage2LocalSignals = {
+        structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm, envelopePass ? 0 : 1)),
+        wallDrift: clamp01(semanticWallDriftNorm),
+        maskedEdgeDrift: clamp01(maskedEdgeDriftNorm),
+        edgeOpeningRisk: clamp01(edgeOpeningRiskNorm),
+        openingCountMismatch: clamp01(Math.max(semanticOpeningsDeltaNorm, openingPass ? 0 : 1)),
+        floorPlaneShift: floorPass ? 0 : 1,
+        fixtureMismatch: fixturePass ? 0 : 1,
+        islandDetectionDrift: 0,
+      };
+
+      const unifiedLocalResult = runUnifiedValidator(localSignals);
+      const formattedSignals = `structuralDegreeChange:${localSignals.structuralDegreeChange.toFixed(4)},wallDrift:${localSignals.wallDrift.toFixed(4)},maskedEdgeDrift:${localSignals.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${localSignals.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${localSignals.openingCountMismatch.toFixed(4)},floorPlaneShift:${localSignals.floorPlaneShift.toFixed(4)},fixtureMismatch:${localSignals.fixtureMismatch.toFixed(4)},islandDetectionDrift:${localSignals.islandDetectionDrift.toFixed(4)}`;
+
+      if (unifiedLocalResult.severity === "CATASTROPHIC") {
+        const catastrophicReason = unifiedLocalResult.warnings[0] || "catastrophic_structural_change";
+        nLog(
+          `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=CATASTROPHIC\nreason=${catastrophicReason}\ndecision=${unifiedLocalResult.decision}`
+        );
+      } else {
+        nLog(
+          `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=${unifiedLocalResult.severity}\nscore=${unifiedLocalResult.score.toFixed(4)}\nsignals={${formattedSignals}}\ndecision=${unifiedLocalResult.decision}`
+        );
+      }
+
+      unifiedValidation = {
+        passed: unifiedLocalResult.decision === "PROCEED_TO_GEMINI",
+        hardFail: unifiedLocalResult.decision === "RETRY",
+        score: unifiedLocalResult.score,
+        reasons: unifiedLocalResult.warnings,
+        warnings: unifiedLocalResult.warnings,
+        evidence: { anchorChecks: {} },
+      } as any;
+
+      if (unifiedLocalResult.decision === "RETRY") {
+        const retryReason = "unified_validator";
         stage2LocalReasons.push(retryReason);
-        pendingStage2StructuralFailureType = null;
+        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
         pendingStage2RetryStrategy = "NORMAL";
         pendingStage2RetryReason = retryReason;
 
@@ -7125,17 +7065,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           final: {
             result: "FAILED",
             finalHard: true,
-            finalCategory: "validator_error",
+            finalCategory: "unified_validator",
             retryTriggered: attempt < MAX_STAGE2_RETRIES,
             retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
             retryStrategy: "NORMAL",
-            reason: retryReason,
-          }
+            reason: unifiedLocalResult.severity.toLowerCase(),
+          },
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
           logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, normalizeValidatorReason(retryReason));
+          logStage2Retry(attempt, retryReason);
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
             stage: "2",
@@ -7152,20 +7092,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
         stage2Blocked = true;
         stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = "validator_error_exhausted";
+        stage2BlockedReason = "unified_validator_exhausted";
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallbackPath;
         stage2CandidatePath = fallbackPath;
+        logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }
 
-      // Mock unifiedValidation for downstream compliance logic
-      unifiedValidation = { passed: seqPass, hardFail: !seqPass, score: seqPass ? 100 : 0, reasons: seqPass ? [] : [failMessage], warnings: [], evidence: { anchorChecks: {} } } as any;
-
-      if (!seqPass) {
-         continue; 
-      }
-      
       let compositeDecision = "pass";
       let complianceDecision = "not_run";
       let geminiConfirmStatus = "not_run";

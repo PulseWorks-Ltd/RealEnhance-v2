@@ -24,6 +24,25 @@ export interface MaskedEdgeResult {
   createdOpenings: number;
   closedOpenings: number;
   maskedEdgeDrift: number;
+  edgeOpeningRisk: number;
+}
+
+function detectEdgeOpening(mask: Buffer, width: number, height: number): number {
+  const borderWidth = Math.max(1, Math.floor(width * 0.04));
+  const yStart = Math.floor(height * 0.25);
+  const yEnd = Math.floor(height * 0.75);
+  let edgeCount = 0;
+  let total = 0;
+
+  for (let y = yStart; y < yEnd; y++) {
+    for (let x = width - borderWidth; x < width; x++) {
+      total++;
+      if (mask[y * width + x] > 0) edgeCount++;
+    }
+  }
+
+  if (total === 0) return 0;
+  return edgeCount / total;
 }
 
 /**
@@ -291,6 +310,10 @@ export async function runMaskedEdgeValidator({
       height
     );
 
+    const originalEdgeOpeningDensity = detectEdgeOpening(originalStructure.mask, width, height);
+    const enhancedEdgeOpeningDensity = detectEdgeOpening(enhancedStructure.mask, width, height);
+    const edgeOpeningRisk = Math.max(0, Math.min(1, originalEdgeOpeningDensity - enhancedEdgeOpeningDensity));
+
     // Determine created/closed openings
     let createdOpenings = 0;
     let closedOpenings = 0;
@@ -320,6 +343,7 @@ export async function runMaskedEdgeValidator({
       createdOpenings,
       closedOpenings,
       maskedEdgeDrift: maskedDrift,
+      edgeOpeningRisk,
     };
 
     // LOG-ONLY OUTPUT (NO BLOCKING)
@@ -331,6 +355,10 @@ export async function runMaskedEdgeValidator({
     console.log(
       `[MASK][stage2] openings created: +${createdOpenings}, closed: -${closedOpenings} ` +
         (createdOpenings || closedOpenings ? "(FAIL)" : "(OK)")
+    );
+
+    console.log(
+      `[MASK][stage2] edge opening risk: ${(edgeOpeningRisk * 100).toFixed(2)}%`
     );
 
     console.log(
@@ -350,6 +378,7 @@ export async function runMaskedEdgeValidator({
       createdOpenings: 0,
       closedOpenings: 0,
       maskedEdgeDrift: 0,
+      edgeOpeningRisk: 0,
     };
   }
 }
