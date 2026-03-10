@@ -1664,6 +1664,7 @@ export default function BatchProcessor() {
     pendingJobIds: string[],
     options?: {
       imageIds?: string[];
+      previewUrls?: string[];
       requiredCredits?: number;
       availableCredits?: number;
       missingCredits?: number;
@@ -1708,6 +1709,7 @@ export default function BatchProcessor() {
       jobIds: normalizedJobIds,
       imageIds: options?.imageIds || pendingRestoreSession?.imageIds || [],
       fileMetadata,
+      previewUrls: options?.previewUrls || pendingRestoreSession?.previewUrls || [],
       requestedCount: Math.max(fileMetadata.length, requiredCredits, normalizedJobIds.length),
       requiredCredits,
       availableCredits: available,
@@ -1731,8 +1733,10 @@ export default function BatchProcessor() {
       }
 
       if (creditGateModal.pendingJobIds.length > 0) {
+        const persistentPreviewUrls = await buildPersistentPreviewUrls();
         persistPendingEnhancementSession(creditGateModal.pendingJobIds, {
           imageIds: pendingRestoreSession?.imageIds || [],
+          previewUrls: persistentPreviewUrls,
           requiredCredits: creditGateModal.requiredCredits,
           availableCredits: creditGateModal.availableCredits,
           missingCredits: creditGateModal.missingCredits,
@@ -1755,6 +1759,7 @@ export default function BatchProcessor() {
     creditGateModal.pendingJobIds,
     creditGateModal.requiredCredits,
     pendingRestoreSession,
+    buildPersistentPreviewUrls,
     persistPendingEnhancementSession,
     toast,
   ]);
@@ -2038,9 +2043,43 @@ export default function BatchProcessor() {
   }
 
   const previewUrls = useMemo(
-    () => files.map((f: any) => (f.__restored ? RESTORED_PLACEHOLDER : URL.createObjectURL(f))),
+    () => files.map((f: any) => {
+      if (f.__restored) {
+        const restoredPreview = String(f.__restoredPreviewUrl || "").trim();
+        return restoredPreview || RESTORED_PLACEHOLDER;
+      }
+      return URL.createObjectURL(f);
+    }),
     [files]
   );
+
+  const fileToDataUrl = useCallback((file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("preview_read_failed"));
+    reader.readAsDataURL(file);
+  }), []);
+
+  const buildPersistentPreviewUrls = useCallback(async (): Promise<string[]> => {
+    const converted = await Promise.all(files.map(async (file: any, index) => {
+      const restoredPreview = String(file?.__restoredPreviewUrl || "").trim();
+      if (restoredPreview) return restoredPreview;
+
+      if (file?.__restored === true) return "";
+
+      try {
+        return await fileToDataUrl(file as File);
+      } catch {
+        const fallback = String(previewUrls[index] || "").trim();
+        if (fallback.startsWith("http://") || fallback.startsWith("https://") || fallback.startsWith("data:image/")) {
+          return fallback;
+        }
+        return "";
+      }
+    }));
+
+    return converted;
+  }, [fileToDataUrl, files, previewUrls]);
 
   useEffect(() => () => {
     previewUrls.forEach(u => {
@@ -2059,6 +2098,7 @@ export default function BatchProcessor() {
   // Restore batch job state on component mount
   useEffect(() => {
     const userId = currentUserId;
+    if (runState !== "idle") return;
     if (!userId) {
       console.log("[BATCH_RESTORE_SKIPPED_NO_USER]");
       clearBatchJobState(undefined, { resetUI: true });
@@ -2153,13 +2193,14 @@ export default function BatchProcessor() {
 
     if (!hasActiveBatch) {
       if (!savedState?.fileMetadata?.length && pendingSession.fileMetadata.length > 0) {
-        const restoredFiles = pendingSession.fileMetadata.map((meta) => {
+        const restoredFiles = pendingSession.fileMetadata.map((meta, idx) => {
           const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
           const file = new File([blob], meta.name, {
             type: meta.type,
             lastModified: meta.lastModified,
           });
           (file as any).__restored = true;
+          (file as any).__restoredPreviewUrl = pendingSession.previewUrls[idx] || "";
           return file;
         });
         setFiles(restoredFiles);
@@ -2170,7 +2211,7 @@ export default function BatchProcessor() {
       setActiveTab("images");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId]);
+  }, [currentUserId, runState]);
 
   // Clear enhancement state when user changes (cross-account guard)
   useEffect(() => {
@@ -3659,8 +3700,10 @@ export default function BatchProcessor() {
           : Math.max(0, Number(availableCredits ?? 0));
 
         if (pendingJobIds.length > 0) {
+          const persistentPreviewUrls = await buildPersistentPreviewUrls();
           persistPendingEnhancementSession(pendingJobIds, {
             imageIds: pendingImageIds,
+            previewUrls: persistentPreviewUrls,
             requiredCredits: required,
             availableCredits: available,
             missingCredits: Math.max(0, required - available),

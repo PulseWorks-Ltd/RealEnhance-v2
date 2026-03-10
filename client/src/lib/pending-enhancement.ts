@@ -16,6 +16,7 @@ export type PendingEnhancementSession = {
   jobIds: string[];
   imageIds: string[];
   fileMetadata: PendingEnhancementFileMetadata[];
+  previewUrls: string[];
   requestedCount: number;
   requiredCredits: number;
   availableCredits: number;
@@ -29,6 +30,7 @@ type PendingEnhancementSessionInput = {
   jobIds: string[];
   imageIds?: string[];
   fileMetadata?: PendingEnhancementFileMetadata[];
+  previewUrls?: string[];
   requestedCount?: number;
   requiredCredits?: number;
   availableCredits?: number;
@@ -39,6 +41,11 @@ type PendingEnhancementSessionInput = {
 
 function normalizeIds(ids: string[]): string[] {
   return Array.from(new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean)));
+}
+
+function normalizePreviewUrls(urls: unknown): string[] {
+  if (!Array.isArray(urls)) return [];
+  return urls.map((url) => String(url || "").trim());
 }
 
 function parseSession(raw: string | null): PendingEnhancementSession | null {
@@ -71,6 +78,7 @@ function parseSession(raw: string | null): PendingEnhancementSession | null {
             }))
             .filter((f: PendingEnhancementFileMetadata) => !!f.name)
         : [],
+          previewUrls: normalizePreviewUrls(parsed.previewUrls),
       requestedCount: Math.max(0, Number(parsed.requestedCount || 0)),
       requiredCredits: Math.max(0, Number(parsed.requiredCredits || 0)),
       availableCredits: Math.max(0, Number(parsed.availableCredits || 0)),
@@ -100,6 +108,7 @@ export function setPendingEnhancementSession(input: PendingEnhancementSessionInp
     jobIds: normalizedJobIds,
     imageIds: normalizeIds(input.imageIds || []),
     fileMetadata: Array.isArray(input.fileMetadata) ? input.fileMetadata : [],
+    previewUrls: normalizePreviewUrls(input.previewUrls),
     requestedCount: Math.max(0, Number(input.requestedCount || 0)),
     requiredCredits: Math.max(0, Number(input.requiredCredits || 0)),
     availableCredits: Math.max(0, Number(input.availableCredits || 0)),
@@ -136,6 +145,7 @@ export function setPendingEnhancementJobs(jobIds: string[]) {
     jobIds: normalized,
     imageIds: existing?.imageIds || [],
     fileMetadata: existing?.fileMetadata || [],
+    previewUrls: existing?.previewUrls || [],
     requestedCount: existing?.requestedCount || normalized.length,
     requiredCredits: existing?.requiredCredits || 0,
     availableCredits: existing?.availableCredits || 0,
