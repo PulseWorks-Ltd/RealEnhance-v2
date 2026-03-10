@@ -5,7 +5,7 @@
 **Source:** [worker/src/validators/geminiSemanticValidator.ts](worker/src/validators/geminiSemanticValidator.ts#L121-L246) lines 121-246
 
 **API Configuration:**
-- Model: `gemini-2.0-flash`
+- Model: `gemini-2.5-flash`
 - Temperature: `0.2`
 - TopP: `0.5`
 - MaxOutputTokens: `512`

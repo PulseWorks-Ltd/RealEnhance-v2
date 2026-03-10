@@ -4,7 +4,7 @@ This document contains the **exact prompts** sent to Gemini 2.0 Flash for valida
 
 ## API Configuration
 
-**Model:** `gemini-2.0-flash`
+**Model:** `gemini-2.5-flash`
 
 **Generation Config:**
 - `temperature`: 0.2

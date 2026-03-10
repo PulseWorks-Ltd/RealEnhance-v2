@@ -60,7 +60,7 @@ Add to `server/.env`:
 ```bash
 # Gemini API for Auto Failure Analysis
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
-GEMINI_MODEL_ANALYSIS=gemini-2.0-flash-exp
+GEMINI_MODEL_ANALYSIS=gemini-2.5-flash-exp
 ANALYSIS_ENABLED=true
 ANALYSIS_RUN_ON_FAILURE=true
 ANALYSIS_MAX_IMAGES=3
@@ -73,7 +73,7 @@ ANALYSIS_REDACT=true
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GEMINI_API_KEY` | (required) | Your Gemini API key |
-| `GEMINI_MODEL_ANALYSIS` | `gemini-2.0-flash-exp` | Gemini model to use |
+| `GEMINI_MODEL_ANALYSIS` | `gemini-2.5-flash-exp` | Gemini model to use |
 | `ANALYSIS_ENABLED` | `true` | Enable/disable analysis feature |
 | `ANALYSIS_RUN_ON_FAILURE` | `true` | Auto-trigger on job failure |
 | `ANALYSIS_MAX_IMAGES` | `3` | Max images to send to Gemini |
@@ -125,7 +125,7 @@ curl -X POST http://localhost:5000/api/admin/jobs/job_123/analysis/run \
     "jobId": "job_123",
     "status": "COMPLETE",
     "trigger": "MANUAL",
-    "model": "gemini-2.0-flash-exp",
+    "model": "gemini-2.5-flash-exp",
     "createdAt": "2026-01-08T08:00:00.000Z",
     "completedAt": "2026-01-08T08:00:15.000Z",
     "promptVersion": "analysis-v1",
@@ -203,7 +203,7 @@ curl -X POST http://localhost:5000/api/admin/jobs/job_123/analysis/run \
   "config": {
     "enabled": true,
     "configured": true,
-    "model": "gemini-2.0-flash-exp",
+    "model": "gemini-2.5-flash-exp",
     "promptVersion": "analysis-v1",
     "maxImages": 3,
     "timeoutMs": 30000,
@@ -351,7 +351,7 @@ rateLimit(req, res, next)    // Rate limiting
     "jobId": "job_123",
     "status": "COMPLETE",
     "trigger": "MANUAL",
-    "model": "gemini-2.0-flash-exp",
+    "model": "gemini-2.5-flash-exp",
     "createdAt": "2026-01-08T08:00:00.000Z",
     "completedAt": "2026-01-08T08:00:15.000Z",
     "promptVersion": "analysis-v1",
@@ -470,7 +470,7 @@ ANALYSIS_MAX_IMAGES=2
 - 100 analyses/day: ~$0.05/day = ~$1.50/month
 
 **Recommendations:**
-- Use `gemini-2.0-flash-exp` for cost efficiency
+- Use `gemini-2.5-flash-exp` for cost efficiency
 - Set `ANALYSIS_MAX_IMAGES=2` to reduce image costs
 - Only enable auto-trigger in production if needed
 - Monitor usage in Google Cloud Console
@@ -489,4 +489,4 @@ For issues or questions:
 
 **Last Updated:** January 8, 2026
 **Prompt Version:** analysis-v1
-**Default Model:** gemini-2.0-flash-exp
+**Default Model:** gemini-2.5-flash-exp

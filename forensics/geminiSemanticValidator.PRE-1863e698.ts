@@ -19,7 +19,7 @@ const BUILTIN_HARDFAIL_CONFIDENCE = 0.85;
  */
 function getModelForRisk(riskLevel?: RiskLevel): string {
   const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-flash";
-  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.0-flash";
+  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.5-flash";
 
   if (!riskLevel || riskLevel === "LOW") return fastModel;
   return strongModel; // MEDIUM and HIGH → strong model
