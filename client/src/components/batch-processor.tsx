@@ -768,36 +768,63 @@ function normalizeCurrentStage(raw: unknown): string {
 function resolveDisplayStageKey(params: {
   status: string;
   currentStage: string;
+  stageSignal?: string;
+  hasStage1A?: boolean;
+  hasStage1B?: boolean;
+  hasStage2?: boolean;
+  declutterRequested?: boolean;
+  stage2Expected?: boolean;
   isDone: boolean;
   isRetryActive: boolean;
   isUploading: boolean;
 }): DisplayStageKey {
-  const { status, currentStage, isDone, isRetryActive, isUploading } = params;
+  const {
+    status,
+    currentStage,
+    stageSignal,
+    hasStage1A,
+    hasStage1B,
+    hasStage2,
+    declutterRequested,
+    stage2Expected,
+    isDone,
+    isRetryActive,
+    isUploading,
+  } = params;
+  const stageText = `${currentStage || ""} ${stageSignal || ""}`.trim();
   if (isDone) return "completed";
   if (isRetryActive) return "retry";
   if (isUploading || status === "queued" || status === "waiting") return "uploading";
   if (
-    currentStage.includes("1b") ||
-    currentStage.includes("stage1b") ||
-    currentStage.includes("declutter")
+    stageText.includes("1b") ||
+    stageText.includes("stage1b") ||
+    stageText.includes("declutter")
   ) return "stage1b";
   if (
-    currentStage.includes("2") ||
-    currentStage.includes("stage2") ||
-    currentStage.includes("staging") ||
-    currentStage.includes("design")
+    stageText.includes("2") ||
+    stageText.includes("stage2") ||
+    stageText.includes("staging") ||
+    stageText.includes("design")
   ) return "stage2";
   if (
-    currentStage.includes("valid") ||
-    currentStage.includes("review") ||
-    currentStage.includes("compliance")
+    stageText.includes("valid") ||
+    stageText.includes("review") ||
+    stageText.includes("compliance")
   ) return "validator";
+  // Fall back to inferred progress when backend stage strings are missing/stale.
+  if (stage2Expected) {
+    if (hasStage2 || hasStage1B) return "stage2";
+    if (hasStage1A) return declutterRequested ? "stage1b" : "stage2";
+  }
+  if (declutterRequested && (hasStage1A || hasStage1B)) return "stage1b";
+  if (hasStage2) return "stage2";
+  if (hasStage1B) return "stage1b";
   if (
-    currentStage.includes("1a") ||
-    currentStage.includes("stage1a") ||
-    currentStage.includes("enhanc") ||
-    currentStage.includes("upload") ||
-    currentStage.includes("preprocess")
+    stageText.includes("1a") ||
+    stageText.includes("stage1a") ||
+    stageText.includes("enhanc") ||
+    stageText.includes("upload") ||
+    stageText.includes("preprocess")
   ) return "stage1a";
   return "stage1a";
 }
@@ -947,7 +974,42 @@ export default function BatchProcessor() {
       const status = String(item?.status || item?.result?.status || "").toLowerCase();
       const isTerminal = status === "completed" || status === "complete" || status === "failed" || status === "cancelled";
       const isRetryActive = Boolean(item?.retryInFlight);
-      const currentStage = normalizeCurrentStage(item?.currentStage || item?.result?.currentStage);
+      const rawPipelineStatus = normalizeCurrentStage(
+        item?.pipelineStatusRaw ||
+        item?.result?.pipelineStatusRaw ||
+        item?.state ||
+        item?.jobState ||
+        item?.queueStatus ||
+        item?.status ||
+        item?.result?.status
+      );
+      const currentStage = normalizeCurrentStage(
+        item?.currentStage ||
+        item?.current_stage ||
+        item?.processingStage ||
+        item?.processing_stage ||
+        item?.stage ||
+        item?.result?.currentStage ||
+        rawPipelineStatus
+      );
+      const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
+      const stage2Url = toDisplayUrl(stageMap?.["2"]) || toDisplayUrl(stageMap?.stage2) || null;
+      const stage1BUrl = toDisplayUrl(stageMap?.["1B"]) || toDisplayUrl(stageMap?.["1b"]) || toDisplayUrl(stageMap?.stage1B) || null;
+      const stage1AUrl = toDisplayUrl(stageMap?.["1A"]) || toDisplayUrl(stageMap?.["1a"]) || toDisplayUrl(stageMap?.["1"]) || toDisplayUrl(stageMap?.stage1A) || null;
+      const sceneLabel = String(
+        item?.meta?.scene?.label ||
+        item?.result?.meta?.scene?.label ||
+        item?.meta?.sceneType ||
+        item?.result?.meta?.sceneType ||
+        ""
+      ).toLowerCase();
+      const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
+      const requestedStages = item?.requestedStages || item?.result?.requestedStages || item?.meta?.requestedStages || {};
+      const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+      const declutterRequested = getPerImageDeclutterRequested(item);
+      const stagingAllowed = getPerImageStagingAllowed(item);
+      const stage2SkippedByDesign = item?.meta?.stage2Skipped === true || item?.result?.meta?.stage2Skipped === true;
+      const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
       const shouldRotate = !isTerminal && (runState === "running" || status === "processing" || status === "queued" || status === "waiting" || isUploading || isRetryActive);
 
       if (!shouldRotate) {
@@ -958,6 +1020,12 @@ export default function BatchProcessor() {
       const displayStageKey = resolveDisplayStageKey({
         status,
         currentStage,
+        stageSignal: rawPipelineStatus,
+        hasStage1A: !!stage1AUrl,
+        hasStage1B: !!stage1BUrl,
+        hasStage2: !!stage2Url,
+        declutterRequested,
+        stage2Expected,
         isDone: false,
         isRetryActive,
         isUploading,
@@ -3056,8 +3124,13 @@ export default function BatchProcessor() {
                 it?.processingStage ||
                 it?.processing_stage ||
                 it?.stage ||
+                it?.stageName ||
+                it?.stage_name ||
+                it?.statusDetail ||
+                it?.status_detail ||
                 it?.meta?.currentStage ||
                 it?.meta?.current_stage ||
+                pipelineStatusRaw ||
                 existing.currentStage ||
                 existing.result?.currentStage
               );
@@ -3118,6 +3191,7 @@ export default function BatchProcessor() {
                 blockedStage: blockedStage || existing.blockedStage,
                 fallbackStage: fallbackStage || existing.fallbackStage,
                 validationNote: validationNote || existing.validationNote,
+                pipelineStatusRaw,
                 retryInFlight: isTerminalStatusForRetry ? undefined : existing.retryInFlight,
                 retryStage: isTerminalStatusForRetry ? undefined : existing.retryStage,
               };
@@ -6676,9 +6750,21 @@ export default function BatchProcessor() {
                           ? "Further decluttering required"
                           : "Enhancing";
                         const currentStage = normalizeCurrentStage(result?.currentStage || result?.result?.currentStage);
+                        const rawPipelineStatus = normalizeCurrentStage(
+                          result?.pipelineStatusRaw ||
+                          result?.result?.pipelineStatusRaw ||
+                          result?.status ||
+                          result?.result?.status
+                        );
                         const displayStageKey = resolveDisplayStageKey({
                           status,
                           currentStage,
+                          stageSignal: rawPipelineStatus,
+                          hasStage1A: !!stage1AUrl,
+                          hasStage1B: !!stage1BUrl,
+                          hasStage2: !!stage2Url,
+                          declutterRequested,
+                          stage2Expected,
                           isDone,
                           isRetryActive,
                           isUploading,
