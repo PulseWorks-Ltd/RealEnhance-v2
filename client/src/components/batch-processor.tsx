@@ -457,7 +457,7 @@ interface PersistedBatchJob {
       retryLatestUrl?: string | null;
       editLatestUrl?: string | null;
       originalUploadUrl?: string | null;
-    },
+    };
     allowStaging: boolean;
     baselineStage: "original" | "1A" | "1B" | "latest";
     outdoorStaging: string;
@@ -465,79 +465,99 @@ interface PersistedBatchJob {
     declutter: boolean;
     stagingStyle: string;
     propertyAddress?: string;
-    void viewingStage;
-
-    const retryLatestUrl = toDisplayUrl(latest?.retryLatestUrl) || null;
-    const editLatestUrl = toDisplayUrl(latest?.editLatestUrl) || null;
   };
   fileMetadata: PersistedFileMetadata[];
   jobIdToIndex: Record<string, number>;
-    const originalUploadUrl = toDisplayUrl(latest?.originalUploadUrl) || null;
-
-    // Latest successful artifact order:
-    // retryLatestUrl -> editLatestUrl -> stage2 -> stage1B -> stage1A -> original_upload
-    if (retryLatestUrl) {
-      return {
-        baselineStage: "latest",
-        stagesToRun: ["2"],
-        allowStaging: true,
-        sourceUrl: retryLatestUrl,
-        sourceStageLabel: "retry_latest",
-      };
-    }
-
-    if (editLatestUrl) {
-      return {
-        baselineStage: "latest",
-        stagesToRun: ["2"],
-        allowStaging: true,
-        sourceUrl: editLatestUrl,
-        sourceStageLabel: "edit_latest",
-      };
-    }
-
-    if (stage2Url) {
-      return {
-        baselineStage: "1B",
-        stagesToRun: ["2"],
-        allowStaging: true,
-        sourceUrl: stage2Url,
-        sourceStageLabel: "stage2",
-      };
-    }
-
-    if (stage1BUrl) {
-      return {
-        baselineStage: "1B",
-        stagesToRun: ["2"],
-        allowStaging: true,
-        sourceUrl: stage1BUrl,
-        sourceStageLabel: "stage1b",
-      };
-    }
-
-    if (stage1AUrl) {
-      return {
-        baselineStage: "1A",
-        stagesToRun: ["1B", "2"],
-        allowStaging: true,
-        sourceUrl: stage1AUrl,
-        sourceStageLabel: "stage1a",
-      };
-    }
-
-    if (originalUploadUrl) {
-      return {
-        baselineStage: "original",
-        stagesToRun: ["1A", "1B", "2"],
-        allowStaging: true,
-        sourceUrl: originalUploadUrl,
-        sourceStageLabel: "original_upload",
-      };
-    }
   imageIdToIndex?: Record<string, number>;
-    // Final fallback: full pipeline from original file upload.
-  // Case A: Viewing Stage 2 → re-stage from Stage 1B
+}
+
+function computeRetryBaseline(
+  viewingStage: StageKey | null,
+  stageMap: any,
+  latest?: {
+    retryLatestUrl?: string | null;
+    editLatestUrl?: string | null;
+    originalUploadUrl?: string | null;
+  }
+): {
+  baselineStage: "original" | "1A" | "1B" | "latest";
+  stagesToRun: StageKey[];
+  allowStaging: boolean;
+  sourceUrl: string | null;
+  sourceStageLabel: string;
+} {
+  const stage2Url = toDisplayUrl(stageMap?.["2"] || stageMap?.stage2) || null;
+  const stage1BUrl = toDisplayUrl(stageMap?.["1B"] || stageMap?.["1b"] || stageMap?.stage1B) || null;
+  const stage1AUrl = toDisplayUrl(stageMap?.["1A"] || stageMap?.["1a"] || stageMap?.["1"] || stageMap?.stage1A) || null;
+
+  const retryLatestUrl = toDisplayUrl(latest?.retryLatestUrl) || null;
+  const editLatestUrl = toDisplayUrl(latest?.editLatestUrl) || null;
+  const originalUploadUrl = toDisplayUrl(latest?.originalUploadUrl) || null;
+
+  // Latest successful artifact order:
+  // retryLatestUrl -> editLatestUrl -> stage2 -> stage1B -> stage1A -> original_upload
+  if (retryLatestUrl) {
+    return {
+      baselineStage: "latest",
+      stagesToRun: ["2"],
+      allowStaging: true,
+      sourceUrl: retryLatestUrl,
+      sourceStageLabel: "retry_latest",
+    };
+  }
+
+  if (editLatestUrl) {
+    return {
+      baselineStage: "latest",
+      stagesToRun: ["2"],
+      allowStaging: true,
+      sourceUrl: editLatestUrl,
+      sourceStageLabel: "edit_latest",
+    };
+  }
+
+  if (stage2Url) {
+    return {
+      baselineStage: "1B",
+      stagesToRun: ["2"],
+      allowStaging: true,
+      sourceUrl: stage2Url,
+      sourceStageLabel: "stage2",
+    };
+  }
+
+  if (stage1BUrl) {
+    return {
+      baselineStage: "1B",
+      stagesToRun: ["2"],
+      allowStaging: true,
+      sourceUrl: stage1BUrl,
+      sourceStageLabel: "stage1b",
+    };
+  }
+
+  if (stage1AUrl) {
+    return {
+      baselineStage: "1A",
+      stagesToRun: ["1B", "2"],
+      allowStaging: true,
+      sourceUrl: stage1AUrl,
+      sourceStageLabel: "stage1a",
+    };
+  }
+
+  if (originalUploadUrl) {
+    return {
+      baselineStage: "original",
+      stagesToRun: ["1A", "1B", "2"],
+      allowStaging: true,
+      sourceUrl: originalUploadUrl,
+      sourceStageLabel: "original_upload",
+    };
+  }
+
+  // Final fallback: full pipeline from original file upload.
+  // Case A: Viewing Stage 2 -> re-stage from Stage 1B
   if (viewingStage === "2" && stage1BUrl) {
     return {
       baselineStage: "1B",
@@ -548,7 +568,7 @@ interface PersistedBatchJob {
     };
   }
 
-  // Case A2: Viewing Stage 2 but no Stage 1B available → re-stage from Stage 1A
+  // Case A2: Viewing Stage 2 but no Stage 1B available -> re-stage from Stage 1A
   if (viewingStage === "2" && stage1AUrl) {
     return {
       baselineStage: "1A",
@@ -559,7 +579,7 @@ interface PersistedBatchJob {
     };
   }
 
-  // Case B: Viewing Stage 1B and Stage 2 exists → re-declutter from 1A, then re-stage
+  // Case B: Viewing Stage 1B and Stage 2 exists -> re-declutter from 1A, then re-stage
   if (viewingStage === "1B" && stage2Url && stage1AUrl) {
     return {
       baselineStage: "1A",
@@ -570,7 +590,7 @@ interface PersistedBatchJob {
     };
   }
 
-  // Case C: Viewing Stage 1B, no Stage 2 → re-declutter from 1A only
+  // Case C: Viewing Stage 1B, no Stage 2 -> re-declutter from 1A only
   if (viewingStage === "1B" && stage1AUrl) {
     return {
       baselineStage: "1A",
@@ -581,7 +601,7 @@ interface PersistedBatchJob {
     };
   }
 
-  // Fallback: viewing 1A or original → full pipeline from original file
+  // Fallback: viewing 1A or original -> full pipeline from original file
   return {
     baselineStage: "original",
     stagesToRun: stage1BUrl ? ["1A", "1B"] : ["1A"],
