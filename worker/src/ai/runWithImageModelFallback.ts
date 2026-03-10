@@ -33,7 +33,7 @@ export const MODEL_CONFIG = {
   },
   stage2: {
     primary: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_PRIMARY, "gemini-2.5-flash-image", "REALENHANCE_MODEL_STAGE2_PRIMARY"),
-    fallback: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_FALLBACK, "gemini-2.5-flash-image", "REALENHANCE_MODEL_STAGE2_FALLBACK"),
+    fallback: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_FALLBACK, "gemini-3.1-flash-image-preview", "REALENHANCE_MODEL_STAGE2_FALLBACK"),
   },
 };
 
