@@ -65,6 +65,44 @@ Set ok=false if ANY envelope violation is visible:
 * ceiling geometry/height/major plane layout is altered
 * structural columns or fixed architectural supports are added/removed/relocated
 
+Wall Plane Extension Rule (Critical)
+FAIL if a new flat wall surface appears in the staged image
+that did not exist in the baseline image, even if the new
+surface aligns with an existing wall.
+
+This includes:
+* wall extensions
+* filled recesses
+* flattened wall indentations
+* added planar wall segments
+* new vertical surfaces attached to existing walls
+
+If a baseline indentation, recess, doorway gap, or wall
+offset becomes a continuous flat wall surface in the
+staged image, this indicates architectural modification
+and must return ok=false.
+
+This rule applies even when:
+* color is identical
+* lighting is identical
+* the change is subtle
+
+Do not interpret a newly flattened wall surface as a
+perspective correction or camera shift.
+
+Local Wall-Plane Continuity Check (Critical)
+Compare the continuity of each visible wall plane.
+
+If a baseline wall plane contains a recess,
+indentation, doorway, or opening gap,
+and the staged image shows that area as a
+continuous flat wall surface, return ok=false.
+
+This catches:
+* doorway infill
+* closet recess flattening
+* wall extensions
+
 Treat these as architectural invariants:
 * wall layout and envelope geometry
 * room proportions and segmentation

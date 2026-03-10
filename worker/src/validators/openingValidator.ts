@@ -58,6 +58,24 @@ OPENING RULE (CRITICAL)
 Treat windows, doors, sliding doors, closet doors, archways, balcony openings, and hallway openings as structural voids in wall planes.
 If an architectural opening exists in the baseline image, it must remain visible in the staged image in approximately the same size and position.
 
+Opening Verification Step (Required)
+First identify all architectural openings present in
+the baseline image.
+
+These may include:
+* windows
+* doors
+* closet doors
+* sliding doors
+* hallway openings
+* archways
+* balcony openings
+* passage openings
+
+For each opening identified in the baseline image,
+verify that the same opening still exists in the
+staged image.
+
 Opening inventory step (internal reasoning):
 Before making a decision, identify all architectural openings visible in the baseline image.
 
@@ -76,6 +94,16 @@ Verification step:
 For each opening identified in the baseline inventory, explicitly verify whether the same opening is visible in the staged image.
 If any baseline opening cannot be located or is replaced by continuous wall surface, the staged image must fail.
 
+Missing Opening Rule
+If any baseline opening cannot be located in the
+staged image, the image must fail.
+
+An opening is considered missing if:
+* it is replaced by continuous wall surface
+* it is sealed, filled, or walled over
+* it disappears behind furniture with no visible
+  opening geometry remaining
+
 Opening invariant rule:
 If any architectural opening from the baseline inventory:
 * disappears
@@ -91,6 +119,27 @@ Windows, doors, sliding doors, and closet openings may be partially occluded by 
 This is acceptable if the opening frame, position, and surrounding wall geometry still indicate that the opening exists.
 Do NOT fail when an opening is partially hidden by furniture.
 Fail ONLY when the opening itself disappears structurally, becomes wall, is sealed, resized, or relocated.
+
+Occlusion Rule
+Furniture or decor may partially block an opening.
+
+However the opening must still be visually detectable
+in the wall geometry.
+
+Acceptable occlusion:
+* bed covering lower portion of a window
+* sofa partially covering doorway edge
+* decor partially blocking a closet door
+
+Unacceptable occlusion:
+* furniture completely covering the opening region
+* the opening cannot be located visually
+* the region appears as continuous flat wall
+
+If the baseline opening cannot be located because it is
+fully hidden by furniture or appears replaced by wall
+surface, assume the opening has been removed and
+return ok=false.
 
 Closet-door strictness:
 Closet doors/openings may not disappear or be replaced by wall surface.

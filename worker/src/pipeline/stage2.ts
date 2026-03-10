@@ -80,6 +80,41 @@ Evaluate whether the following elements remain consistent between the two images
 
 Treat windows, doors, sliding doors, closet doors, archways, balcony openings, and hallway openings as architectural openings that must be preserved.
 
+Wall Plane Invariant
+
+The set of wall planes defining the room envelope must
+remain identical.
+
+If the staged image introduces any new flat wall plane
+that did not exist in the baseline image, the review
+must fail.
+
+This includes:
+
+* extended walls
+* filled recesses
+* flattened wall indentations
+* new planar surfaces attached to existing walls
+
+Opening Preservation Invariant
+
+Every architectural opening present in the baseline
+image must remain visible in the staged image.
+
+Openings include:
+
+* doors
+* closet doors
+* sliding doors
+* hallway openings
+* windows
+* archways
+* balcony doors
+
+If any baseline opening disappears, is sealed,
+is replaced by continuous wall surface, or cannot
+be visually located, the staged image must fail.
+
 ACCEPTABLE DIFFERENCES
 
 Ignore differences in:
