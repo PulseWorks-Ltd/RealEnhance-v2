@@ -9,6 +9,10 @@ export type WallIndex = 0 | 1 | 2 | 3;
 export type HorizontalBand = "left_third" | "center_third" | "right_third";
 export type VerticalBand = "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height";
 export type WidthBand = "narrow" | "single" | "double" | "wide";
+export type WallCoverageBand = "5-10" | "10-20" | "20-40" | "40-60" | "60+";
+export type OpeningOrientation = "portrait" | "landscape" | "square";
+export type PaneStructure = "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown";
+export type HeightClass = "standard" | "floor_to_ceiling" | "transom";
 
 export type StructuralOpening = {
   id: string;
@@ -21,6 +25,10 @@ export type StructuralOpening = {
   horizontalBand: HorizontalBand;
   verticalBand: VerticalBand;
   widthBand: WidthBand;
+  wallCoverageBand: WallCoverageBand;
+  orientation: OpeningOrientation;
+  paneStructure: PaneStructure;
+  heightClass: HeightClass;
   approxAspectRatio: number;
   confidence: number;
 
@@ -122,6 +130,10 @@ Return JSON in this exact schema:
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "verticalBand": "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height",
       "widthBand": "narrow" | "single" | "double" | "wide",
+      "wallCoverageBand": "5-10" | "10-20" | "20-40" | "40-60" | "60+",
+      "orientation": "portrait" | "landscape" | "square",
+      "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
+      "heightClass": "standard" | "floor_to_ceiling" | "transom",
       "approxAspectRatio": number,
       "confidence": number
     }
@@ -137,33 +149,14 @@ Rules:
 - aspect_ratio must be width/height for the opening geometry.
 - horizontalBand and verticalBand should be stable under mild reframing.
 - widthBand reflects approximate opening width class.
+- wallCoverageBand is approximate percent of the wall occupied by the opening (not image area).
+- orientation should be derived from opening shape (portrait, landscape, square).
+- paneStructure should describe visible pane layout; if uncertain return "unknown".
+- heightClass should describe vertical extent as standard, floor_to_ceiling, or transom.
+- Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
 
 Return only valid JSON.`;
-
-const OPENING_VALIDATION_SYSTEM_INSTRUCTION = `You are a structural preservation validator.
-
-Your job is to compare:
-1) The structural baseline (extracted from the original image).
-2) The enhanced image.
-
-You must enforce strict spatial preservation of architectural openings.
-
-Rules:
-- Opening identity must be preserved.
-- Structural class must match.
-- Wall index must match.
-- Horizontal/vertical banding must match unless out-of-frame.
-- Material width-band resizing is a violation.
-- Substitution across walls is a violation.
-
-Out-of-frame handling:
-- If an opening wall region is cropped out, include the opening id in outOfFrameOpenings.
-- Do not mark it removed unless sealing is visible.
-
-Return strict JSON only.
-No explanation.
-No commentary.`;
 
 function extractJsonCandidate(text: string): string {
   if (!text) return "";
@@ -229,6 +222,70 @@ function isVerticalBand(value: string): value is VerticalBand {
 
 function isWidthBand(value: string): value is WidthBand {
   return value === "narrow" || value === "single" || value === "double" || value === "wide";
+}
+
+function isWallCoverageBand(value: string): value is WallCoverageBand {
+  return value === "5-10" || value === "10-20" || value === "20-40" || value === "40-60" || value === "60+";
+}
+
+function isOpeningOrientation(value: string): value is OpeningOrientation {
+  return value === "portrait" || value === "landscape" || value === "square";
+}
+
+function isPaneStructure(value: string): value is PaneStructure {
+  return (
+    value === "single_fixed" ||
+    value === "double_fixed" ||
+    value === "fixed_plus_opening" ||
+    value === "sliding_panel" ||
+    value === "multi_pane_grid" ||
+    value === "unknown"
+  );
+}
+
+function isHeightClass(value: string): value is HeightClass {
+  return value === "standard" || value === "floor_to_ceiling" || value === "transom";
+}
+
+function normalizePaneStructure(value: unknown): PaneStructure {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "unknown";
+  if (raw === "single_fixed" || raw === "single pane" || raw === "single") return "single_fixed";
+  if (raw === "double_fixed" || raw === "double pane" || raw === "double") return "double_fixed";
+  if (raw === "fixed_plus_opening" || raw === "fixed+opening") return "fixed_plus_opening";
+  if (raw === "sliding_panel" || raw === "sliding" || raw === "slider") return "sliding_panel";
+  if (raw === "multi_pane_grid" || raw === "grid" || raw === "multi pane") return "multi_pane_grid";
+  return "unknown";
+}
+
+function deriveOrientation(aspectRatio: number): OpeningOrientation {
+  if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) return "square";
+  if (aspectRatio >= 1.15) return "landscape";
+  if (aspectRatio <= 0.85) return "portrait";
+  return "square";
+}
+
+function deriveWallCoverageBand(areaPct: number): WallCoverageBand {
+  const area = Number.isFinite(areaPct) ? Math.max(0, areaPct) : 0;
+  if (area < 10) return "5-10";
+  if (area < 20) return "10-20";
+  if (area < 40) return "20-40";
+  if (area < 60) return "40-60";
+  return "60+";
+}
+
+function deriveHeightClass(verticalBand: VerticalBand): HeightClass {
+  if (verticalBand === "full_height") return "floor_to_ceiling";
+  if (verticalBand === "ceiling_zone") return "transom";
+  return "standard";
+}
+
+function wallCoverageBandIndex(value: WallCoverageBand): number {
+  if (value === "5-10") return 0;
+  if (value === "10-20") return 1;
+  if (value === "20-40") return 2;
+  if (value === "40-60") return 3;
+  return 4;
 }
 
 function mapWallPositionToIndex(wallPosition: WallPosition): WallIndex {
@@ -456,6 +513,26 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? Math.max(0, Math.min(1, opening.confidence))
         : 0.85;
 
+    const wallCoverageBandCandidate =
+      typeof opening.wallCoverageBand === "string" && isWallCoverageBand(opening.wallCoverageBand)
+        ? opening.wallCoverageBand
+        : deriveWallCoverageBand(areaPctCandidate);
+
+    const orientationCandidate =
+      typeof opening.orientation === "string" && isOpeningOrientation(opening.orientation)
+        ? opening.orientation
+        : deriveOrientation(aspectRatioCandidate);
+
+    const paneStructureCandidate =
+      typeof opening.paneStructure === "string" && isPaneStructure(opening.paneStructure)
+        ? opening.paneStructure
+        : normalizePaneStructure(opening.paneStructure);
+
+    const heightClassCandidate =
+      typeof opening.heightClass === "string" && isHeightClass(opening.heightClass)
+        ? opening.heightClass
+        : deriveHeightClass(verticalBandCandidate);
+
     return {
       id: opening.id,
       type: normalizedType,
@@ -467,6 +544,10 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       horizontalBand: horizontalBandCandidate,
       verticalBand: verticalBandCandidate,
       widthBand: widthBandCandidate,
+      wallCoverageBand: wallCoverageBandCandidate,
+      orientation: orientationCandidate,
+      paneStructure: paneStructureCandidate,
+      heightClass: heightClassCandidate,
       approxAspectRatio: aspectRatioCandidate,
       confidence: confidenceCandidate,
 
@@ -618,167 +699,173 @@ export async function extractStructuralBaseline(imageUrl: string): Promise<Struc
   } as any);
 
   const parsed = parseJsonResponse(response);
-  return validateStructuralBaseline(parsed);
+  const baseline = validateStructuralBaseline(parsed);
+  console.log("[OPENING_BASELINE]", JSON.stringify({
+    openings: baseline.openings.map((opening) => ({
+      id: opening.id,
+      type: opening.type,
+      wallIndex: opening.wallIndex,
+      horizontalBand: opening.horizontalBand,
+      verticalBand: opening.verticalBand,
+      wallCoverageBand: opening.wallCoverageBand,
+      orientation: opening.orientation,
+      paneStructure: opening.paneStructure,
+      heightClass: opening.heightClass,
+      confidence: opening.confidence,
+    })),
+    wallCount: baseline.wallCount,
+  }));
+  return baseline;
 }
 
 export async function validateOpeningPreservation(
   baseline: StructuralBaseline,
   newImageUrl: string
 ): Promise<OpeningValidationResult> {
-  const ai = getGeminiClient();
-  const image = toBase64(newImageUrl);
+  const detected = await extractStructuralBaseline(newImageUrl);
 
-  const userPrompt = `You are given:
+  const allowedOccluders = new Set([
+    "bed",
+    "dresser",
+    "wardrobe",
+    "cabinet",
+    "sofa",
+    "bookshelf",
+    "desk",
+    "nightstand",
+  ]);
 
-1) Structural baseline JSON from the original image.
-2) A new generated image.
+  const openingResults: OpeningResult[] = [];
+  const outOfFrameOpenings: string[] = [];
+  let openingRemoved = false;
+  let openingRelocated = false;
+  let openingResized = false;
+  let openingClassMismatch = false;
+  let openingBandMismatch = false;
+  let maxAreaDelta = 0;
+  let maxAspectDelta = 0;
 
-  STRUCTURAL BASELINE OPENINGS:
+  for (const baseOpening of baseline.openings) {
+    const directMatch = detected.openings.find((candidate) => candidate.id === baseOpening.id);
+    const fallbackMatch = detected.openings.find(
+      (candidate) =>
+        candidate.type === baseOpening.type &&
+        candidate.wallIndex === baseOpening.wallIndex &&
+        candidate.horizontalBand === baseOpening.horizontalBand
+    );
 
-  ${baseline.openings.map((o) => `
-  ID: ${o.id}
-  Type: ${o.type}
-  Structural Class: ${o.structuralClass}
-  Wall Index: ${o.wallIndex}
-  Horizontal Band: ${o.horizontalBand}
-  Vertical Band: ${o.verticalBand}
-  Width Band: ${o.widthBand}
-  `).join("\n")}
+    const match = directMatch || fallbackMatch;
 
-  VALIDATION RULES:
+    if (!match) {
+      openingRemoved = true;
+      const likelyFloorStandingOcclusion =
+        (baseOpening.verticalBand === "floor_zone" || baseOpening.verticalBand === "full_height") &&
+        allowedOccluders.size > 0;
 
-  For each baseline opening:
-  1) It must still exist.
-  2) It must remain on the same Wall Index.
-    3) It must remain approximately within the same horizontal region.
-      Minor adjacent band shifts due to perspective normalization are allowed.
-    4) It must remain approximately within the same vertical region.
-      Minor adjacent band shifts due to perspective normalization are allowed.
-  5) It must retain the same Structural Class.
-  6) It must not be resized materially (width band mismatch).
-  7) It must not be converted to flat wall.
-  8) It must not be replaced by a different opening elsewhere.
+      const status = likelyFloorStandingOcclusion ? "OCCLUDED" : "MISSING";
+      const reason = likelyFloorStandingOcclusion
+        ? "missing_opening_no_floor_occluder_confirmation"
+        : "missing_opening";
 
-  RELOCATION RULE:
-  If an opening of the same structural class appears on a different wall,
-  and the original wall location no longer contains that opening,
-  this is a relocation and must be marked as violation.
+      console.log(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
 
-  OUT-OF-FRAME RULE:
-  If the opening's wall region is not visible due to cropping,
-  mark that opening ID in outOfFrameOpenings.
-  Do NOT mark it as removed unless sealing is visible.
-
-Return JSON in this schema:
-
-{
-    "openingRemoved": boolean,
-    "openingRelocated": boolean,
-    "openingResized": boolean,
-    "openingClassMismatch": boolean,
-    "openingBandMismatch": boolean,
-    "outOfFrameOpenings": string[],
-    "confidence": number,
-    "results": [
-      {
-        "id": string,
-        "present": boolean,
-        "sealed": boolean,
-        "relocated": boolean,
-        "outOfFrame": boolean,
-        "confidence": number
-      }
-    ]
-}
-
-Baseline JSON:
-${JSON.stringify(baseline)}`;
-
-  const response = await (ai as any).models.generateContent({
-    model: OPENING_VALIDATOR_MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: OPENING_VALIDATION_SYSTEM_INSTRUCTION },
-          { text: userPrompt },
-          { inlineData: { mimeType: image.mime, data: image.data } },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0,
-      topP: 0.1,
-      topK: 1,
-      maxOutputTokens: 1024,
-      responseMimeType: "application/json",
-    },
-  } as any);
-
-  const parsed = parseJsonResponse(response);
-  const normalized = {
-    ...parsed,
-    summary: {
-      openingRemoved: parsed?.openingRemoved === true,
-      openingSealed: parsed?.openingRemoved === true,
-      openingRelocated: parsed?.openingRelocated === true,
-      openingResized: parsed?.openingResized === true,
-      openingClassMismatch: parsed?.openingClassMismatch === true,
-      openingBandMismatch: parsed?.openingBandMismatch === true,
-      outOfFrameOpenings: Array.isArray(parsed?.outOfFrameOpenings) ? parsed.outOfFrameOpenings : [],
-      confidence: typeof parsed?.confidence === "number" ? parsed.confidence : 0,
-    },
-    results: Array.isArray(parsed?.results) ? parsed.results : [],
-  };
-
-  const validated = validateOpeningValidationResult(normalized, baseline);
-
-  try {
-    const detected = await extractStructuralBaseline(newImageUrl);
-    validated.detectedOpenings = detected.openings;
-
-    let maxAreaDelta = 0;
-    let maxAspectDelta = 0;
-
-    const safeType = (type: StructuralOpeningType): StructuralOpeningType => normalizeOpeningType(type) || type;
-
-    for (const baseOpening of baseline.openings) {
-      const baseType = safeType(baseOpening.type);
-      const directMatch = detected.openings.find((candidate) => candidate.id === baseOpening.id);
-      const semanticMatch = detected.openings.find((candidate) => {
-        const candidateType = safeType(candidate.type);
-        const sameType = candidateType === baseType;
-        const sameWall = candidate.wallIndex === baseOpening.wallIndex;
-        const sameBand = candidate.horizontalBand === baseOpening.horizontalBand;
-        return sameType && sameWall && sameBand;
+      openingResults.push({
+        id: baseOpening.id,
+        present: false,
+        sealed: true,
+        relocated: false,
+        outOfFrame: false,
+        confidence: 0.99,
       });
-
-      const match = directMatch || semanticMatch;
-      if (!match) {
-        maxAreaDelta = Math.max(maxAreaDelta, 1);
-        maxAspectDelta = Math.max(maxAspectDelta, 1);
-        continue;
-      }
-
-      const baseArea = Math.max(0.01, Number(baseOpening.area_pct || 0));
-      const detectedArea = Math.max(0.01, Number(match.area_pct || 0));
-      const areaDelta = Math.abs((detectedArea - baseArea) / baseArea);
-
-      const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
-      const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
-      const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
-
-      maxAreaDelta = Math.max(maxAreaDelta, areaDelta);
-      maxAspectDelta = Math.max(maxAspectDelta, aspectDelta);
+      continue;
     }
 
-    validated.summary.semanticOpeningAreaDeltaPct = maxAreaDelta;
-    validated.summary.semanticOpeningAspectRatioDelta = maxAspectDelta;
-  } catch {
-    validated.detectedOpenings = [];
+    const invariantReasons: string[] = [];
+
+    if (match.wallIndex !== baseOpening.wallIndex) {
+      openingRelocated = true;
+      invariantReasons.push("wall_index_changed");
+    }
+
+    if (match.horizontalBand !== baseOpening.horizontalBand) {
+      openingBandMismatch = true;
+      invariantReasons.push("horizontal_band_changed");
+    }
+
+    if (match.verticalBand !== baseOpening.verticalBand) {
+      openingBandMismatch = true;
+      invariantReasons.push("vertical_band_changed");
+    }
+
+    const baseCoverageIdx = wallCoverageBandIndex(baseOpening.wallCoverageBand);
+    const matchCoverageIdx = wallCoverageBandIndex(match.wallCoverageBand);
+    if (Math.abs(matchCoverageIdx - baseCoverageIdx) > 1) {
+      openingResized = true;
+      invariantReasons.push("wall_coverage_band_changed_gt_one");
+    }
+
+    if (
+      baseOpening.paneStructure !== "unknown" &&
+      match.paneStructure !== "unknown" &&
+      baseOpening.paneStructure !== match.paneStructure
+    ) {
+      openingClassMismatch = true;
+      openingResized = true;
+      invariantReasons.push("pane_structure_changed");
+    }
+
+    if (baseOpening.orientation !== match.orientation) {
+      openingResized = true;
+      invariantReasons.push("orientation_changed");
+    }
+
+    const baseArea = Math.max(0.01, Number(baseOpening.area_pct || 0));
+    const detectedArea = Math.max(0.01, Number(match.area_pct || 0));
+    const areaDelta = Math.abs((detectedArea - baseArea) / baseArea);
+    maxAreaDelta = Math.max(maxAreaDelta, areaDelta);
+
+    const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
+    const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
+    const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
+    maxAspectDelta = Math.max(maxAspectDelta, aspectDelta);
+
+    const altered = invariantReasons.length > 0;
+    console.log(
+      `[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${altered ? "ALTERED" : "PRESERVED"} reason=${
+        altered ? invariantReasons.join("|") : "none"
+      }`
+    );
+
+    openingResults.push({
+      id: baseOpening.id,
+      present: !altered,
+      sealed: altered,
+      relocated: match.wallIndex !== baseOpening.wallIndex,
+      outOfFrame: false,
+      confidence: Math.min(baseOpening.confidence, match.confidence),
+    });
   }
 
-  return validated;
+  const summary = {
+    openingRemoved,
+    openingSealed: openingRemoved || openingResized || openingBandMismatch || openingClassMismatch,
+    openingRelocated,
+    openingResized,
+    openingClassMismatch,
+    openingBandMismatch,
+    outOfFrameOpenings,
+    semanticOpeningAreaDeltaPct: maxAreaDelta,
+    semanticOpeningAspectRatioDelta: maxAspectDelta,
+    confidence: openingResults.length
+      ? Number((openingResults.reduce((sum, row) => sum + row.confidence, 0) / openingResults.length).toFixed(3))
+      : 1,
+  };
+
+  return {
+    results: openingResults,
+    summary,
+    detectedOpenings: detected.openings,
+  };
 }
 
 export function shouldHardFailOpening(

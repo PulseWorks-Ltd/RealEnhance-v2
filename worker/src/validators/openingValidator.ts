@@ -1,5 +1,11 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import {
+  detectRelocation,
+  shouldHardFailOpening,
+  type StructuralBaseline,
+  validateOpeningPreservation,
+} from "./openingPreservationValidator";
 
 export type OpeningValidatorResult = {
   status: "pass" | "fail";
@@ -39,8 +45,29 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
 
 export async function runOpeningValidator(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  baseline?: StructuralBaseline | null
 ): Promise<OpeningValidatorResult> {
+  if (baseline && Array.isArray(baseline.openings) && baseline.openings.length > 0) {
+    const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
+    const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
+    const hardFail = shouldHardFailOpening(deterministic.summary, { relocationDetected });
+
+    const reasonParts: string[] = [];
+    if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
+    if (deterministic.summary.openingRelocated || relocationDetected) reasonParts.push("opening_relocated");
+    if (deterministic.summary.openingResized) reasonParts.push("opening_resized");
+    if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
+    if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
+    if (reasonParts.length === 0) reasonParts.push("openings_preserved");
+
+    return {
+      status: hardFail ? "fail" : "pass",
+      reason: reasonParts.join("|"),
+      confidence: deterministic.summary.confidence,
+    };
+  }
+
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;

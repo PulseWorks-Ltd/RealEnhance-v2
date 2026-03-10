@@ -6923,7 +6923,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
         }
 
-        const opRes = await runOpeningValidator(validationBasePath, path2);
+        const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
         openingPass = opRes.status !== "fail";
         if (opRes.status === "fail") {
           seqPass = false;
