@@ -136,6 +136,61 @@ function buildAdjudicatorPrompt(
   evidence?: ValidationEvidence,
   riskLevel?: RiskLevel
 ): string {
+  const buildNeutralEvidenceBlock = (input?: ValidationEvidence): string => {
+    if (!input) return "";
+
+    const windowsDelta = (input.openings?.windowsAfter ?? 0) - (input.openings?.windowsBefore ?? 0);
+    const doorsDelta = (input.openings?.doorsAfter ?? 0) - (input.openings?.doorsBefore ?? 0);
+    const openingDeltaAbs = Math.abs(windowsDelta) + Math.abs(doorsDelta);
+
+    const wallDrift = Number(input.drift?.wallPercent ?? 0);
+    const edgeDrift = Number(input.drift?.maskedEdgePercent ?? 0);
+    const angleDrift = Number(input.drift?.angleDegrees ?? 0);
+
+    const driftMagnitude = (() => {
+      const composite = Math.max(wallDrift / 100, edgeDrift / 100, angleDrift / 45);
+      if (composite >= 0.55) return "large";
+      if (composite >= 0.22) return "moderate";
+      if (composite > 0) return "minor";
+      return "none";
+    })();
+
+    const anchorsChanged = Object.values(input.anchorChecks || {}).some(Boolean);
+    const ssimLow = input.ssimPassed === false || (input.ssim < input.ssimThreshold);
+
+    const hints: string[] = [];
+    if (openingDeltaAbs > 0) {
+      hints.push("possible opening detection change");
+    }
+    if (driftMagnitude !== "none") {
+      hints.push(`${driftMagnitude} geometry difference`);
+    }
+    if (anchorsChanged) {
+      hints.push("possible fixed-element consistency concern");
+    }
+    if (ssimLow) {
+      hints.push("overall visual difference likely from staging, rendering, or perspective");
+    }
+
+    if (!hints.length) return "";
+
+    return `
+
+AUTOMATED REVIEW CONTEXT (ADVISORY ONLY):
+- The following are tentative cues from heuristic analysis and can include false positives.
+- Treat them as review hints, not confirmed facts.
+- Do not assume structural failure unless visually confirmed in the images.
+
+Potential cues:
+${hints.map((h) => `- ${h}`).join("\n")}
+
+Visual adjudication priority:
+- Approve if the same architectural openings and envelope are still clearly present.
+- Reject only when visual evidence clearly shows opening removal/relocation/material resize,
+  wall/envelope change, or fixed built-in removal/relocation.
+`;
+  };
+
   const structuralFocusRules = `
 
 NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
@@ -145,7 +200,10 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Ignore color variation.
 - Only evaluate permanent architectural structure.`;
 
-  return `${basePrompt}${structuralFocusRules}`;
+  const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
+  const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} (advisory only; not proof of failure).` : "";
+
+  return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${riskContext}`;
 }
 
 export type GeminiSemanticVerdict = {
