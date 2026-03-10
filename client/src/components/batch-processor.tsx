@@ -1660,6 +1660,30 @@ export default function BatchProcessor() {
     });
   }, []);
 
+  const fileToDataUrl = useCallback((file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("preview_read_failed"));
+    reader.readAsDataURL(file);
+  }), []);
+
+  const buildPersistentPreviewUrls = useCallback(async (): Promise<string[]> => {
+    const converted = await Promise.all(files.map(async (file: any) => {
+      const restoredPreview = String(file?.__restoredPreviewUrl || "").trim();
+      if (restoredPreview) return restoredPreview;
+
+      if (file?.__restored === true) return "";
+
+      try {
+        return await fileToDataUrl(file as File);
+      } catch {
+        return "";
+      }
+    }));
+
+    return converted;
+  }, [fileToDataUrl, files]);
+
   const persistPendingEnhancementSession = useCallback((
     pendingJobIds: string[],
     options?: {
@@ -2052,34 +2076,6 @@ export default function BatchProcessor() {
     }),
     [files]
   );
-
-  const fileToDataUrl = useCallback((file: File) => new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("preview_read_failed"));
-    reader.readAsDataURL(file);
-  }), []);
-
-  const buildPersistentPreviewUrls = useCallback(async (): Promise<string[]> => {
-    const converted = await Promise.all(files.map(async (file: any, index) => {
-      const restoredPreview = String(file?.__restoredPreviewUrl || "").trim();
-      if (restoredPreview) return restoredPreview;
-
-      if (file?.__restored === true) return "";
-
-      try {
-        return await fileToDataUrl(file as File);
-      } catch {
-        const fallback = String(previewUrls[index] || "").trim();
-        if (fallback.startsWith("http://") || fallback.startsWith("https://") || fallback.startsWith("data:image/")) {
-          return fallback;
-        }
-        return "";
-      }
-    }));
-
-    return converted;
-  }, [fileToDataUrl, files, previewUrls]);
 
   useEffect(() => () => {
     previewUrls.forEach(u => {
