@@ -2,16 +2,12 @@ import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import {
   detectRelocation,
-  shouldHardFailOpening,
   type StructuralBaseline,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
+import type { ValidatorOutcome } from "./validatorOutcome";
 
-export type OpeningValidatorResult = {
-  status: "pass" | "fail";
-  reason: string;
-  confidence: number;
-};
+export type OpeningValidatorResult = ValidatorOutcome;
 
 const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
@@ -40,6 +36,8 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
+    hardFail: parsed.ok ? false : confidence >= 0.85,
+    advisorySignals: parsed.ok ? [] : [reason],
   };
 }
 
@@ -51,12 +49,33 @@ export async function runOpeningValidator(
   if (baseline && Array.isArray(baseline.openings) && baseline.openings.length > 0) {
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
-    const hardFail = shouldHardFailOpening(deterministic.summary, { relocationDetected });
+    const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
+      ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
+      : 0;
+    const openingResizeHardFail = areaDelta >= 0.3;
+    const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
+    const hardFail =
+      deterministic.summary.openingRemoved ||
+      deterministic.summary.openingSealed ||
+      deterministic.summary.openingRelocated ||
+      deterministic.summary.openingClassMismatch ||
+      deterministic.summary.openingBandMismatch ||
+      relocationDetected ||
+      openingResizeHardFail;
 
     const reasonParts: string[] = [];
+    const advisorySignals: string[] = [];
     if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
     if (deterministic.summary.openingRelocated || relocationDetected) reasonParts.push("opening_relocated");
-    if (deterministic.summary.openingResized) reasonParts.push("opening_resized");
+    if (deterministic.summary.openingResized) {
+      reasonParts.push("opening_resized");
+      if (openingResizeAdvisory) {
+        advisorySignals.push(`opening_resized_minor:${areaDelta.toFixed(3)}`);
+      }
+      if (openingResizeHardFail) {
+        reasonParts.push(`opening_resize_ge_0_30:${areaDelta.toFixed(3)}`);
+      }
+    }
     if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
@@ -65,6 +84,8 @@ export async function runOpeningValidator(
       status: hardFail ? "fail" : "pass",
       reason: reasonParts.join("|"),
       confidence: deterministic.summary.confidence,
+      hardFail,
+      advisorySignals,
     };
   }
 

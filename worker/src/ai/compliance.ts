@@ -22,8 +22,8 @@ function resolveTier(confidence: number): number {
   return 1;
 }
 
-async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string) {
-  const complianceModel = process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
+async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string, modelOverride?: string) {
+  const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
   const resp = await (ai as any).models.generateContent({
     model: complianceModel,
     contents: [{
@@ -66,17 +66,24 @@ export async function checkCompliance(
   ai: GoogleGenAI,
   originalB64: string,
   editedB64: string,
-  opts?: { validationMode?: Stage2ValidationMode }
+  opts?: { validationMode?: Stage2ValidationMode; advisorySignals?: string[]; modelOverride?: string }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
-    const structuralPrompt = [
+  const advisoryContext = Array.isArray(opts?.advisorySignals) && opts.advisorySignals.length > 0
+    ? [
+        "ADVISORY SIGNALS FROM LOCAL VALIDATORS (focus review here):",
+        ...opts.advisorySignals.map((signal) => `- ${signal}`),
+      ]
+    : [];
+  const structuralPrompt = [
     'Return JSON only: {\"ok\": true|false, \"confidence\": 0.0-1.0, \"reasons\": [\"...\"]}',
     ...stage2Context,
+    ...advisoryContext,
     'Compare ORIGINAL vs EDITED. Ignore structural changes (those are handled elsewhere).',
     'ok=false ONLY if there are severe rendering artifacts, unnatural warping, or glitches.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
-  const s = await ask(ai, originalB64, editedB64, structuralPrompt);
+  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride);
   if (!s) {
     const reasons = ["Compliance parser failed"];
     const confidence = 0.3;
@@ -110,9 +117,10 @@ export async function checkCompliance(
     return result;
   }
 
-    const placementPrompt = [
+  const placementPrompt = [
     'Return JSON only: {\"ok\": true|false, \"confidence\": 0.0-1.0, \"reasons\": [\"...\"]}',
     ...stage2Context,
+    ...advisoryContext,
     'Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:',
     '- floating furniture,',
     '- furniture not aligned to floor perspective,',
@@ -120,7 +128,7 @@ export async function checkCompliance(
     'Ignore structural architecture (like walls, windows, fixtures), that is handled elsewhere.',
     'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
   ].join("\n");
-  const p = await ask(ai, originalB64, editedB64, placementPrompt);
+  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride);
   if (!p) {
     const reasons = ["Compliance parser failed (placement)"];
     const confidence = 0.3;

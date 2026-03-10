@@ -1,11 +1,8 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import type { ValidatorOutcome } from "./validatorOutcome";
 
-export type EnvelopeValidatorResult = {
-  status: "pass" | "fail";
-  reason: string;
-  confidence: number;
-};
+export type EnvelopeValidatorResult = ValidatorOutcome;
 
 const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
@@ -34,6 +31,8 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
+    hardFail: parsed.ok ? false : confidence >= 0.85,
+    advisorySignals: parsed.ok ? [] : [reason],
   };
 }
 

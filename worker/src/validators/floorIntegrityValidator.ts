@@ -1,11 +1,8 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import type { ValidatorOutcome } from "./validatorOutcome";
 
-export type FloorIntegrityValidatorResult = {
-  status: "pass" | "fail";
-  reason: string;
-  confidence: number;
-};
+export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
 function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
@@ -30,6 +27,8 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
+    hardFail: false,
+    advisorySignals: parsed.ok ? [] : [reason],
   };
 }
 

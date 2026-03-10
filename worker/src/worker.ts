@@ -6946,10 +6946,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let openingPass = true;
       let fixturePass = true;
       let floorPass = true;
+      const stage2AdvisorySignals: string[] = [];
 
       type Stage2GateValidator = "openings" | "fixtures" | "floor" | "envelope";
       let currentValidator: Stage2GateValidator = "openings";
       let stage2GateFailure: { validator: Stage2GateValidator; reason: string } | null = null;
+
+      const appendAdvisories = (validator: Stage2GateValidator, advisories: string[]) => {
+        if (!Array.isArray(advisories) || advisories.length === 0) return;
+        const normalized = advisories.map((signal) => `${validator}:${normalizeValidatorReason(String(signal || "advisory"))}`);
+        stage2AdvisorySignals.push(...normalized);
+        nLog("[VALIDATOR_ADVISORY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator,
+          advisorySignals: normalized,
+        });
+      };
 
       try {
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
@@ -6960,9 +6974,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         // Stage-A gate: openings -> fixtures
         currentValidator = "openings";
         const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
-        openingPass = opRes.status !== "fail";
-        if (!openingPass) {
+        appendAdvisories("openings", opRes.advisorySignals || []);
+        openingPass = opRes.hardFail !== true;
+        if (opRes.hardFail === true) {
           stage2GateFailure = { validator: "openings", reason: opRes.reason };
+          nLog("[VALIDATOR_HARD_FAIL]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openings",
+            reason: opRes.reason,
+            confidence: opRes.confidence,
+          });
           nLog("[STAGE2_VALIDATION_FAIL] openings");
           nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
           logValidatorResult({
@@ -6988,9 +7011,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (!stage2GateFailure) {
           currentValidator = "fixtures";
           const fixRes = await runFixtureValidator(validationBasePath, path2);
-          fixturePass = fixRes.status !== "fail";
-          if (!fixturePass) {
+          appendAdvisories("fixtures", fixRes.advisorySignals || []);
+          fixturePass = fixRes.hardFail !== true;
+          if (fixRes.hardFail === true) {
             stage2GateFailure = { validator: "fixtures", reason: fixRes.reason };
+            nLog("[VALIDATOR_HARD_FAIL]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "fixtures",
+              reason: fixRes.reason,
+              confidence: fixRes.confidence,
+            });
             nLog("[STAGE2_VALIDATION_FAIL] fixtures");
             nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
             logValidatorResult({
@@ -7018,9 +7050,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (!stage2GateFailure) {
           currentValidator = "floor";
           const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
-          floorPass = floorRes.status !== "fail";
-          if (!floorPass) {
+          appendAdvisories("floor", floorRes.advisorySignals || []);
+          floorPass = floorRes.hardFail !== true;
+          if (floorRes.hardFail === true) {
             stage2GateFailure = { validator: "floor", reason: floorRes.reason };
+            nLog("[VALIDATOR_HARD_FAIL]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "floor",
+              reason: floorRes.reason,
+              confidence: floorRes.confidence,
+            });
             nLog("[STAGE2_VALIDATION_FAIL] floor");
             nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
             logValidatorResult({
@@ -7047,9 +7088,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (!stage2GateFailure) {
           currentValidator = "envelope";
           const envRes = await runEnvelopeValidator(validationBasePath, path2);
-          envelopePass = envRes.status !== "fail";
-          if (!envelopePass) {
+          appendAdvisories("envelope", envRes.advisorySignals || []);
+          envelopePass = envRes.hardFail !== true;
+          if (envRes.hardFail === true) {
             stage2GateFailure = { validator: "envelope", reason: envRes.reason };
+            nLog("[VALIDATOR_HARD_FAIL]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "envelope",
+              reason: envRes.reason,
+              confidence: envRes.confidence,
+            });
             nLog("[STAGE2_VALIDATION_FAIL] envelope");
             nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
             logValidatorResult({
@@ -7232,12 +7282,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const finalConfirmMode: "block" | "log" = geminiSemanticValidatorMode === "log" ? "log" : "block";
       if (validationStage === "2") {
         try {
-          const ai = getGeminiClient();
-          const base1A = toBase64(path1A);
-          const baseFinal = toBase64(path2);
-          compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
-            validationMode: stage2ValidationMode,
-          });
+          if (stage2AdvisorySignals.length === 0) {
+            nLog("[GEMINI_ESCALATION]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              action: "skip",
+              reason: "no_advisories",
+            });
+          } else {
+            const ai = getGeminiClient();
+            const base1A = toBase64(path1A);
+            const baseFinal = toBase64(path2);
+            nLog("[GEMINI_ESCALATION]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              action: "run",
+              model: "gemini-2.5-pro",
+              advisoryCount: stage2AdvisorySignals.length,
+              advisorySignals: stage2AdvisorySignals,
+            });
+            compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
+              validationMode: stage2ValidationMode,
+              advisorySignals: stage2AdvisorySignals,
+              modelOverride: "gemini-2.5-pro",
+            });
+          }
 
           if (compliance && compliance.ok === false) {
             const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;

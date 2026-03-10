@@ -1,0 +1,730 @@
+[
+  {
+    "image": "Bedroom 02",
+    "staged": "Bedroom 02 (Enhanced).webp",
+    "baselineFile": "Bedroom 02.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.0488,
+            0.3841,
+            0.5273,
+            0.7161
+          ],
+          "area_pct": 15.9,
+          "aspect_ratio": 1.92,
+          "structuralClass": "exterior",
+          "wallIndex": 0,
+          "horizontalBand": "left_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "wide",
+          "wallCoverageBand": "40-60",
+          "orientation": "landscape",
+          "paneStructure": "multi_pane_grid",
+          "heightClass": "standard",
+          "approxAspectRatio": 1.92,
+          "confidence": 0.95,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "D1",
+          "type": "door",
+          "bbox": [
+            0.8643,
+            0.2669,
+            0.9668,
+            0.9697
+          ],
+          "area_pct": 7.2,
+          "aspect_ratio": 0.19,
+          "structuralClass": "circulation",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "widthBand": "single",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.19,
+          "confidence": 0.95,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 4
+    }
+  },
+  {
+    "image": "Bedroom 04",
+    "staged": "Bedroom 04 (Enhanced).webp",
+    "baselineFile": "Bedroom 04.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "bbox": [
+            0,
+            0.125,
+            0.125,
+            1
+          ],
+          "area_pct": 10.94,
+          "aspect_ratio": 0.19,
+          "structuralClass": "circulation",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "full_height",
+          "widthBand": "single",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.19,
+          "confidence": 1,
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.1125,
+            0.125,
+            0.425,
+            1
+          ],
+          "area_pct": 27.34,
+          "aspect_ratio": 0.476,
+          "structuralClass": "storage",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "verticalBand": "full_height",
+          "widthBand": "double",
+          "wallCoverageBand": "40-60",
+          "orientation": "portrait",
+          "paneStructure": "sliding_panel",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.476,
+          "confidence": 1,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "center",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.4875,
+            0.125,
+            0.96875,
+            0.3167
+          ],
+          "area_pct": 9.22,
+          "aspect_ratio": 3.347,
+          "structuralClass": "exterior",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "ceiling_zone",
+          "widthBand": "wide",
+          "wallCoverageBand": "60+",
+          "orientation": "landscape",
+          "paneStructure": "multi_pane_grid",
+          "heightClass": "transom",
+          "approxAspectRatio": 3.347,
+          "confidence": 1,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 3
+    }
+  },
+  {
+    "image": "Bedroom 05",
+    "staged": "Bedroom 05 (Enhanced).webp",
+    "baselineFile": "Bedroom 05.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.44,
+            0.06,
+            0.9,
+            0.69
+          ],
+          "area_pct": 28.98,
+          "aspect_ratio": 0.73,
+          "structuralClass": "exterior",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "double",
+          "wallCoverageBand": "60+",
+          "orientation": "portrait",
+          "paneStructure": "multi_pane_grid",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.73,
+          "confidence": 0.95,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.08,
+            0.06,
+            0.4,
+            0.25
+          ],
+          "area_pct": 6.08,
+          "aspect_ratio": 1.68,
+          "structuralClass": "exterior",
+          "wallIndex": 0,
+          "horizontalBand": "left_third",
+          "verticalBand": "ceiling_zone",
+          "widthBand": "double",
+          "wallCoverageBand": "60+",
+          "orientation": "landscape",
+          "paneStructure": "double_fixed",
+          "heightClass": "transom",
+          "approxAspectRatio": 1.68,
+          "confidence": 0.95,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 2
+    }
+  },
+  {
+    "image": "Bedroom 06",
+    "staged": "Bedroom 06 (Enhanced).webp",
+    "baselineFile": "Bedroom 06.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.4315,
+            0.2612,
+            0.9152,
+            0.6151
+          ],
+          "area_pct": 17.11,
+          "aspect_ratio": 1.822,
+          "structuralClass": "exterior",
+          "wallIndex": 2,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "wide",
+          "wallCoverageBand": "40-60",
+          "orientation": "landscape",
+          "paneStructure": "multi_pane_grid",
+          "heightClass": "standard",
+          "approxAspectRatio": 1.822,
+          "confidence": 1,
+          "wallPosition": "far_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.0422,
+            0.2546,
+            0.4117,
+            0.9159
+          ],
+          "area_pct": 24.43,
+          "aspect_ratio": 0.745,
+          "structuralClass": "storage",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "full_height",
+          "widthBand": "wide",
+          "wallCoverageBand": "40-60",
+          "orientation": "portrait",
+          "paneStructure": "sliding_panel",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.745,
+          "confidence": 1,
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "bbox": [
+            0.3918,
+            0.2943,
+            0.4315,
+            0.8995
+          ],
+          "area_pct": 2.4,
+          "aspect_ratio": 0.087,
+          "structuralClass": "storage",
+          "wallIndex": 2,
+          "horizontalBand": "center_third",
+          "verticalBand": "full_height",
+          "widthBand": "narrow",
+          "wallCoverageBand": "5-10",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.087,
+          "confidence": 1,
+          "wallPosition": "far_wall",
+          "relativeHorizontalPosition": "center",
+          "shape": "walkthrough",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 4
+    }
+  },
+  {
+    "image": "Bedroom 07",
+    "staged": "Bedroom 07 (Enhanced).webp",
+    "baselineFile": "Bedroom 07.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.1406,
+            0.2431,
+            0.8698,
+            0.7153
+          ],
+          "area_pct": 34.43,
+          "aspect_ratio": 2.0588,
+          "structuralClass": "exterior",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "wide",
+          "wallCoverageBand": "60+",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 2.0588,
+          "confidence": 0.98,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "center",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 4
+    }
+  },
+  {
+    "image": "Bedroom 11",
+    "staged": "Bedroom 11 (Enhanced).webp",
+    "baselineFile": "Bedroom 11.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "bbox": [
+            0,
+            0,
+            0.2,
+            1
+          ],
+          "area_pct": 20,
+          "aspect_ratio": 0.13,
+          "structuralClass": "circulation",
+          "wallIndex": 0,
+          "horizontalBand": "left_third",
+          "verticalBand": "full_height",
+          "widthBand": "narrow",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.13,
+          "confidence": 0.95,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.2,
+            0,
+            0.36,
+            1
+          ],
+          "area_pct": 16,
+          "aspect_ratio": 0.11,
+          "structuralClass": "storage",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "full_height",
+          "widthBand": "narrow",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "single_fixed",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.11,
+          "confidence": 0.98,
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.375,
+            0.26,
+            0.76,
+            0.646
+          ],
+          "area_pct": 14.89,
+          "aspect_ratio": 0.66,
+          "structuralClass": "exterior",
+          "wallIndex": 2,
+          "horizontalBand": "center_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "single",
+          "wallCoverageBand": "40-60",
+          "orientation": "portrait",
+          "paneStructure": "double_fixed",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.66,
+          "confidence": 0.99,
+          "wallPosition": "far_wall",
+          "relativeHorizontalPosition": "center",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.76,
+            0.3,
+            0.92,
+            0.4
+          ],
+          "area_pct": 1.6,
+          "aspect_ratio": 1.07,
+          "structuralClass": "exterior",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "ceiling_zone",
+          "widthBand": "narrow",
+          "wallCoverageBand": "20-40",
+          "orientation": "square",
+          "paneStructure": "single_fixed",
+          "heightClass": "transom",
+          "approxAspectRatio": 1.07,
+          "confidence": 0.98,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 4
+    }
+  },
+  {
+    "image": "Bedroom 12",
+    "staged": "Bedroom 12 (Enhanced).webp",
+    "baselineFile": "Bedroom 12.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "bbox": [
+            0.09,
+            0.3,
+            0.7,
+            0.9
+          ],
+          "area_pct": 36.6,
+          "aspect_ratio": 1.016,
+          "structuralClass": "exterior",
+          "wallIndex": 3,
+          "horizontalBand": "center_third",
+          "verticalBand": "full_height",
+          "widthBand": "double",
+          "wallCoverageBand": "40-60",
+          "orientation": "square",
+          "paneStructure": "sliding_panel",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 1.016,
+          "confidence": 0.95,
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "center",
+          "shape": "door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "walkthrough",
+          "bbox": [
+            0.7,
+            0.3,
+            0.9,
+            0.9
+          ],
+          "area_pct": 12,
+          "aspect_ratio": 0.333,
+          "structuralClass": "circulation",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "widthBand": "single",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 0.333,
+          "confidence": 0.95,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "walkthrough",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 4
+    }
+  },
+  {
+    "image": "Bedroom 14",
+    "staged": "Bedroom 14 (Enhanced).webp",
+    "baselineFile": "Bedroom 14.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.03125,
+            0.1875,
+            0.390625,
+            0.5833
+          ],
+          "area_pct": 14.23,
+          "aspect_ratio": 1.21,
+          "structuralClass": "exterior",
+          "wallIndex": 0,
+          "horizontalBand": "left_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "double",
+          "wallCoverageBand": "20-40",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 1.21,
+          "confidence": 0.9,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.609375,
+            0.1875,
+            0.96875,
+            0.5833
+          ],
+          "area_pct": 14.23,
+          "aspect_ratio": 1.21,
+          "structuralClass": "exterior",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "double",
+          "wallCoverageBand": "20-40",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "heightClass": "standard",
+          "approxAspectRatio": 1.21,
+          "confidence": 0.9,
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.9140625,
+            0,
+            1,
+            1
+          ],
+          "area_pct": 8.59,
+          "aspect_ratio": 0.11,
+          "structuralClass": "storage",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "widthBand": "single",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.11,
+          "confidence": 0.8,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 3
+    }
+  },
+  {
+    "image": "Bedroom 16",
+    "staged": "Bedroom 16 (Enhanced).webp",
+    "baselineFile": "Bedroom 16.jpg",
+    "baselineExtraction": {
+      "openings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0,
+            0.3293,
+            0.457,
+            0.9987
+          ],
+          "area_pct": 30.58,
+          "aspect_ratio": 0.91,
+          "structuralClass": "exterior",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "full_height",
+          "widthBand": "double",
+          "wallCoverageBand": "40-60",
+          "orientation": "square",
+          "paneStructure": "sliding_panel",
+          "heightClass": "floor_to_ceiling",
+          "approxAspectRatio": 0.91,
+          "confidence": 1,
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.535,
+            0.48,
+            0.96,
+            0.648
+          ],
+          "area_pct": 7.14,
+          "aspect_ratio": 3.37,
+          "structuralClass": "exterior",
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "widthBand": "double",
+          "wallCoverageBand": "40-60",
+          "orientation": "landscape",
+          "paneStructure": "double_fixed",
+          "heightClass": "standard",
+          "approxAspectRatio": 3.37,
+          "confidence": 1,
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "wallCount": 2
+    }
+  }
+]
