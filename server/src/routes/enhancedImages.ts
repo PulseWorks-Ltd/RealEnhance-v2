@@ -8,6 +8,9 @@
 import { Router, type Request, type Response } from 'express';
 import { listEnhancedImages, getEnhancedImage } from '../services/enhancedImages.js';
 
+const ENHANCED_IMAGES_DEFAULT_LIMIT = Math.max(1, Number(process.env.ENHANCED_IMAGES_DEFAULT_LIMIT || 200));
+const ENHANCED_IMAGES_MAX_LIMIT = Math.max(ENHANCED_IMAGES_DEFAULT_LIMIT, Number(process.env.ENHANCED_IMAGES_MAX_LIMIT || 5000));
+
 export function enhancedImagesRouter() {
   const router = Router();
 
@@ -17,7 +20,7 @@ export function enhancedImagesRouter() {
    * List previously enhanced images for the authenticated user
    *
    * Query params:
-   * - limit: Max results (default: 50, max: 100)
+  * - limit: Max results (default: 200, max: 5000)
    * - offset: Pagination offset (default: 0)
    *
    * Permissions:
@@ -38,7 +41,11 @@ export function enhancedImagesRouter() {
       }
 
       // Parse query params
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const requestedLimit = parseInt(req.query.limit as string, 10);
+      const limit = Math.max(
+        1,
+        Math.min(Number.isFinite(requestedLimit) ? requestedLimit : ENHANCED_IMAGES_DEFAULT_LIMIT, ENHANCED_IMAGES_MAX_LIMIT)
+      );
       const offset = parseInt(req.query.offset as string) || 0;
 
       // Check user role for permissions

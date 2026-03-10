@@ -21,6 +21,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ImageOff, Loader2, Info, Download, Eye, Folder } from 'lucide-react';
 
+const GALLERY_FETCH_LIMIT = 5000;
+
 export default function EnhancedHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -46,7 +48,7 @@ export default function EnhancedHistoryPage() {
         return;
       }
 
-      const response = await apiFetch('/api/enhanced-images?limit=200&offset=0');
+      const response = await apiFetch(`/api/enhanced-images?limit=${GALLERY_FETCH_LIMIT}&offset=0`);
       if (!response.ok) {
         if (response.status >= 500) {
           throw new Error('Gallery is temporarily unavailable. Please try again in a few minutes.');
