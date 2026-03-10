@@ -18,7 +18,12 @@ import {
   requestClearEnhancementState,
 } from "@/lib/enhancement-state";
 import { getQuotaExceededMessage } from "@/lib/quota-messaging";
-import { clearPendingEnhancementJobs, setPendingEnhancementJobs } from "@/lib/pending-enhancement";
+import {
+  clearPendingEnhancementJobs,
+  getPendingEnhancementSession,
+  setPendingEnhancementSession,
+  type PendingEnhancementSession,
+} from "@/lib/pending-enhancement";
 import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
@@ -874,6 +879,8 @@ export default function BatchProcessor() {
     missingCredits: 0,
     pendingJobIds: [],
   });
+  const [pendingRestoreSession, setPendingRestoreSession] = useState<PendingEnhancementSession | null>(null);
+  const [showPendingRestoreBanner, setShowPendingRestoreBanner] = useState(false);
 
   // Keep restored batches in the unified workspace when files arrive asynchronously.
   useEffect(() => {
@@ -1653,6 +1660,63 @@ export default function BatchProcessor() {
     });
   }, []);
 
+  const persistPendingEnhancementSession = useCallback((
+    pendingJobIds: string[],
+    options?: {
+      imageIds?: string[];
+      requiredCredits?: number;
+      availableCredits?: number;
+      missingCredits?: number;
+      createdAt?: number;
+      expiresAt?: number;
+    }
+  ) => {
+    const normalizedJobIds = Array.from(new Set((pendingJobIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+    if (!normalizedJobIds.length) {
+      clearPendingEnhancementJobs();
+      return;
+    }
+
+    const fileMetadata = files.map((file) => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+    }));
+
+    const requiredCredits = Math.max(
+      0,
+      Number(
+        options?.requiredCredits ??
+          (pendingRestoreSession?.requiredCredits ?? requiredBatchCredits)
+      )
+    );
+    const available = Math.max(
+      0,
+      Number(
+        options?.availableCredits ??
+          (availableCredits ?? pendingRestoreSession?.availableCredits ?? 0)
+      )
+    );
+    const missing = Math.max(
+      0,
+      Number(options?.missingCredits ?? (requiredCredits - available))
+    );
+
+    setPendingEnhancementSession({
+      ownerUserId: currentUserId || undefined,
+      jobIds: normalizedJobIds,
+      imageIds: options?.imageIds || pendingRestoreSession?.imageIds || [],
+      fileMetadata,
+      requestedCount: Math.max(fileMetadata.length, requiredCredits, normalizedJobIds.length),
+      requiredCredits,
+      availableCredits: available,
+      missingCredits: missing,
+      createdAt: options?.createdAt,
+      expiresAt: options?.expiresAt,
+    });
+  }, [availableCredits, currentUserId, files, pendingRestoreSession, requiredBatchCredits]);
+
   const handleContinueEnhancementCheckout = useCallback(async () => {
     try {
       const res = await apiFetch("/api/agency/bundles/checkout", {
@@ -1667,7 +1731,14 @@ export default function BatchProcessor() {
       }
 
       if (creditGateModal.pendingJobIds.length > 0) {
-        setPendingEnhancementJobs(creditGateModal.pendingJobIds);
+        persistPendingEnhancementSession(creditGateModal.pendingJobIds, {
+          imageIds: pendingRestoreSession?.imageIds || [],
+          requiredCredits: creditGateModal.requiredCredits,
+          availableCredits: creditGateModal.availableCredits,
+          missingCredits: creditGateModal.missingCredits,
+          createdAt: pendingRestoreSession?.createdAt,
+          expiresAt: pendingRestoreSession?.expiresAt,
+        });
       }
 
       window.location.assign(checkoutUrl);
@@ -1678,7 +1749,15 @@ export default function BatchProcessor() {
         variant: "destructive",
       });
     }
-  }, [creditGateModal.pendingJobIds, toast]);
+  }, [
+    creditGateModal.availableCredits,
+    creditGateModal.missingCredits,
+    creditGateModal.pendingJobIds,
+    creditGateModal.requiredCredits,
+    pendingRestoreSession,
+    persistPendingEnhancementSession,
+    toast,
+  ]);
 
   const handleCancelPendingEnhancement = useCallback(async () => {
     const pendingJobIds = creditGateModal.pendingJobIds;
@@ -1693,6 +1772,8 @@ export default function BatchProcessor() {
       );
     } finally {
       clearPendingEnhancementJobs();
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
       setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
     }
   }, [creditGateModal.pendingJobIds]);
@@ -1981,70 +2062,112 @@ export default function BatchProcessor() {
     if (!userId) {
       console.log("[BATCH_RESTORE_SKIPPED_NO_USER]");
       clearBatchJobState(undefined, { resetUI: true });
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
       return;
     }
 
     const savedState = loadBatchJobState(userId);
-    if (!savedState) return;
 
-    if (savedState.ownerUserId && savedState.ownerUserId !== userId) {
-      console.log("[BATCH_RESTORE_SKIPPED_DIFFERENT_USER]", { stored: savedState.ownerUserId, current: userId });
-      clearBatchJobState(userId, { resetUI: true });
+    if (savedState) {
+      if (savedState.ownerUserId && savedState.ownerUserId !== userId) {
+        console.log("[BATCH_RESTORE_SKIPPED_DIFFERENT_USER]", { stored: savedState.ownerUserId, current: userId });
+        clearBatchJobState(userId, { resetUI: true });
+        setPendingRestoreSession(null);
+        setShowPendingRestoreBanner(false);
+        return;
+      }
+
+      console.log("[BATCH_RESTORE_OK]", { userId, jobId: savedState.jobId });
+      setJobId(savedState.jobId);
+      setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
+      setRunState(savedState.runState);
+      setResults(savedState.results);
+      setProcessedImages(savedState.processedImages);
+      setProcessedImagesByIndex(savedState.processedImagesByIndex);
+      jobIdToIndexRef.current = savedState.jobIdToIndex || {};
+      imageIdToIndexRef.current = savedState.imageIdToIndex || {};
+      if (!Object.keys(jobIdToIndexRef.current).length) {
+        rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
+      }
+      if (!Object.keys(imageIdToIndexRef.current).length && Array.isArray(savedState.results)) {
+        savedState.results.forEach((res, idx) => {
+          const imgId = res?.imageId || res?.result?.imageId;
+          if (imgId && imageIdToIndexRef.current[imgId] === undefined) {
+            imageIdToIndexRef.current[imgId] = idx;
+          }
+        });
+      }
+      setGlobalGoal(savedState.goal);
+      setPreserveStructure?.(savedState.settings.preserveStructure);
+      setAllowStaging(savedState.settings.allowStaging);
+      setAllowRetouch?.(savedState.settings.allowRetouch);
+      setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
+      setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
+      setDeclutter(savedState.settings.declutter ?? false);
+      setPropertyAddress(savedState.settings.propertyAddress ?? "");
+      // DO NOT restore stagingStyle - always default to Standard Listing
+      // User must explicitly select a different style for each new session
+
+      // Restore file metadata if available
+      if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
+        console.log("Restoring file metadata for", savedState.fileMetadata.length, "files");
+        // Create placeholder File objects from metadata so the UI shows the upload queue
+        const restoredFiles = savedState.fileMetadata.map((meta) => {
+          const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
+          const file = new File([blob], meta.name, {
+            type: meta.type,
+            lastModified: meta.lastModified
+          });
+          (file as any).__restored = true; // display-only placeholder
+          return file;
+        });
+        setFiles(restoredFiles);
+      }
+
+      if (savedState.runState === "running") {
+        setActiveTab("enhance");
+        startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
+      } else if (savedState.runState === "done") {
+        setActiveTab("enhance");
+      }
+    }
+
+    const pendingSession = getPendingEnhancementSession();
+    if (!pendingSession) {
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
       return;
     }
 
-    console.log("[BATCH_RESTORE_OK]", { userId, jobId: savedState.jobId });
-    setJobId(savedState.jobId);
-    setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
-    setRunState(savedState.runState);
-    setResults(savedState.results);
-    setProcessedImages(savedState.processedImages);
-    setProcessedImagesByIndex(savedState.processedImagesByIndex);
-    jobIdToIndexRef.current = savedState.jobIdToIndex || {};
-    imageIdToIndexRef.current = savedState.imageIdToIndex || {};
-    if (!Object.keys(jobIdToIndexRef.current).length) {
-      rebuildJobIndexMapping(savedState.jobIds, savedState.fileMetadata?.length || savedState.results?.length || 0);
+    if (pendingSession.ownerUserId && pendingSession.ownerUserId !== userId) {
+      clearPendingEnhancementJobs();
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
+      return;
     }
-    if (!Object.keys(imageIdToIndexRef.current).length && Array.isArray(savedState.results)) {
-      savedState.results.forEach((res, idx) => {
-        const imgId = res?.imageId || res?.result?.imageId;
-        if (imgId && imageIdToIndexRef.current[imgId] === undefined) {
-          imageIdToIndexRef.current[imgId] = idx;
-        }
-      });
-    }
-    setGlobalGoal(savedState.goal);
-    setPreserveStructure?.(savedState.settings.preserveStructure);
-    setAllowStaging(savedState.settings.allowStaging);
-    setAllowRetouch?.(savedState.settings.allowRetouch);
-    setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
-    setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
-    setDeclutter(savedState.settings.declutter ?? false);
-    setPropertyAddress(savedState.settings.propertyAddress ?? "");
-    // DO NOT restore stagingStyle - always default to Standard Listing
-    // User must explicitly select a different style for each new session
-    
-    // Restore file metadata if available
-    if (savedState.fileMetadata && savedState.fileMetadata.length > 0) {
-      console.log("Restoring file metadata for", savedState.fileMetadata.length, "files");
-      // Create placeholder File objects from metadata so the UI shows the upload queue
-      const restoredFiles = savedState.fileMetadata.map((meta) => {
-        const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
-        const file = new File([blob], meta.name, {
-          type: meta.type,
-          lastModified: meta.lastModified
+
+    const hasActiveBatch = !!savedState &&
+      (savedState.runState === "running" || savedState.runState === "done") &&
+      ((savedState.jobIds && savedState.jobIds.length > 0) || !!savedState.jobId);
+
+    if (!hasActiveBatch) {
+      if (!savedState?.fileMetadata?.length && pendingSession.fileMetadata.length > 0) {
+        const restoredFiles = pendingSession.fileMetadata.map((meta) => {
+          const blob = new Blob([`Placeholder for ${meta.name}`], { type: meta.type });
+          const file = new File([blob], meta.name, {
+            type: meta.type,
+            lastModified: meta.lastModified,
+          });
+          (file as any).__restored = true;
+          return file;
         });
-        (file as any).__restored = true; // display-only placeholder
-        return file;
-      });
-      setFiles(restoredFiles);
-    }
-    
-    if (savedState.runState === "running") {
-      setActiveTab("enhance");
-      startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
-    } else if (savedState.runState === "done") {
-      setActiveTab("enhance");
+        setFiles(restoredFiles);
+      }
+
+      setPendingRestoreSession(pendingSession);
+      setShowPendingRestoreBanner(true);
+      setActiveTab("images");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId]);
@@ -2127,6 +2250,8 @@ export default function BatchProcessor() {
       setRegionEditorOpen(false);
       setRunState("idle");
       setFiles([]);
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
       setActiveTab("images");
       console.log("[BATCH_STATE_CLEARED]", { source: "clear-event" });
     };
@@ -3522,9 +3647,7 @@ export default function BatchProcessor() {
       if (uploadResult?.requiresPayment) {
         const pendingJobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
         const pendingJobIds = pendingJobs.map((j: any) => String(j?.jobId || "").trim()).filter(Boolean);
-        if (pendingJobIds.length > 0) {
-          setPendingEnhancementJobs(pendingJobIds);
-        }
+        const pendingImageIds = pendingJobs.map((j: any) => String(j?.imageId || "").trim()).filter(Boolean);
 
         setRunState("idle");
         setJobIds([]);
@@ -3535,6 +3658,17 @@ export default function BatchProcessor() {
           ? Number(uploadResult.availableCredits)
           : Math.max(0, Number(availableCredits ?? 0));
 
+        if (pendingJobIds.length > 0) {
+          persistPendingEnhancementSession(pendingJobIds, {
+            imageIds: pendingImageIds,
+            requiredCredits: required,
+            availableCredits: available,
+            missingCredits: Math.max(0, required - available),
+          });
+          setPendingRestoreSession(getPendingEnhancementSession());
+          setShowPendingRestoreBanner(false);
+        }
+
         openCreditGateModal(required, available, pendingJobIds);
         return;
       }
@@ -3542,6 +3676,8 @@ export default function BatchProcessor() {
       const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
       if (!jobs.length) throw new Error("Upload response missing jobs");
       clearPendingEnhancementJobs();
+      setPendingRestoreSession(null);
+      setShowPendingRestoreBanner(false);
       const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
       console.info("[ENHANCE_REQUEST] ok", { jobs: ids.length });
       console.log("[BATCH] start", {
@@ -5018,6 +5154,9 @@ export default function BatchProcessor() {
     setActiveTab(nextTab);
 
     clearBatchJobState(currentUserId);
+    clearPendingEnhancementJobs();
+    setPendingRestoreSession(null);
+    setShowPendingRestoreBanner(false);
     clearEnhancementStateStorage(currentUserId);
     clearEnhancementStateStorage(undefined);
     localStorage.removeItem("currentBatch");
@@ -5602,6 +5741,42 @@ export default function BatchProcessor() {
       backgroundSize: "24px 24px",
     }}
   >
+        {showPendingRestoreBanner && pendingRestoreSession && (
+          <div className="mx-4 mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">Your enhancement batch is ready to continue</p>
+                <p className="text-xs text-amber-800">
+                  {Math.max(1, Math.ceil((pendingRestoreSession.expiresAt - Date.now()) / 60000))} minutes remaining before this pending batch expires.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    openCreditGateModal(
+                      pendingRestoreSession.requiredCredits,
+                      Math.max(0, Number(availableCredits ?? pendingRestoreSession.availableCredits)),
+                      pendingRestoreSession.jobIds
+                    );
+                    setShowPendingRestoreBanner(false);
+                  }}
+                >
+                  Continue Enhancement
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowPendingRestoreBanner(false)}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Upload Tab */}
         {activeTab === "upload" && (

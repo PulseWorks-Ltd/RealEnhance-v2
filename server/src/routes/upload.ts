@@ -5,7 +5,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
-import { createAwaitingPaymentEnhanceJob, enqueueEnhanceJob } from "../services/jobs.js";
+import { createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
@@ -380,6 +380,25 @@ export function uploadRouter() {
         code: "CREDIT_CHECK_FAILED",
         message: "Unable to verify available credits. Please try again.",
       });
+    }
+
+    // Deduplicate pending jobs: if user already has awaiting_payment jobs, reuse them.
+    if (requiresPayment) {
+      const existingAwaiting = await listAwaitingPaymentEnhanceJobs(sessUser.id);
+      if (existingAwaiting.length > 0) {
+        const existingJobs = existingAwaiting.map((pending) => ({
+          jobId: pending.jobId,
+          imageId: String((pending as any)?.payload?.imageId || ""),
+        }));
+
+        return res.json({
+          requiresPayment: true,
+          deficit,
+          requiredCredits,
+          availableCredits,
+          jobs: existingJobs,
+        });
+      }
     }
 
     for (let i = 0; i < files.length; i++) {
