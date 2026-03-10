@@ -298,6 +298,21 @@ function normalizeVersionToTimestamp(value: unknown): number {
   return 0;
 }
 
+function getPerImageDeclutterRequested(item: any): boolean {
+  const requestedStages = item?.requestedStages || item?.result?.requestedStages || item?.meta?.requestedStages || null;
+  return !!requestedStages?.stage1b ||
+    (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false) ||
+    !!item?.options?.declutter ||
+    !!item?.result?.options?.declutter;
+}
+
+function getPerImageStagingAllowed(item: any): boolean {
+  const itemAllow = item?.meta?.allowStaging;
+  const resultAllow = item?.result?.meta?.allowStaging;
+  if (itemAllow === false || resultAllow === false) return false;
+  return true;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // FIX 2: Filter backend warnings and errors for user-friendly display
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2294,7 +2309,7 @@ export default function BatchProcessor() {
             const singleStageMap = data?.stageUrls || data?.result?.stageUrls || {};
             const singleReqStages = data?.requestedStages || data?.meta?.requestedStages || data?.result?.requestedStages || {};
             const singleSceneLabel = String(data?.meta?.scene?.label || data?.result?.meta?.scene?.label || "").toLowerCase();
-            const singleStagingAllowed = data?.meta?.allowStaging !== false && allowStaging;
+            const singleStagingAllowed = getPerImageStagingAllowed(data);
             const singleReqStage2 = singleReqStages?.stage2 === true || singleReqStages?.stage2 === "true";
             const singleDeclutter = !!singleReqStages?.stage1b;
             const singleStage2Expected = singleReqStage2 && singleSceneLabel !== "exterior" && singleStagingAllowed;
@@ -2336,7 +2351,7 @@ export default function BatchProcessor() {
             const diStageMap = di?.stageUrls || di?.stage_urls || {};
             const diReqStages = di?.requestedStages || di?.meta?.requestedStages || {};
             const diScene = String(di?.meta?.scene?.label || "").toLowerCase();
-            const diStagingOk = di?.meta?.allowStaging !== false && allowStaging;
+            const diStagingOk = getPerImageStagingAllowed(di);
             const diReqS2 = diReqStages?.stage2 === true || diReqStages?.stage2 === "true";
             const diDeclutter = !!diReqStages?.stage1b;
             const diS2Expected = diReqS2 && diScene !== "exterior" && diStagingOk;
@@ -2561,14 +2576,14 @@ export default function BatchProcessor() {
           } : null;
           const requestedStages = it?.requestedStages || it?.meta?.requestedStages || it?.metadata?.requestedStages || null;
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-          const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
+          const declutterRequested = getPerImageDeclutterRequested(it);
           const trackedRegionEditJob = !!polledId && regionEditJobIdsRef.current.has(polledId);
           const editInFlightForIdx = typeof idx === "number" && editingImagesRef.current.has(idx);
           const isRegionEdit = trackedRegionEditJob || editInFlightForIdx ||
             String(it?.meta?.type || "").toLowerCase() === "region-edit" ||
             String(it?.meta?.jobType || "").toLowerCase() === "region_edit";
           const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
-          const stagingAllowed = it?.meta?.allowStaging !== false && allowStaging;
+          const stagingAllowed = getPerImageStagingAllowed(it);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const extraResult = it?.result || {};
@@ -2784,9 +2799,6 @@ export default function BatchProcessor() {
                 || existing.result?.finalOutputUrl
                 || existing.result?.resultUrl
                 || null;
-              if (mergedMeta.allowStaging === undefined && typeof allowStaging === 'boolean') {
-                mergedMeta.allowStaging = allowStaging;
-              }
               const isTerminalStatusForRetry = status === "completed" || status === "failed";
               const polledCurrentStage = normalizeCurrentStage(
                 it?.currentStage ||
@@ -2998,9 +3010,9 @@ export default function BatchProcessor() {
 
           const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
           const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
-          const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
+          const stagingAllowed = getPerImageStagingAllowed(r);
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-          const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
+          const declutterRequested = getPerImageDeclutterRequested(r);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
           const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
 
@@ -3070,7 +3082,7 @@ export default function BatchProcessor() {
                 // Check if item is legitimately in multi-stage pipeline
                 const requestedStages = existing?.requestedStages || existing?.result?.requestedStages || {};
                 const sceneLabel = String(existing?.meta?.scene?.label || existing?.result?.meta?.scene?.label || "").toLowerCase();
-                const stagingAllowed = existing?.meta?.allowStaging !== false && existing?.result?.meta?.allowStaging !== false && allowStaging;
+                const stagingAllowed = getPerImageStagingAllowed(existing);
                 const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                 const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                 const isMultiStageItem = stage2Expected || requestedStages?.stage1b;
@@ -6045,9 +6057,9 @@ export default function BatchProcessor() {
                             // Calculate target stage for this image
                             const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
                             const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
-                            const stagingAllowed = r?.meta?.allowStaging !== false && r?.result?.meta?.allowStaging !== false && allowStaging;
+                            const stagingAllowed = getPerImageStagingAllowed(r);
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                            const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false);
+                            const declutterRequested = getPerImageDeclutterRequested(r);
                             const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
                             
                             const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
@@ -6207,8 +6219,8 @@ export default function BatchProcessor() {
                         const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
                         const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
                         const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                        const declutterRequested = !!requestedStages?.stage1b || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false) || !!(result as any)?.options?.declutter;
-                        const stagingAllowed = result?.meta?.allowStaging !== false && result?.result?.meta?.allowStaging !== false && allowStaging;
+                        const declutterRequested = getPerImageDeclutterRequested(result);
+                        const stagingAllowed = getPerImageStagingAllowed(result);
                         const stage2SkippedByDesign = result?.meta?.stage2Skipped === true || result?.result?.meta?.stage2Skipped === true;
                         const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
@@ -6339,9 +6351,9 @@ export default function BatchProcessor() {
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
-                        const improvingMessage = allowStaging
+                        const improvingMessage = stage2Expected
                           ? "Staging is being improved"
-                          : declutter
+                          : declutterRequested
                           ? "Further decluttering required"
                           : "Enhancing";
                         const currentStage = normalizeCurrentStage(result?.currentStage || result?.result?.currentStage);
