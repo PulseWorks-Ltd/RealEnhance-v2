@@ -704,45 +704,54 @@ const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string =
   return "Retrying...";
 };
 
-type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "retry";
+type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2";
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
 type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
 
-const MESSAGE_ROTATION_MS = 2_500;
+const MESSAGE_ROTATION_MIN_MS = 7_000;
+const MESSAGE_ROTATION_MAX_MS = 10_000;
+
+const randomBetween = (min: number, max: number): number => {
+  const floorMin = Math.ceil(min);
+  const floorMax = Math.floor(max);
+  return Math.floor(Math.random() * (floorMax - floorMin + 1)) + floorMin;
+};
+
+const randomFromPool = (pool: string[], previous?: string): string => {
+  if (pool.length === 0) return "";
+  if (pool.length === 1) return pool[0];
+  const candidates = previous ? pool.filter((message) => message !== previous) : pool;
+  const source = candidates.length > 0 ? candidates : pool;
+  return source[Math.floor(Math.random() * source.length)];
+};
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
-    "Improving color balance",
-    "Enhancing lighting",
-    "Correcting white balance",
-    "Sharpening image details",
-    "Optimizing exposure",
+    "Balancing interior lighting",
+    "Recovering window highlights",
+    "Optimising exposure levels",
+    "Reducing interior shadows",
+    "Improving natural light balance",
+    "Enhancing room brightness",
+    "Adjusting tonal contrast",
+    "Refining lighting realism",
   ],
   stage1b: [
-    "Detecting removable furniture",
-    "Decluttering room layout",
-    "Removing temporary objects",
-    "Cleaning visual distractions",
+    "Detecting clutter",
+    "Removing visual distractions",
+    "Cleaning room surfaces",
+    "Clearing floor areas",
+    "Simplifying scene layout",
     "Preparing room for staging",
   ],
   stage2: [
-    "Designing staged layout",
-    "Placing furniture",
-    "Optimizing room composition",
-    "Adding realistic staging elements",
-    "Finalizing staged presentation",
-  ],
-  validator: [
-    "Reviewing visual quality",
-    "Checking composition",
-    "Verifying layout",
-    "Finalizing details"
-  ],
-  retry: [
-    "Improving styling",
-    "Adjusting composition",
-    "Refining layout",
-    "Updating presentation"
+    "Designing staging layout",
+    "Positioning virtual furniture",
+    "Balancing room composition",
+    "Styling interior elements",
+    "Refining staging realism",
+    "Adjusting staging scale",
+    "Rendering staged scene",
   ],
 };
 
@@ -790,8 +799,7 @@ function resolveDisplayStageKey(params: {
 function toProcessingMessageStage(key: DisplayStageKey): ProcessingMessageStage {
   if (key === "stage1b") return "stage1b";
   if (key === "stage2") return "stage2";
-  if (key === "validator" || key === "completed") return "validator";
-  if (key === "retry") return "retry";
+  if (key === "retry") return "stage2";
   return "stage1a";
 }
 
@@ -846,9 +854,10 @@ export default function BatchProcessor() {
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
   const [results, setResults] = useState<any[]>([]);
-  const [messageIndexByImage, setMessageIndexByImage] = useState<Record<number, number>>({});
+  const [messageByImage, setMessageByImage] = useState<Record<number, string>>({});
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
+  const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
   const [creditGateModal, setCreditGateModal] = useState<{
@@ -905,6 +914,20 @@ export default function BatchProcessor() {
         delete messageTimerByImageRef.current[index];
       }
       delete messageStageByImageRef.current[index];
+      delete currentMessageByImageRef.current[index];
+    };
+
+    const scheduleMessageRotation = (index: number, messageStage: ProcessingMessageStage) => {
+      const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
+      const nextDelay = randomBetween(MESSAGE_ROTATION_MIN_MS, MESSAGE_ROTATION_MAX_MS);
+
+      messageTimerByImageRef.current[index] = setTimeout(() => {
+        const previousMessage = currentMessageByImageRef.current[index];
+        const nextMessage = randomFromPool(messages, previousMessage);
+        currentMessageByImageRef.current[index] = nextMessage;
+        setMessageByImage((prev) => ({ ...prev, [index]: nextMessage }));
+        scheduleMessageRotation(index, messageStage);
+      }, nextDelay);
     };
 
     files.forEach((_, index) => {
@@ -931,20 +954,13 @@ export default function BatchProcessor() {
 
       if (!messageTimerByImageRef.current[index] || messageStageByImageRef.current[index] !== messageStage) {
         clearMessageTimer(index);
-
-        const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
-        setMessageIndexByImage((prev) => ({ ...prev, [index]: 0 }));
         messageStageByImageRef.current[index] = messageStage;
 
-        const rotateMessage = () => {
-          setMessageIndexByImage((prev) => ({
-            ...prev,
-            [index]: ((prev[index] ?? 0) + 1) % Math.max(1, messages.length),
-          }));
-          messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
-        };
-
-        messageTimerByImageRef.current[index] = setTimeout(rotateMessage, MESSAGE_ROTATION_MS);
+        const messages = STAGE_MESSAGES[messageStage] || STAGE_MESSAGES.stage1a;
+        const initialMessage = randomFromPool(messages, currentMessageByImageRef.current[index]);
+        currentMessageByImageRef.current[index] = initialMessage;
+        setMessageByImage((prev) => ({ ...prev, [index]: initialMessage }));
+        scheduleMessageRotation(index, messageStage);
       }
     });
 
@@ -959,6 +975,7 @@ export default function BatchProcessor() {
       });
       messageTimerByImageRef.current = {};
       messageStageByImageRef.current = {};
+      currentMessageByImageRef.current = {};
     };
   }, []);
 
@@ -2033,7 +2050,7 @@ export default function BatchProcessor() {
       setDisplayStageByIndex({});
       setStrictRetryingIndices(new Set());
       setProgressText("");
-      setMessageIndexByImage({});
+      setMessageByImage({});
       setAiSteps({});
       setIsUploading(false);
       setIsBatchRefining(false);
@@ -4905,7 +4922,7 @@ export default function BatchProcessor() {
     setEditingImages(new Set());
     setEditCompletedImages(new Set());
     setStrictRetryingIndices(new Set());
-    setMessageIndexByImage({});
+    setMessageByImage({});
     setAiSteps({});
     setLastDetected(null);
     setFlashAssignedThumbnailIndex(null);
@@ -6060,6 +6077,7 @@ export default function BatchProcessor() {
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
+             <div className="flex-1 min-h-0 overflow-y-auto pr-1">
              <div className="max-w-[1600px] mx-auto px-6 lg:px-8 py-8 relative z-10">
                 
                 {/* 1. Header Section */}
@@ -6386,8 +6404,7 @@ export default function BatchProcessor() {
                         });
                         const stageMessageKey = toProcessingMessageStage(displayStageKey);
                         const rotatingMessages = STAGE_MESSAGES[stageMessageKey] || STAGE_MESSAGES.stage1a;
-                        const messageIndex = messageIndexByImage[i] ?? 0;
-                        const rotatingMessage = rotatingMessages[messageIndex % rotatingMessages.length];
+                        const rotatingMessage = messageByImage[i] || rotatingMessages[0];
                         const stageProgressValue = isDone
                           ? 100
                           : (STAGE_PROGRESS[displayStageKey] ?? (isProcessing ? 35 : 0));
@@ -6738,6 +6755,7 @@ export default function BatchProcessor() {
                     </div>
                 )}
                 
+             </div>
              </div>
             )}
           </div>
