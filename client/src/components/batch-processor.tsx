@@ -3997,6 +3997,47 @@ export default function BatchProcessor() {
     return null;
   }, [displayStageByIndex, results]);
 
+  const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
+    if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
+
+    const file = files[index];
+    if (!file) return null;
+
+    const result = results[index];
+    const selectedStage = displayStageByIndex[index] as DisplayOutputKey | undefined;
+    const preEditSnapshot = preEditStageUrlsRef.current[index] || { stage2: null, stage1B: null, stage1A: null };
+    const resolved = resolveBestStageOutput(result, selectedStage, previewUrls[index] || null, {
+      stage2: preEditSnapshot.stage2,
+      stage1B: preEditSnapshot.stage1B,
+      stage1A: preEditSnapshot.stage1A,
+    });
+    const bestDisplayUrl = resolved.url || previewUrls[index] || null;
+    const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
+
+    const persistedOriginalUrl =
+      result?.result?.originalImageUrl ||
+      result?.originalImageUrl ||
+      result?.result?.originalUrl ||
+      result?.originalUrl ||
+      null;
+    const localOriginal =
+      (file as any)?.__restored !== true &&
+      previewUrls[index] &&
+      previewUrls[index] !== RESTORED_PLACEHOLDER
+        ? previewUrls[index]
+        : undefined;
+    const originalUrl = persistedOriginalUrl || localOriginal;
+    const finalUrl = enhancedUrl || previewUrls[index];
+    if (!finalUrl) return null;
+
+    return {
+      url: finalUrl,
+      filename: file.name || `Image ${index + 1}`,
+      originalUrl,
+      index,
+    };
+  }, [displayStageByIndex, files, previewUrls, results]);
+
   const getEditSourceForIndex = useCallback((imageIndex: number) => {
     const item = results[imageIndex];
     if (!item) return { url: null, stage: null } as const;
@@ -5393,47 +5434,6 @@ export default function BatchProcessor() {
         ? "border-green-500 bg-green-50 text-green-700"
         : "border-gray-300 bg-white text-slate-700 hover:bg-slate-50"
     }`;
-
-  const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
-    if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
-
-    const file = files[index];
-    if (!file) return null;
-
-    const result = results[index];
-    const selectedStage = displayStageByIndex[index] as DisplayOutputKey | undefined;
-    const preEditSnapshot = preEditStageUrlsRef.current[index] || { stage2: null, stage1B: null, stage1A: null };
-    const resolved = resolveBestStageOutput(result, selectedStage, previewUrls[index] || null, {
-      stage2: preEditSnapshot.stage2,
-      stage1B: preEditSnapshot.stage1B,
-      stage1A: preEditSnapshot.stage1A,
-    });
-    const bestDisplayUrl = resolved.url || previewUrls[index] || null;
-    const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
-
-    const persistedOriginalUrl =
-      result?.result?.originalImageUrl ||
-      result?.originalImageUrl ||
-      result?.result?.originalUrl ||
-      result?.originalUrl ||
-      null;
-    const localOriginal =
-      (file as any)?.__restored !== true &&
-      previewUrls[index] &&
-      previewUrls[index] !== RESTORED_PLACEHOLDER
-        ? previewUrls[index]
-        : undefined;
-    const originalUrl = persistedOriginalUrl || localOriginal;
-    const finalUrl = enhancedUrl || previewUrls[index];
-    if (!finalUrl) return null;
-
-    return {
-      url: finalUrl,
-      filename: file.name || `Image ${index + 1}`,
-      originalUrl,
-      index,
-    };
-  }, [displayStageByIndex, files, previewUrls, results]);
 
   const openPreviewImage = useCallback((index: number) => {
     const payload = buildPreviewImage(index);
