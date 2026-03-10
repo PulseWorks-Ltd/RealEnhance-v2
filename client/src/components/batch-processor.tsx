@@ -18,6 +18,7 @@ import {
   requestClearEnhancementState,
 } from "@/lib/enhancement-state";
 import { getQuotaExceededMessage } from "@/lib/quota-messaging";
+import { clearPendingEnhancementJobs, setPendingEnhancementJobs } from "@/lib/pending-enhancement";
 import { Modal } from "./Modal";
 import { EditModal } from "./EditModal";
 import { CompareSlider } from "./CompareSlider";
@@ -864,10 +865,14 @@ export default function BatchProcessor() {
     open: boolean;
     requiredCredits: number;
     availableCredits: number;
+    missingCredits: number;
+    pendingJobIds: string[];
   }>({
     open: false,
     requiredCredits: 0,
     availableCredits: 0,
+    missingCredits: 0,
+    pendingJobIds: [],
   });
 
   // Keep restored batches in the unified workspace when files arrive asynchronously.
@@ -1638,13 +1643,59 @@ export default function BatchProcessor() {
 
   const isEnhanceCreditBlocked = availableCredits !== null && requiredBatchCredits > availableCredits;
 
-  const openCreditGateModal = useCallback((requiredCredits: number, available: number) => {
+  const openCreditGateModal = useCallback((requiredCredits: number, available: number, pendingJobIds: string[] = []) => {
     setCreditGateModal({
       open: true,
       requiredCredits,
       availableCredits: available,
+      missingCredits: Math.max(0, requiredCredits - available),
+      pendingJobIds,
     });
   }, []);
+
+  const handleContinueEnhancementCheckout = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/agency/bundles/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bundleCode: "BUNDLE_50" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const checkoutUrl = String(data?.checkoutUrl || data?.url || "").trim();
+      if (!checkoutUrl) {
+        throw new Error("Failed to create checkout session");
+      }
+
+      if (creditGateModal.pendingJobIds.length > 0) {
+        setPendingEnhancementJobs(creditGateModal.pendingJobIds);
+      }
+
+      window.location.assign(checkoutUrl);
+    } catch (error: any) {
+      toast({
+        title: "Purchase Failed",
+        description: error?.message || "Network error creating checkout session",
+        variant: "destructive",
+      });
+    }
+  }, [creditGateModal.pendingJobIds, toast]);
+
+  const handleCancelPendingEnhancement = useCallback(async () => {
+    const pendingJobIds = creditGateModal.pendingJobIds;
+    try {
+      await Promise.all(
+        pendingJobIds.map((jobId) =>
+          apiFetch("/api/enhance/cancel", {
+            method: "POST",
+            body: JSON.stringify({ jobId }),
+          }).catch(() => null)
+        )
+      );
+    } finally {
+      clearPendingEnhancementJobs();
+      setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
+    }
+  }, [creditGateModal.pendingJobIds]);
 
   const refreshCreditSummary = useCallback(async () => {
     if (!currentUserId) {
@@ -3468,8 +3519,29 @@ export default function BatchProcessor() {
 
       const uploadResult = await uploadResp.json();
       setIsUploading(false);
+      if (uploadResult?.requiresPayment) {
+        const pendingJobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
+        const pendingJobIds = pendingJobs.map((j: any) => String(j?.jobId || "").trim()).filter(Boolean);
+        if (pendingJobIds.length > 0) {
+          setPendingEnhancementJobs(pendingJobIds);
+        }
+
+        setRunState("idle");
+        setJobIds([]);
+        setCancelIds([]);
+
+        const required = Number.isFinite(uploadResult?.requiredCredits) ? Number(uploadResult.requiredCredits) : totalCreditsNeeded;
+        const available = Number.isFinite(uploadResult?.availableCredits)
+          ? Number(uploadResult.availableCredits)
+          : Math.max(0, Number(availableCredits ?? 0));
+
+        openCreditGateModal(required, available, pendingJobIds);
+        return;
+      }
+
       const jobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
       if (!jobs.length) throw new Error("Upload response missing jobs");
+      clearPendingEnhancementJobs();
       const ids = jobs.map((j:any)=>j.jobId).filter(Boolean);
       console.info("[ENHANCE_REQUEST] ok", { jobs: ids.length });
       console.log("[BATCH] start", {
@@ -3639,11 +3711,6 @@ export default function BatchProcessor() {
 
     if (!files.length) {
       toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
-      return;
-    }
-
-    if (isEnhanceCreditBlocked) {
-      openCreditGateModal(requiredBatchCredits, Math.max(0, Number(availableCredits ?? 0)));
       return;
     }
 
@@ -6003,7 +6070,7 @@ export default function BatchProcessor() {
                 )}
                 <button
                   onClick={handleStartEnhance}
-                  disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index)) || isEnhanceCreditBlocked}
+                  disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index))}
                   title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
                   className="rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-8 py-2 font-semibold text-white shadow-md transition-all hover:from-action-700 hover:to-indigo-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 text-base flex items-center border border-transparent"
                   data-testid="button-proceed-enhance"
@@ -7226,30 +7293,42 @@ export default function BatchProcessor() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Not enough credits to enhance this batch.</DialogTitle>
+            <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
-              Batch requires {creditGateModal.requiredCredits} credits — you have {creditGateModal.availableCredits} available.
+              This enhancement requires {creditGateModal.requiredCredits} images, but your plan currently includes {creditGateModal.availableCredits} remaining.
+              Add {creditGateModal.missingCredits} more images to continue processing your batch.
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
+            <div>Required: {creditGateModal.requiredCredits} images</div>
+            <div>Available: {creditGateModal.availableCredits} images</div>
+            <div>Needed: {creditGateModal.missingCredits} images</div>
+          </div>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button
               type="button"
-              onClick={() => {
-                window.open(addonHref, "_blank");
-              }}
+              onClick={handleContinueEnhancementCheckout}
             >
-              Buy Add-On Bundle
+              Add 50 Image Bundle - $49 Continue Enhancement
             </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => {
-                window.open(billingHref, "_blank");
+                window.location.assign("/billing");
               }}
             >
               Upgrade Plan
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancelPendingEnhancement}
+            >
+              Not Now
+            </Button>
           </div>
+          <p className="text-xs text-muted-foreground">Increase your monthly image allowance.</p>
         </DialogContent>
       </Dialog>
 

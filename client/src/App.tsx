@@ -109,11 +109,13 @@ export default function App() {
             {/* Agency page: RequireAuth only (new users create agency here) */}
             <Route path="/agency" element={<AppShell><Agency /></AppShell>} />
             <Route path="/settings/billing" element={<AppShell><BillingSettings /></AppShell>} />
+            <Route path="/billing" element={<Navigate to="/agency" replace />} />
             
             {/* Protected routes: RequireAuth + RequireAgency */}
             <Route element={<RequireAgency><Outlet /></RequireAgency>}>
               {/* Enhance page: Additional RequireSubscription guard */}
               <Route path="/home" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
+              <Route path="/processing" element={<Navigate to="/home" replace />} />
               
               {/* Other app routes: RequireAuth + RequireAgency */}
               <Route element={<AppShell><Outlet /></AppShell>}>

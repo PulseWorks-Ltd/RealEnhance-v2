@@ -20,6 +20,21 @@ redisClient.connect().catch(() => {});
 const DEFAULT_JOB_ATTEMPTS = Math.max(1, Number(process.env.JOB_ATTEMPTS || 3));
 const DEFAULT_JOB_BACKOFF_DELAY_MS = Math.max(100, Number(process.env.JOB_BACKOFF_DELAY_MS || 1000));
 const STUCK_PROCESSING_RECOVERY_MS = Math.max(60_000, Number(process.env.STUCK_PROCESSING_RECOVERY_MS || 20 * 60 * 1000));
+const AWAITING_PAYMENT_TTL_MS = 10 * 60 * 1000;
+
+function buildAwaitingPaymentExpiryIso(createdAtIso?: string): string {
+  const createdTs = Date.parse(String(createdAtIso || ""));
+  const baseTs = Number.isFinite(createdTs) ? createdTs : Date.now();
+  return new Date(baseTs + AWAITING_PAYMENT_TTL_MS).toISOString();
+}
+
+function isAwaitingPaymentExpired(rec: any): boolean {
+  const expiresAt = String(rec?.expiresAt || "").trim();
+  if (!expiresAt) return false;
+  const expiresTs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresTs)) return false;
+  return Date.now() > expiresTs;
+}
 
 function buildQueueJobOptions(jobId: string) {
   return {
@@ -452,6 +467,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   };
 }, jobIdOverride?: JobId) {
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
+  const expiresAt = buildAwaitingPaymentExpiryIso(payload.createdAt);
 
   await Promise.all([
     saveJobMetadata(jobMeta),
@@ -466,6 +482,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
       clientBatchId: params.clientBatchId || undefined,
       metadata: jobMeta,
       createdAt: payload.createdAt,
+      expiresAt,
     }),
   ]);
 
@@ -490,6 +507,15 @@ export async function enqueueStoredJob(jobId: string): Promise<{ enqueued: boole
   const rec = await getJob(jobId);
   const payload = (rec as any)?.payload;
   if (!payload || typeof payload !== "object") {
+    return { enqueued: false };
+  }
+
+  if (String((rec as any)?.status || "") === "awaiting_payment" && isAwaitingPaymentExpired(rec)) {
+    await updateJob(jobId as any, {
+      status: "cancelled",
+      cancelReason: "payment_timeout",
+      cancelledAt: new Date().toISOString(),
+    });
     return { enqueued: false };
   }
 
@@ -583,6 +609,15 @@ export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Ar
           staleIds.push(jobId);
           continue;
         }
+        if (isAwaitingPaymentExpired(rec)) {
+          await updateJob(jobId as any, {
+            status: "cancelled",
+            cancelReason: "payment_timeout",
+            cancelledAt: new Date().toISOString(),
+          });
+          staleIds.push(jobId);
+          continue;
+        }
         out.push({
           jobId,
           createdAt: String(rec?.createdAt || rec?.payload?.createdAt || ""),
@@ -627,6 +662,14 @@ export async function listAwaitingPaymentEnhanceJobs(userId: string): Promise<Ar
         ) {
           const jobId = String(rec?.jobId || rec?.id || keys[i].replace(/^jobs:/, "")).trim();
           if (!jobId) continue;
+          if (isAwaitingPaymentExpired(rec)) {
+            await updateJob(jobId as any, {
+              status: "cancelled",
+              cancelReason: "payment_timeout",
+              cancelledAt: new Date().toISOString(),
+            });
+            continue;
+          }
           out.push({
             jobId,
             createdAt: String(rec?.createdAt || rec?.payload?.createdAt || ""),

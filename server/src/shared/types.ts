@@ -99,6 +99,7 @@ export type JobStatus =
   | "awaiting_payment"
   | "processing"
   | "complete"
+  | "cancelled"
   | "error"
   | "failed";
 

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useUsage } from "@/hooks/use-usage";
 import { apiFetch } from "@/lib/api";
+import { clearPendingEnhancementJobs, getPendingEnhancementJobIds } from "@/lib/pending-enhancement";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -89,12 +90,34 @@ export function usePostCheckoutSync() {
 
       // Step 2: Poll for activation
       const activated = await pollForSubscriptionActivation();
+      let resumed = 0;
+      const pendingJobIds = getPendingEnhancementJobIds();
+      for (const jobId of pendingJobIds) {
+        try {
+          const resp = await apiFetch("/api/enhance/resume", {
+            method: "POST",
+            body: JSON.stringify({ jobId }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (data?.status === "processing") {
+            resumed += 1;
+          }
+        } catch (error) {
+          console.warn("[PostCheckoutSync] Failed to resume pending enhancement after subscription", { jobId, error });
+        }
+      }
+
+      if (resumed > 0) {
+        clearPendingEnhancementJobs();
+      }
 
       if (activated) {
         // Step 3: Show success message
         toast({
           title: "Subscription Activated!",
-          description: "Your subscription is now active. Redirecting to Enhance...",
+          description: resumed > 0
+            ? "Subscription activated and enhancement resumed. Redirecting to processing..."
+            : "Your subscription is now active. Redirecting to Enhance...",
         });
 
         // Step 4: Clean up URL and redirect
@@ -105,7 +128,7 @@ export function usePostCheckoutSync() {
 
         // Wait a moment for user to see toast, then redirect
         setTimeout(() => {
-          navigate("/home", { replace: true });
+          navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
         }, 1500);
       } else {
         // Activation polling timed out - still redirect but show warning
@@ -121,7 +144,7 @@ export function usePostCheckoutSync() {
         setSearchParams(newParams, { replace: true });
 
         setTimeout(() => {
-          navigate("/home", { replace: true });
+          navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
         }, 2000);
       }
     } catch (error) {
@@ -160,9 +183,32 @@ export function usePostCheckoutSync() {
         refetchUsage(),
       ]);
 
+      const pendingJobIds = getPendingEnhancementJobIds();
+      let resumed = 0;
+      for (const jobId of pendingJobIds) {
+        try {
+          const resp = await apiFetch("/api/enhance/resume", {
+            method: "POST",
+            body: JSON.stringify({ jobId }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (data?.status === "processing") {
+            resumed += 1;
+          }
+        } catch (error) {
+          console.warn("[PostCheckoutSync] Failed to resume pending enhancement", { jobId, error });
+        }
+      }
+
+      if (resumed > 0) {
+        clearPendingEnhancementJobs();
+      }
+
       toast({
         title: "Bundle Purchase Complete!",
-        description: "Your credits have been added. Redirecting to Enhance...",
+        description: resumed > 0
+          ? "Your credits were added and enhancement resumed. Redirecting to processing..."
+          : "Your credits have been added. Redirecting to Enhance...",
       });
 
       // Clean up URL
@@ -172,7 +218,7 @@ export function usePostCheckoutSync() {
 
       // Redirect to Enhance
       setTimeout(() => {
-        navigate("/home", { replace: true });
+        navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
       }, 1500);
     } catch (error) {
       console.error("[PostCheckoutSync] Error during bundle sync:", error);
