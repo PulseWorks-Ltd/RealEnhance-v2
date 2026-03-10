@@ -107,6 +107,46 @@ function logModelResolution(meta: ModelLogMeta) {
   );
 }
 
+function parseErrorStatusCode(err: any): number | null {
+  const direct = Number((err as any)?.status ?? (err as any)?.statusCode);
+  if (Number.isFinite(direct) && direct > 0) {
+    return direct;
+  }
+
+  const code = String((err as any)?.code ?? "").trim();
+  if (/^\d{3}$/.test(code)) {
+    return Number(code);
+  }
+
+  const msg = String((err as any)?.message ?? "");
+  const httpMatch = msg.match(/\b(429|5\d\d)\b/);
+  if (httpMatch) {
+    return Number(httpMatch[1]);
+  }
+
+  return null;
+}
+
+function isTimeoutError(err: any): boolean {
+  const code = String((err as any)?.code ?? "").toLowerCase();
+  const msg = String((err as any)?.message ?? "").toLowerCase();
+  return (
+    code.includes("timeout")
+    || code === "etimedout"
+    || code === "aborted"
+    || msg.includes("timeout")
+    || msg.includes("timed out")
+    || msg.includes("deadline exceeded")
+  );
+}
+
+function isRetryableModelError(err: any): boolean {
+  const status = parseErrorStatusCode(err);
+  if (status === 429) return true;
+  if (status !== null && status >= 500) return true;
+  return isTimeoutError(err);
+}
+
 /**
  * Legacy function for Stage 1A (Gemini 2.5 only, no fallback)
  *
@@ -197,8 +237,11 @@ export async function runWithPrimaryThenFallback({
     fallbackModel,
   });
 
-  // ✅ ATTEMPT PRIMARY MODEL FIRST
+  // Attempt primary model first. Fallback is only allowed for retryable transport failures
+  // or when primary response is structurally valid but missing image bytes.
   let primaryError: any = null;
+  let primaryMissingImage = false;
+  let shouldTryFallback = false;
   try {
     const resp = await ai.models.generateContent({
       ...baseRequest,
@@ -211,6 +254,8 @@ export async function runWithPrimaryThenFallback({
 
     if (!validation.valid) {
       logNoImageResponse(meta, stageLabel, primaryModel, parts);
+      primaryMissingImage = true;
+      shouldTryFallback = true;
       primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
       console.warn(`[stage${stageLabel}] Gemini primary failed: ${validation.reason} → falling back to ${fallbackModel}`);
     } else {
@@ -221,10 +266,25 @@ export async function runWithPrimaryThenFallback({
   } catch (err) {
     primaryError = err;
     logGeminiError(`${context}:${primaryModel}`, err);
-    console.warn(`[stage${stageLabel}] Gemini primary failed: ${(err as any)?.message || err} → falling back to ${fallbackModel}`);
+    shouldTryFallback = isRetryableModelError(err);
+    if (shouldTryFallback) {
+      console.warn(`[stage${stageLabel}] Gemini primary failed with retryable error: ${(err as any)?.message || err} → falling back to ${fallbackModel}`);
+    } else {
+      console.error(`[stage${stageLabel}] Gemini primary failed with non-retryable error: ${(err as any)?.message || err} → not using fallback`);
+    }
   }
 
-  // ✅ ATTEMPT FALLBACK MODEL
+  if (!shouldTryFallback) {
+    const reason = primaryMissingImage
+      ? "primary_missing_image"
+      : "primary_non_retryable_failure";
+    throw new Error(
+      `[GEMINI][${context}] Primary model failed without fallback eligibility (${reason}). ` +
+      `Primary (${primaryModel}): ${primaryError?.message || primaryError}`
+    );
+  }
+
+  // Attempt fallback model only after retryable primary failure or missing image bytes.
   let fallbackError: any = null;
   try {
     console.log(`[stage${stageLabel}] Attempting fallback model: ${fallbackModel}`);

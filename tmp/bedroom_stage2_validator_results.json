@@ -1,0 +1,315 @@
+[
+  {
+    "image": "Bedroom 02",
+    "baseline": "Bedroom 02.jpg",
+    "staged": "Bedroom 02 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.653,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.6330951201685004,
+        "message": "SSIM 0.633 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 03",
+    "baseline": "Bedroom 03.jpg",
+    "staged": "Bedroom 03 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.544,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.36049700138058627,
+        "message": "SSIM 0.360 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 06",
+    "baseline": "Bedroom 06.jpg",
+    "staged": "Bedroom 06 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.571,
+    "reasons": [],
+    "warnings": [
+      "stage2_direct_advisory: anchor_hvac_changed"
+    ],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.4283930591160395,
+        "message": "SSIM 0.428 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed, anchor:hvac_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 07",
+    "baseline": "Bedroom 07.jpg",
+    "staged": "Bedroom 07 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.549,
+    "reasons": [],
+    "warnings": [
+      "stage2_direct_advisory: anchor_cabinetry_changed"
+    ],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.373265321870239,
+        "message": "SSIM 0.373 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed, anchor:cabinetry_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 09",
+    "baseline": "Bedroom 09.jpg",
+    "staged": "Bedroom 09 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.596,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.489553770274679,
+        "message": "SSIM 0.490 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 11",
+    "baseline": "Bedroom 11.jpg",
+    "staged": "Bedroom 11 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.627,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.568403355038086,
+        "message": "SSIM 0.568 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 12",
+    "baseline": "Bedroom 12.jpg",
+    "staged": "Bedroom 12 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.626,
+    "reasons": [],
+    "warnings": [
+      "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+      "stage2_direct_advisory: anchor_fixed_lighting_changed"
+    ],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.5649806481682733,
+        "message": "SSIM 0.565 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed, anchor:lighting_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 14",
+    "baseline": "Bedroom 14.jpg",
+    "staged": "Bedroom 14 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.653,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.6325019166606561,
+        "message": "SSIM 0.633 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  },
+  {
+    "image": "Bedroom 16",
+    "baseline": "Bedroom 16.jpg",
+    "staged": "Bedroom 16 (Enhanced).webp",
+    "passed": true,
+    "hardFail": false,
+    "score": 0.701,
+    "reasons": [],
+    "warnings": [],
+    "validatorPath": [
+      "perceptualDiff",
+      "gemini"
+    ],
+    "earlyExit": true,
+    "escalated": false,
+    "modelUsed": null,
+    "raw": {
+      "perceptualDiff": {
+        "passed": false,
+        "score": 0.7521027392480706,
+        "message": "SSIM 0.752 (threshold 0.97)"
+      },
+      "anchors": {
+        "passed": true,
+        "score": 1,
+        "message": "anchor:island_changed"
+      },
+      "geminiSemantic": {
+        "passed": true,
+        "score": 0.5,
+        "message": "Gemini semantic error (fail-open)"
+      }
+    }
+  }
+]

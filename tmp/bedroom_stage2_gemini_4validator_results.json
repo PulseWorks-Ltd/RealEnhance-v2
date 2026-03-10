@@ -1,0 +1,299 @@
+[
+  {
+    "image": "Bedroom 02",
+    "baseline": "Bedroom 02.jpg",
+    "staged": "Bedroom 02 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, ceiling, window placement, and door location, is identical between the baseline and staged images. No walls have been moved, added, or removed. There are no changes to room footprint, wall intersections, alcoves, bulkheads, or ceiling geometry. The 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check' are satisfied as no recesses or openings from the baseline have been filled to create a continuous flat wall surface in the staged image. Furniture and decor changes are ignored.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "fail",
+        "reason": "A recessed light fixture present in the baseline image (closer to the viewer) has been removed in the staged image. The baseline shows two recessed lights, while the staged image shows only one.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (dark carpet) and its structural boundaries with the walls remain consistent between the baseline and staged images. No floor-plane invariants are violated.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "fail",
+        "reason": "A door is visible on the right-hand wall in the baseline image, but it is missing in the staged image. The area where the door was located has been replaced by a continuous, solid wall.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 03",
+    "baseline": "Bedroom 03.jpg",
+    "staged": "Bedroom 03 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 3,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope of the room, including wall layout, window structure, ceiling geometry, and fixed elements like the window bulkhead, appears identical in both the baseline and staged images. All structural features and wall plane continuities are preserved. Differences are limited to furniture, decor, and minor perspective shifts, which are permissible.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture and fixed fixtures (two recessed ceiling lights) are identical in both images. Furniture and decor have changed, which is permitted.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying dark grey carpet material, its layout, and the floor geometry/boundaries remain consistent between the baseline and staged images. The rug is a movable covering and not part of the structural floor.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "pass",
+        "reason": "The room's architecture, including the window on the far wall and the partially visible door on the left wall, is identical in both images. All changes are limited to furniture and decor, which is permissible.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 06",
+    "baseline": "Bedroom 06.jpg",
+    "staged": "Bedroom 06 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 3,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "fail",
+        "reason": "The wall section to the right of the closet, which featured a recessed area with shelves in the baseline image, has been filled and made flush with the main wall plane in the staged image. This constitutes an alteration of the architectural envelope and wall continuity, specifically violating the 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check'.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure, including the window, built-in wardrobe, and built-in shelves, is identical. The single ceiling light fixture is present and unchanged. No major fixed fixtures have been added, removed, or altered.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (blue carpet) and its geometry remain consistent between the baseline and staged images. The added rug is a movable covering and does not constitute a structural change.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "fail",
+        "reason": "The built-in wall shelves located to the right of the window in the baseline image have been removed and replaced by a continuous wall surface in the staged image. This constitutes a structural modification of a built-in architectural feature.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 07",
+    "baseline": "Bedroom 07.jpg",
+    "staged": "Bedroom 07 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 3,
+      "openingCount": 1
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, window placement, ceiling, and wall continuity, remains identical between the baseline and staged images. No structural changes, wall extensions, or filled recesses are visible. Furniture and decor changes are permitted.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure, window, blinds, recessed lighting, and wall switch are consistent between both images. Furniture and decor have changed, which is allowed.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying structural floor material (dark brown carpet) remains unchanged between the baseline and staged images. The area rug in the staged image is considered a movable covering and is ignored as per the rules. No other structural floor invariants are violated.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "pass",
+        "reason": "The single window on the back wall is present and architecturally unchanged in both images. The staged furniture partially occludes the bottom of the window, but this is an acceptable staging change as the window's size and position remain consistent.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 09",
+    "baseline": "Bedroom 09.jpg",
+    "staged": "Bedroom 09 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, window placements, ceiling features, and electrical outlet positions, remains identical between the baseline and staged images. No structural walls have been altered, added, or removed. There are no instances of recesses or indentations being filled to create new flat wall surfaces. The changes are limited to furniture, decor, and lighting, which are explicitly ignored.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, fixed window placements, ceiling recessed light, and wall outlets/switches are identical in both images. Only furniture and decor have changed.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying dark gray carpet floor material, layout, and room architectural boundaries remain unchanged. The added rug, furniture, and decor are non-structural differences.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "fail",
+        "reason": "The large, wide window on the left wall in the baseline image has been replaced by a significantly narrower, vertical window in the staged image. The original opening has been partially filled in with a solid wall, which is a major structural modification.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 11",
+    "baseline": "Bedroom 11.jpg",
+    "staged": "Bedroom 11 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 4
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, ceiling, and room footprint, remains identical between the baseline and staged images. No wall planes have been extended or flattened, and all structural elements are consistent. Changes are limited to furniture and decor.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure, windows, and fixed installed fixtures (recessed lighting) remain unchanged between the baseline and staged images. Any potentially obscured wall outlets are consistent with being hidden by new furniture, which is allowed.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) remains the same, and there are no discernible changes in its layout or the room's architectural footprint and floor geometry between the baseline and staged images.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "pass",
+        "reason": "All architectural openings, including the large window, the high horizontal window, and the sliding closet doors, are present and correctly positioned in both images. The room's structure is identical.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 12",
+    "baseline": "Bedroom 12.jpg",
+    "staged": "Bedroom 12 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, window/door openings, ceiling features, and fixed structural elements (like the AC unit), remains identical between the baseline and staged images. All changes are limited to furniture, decor, and lighting, which are permissible.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure and all fixed installed fixtures, including the wall-mounted AC unit, central ceiling light, and ceiling vent, are identical in both the baseline and staged images. Only furniture and decor have changed, which is permitted.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) and its boundaries with the walls remain consistent between both images. Furniture and decor have been added, which are non-structural changes.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "fail",
+        "reason": "The large sliding glass door leading to the balcony in the baseline image has been replaced by a window in the staged image. The opening no longer extends to the floor and the bottom portion has been filled in with a solid wall. This is a significant structural modification.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 14",
+    "baseline": "Bedroom 14.jpg",
+    "staged": "Bedroom 14 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 3
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, wall layout, room proportions, window and door placements, ceiling geometry, and structural elements are identical in both images. All changes are limited to furniture, decor, and lighting, which are explicitly allowed. No wall planes have been added, removed, or altered, and no recesses or openings have been filled.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, including walls, windows, and ceiling, remains identical. The fixed ceiling light fixture is present in the same location and appears to be the same fixture in both images. No other major fixed fixtures (HVAC, ceiling fans, recessed lights, vents, smoke detectors) are visible or have been added/removed.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) and its architectural boundaries are identical between the baseline and staged images. All changes are non-structural (furniture, decor, lighting).",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "fail",
+        "reason": "An architectural opening has been removed. The closet door visible on the far right edge of the baseline image is missing in the staged image and has been replaced by a continuous wall.",
+        "confidence": 1
+      }
+    }
+  },
+  {
+    "image": "Bedroom 16",
+    "baseline": "Bedroom 16.jpg",
+    "staged": "Bedroom 16 (Enhanced).webp",
+    "pairFound": true,
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, room footprint, window placement, and ceiling geometry, is identical between the baseline and staged images. No structural walls, recesses, or openings have been altered or filled. The changes are limited to furniture and decor.",
+        "confidence": 1
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, windows, and all fixed installed fixtures such as the ceiling light and wall outlets are consistent between both images. Furniture and decor changes are permitted.",
+        "confidence": 1
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) and its layout/geometry appear identical in both images. Furniture and decor have been added, but no structural changes to the floor are visible.",
+        "confidence": 1
+      },
+      "opening": {
+        "status": "pass",
+        "reason": "The architectural features, including the sliding glass door and the wide window, are identical in both images. The furniture added in the staged image does not alter the underlying room structure.",
+        "confidence": 1
+      }
+    }
+  }
+]
