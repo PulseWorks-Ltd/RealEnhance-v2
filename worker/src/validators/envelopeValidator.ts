@@ -45,28 +45,41 @@ export async function runEnvelopeValidator(
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
-  const prompt = `You are validating whether two images represent the same physical room.
+  const prompt = `You are validating whether two images represent the exact same physical room architecture.
 
 Compare the BASELINE image and the STAGED image.
 
-Your task is to verify that the architectural envelope of the room is identical.
+GLOBAL RULE
+The staged image must represent the exact same physical room architecture as the baseline image.
+Furniture, decor, and staging objects may change.
+Architectural structure may NOT change.
 
-Set ok=false ONLY if any of these are visible:
+Your task is to verify that the architectural envelope is identical.
 
-* walls were added, removed, reshaped, extended, shortened, or shifted
-* room segmentation changes (new/removed partitions, dividers, enclosed areas)
-* ceiling plane geometry is altered
-* room footprint changes shape or size
-* major wall intersections appear or disappear
-* a new structural wall plane appears that intersects floor and ceiling and alters room segmentation
-* the number of visible major room corner intersections increases or decreases, indicating room geometry changed
+Set ok=false if ANY envelope violation is visible:
+* walls moved, shifted, rotated, extended, shortened, reshaped, added, or removed
+* room footprint changed in shape, width, depth, or segmentation
+* wall intersections/corners changed, appeared, or disappeared
+* new structural wall planes appear, or existing wall planes disappear
+* alcoves/recesses/bulkheads/soffits that define room shape are altered
+* ceiling geometry/height/major plane layout is altered
+* structural columns or fixed architectural supports are added/removed/relocated
 
-Focus on the shape and boundaries of the room itself, not the objects inside it.
+Treat these as architectural invariants:
+* wall layout and envelope geometry
+* room proportions and segmentation
+* fixed structural boundaries of the room
+
+Important disambiguation:
+* Perspective/cropping differences are allowed only when envelope geometry is still consistent.
+* Do NOT excuse true wall or footprint changes as camera shift.
+* Do not treat furniture or decor occluding part of a window or doorway as an envelope change.
 
 Ignore:
-furniture changes, decor changes, staging items, lighting differences, rugs, reflections, minor rendering differences, small camera shifts, minor perspective corrections, or cropping differences.
-
-The staged image must represent the exact same room boundaries and wall layout as the baseline image.
+* furniture and decor changes
+* rugs and movable items
+* lighting/color/rendering differences
+* minor perspective normalization or crop differences that do not change architecture
 
 Return JSON only:
 

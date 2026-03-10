@@ -58,6 +58,11 @@ These changes are allowed and should be ignored.
 
 Your task is ONLY to evaluate whether the underlying room architecture is the same.
 
+GLOBAL RULE
+The staged image must represent the exact same physical room architecture as the baseline image.
+Furniture, decor, and movable staging objects may change.
+Architectural structure may NOT change.
+
 ARCHITECTURAL ELEMENTS TO COMPARE
 
 Evaluate whether the following elements remain consistent between the two images:
@@ -66,10 +71,14 @@ Evaluate whether the following elements remain consistent between the two images
 * room proportions and depth
 * window count and window placement
 * door count and door placement
+* closet door count, closet opening visibility, and closet opening placement
 * openings between spaces
 * ceiling geometry and height
 * major architectural structures (columns, beams, half-walls)
+* built-ins (built-in cabinetry, kitchen islands, fireplaces, wall shelving, recessed wall units)
 * camera viewpoint and perspective
+
+Treat windows, doors, sliding doors, closet doors, archways, balcony openings, and hallway openings as architectural openings that must be preserved.
 
 ACCEPTABLE DIFFERENCES
 
@@ -82,23 +91,37 @@ Ignore differences in:
 * color grading or brightness
 * minor perspective normalization
 
+Perspective or cropping differences are acceptable ONLY if architectural invariants are preserved.
+
+Occlusion clarification:
+Furniture or decor may partially block windows or doors.
+This is acceptable if the architectural opening still clearly exists in the wall.
+Do not treat furniture occlusion as structural removal.
+
 UNACCEPTABLE DIFFERENCES
 
 Fail the review if any of the following appear:
 
 * walls moved, extended, or removed
 * room size or shape changed
-* windows moved or swapped to another wall
-* doors moved or removed
+* windows moved, resized, removed, added, sealed, blocked, or infilled
+* doors moved, resized, removed, or added
+* closet doors/openings removed, added, resized, sealed, blocked, infilled, or replaced by flat wall
+* any architectural opening disappears, is relocated, or is replaced by continuous wall surface
+* built-ins moved, resized, removed, or added
 * new architectural openings created
 * camera viewpoint shifted significantly
 * the room appears to be a different physical space
+
+MANDATORY REJECTION RULE
+If any architectural invariant is violated (walls, openings, or built-ins), Image B must be rejected (FAIL).
+Do not allow perspective/cropping as an excuse for lost/added/resized/relocated openings.
 
 DECISION RULE
 
 Ask yourself:
 
-"Would a reasonable property buyer clearly recognize this as the same room?"
+"Would a reasonable property buyer clearly recognize this as the same room with identical architecture?"
 
 If YES -> PASS
 If NO -> FAIL

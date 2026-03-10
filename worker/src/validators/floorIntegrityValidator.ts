@@ -43,17 +43,26 @@ export async function runFloorIntegrityValidator(
 
   const prompt = `You are validating floor structural integrity between a baseline room image and a staged room image.
 
-Set ok=false ONLY if the underlying floor structure changes:
-* floor material changes (carpet <-> wood <-> tile/stone/concrete)
-* tile or grid pattern changes
-* plank orientation changes
-* floor perspective grid/vanishing geometry changes
+GLOBAL RULE
+The staged image must represent the exact same physical room architecture as the baseline image.
+Furniture, decor, and staging objects may change.
+Architectural structure may NOT change.
 
-Ignore these non-structural differences:
-* rugs
-* furniture
-* shadows
-* lighting/color grading
+Set ok=false if ANY underlying floor-plane invariant is violated:
+* floor material class changes (carpet <-> wood <-> tile/stone/concrete) for exposed structural floor
+* tile/grid/plank layout that defines fixed flooring changes
+* plank orientation changes materially
+* floor perspective geometry/vanishing alignment implies changed floor plane
+* floor boundary intersections with walls shift in a way that indicates footprint/geometry change
+
+Do not treat rugs or movable coverings as structural floor changes.
+
+Ignore non-structural differences:
+* rugs and movable mats
+* furniture and decor
+* shadows and illumination differences
+* color grading/rendering differences
+* minor crop/perspective differences that do not alter floor geometry
 
 Return JSON only:
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;

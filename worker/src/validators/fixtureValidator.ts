@@ -41,27 +41,32 @@ export async function runFixtureValidator(
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
-  const prompt = `You are validating whether two images represent the same physical room.
+  const prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
 
-Compare the baseline image and the staged image.
+Compare the BASELINE image and the STAGED image.
 
-Set ok=false ONLY if these major fixed fixtures are clearly added, removed, or relocated:
-* HVAC systems (wall-mounted split units, fixed air-conditioning units)
+GLOBAL RULE
+The staged image must represent the exact same physical room architecture as the baseline image.
+Furniture, decor, and staging objects may change.
+Architectural structure and fixed installed fixtures may NOT change.
+
+Set ok=false if ANY major fixed fixture is clearly added, removed, resized, replaced with a different class, or relocated:
+* HVAC systems (wall-mounted split units, fixed AC units)
 * ceiling fans
 * pendant lights
-* recessed lights
+* recessed/downlights
 * ceiling vents
 * smoke detectors
 
-Do NOT fail for small wall fixtures unless clearly removed.
+Also fail if a fixed ceiling/wall fixture present in baseline is replaced by a materially different fixed fixture type in staged image.
 
-Examples that should NOT fail:
-* light switches hidden behind furniture
-* outlets no longer visible due to camera angle
-* small fixtures occluded by staging objects
-* curtain rails added
+Do NOT fail for uncertain visibility alone. Only pass when evidence supports that fixed fixtures are preserved.
 
-Ignore furniture, decor, styling, lighting changes, and minor rendering differences.
+Examples that should NOT fail when architecture/fixtures are otherwise preserved:
+* light switches or outlets hidden by furniture
+* small fixtures partially occluded by decor
+* minor camera/perspective/cropping differences
+* color temperature/brightness/rendering differences
 
 Return JSON only:
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
