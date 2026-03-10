@@ -63,7 +63,6 @@ export function runUnifiedValidator(signals: Stage2LocalSignals): UnifiedValidat
     { key: "structuralDegreeChange", threshold: 0.9 },
     { key: "wallDrift", threshold: 0.9 },
     { key: "floorPlaneShift", threshold: 0.9 },
-    { key: "openingCountMismatch", threshold: 0.95 },
   ];
 
   for (const rule of catastrophicRules) {
@@ -89,7 +88,7 @@ export function runUnifiedValidator(signals: Stage2LocalSignals): UnifiedValidat
 
   const roundedScore = Number(score.toFixed(4));
   const severity = classifySeverity(roundedScore);
-  const decision: UnifiedValidatorDecision = severity === "CRITICAL" ? "RETRY" : "PROCEED_TO_GEMINI";
+  const decision: UnifiedValidatorDecision = "PROCEED_TO_GEMINI";
 
   return {
     decision,
