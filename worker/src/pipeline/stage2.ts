@@ -115,6 +115,34 @@ If any baseline opening disappears, is sealed,
 is replaced by continuous wall surface, or cannot
 be visually located, the staged image must fail.
 
+OPENING SIZE INVARIANT
+
+Architectural openings must preserve their size.
+
+Fail the review if the staged image shows:
+
+* windows significantly smaller than the baseline
+* doors narrower than the baseline
+* openings partially filled with wall surface
+* window geometry altered to accommodate furniture
+
+Furniture placement must never modify
+the structural dimensions of windows or doors.
+
+PARTIALLY VISIBLE OPENINGS
+
+If an opening is only partially visible in the baseline image,
+the visible portion of that opening must remain identical
+in the staged image.
+
+The validator must not assume the unseen portion
+extends beyond the camera frame.
+
+If the visible opening boundary shrinks or disappears,
+the opening has been structurally modified.
+
+Return ok=false.
+
 ACCEPTABLE DIFFERENCES
 
 Ignore differences in:

@@ -141,6 +141,109 @@ fully hidden by furniture or appears replaced by wall
 surface, assume the opening has been removed and
 return ok=false.
 
+PARTIAL OPENING DETECTION (CRITICAL)
+
+If any portion of a window frame, door frame, sliding door frame,
+or doorway opening is visible in the baseline image,
+the validator must treat the opening as present.
+
+Even if the opening is partially cropped by the camera frame,
+the visible portion of the opening must remain visible
+in the staged image.
+
+If the visible edges of that opening disappear,
+or are replaced by continuous wall surface,
+the opening has been removed and the image must fail.
+
+Do NOT assume the rest of the opening exists outside the frame.
+
+EDGE-FRAME OPENING DETECTION (CRITICAL)
+
+Architectural openings may appear partially at the edge of the camera frame.
+
+If any portion of a window frame, door frame, sliding door frame,
+or doorway boundary touches the image edge in the baseline image,
+the validator must treat this as evidence that the opening continues
+outside the camera view.
+
+The validator must assume the opening extends beyond the frame
+unless strong evidence proves otherwise.
+
+Edge indicators of an opening include:
+
+* vertical door frame touching the image edge
+* horizontal window sill touching the image edge
+* partial closet door frame cut off by the camera border
+* doorway trim partially visible at the image boundary
+* visible opening depth leading into another space
+
+If these edge indicators exist in the baseline image,
+the staged image must preserve the same visible boundary.
+
+Return ok=false if:
+
+* the edge frame disappears
+* the edge frame becomes continuous wall
+* the opening boundary becomes flat wall surface
+* the visible edge of the opening shrinks or is replaced by furniture
+
+Do NOT assume the opening disappears simply because
+the camera cropped it.
+
+If the baseline shows frame evidence at the image edge,
+the staged image must show the same frame evidence.
+
+OPENING BOUNDARY PRESERVATION
+
+For every architectural opening detected in the baseline image
+(window, door, closet door, sliding door, hallway opening):
+
+1. Identify the visible edges of the opening.
+2. Compare those edges in the staged image.
+
+Return ok=false if any of the following occur:
+
+* opening edges disappear
+* opening edges move closer together
+* wall surface replaces part of the opening
+* the opening width decreases
+* the opening height decreases
+* the opening shape changes
+
+All architectural openings must preserve their visible boundaries.
+
+WINDOW GEOMETRY PRESERVATION (CRITICAL)
+
+If a window is visible in the baseline image,
+its approximate width and height relative to the wall
+must remain consistent.
+
+Fail the validation if the staged image shows:
+
+* window width reduced
+* window height reduced
+* window geometry altered
+* window edges moved closer together
+* window converted into a narrow slot window
+* window partially replaced by wall surface
+* window shape materially altered
+
+Even moderate reductions in window width or height
+should be treated as structural modification.
+
+Furniture placement must NEVER cause windows to shrink.
+
+FURNITURE OCCLUSION RULE
+
+Furniture may partially block an opening,
+but it must not alter the geometry of the opening.
+
+If furniture appears to reduce the visible size
+of a window or doorway, assume the opening
+has been structurally modified.
+
+In this situation return ok=false.
+
 Closet-door strictness:
 Closet doors/openings may not disappear or be replaced by wall surface.
 Temporary occlusion by small decor is possible, but large furniture covering the entire closet opening should be treated as suspicious and fail unless the closet opening is still clearly evidenced.
@@ -191,19 +294,21 @@ Return JSON only:
 
   try {
     const flashResult = await runWithModel(OPENING_MODEL_PRIMARY);
-    if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= OPENING_ESCALATION_CONFIDENCE) {
+    /*
+    Flash FAIL is trusted immediately because it normally
+    indicates an obvious architectural violation.
+    */
+    if (flashResult.status === "fail") {
       return flashResult;
     }
 
-    try {
-      const proResult = await runWithModel(OPENING_MODEL_ESCALATION);
-      if (Number.isFinite(proResult.confidence) && proResult.confidence >= OPENING_ESCALATION_CONFIDENCE) {
-        return proResult;
-      }
-      return flashResult;
-    } catch {
-      return flashResult;
-    }
+    /*
+    Flash PASS must always be verified by Pro because Flash
+    can miss subtle geometry changes (window shrink,
+    opening boundary movement, etc.)
+    */
+    const proResult = await runWithModel(OPENING_MODEL_ESCALATION);
+    return proResult;
   } catch (error: any) {
     throw new Error(`validator_error_opening:${error?.message || String(error)}`);
   }

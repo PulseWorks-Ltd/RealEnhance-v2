@@ -200,10 +200,10 @@ export async function requireS3OrExit() {
 /**
  * Generate a pre-signed URL for S3 object access
  * @param key S3 object key
- * @param expiresIn Expiration time in seconds (default: 3600 = 1 hour)
+ * @param expiresIn Expiration time in seconds (default: 86400 = 24 hours)
  * @returns Pre-signed URL
  */
-export async function getS3SignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+export async function getS3SignedUrl(key: string, expiresIn: number = 86400): Promise<string> {
   const bucket = process.env.S3_BUCKET;
   if (!bucket) {
     throw new Error("S3_BUCKET not configured");

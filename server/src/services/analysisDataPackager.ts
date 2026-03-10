@@ -122,7 +122,7 @@ async function getImageUrls(job: any, imageRecord: any): Promise<{
     // Original image
     if (imageRecord?.originalPath) {
       const s3Key = imageRecord.originalPath.replace(/^.*uploads\//, "");
-      urls.original = await getS3SignedUrl(s3Key, 3600); // 1 hour expiry
+      urls.original = await getS3SignedUrl(s3Key, 86400); // 24 hour expiry
     }
 
     // Stage outputs (check version history)
@@ -131,7 +131,7 @@ async function getImageUrls(job: any, imageRecord: any): Promise<{
         const stage = version.stageLabel;
         if (version.filePath || version.s3Key) {
           const key = version.s3Key || version.filePath.replace(/^.*uploads\//, "");
-          const signedUrl = await getS3SignedUrl(key, 3600);
+          const signedUrl = await getS3SignedUrl(key, 86400);
 
           if (stage === "1A" || stage === "stage1A") {
             urls.stage1A = signedUrl;
@@ -149,7 +149,7 @@ async function getImageUrls(job: any, imageRecord: any): Promise<{
       urls.failed = imageRecord.outputUrl;
     } else if (imageRecord?.filePath) {
       const key = imageRecord.filePath.replace(/^.*uploads\//, "");
-      urls.failed = await getS3SignedUrl(key, 3600);
+      urls.failed = await getS3SignedUrl(key, 86400);
     }
   } catch (error) {
     console.error("[ANALYSIS] Error getting image URLs:", error);
