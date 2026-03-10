@@ -54,7 +54,7 @@ export interface ImageRecord {
     createdAt: string;
     updatedAt: string;
 }
-export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete" | "error" | "failed";
+export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete" | "cancelled" | "error" | "failed";
 /**
  * Declutter mode controls Stage 1B behavior:
  * - "light": Remove clutter/mess only, preserve all main furniture

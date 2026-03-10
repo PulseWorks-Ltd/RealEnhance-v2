@@ -6512,8 +6512,58 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
+    type Stage2ValidatorLogArgs = {
+      jobId?: string;
+      imageId?: string;
+      attempt?: number;
+      validator: string;
+      result: "PASS" | "FAIL";
+      reason?: string;
+    };
+
+    const logValidatorContextError = (validator: string): void => {
+      nLog(
+        `[VALIDATOR_CONTEXT_ERROR]\nvalidator=${validator}\nmessage="validator executed without job context"`
+      );
+    };
+
+    const logValidatorResult = ({ jobId, imageId, attempt, validator, result, reason }: Stage2ValidatorLogArgs): void => {
+      if (!jobId || !imageId || !Number.isFinite(attempt)) {
+        logValidatorContextError(validator);
+        return;
+      }
+
+      nLog(
+        `[VALIDATOR_RESULT]\njob_id=${jobId}\nimage_id=${imageId}\nattempt=${attempt}\nvalidator=${validator}\nresult=${result}\nreason=${reason && reason.trim().length > 0 ? reason : "none"}`
+      );
+    };
+
+    const logStage2AttemptAnchor = (attempt: number): void => {
+      nLog(
+        `[STAGE2_ATTEMPT]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}`
+      );
+    };
+
+    const logStage2Candidate = (attempt: number, candidatePath: string): void => {
+      nLog(
+        `[STAGE2_CANDIDATE]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\ncandidate_path=${candidatePath}`
+      );
+    };
+
+    const logStage2Retry = (attempt: number, reason: string): void => {
+      nLog(
+        `[STAGE2_RETRY]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nreason=${reason}`
+      );
+    };
+
+    const logValidateFinal = (attempt: number, decision: "accept" | "retry" | "reject", retries: number): void => {
+      nLog(
+        `[VALIDATE_FINAL]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\ndecision=${decision}\nretries=${retries}`
+      );
+    };
+
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
-      nLog(`[STAGE2_ATTEMPT] job=${payload.jobId} image=${imageLabel} attempt=${attempt} stagingStyle=${normalizeForensicStagingStyle(stagingStyleNorm)}`);
+      logStage2AttemptAnchor(attempt);
       const emitStage2DecisionBreakdown = (params: {
         extremeLocalFail: boolean;
         topologyFail: boolean;
@@ -6648,7 +6698,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           pendingStage2RetryStrategy = "NORMAL";
           pendingStage2RetryReason = "opening_preservation";
           if (attempt < MAX_STAGE2_RETRIES) {
-            nLog(`[STAGE2_RETRY] reason=stage2_generation_retryable next_attempt=${attempt + 1}`);
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, "stage2_generation_retryable");
             continue;
           }
 
@@ -6676,6 +6727,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         commitStageOutput("2", retryStage2Path);
       }
 
+      logStage2Candidate(attempt, path2);
       stage2AttemptsUsed = Math.max(stage2AttemptsUsed, attempt);
       stage2LocalReasons = [];
       let openingIdentityWarnings: string[] = [];
@@ -6725,7 +6777,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         pendingStage2RetryReason = "opening_preservation";
 
         if (attempt < MAX_STAGE2_RETRIES) {
-          nLog(`[STAGE2_RETRY] reason=stage2_candidate_equals_baseline next_attempt=${attempt + 1}`);
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, "stage2_candidate_equals_baseline");
           continue;
         }
 
@@ -6847,11 +6900,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             },
           });
 
-          nLog(
-            `[VALIDATOR_FAIL] validator=local_catastrophic reason=extreme_local_validator_fail drift_semantic=${semanticWallDriftPct.toFixed(2)} drift_masked=${maskedDriftPct.toFixed(2)}`
-          );
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "localCatastrophicGate",
+            result: "FAIL",
+            reason: `extreme_local_validator_fail_drift_semantic_${semanticWallDriftPct.toFixed(2)}_drift_masked_${maskedDriftPct.toFixed(2)}`,
+          });
 
           if (attempt < MAX_STAGE2_RETRIES) {
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, "extreme_local_validator_fail");
             logEvent("STAGE_RETRY", {
               jobId: payload.jobId,
               stage: "2",
@@ -6908,36 +6968,92 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (envRes.status === "fail") {
           seqPass = false;
           failMessage = envRes.reason;
-          nLog(`[VALIDATOR_FAIL] validator=envelope reason=${normalizeValidatorReason(failMessage)}`);
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "envelopeValidator",
+            result: "FAIL",
+            reason: normalizeValidatorReason(failMessage),
+          });
         } else {
-          nLog(`[VALIDATOR_ENVELOPE_PASS]`);
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "envelopeValidator",
+            result: "PASS",
+            reason: "none",
+          });
           
           failValidator = "openings";
           const opRes = await runOpeningValidator(validationBasePath, path2);
           if (opRes.status === "fail") {
             seqPass = false;
             failMessage = opRes.reason;
-            nLog(`[VALIDATOR_FAIL] validator=openings reason=${normalizeValidatorReason(failMessage)}`);
+            logValidatorResult({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "openingValidator",
+              result: "FAIL",
+              reason: normalizeValidatorReason(failMessage),
+            });
           } else {
-            nLog(`[VALIDATOR_OPENINGS_PASS]`);
+            logValidatorResult({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "openingValidator",
+              result: "PASS",
+              reason: "none",
+            });
             
             failValidator = "fixtures";
             const fixRes = await runFixtureValidator(validationBasePath, path2);
             if (fixRes.status === "fail") {
               seqPass = false;
               failMessage = fixRes.reason;
-              nLog(`[VALIDATOR_FAIL] validator=fixtures reason=${normalizeValidatorReason(failMessage)}`);
+              logValidatorResult({
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                validator: "fixtureValidator",
+                result: "FAIL",
+                reason: normalizeValidatorReason(failMessage),
+              });
             } else {
-              nLog(`[VALIDATOR_FIXTURES_PASS]`);
+              logValidatorResult({
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                validator: "fixtureValidator",
+                result: "PASS",
+                reason: "none",
+              });
 
               failValidator = "floor";
               const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
               if (floorRes.status === "fail") {
                 seqPass = false;
                 failMessage = floorRes.reason;
-                nLog(`[VALIDATOR_FAIL] validator=floor reason=${normalizeValidatorReason(failMessage)}`);
+                logValidatorResult({
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                  validator: "floorIntegrityValidator",
+                  result: "FAIL",
+                  reason: normalizeValidatorReason(failMessage),
+                });
               } else {
-                nLog(`[VALIDATOR_FLOOR_PASS]`);
+                logValidatorResult({
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                  validator: "floorIntegrityValidator",
+                  result: "PASS",
+                  reason: "none",
+                });
               }
             }
           }
@@ -6965,6 +7081,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
 
             if (attempt < MAX_STAGE2_RETRIES) {
+              logValidateFinal(attempt, "retry", attempt);
+              logStage2Retry(attempt, normalizeValidatorReason(validatorErrored ? retryReason : failMessage));
                 logEvent("STAGE_RETRY", {
                     jobId: payload.jobId,
                     stage: "2",
@@ -6990,7 +7108,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         seqPass = false;
         failMessage = err?.message || String(err);
         const retryReason = `validator_error_${failValidator}`;
-        nLog(`[VALIDATOR_ERROR] validator=${failValidator} reason=${normalizeValidatorReason(failMessage)}`);
+        logValidatorResult({
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: `${failValidator}Validator`,
+          result: "FAIL",
+          reason: normalizeValidatorReason(failMessage),
+        });
         stage2LocalReasons.push(retryReason);
         pendingStage2StructuralFailureType = null;
         pendingStage2RetryStrategy = "NORMAL";
@@ -7009,6 +7134,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(retryReason));
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
             stage: "2",
@@ -7188,7 +7315,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   reason: "compliance",
                 });
                 nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-                nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=compliance retries=${attempt - 1}`);
+                logValidateFinal(attempt, "reject", attempt - 1);
                 break;
               }
 
@@ -7203,7 +7330,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 decisionPoint: "retry_schedule",
                 reason: reasonText,
               });
-              nLog(`[STAGE2_COMPLIANCE_RETRY] attempt=${attempt + 1} tier=${tier}`);
+              logValidateFinal(attempt, "retry", attempt);
+              logStage2Retry(attempt, normalizeValidatorReason(reasonText));
               logEvent("STAGE_RETRY", {
                 jobId: payload.jobId,
                 stage: "2",
@@ -7313,7 +7441,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                    decisionPoint: "final_block",
                    reason: "fixture_validator_fail",
                  });
-                 nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=fixture retries=${attempt - 1}`);
+                 logValidateFinal(attempt, "reject", attempt - 1);
                  break;
                }
              } else {
@@ -7331,7 +7459,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let finalFailReason = "";
 
       try {
-        nLog("[STRUCTURAL_REVIEW_PRO_START]");
         const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
           ? await runGeminiStructuralReviewPro(validationBasePath, path2)
           : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
@@ -7341,16 +7468,37 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             finalFailValidator = "structural_review";
             seePass = false;
             finalFailReason = structuralReview.explanation || "structural_review_failed";
-            nLog(`[STRUCTURAL_REVIEW_PRO_FAIL] confidence=${structuralReview.confidence} explanation=${structuralReview.explanation}`);
+            logValidatorResult({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "structuralIdentityReview",
+              result: "FAIL",
+              reason: normalizeValidatorReason(finalFailReason),
+            });
           } else {
-            nLog(`[STRUCTURAL_REVIEW_PRO_PASS] confidence=${structuralReview.confidence} explanation=${structuralReview.explanation}`);
+            logValidatorResult({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "structuralIdentityReview",
+              result: "PASS",
+              reason: "none",
+            });
           }
         }
       } catch (finalGateErr: any) {
         finalFailValidator = finalFailValidator === "unknown" ? "structural_review" : finalFailValidator;
         seePass = false;
         finalFailReason = finalGateErr?.message || String(finalGateErr);
-        nLog(`[STRUCTURAL_REVIEW_PRO_FAIL] confidence=0 explanation=${finalFailReason}`);
+        logValidatorResult({
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "structuralIdentityReview",
+          result: "FAIL",
+          reason: normalizeValidatorReason(finalFailReason),
+        });
       }
 
       if (!seePass) {
@@ -7380,7 +7528,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
-          nLog(`[VALIDATE_FINAL] stage=2 decision=retry blockedBy=${finalFailValidator} retries=${attempt}`);
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, `${retryReason}:${normalizedFinalReason}`);
           logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
             stage: "2",
@@ -7399,7 +7548,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallback1B || path1A;
         stage2CandidatePath = path2;
-        nLog(`[VALIDATE_FINAL] stage=2 decision=fallback blockedBy=${finalFailValidator} retries=${attempt - 1}`);
+        logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }
 
@@ -7432,7 +7581,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           geminiConfirm: null,
         }
       });
-      nLog(`[VALIDATE_FINAL] stage=2 decision=accept blockedBy=none retries=${attempt - 1}`);
+      logValidateFinal(attempt, "accept", attempt - 1);
       break;
     }
   }
