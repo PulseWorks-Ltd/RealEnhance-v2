@@ -18,10 +18,10 @@ jest.mock("../src/ai/runWithImageModelFallback", () => ({
   MODEL_CONFIG: {
     stage2: {
       primary: "gemini-2.5-flash-image",
-      fallback: "gemini-2.5-pro-image",
+      fallback: "gemini-3.1-flash-image",
     },
   },
-  runWithPrimaryThenFallback: (...args: any[]) => runWithPrimaryThenFallbackMock(...args),
+  runWithSelectedImageModel: (...args: any[]) => runWithPrimaryThenFallbackMock(...args),
 }));
 
 jest.mock("../src/utils/images", () => ({

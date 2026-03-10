@@ -4,13 +4,15 @@ import { logIfNotFocusMode } from "../logger";
 
 function ensureImageCapableModel(model: string | undefined, fallback: string, envName: string): string {
   const candidate = String(model || "").trim();
-  if (candidate && candidate.toLowerCase().includes("image")) {
+  if (!candidate) {
+    return fallback;
+  }
+
+  if (candidate.toLowerCase().includes("-image")) {
     return candidate;
   }
-  if (candidate) {
-    console.warn(`[MODEL_CONFIG_INVALID] env=${envName} value=${candidate} reason=non_image_model fallback=${fallback}`);
-  }
-  return fallback;
+
+  throw new Error(`[MODEL_CONFIG_INVALID] env=${envName} value=${candidate} reason=non_image_model`);
 }
 
 /**
@@ -33,7 +35,7 @@ export const MODEL_CONFIG = {
   },
   stage2: {
     primary: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_PRIMARY, "gemini-2.5-flash-image", "REALENHANCE_MODEL_STAGE2_PRIMARY"),
-    fallback: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_FALLBACK, "gemini-3.1-flash-image-preview", "REALENHANCE_MODEL_STAGE2_FALLBACK"),
+    fallback: ensureImageCapableModel(process.env.REALENHANCE_MODEL_STAGE2_FALLBACK, "gemini-3.1-flash-image", "REALENHANCE_MODEL_STAGE2_FALLBACK"),
   },
 };
 
@@ -197,6 +199,54 @@ export async function runWithImageModelFallback(
     logGeminiError(`${context}:${model}`, err);
     console.error(`❌ FATAL: ${model} unavailable — cannot continue AI pipeline.`);
     throw new Error(`[GEMINI][${context}] ${model} model unavailable – aborting job. Error: ${(err as any)?.message || err}`);
+  }
+}
+
+export async function runWithSelectedImageModel({
+  stageLabel,
+  ai,
+  baseRequest,
+  context,
+  model,
+  meta,
+}: {
+  stageLabel: "1B" | "2";
+  ai: GoogleGenAI;
+  baseRequest: Omit<GenerateContentParams, "model">;
+  context: string;
+  model: string;
+  meta?: ModelLogMeta;
+}): Promise<{ resp: any; modelUsed: string }> {
+  const selectedModel = ensureImageCapableModel(model, model, `stage${stageLabel}_selected_model`);
+  logModelResolution({
+    stage: meta?.stage || stageLabel,
+    jobId: meta?.jobId,
+    filename: meta?.filename,
+    roomType: meta?.roomType,
+    reason: meta?.reason || context,
+    selectedModel,
+    fallbackModel: null,
+  });
+
+  try {
+    const resp = await ai.models.generateContent({
+      ...baseRequest,
+      model: selectedModel,
+    });
+
+    const validation = isValidImageResponse(resp);
+    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    console.info(`[GEMINI][${context}] Attempt with ${selectedModel} parts=${parts.length} hasImage=${validation.valid}`);
+
+    if (!validation.valid) {
+      logNoImageResponse(meta, stageLabel, selectedModel, parts);
+      throw new Error(`Model ${selectedModel} ${validation.reason}`);
+    }
+
+    return { resp, modelUsed: selectedModel };
+  } catch (err) {
+    logGeminiError(`${context}:${selectedModel}`, err);
+    throw err;
   }
 }
 

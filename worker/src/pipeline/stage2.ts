@@ -21,7 +21,8 @@ import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanne
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
-import { MODEL_CONFIG, runWithPrimaryThenFallback } from "../ai/runWithImageModelFallback";
+import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
+import { resolveStage2ImageModel } from "../ai/modelResolver";
 
 const logger = console;
 
@@ -261,24 +262,20 @@ function isStructuralRetryReason(reason: Stage2RetryReason): boolean {
 
 function ensureImageCapableModel(model: string | undefined, fallback: string): string {
   const candidate = String(model || "").trim();
-  if (candidate && candidate.toLowerCase().includes("image")) {
+  if (!candidate) {
+    return fallback;
+  }
+  if (candidate.toLowerCase().includes("-image")) {
     return candidate;
   }
-  return fallback;
+  throw new Error(`[MODEL_CONFIG_INVALID] stage=stage2 value=${candidate} reason=non_image_model`);
 }
 
 export function resolveStage2Model(attempt: number, reason: Stage2RetryReason, previousModel?: string): string {
-  const primary = ensureImageCapableModel(
-    process.env.REALENHANCE_MODEL_STAGE2_PRIMARY || MODEL_CONFIG.stage2.primary,
-    "gemini-2.5-flash-image"
-  );
-  const fallback = ensureImageCapableModel(
-    process.env.REALENHANCE_MODEL_STAGE2_FALLBACK || MODEL_CONFIG.stage2.fallback || "gemini-2.5-pro-image",
-    "gemini-2.5-pro-image"
-  );
-  if (attempt <= 1) return primary;
-  if (!isStructuralRetryReason(reason)) return previousModel || primary;
-  return fallback;
+  void reason;
+  void previousModel;
+  const resolved = resolveStage2ImageModel(attempt);
+  return ensureImageCapableModel(resolved, "gemini-2.5-flash-image");
 }
 
 function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, previousTemperature?: number): number {
@@ -637,6 +634,7 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
+  logger.info(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model}`);
   const generationConfig: any = {
     temperature: generationPlan.temperature,
     topP: generationPlan.topP,
@@ -649,9 +647,10 @@ Do not add blinds, rods, tracks, or new window coverings.
   let resp: any;
   let modelUsed = generationPlan.model;
   try {
-    const run = await runWithPrimaryThenFallback({
+    const run = await runWithSelectedImageModel({
       stageLabel: "2",
       ai: ai as any,
+      model: generationPlan.model,
       baseRequest: {
         contents: requestParts,
         generationConfig,
