@@ -20,8 +20,9 @@ import {
 import { getUserById, updateUser, getUserByEmail, createUserWithPassword } from "../services/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { hashPassword } from "../utils/password.js";
-import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
-import { getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
+import { IMAGE_BUNDLES, getBundleStripePriceId, type BundleCode } from "@realenhance/shared/bundles.js";
+import { createImageBundle, getBundleHistory } from "@realenhance/shared/usage/imageBundles.js";
+import { AGENCY_SIGNUP_PROMO_CREDITS } from "@realenhance/shared/plans.js";
 import { sendInvitationEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { invalidateSessionsForUser } from "../services/sessionStore.js";
@@ -29,6 +30,7 @@ import { getTrialSummary } from "../services/trials.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import { INITIAL_FREE_CREDITS } from "../config.js";
+import { withTransaction } from "../db/index.js";
 
 const router = Router();
 
@@ -38,6 +40,81 @@ const stripeApiVersion = process.env.STRIPE_API_VERSION as Stripe.StripeConfig["
 const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: stripeApiVersion })
   : null;
+
+const PROMO_SIGNUP_SOURCE = "promo_signup";
+const PROMO_SIGNUP_BUNDLE_CODE: BundleCode = "BUNDLE_20";
+
+async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): Promise<boolean> {
+  if (!Number.isFinite(credits) || credits <= 0) return false;
+
+  const existingPromo = await withTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = $2 LIMIT 1`,
+      [agencyId, PROMO_SIGNUP_SOURCE]
+    );
+    return existing.rowCount > 0;
+  });
+
+  if (existingPromo) return false;
+
+  const promoIntentId = `${PROMO_SIGNUP_SOURCE}:${agencyId}`;
+  const bundleResult = await createImageBundle({
+    agencyId,
+    bundleCode: PROMO_SIGNUP_BUNDLE_CODE,
+    imagesPurchased: credits,
+    stripePaymentIntentId: promoIntentId,
+    stripeSessionId: PROMO_SIGNUP_SOURCE,
+  });
+
+  if (!bundleResult.created && bundleResult.reason !== "duplicate") {
+    throw new Error(`Failed to create promo bundle: ${bundleResult.reason || "unknown"}`);
+  }
+
+  const granted = await withTransaction(async (client) => {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [agencyId]);
+
+    const existing = await client.query(
+      `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = $2 LIMIT 1`,
+      [agencyId, PROMO_SIGNUP_SOURCE]
+    );
+    if (existing.rowCount) return false;
+
+    await client.query(
+      `INSERT INTO agency_accounts (agency_id, addon_images_balance)
+       VALUES ($1, $2)
+       ON CONFLICT (agency_id) DO UPDATE
+         SET addon_images_balance = agency_accounts.addon_images_balance + EXCLUDED.addon_images_balance,
+             updated_at = NOW();`,
+      [agencyId, credits]
+    );
+
+    await client.query(
+      `INSERT INTO addon_purchases (agency_id, quantity, source, metadata)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        agencyId,
+        credits,
+        PROMO_SIGNUP_SOURCE,
+        JSON.stringify({
+          type: "signup_promo",
+          reason: "new_agency_promotion",
+          bundleCode: PROMO_SIGNUP_BUNDLE_CODE,
+          credits,
+          stripePaymentIntentId: promoIntentId,
+          grantedAt: new Date().toISOString(),
+        }),
+      ]
+    );
+
+    return true;
+  });
+
+  if (granted) {
+    console.log(`[AGENCY_PROMO_CREDITS_GRANTED] agencyId=${agencyId} credits=${credits}`);
+  }
+
+  return granted;
+}
 
 /**
  * Middleware to require authenticated user
@@ -114,6 +191,8 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
     }
 
     const updatedUser = await updateUser(user.id, updatePayload);
+
+    await grantSignupPromoCreditsOnce(agency.agencyId, AGENCY_SIGNUP_PROMO_CREDITS);
 
     // Refresh session payload so subsequent requests immediately see the new agency/role
     const displayName = getDisplayName(updatedUser as any);
@@ -566,22 +645,26 @@ router.post("/bundles/checkout", requireAuth, requireAgencyAdmin, async (req: Re
       return res.status(404).json({ error: "Agency not found" });
     }
 
+    const stripePriceId = getBundleStripePriceId(bundle.code, "nzd");
+
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "nzd",
-            product_data: {
-              name: bundle.name,
-              description: bundle.description,
+      line_items: stripePriceId
+        ? [{ price: stripePriceId, quantity: 1 }]
+        : [
+            {
+              price_data: {
+                currency: "nzd",
+                product_data: {
+                  name: bundle.name,
+                  description: bundle.description,
+                },
+                unit_amount: bundle.priceNZD * 100, // Convert to cents
+              },
+              quantity: 1,
             },
-            unit_amount: bundle.priceNZD * 100, // Convert to cents
-          },
-          quantity: 1,
-        },
-      ],
+          ],
       metadata: {
         agencyId: user.agencyId!,
         bundleCode: bundle.code,

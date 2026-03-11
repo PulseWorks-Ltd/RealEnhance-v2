@@ -140,6 +140,130 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
     // Get or create Stripe Price ID
     const stripePriceId = getStripePriceId(planTier, billingCurrency);
 
+    // If agency already has a subscription, update that subscription instead of creating a new one.
+    if (agency.stripeSubscriptionId) {
+      let existingSubscription: Stripe.Subscription | null = null;
+
+      try {
+        existingSubscription = await stripe.subscriptions.retrieve(agency.stripeSubscriptionId);
+      } catch (subErr: any) {
+        // If the stored subscription no longer exists in Stripe, fall back to checkout creation.
+        if (subErr?.code !== "resource_missing") {
+          throw subErr;
+        }
+      }
+
+      if (existingSubscription) {
+        if (!stripePriceId) {
+          return res.status(400).json({
+            error: "Missing Stripe price ID",
+            message: "Subscription updates require configured Stripe price IDs",
+          });
+        }
+
+        const existingCustomerId =
+          typeof existingSubscription.customer === "string"
+            ? existingSubscription.customer
+            : existingSubscription.customer?.id;
+
+        if (!stripeCustomerId && existingCustomerId) {
+          stripeCustomerId = existingCustomerId;
+          agency.stripeCustomerId = existingCustomerId;
+          await updateAgency(agency);
+        }
+
+        if (!existingCustomerId) {
+          return res.status(400).json({
+            error: "Missing Stripe customer",
+            message: "Existing subscription is not linked to a Stripe customer",
+          });
+        }
+
+        const stripeCustomer = await stripe.customers.retrieve(existingCustomerId);
+        const customerDefaultPaymentMethod =
+          "deleted" in stripeCustomer && stripeCustomer.deleted
+            ? null
+            : stripeCustomer.invoice_settings?.default_payment_method;
+        const subscriptionDefaultPaymentMethod = existingSubscription.default_payment_method;
+
+        if (!subscriptionDefaultPaymentMethod && !customerDefaultPaymentMethod) {
+          let portalUrl: string | null = null;
+          try {
+            const portalSession = await stripe.billingPortal.sessions.create({
+              customer: existingCustomerId,
+              return_url: `${CLIENT_URL}/agency`,
+            });
+            portalUrl = portalSession.url;
+          } catch (portalErr) {
+            console.warn(
+              `[BILLING] Failed to create portal session for missing payment method (agency ${agency.agencyId})`,
+              portalErr
+            );
+          }
+
+          return res.status(409).json({
+            code: "missing_payment_method",
+            error: "No default payment method",
+            message: "Please add a default payment method in Stripe billing portal before changing plans",
+            portalUrl,
+          });
+        }
+
+        const item = existingSubscription.items.data[0];
+        if (!item) {
+          return res.status(400).json({ error: "Subscription item not found" });
+        }
+
+        const updatedSubscription = await stripe.subscriptions.update(existingSubscription.id, {
+          items: [
+            {
+              id: item.id,
+              price: stripePriceId,
+            },
+          ],
+          proration_behavior: "create_prorations",
+          metadata: {
+            ...existingSubscription.metadata,
+            agencyId: agency.agencyId,
+            planTier,
+            currency: billingCurrency,
+            country: billingCountry,
+          },
+        });
+
+        agency.stripeSubscriptionId = updatedSubscription.id;
+        agency.stripePriceId = stripePriceId;
+        agency.planTier = planTier;
+        agency.subscriptionStatus = "ACTIVE";
+        if (stripeCustomerId) agency.stripeCustomerId = stripeCustomerId;
+
+        const updatedPeriodStart = (updatedSubscription as any).current_period_start;
+        const updatedPeriodEnd = (updatedSubscription as any).current_period_end;
+        if (updatedPeriodStart) {
+          agency.currentPeriodStart = new Date(updatedPeriodStart * 1000).toISOString();
+        }
+        if (updatedPeriodEnd) {
+          agency.currentPeriodEnd = new Date(updatedPeriodEnd * 1000).toISOString();
+        }
+
+        if (billingCurrency) agency.billingCurrency = billingCurrency;
+        if (billingCountry) agency.billingCountry = billingCountry;
+
+        await updateAgency(agency);
+
+        console.log(
+          `[BILLING] Updated existing subscription ${updatedSubscription.id} for agency ${agency.agencyId} to ${planTier}`
+        );
+
+        return res.json({
+          updated: true,
+          subscriptionId: updatedSubscription.id,
+          planTier,
+          url: `${CLIENT_URL}/agency?subscription=updated`,
+        });
+      }
+    }
+
     let lineItems: Stripe.Checkout.SessionCreateParams.LineItem[];
 
     if (stripePriceId) {

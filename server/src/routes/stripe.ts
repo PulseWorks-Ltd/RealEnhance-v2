@@ -266,6 +266,7 @@ router.post(
           break;
         }
 
+        case "customer.subscription.created":
         case "customer.subscription.updated": {
           const subscription = event.data.object as Stripe.Subscription;
           const agencyId = subscription.metadata.agencyId;
@@ -279,6 +280,11 @@ router.post(
           if (!agency) {
             console.error(`[STRIPE] Agency not found: ${agencyId}`);
             break;
+          }
+
+          agency.stripeSubscriptionId = subscription.id;
+          if (subscription.customer && typeof subscription.customer === "string") {
+            agency.stripeCustomerId = subscription.customer;
           }
 
           // Update subscription status
@@ -309,7 +315,7 @@ router.post(
 
           await updateAgency(agency);
 
-          console.log(`[STRIPE] ✅ Subscription updated for agency ${agencyId}: ${subscription.status}`);
+          console.log(`[STRIPE] ✅ Subscription ${event.type} synced for agency ${agencyId}: ${subscription.status}`);
           break;
         }
 
@@ -364,6 +370,10 @@ router.post(
           try {
             const agency = await getAgency(agencyId);
             if (agency) {
+              agency.stripeSubscriptionId = subscription.id;
+              if (subscription.customer && typeof subscription.customer === "string") {
+                agency.stripeCustomerId = subscription.customer;
+              }
               agency.subscriptionStatus = mapStripeStatusToInternal(subscription.status as StripeSubscriptionStatus);
 
               const periodStart = (subscription as any).current_period_start;

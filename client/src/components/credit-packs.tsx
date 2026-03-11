@@ -18,22 +18,22 @@ interface CreditPack {
 
 const creditPacks: CreditPack[] = [
   {
-    credits: 10,
-    price: 10,
-    pricePerCredit: 1.00,
-  },
-  {
-    credits: 25,
-    price: 20,
-    pricePerCredit: 0.80,
-    savings: 'Save 20%',
-    popular: true,
+    credits: 20,
+    price: 49,
+    pricePerCredit: 2.45,
   },
   {
     credits: 50,
-    price: 30,
-    pricePerCredit: 0.60,
-    savings: 'Save 40%',
+    price: 99,
+    pricePerCredit: 1.98,
+    savings: 'Most Popular',
+    popular: true,
+  },
+  {
+    credits: 100,
+    price: 179,
+    pricePerCredit: 1.79,
+    savings: 'Best Value',
   }
 ];
 
@@ -109,9 +109,9 @@ export function CreditPacks() {
                 <CardContent className={`p-6 ${pack.popular ? 'mt-2' : ''}`}>
                   <div className="mb-4">
                     <h4 className="text-lg font-semibold mb-2">
-                      {pack.credits === 10 ? 'Starter Pack' : 
-                       pack.credits === 25 ? 'Pro Pack' : 
-                       'Business Pack'}
+                       {pack.credits === 20 ? 'Small Pack' : 
+                        pack.credits === 50 ? 'Standard Pack' : 
+                        'Large Pack'}
                     </h4>
                     <div className="text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-accent bg-clip-text text-transparent mb-1">
                       {pack.credits}

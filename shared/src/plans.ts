@@ -3,6 +3,8 @@
 
 import type { PlanTier } from "./auth/types.js";
 
+export const AGENCY_SIGNUP_PROMO_CREDITS = Number(process.env.AGENCY_SIGNUP_PROMO_CREDITS || 20);
+
 // Environment-driven plan tuning (falls back to existing defaults)
 const num = (v: string | undefined, fallback: number) => {
   const n = Number(v);
@@ -12,7 +14,7 @@ const num = (v: string | undefined, fallback: number) => {
 // Allow overriding allowances/retention per tier without code changes
 const STARTER_MAIN_ALLOWANCE = num(
   process.env.STARTER_MAIN_ALLOWANCE,
-  num(process.env.INITIAL_FREE_CREDITS, 100)
+  num(process.env.INITIAL_FREE_CREDITS, 75)
 );
 const STARTER_RET_MULT = num(process.env.STARTER_RETENTION_MULTIPLIER, 3);
 const STARTER_RETENTION = num(
@@ -20,7 +22,7 @@ const STARTER_RETENTION = num(
   STARTER_MAIN_ALLOWANCE * STARTER_RET_MULT
 );
 
-const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 250);
+const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 150);
 const PRO_RET_MULT = num(process.env.PRO_RETENTION_MULTIPLIER, 3);
 const PRO_RETENTION = num(
   process.env.PRO_RETENTION_LIMIT,
@@ -30,7 +32,7 @@ const PRO_RETENTION = num(
 // Studio tier (internally stored as "agency"), prefer STUDIO_* envs; fall back to legacy AGENCY_* if set
 const STUDIO_MAIN_ALLOWANCE = num(
   process.env.STUDIO_MAIN_ALLOWANCE ?? process.env.AGENCY_MAIN_ALLOWANCE,
-  600
+  300
 );
 const STUDIO_RET_MULT = num(
   process.env.STUDIO_RETENTION_MULTIPLIER ?? process.env.AGENCY_RETENTION_MULTIPLIER,
@@ -59,7 +61,7 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   starter: {
     mainAllowance: STARTER_MAIN_ALLOWANCE,
     stagingAllowance: 0,
-    price: 129,
+    price: 149,
     retentionLimit: STARTER_RETENTION
   },
   pro: {
@@ -71,7 +73,7 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
   agency: {
     mainAllowance: STUDIO_MAIN_ALLOWANCE,
     stagingAllowance: 0,
-    price: 499, // NZD base price
+    price: 449, // NZD base price
     retentionLimit: STUDIO_RETENTION
   },
 };

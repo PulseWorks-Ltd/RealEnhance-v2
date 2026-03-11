@@ -7803,7 +7803,7 @@ export default function BatchProcessor() {
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Add 50 Image Bundle - $49 Continue Enhancement
+              Add Standard Pack (50 Images) - $99 Continue Enhancement
             </Button>
             <Button
               type="button"

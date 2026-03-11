@@ -40,6 +40,21 @@ export interface StripePlanConfig {
   stripePriceIdByCurrency: Partial<Record<BillingCurrency, string>>;
 }
 
+export const STRIPE_PRICES = {
+  starter: {
+    nzd: process.env.STRIPE_PRICE_STARTER_NZD,
+    aud: process.env.STRIPE_PRICE_STARTER_AUD,
+  },
+  pro: {
+    nzd: process.env.STRIPE_PRICE_PRO_NZD,
+    aud: process.env.STRIPE_PRICE_PRO_AUD,
+  },
+  agency: {
+    nzd: process.env.STRIPE_PRICE_AGENCY_NZD,
+    aud: process.env.STRIPE_PRICE_AGENCY_AUD,
+  },
+} as const;
+
 /**
  * Exchange rate approximations for pricing (NZD base)
  * Used for dynamic price calculation if Stripe Price IDs not set
@@ -68,25 +83,25 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
   starter: {
     planCode: "starter",
     displayName: "Starter",
-    mainAllowance: 100,
+    mainAllowance: 75,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,
     monthlyPriceByCurrency: {
-      nzd: 12900, // $129 NZD
-      aud: 11900, // $119 AUD (calculated: ~11868)
-      zar: 135500, // R1355 ZAR (calculated: ~135450)
-      usd: 7600, // $76 USD (calculated: ~7611)
+      nzd: 14900, // $149 NZD
+      aud: 13700, // $137 AUD (calculated: ~13708)
+      zar: 156500, // R1565 ZAR (calculated: ~156450)
+      usd: 8800, // $88 USD (calculated: ~8791)
     },
     stripePriceIdByCurrency: {
-      nzd: "price_1SlxnZPay1sYFQ7VPUCSv2u1",
-      aud: "price_1SlxuYPay1sYFQ7VkqWef0bn",
+      nzd: STRIPE_PRICES.starter.nzd,
+      aud: STRIPE_PRICES.starter.aud,
     },
   },
   pro: {
     planCode: "pro",
     displayName: "Pro",
-    mainAllowance: 250,
+    mainAllowance: 150,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,
@@ -97,26 +112,26 @@ export const STRIPE_PLANS: Record<PlanTier, StripePlanConfig> = {
       usd: 14700, // $147 USD (calculated: ~14691)
     },
     stripePriceIdByCurrency: {
-      nzd: "price_1SlxpoPay1sYFQ7VhgbzFUlu",
-      aud: "price_1SlxxGPay1sYFQ7V5OzTzJwy",
+      nzd: STRIPE_PRICES.pro.nzd,
+      aud: STRIPE_PRICES.pro.aud,
     },
   },
   agency: {
     planCode: "agency",
-    displayName: "Studio",
-    mainAllowance: 600,
+    displayName: "Agency",
+    mainAllowance: 300,
     stagingAllowance: 0,
     seatLimit: null,
     allowInvites: true,
     monthlyPriceByCurrency: {
-      nzd: 49900, // $499 NZD
-      aud: 45900, // $459 AUD (calculated: ~45908)
-      zar: 523900, // R5239 ZAR (calculated: ~523950)
-      usd: 29400, // $294 USD (calculated: ~29441)
+      nzd: 44900, // $449 NZD
+      aud: 41300, // $413 AUD (calculated: ~41308)
+      zar: 471500, // R4715 ZAR (calculated: ~471450)
+      usd: 26500, // $265 USD (calculated: ~26491)
     },
     stripePriceIdByCurrency: {
-      nzd: "price_1SlxqQPay1sYFQ7VCZ5vnSrM",
-      aud: "price_1SlxwGPay1sYFQ7VMxdM1Mdb",
+      nzd: STRIPE_PRICES.agency.nzd,
+      aud: STRIPE_PRICES.agency.aud,
     },
   },
 };

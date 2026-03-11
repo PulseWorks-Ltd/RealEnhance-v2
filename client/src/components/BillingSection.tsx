@@ -59,8 +59,8 @@ interface SubscriptionInfo {
 
 const PLAN_NAMES: Record<string, string> = {
   starter: "Starter",
-  pro: "Agency",
-  agency: "Agency Plus",
+  pro: "Pro",
+  agency: "Agency",
 };
 
 const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
@@ -72,21 +72,20 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
   },
   {
     value: "pro",
-    displayName: "Agency",
+    displayName: "Pro",
     monthlyPriceNZD: 249,
     monthlyAllowance: 150,
   },
   {
     value: "agency",
-    displayName: "Agency Plus",
+    displayName: "Agency",
     monthlyPriceNZD: 449,
     monthlyAllowance: 300,
   },
 ];
 
 function formatPlanDisplayName(planTier: "starter" | "pro" | "agency", planDisplayName?: string | null): string {
-  if (planDisplayName === "Pro") return PLAN_NAMES.pro;
-  if (planDisplayName === "Studio") return PLAN_NAMES.agency;
+  if (planDisplayName === "Studio" || planDisplayName === "Agency Plus") return PLAN_NAMES.agency;
   return planDisplayName || PLAN_NAMES[planTier];
 }
 

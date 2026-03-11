@@ -12,7 +12,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Loader2, Package, Sparkles } from "lucide-react";
 
 interface BundleOption {
-  code: "BUNDLE_50" | "BUNDLE_100";
+  code: "BUNDLE_20" | "BUNDLE_50" | "BUNDLE_100";
   name: string;
   images: number;
   priceNZD: number;
@@ -24,19 +24,26 @@ interface BundleOption {
 // If prices change, update BOTH files.
 const BUNDLES: BundleOption[] = [
   {
+    code: "BUNDLE_20",
+    name: "Small Pack",
+    images: 20,
+    priceNZD: 49,
+    description: "Quick top-up for urgent batches",
+  },
+  {
     code: "BUNDLE_50",
-    name: "50 Image Bundle",
+    name: "Standard Pack",
     images: 50,
-    priceNZD: 79,
-    description: "Perfect for a busy month",
+    priceNZD: 99,
+    description: "Ideal for steady monthly volume",
+    recommended: true,
   },
   {
     code: "BUNDLE_100",
-    name: "100 Image Bundle",
+    name: "Large Pack",
     images: 100,
-    priceNZD: 149,
-    description: "Best value for high-volume agencies",
-    recommended: true,
+    priceNZD: 179,
+    description: "Best value for high-volume needs",
   },
 ];
 
@@ -108,7 +115,7 @@ export function BundlePurchase() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {BUNDLES.map((bundle) => (
             <div
               key={bundle.code}
@@ -163,7 +170,7 @@ export function BundlePurchase() {
                       Redirecting...
                     </>
                   ) : (
-                    `Purchase ${bundle.images} Images`
+                    `Purchase ${bundle.name}`
                   )}
                 </Button>
               </div>
