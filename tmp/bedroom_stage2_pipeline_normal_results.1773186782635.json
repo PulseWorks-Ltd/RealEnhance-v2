@@ -1,0 +1,482 @@
+[
+  {
+    "image": "Bedroom 02",
+    "baseline": "Bedroom 02.jpg",
+    "staged": "Bedroom 02 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_band_mismatch",
+        "confidence": 0.97,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure and fixed installed fixtures, including the two recessed ceiling lights, remain consistent between the baseline and staged images. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (dark carpet) and its boundaries with the walls remain consistent between the baseline and staged images. No structural floor changes are detected.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, doors, bulkhead, and ceiling geometry, remains identical between the baseline and staged images. No structural changes, wall extensions, or filled recesses are observed. Differences are limited to furniture, decor, lighting, and camera perspective.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": true,
+      "category": "structure",
+      "violationType": "other",
+      "confidence": 1,
+      "reasons": [
+        "The two original recessed downlights in the ceiling have been removed and replaced with a single, different style downlight in a new central position. This is a modification of fixed architectural features."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 03",
+    "baseline": "Bedroom 03.jpg",
+    "staged": "Bedroom 03 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "computed",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_resized|opening_resize_ge_0_30:0.305",
+        "confidence": 0.925,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, window, door hardware, and fixed ceiling recessed lights are identical in both images. Only furniture and decor have changed, which is allowed.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying dark grey carpet floor material and its boundaries remain consistent between both images. The white patterned rug in the staged image is a movable covering and not a structural floor change.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including all visible walls, ceiling geometry, window placement, and wall continuity, remains identical between the baseline and staged images. Furniture, decor, and lighting have changed, but these are not architectural modifications.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 1,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 04",
+    "baseline": "Bedroom 04.jpg",
+    "staged": "Bedroom 04 (Enhanced).webp",
+    "pairFound": false
+  },
+  {
+    "image": "Bedroom 05",
+    "baseline": "Bedroom 05.jpg",
+    "staged": "Bedroom 05 (Enhanced).webp",
+    "pairFound": false
+  },
+  {
+    "image": "Bedroom 06",
+    "baseline": "Bedroom 06.jpg",
+    "staged": "Bedroom 06 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 3
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_relocated|opening_resized|opening_resize_ge_0_30:0.518|opening_class_mismatch|opening_band_mismatch",
+        "confidence": 0.973,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, including the window, closet, and built-in shelves, is identical. The single ceiling light fixture is also preserved in both images. All changes are limited to furniture and decor, which is permissible.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (blue carpet) and its structural boundaries remain unchanged. Differences are due to furniture, decor, and a movable rug, which are not considered structural.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "fail",
+        "reason": "The baseline image shows a recessed area with shelves to the right of the sliding door. In the staged image, this recess has been filled, creating a continuous flat wall surface, which constitutes an alteration of the architectural envelope and violates the 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check'.",
+        "confidence": 1,
+        "hardFail": true
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": true,
+      "category": "structure",
+      "violationType": "built_in_moved",
+      "confidence": 1,
+      "reasons": [
+        "The built-in shelving unit to the right of the wardrobe has been modified. The number of shelves has been reduced from four in the 'BEFORE' image to two in the 'AFTER' image."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 07",
+    "baseline": "Bedroom 07.jpg",
+    "staged": "Bedroom 07 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 1
+    },
+    "validators": {
+      "opening": {
+        "status": "pass",
+        "reason": "openings_preserved",
+        "confidence": 0.95,
+        "hardFail": false
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture and fixed installed fixtures (window, light switch/outlet on left wall) are preserved between the baseline and staged images. Furniture and decor have been added, which is allowed.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying floor material remains dark brown carpet in both images. The visible rug in the staged image is a movable covering and not a structural floor change. All architectural floor-plane invariants are maintained.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, window, ceiling, and room proportions, remains identical between the baseline and staged images. No structural changes, wall plane extensions, or changes in room segmentation are observed. Furniture, decor, and rugs are appropriately ignored.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": false,
+      "trigger": "none"
+    },
+    "finalStructuralValidator": {
+      "ran": false,
+      "model": "gemini-2.5-pro"
+    }
+  },
+  {
+    "image": "Bedroom 09",
+    "baseline": "Bedroom 09.jpg",
+    "staged": "Bedroom 09 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "computed",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.790|opening_class_mismatch",
+        "confidence": 0.95,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The fixed architectural elements and installed fixtures, including the recessed downlight, windows, and wall outlets/switches, are identical in both images and retain their original positions. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The structural floor material (dark grey carpet) and its boundaries remain consistent between the baseline and staged images. The added rug in the staged image is a movable covering and not a structural change.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, wall planes, windows, outlets, and ceiling geometry are identical between the baseline and staged images. No architectural modifications, such as wall extensions, infills, or changes to the room's footprint, are visible.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 1,
+      "reasons": [
+        "The staging successfully introduces furniture while preserving all architectural and built-in features, including walls, windows, ceiling fixtures, and window treatments. No structural violations were detected."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 11",
+    "baseline": "Bedroom 11.jpg",
+    "staged": "Bedroom 11 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 4
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.396|opening_class_mismatch",
+        "confidence": 0.955,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure including windows and closet, along with the two recessed ceiling lights, are identical in both images. Only furniture and decor have been added, which is allowed.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet), its layout, perspective geometry, and boundary intersections with walls are consistent between the baseline and staged images. Furniture and staging objects are non-structural changes.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, ceiling, and room footprint, remains identical between the baseline and staged images. No wall planes have been altered, extended, or filled, and all structural elements are consistent. Changes observed are limited to furniture, decor, and minor perspective/lighting differences, which are permissible.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 1,
+      "reasons": [
+        "The room has been successfully staged with furniture without any structural modifications. All architectural elements including walls, windows, doors, and built-in features like the mirrored closet and ceiling fixtures are preserved."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 12",
+    "baseline": "Bedroom 12.jpg",
+    "staged": "Bedroom 12 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 4,
+      "openingCount": 2
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.750|opening_band_mismatch",
+        "confidence": 0.95,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure, fixed installed fixtures, and major ceiling/wall fixtures (HVAC unit, central ceiling light, ceiling vent) are identical in both the baseline and staged images. The changes are limited to furniture and decor, which is permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (dark gray carpet) remains consistent between both images, and there are no discernible changes to the floor's boundaries, geometry, or perspective that would indicate a structural alteration.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, doorways, windows, and ceiling, remains identical. No structural changes, wall modifications, or alterations to room footprint are visible. The changes are limited to furniture and decor, which are to be ignored.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 0.99,
+      "reasons": [
+        "No structural changes were detected. The room has been staged with furniture, which is the expected outcome for this mode."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 14",
+    "baseline": "Bedroom 14.jpg",
+    "staged": "Bedroom 14 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 3,
+      "openingCount": 3
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_relocated|opening_resized|opening_resize_ge_0_30:0.727|opening_band_mismatch",
+        "confidence": 0.93,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room's architecture, windows, and fixed ceiling light fixture remain identical. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) remains the same, and there are no changes to the floor's layout, orientation, perspective geometry, or boundary intersections with the walls. Only furniture and decor have changed.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "fail",
+        "reason": "The wall on the far right of the room has been altered. In the baseline image, there appears to be an opening or recess (likely a doorway or closet opening) at the far right. In the staged image, this area has been filled in to create a continuous flat wall surface, which is an architectural modification (doorway infill/flattened wall indentation).",
+        "confidence": 1,
+        "hardFail": true
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 1,
+      "reasons": [
+        "Successful full staging of the room. All architectural elements, including walls, openings, ceiling fixtures, and curtain rods, have been preserved."
+      ]
+    }
+  },
+  {
+    "image": "Bedroom 16",
+    "baseline": "Bedroom 16.jpg",
+    "staged": "Bedroom 16 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "baselineExtraction": {
+      "ok": true,
+      "wallCount": 2,
+      "openingCount": 2
+    },
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_relocated",
+        "confidence": 0.985,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture and fixed installed fixtures, including the central ceiling light, are identical in both images. Changes are limited to furniture and decor.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material class (carpet), layout, perspective geometry, and boundary intersections with walls remain unchanged. The added furniture is a non-structural difference.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, window and door placements, ceiling, and floor, are identical between the baseline and staged images. No structural changes, such as altered wall planes, filled recesses, or changes to openings, are visible. Differences are limited to furniture and decor.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "decision": {
+      "escalatedToFinalStructuralValidator": true,
+      "trigger": "validator_fail"
+    },
+    "finalStructuralValidator": {
+      "ran": true,
+      "model": "gemini-2.5-pro",
+      "hardFail": false,
+      "category": "furniture_change",
+      "violationType": "layout_only",
+      "confidence": 1,
+      "reasons": [
+        "The structural envelope, openings, and built-in fixtures are preserved. Only compliant furniture has been added for staging purposes."
+      ]
+    }
+  }
+]
