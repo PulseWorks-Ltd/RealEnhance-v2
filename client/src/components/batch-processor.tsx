@@ -6487,11 +6487,6 @@ export default function BatchProcessor() {
 
             {files.length > 0 && (
               <footer className="sticky bottom-0 mt-auto py-4 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 z-50 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
-                {isEnhanceCreditBlocked && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700" title="Not enough credits">
-                    Batch requires {requiredBatchCredits} credits - you have {Math.max(0, Number(availableCredits ?? 0))} available.
-                  </p>
-                )}
                 <button
                   onClick={handleStartEnhance}
                   disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index))}
