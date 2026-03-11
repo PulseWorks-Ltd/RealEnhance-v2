@@ -7038,6 +7038,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let floorPass = true;
       const stage2AdvisorySignals: string[] = [];
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
+      let openingStructuralSignalDetected = false;
 
       type Stage2GateValidator = "openings" | "fixtures" | "floor" | "envelope";
       let currentValidator: Stage2GateValidator = "openings";
@@ -7070,7 +7071,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const openingSignals = extractOpeningSignals(opRes);
         const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
         const openingReason = openingConfidence.reason;
-        const openingStructuralSignalDetected =
+        openingStructuralSignalDetected =
           openingConfidence.level === "strong" || openingConfidence.level === "extreme";
 
         nLog("[OPENING_STRUCTURAL_SIGNAL]", {
@@ -7086,6 +7087,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         if (openingStructuralSignalDetected && openingReason) {
+          const confidenceLevel = openingConfidence.level;
           appendAdvisories("openings", [
             "opening_structural_signal:true",
             `opening_structural_signal_reason:${openingReason}`,
@@ -7093,7 +7095,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
           openingStructuralSignal = {
             type: openingReason,
-            confidence: openingConfidence.level,
+            confidence: confidenceLevel === "strong" || confidenceLevel === "extreme" ? confidenceLevel : "advisory",
             resizeDelta: Number.isFinite(openingSignals.resizeDelta)
               ? openingSignals.resizeDelta
               : undefined,
@@ -7448,7 +7450,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               advisorySignals: stage2AdvisorySignals,
               openingStructuralSignal: openingStructuralSignalDetected,
               openingStructuralSignalContext: openingStructuralSignal,
-              openingStructuralSignal,
               modelOverride: "gemini-2.5-pro",
             });
           }
