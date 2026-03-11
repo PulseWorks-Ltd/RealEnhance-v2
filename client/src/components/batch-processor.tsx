@@ -39,6 +39,13 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
+type StagingStyle =
+  | "standard_listing"
+  | "family_home"
+  | "urban_apartment"
+  | "high_end_luxury"
+  | "country_lifestyle"
+  | "lived_in_rental";
 type DisplayOutputKey = StageKey | "retried" | "edited";
 type EditSourceStage = "stage2" | "stage1B" | "stage1A";
 type PreviewModalImage = { url: string; filename: string; originalUrl?: string; index: number };
@@ -465,6 +472,7 @@ interface PersistedBatchJob {
       originalUploadUrl?: string | null;
     };
     allowStaging: boolean;
+    allowRetouch?: boolean;
     baselineStage: "original" | "1A" | "1B" | "latest";
     outdoorStaging: string;
     furnitureReplacement: boolean;
@@ -523,12 +531,14 @@ function computeRetryBaseline(
   }
 
   if (stage2Url) {
+    const sourceUrl = stage1BUrl || stage1AUrl || originalUploadUrl || null;
+    const baselineStage: "original" | "1A" | "1B" = stage1BUrl ? "1B" : stage1AUrl ? "1A" : "original";
     return {
-      baselineStage: "1B",
+      baselineStage,
       stagesToRun: ["2"],
       allowStaging: true,
-      sourceUrl: stage2Url,
-      sourceStageLabel: "stage2",
+      sourceUrl,
+      sourceStageLabel: stage1BUrl ? "stage1b" : stage1AUrl ? "stage1a" : "original_upload",
     };
   }
 
@@ -619,6 +629,7 @@ function computeRetryBaseline(
 
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
+const JOB_EXPIRY_HOURS = 24;
 
 function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' {
   const val = (raw || "").toLowerCase();
@@ -710,7 +721,7 @@ const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string =
   return "Retrying...";
 };
 
-type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2";
+type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "retry";
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
 type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
 
@@ -759,7 +770,32 @@ const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
     "Adjusting staging scale",
     "Rendering staged scene",
   ],
+  validator: [
+    "Running quality validation",
+    "Checking structural consistency",
+    "Reviewing edit safety rules",
+    "Verifying output compliance",
+  ],
+  retry: [
+    "Re-running enhancement pipeline",
+    "Applying stricter retry policy",
+    "Generating improved output",
+    "Comparing retry candidate",
+  ],
 };
+
+function parseExplicitDisplayStage(raw: unknown): DisplayStageKey | null {
+  const text = String(raw || "").toLowerCase();
+  if (!text) return null;
+  if (text.includes("retry")) return "retry";
+  if (text.includes("valid") || text.includes("review") || text.includes("compliance") || text.includes("audit")) return "validator";
+  if (text.includes("1b") || text.includes("stage1b") || text.includes("declutter")) return "stage1b";
+  if (text.includes("2") || text.includes("stage2") || text.includes("staging") || text.includes("design")) return "stage2";
+  if (text.includes("1a") || text.includes("stage1a") || text.includes("enhanc") || text.includes("preprocess")) return "stage1a";
+  if (text.includes("upload") || text.includes("queued") || text.includes("waiting")) return "uploading";
+  if (text.includes("complete") || text.includes("done") || text.includes("success")) return "completed";
+  return null;
+}
 
 function normalizeCurrentStage(raw: unknown): string {
   return String(raw || "").toLowerCase();
@@ -832,7 +868,8 @@ function resolveDisplayStageKey(params: {
 function toProcessingMessageStage(key: DisplayStageKey): ProcessingMessageStage {
   if (key === "stage1b") return "stage1b";
   if (key === "stage2") return "stage2";
-  if (key === "retry") return "stage2";
+  if (key === "validator") return "validator";
+  if (key === "retry") return "retry";
   return "stage1a";
 }
 
@@ -890,6 +927,7 @@ export default function BatchProcessor() {
   const [messageByImage, setMessageByImage] = useState<Record<number, string>>({});
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
+  const lastKnownDisplayStageByImageRef = useRef<Record<number, DisplayStageKey>>({});
   const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
@@ -1030,7 +1068,38 @@ export default function BatchProcessor() {
         isRetryActive,
         isUploading,
       });
-      const messageStage = toProcessingMessageStage(displayStageKey);
+      const backendStageRaw =
+        item?.currentStage ||
+        item?.current_stage ||
+        item?.processingStage ||
+        item?.processing_stage ||
+        item?.stage ||
+        item?.stageName ||
+        item?.stage_name ||
+        item?.meta?.currentStage ||
+        item?.meta?.current_stage ||
+        item?.result?.currentStage ||
+        item?.result?.current_stage ||
+        item?.result?.processingStage ||
+        item?.result?.processing_stage ||
+        item?.result?.stage ||
+        item?.result?.stageName ||
+        item?.result?.stage_name ||
+        item?.pipelineStatusRaw ||
+        item?.result?.pipelineStatusRaw ||
+        "";
+      const backendStage = parseExplicitDisplayStage(backendStageRaw);
+      const lastKnownStage = lastKnownDisplayStageByImageRef.current[index];
+      const resolvedDisplayStage = backendStage ?? lastKnownStage ?? displayStageKey;
+
+      // Never let heuristic fallback overwrite a known backend stage.
+      if (backendStage) {
+        lastKnownDisplayStageByImageRef.current[index] = backendStage;
+      } else if (!lastKnownStage) {
+        lastKnownDisplayStageByImageRef.current[index] = displayStageKey;
+      }
+
+      const messageStage = toProcessingMessageStage(resolvedDisplayStage);
 
       if (!messageTimerByImageRef.current[index] || messageStageByImageRef.current[index] !== messageStage) {
         clearMessageTimer(index);
@@ -1055,9 +1124,16 @@ export default function BatchProcessor() {
       });
       messageTimerByImageRef.current = {};
       messageStageByImageRef.current = {};
+      lastKnownDisplayStageByImageRef.current = {};
       currentMessageByImageRef.current = {};
     };
   }, []);
+
+  useEffect(() => {
+    if (runState === "idle" && results.length === 0) {
+      lastKnownDisplayStageByImageRef.current = {};
+    }
+  }, [runState, results.length]);
 
   const [jobId, setJobId] = useState<string>("");
   const [jobIds, setJobIds] = useState<string[]>([]); // multi-job batch ids
@@ -1171,6 +1247,8 @@ export default function BatchProcessor() {
 
   // Retry timeout safety (5 minutes max for full pipeline jobs)
   const RETRY_TIMEOUT_MS = 300_000;
+  const EDIT_COMPLETE_FALLBACK_MS = 15_000;
+  const STUCK_UI_MS = 120_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Retry dialog state
@@ -2205,7 +2283,9 @@ export default function BatchProcessor() {
       setGlobalGoal(savedState.goal);
       setPreserveStructure?.(savedState.settings.preserveStructure);
       setAllowStaging(savedState.settings.allowStaging);
-      setAllowRetouch?.(savedState.settings.allowRetouch);
+      if (typeof savedState.settings.allowRetouch === "boolean") {
+        setAllowRetouch(savedState.settings.allowRetouch);
+      }
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
@@ -2384,6 +2464,7 @@ export default function BatchProcessor() {
           preserveStructure,
           allowStaging,
           allowRetouch,
+          baselineStage: "original",
           outdoorStaging,
           furnitureReplacement,
           declutter,
@@ -3035,7 +3116,7 @@ export default function BatchProcessor() {
           const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrlSafe);
           if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
             statusHasUrlLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
-            console.log('[BATCH][status_unmapped_but_has_url]', { polledId, parentJobId, imageId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrl } });
+            console.log('[BATCH][status_unmapped_but_has_url]', { polledId, parentJobId, imageId, rawStatus: pipelineStatusRaw, normalized: normalizedStatus, urlFieldsPresent: { displayUrl: !!displayUrl, stage2Url: !!stage2Url, stage1bUrl: !!stage1bUrl, stage1aUrl: !!stage1aUrl, imageUrl: !!it?.imageUrl, image: !!it?.image, extraResultUrl: !!(extraResult?.imageUrl || extraResult?.url), resultUrl: !!resultUrlSafe } });
           }
 
           // No downgrades: keep processing/queued/failed/completed as reported
@@ -3202,6 +3283,15 @@ export default function BatchProcessor() {
               retryTerminalIndices.add(idx);
             }
 
+            // Ensure the card immediately flips to the latest retry artifact once retry completes,
+            // rather than waiting for another render/poll cycle to infer it.
+            if (isRetryChildJob && completedFinal) {
+              setDisplayStageByIndex((prev) => {
+                if (prev[idx] === "retried") return prev;
+                return { ...prev, [idx]: "retried" };
+              });
+            }
+
             if (isRegionEdit && completedFinal) {
               clearEditFallbackTimer(idx);
               setEditingImages(prev => {
@@ -3231,7 +3321,7 @@ export default function BatchProcessor() {
                 status,
                 stageKeys,
                 resultStage: resultStage || null,
-                resultUrl: resultUrl || null,
+                resultUrl: resultUrlSafe || null,
                 chosenPreview: chosenPreview || null,
               });
             }
@@ -3262,7 +3352,7 @@ export default function BatchProcessor() {
               });
             }
           } else {
-            const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrl);
+            const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrlSafe);
             const missingKey = String(resolvedJobKey || polledId || parentJobId || imageId || 'unknown');
             if (!idxMissingLoggedRef.current.has(missingKey)) {
               idxMissingLoggedRef.current.add(missingKey);
@@ -3274,7 +3364,7 @@ export default function BatchProcessor() {
                 status: pipelineStatusRaw,
                 hasAnyUrl,
                 urlsPresent: {
-                  resultUrl: !!resultUrl,
+                  resultUrl: !!resultUrlSafe,
                   stage2Url: !!stage2Url,
                   stage1bUrl: !!stage1bUrl,
                   stage1aUrl: !!stage1aUrl,
@@ -4386,7 +4476,7 @@ export default function BatchProcessor() {
   }, [buildPreviewImage, resolveDisplayedStageForEdit, results]);
 
   // Handle edit image - resolve URL before opening editor
-  const handleEditImage = (imageIndex: number, displayedUrlOverride?: string | null) => {
+  const handleEditImage = (imageIndex: number) => {
     const item = results[imageIndex];
     if (!item) {
       console.error('[EDIT][load_source] No result data for index:', imageIndex);
@@ -4409,9 +4499,7 @@ export default function BatchProcessor() {
     };
 
     const resolvedEditSource = getEditSourceForIndex(imageIndex);
-    const imageUrl =
-      toDisplayUrl(displayedUrlOverride) ||
-      resolvedEditSource.url;
+    const imageUrl = resolvedEditSource.url;
     const urlSource = resolvedEditSource.stage;
     const imageId = item?.imageId || item?.result?.imageId || null;
     const sourceJobId = item?.jobId || item?.result?.jobId || null;
@@ -4453,7 +4541,7 @@ export default function BatchProcessor() {
     setRegionEditorOpen(true);
   };
 
-  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B") => {
+  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
     // ✅ Prevent double retry on same image
     if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
 
@@ -6597,6 +6685,7 @@ export default function BatchProcessor() {
                 </div>
 
                   {/* 3. Gallery Grid */}
+                  <div className={runState === "done" ? "max-h-[calc(100vh-21rem)] overflow-y-auto pr-1" : ""}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {files.map((file, i) => {
                         const result = results[i];
@@ -6769,15 +6858,33 @@ export default function BatchProcessor() {
                           isRetryActive,
                           isUploading,
                         });
-                        const stageMessageKey = toProcessingMessageStage(displayStageKey);
+                        const backendDisplayStage = parseExplicitDisplayStage(
+                          result?.currentStage ||
+                          result?.current_stage ||
+                          result?.processingStage ||
+                          result?.processing_stage ||
+                          result?.stage ||
+                          result?.stageName ||
+                          result?.stage_name ||
+                          result?.pipelineStatusRaw ||
+                          result?.result?.pipelineStatusRaw ||
+                          rawPipelineStatus
+                        );
+                        const persistedDisplayStage = lastKnownDisplayStageByImageRef.current[i];
+                        const resolvedDisplayStageKey = backendDisplayStage ?? persistedDisplayStage ?? displayStageKey;
+                        if (backendDisplayStage) {
+                          lastKnownDisplayStageByImageRef.current[i] = backendDisplayStage;
+                        }
+
+                        const stageMessageKey = toProcessingMessageStage(resolvedDisplayStageKey);
                         const rotatingMessages = STAGE_MESSAGES[stageMessageKey] || STAGE_MESSAGES.stage1a;
                         const rotatingMessage = messageByImage[i] || rotatingMessages[0];
                         const stageProgressValue = isDone
                           ? 100
-                          : (STAGE_PROGRESS[displayStageKey] ?? (isProcessing ? 35 : 0));
+                          : (STAGE_PROGRESS[resolvedDisplayStageKey] ?? (isProcessing ? 35 : 0));
                         const stageTitle = isDone
                           ? STAGE_TITLES.completed
-                          : (STAGE_TITLES[displayStageKey] || STAGE_TITLES.stage1a);
+                          : (STAGE_TITLES[resolvedDisplayStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = (() => {
                           if (currentStage.includes("2")) return "Applying design...";
                           if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Simplifying space...";
@@ -6870,6 +6977,15 @@ export default function BatchProcessor() {
                             ? (enhancedUrl || previewUrls[i] || null)
                             : (previewUrls[i] || null);
                         const canEditFromDisplayedOutput = !!previewUrl;
+                        const hasFinalArtifactUrl = !!(
+                          finalResultUrl ||
+                          stage2Url ||
+                          stage1BUrl ||
+                          stage1AUrl ||
+                          retriedUrl ||
+                          editedUrl ||
+                          resolvedFinalUrl
+                        );
 
                         const stageBadgeLabel = (() => {
                           const artifactFinalLabel = stage2Url
@@ -7043,7 +7159,7 @@ export default function BatchProcessor() {
 
                             {/* Action / Cancel Column */}
                             <div className="flex flex-wrap gap-2 pt-1">
-                              {bestDisplayUrl && (isUiComplete || isError) && (
+                              {bestDisplayUrl && (hasFinalArtifactUrl || isUiComplete || isError || isEditComplete) && (
                                 <>
                                   <button 
                                     onClick={() => openPreviewImage(i)}
@@ -7052,7 +7168,7 @@ export default function BatchProcessor() {
                                     Preview
                                   </button>
                                   <button 
-                                    onClick={() => handleEditImage(i, previewUrl)}
+                                    onClick={() => handleEditImage(i)}
                                     disabled={result?.retryInFlight || editingImages.has(i) || !canEditFromDisplayedOutput}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
@@ -7082,6 +7198,7 @@ export default function BatchProcessor() {
                           </div>
                         );
                     })}
+                </div>
                 </div>
 
                 {/* Final Actions */}
@@ -7148,7 +7265,7 @@ export default function BatchProcessor() {
                   onClick={() => {
                     const index = previewImage.index;
                     setPreviewImage(null);
-                    handleEditImage(index, previewImage.url);
+                    handleEditImage(index);
                   }}
                   disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index) || !canEditFromPreview}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"

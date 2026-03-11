@@ -15,10 +15,9 @@ export type ComplianceVerdict = {
 type OpeningStructuralSignal = {
   type:
     | "opening_removed"
+    | "opening_removed_and_relocated"
     | "opening_resize_extreme"
-    | "opening_resize_large"
-    | "opening_relocated_and_resized"
-    | "opening_minor_change";
+    | "opening_relocated_and_resized";
   confidence: "advisory" | "strong" | "extreme";
   resizeDelta?: number;
 };
@@ -86,29 +85,47 @@ export async function checkCompliance(
   opts?: {
     validationMode?: Stage2ValidationMode;
     advisorySignals?: string[];
-    openingStructuralSignal?: OpeningStructuralSignal;
+    openingStructuralSignal?: boolean | OpeningStructuralSignal;
+    openingStructuralSignalContext?: OpeningStructuralSignal;
     modelOverride?: string;
   }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
+  const openingStructuralSignalFlag = typeof opts?.openingStructuralSignal === "boolean"
+    ? opts?.openingStructuralSignal
+    : !!opts?.openingStructuralSignal;
+  const openingStructuralSignalContext =
+    opts?.openingStructuralSignalContext ||
+    (typeof opts?.openingStructuralSignal === "object" ? opts?.openingStructuralSignal : undefined);
   const advisoryContext = Array.isArray(opts?.advisorySignals) && opts.advisorySignals.length > 0
     ? [
         "ADVISORY SIGNALS FROM LOCAL VALIDATORS (focus review here):",
         ...opts.advisorySignals.map((signal) => `- ${signal}`),
       ]
     : [];
-  const openingStructuralContext = opts?.openingStructuralSignal
+  const openingStructuralContext = openingStructuralSignalContext
     ? [
         "OPENING STRUCTURAL SIGNAL (sensor evidence, not final verdict):",
-        `- type: ${opts.openingStructuralSignal.type}`,
-        `- confidence: ${opts.openingStructuralSignal.confidence}`,
-        ...(typeof opts.openingStructuralSignal.resizeDelta === "number"
-          ? [`- resizeDelta: ${opts.openingStructuralSignal.resizeDelta.toFixed(3)}`]
+        `- type: ${openingStructuralSignalContext.type}`,
+        `- confidence: ${openingStructuralSignalContext.confidence}`,
+        ...(typeof openingStructuralSignalContext.resizeDelta === "number"
+          ? [`- resizeDelta: ${openingStructuralSignalContext.resizeDelta.toFixed(3)}`]
           : []),
       ]
     : [];
+  const openingStructuralGuidance = openingStructuralSignalFlag
+    ? [
+        "Local structural detectors indicate that an architectural opening",
+        "(window or door) may have been partially replaced with wall surface.",
+        "",
+        "Furniture may hide part of a window, but furniture cannot replace",
+        "the architectural opening itself.",
+        "",
+        "Please confirm visually whether the opening geometry has changed.",
+      ]
+    : [];
   const openingRelocatedResizedGuidance =
-    opts?.openingStructuralSignal?.type === "opening_relocated_and_resized"
+    openingStructuralSignalContext?.type === "opening_relocated_and_resized"
       ? [
           "Local structural detectors observed that a window opening appears both relocated and significantly resized.",
           "This combination frequently indicates that part of the opening may have been replaced by wall surface.",
@@ -116,7 +133,7 @@ export async function checkCompliance(
           "Please verify whether the opening geometry has actually changed or whether the difference is caused only by occlusion or perspective.",
         ]
       : [];
-  const structuralDecisionInstruction = opts?.openingStructuralSignal
+  const structuralDecisionInstruction = openingStructuralSignalFlag
     ? "Compare ORIGINAL vs EDITED with focus on confirming or refuting opening-geometry changes signaled above."
     : "Compare ORIGINAL vs EDITED. Ignore structural changes (those are handled elsewhere).";
 
@@ -124,6 +141,7 @@ export async function checkCompliance(
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
+    ...openingStructuralGuidance,
     ...openingStructuralContext,
     ...openingRelocatedResizedGuidance,
     structuralDecisionInstruction,
@@ -170,6 +188,7 @@ export async function checkCompliance(
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
+    ...openingStructuralGuidance,
     ...openingStructuralContext,
     ...openingRelocatedResizedGuidance,
     "Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:",

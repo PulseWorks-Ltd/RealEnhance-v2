@@ -1,0 +1,565 @@
+[
+  {
+    "image": "Bedroom 02",
+    "baseline": "Bedroom 02.jpg",
+    "staged": "Bedroom 02 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_band_mismatch",
+        "confidence": 0.95,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure and all fixed installed fixtures, including the two recessed lights and the wall outlet, are identical in both the baseline and staged images. Furniture and decor have changed, which is permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The structural floor material (dark carpet) and its boundaries remain consistent between the baseline and staged images. The added rug is a movable covering and not a structural change.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, room proportions, ceiling geometry, and fixed structural boundaries, remains identical between the baseline and staged images. No walls have been moved, reshaped, added, or removed. No recesses or indentations have been filled to create new flat wall surfaces.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.5657232699080522,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.834733893557423,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "CRITICAL",
+      "unifiedScore": 8.7056,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_minor_change"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_minor_change",
+        "confidence": "advisory",
+        "resizeDelta": 0
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 03",
+    "baseline": "Bedroom 03.jpg",
+    "staged": "Bedroom 03 (Enhanced).webp",
+    "pairFound": false
+  },
+  {
+    "image": "Bedroom 04",
+    "baseline": "Bedroom 04.jpg",
+    "staged": "Bedroom 04 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_band_mismatch",
+        "confidence": 0.983,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture and all fixed installed fixtures, including the recessed light and wall outlets, are identical between the baseline and staged images. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying floor material (carpet) and structural boundaries remain consistent between the baseline and staged images. The rug and furniture are non-structural additions.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, ceiling, floor plan, and the recessed closet, is identical in both images. No structural changes, wall modifications, or alterations to existing recesses or openings are visible. Furniture and decor changes are ignored.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.9848981289138834,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.17337388862891903,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "RETRY",
+      "unifiedDecision": "RETRY",
+      "unifiedSeverity": "CATASTROPHIC",
+      "unifiedScore": 0,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_minor_change"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_minor_change",
+        "confidence": "advisory",
+        "resizeDelta": 0
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 05",
+    "baseline": "Bedroom 05.jpg",
+    "staged": "Bedroom 05 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.548|opening_class_mismatch|opening_band_mismatch",
+        "confidence": 0.95,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure, windows, and fixed ceiling lights remain identical. A wall outlet is partially obscured by furniture in the staged image, which is an allowed change.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet), layout, orientation, perspective geometry, and boundary intersections remain identical between the baseline and staged images. Furniture and decor are non-structural changes.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, ceiling geometry, and room footprint, remains identical between the baseline and staged images. No structural changes, wall plane extensions, or changes in wall continuity are observed.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.6372518194713498,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.43111018189420863,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "CRITICAL",
+      "unifiedScore": 7.323,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_resize_large"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_resize_large",
+        "confidence": "strong",
+        "resizeDelta": 0.548
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 06",
+    "baseline": "Bedroom 06.jpg",
+    "staged": "Bedroom 06 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_relocated|opening_resized|opening_resize_ge_0_30:0.569|opening_class_mismatch|opening_band_mismatch",
+        "confidence": 0.947,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure including walls, window, and built-in wardrobe/shelves is identical. The single ceiling light fixture is also present and unchanged in both images. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying blue carpet floor material remains the same, and the room's architectural footprint and floor geometry are consistent between both images. The added rug and furniture are non-structural changes.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including all walls, window openings, ceiling geometry, and the recessed shelving unit, remains identical between the baseline and staged images. No walls have been moved, reshaped, or altered. The recessed shelving area to the right of the sliding door is preserved, and no baseline indentations or recesses have been filled or flattened to create new flat wall surfaces.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.8441157007017884,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.22352608511239927,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "CRITICAL",
+      "unifiedScore": 8.3559,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_removed"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_removed",
+        "confidence": "strong",
+        "resizeDelta": 0.569
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 07",
+    "baseline": "Bedroom 07.jpg",
+    "staged": "Bedroom 07 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated",
+        "confidence": 0.98,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "A new flush-mount ceiling light fixture has been added to the staged image that was not present in the baseline image.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) and its boundary/perspective geometry remain consistent between the baseline and staged images. Only non-structural elements like furniture and lighting have changed.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, window placement, ceiling geometry, and room dimensions, remains identical between the baseline and staged images. No structural changes, wall extensions, filled recesses, or changes to wall plane continuity are visible. Differences are limited to furniture, decor, lighting, and minor perspective variations.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.2543014144836665,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.33251164064639827,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "HIGH",
+      "unifiedScore": 4.758,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_minor_change",
+        "fixtures:a_new_flush_mount_ceiling_light_fixture_has_been_added_to_the_staged_image_that_was_not_present_in_the_baseline_image"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_minor_change",
+        "confidence": "advisory",
+        "resizeDelta": 0
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 09",
+    "baseline": "Bedroom 09.jpg",
+    "staged": "Bedroom 09 (Enhanced).webp",
+    "pairFound": false
+  },
+  {
+    "image": "Bedroom 11",
+    "baseline": "Bedroom 11.jpg",
+    "staged": "Bedroom 11 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.624|opening_class_mismatch|opening_band_mismatch",
+        "confidence": 0.953,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, including windows, recessed lighting, and fixed wardrobe, remains identical between the baseline and staged images. Furniture and decor have been added, but no fixed fixtures have been added, removed, or altered.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) remains the same, and there are no changes to the floor's layout, orientation, perspective geometry, or boundary intersections with walls. Differences are limited to furniture, decor, and lighting.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, window placement, and ceiling geometry, remains identical between the baseline and staged images. No walls have been moved, reshaped, added, or removed. There are no instances of recesses or indentations being filled to create new flat wall surfaces.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.3310141338445852,
+      "semanticOpeningsDelta": 0,
+      "maskedEdgeDrift": 0.3778552071234998,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "HIGH",
+      "unifiedScore": 5.2602,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_resize_extreme"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_resize_extreme",
+        "confidence": "extreme",
+        "resizeDelta": 0.624
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 12",
+    "baseline": "Bedroom 12.jpg",
+    "staged": "Bedroom 12 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_relocated|opening_resized|opening_resize_ge_0_30:0.808|opening_band_mismatch",
+        "confidence": 0.97,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The architectural structure and all major fixed installed fixtures (ceiling light, wall-mounted AC unit, ceiling vent) are identical in both the baseline and staged images. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying structural floor material (carpet) remains the same. The addition of a rug and furniture are considered non-structural changes.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, ceiling geometry, and openings, remains identical. All visible changes are due to furniture and decor, which are permitted.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.5216912360278635,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.29657712305025996,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "CRITICAL",
+      "unifiedScore": 6.245,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_removed"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_removed",
+        "confidence": "strong",
+        "resizeDelta": 0.808
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 14",
+    "baseline": "Bedroom 14.jpg",
+    "staged": "Bedroom 14 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_resized",
+        "confidence": 0.93,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, including walls, windows, and the central ceiling light fixture, is identical in both images. All changes are due to staging.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The underlying structural floor material (carpet) remains the same. Floor geometry, boundaries, and perspective are consistent between the baseline and staged images. The added rug is a movable covering and is ignored.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, and ceiling, remains identical between the baseline and staged images. No structural changes, wall modifications, or changes to room geometry are visible. Furniture, decor, and lighting have changed, which is allowed.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.7068217752283157,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.5991649269311065,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "CRITICAL",
+      "unifiedScore": 8.1461,
+      "advisorySignals": [
+        "openings:opening_resized_minor_0_025",
+        "openings:opening_structural_signal_opening_removed"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_removed",
+        "confidence": "strong",
+        "resizeDelta": 0
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  },
+  {
+    "image": "Bedroom 16",
+    "baseline": "Bedroom 16.jpg",
+    "staged": "Bedroom 16 (Enhanced).webp",
+    "pairFound": true,
+    "baselineSource": "cached",
+    "validators": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated|opening_resized|opening_resize_ge_0_30:0.643|opening_class_mismatch|opening_band_mismatch",
+        "confidence": 0.985,
+        "hardFail": true
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "The room architecture, including windows and walls, remains identical. The single ceiling light fixture is also unchanged. No major fixed fixtures have been added, removed, or altered.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "flooring": {
+        "status": "pass",
+        "reason": "The floor material (carpet) and its boundary intersections with walls and doors remain identical between both images. Furniture and decor changes are ignored.",
+        "confidence": 1,
+        "hardFail": false
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including walls, windows, and ceiling, remains identical between the baseline and staged images. No walls have been moved, reshaped, or extended, and no recesses have been filled. The differences are limited to furniture, decor, and lighting.",
+        "confidence": 1,
+        "hardFail": false
+      }
+    },
+    "workerSignals": {
+      "semanticWallDrift": 0.30738878635524736,
+      "semanticOpeningsDelta": 1,
+      "maskedEdgeDrift": 0.48614702622829703,
+      "edgeOpeningRisk": 0,
+      "localPrecheckDecision": "PROCEED_TO_GEMINI",
+      "unifiedDecision": "PROCEED_TO_GEMINI",
+      "unifiedSeverity": "HIGH",
+      "unifiedScore": 5.839,
+      "advisorySignals": [
+        "openings:opening_structural_signal_opening_resize_extreme"
+      ],
+      "openingStructuralSignal": {
+        "type": "opening_resize_extreme",
+        "confidence": "extreme",
+        "resizeDelta": 0.643
+      }
+    },
+    "compliance": {
+      "ran": true,
+      "ok": true,
+      "confidence": 0,
+      "blocking": false,
+      "tier": 1,
+      "structuralViolation": false,
+      "placementViolation": false,
+      "reasons": []
+    }
+  }
+]

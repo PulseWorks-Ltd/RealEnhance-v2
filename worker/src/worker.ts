@@ -6846,10 +6846,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       type OpeningStructuralSignalReason =
         | "opening_removed"
+        | "opening_removed_and_relocated"
         | "opening_resize_extreme"
-        | "opening_resize_large"
-        | "opening_relocated_and_resized"
-        | "opening_minor_change";
+        | "opening_relocated_and_resized";
 
       type OpeningStructuralSignal = {
         type: OpeningStructuralSignalReason;
@@ -6896,20 +6895,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const evaluateOpeningStructuralConfidence = (
         signals: OpeningSignals
       ): { level: OpeningStructuralSignalLevel; reason?: OpeningStructuralSignalReason } => {
+        if (signals.removed && signals.relocated) {
+          return { level: "strong", reason: "opening_removed_and_relocated" };
+        }
+
         if (signals.removed) {
           return { level: "strong", reason: "opening_removed" };
         }
 
+        if (signals.relocated && signals.resized) {
+          return { level: "strong", reason: "opening_relocated_and_resized" };
+        }
+
         if (signals.resized && signals.resizeDelta >= 0.6) {
           return { level: "extreme", reason: "opening_resize_extreme" };
-        }
-
-        if (signals.resized && signals.resizeDelta >= 0.35) {
-          return { level: "strong", reason: "opening_resize_large" };
-        }
-
-        if (signals.resized && signals.relocated) {
-          return { level: "strong", reason: "opening_relocated_and_resized" };
         }
 
         if (
@@ -6918,7 +6917,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           signals.bandMismatch ||
           signals.classMismatch
         ) {
-          return { level: "advisory", reason: "opening_minor_change" };
+          return { level: "advisory" };
         }
 
         return { level: "none" };
@@ -7071,19 +7070,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const openingSignals = extractOpeningSignals(opRes);
         const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
         const openingReason = openingConfidence.reason;
+        const openingStructuralSignalDetected =
+          openingConfidence.level === "strong" || openingConfidence.level === "extreme";
 
         nLog("[OPENING_STRUCTURAL_SIGNAL]", {
-          openingId: "aggregate",
+          openingStructuralSignal: openingStructuralSignalDetected,
           signalLevel: openingConfidence.level,
           reason: openingReason || "none",
-          resizeDelta: openingSignals.resizeDelta,
-          relocated: openingSignals.relocated,
           removed: openingSignals.removed,
+          relocated: openingSignals.relocated,
+          resized: openingSignals.resized,
+          resizeDelta: openingSignals.resizeDelta,
+          bandMismatch: openingSignals.bandMismatch,
+          classMismatch: openingSignals.classMismatch,
         });
 
-        if (openingConfidence.level !== "none" && openingReason) {
-          const advisorySignal = `opening_structural_signal:${openingReason}`;
-          appendAdvisories("openings", [advisorySignal]);
+        if (openingStructuralSignalDetected && openingReason) {
+          appendAdvisories("openings", [
+            "opening_structural_signal:true",
+            `opening_structural_signal_reason:${openingReason}`,
+          ]);
 
           openingStructuralSignal = {
             type: openingReason,
@@ -7434,11 +7440,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               model: "gemini-2.5-pro",
               advisoryCount: stage2AdvisorySignals.length,
               advisorySignals: stage2AdvisorySignals,
+              openingStructuralSignalFlag: openingStructuralSignalDetected,
               openingStructuralSignal: openingStructuralSignal || null,
             });
             compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
               validationMode: stage2ValidationMode,
               advisorySignals: stage2AdvisorySignals,
+              openingStructuralSignal: openingStructuralSignalDetected,
+              openingStructuralSignalContext: openingStructuralSignal,
               openingStructuralSignal,
               modelOverride: "gemini-2.5-pro",
             });
