@@ -1,7 +1,9 @@
 const PENDING_ENHANCEMENT_KEY = "pendingEnhancementJobId";
 const PENDING_ENHANCEMENT_IDS_KEY = "pendingEnhancementJobIds";
 const PENDING_ENHANCEMENT_SESSION_KEY = "pendingEnhancementSessionV2";
-const PENDING_ENHANCEMENT_TTL_MS = 15 * 60 * 1000;
+const PENDING_ENHANCEMENT_TTL_MS = 90 * 60 * 1000;
+
+export type PendingEnhancementResumeStatus = "pending" | "rehydrated";
 
 export type PendingEnhancementFileMetadata = {
   name: string;
@@ -17,6 +19,11 @@ export type PendingEnhancementSession = {
   imageIds: string[];
   fileMetadata: PendingEnhancementFileMetadata[];
   previewUrls: string[];
+  roomTypeByImageId: Record<string, string>;
+  sceneTypeByImageId: Record<string, string>;
+  stagingStyle?: string;
+  resumeStatus: PendingEnhancementResumeStatus;
+  rehydratedAt?: number;
   requestedCount: number;
   requiredCredits: number;
   availableCredits: number;
@@ -31,6 +38,11 @@ type PendingEnhancementSessionInput = {
   imageIds?: string[];
   fileMetadata?: PendingEnhancementFileMetadata[];
   previewUrls?: string[];
+  roomTypeByImageId?: Record<string, string>;
+  sceneTypeByImageId?: Record<string, string>;
+  stagingStyle?: string;
+  resumeStatus?: PendingEnhancementResumeStatus;
+  rehydratedAt?: number;
   requestedCount?: number;
   requiredCredits?: number;
   availableCredits?: number;
@@ -46,6 +58,18 @@ function normalizeIds(ids: string[]): string[] {
 function normalizePreviewUrls(urls: unknown): string[] {
   if (!Array.isArray(urls)) return [];
   return urls.map((url) => String(url || "").trim());
+}
+
+function normalizeStringMap(input: unknown): Record<string, string> {
+  if (!input || typeof input !== "object") return {};
+  const entries = Object.entries(input as Record<string, unknown>)
+    .map(([k, v]) => [String(k || "").trim(), String(v || "").trim()] as const)
+    .filter(([k, v]) => !!k && !!v);
+  return Object.fromEntries(entries);
+}
+
+function normalizeResumeStatus(value: unknown): PendingEnhancementResumeStatus {
+  return value === "pending" ? "pending" : "rehydrated";
 }
 
 function parseSession(raw: string | null): PendingEnhancementSession | null {
@@ -78,7 +102,14 @@ function parseSession(raw: string | null): PendingEnhancementSession | null {
             }))
             .filter((f: PendingEnhancementFileMetadata) => !!f.name)
         : [],
-          previewUrls: normalizePreviewUrls(parsed.previewUrls),
+      previewUrls: normalizePreviewUrls(parsed.previewUrls),
+      roomTypeByImageId: normalizeStringMap(parsed.roomTypeByImageId),
+      sceneTypeByImageId: normalizeStringMap(parsed.sceneTypeByImageId),
+      stagingStyle: parsed.stagingStyle ? String(parsed.stagingStyle) : undefined,
+      resumeStatus: normalizeResumeStatus(parsed.resumeStatus),
+      rehydratedAt: Number.isFinite(Number(parsed.rehydratedAt))
+        ? Math.max(0, Number(parsed.rehydratedAt))
+        : undefined,
       requestedCount: Math.max(0, Number(parsed.requestedCount || 0)),
       requiredCredits: Math.max(0, Number(parsed.requiredCredits || 0)),
       availableCredits: Math.max(0, Number(parsed.availableCredits || 0)),
@@ -109,6 +140,13 @@ export function setPendingEnhancementSession(input: PendingEnhancementSessionInp
     imageIds: normalizeIds(input.imageIds || []),
     fileMetadata: Array.isArray(input.fileMetadata) ? input.fileMetadata : [],
     previewUrls: normalizePreviewUrls(input.previewUrls),
+    roomTypeByImageId: normalizeStringMap(input.roomTypeByImageId),
+    sceneTypeByImageId: normalizeStringMap(input.sceneTypeByImageId),
+    stagingStyle: input.stagingStyle ? String(input.stagingStyle) : undefined,
+    resumeStatus: normalizeResumeStatus(input.resumeStatus),
+    rehydratedAt: Number.isFinite(Number(input.rehydratedAt))
+      ? Math.max(0, Number(input.rehydratedAt))
+      : undefined,
     requestedCount: Math.max(0, Number(input.requestedCount || 0)),
     requiredCredits: Math.max(0, Number(input.requiredCredits || 0)),
     availableCredits: Math.max(0, Number(input.availableCredits || 0)),
@@ -146,6 +184,11 @@ export function setPendingEnhancementJobs(jobIds: string[]) {
     imageIds: existing?.imageIds || [],
     fileMetadata: existing?.fileMetadata || [],
     previewUrls: existing?.previewUrls || [],
+    roomTypeByImageId: existing?.roomTypeByImageId || {},
+    sceneTypeByImageId: existing?.sceneTypeByImageId || {},
+    stagingStyle: existing?.stagingStyle,
+    resumeStatus: existing?.resumeStatus || "rehydrated",
+    rehydratedAt: existing?.rehydratedAt,
     requestedCount: existing?.requestedCount || normalized.length,
     requiredCredits: existing?.requiredCredits || 0,
     availableCredits: existing?.availableCredits || 0,
@@ -187,4 +230,28 @@ export function clearPendingEnhancementJobs() {
   localStorage.removeItem(PENDING_ENHANCEMENT_SESSION_KEY);
   localStorage.removeItem(PENDING_ENHANCEMENT_KEY);
   localStorage.removeItem(PENDING_ENHANCEMENT_IDS_KEY);
+}
+
+export function setPendingEnhancementResumeStatus(status: PendingEnhancementResumeStatus) {
+  const existing = getPendingEnhancementSession();
+  if (!existing) return;
+
+  setPendingEnhancementSession({
+    ownerUserId: existing.ownerUserId,
+    jobIds: existing.jobIds,
+    imageIds: existing.imageIds,
+    fileMetadata: existing.fileMetadata,
+    previewUrls: existing.previewUrls,
+    roomTypeByImageId: existing.roomTypeByImageId,
+    sceneTypeByImageId: existing.sceneTypeByImageId,
+    stagingStyle: existing.stagingStyle,
+    resumeStatus: status,
+    rehydratedAt: status === "rehydrated" ? Date.now() : undefined,
+    requestedCount: existing.requestedCount,
+    requiredCredits: existing.requiredCredits,
+    availableCredits: existing.availableCredits,
+    missingCredits: existing.missingCredits,
+    createdAt: existing.createdAt,
+    expiresAt: existing.expiresAt,
+  });
 }

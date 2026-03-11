@@ -97,16 +97,7 @@ const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
 ];
 
 function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
-  return images.reduce((sum, img) => {
-    const sceneType = String(img.sceneType || "").toLowerCase();
-    if (sceneType === "exterior") {
-      return sum + 1;
-    }
-    if (img.userSelectedStage1B && img.userSelectedStage2) {
-      return sum + 2;
-    }
-    return sum + 1;
-  }, 0);
+  return images.length;
 }
 
 // Generate a stable ID for a file based on its properties (not array index)
@@ -1380,6 +1371,7 @@ export default function BatchProcessor() {
   const statusTargetNotReachedLoggedRef = useRef<Set<string>>(new Set());
   const retryChildMappingLoggedRef = useRef<Set<string>>(new Set());
   const autoFurnitureNoticeLoggedRef = useRef<Set<number>>(new Set());
+  const resumePendingClearedRef = useRef(false);
 
   // Industry mapping - locked to Real Estate only
   const industryMap: Record<string, string> = {
@@ -1839,6 +1831,10 @@ export default function BatchProcessor() {
     options?: {
       imageIds?: string[];
       previewUrls?: string[];
+      roomTypeByImageId?: Record<string, string>;
+      sceneTypeByImageId?: Record<string, string>;
+      stagingStyle?: StagingStyle;
+      resumeStatus?: "pending" | "rehydrated";
       requiredCredits?: number;
       availableCredits?: number;
       missingCredits?: number;
@@ -1884,6 +1880,10 @@ export default function BatchProcessor() {
       imageIds: options?.imageIds || pendingRestoreSession?.imageIds || [],
       fileMetadata,
       previewUrls: options?.previewUrls || pendingRestoreSession?.previewUrls || [],
+      roomTypeByImageId: options?.roomTypeByImageId || pendingRestoreSession?.roomTypeByImageId || imageRoomTypesById,
+      sceneTypeByImageId: options?.sceneTypeByImageId || pendingRestoreSession?.sceneTypeByImageId || imageSceneTypesById,
+      stagingStyle: options?.stagingStyle || pendingRestoreSession?.stagingStyle || stagingStyle,
+      resumeStatus: options?.resumeStatus || pendingRestoreSession?.resumeStatus || "rehydrated",
       requestedCount: Math.max(fileMetadata.length, requiredCredits, normalizedJobIds.length),
       requiredCredits,
       availableCredits: available,
@@ -1891,7 +1891,7 @@ export default function BatchProcessor() {
       createdAt: options?.createdAt,
       expiresAt: options?.expiresAt,
     });
-  }, [availableCredits, currentUserId, files, pendingRestoreSession, requiredBatchCredits]);
+  }, [availableCredits, currentUserId, files, imageRoomTypesById, imageSceneTypesById, pendingRestoreSession, requiredBatchCredits, stagingStyle]);
 
   const handleContinueEnhancementCheckout = useCallback(async () => {
     try {
@@ -2339,6 +2339,16 @@ export default function BatchProcessor() {
       (savedState.runState === "running" || savedState.runState === "done") &&
       ((savedState.jobIds && savedState.jobIds.length > 0) || !!savedState.jobId);
 
+    if (Object.keys(pendingSession.roomTypeByImageId || {}).length > 0) {
+      setImageRoomTypesById(pendingSession.roomTypeByImageId);
+    }
+    if (Object.keys(pendingSession.sceneTypeByImageId || {}).length > 0) {
+      setImageSceneTypesById(pendingSession.sceneTypeByImageId);
+    }
+    if (pendingSession.stagingStyle) {
+      setStagingStyle(pendingSession.stagingStyle as StagingStyle);
+    }
+
     if (!hasActiveBatch) {
       if (!savedState?.fileMetadata?.length && pendingSession.fileMetadata.length > 0) {
         const restoredFiles = pendingSession.fileMetadata.map((meta, idx) => {
@@ -2352,6 +2362,39 @@ export default function BatchProcessor() {
           return file;
         });
         setFiles(restoredFiles);
+      }
+
+      if (pendingSession.resumeStatus === "pending" && pendingSession.jobIds.length > 0) {
+        resumePendingClearedRef.current = false;
+        const rehydratedAt = Date.now();
+        setPendingEnhancementSession({
+          ownerUserId: pendingSession.ownerUserId,
+          jobIds: pendingSession.jobIds,
+          imageIds: pendingSession.imageIds,
+          fileMetadata: pendingSession.fileMetadata,
+          previewUrls: pendingSession.previewUrls,
+          roomTypeByImageId: pendingSession.roomTypeByImageId,
+          sceneTypeByImageId: pendingSession.sceneTypeByImageId,
+          stagingStyle: pendingSession.stagingStyle,
+          resumeStatus: "rehydrated",
+          rehydratedAt,
+          requestedCount: pendingSession.requestedCount,
+          requiredCredits: pendingSession.requiredCredits,
+          availableCredits: pendingSession.availableCredits,
+          missingCredits: pendingSession.missingCredits,
+          createdAt: pendingSession.createdAt,
+          expiresAt: pendingSession.expiresAt,
+        });
+
+        setPendingRestoreSession({ ...pendingSession, resumeStatus: "rehydrated", rehydratedAt });
+        setShowPendingRestoreBanner(false);
+        setRunState("running");
+        setJobIds(pendingSession.jobIds);
+        setCancelIds(pendingSession.jobIds);
+        setJobId(pendingSession.jobIds[0] || "");
+        setActiveTab("enhance");
+        startPollingExistingBatch(pendingSession.jobIds);
+        return;
       }
 
       setPendingRestoreSession(pendingSession);
@@ -2858,6 +2901,18 @@ export default function BatchProcessor() {
 
         // Debug logging to see what we're receiving
         if (items.length > 0) {
+          if (!resumePendingClearedRef.current) {
+            const pending = getPendingEnhancementSession();
+            const hasRehydratedMarker = Number.isFinite(Number(pending?.rehydratedAt)) && Number(pending?.rehydratedAt) > 0;
+            const matchesPolledJobs = !!pending?.jobIds?.some((jobId) => ids.includes(jobId));
+            if (pending?.resumeStatus === "rehydrated" && hasRehydratedMarker && matchesPolledJobs) {
+              clearPendingEnhancementJobs();
+              setPendingRestoreSession(null);
+              setShowPendingRestoreBanner(false);
+              resumePendingClearedRef.current = true;
+            }
+          }
+
           console.log('[BATCH] Received status update:', {
             totalItems: items.length,
             completed: items.filter((it: any) => it && it.status === 'completed').length,
@@ -3166,6 +3221,73 @@ export default function BatchProcessor() {
                 existingJobId !== polledId &&
                 (isRetryChildJob || mappedViaParent || mappedViaImage)
               ) {
+                // Minimal artifact promotion rule for retry children:
+                // when a retry child completes with a Stage-2 artifact for this parent,
+                // capture retryLatestUrl but keep parent status/stage/job lineage immutable.
+                const canPromoteRetryArtifact =
+                  isRetryChildJob &&
+                  incomingNormalizedStatus === "completed" &&
+                  !!stage2Url &&
+                  !!parentJobId &&
+                  parentJobId === existingJobId;
+
+                if (canPromoteRetryArtifact) {
+                  const promotedUrl = stage2Url as string;
+                  const promotedVersion = normalizeVersionToTimestamp(
+                    it?.version ?? it?.updatedAt ?? it?.updated_at
+                  );
+                  const existingRetryLatestUpdatedAt = normalizeVersionToTimestamp(
+                    existing.retryLatestUpdatedAt ??
+                    existing.result?.retryLatestUpdatedAt ??
+                    existing.updatedAt ??
+                    existing.version
+                  );
+                  const hasExistingRetryArtifact = !!(
+                    existing.retryLatestUrl ||
+                    existing.result?.retryLatestUrl
+                  );
+                  const shouldPromoteRetryArtifact =
+                    !hasExistingRetryArtifact ||
+                    promotedVersion >= existingRetryLatestUpdatedAt;
+
+                  if (!shouldPromoteRetryArtifact) {
+                    if (!retryChildMappingLoggedRef.current.has(`promote-stale:${polledId}:${existingJobId}:${idx}`)) {
+                      retryChildMappingLoggedRef.current.add(`promote-stale:${polledId}:${existingJobId}:${idx}`);
+                      console.log('[BATCH][retry_child_promote_skipped_stale]', {
+                        index: idx,
+                        parentJobId: existingJobId,
+                        childJobId: polledId,
+                        incomingVersion: promotedVersion,
+                        existingRetryLatestUpdatedAt,
+                      });
+                    }
+                    return copy;
+                  }
+
+                  copy[idx] = {
+                    ...existing,
+                    retryLatestUrl: promotedUrl,
+                    retryLatestUpdatedAt: promotedVersion || Date.now(),
+                    version: Math.max(promotedVersion, normalizeVersionToTimestamp(existing.version ?? existing.updatedAt)),
+                    updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
+                    result: {
+                      ...(existing.result || {}),
+                      retryLatestUrl: promotedUrl,
+                      retryLatestUpdatedAt: promotedVersion || Date.now(),
+                    },
+                  };
+                  if (!retryChildMappingLoggedRef.current.has(`promote:${polledId}:${existingJobId}:${idx}`)) {
+                    retryChildMappingLoggedRef.current.add(`promote:${polledId}:${existingJobId}:${idx}`);
+                    console.log('[BATCH][retry_child_promoted_retry_latest_url]', {
+                      index: idx,
+                      parentJobId: existingJobId,
+                      childJobId: polledId,
+                      hasStage2: true,
+                    });
+                  }
+                  return copy;
+                }
+
                 if (!retryChildMappingLoggedRef.current.has(`skip:${polledId}:${existingJobId}:${idx}`)) {
                   retryChildMappingLoggedRef.current.add(`skip:${polledId}:${existingJobId}:${idx}`);
                   console.log('[BATCH][job_scoped_skip_cross_job_update]', {
@@ -4149,7 +4271,7 @@ export default function BatchProcessor() {
       return;
     }
 
-    // Get the indices of failed images to retry with original files
+    // Get the indices of failed images and dispatch free per-image retries
     const failedIndices = failedImages.map(r => r.index);
     const filesToRetry = failedIndices.map(i => files[i]).filter(Boolean);
     
@@ -4159,88 +4281,15 @@ export default function BatchProcessor() {
     }
 
     try {
-      // Ensure user has sufficient credits
-      await ensureLoggedInAndCredits(filesToRetry.length);
-    } catch (e: any) {
-      alert(e.message || "Unable to retry - please sign in and try again.");
-      return;
-    }
-
-    // Retry with same settings
-    setRunState("running");
-    const fd = new FormData();
-    filesToRetry.forEach(f => fd.append("images", f));
-    
-    const goalToSend = globalGoal.trim() || "General, realistic enhancement for the selected industry.";
-    fd.append("goal", goalToSend);
-    
-    fd.append("industry", industryMap[presetKey] || "Real Estate");
-    fd.append("preserveStructure", "true");
-    fd.append("allowStaging", allowStaging.toString());
-    fd.append("stagingStyle", allowStaging ? stagingStyle : "");
-    fd.append("allowRetouch", "true");
-    fd.append("furnitureReplacement", furnitureReplacement.toString());
-    if (propertyAddress.trim()) {
-      fd.append("propertyAddress", propertyAddress.trim());
-    }
-    // Manual room linking metadata (for retry)
-    fd.append("metaJson", metaJson);
-
-    try {
-      // AUDIT FIX: added timeout to prevent hung retry upload
-      const res = await fetch(api("/api/upload"), withDevice({
-        method: "POST",
-        body: fd,
-        credentials: "include",
-        signal: AbortSignal.timeout(60_000)
-      }));
-      
-      if (!res.ok) {
-        setRunState("done");
-        if (res.status === 402) {
-          const err = await res.json().catch(() => ({}));
-          if (err?.code === "QUOTA_EXCEEDED") {
-            showQuotaExceededToast();
-            return;
-          }
-          if (err?.code === "INSUFFICIENT_CREDITS") {
-            const required = Number.isFinite(err?.requiredCredits) ? Number(err.requiredCredits) : filesToRetry.length;
-            const available = Number.isFinite(err?.availableCredits) ? Number(err.availableCredits) : Math.max(0, Number(availableCredits ?? 0));
-            openCreditGateModal(required, available);
-            return;
-          }
-        }
-        alert("Failed to retry batch processing");
-        return;
+      for (const idx of failedIndices) {
+        await handleRetryImage(idx);
       }
-      
-      const data = await res.json();
-      
-      // Handle synchronous response - no jobId needed, results are immediate
-      if (data.results) {
-        // Merge retry results with existing results
-        const updatedResults = [...results];
-        data.results.forEach((retryResult: any) => {
-          const originalIndex = retryResult.index;
-          if (originalIndex >= 0 && originalIndex < updatedResults.length) {
-            updatedResults[originalIndex] = retryResult;
-          }
-        });
-        setResults(updatedResults);
-        setRunState("done");
-        toast({ 
-          title: "Retry Complete", 
-          description: `Retried ${filesToRetry.length} images. Used ${data.creditsUsed || 0} credits.`
-        });
-        return;
-      }
-      
-      // Fallback: if no immediate results, something went wrong
-      setRunState("done");
-      alert("Retry completed but results were not returned properly");
+      toast({
+        title: "Retries started",
+        description: `Started retry for ${failedIndices.length} image${failedIndices.length === 1 ? "" : "s"}.`,
+      });
     } catch (error: any) {
-      setRunState("done");
-      alert(error.message || "Failed to retry batch processing");
+      alert(error.message || "Failed to start retries");
     }
   };
 
@@ -4678,25 +4727,6 @@ export default function BatchProcessor() {
       }
     }
 
-    try {
-      // Check credits and authentication
-      await ensureLoggedInAndCredits(1);
-    } catch (e: any) {
-      if (e.code === "INSUFFICIENT_CREDITS") {
-        const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
-        if (goBuy) {
-          window.open("/settings/billing", "_blank");
-        }
-        return;
-      }
-      toast({
-        title: "Authentication required",
-        description: e.message || "Please sign in to retry images",
-        variant: "destructive"
-      });
-      return;
-    }
-
     // ✅ Clear any previous timeout
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
@@ -4800,10 +4830,7 @@ export default function BatchProcessor() {
               showQuotaExceededToast();
               return;
             }
-            const goBuy = confirm("You need 1 more credit to retry this image. Buy credits now?");
-            if (goBuy) {
-              window.open("/settings/billing", "_blank");
-            }
+            markRetryFailed(imageIndex, err?.message || "Retry could not be started.");
             return;
           }
           const err = await response.json().catch(() => ({}));
@@ -7169,7 +7196,7 @@ export default function BatchProcessor() {
                                       <Info className="mt-0.5 h-3.5 w-3.5 text-amber-600" />
                                       <div>
                                         <p>Furniture was automatically detected and removed before staging.</p>
-                                        <p>An additional processing step was required, so 1 extra image credit was used.</p>
+                                            <p>An additional processing step was required before staging.</p>
                                       </div>
                                     </div>
                                   )}

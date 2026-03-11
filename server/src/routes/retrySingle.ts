@@ -13,7 +13,7 @@ import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore"
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
-import { consumeFreeRetryCount, reserveAllowance } from "../services/usageLedger.js";
+import { consumeFreeRetryCount } from "../services/usageLedger.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -1057,34 +1057,8 @@ export function retrySingleRouter() {
         });
       }
 
-      // Free retry must not reserve additional credit.
-      // Reserve a zero-credit row only so worker finalization remains idempotent/traceable.
-      try {
-        await reserveAllowance({
-          jobId,
-          agencyId,
-          userId: sessUser.id,
-          requiredImages: 0,
-          requestedStage12: true,
-          requestedStage2: effectiveAllowStaging,
-        });
-        console.log(`[retry-single] Registered free retry reservation row (0 credits) for job ${jobId}`);
-      } catch (err: any) {
-        if (err?.code === "QUOTA_EXCEEDED") {
-          return res.status(402).json({ 
-            success: false,
-            code: "QUOTA_EXCEEDED", 
-            snapshot: err.snapshot,
-            message: "Unable to register retry reservation"
-          });
-        }
-        console.error('[retry-single] Reservation failed:', err);
-        return res.status(503).json({ 
-          success: false, 
-          error: "reservation_failed",
-          message: "Failed to reserve credits for retry"
-        });
-      }
+      // Free retries must never create allowance reservations or billing ledger entries.
+      // Manual retry charge finalization is skipped in worker when retryType === "manual_retry".
 
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,

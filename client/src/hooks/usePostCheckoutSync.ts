@@ -3,7 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useUsage } from "@/hooks/use-usage";
 import { apiFetch } from "@/lib/api";
-import { clearPendingEnhancementJobs, getPendingEnhancementJobIds } from "@/lib/pending-enhancement";
+import {
+  getPendingEnhancementJobIds,
+  getPendingEnhancementSession,
+  setPendingEnhancementResumeStatus,
+  setPendingEnhancementSession,
+} from "@/lib/pending-enhancement";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -21,11 +26,37 @@ import { useToast } from "@/hooks/use-toast";
  */
 export function usePostCheckoutSync() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { refreshUser } = useAuth();
+  const { refreshUser, user } = useAuth();
   const { refetch: refetchUsage } = useUsage();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [syncing, setSyncing] = useState(false);
+
+  const markResumePending = useCallback((jobIds: string[]) => {
+    const existing = getPendingEnhancementSession();
+    if (existing) {
+      setPendingEnhancementResumeStatus("pending");
+      return;
+    }
+
+    if (!jobIds.length) return;
+
+    // Fallback for legacy sessions: preserve resumability even when prior session payload is missing.
+    setPendingEnhancementSession({
+      ownerUserId: user?.id || undefined,
+      jobIds,
+      imageIds: [],
+      fileMetadata: [],
+      previewUrls: [],
+      roomTypeByImageId: {},
+      sceneTypeByImageId: {},
+      resumeStatus: "pending",
+      requestedCount: jobIds.length,
+      requiredCredits: 0,
+      availableCredits: 0,
+      missingCredits: 0,
+    });
+  }, [user?.id]);
 
   const refetchAgency = useCallback(async () => {
     try {
@@ -108,7 +139,7 @@ export function usePostCheckoutSync() {
       }
 
       if (resumed > 0) {
-        clearPendingEnhancementJobs();
+        markResumePending(pendingJobIds);
       }
 
       if (activated) {
@@ -116,7 +147,7 @@ export function usePostCheckoutSync() {
         toast({
           title: "Subscription Activated!",
           description: resumed > 0
-            ? "Subscription activated and enhancement resumed. Redirecting to processing..."
+            ? "Subscription activated and enhancement resumed. Redirecting to Enhance..."
             : "Your subscription is now active. Redirecting to Enhance...",
         });
 
@@ -128,7 +159,7 @@ export function usePostCheckoutSync() {
 
         // Wait a moment for user to see toast, then redirect
         setTimeout(() => {
-          navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
+          navigate("/home", { replace: true });
         }, 1500);
       } else {
         // Activation polling timed out - still redirect but show warning
@@ -144,7 +175,7 @@ export function usePostCheckoutSync() {
         setSearchParams(newParams, { replace: true });
 
         setTimeout(() => {
-          navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
+          navigate("/home", { replace: true });
         }, 2000);
       }
     } catch (error) {
@@ -201,13 +232,13 @@ export function usePostCheckoutSync() {
       }
 
       if (resumed > 0) {
-        clearPendingEnhancementJobs();
+        markResumePending(pendingJobIds);
       }
 
       toast({
         title: "Bundle Purchase Complete!",
         description: resumed > 0
-          ? "Your credits were added and enhancement resumed. Redirecting to processing..."
+          ? "Your credits were added and enhancement resumed. Redirecting to Enhance..."
           : "Your credits have been added. Redirecting to Enhance...",
       });
 
@@ -218,7 +249,7 @@ export function usePostCheckoutSync() {
 
       // Redirect to Enhance
       setTimeout(() => {
-        navigate(resumed > 0 ? "/processing" : "/home", { replace: true });
+        navigate("/home", { replace: true });
       }, 1500);
     } catch (error) {
       console.error("[PostCheckoutSync] Error during bundle sync:", error);
@@ -235,6 +266,7 @@ export function usePostCheckoutSync() {
     refreshUser,
     refetchAgency,
     refetchUsage,
+    markResumePending,
     toast,
     navigate,
     searchParams,

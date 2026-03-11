@@ -12,15 +12,15 @@ describe("billing rules", () => {
     expect(result.reason).toBe("stage1A_failed");
   });
 
-  it("returns 2 for full interior pipeline", () => {
+  it("returns 1 for full interior pipeline", () => {
     const result = computeCharge({
       stage1A: true,
       stage1B: true,
       stage2: true,
       sceneType: "interior",
     });
-    expect(result.amount).toBe(2);
-    expect(result.reason).toBe("interior_full_pipeline");
+    expect(result.amount).toBe(1);
+    expect(result.reason).toBe("flat_one_image_model");
   });
 
   it("returns 1 for partial interior pipeline", () => {
@@ -31,10 +31,10 @@ describe("billing rules", () => {
       sceneType: "interior",
     });
     expect(result.amount).toBe(1);
-    expect(result.reason).toBe("interior_partial_pipeline");
+    expect(result.reason).toBe("flat_one_image_model");
   });
 
-  it("caps exterior charge after stage-based computation", () => {
+  it("returns 1 for exterior full pipeline", () => {
     const result = computeCharge({
       stage1A: true,
       stage1B: true,
@@ -42,6 +42,6 @@ describe("billing rules", () => {
       sceneType: "exterior",
     });
     expect(result.amount).toBe(1);
-    expect(result.reason).toBe("exterior_cap");
+    expect(result.reason).toBe("flat_one_image_model");
   });
 });
