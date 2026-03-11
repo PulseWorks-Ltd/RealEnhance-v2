@@ -238,7 +238,11 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
   };
 
   const isFailed = status === "failed";
-  if (isFailed) return pickFallback();
+  if (isFailed) {
+    // Failed retries are non-destructive: keep an existing Stage-2 artifact visible.
+    if (stage2) return { url: stage2, stage: "2" };
+    return pickFallback();
+  }
   if (blockedStage) {
     const fb = pickFallback();
     if (fb.url) return fb;
@@ -3224,25 +3228,60 @@ export default function BatchProcessor() {
               const existingStageMap = existing.stageUrls || existing.result?.stageUrls || existing.stageOutputs || existing.result?.stageOutputs || null;
               const stageUrlsMap = (stageUrls || null) as Record<string, any> | null;
               const existingStageMapObj = (existingStageMap || null) as Record<string, any> | null;
-              const mergedStageUrls = (isRetryChildJob || isRegionEdit)
+              const existingStage2Url =
+                toDisplayUrl(existingStageMapObj?.['2']) ||
+                toDisplayUrl(existingStageMapObj?.[2]) ||
+                toDisplayUrl(existingStageMapObj?.stage2) ||
+                toDisplayUrl(existing?.stage2Url) ||
+                toDisplayUrl(existing?.result?.stage2Url) ||
+                null;
+              const hasIncomingStage2 = !!stage2Url;
+              const isRetryStage2Success = isRetryChildJob && status === "completed" && hasIncomingStage2;
+              const preserveExistingStage2Artifacts = !!existingStage2Url && (
+                status === "failed" ||
+                (isRetryChildJob && !hasIncomingStage2)
+              );
+              const mergedStageUrls = isRegionEdit
                 ? (existingStageMapObj || stageUrlsMap || null)
-                : stageUrlsMap
-                  ? {
-                      ...(existingStageMapObj || {}),
-                      ...(stageUrlsMap || {}),
-                      '2': stageUrlsMap['2'] || stageUrlsMap.stage2 || existingStageMapObj?.['2'] || existingStageMapObj?.stage2 || null,
-                      '1B': stageUrlsMap['1B'] || stageUrlsMap['1b'] || stageUrlsMap.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
-                      '1A': stageUrlsMap['1A'] || stageUrlsMap['1'] || stageUrlsMap.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
-                      stage2: stageUrlsMap.stage2 || stageUrlsMap['2'] || existingStageMapObj?.stage2 || existingStageMapObj?.['2'] || null,
-                      stage1B: stageUrlsMap.stage1B || stageUrlsMap['1B'] || stageUrlsMap['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
-                      stage1A: stageUrlsMap.stage1A || stageUrlsMap['1A'] || stageUrlsMap['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
-                    }
-                  : (existingStageMapObj || null);
-              const mergedResultUrl = resultUrlSafe
-                || existing.resultUrl
-                || existing.result?.finalOutputUrl
-                || existing.result?.resultUrl
-                || null;
+                : isRetryChildJob
+                  ? (isRetryStage2Success
+                      ? {
+                          ...(existingStageMapObj || {}),
+                          ...(stageUrlsMap || {}),
+                          '2': stage2Url,
+                          stage2: stage2Url,
+                          '1B': stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || stageUrlsMap?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
+                          '1A': stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || stageUrlsMap?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
+                          stage1B: stageUrlsMap?.stage1B || stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
+                          stage1A: stageUrlsMap?.stage1A || stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
+                        }
+                      : (existingStageMapObj || stageUrlsMap || null))
+                  : stageUrlsMap
+                    ? {
+                        ...(existingStageMapObj || {}),
+                        ...(stageUrlsMap || {}),
+                        '2': stageUrlsMap['2'] || stageUrlsMap.stage2 || existingStageMapObj?.['2'] || existingStageMapObj?.stage2 || null,
+                        '1B': stageUrlsMap['1B'] || stageUrlsMap['1b'] || stageUrlsMap.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
+                        '1A': stageUrlsMap['1A'] || stageUrlsMap['1'] || stageUrlsMap.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
+                        stage2: stageUrlsMap.stage2 || stageUrlsMap['2'] || existingStageMapObj?.stage2 || existingStageMapObj?.['2'] || null,
+                        stage1B: stageUrlsMap.stage1B || stageUrlsMap['1B'] || stageUrlsMap['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
+                        stage1A: stageUrlsMap.stage1A || stageUrlsMap['1A'] || stageUrlsMap['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
+                      }
+                    : (existingStageMapObj || null);
+              const mergedResultUrl = preserveExistingStage2Artifacts
+                ? (
+                    existing.resultUrl ||
+                    existing.result?.finalOutputUrl ||
+                    existing.result?.resultUrl ||
+                    null
+                  )
+                : (
+                    resultUrlSafe ||
+                    existing.resultUrl ||
+                    existing.result?.finalOutputUrl ||
+                    existing.result?.resultUrl ||
+                    null
+                  );
               const isTerminalStatusForRetry = status === "completed" || status === "failed";
               const polledCurrentStage = normalizeCurrentStage(
                 it?.currentStage ||
@@ -3269,8 +3308,8 @@ export default function BatchProcessor() {
                 resultUrl: mergedResultUrl,
                 finalOutputUrl: mergedResultUrl,
                 stageUrls: mergedStageUrls,
-                completionSource: completionSourceResolved,
-                retryLatestUrl: (isRetryChildJob && completedFinal ? (displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
+                completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
+                retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
                 editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.editLatestUrl ?? null) : (existing.editLatestUrl ?? null),
                 version: Math.max(incomingVersion, existingVersion), // ✅ Store normalized numeric timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
@@ -3288,7 +3327,7 @@ export default function BatchProcessor() {
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
-                  imageUrl: completedFinal ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
+                  imageUrl: (completedFinal && !preserveExistingStage2Artifacts) ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
                   finalOutputUrl: mergedResultUrl,
                   resultUrl: mergedResultUrl,
                   originalImageUrl: originalUrl || existing.result?.originalImageUrl || existing.result?.originalUrl || existing.originalImageUrl || existing.originalUrl,
@@ -3303,12 +3342,12 @@ export default function BatchProcessor() {
                   warnings: warningList,
                   uiStatus,
                   hardFail,
-                  completionSource: completionSourceResolved,
-                  retryLatestUrl: (isRetryChildJob && completedFinal ? (displayUrl || existing.result?.retryLatestUrl || null) : (existing.result?.retryLatestUrl ?? null)),
+                  completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
+                  retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.result?.retryLatestUrl || null) : (existing.result?.retryLatestUrl ?? null)),
                   editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.result?.editLatestUrl ?? null) : (existing.result?.editLatestUrl ?? null),
                 },
                 // Preview URL used while processing
-                previewUrl: chosenPreview || existing.previewUrl || null,
+                previewUrl: preserveExistingStage2Artifacts ? (existing.previewUrl || chosenPreview || null) : (chosenPreview || existing.previewUrl || null),
                 // FIX 3: Only show errors for terminal failure states
                 error: (status === "failed" || (it.errorCode && isTerminalFlag))
                   ? getDisplayError({ status, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
@@ -3330,7 +3369,7 @@ export default function BatchProcessor() {
 
             // Ensure the card immediately flips to the latest retry artifact once retry completes,
             // rather than waiting for another render/poll cycle to infer it.
-            if (isRetryChildJob && completedFinal) {
+            if (isRetryChildJob && status === "completed" && !!stage2Url) {
               setDisplayStageByIndex((prev) => {
                 if (prev[idx] === "retried") return prev;
                 return { ...prev, [idx]: "retried" };
@@ -4921,21 +4960,24 @@ export default function BatchProcessor() {
               const isJobCompleted = jobStatusRaw === "completed" || jobStatusRaw === "complete";
               const isJobFailed = jobStatusRaw === "failed" || jobStatusRaw === "error" || jobStatusRaw === "cancelled" || jobStatusRaw === "canceled";
               const jobStageUrls = job?.stageUrls || job?.stage_urls || {};
+              const completedStage2Url =
+                toDisplayUrl(jobStageUrls?.stage2) ||
+                toDisplayUrl(jobStageUrls?.["2"]) ||
+                null;
               const completedOutputUrl =
                 toDisplayUrl(job?.imageUrl) ||
                 toDisplayUrl(job?.resultUrl) ||
                 toDisplayUrl(job?.publishedUrl) ||
-                toDisplayUrl(jobStageUrls?.stage2) ||
-                toDisplayUrl(jobStageUrls?.["2"]) ||
+                completedStage2Url ||
                 toDisplayUrl(jobStageUrls?.stage1B) ||
                 toDisplayUrl(jobStageUrls?.["1B"]) ||
                 toDisplayUrl(jobStageUrls?.stage1A) ||
                 toDisplayUrl(jobStageUrls?.["1A"]) ||
                 null;
-              const hasCompletedOutput = !!completedOutputUrl;
-              const hasRecoverableFallback = isJobFailed && hasCompletedOutput;
+              const hasCompletedStage2Output = !!completedStage2Url;
 
-              if (job && isJobCompleted && hasCompletedOutput) {
+              if (job && isJobCompleted && hasCompletedStage2Output) {
+                const completedStage2OutputUrl = completedStage2Url as string;
                 // ✅ Clear timeout on success (spinner stays until onLoad)
                 if (retryTimeoutRef.current) {
                   clearTimeout(retryTimeoutRef.current);
@@ -4947,9 +4989,9 @@ export default function BatchProcessor() {
                 const stageUrls = jobStageUrls || null;
                 const imageIdFromJob = job.imageId || job.image_id || null;
                 const retryResult = {
-                  image: completedOutputUrl,
-                  imageUrl: completedOutputUrl,
-                  result: { imageUrl: completedOutputUrl },
+                  image: completedStage2OutputUrl,
+                  imageUrl: completedStage2OutputUrl,
+                  result: { imageUrl: completedStage2OutputUrl },
                   stageUrls,
                   imageId: imageIdFromJob,
                   error: null,
@@ -4968,20 +5010,20 @@ export default function BatchProcessor() {
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
                     ...r,
-                    image: completedOutputUrl,
-                    imageUrl: completedOutputUrl,
-                    resultUrl: completedOutputUrl,
+                    image: completedStage2OutputUrl,
+                    imageUrl: completedStage2OutputUrl,
+                    resultUrl: completedStage2OutputUrl,
                     version: stamp,
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
                     stageUrls: r?.stageUrls || stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
-                    retryLatestUrl: completedOutputUrl,
+                    retryLatestUrl: completedStage2OutputUrl,
                     retryHistory: [
                       ...existingRetryHistory,
                       {
-                        url: completedOutputUrl,
+                        url: completedStage2OutputUrl,
                         ts: stamp,
                         stage: retryStage || null,
                         jobId,
@@ -4996,29 +5038,29 @@ export default function BatchProcessor() {
                     finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
                     result: {
                       ...(normalizedResult || {}),
-                      image: completedOutputUrl,
-                      imageUrl: completedOutputUrl,
-                      resultUrl: completedOutputUrl,
+                      image: completedStage2OutputUrl,
+                      imageUrl: completedStage2OutputUrl,
+                      resultUrl: completedStage2OutputUrl,
                       originalImageUrl: preservedOriginalUrl,
                       stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                      retryLatestUrl: completedOutputUrl,
+                      retryLatestUrl: completedStage2OutputUrl,
                     },
                     error: null,
                     filename: r?.filename
                   } : r
                 ));
                 setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
-                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: completedOutputUrl }));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: completedStage2OutputUrl! }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
-                  newSet.add(completedOutputUrl);
+                  newSet.add(completedStage2OutputUrl!);
                   return Array.from(newSet);
                 });
                 setProcessedImagesByIndex(prev => ({
                   ...prev,
-                  [imageIndex]: completedOutputUrl
+                  [imageIndex]: completedStage2OutputUrl!
                 }));
                 await refreshUser();
 
@@ -5031,78 +5073,39 @@ export default function BatchProcessor() {
                 // ❌ setProgressText("Retry complete! Enhanced image is ready.");
 
                 return;
-              } else if (job && hasRecoverableFallback) {
+              } else if (job && isJobCompleted && !hasCompletedStage2Output) {
                 if (retryTimeoutRef.current) {
                   clearTimeout(retryTimeoutRef.current);
                   retryTimeoutRef.current = null;
                 }
 
-                const stamp = Date.now();
-                const stageUrls = jobStageUrls || null;
-                const imageIdFromJob = job.imageId || job.image_id || null;
-                const preservedOriginalUrl =
-                  results[imageIndex]?.result?.originalImageUrl ||
-                  results[imageIndex]?.result?.originalUrl ||
-                  results[imageIndex]?.originalImageUrl ||
-                  results[imageIndex]?.originalUrl;
-                const preservedQualityEnhancedUrl = results[imageIndex]?.result?.qualityEnhancedUrl || results[imageIndex]?.qualityEnhancedUrl;
-                const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
-                  ? results[imageIndex].retryHistory
-                  : [];
-
-                setResults(prev => prev.map((r, i) =>
-                  i === imageIndex ? {
+                setResults(prev => prev.map((r, i) => {
+                  if (i !== imageIndex) return r;
+                  const preservedStageMap = r?.stageUrls || r?.result?.stageUrls || null;
+                  const preservedStage2 =
+                    toDisplayUrl(preservedStageMap?.['2']) ||
+                    toDisplayUrl(preservedStageMap?.[2]) ||
+                    toDisplayUrl(preservedStageMap?.stage2) ||
+                    toDisplayUrl(r?.stage2Url) ||
+                    toDisplayUrl(r?.result?.stage2Url) ||
+                    null;
+                  return {
                     ...r,
-                    image: completedOutputUrl,
-                    imageUrl: completedOutputUrl,
-                    resultUrl: completedOutputUrl,
-                    version: stamp,
-                    mode: job.mode || "staged",
-                    originalImageUrl: preservedOriginalUrl,
-                    qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: r?.stageUrls || stageUrls || null,
-                    imageId: imageIdFromJob || r?.imageId,
-                    retryLatestUrl: completedOutputUrl,
-                    retryHistory: [
-                      ...existingRetryHistory,
-                      {
-                        url: completedOutputUrl,
-                        ts: stamp,
-                        stage: retryStage || null,
-                        jobId,
-                      },
-                    ],
-                    status: "completed",
-                    uiStatus: "warning",
-                    currentStage: null,
+                    status: preservedStage2 ? "completed" : (r?.status || "completed"),
+                    uiStatus: preservedStage2 ? "ok" : (r?.uiStatus || "warning"),
                     retryInFlight: undefined,
                     retryStage: undefined,
-                    resultStage: (job.resultStage || job.finalStage || retryStage || r?.resultStage || null) as StageKey | null,
-                    finalStage: (job.finalStage || job.resultStage || retryStage || r?.finalStage || null) as StageKey | null,
+                    currentStage: null,
+                    error: preservedStage2 ? null : r?.error,
                     warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.warnings || []),
-                    result: {
-                      ...(r?.result || {}),
-                      image: completedOutputUrl,
-                      imageUrl: completedOutputUrl,
-                      resultUrl: completedOutputUrl,
-                      originalImageUrl: preservedOriginalUrl,
-                      stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls,
-                      imageId: imageIdFromJob || r?.result?.imageId,
-                      qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                      retryLatestUrl: completedOutputUrl,
-                      warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.result?.warnings || []),
-                    },
-                    error: null,
-                  } : r
-                ));
+                  };
+                }));
 
-                setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
-                setProcessedImagesByIndex(prev => ({ ...prev, [String(imageIndex)]: completedOutputUrl }));
                 clearRetryFlags(imageIndex);
 
                 toast({
-                  title: "Retry completed with fallback",
-                  description: (Array.isArray(job?.warnings) && job.warnings[0]) || "A best-available result was returned after validation fallback.",
+                  title: "Retry completed without staged output",
+                  description: (Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output.",
                   variant: "default"
                 });
                 return;
@@ -6963,7 +6966,7 @@ export default function BatchProcessor() {
                         const safeStage = resolveSafeStageUrl(result);
                         
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
-                        const disallowStage2 = (status === "failed") || !!blockedStage;
+                        const disallowStage2 = !!blockedStage && !stage2Url;
                         const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
                         const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
@@ -7015,8 +7018,15 @@ export default function BatchProcessor() {
                           null;
                         const compareOriginalUrl = persistedOriginalUrl || (((file as any)?.__restored !== true && previewUrls[i] && previewUrls[i] !== RESTORED_PLACEHOLDER) ? previewUrls[i] : undefined);
                         const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting"].includes(status);
-                        const canUseRemotePreview = status === "completed" || (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
-                        const previewUrl = isNonTerminalProcessingStatus
+                        const shouldPreferPreservedStage2 = !!stage2Url && (
+                          selectedStage === "2" ||
+                          (!selectedStage && defaultStage === "2")
+                        );
+                        const canUseRemotePreview =
+                          status === "completed" ||
+                          shouldPreferPreservedStage2 ||
+                          (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
+                        const previewUrl = (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2)
                           ? (previewUrls[i] || null)
                           : canUseRemotePreview
                             ? (enhancedUrl || previewUrls[i] || null)
