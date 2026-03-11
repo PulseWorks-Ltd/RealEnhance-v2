@@ -6833,6 +6833,97 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return Math.max(0, Math.min(1, value));
       };
 
+      type OpeningSignals = {
+        removed: boolean;
+        relocated: boolean;
+        resized: boolean;
+        resizeDelta: number;
+        bandMismatch: boolean;
+        classMismatch: boolean;
+      };
+
+      type OpeningStructuralSignalLevel = "none" | "advisory" | "strong" | "extreme";
+
+      type OpeningStructuralSignalReason =
+        | "opening_removed"
+        | "opening_resize_extreme"
+        | "opening_resize_large"
+        | "opening_relocated_and_resized"
+        | "opening_minor_change";
+
+      type OpeningStructuralSignal = {
+        type: OpeningStructuralSignalReason;
+        confidence: Exclude<OpeningStructuralSignalLevel, "none">;
+        resizeDelta?: number;
+      };
+
+      const extractOpeningSignals = (openingResult: { reason?: string; advisorySignals?: string[] }): OpeningSignals => {
+        const reasonTokens = String(openingResult.reason || "")
+          .split("|")
+          .map((token) => token.trim().toLowerCase())
+          .filter(Boolean);
+        const advisoryTokens = Array.isArray(openingResult.advisorySignals)
+          ? openingResult.advisorySignals.map((token) => String(token || "").trim().toLowerCase()).filter(Boolean)
+          : [];
+
+        const tokens = [...reasonTokens, ...advisoryTokens];
+        const joined = tokens.join("|");
+
+        const extractResizeDelta = (): number => {
+          const resizeMatch = joined.match(/opening_resize(?:d_minor|_ge_0_30)?:(\d+(?:\.\d+)?)/i);
+          if (resizeMatch && Number.isFinite(Number(resizeMatch[1]))) {
+            return Number(resizeMatch[1]);
+          }
+          return 0;
+        };
+
+        const resizeDelta = extractResizeDelta();
+        const resized =
+          /(^|\|)opening_resized($|\|)/.test(joined) ||
+          joined.includes("opening_resize_ge_0_30") ||
+          joined.includes("opening_resized_minor:");
+
+        return {
+          removed: /(^|\|)opening_removed($|\|)/.test(joined),
+          relocated: /(^|\|)opening_relocated($|\|)/.test(joined),
+          resized,
+          resizeDelta,
+          bandMismatch: /(^|\|)opening_band_mismatch($|\|)/.test(joined),
+          classMismatch: /(^|\|)opening_class_mismatch($|\|)/.test(joined),
+        };
+      };
+
+      const evaluateOpeningStructuralConfidence = (
+        signals: OpeningSignals
+      ): { level: OpeningStructuralSignalLevel; reason?: OpeningStructuralSignalReason } => {
+        if (signals.removed) {
+          return { level: "strong", reason: "opening_removed" };
+        }
+
+        if (signals.resized && signals.resizeDelta >= 0.6) {
+          return { level: "extreme", reason: "opening_resize_extreme" };
+        }
+
+        if (signals.resized && signals.resizeDelta >= 0.35) {
+          return { level: "strong", reason: "opening_resize_large" };
+        }
+
+        if (signals.resized && signals.relocated) {
+          return { level: "strong", reason: "opening_relocated_and_resized" };
+        }
+
+        if (
+          signals.relocated ||
+          signals.resized ||
+          signals.bandMismatch ||
+          signals.classMismatch
+        ) {
+          return { level: "advisory", reason: "opening_minor_change" };
+        }
+
+        return { level: "none" };
+      };
+
       let semanticWallDriftNorm = 0;
       let semanticOpeningsDeltaNorm = 0;
       let maskedEdgeDriftNorm = 0;
@@ -6947,6 +7038,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let fixturePass = true;
       let floorPass = true;
       const stage2AdvisorySignals: string[] = [];
+      let openingStructuralSignal: OpeningStructuralSignal | undefined;
 
       type Stage2GateValidator = "openings" | "fixtures" | "floor" | "envelope";
       let currentValidator: Stage2GateValidator = "openings";
@@ -6975,38 +7067,78 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         currentValidator = "openings";
         const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
         appendAdvisories("openings", opRes.advisorySignals || []);
-        openingPass = opRes.hardFail !== true;
-        if (opRes.hardFail === true) {
-          stage2GateFailure = { validator: "openings", reason: opRes.reason };
-          nLog("[VALIDATOR_HARD_FAIL]", {
+        openingPass = true;
+        const openingSignals = extractOpeningSignals(opRes);
+        const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
+        const openingReason = openingConfidence.reason;
+
+        nLog("[OPENING_STRUCTURAL_SIGNAL]", {
+          openingId: "aggregate",
+          signalLevel: openingConfidence.level,
+          reason: openingReason || "none",
+          resizeDelta: openingSignals.resizeDelta,
+          relocated: openingSignals.relocated,
+          removed: openingSignals.removed,
+        });
+
+        if (openingConfidence.level !== "none" && openingReason) {
+          const advisorySignal = `opening_structural_signal:${openingReason}`;
+          appendAdvisories("openings", [advisorySignal]);
+
+          openingStructuralSignal = {
+            type: openingReason,
+            confidence: openingConfidence.level,
+            resizeDelta: Number.isFinite(openingSignals.resizeDelta)
+              ? openingSignals.resizeDelta
+              : undefined,
+          };
+        }
+
+        if (openingConfidence.level === "extreme") {
+          nLog("[OPENING_STRUCTURAL_CANDIDATE]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
-            validator: "openings",
-            reason: opRes.reason,
-            confidence: opRes.confidence,
-          });
-          nLog("[STAGE2_VALIDATION_FAIL] openings");
-          nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
-          logValidatorResult({
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            validator: "openingValidator",
-            result: "FAIL",
-            reason: normalizeValidatorReason(opRes.reason),
-          });
-        } else {
-          nLog("[STAGE2_VALIDATION_A] openings pass");
-          logValidatorResult({
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            validator: "openingValidator",
-            result: "PASS",
-            reason: "none",
+            signalLevel: openingConfidence.level,
+            reason: openingReason,
+            action: "escalate_gemini_confirmation",
           });
         }
+
+        if (openingConfidence.level === "strong") {
+          nLog("[OPENING_STRUCTURAL_ESCALATION]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            signalLevel: openingConfidence.level,
+            reason: openingReason,
+            action: "escalate_gemini_strong_cue",
+          });
+        }
+
+        if (openingConfidence.level === "advisory") {
+          nLog("[OPENING_STRUCTURAL_ADVISORY]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            signalLevel: openingConfidence.level,
+            reason: openingReason,
+            action: "advisory_only",
+          });
+        }
+
+        nLog("[STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)");
+        logValidatorResult({
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "openingValidator",
+          result: "PASS",
+          reason:
+            openingConfidence.level !== "none"
+              ? normalizeValidatorReason(`sensor_${openingReason || "opening_signal"}`)
+              : "none",
+        });
 
         if (!stage2GateFailure) {
           currentValidator = "fixtures";
@@ -7302,10 +7434,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               model: "gemini-2.5-pro",
               advisoryCount: stage2AdvisorySignals.length,
               advisorySignals: stage2AdvisorySignals,
+              openingStructuralSignal: openingStructuralSignal || null,
             });
             compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
               validationMode: stage2ValidationMode,
               advisorySignals: stage2AdvisorySignals,
+              openingStructuralSignal,
               modelOverride: "gemini-2.5-pro",
             });
           }

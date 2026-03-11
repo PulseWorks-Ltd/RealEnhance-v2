@@ -12,6 +12,17 @@ export type ComplianceVerdict = {
   reasons: string[];
 };
 
+type OpeningStructuralSignal = {
+  type:
+    | "opening_removed"
+    | "opening_resize_extreme"
+    | "opening_resize_large"
+    | "opening_relocated_and_resized"
+    | "opening_minor_change";
+  confidence: "advisory" | "strong" | "extreme";
+  resizeDelta?: number;
+};
+
 function clampTier(value: number): number {
   return Math.max(1, Math.min(3, Math.floor(value)));
 }
@@ -22,7 +33,13 @@ function resolveTier(confidence: number): number {
   return 1;
 }
 
-async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prompt: string, modelOverride?: string) {
+async function ask(
+  ai: GoogleGenAI,
+  originalB64: string,
+  editedB64: string,
+  prompt: string,
+  modelOverride?: string
+) {
   const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
   const resp = await (ai as any).models.generateContent({
     model: complianceModel,
@@ -33,9 +50,9 @@ async function ask(ai: GoogleGenAI, originalB64: string, editedB64: string, prom
         { text: "ORIGINAL:" },
         { inlineData: { mimeType: "image/webp", data: originalB64 } },
         { text: "EDITED:" },
-        { inlineData: { mimeType: "image/webp", data: editedB64 } }
-      ]
-    }]
+        { inlineData: { mimeType: "image/webp", data: editedB64 } },
+      ],
+    }],
   });
   const text = resp.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n") || "{}";
   try {
@@ -66,7 +83,12 @@ export async function checkCompliance(
   ai: GoogleGenAI,
   originalB64: string,
   editedB64: string,
-  opts?: { validationMode?: Stage2ValidationMode; advisorySignals?: string[]; modelOverride?: string }
+  opts?: {
+    validationMode?: Stage2ValidationMode;
+    advisorySignals?: string[];
+    openingStructuralSignal?: OpeningStructuralSignal;
+    modelOverride?: string;
+  }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
   const advisoryContext = Array.isArray(opts?.advisorySignals) && opts.advisorySignals.length > 0
@@ -75,14 +97,40 @@ export async function checkCompliance(
         ...opts.advisorySignals.map((signal) => `- ${signal}`),
       ]
     : [];
+  const openingStructuralContext = opts?.openingStructuralSignal
+    ? [
+        "OPENING STRUCTURAL SIGNAL (sensor evidence, not final verdict):",
+        `- type: ${opts.openingStructuralSignal.type}`,
+        `- confidence: ${opts.openingStructuralSignal.confidence}`,
+        ...(typeof opts.openingStructuralSignal.resizeDelta === "number"
+          ? [`- resizeDelta: ${opts.openingStructuralSignal.resizeDelta.toFixed(3)}`]
+          : []),
+      ]
+    : [];
+  const openingRelocatedResizedGuidance =
+    opts?.openingStructuralSignal?.type === "opening_relocated_and_resized"
+      ? [
+          "Local structural detectors observed that a window opening appears both relocated and significantly resized.",
+          "This combination frequently indicates that part of the opening may have been replaced by wall surface.",
+          "Furniture may hide part of a window, but furniture cannot replace the architectural opening.",
+          "Please verify whether the opening geometry has actually changed or whether the difference is caused only by occlusion or perspective.",
+        ]
+      : [];
+  const structuralDecisionInstruction = opts?.openingStructuralSignal
+    ? "Compare ORIGINAL vs EDITED with focus on confirming or refuting opening-geometry changes signaled above."
+    : "Compare ORIGINAL vs EDITED. Ignore structural changes (those are handled elsewhere).";
+
   const structuralPrompt = [
-    'Return JSON only: {\"ok\": true|false, \"confidence\": 0.0-1.0, \"reasons\": [\"...\"]}',
+    'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
-    'Compare ORIGINAL vs EDITED. Ignore structural changes (those are handled elsewhere).',
-    'ok=false ONLY if there are severe rendering artifacts, unnatural warping, or glitches.',
-    'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
+    ...openingStructuralContext,
+    ...openingRelocatedResizedGuidance,
+    structuralDecisionInstruction,
+    "ok=false ONLY if there are severe rendering artifacts, unnatural warping, or glitches.",
+    "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
+
   const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride);
   if (!s) {
     const reasons = ["Compliance parser failed"];
@@ -100,7 +148,8 @@ export async function checkCompliance(
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
-  const sConfidence = typeof s.confidence === 'number' ? s.confidence : 0.6;
+
+  const sConfidence = typeof s.confidence === "number" ? s.confidence : 0.6;
   if (s.ok === false) {
     const reasons = s.reasons || ["Structural change detected"];
     const result = {
@@ -118,16 +167,19 @@ export async function checkCompliance(
   }
 
   const placementPrompt = [
-    'Return JSON only: {\"ok\": true|false, \"confidence\": 0.0-1.0, \"reasons\": [\"...\"]}',
+    'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
-    'Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:',
-    '- floating furniture,',
-    '- furniture not aligned to floor perspective,',
-    '- furniture inappropriately passing through other objects.',
-    'Ignore structural architecture (like walls, windows, fixtures), that is handled elsewhere.',
-    'Confidence scale: 0.9–1.0 = very certain violation, 0.7–0.9 = likely violation, 0.4–0.7 = uncertain, <0.4 = weak signal',
+    ...openingStructuralContext,
+    ...openingRelocatedResizedGuidance,
+    "Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:",
+    "- floating furniture,",
+    "- furniture not aligned to floor perspective,",
+    "- furniture inappropriately passing through other objects.",
+    "Ignore structural architecture (like walls, windows, fixtures), that is handled elsewhere.",
+    "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
+
   const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride);
   if (!p) {
     const reasons = ["Compliance parser failed (placement)"];
@@ -145,7 +197,8 @@ export async function checkCompliance(
     console.log("[COMPLIANCE_RESULT]", { ok: result.ok, confidence: result.confidence, reasonsCount: result.reasons.length });
     return result;
   }
-  const pConfidence = typeof p.confidence === 'number' ? p.confidence : 0.6;
+
+  const pConfidence = typeof p.confidence === "number" ? p.confidence : 0.6;
   if (p.ok === false) {
     const reasons = p.reasons || ["Unrealistic/blocked placement"];
     const result = {
