@@ -11,21 +11,20 @@ const heroImage =
   "https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=1800&q=80"; // Replace with approved RealEnhance hero image when available
 
 export default function Signup() {
+  const [agencyName, setAgencyName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [inviteInfo, setInviteInfo] = useState<{ email: string; agencyName: string } | null>(null);
   const [submitted, setSubmitted] = useState(false);
-  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const { signUpWithEmail, ensureSignedIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get("redirect") || "/home";
+  const redirectTo = searchParams.get("redirect") || "/upload";
   const inviteToken = searchParams.get("token");
 
   // Load invite info if token present
@@ -53,8 +52,13 @@ export default function Signup() {
     setSubmitted(true);
     setError("");
 
-    if (!firstName.trim() || !lastName.trim()) {
-      setError("First and last name are required");
+    if (!inviteToken && !agencyName.trim()) {
+      setError("Agency name is required");
+      return;
+    }
+
+    if (!fullName.trim()) {
+      setError("Full name is required");
       return;
     }
 
@@ -73,11 +77,6 @@ export default function Signup() {
       return;
     }
 
-    if (!acceptedLegal) {
-      setError("You must agree to the Terms of Service and Privacy Policy to create an account.");
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -87,7 +86,7 @@ export default function Signup() {
           method: "POST",
           body: JSON.stringify({
             token: inviteToken,
-            name: `${firstName} ${lastName}`.trim(),
+            name: fullName.trim(),
             password,
           }),
         });
@@ -98,10 +97,10 @@ export default function Signup() {
         }
 
         // Invite accepted, user created and logged in
-        navigate("/home");
+        navigate("/upload");
       } else {
         // Regular signup flow
-        await signUpWithEmail(email, password, firstName.trim(), lastName.trim());
+        await signUpWithEmail(agencyName.trim(), fullName.trim(), email.trim(), password, confirmPassword);
         navigate(redirectTo);
       }
     } catch (err: any) {
@@ -136,8 +135,8 @@ export default function Signup() {
     return baseInputClasses;
   };
 
-  const firstNameValid = firstName.trim().length > 1;
-  const lastNameValid = lastName.trim().length > 1;
+  const agencyNameValid = agencyName.trim().length > 1;
+  const fullNameValid = fullName.trim().length > 1;
   const emailValid = email.trim().length > 0;
   const passwordValid = password.length >= 8;
   const passwordsMatch = confirmPassword === password && confirmPassword.length > 0;
@@ -192,53 +191,54 @@ export default function Signup() {
               )}
 
               <form onSubmit={handleEmailSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {!inviteInfo && (
                   <div className="space-y-2">
-                    <Label htmlFor="firstName" className="text-sm font-medium text-slate-700">
-                      First Name
+                    <Label htmlFor="agencyName" className="text-sm font-medium text-slate-700">
+                      Agency Name
                     </Label>
                     <Input
-                      id="firstName"
+                      id="agencyName"
                       type="text"
-                      placeholder="Jordan"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      placeholder="Rivera Realty"
+                      value={agencyName}
+                      onChange={(e) => setAgencyName(e.target.value)}
                       required
                       disabled={loading}
-                      className={inputTone(submitted && !firstNameValid, firstNameValid)}
-                      aria-invalid={submitted && !firstNameValid}
+                      className={inputTone(submitted && !agencyNameValid, agencyNameValid)}
+                      aria-invalid={submitted && !agencyNameValid}
                     />
-                    {submitted && !firstNameValid ? (
+                    {submitted && !agencyNameValid ? (
                       <p className="text-xs text-rose-600" role="alert">
-                        First name is required
+                        Agency name is required
                       </p>
-                    ) : firstNameValid ? (
+                    ) : agencyNameValid ? (
                       <p className="text-xs text-emerald-600">Thanks, looks good.</p>
                     ) : null}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName" className="text-sm font-medium text-slate-700">
-                      Last Name
-                    </Label>
-                    <Input
-                      id="lastName"
-                      type="text"
-                      placeholder="Rivera"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      required
-                      disabled={loading}
-                      className={inputTone(submitted && !lastNameValid, lastNameValid)}
-                      aria-invalid={submitted && !lastNameValid}
-                    />
-                    {submitted && !lastNameValid ? (
-                      <p className="text-xs text-rose-600" role="alert">
-                        Last name is required
-                      </p>
-                    ) : lastNameValid ? (
-                      <p className="text-xs text-emerald-600">Looks great.</p>
-                    ) : null}
-                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="fullName" className="text-sm font-medium text-slate-700">
+                    User Full Name
+                  </Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="Jordan Rivera"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                    disabled={loading}
+                    className={inputTone(submitted && !fullNameValid, fullNameValid)}
+                    aria-invalid={submitted && !fullNameValid}
+                  />
+                  {submitted && !fullNameValid ? (
+                    <p className="text-xs text-rose-600" role="alert">
+                      Full name is required
+                    </p>
+                  ) : fullNameValid ? (
+                    <p className="text-xs text-emerald-600">Looks great.</p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">
@@ -328,36 +328,17 @@ export default function Signup() {
                   {loading ? "Creating account..." : "Create account"}
                 </Button>
 
-                <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <label htmlFor="signup-legal-agreement" className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
-                    <input
-                      id="signup-legal-agreement"
-                      type="checkbox"
-                      checked={acceptedLegal}
-                      onChange={(e) => setAcceptedLegal(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                      required
-                      disabled={loading}
-                      aria-invalid={submitted && !acceptedLegal}
-                    />
-                    <span>
-                      I agree to the {" "}
-                      <Link to="/terms" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
-                        Terms of Service
-                      </Link>{" "}
-                      and {" "}
-                      <Link to="/privacy" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
-                        Privacy Policy
-                      </Link>
-                      .
-                    </span>
-                  </label>
-                  {submitted && !acceptedLegal && (
-                    <p className="text-xs text-rose-600" role="alert">
-                      You must agree to the Terms of Service and Privacy Policy to create an account.
-                    </p>
-                  )}
-                </div>
+                <p className="text-xs text-slate-500 text-center">
+                  By creating an account, you agree to our {" "}
+                  <Link to="/terms" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                    Terms of Service
+                  </Link>{" "}
+                  and {" "}
+                  <Link to="/privacy" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                    Privacy Policy
+                  </Link>
+                  .
+                </p>
 
                 <p className="text-xs text-slate-500 text-center">
                   Trusted by real estate agencies and photographers.

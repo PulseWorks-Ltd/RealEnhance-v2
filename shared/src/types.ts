@@ -17,6 +17,7 @@ export type JobId = string;
 export interface UserRecord {
   id: UserId;
   email: string;
+  emailVerified?: boolean;
   name?: string; // Legacy full name (kept for backward compatibility)
   firstName?: string;
   lastName?: string;
@@ -28,6 +29,7 @@ export interface UserRecord {
   agencyId?: string | null; // Optional: links user to an agency for usage tracking
   role?: "owner" | "admin" | "member"; // Agency role, defaults to "member"
   isActive?: boolean; // Whether user can log in, defaults to true
+  hasSeenWelcome?: boolean;
   plan?: "free" | "individual" | "agency"; // Future: plan-based limits
   usageStats?: {
     monthlyImages: number;

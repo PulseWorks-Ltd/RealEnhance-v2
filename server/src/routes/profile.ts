@@ -14,9 +14,11 @@ function buildSessionUser(user: UserRecord) {
     lastName: user.lastName ?? null,
     displayName,
     email: user.email,
+    emailVerified: user.emailVerified === true,
     credits: user.credits,
     agencyId: user.agencyId ?? null,
     role: user.role ?? "member",
+    hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
   };
 }
 

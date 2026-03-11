@@ -97,6 +97,7 @@ export async function createUser(params: {
   const user: UserRecord = {
     id: userId,
     email: params.email,
+    emailVerified: false,
     name: fallbackName,
     firstName: params.firstName?.trim(),
     lastName: params.lastName?.trim(),
@@ -106,6 +107,7 @@ export async function createUser(params: {
     agencyId: params.agencyId,
     role: params.role,
     isActive: true,
+    hasSeenWelcome: false,
     credits: getInitialCredits(),
     imageIds: [],
     createdAt: now,
@@ -121,6 +123,7 @@ export async function createUser(params: {
       await client.hSet(key, {
         id: user.id,
         email: user.email,
+        emailVerified: String(user.emailVerified === true),
         name: user.name || "",
         firstName: user.firstName || "",
         lastName: user.lastName || "",
@@ -130,6 +133,7 @@ export async function createUser(params: {
         agencyId: user.agencyId || "",
         role: user.role || "",
         credits: user.credits.toString(),
+        hasSeenWelcome: String(user.hasSeenWelcome === true),
         imageIds: JSON.stringify(user.imageIds),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -172,6 +176,7 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
       return {
         id: data.id,
         email: data.email,
+        emailVerified: data.emailVerified === "true",
         name: data.name,
         firstName: data.firstName || undefined,
         lastName: data.lastName || undefined,
@@ -181,6 +186,7 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
         agencyId: data.agencyId || undefined,
         role: (data.role as "owner" | "admin" | "member") || undefined,
         isActive: data.isActive !== "false",
+        hasSeenWelcome: data.hasSeenWelcome === "true",
         credits: parseInt(data.credits || "0", 10),
         imageIds: data.imageIds ? JSON.parse(data.imageIds) : [],
         createdAt: data.createdAt,
@@ -241,6 +247,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
       await client.hSet(key, {
         id: user.id,
         email: user.email,
+        emailVerified: String(user.emailVerified === true),
         name: user.name || "",
         firstName: user.firstName || "",
         lastName: user.lastName || "",
@@ -251,6 +258,7 @@ export async function updateUser(user: UserRecord): Promise<void> {
         role: user.role || "",
         isActive: String(user.isActive !== false),
         credits: user.credits.toString(),
+        hasSeenWelcome: String(user.hasSeenWelcome === true),
         imageIds: JSON.stringify(user.imageIds),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,

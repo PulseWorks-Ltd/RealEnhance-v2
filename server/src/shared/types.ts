@@ -13,7 +13,9 @@ export interface AuthUser {
   lastName?: string;
   displayName?: string;
   email: string;
+  emailVerified?: boolean;
   credits: number;
+  hasSeenWelcome?: boolean;
   createdAt: string;
   updatedAt: string;
 }

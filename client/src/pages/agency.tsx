@@ -37,6 +37,7 @@ import {
 interface AgencyMember {
   id: string;
   email: string;
+  emailVerified?: boolean;
   name?: string;
   firstName?: string;
   lastName?: string;
@@ -62,6 +63,7 @@ interface AgencyInfo {
   stripeSubscriptionId?: string;
   billingCountry?: "NZ" | "AU" | "ZA";
   billingCurrency?: "nzd" | "aud" | "zar" | "usd";
+  billingEmail?: string;
   currentPeriodEnd?: string;
   activeUsers?: number;
   userRole: "owner" | "admin" | "member";
@@ -108,6 +110,15 @@ export default function AgencyPage() {
   const [invites, setInvites] = useState<AgencyInvite[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  const [newMemberName, setNewMemberName] = useState("");
+  const [newMemberEmail, setNewMemberEmail] = useState("");
+  const [newMemberPassword, setNewMemberPassword] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState<"OWNER" | "ADMIN" | "USER">("USER");
+  const [savingNewMember, setSavingNewMember] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileCountry, setProfileCountry] = useState<"NZ" | "AU" | "ZA">("NZ");
+  const [profileBillingEmail, setProfileBillingEmail] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
   const [agencyName, setAgencyName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -175,6 +186,7 @@ export default function AgencyPage() {
         stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
         billingCountry: infoData.agency.billingCountry,
         billingCurrency: infoData.agency.billingCurrency,
+        billingEmail: infoData.agency.billingEmail,
         currentPeriodEnd: infoData.agency.currentPeriodEnd,
         activeUsers: infoData.activeUsers,
         userRole: user?.role || "member",
@@ -201,6 +213,9 @@ export default function AgencyPage() {
       };
 
       setAgencyInfo(agencyInfo);
+      setProfileName(agencyInfo.name);
+      setProfileCountry((agencyInfo.billingCountry || "NZ") as "NZ" | "AU" | "ZA");
+      setProfileBillingEmail(agencyInfo.billingEmail || "");
 
       if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
         try {
@@ -313,6 +328,72 @@ export default function AgencyPage() {
         description: "Failed to update team member status",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleUpdateAgencyProfile = async () => {
+    try {
+      setSavingProfile(true);
+      const res = await apiFetch("/api/agency/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: profileName.trim(),
+          country: profileCountry,
+          billingEmail: profileBillingEmail.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update agency profile");
+      }
+
+      toast({ title: "Saved", description: "Agency profile updated." });
+      await loadAgencyData();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to update agency profile", variant: "destructive" });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleCreateTeamMember = async () => {
+    if (!newMemberName.trim() || !newMemberEmail.trim() || !newMemberPassword.trim()) {
+      toast({
+        title: "Error",
+        description: "Full Name, Email, and Password are required.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setSavingNewMember(true);
+      const res = await apiFetch("/api/agency/team-members", {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: newMemberName.trim(),
+          email: newMemberEmail.trim(),
+          password: newMemberPassword,
+          role: newMemberRole,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create team member");
+      }
+
+      toast({ title: "Success", description: `Created ${newMemberEmail.trim()} successfully.` });
+      setNewMemberName("");
+      setNewMemberEmail("");
+      setNewMemberPassword("");
+      setNewMemberRole("USER");
+      await loadAgencyData();
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to create team member", variant: "destructive" });
+    } finally {
+      setSavingNewMember(false);
     }
   };
 
@@ -615,11 +696,55 @@ export default function AgencyPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between py-2 border-b border-border">
-                  <span className="text-sm text-muted-foreground">Name</span>
-                  <span className="text-sm font-medium">{agencyInfo.name}</span>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-sm font-medium">Complete agency profile</p>
+                  <p className="text-xs text-muted-foreground mt-1">You can edit these details anytime in settings.</p>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Agency Name</label>
+                  <Input
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    disabled={!isAdmin}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Country</label>
+                  <Select
+                    value={profileCountry}
+                    onValueChange={(v) => setProfileCountry(v as "NZ" | "AU" | "ZA")}
+                    disabled={!isAdmin}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NZ">New Zealand</SelectItem>
+                      <SelectItem value="AU">Australia</SelectItem>
+                      <SelectItem value="ZA">South Africa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Billing Email</label>
+                  <Input
+                    type="email"
+                    value={profileBillingEmail}
+                    onChange={(e) => setProfileBillingEmail(e.target.value)}
+                    disabled={!isAdmin}
+                  />
+                </div>
+
+                {isAdmin && (
+                  <Button onClick={handleUpdateAgencyProfile} disabled={savingProfile}>
+                    {savingProfile ? "Saving..." : "Save Agency Profile"}
+                  </Button>
+                )}
+
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Plan</span>
                   <Badge variant="secondary">
@@ -662,10 +787,57 @@ export default function AgencyPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Mail className="w-5 h-5 text-muted-foreground" />
-                  Invite Team Member
+                  Create Team Member
                 </CardTitle>
                 <CardDescription>
-                  Send an invitation to add a new team member
+                  Add a user directly to your agency
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Input
+                    type="text"
+                    placeholder="Full name"
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                  />
+                  <Input
+                    type="email"
+                    placeholder="colleague@example.com"
+                    value={newMemberEmail}
+                    onChange={(e) => setNewMemberEmail(e.target.value)}
+                  />
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    value={newMemberPassword}
+                    onChange={(e) => setNewMemberPassword(e.target.value)}
+                  />
+                  <Select value={newMemberRole} onValueChange={(v) => setNewMemberRole(v as "OWNER" | "ADMIN" | "USER")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="OWNER">OWNER</SelectItem>
+                      <SelectItem value="ADMIN">ADMIN</SelectItem>
+                      <SelectItem value="USER">USER</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button className="mt-3" onClick={handleCreateTeamMember} disabled={savingNewMember}>
+                  {savingNewMember ? "Creating..." : "Create Team Member"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="w-5 h-5 text-muted-foreground" />
+                  Invite via Email
+                </CardTitle>
+                <CardDescription>
+                  Optional: send a signup link instead of setting a password directly
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -686,9 +858,7 @@ export default function AgencyPage() {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleInvite}>
-                    Send Invite
-                  </Button>
+                  <Button onClick={handleInvite}>Send Invite</Button>
                 </div>
               </CardContent>
             </Card>
@@ -763,6 +933,10 @@ export default function AgencyPage() {
                             <StatusBadge
                               status={member.isActive ? "success" : "error"}
                               label={member.isActive ? "Active" : "Disabled"}
+                            />
+                            <StatusBadge
+                              status={member.emailVerified ? "success" : "pending"}
+                              label={member.emailVerified ? "Verified" : "Unverified"}
                             />
                             {member.role !== "owner" && agencyInfo.userRole === "owner" && (
                               <Button

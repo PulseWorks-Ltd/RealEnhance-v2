@@ -67,6 +67,48 @@ export function enhancedImagesRouter() {
   });
 
   /**
+   * GET /api/enhanced-images/:id/download
+   * Server-side gated download redirect.
+   */
+  router.get('/:id/download', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      if (user.emailVerified !== true) {
+        return res.status(403).json({
+          error: 'EMAIL_NOT_VERIFIED',
+          message: 'Please confirm your email address to download the images.',
+        });
+      }
+
+      if (!user.agencyId) {
+        return res.status(404).json({ error: 'Image not found' });
+      }
+
+      const imageId = req.params.id;
+      const isAdminOrOwner = user.role === 'owner' || user.role === 'admin';
+
+      const image = await getEnhancedImage(
+        imageId,
+        user.agencyId,
+        isAdminOrOwner ? undefined : user.id
+      );
+
+      if (!image?.publicUrl) {
+        return res.status(404).json({ error: 'Image not found' });
+      }
+
+      return res.redirect(302, image.publicUrl);
+    } catch (error) {
+      console.error('[enhanced-images] Download gate error:', error);
+      return res.status(500).json({ error: 'Failed to prepare download' });
+    }
+  });
+
+  /**
    * GET /api/enhanced-images/:id
    *
    * Get a single enhanced image by ID

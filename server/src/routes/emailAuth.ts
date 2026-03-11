@@ -2,9 +2,13 @@ import { Router, Request, Response } from "express";
 import { createUserWithPassword, getUserByEmail, getUserById, updateUser } from "../services/users.js";
 import { hashPassword, comparePassword, validatePassword, validateEmail } from "../utils/password.js";
 import { createResetToken, consumeResetToken, checkResetThrottle } from "../services/passwordResetTokens.js";
-import { sendPasswordResetEmail } from "../services/email.js";
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
+import { createAgency } from "@realenhance/shared/agencies.js";
+import { AGENCY_SIGNUP_PROMO_CREDITS } from "@realenhance/shared/plans.js";
+import { grantSignupPromoCreditsOnce } from "./agency.js";
+import { createEmailVerificationToken, consumeEmailVerificationToken } from "../services/emailVerificationTokens.js";
 // Seat limits removed - unlimited users per agency
 
 export function emailAuthRouter() {
@@ -23,9 +27,11 @@ export function emailAuthRouter() {
       lastName: user.lastName ?? null,
       displayName,
       email: user.email,
+      emailVerified: user.emailVerified === true,
       credits: user.credits,
       agencyId: user.agencyId ?? null,
       role: user.role ?? "member",
+      hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
     };
   };
 
@@ -51,7 +57,26 @@ export function emailAuthRouter() {
   // POST /api/auth/signup - Create new user with email+password
   r.post("/signup", async (req: Request, res: Response) => {
     try {
-      const { email, password, firstName, lastName, name } = req.body;
+      const { agencyName, fullName, email, password, confirmPassword } = req.body || {};
+
+      const cleanedAgencyName = typeof agencyName === "string" ? agencyName.trim() : "";
+      const cleanedFullName = typeof fullName === "string" ? fullName.trim() : "";
+
+      if (!cleanedAgencyName) {
+        return res.status(400).json({ error: "Agency name is required" });
+      }
+
+      if (!cleanedFullName) {
+        return res.status(400).json({ error: "User full name is required" });
+      }
+
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      if (password !== confirmPassword) {
+        return res.status(400).json({ error: "Passwords do not match" });
+      }
 
       // Validate email format
       const emailValidation = validateEmail(email);
@@ -65,19 +90,13 @@ export function emailAuthRouter() {
         return res.status(400).json({ error: passwordValidation.error });
       }
 
-      const cleanedFirst = firstName?.trim();
-      const cleanedLast = lastName?.trim();
-      const cleanedLegacyName = name?.trim();
-      const combinedName = `${cleanedFirst || ""} ${cleanedLast || ""}`.trim();
-
-      if (!cleanedFirst || !cleanedLast) {
-        if (!cleanedLegacyName) {
-          return res.status(400).json({ error: "First and last name are required" });
-        }
-      }
+      const [firstNameRaw, ...lastParts] = cleanedFullName.split(/\s+/).filter(Boolean);
+      const cleanedFirst = firstNameRaw || undefined;
+      const cleanedLast = lastParts.join(" ") || undefined;
 
       // Check if user already exists
-      const existingUser = await getUserByEmail(email);
+      const normalizedEmail = email.toLowerCase().trim();
+      const existingUser = await getUserByEmail(normalizedEmail);
       if (existingUser) {
         return res.status(409).json({ error: "User with this email already exists" });
       }
@@ -87,14 +106,42 @@ export function emailAuthRouter() {
 
       // Create user
       const newUser = await createUserWithPassword({
-        email: email.toLowerCase().trim(),
-        name: cleanedLegacyName || combinedName || email.toLowerCase().trim(),
+        email: normalizedEmail,
+        name: cleanedFullName,
         firstName: cleanedFirst,
         lastName: cleanedLast,
-        passwordHash
+        passwordHash,
+        role: "owner",
       });
 
-      const sessionUser = buildSessionUser(newUser);
+      // Create agency and assign owner to it
+      const agency = await createAgency({
+        name: cleanedAgencyName,
+        planTier: "starter",
+        ownerId: newUser.id,
+      });
+
+      const ownerUser = await updateUser(newUser.id, {
+        agencyId: agency.agencyId,
+        role: "owner",
+        emailVerified: false,
+        hasSeenWelcome: false,
+      });
+
+      // Existing promo logic: grant one-time signup promo credits
+      await grantSignupPromoCreditsOnce(agency.agencyId, AGENCY_SIGNUP_PROMO_CREDITS);
+
+      // Create verification token + send email
+      const tokenRecord = await createEmailVerificationToken(ownerUser.id);
+      const clientBase = (process.env.CLIENT_URL || req.headers.origin || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+      const verifyLink = `${clientBase}/verify-email?token=${encodeURIComponent(tokenRecord.token)}`;
+      await sendEmailVerificationEmail({
+        toEmail: ownerUser.email,
+        verifyLink,
+        displayName: getDisplayName(ownerUser),
+      });
+
+      const sessionUser = buildSessionUser(ownerUser);
 
       // Create session (same as Google OAuth)
       (req.session as any).user = sessionUser;
@@ -344,6 +391,82 @@ export function emailAuthRouter() {
     } catch (err) {
       console.error("[auth] set-password error", err);
       return res.status(500).json({ error: "Failed to set password" });
+    }
+  });
+
+  // GET /api/auth/verify-email?token=... - consume token and mark verified
+  r.get("/verify-email", async (req: Request, res: Response) => {
+    try {
+      const token = String(req.query.token || "").trim();
+      if (!token) {
+        return res.status(400).json({ error: "Verification token is required" });
+      }
+
+      const tokenResult = await consumeEmailVerificationToken(token);
+      if (!tokenResult) {
+        return res.status(400).json({ error: "Invalid or expired verification token" });
+      }
+
+      const user = await getUserById(tokenResult.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const updated = await updateUser(user.id, { emailVerified: true });
+      if ((req.session as any)?.user?.id === updated.id) {
+        (req.session as any).user = buildSessionUser(updated);
+      }
+
+      return res.json({ ok: true, verified: true });
+    } catch (err) {
+      console.error("[auth] verify-email error", err);
+      return res.status(500).json({ error: "Failed to verify email" });
+    }
+  });
+
+  // POST /api/auth/resend-verification - resend verification email for current user
+  r.post("/resend-verification", async (req: Request, res: Response) => {
+    try {
+      const user = await requireAuthedUser(req, res);
+      if (!user) return;
+
+      if (user.emailVerified === true) {
+        return res.json({ ok: true, alreadyVerified: true });
+      }
+
+      const tokenRecord = await createEmailVerificationToken(user.id);
+      const clientBase = (process.env.CLIENT_URL || req.headers.origin || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+      const verifyLink = `${clientBase}/verify-email?token=${encodeURIComponent(tokenRecord.token)}`;
+
+      const result = await sendEmailVerificationEmail({
+        toEmail: user.email,
+        verifyLink,
+        displayName: getDisplayName(user),
+      });
+
+      if (!result.ok) {
+        return res.status(503).json({ error: "Failed to send verification email" });
+      }
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[auth] resend-verification error", err);
+      return res.status(500).json({ error: "Failed to resend verification email" });
+    }
+  });
+
+  // POST /api/auth/welcome-seen - mark first-login welcome as completed
+  r.post("/welcome-seen", async (req: Request, res: Response) => {
+    try {
+      const user = await requireAuthedUser(req, res);
+      if (!user) return;
+
+      const updated = await updateUser(user.id, { hasSeenWelcome: true });
+      (req.session as any).user = buildSessionUser(updated);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[auth] welcome-seen error", err);
+      return res.status(500).json({ error: "Failed to update welcome state" });
     }
   });
 

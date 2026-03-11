@@ -44,7 +44,7 @@ const stripe = process.env.STRIPE_SECRET_KEY
 const PROMO_SIGNUP_SOURCE = "promo_signup";
 const PROMO_SIGNUP_BUNDLE_CODE: BundleCode = "BUNDLE_20";
 
-async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): Promise<boolean> {
+export async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): Promise<boolean> {
   if (!Number.isFinite(credits) || credits <= 0) return false;
 
   const existingPromo = await withTransaction(async (client) => {
@@ -203,9 +203,11 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
       firstName: updatedUser.firstName ?? null,
       lastName: updatedUser.lastName ?? null,
       displayName,
+      emailVerified: updatedUser.emailVerified === true,
       credits: updatedUser.credits,
       agencyId: updatedUser.agencyId,
       role: updatedUser.role || "owner",
+      hasSeenWelcome: updatedUser.hasSeenWelcome === false ? false : true,
     };
 
     res.status(201).json({
@@ -289,6 +291,7 @@ router.get("/members", requireAuth, requireAgencyAdmin, async (req: Request, res
     const safeMembers = members.map((m) => ({
       id: m.id,
       email: m.email,
+      emailVerified: m.emailVerified === true,
       name: m.name,
       firstName: m.firstName,
       lastName: m.lastName,
@@ -368,6 +371,74 @@ router.post("/invite", requireAuth, requireAgencyAdmin, async (req: Request, res
   } catch (err) {
     console.error("[AGENCY] Invite error:", err);
     res.status(500).json({ error: "Failed to create invite" });
+  }
+});
+
+/**
+ * POST /api/agency/team-members
+ * Create an agency team member directly (admin only)
+ */
+router.post("/team-members", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminUser = (req as any).user as UserRecord;
+    const { fullName, email, password, role } = req.body || {};
+
+    const cleanedName = typeof fullName === "string" ? fullName.trim() : "";
+    const cleanedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const cleanedPassword = typeof password === "string" ? password : "";
+    const incomingRole = typeof role === "string" ? role.trim().toUpperCase() : "";
+    const mappedRole = incomingRole === "OWNER" ? "owner" : incomingRole === "ADMIN" ? "admin" : incomingRole === "USER" ? "member" : "";
+
+    if (!cleanedName) return res.status(400).json({ error: "Full name is required" });
+    if (!cleanedEmail) return res.status(400).json({ error: "Email is required" });
+    if (!cleanedPassword || cleanedPassword.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+    if (!mappedRole) {
+      return res.status(400).json({ error: "Role must be OWNER, ADMIN, or USER" });
+    }
+
+    // Non-owners cannot create owners
+    if (mappedRole === "owner" && adminUser.role !== "owner") {
+      return res.status(403).json({ error: "Only owners can create owner accounts" });
+    }
+
+    const existing = await getUserByEmail(cleanedEmail);
+    if (existing) {
+      return res.status(409).json({ error: "User with this email already exists" });
+    }
+
+    const [firstName, ...rest] = cleanedName.split(/\s+/).filter(Boolean);
+    const lastName = rest.join(" ") || undefined;
+    const passwordHash = await hashPassword(cleanedPassword);
+
+    const created = await createUserWithPassword({
+      email: cleanedEmail,
+      name: cleanedName,
+      firstName,
+      lastName,
+      passwordHash,
+      agencyId: adminUser.agencyId!,
+      role: mappedRole as "owner" | "admin" | "member",
+    });
+
+    const normalized = {
+      id: created.id,
+      email: created.email,
+      emailVerified: created.emailVerified === true,
+      name: created.name,
+      firstName: created.firstName,
+      lastName: created.lastName,
+      displayName: getDisplayName(created),
+      role: created.role || "member",
+      isActive: created.isActive !== false,
+      createdAt: created.createdAt,
+    };
+
+    return res.status(201).json({ user: normalized });
+  } catch (err) {
+    console.error("[AGENCY] Create team member error:", err);
+    return res.status(500).json({ error: "Failed to create team member" });
   }
 });
 
@@ -475,7 +546,11 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
         lastName: user.lastName ?? null,
         displayName: getDisplayName(user),
         email: user.email,
+        emailVerified: user.emailVerified === true,
         credits: user.credits,
+        agencyId: user.agencyId ?? null,
+        role: user.role || "member",
+        hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
       };
 
       return res.json({
@@ -518,7 +593,11 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
       lastName: user.lastName ?? null,
       displayName: getDisplayName(user),
       email: user.email,
+      emailVerified: user.emailVerified === true,
       credits: user.credits,
+      agencyId: user.agencyId ?? null,
+      role: user.role || "member",
+      hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
     };
 
     res.status(201).json({
@@ -622,6 +701,41 @@ router.post("/users/:userId/enable", requireAuth, requireAgencyAdmin, async (req
 });
 
 /**
+ * PATCH /api/agency/profile
+ * Update agency profile fields (admin only)
+ */
+router.patch("/profile", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user as UserRecord;
+    const agency = await getAgency(user.agencyId!);
+    if (!agency) return res.status(404).json({ error: "Agency not found" });
+
+    const { name, country, billingEmail } = req.body || {};
+    const nextName = typeof name === "string" ? name.trim() : agency.name;
+    const nextCountry = typeof country === "string" ? country.trim().toUpperCase() : agency.billingCountry;
+    const nextBillingEmail = typeof billingEmail === "string" ? billingEmail.trim().toLowerCase() : agency.billingEmail;
+
+    if (!nextName) return res.status(400).json({ error: "Agency name is required" });
+    if (nextCountry && !["NZ", "AU", "ZA"].includes(nextCountry)) {
+      return res.status(400).json({ error: "Country must be NZ, AU, or ZA" });
+    }
+    if (nextBillingEmail && !/^\S+@\S+\.\S+$/.test(nextBillingEmail)) {
+      return res.status(400).json({ error: "Billing email is invalid" });
+    }
+
+    agency.name = nextName;
+    agency.billingCountry = (nextCountry as any) || undefined;
+    agency.billingEmail = nextBillingEmail || undefined;
+    await updateAgency(agency);
+
+    return res.json({ agency });
+  } catch (err) {
+    console.error("[AGENCY] Update profile error:", err);
+    return res.status(500).json({ error: "Failed to update agency profile" });
+  }
+});
+
+/**
  * POST /api/agency/bundles/checkout
  * Create Stripe checkout session for image bundle purchase (admin only)
  */
@@ -632,6 +746,12 @@ router.post("/bundles/checkout", requireAuth, requireAgencyAdmin, async (req: Re
     }
 
     const user = (req as any).user as UserRecord;
+    if (user.emailVerified !== true) {
+      return res.status(403).json({
+        error: "EMAIL_NOT_VERIFIED",
+        message: "Please confirm your email address before purchasing a plan.",
+      });
+    }
     const { bundleCode } = req.body;
 
     if (!bundleCode || !(bundleCode in IMAGE_BUNDLES)) {

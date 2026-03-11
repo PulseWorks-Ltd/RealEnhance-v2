@@ -19,6 +19,8 @@ import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
+const UNVERIFIED_PROCESSING_TTL_HOURS = Number(process.env.UNVERIFIED_PROCESSING_TTL_HOURS || 48);
+const ENFORCE_UNVERIFIED_PROCESSING_EXPIRY = String(process.env.ENFORCE_UNVERIFIED_PROCESSING_EXPIRY || "true").toLowerCase() !== "false";
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -128,6 +130,20 @@ export function uploadRouter() {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
 
+    const fullUser = await getUserById(sessUser.id);
+    if (!fullUser) return res.status(401).json({ error: "not_authenticated" });
+
+    if (ENFORCE_UNVERIFIED_PROCESSING_EXPIRY && fullUser.emailVerified !== true) {
+      const createdAtMs = new Date(fullUser.createdAt).getTime();
+      if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > UNVERIFIED_PROCESSING_TTL_HOURS * 60 * 60 * 1000) {
+        return res.status(403).json({
+          code: "EMAIL_VERIFICATION_REQUIRED_EXPIRED",
+          error: "Email verification required",
+          message: "Please confirm your email address to continue processing images.",
+        });
+      }
+    }
+
     const files = (req.files as Express.Multer.File[]) || [];
     if (!files.length) return res.status(400).json({ error: "no_files" });
 
@@ -169,7 +185,6 @@ export function uploadRouter() {
 
     // ===== SUBSCRIPTION STATUS GATING: Check if agency subscription is active =====
     // FAIL-CLOSED: block uploads if we can't verify subscription status
-    const fullUser = await getUserById(sessUser.id);
     let trialSummary: Awaited<ReturnType<typeof getTrialSummary>> | null = null;
     const now = new Date();
 

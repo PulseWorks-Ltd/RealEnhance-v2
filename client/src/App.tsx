@@ -44,6 +44,7 @@ const AcceptInvite   = lazyWithRetry(() => import("@/pages/accept-invite"));
 const EnhancedHistory = lazyWithRetry(() => import("@/pages/enhanced-history"));
 const ForgotPassword = lazyWithRetry(() => import("@/pages/forgot-password"));
 const ResetPassword = lazyWithRetry(() => import("@/pages/reset-password"));
+const VerifyEmail = lazyWithRetry(() => import("@/pages/verify-email"));
 const ChangePassword = lazyWithRetry(() => import("@/pages/change-password"));
 const ProfileSettings = lazyWithRetry(() => import("@/pages/settings/profile"));
 const SecuritySettings = lazyWithRetry(() => import("@/pages/settings/security"));
@@ -100,6 +101,7 @@ export default function App() {
             <Route path="/start-trial" element={<StartTrial />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="*" element={<NotFound />} />
           </Route>
 
@@ -115,6 +117,7 @@ export default function App() {
             <Route element={<RequireAgency><Outlet /></RequireAgency>}>
               {/* Enhance page: Additional RequireSubscription guard */}
               <Route path="/home" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
+              <Route path="/upload" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
               <Route path="/processing" element={<Navigate to="/home" replace />} />
               
               {/* Other app routes: RequireAuth + RequireAgency */}

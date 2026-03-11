@@ -402,6 +402,79 @@ RealEnhance — Elevate your property photos
 }
 
 /**
+ * Send an email verification email
+ */
+export async function sendEmailVerificationEmail(params: {
+  toEmail: string;
+  verifyLink: string;
+  displayName?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@polishmypic.com';
+
+  if (!process.env.SENDGRID_API_KEY) {
+    console.warn('[EMAIL] SENDGRID_API_KEY not set, verification email not sent');
+    return { ok: false, error: 'SendGrid not configured' };
+  }
+
+  const { toEmail, verifyLink, displayName } = params;
+  const friendlyName = displayName || toEmail;
+  const subject = 'Verify your email address';
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2563eb;">Verify your email address</h2>
+
+      <p>Hi ${friendlyName},</p>
+
+      <p>Thanks for signing up to RealEnhance. Please confirm your email address to enable downloads and billing.</p>
+
+      <div style="margin: 30px 0;">
+        <a href="${verifyLink}"
+           style="background-color: #2563eb; color: white; padding: 12px 24px;
+                  text-decoration: none; border-radius: 6px; display: inline-block;">
+          Verify Email
+        </a>
+      </div>
+
+      <p style="color: #6b7280; font-size: 14px;">
+        This link expires in 24 hours. If you didn't create this account, you can ignore this email.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;" />
+
+      <p style="color: #9ca3af; font-size: 12px;">
+        RealEnhance — Elevate your property photos<br/>
+        If the button above doesn't work, copy and paste this link:<br/>
+        <a href="${verifyLink}" style="color: #2563eb;">${verifyLink}</a>
+      </p>
+    </div>
+  `;
+
+  const textContent = `
+Verify your email address
+
+Hi ${friendlyName},
+
+Thanks for signing up to RealEnhance. Please confirm your email address to enable downloads and billing.
+
+Verify your email:
+${verifyLink}
+
+This link expires in 24 hours. If you didn't create this account, you can ignore this email.
+  `.trim();
+
+  const ok = await sendEmail({
+    to: toEmail,
+    from: fromEmail,
+    subject,
+    text: textContent,
+    html: htmlContent,
+  });
+
+  return { ok, error: ok ? undefined : 'Email sending failed' };
+}
+
+/**
  * Send subscription update notification
  */
 export async function sendSubscriptionUpdateEmail(params: {

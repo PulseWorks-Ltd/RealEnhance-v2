@@ -16,6 +16,7 @@ export type JobId = string;
 export interface UserRecord {
     id: UserId;
     email: string;
+    emailVerified?: boolean;
     name?: string;
     firstName?: string;
     lastName?: string;
@@ -27,6 +28,7 @@ export interface UserRecord {
     agencyId?: string | null;
     role?: "owner" | "admin" | "member";
     isActive?: boolean;
+    hasSeenWelcome?: boolean;
     plan?: "free" | "individual" | "agency";
     usageStats?: {
         monthlyImages: number;

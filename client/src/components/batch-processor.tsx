@@ -1380,6 +1380,19 @@ export default function BatchProcessor() {
   
   const { toast } = useToast();
   const { user, refreshUser, signOut } = useAuth();
+    const requireVerifiedEmail = useCallback((mode: "download" | "billing"): boolean => {
+      if (user?.emailVerified === true) return true;
+      toast({
+        title: "Email Verification Required",
+        description:
+          mode === "download"
+            ? "Please confirm your email address to download the images."
+            : "Please confirm your email address before purchasing a plan.",
+        variant: "destructive",
+      });
+      return false;
+    }, [toast, user?.emailVerified]);
+
   const { ensureLoggedInAndCredits } = useAuthGuard();
   const currentUserId = user?.id || null;
 
@@ -1894,6 +1907,7 @@ export default function BatchProcessor() {
   }, [availableCredits, currentUserId, files, imageRoomTypesById, imageSceneTypesById, pendingRestoreSession, requiredBatchCredits, stagingStyle]);
 
   const handleContinueEnhancementCheckout = useCallback(async () => {
+    if (!requireVerifiedEmail("billing")) return;
     try {
       const res = await apiFetch("/api/agency/bundles/checkout", {
         method: "POST",
@@ -1933,6 +1947,7 @@ export default function BatchProcessor() {
     creditGateModal.pendingJobIds,
     creditGateModal.requiredCredits,
     pendingRestoreSession,
+    requireVerifiedEmail,
     buildPersistentPreviewUrls,
     persistPendingEnhancementSession,
     toast,
@@ -4128,6 +4143,7 @@ export default function BatchProcessor() {
   };
 
   const downloadZip = async () => {
+    if (!requireVerifiedEmail("download")) return;
     // Check if we have processed images from batch processing
     if (processedImages.length === 0) {
       toast({ 
@@ -7252,14 +7268,16 @@ export default function BatchProcessor() {
                                     Edit
                                   </button>
                                   {(isUiComplete || isEditComplete) && (
-                                    <a
-                                      href={enhancedUrl || previewUrl || "#"}
-                                      target="_blank"
-                                      rel="noreferrer"
+                                    <button
+                                      onClick={() => {
+                                        if (!requireVerifiedEmail("download")) return;
+                                        const url = enhancedUrl || previewUrl;
+                                        if (url) window.open(url, "_blank", "noopener,noreferrer");
+                                      }}
                                       className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"
                                     >
                                       Download
-                                    </a>
+                                    </button>
                                   )}
                                   <button
                                     onClick={() => handleOpenRetryDialog(i)}
@@ -7362,15 +7380,17 @@ export default function BatchProcessor() {
                 >
                   Retry
                 </button>
-                <a
-                  href={previewImage.url}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!requireVerifiedEmail("download")) return;
+                    window.open(previewImage.url, "_blank", "noopener,noreferrer");
+                  }}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                   data-testid="link-download-preview"
                 >
                   Download
-                </a>
+                </button>
                 <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                   Enhanced ✓
                 </span>

@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getCheckoutRedirect } from "@/lib/checkoutRedirect";
 import { loadStripe } from "@stripe/stripe-js";
 import { Loader2, Package, Sparkles } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface BundleOption {
   code: "BUNDLE_20" | "BUNDLE_50" | "BUNDLE_100";
@@ -49,6 +50,7 @@ const BUNDLES: BundleOption[] = [
 
 export function BundlePurchase() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
   const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || "");
 
@@ -70,6 +72,14 @@ export function BundlePurchase() {
 
   const handlePurchase = async (bundleCode: string) => {
     try {
+      if (user?.emailVerified !== true) {
+        toast({
+          title: "Email Verification Required",
+          description: "Please confirm your email address before purchasing a plan.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (loading) return; // guard against double clicks
       setLoading(bundleCode);
 

@@ -57,6 +57,15 @@ function requireAgencyAdmin(user: any) {
   return role === "owner" || role === "admin";
 }
 
+function blockIfEmailUnverified(user: any, res: Response) {
+  if (user?.emailVerified === true) return false;
+  res.status(403).json({
+    error: "EMAIL_NOT_VERIFIED",
+    message: "Please confirm your email address before purchasing a plan.",
+  });
+  return true;
+}
+
 /**
  * POST /api/billing/checkout-subscription
  * Create a Stripe Checkout session for subscription
@@ -93,6 +102,7 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
         message: "User must be part of an agency to subscribe",
       });
     }
+    if (blockIfEmailUnverified(user, res)) return;
 
     const agency = await getAgency(user.agencyId);
     if (!agency) {
@@ -344,6 +354,7 @@ router.post("/portal", requireAuth, async (req: Request, res: Response) => {
         message: "User must be part of an agency",
       });
     }
+    if (blockIfEmailUnverified(user, res)) return;
 
     const agency = await getAgency(user.agencyId);
     if (!agency) {
@@ -465,6 +476,8 @@ router.get("/subscription/preview-change", requireAuth, async (req: Request, res
     }
 
     const { user, agency } = await loadUserAndAgency(req);
+
+    if (blockIfEmailUnverified(user, res)) return;
     if (!requireAgencyAdmin(user)) {
       return res.status(403).json({ error: "Admin access required" });
     }
@@ -613,6 +626,7 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
     if (!requireAgencyAdmin(user)) {
       return res.status(403).json({ error: "Admin access required" });
     }
+    if (blockIfEmailUnverified(user, res)) return;
 
     if (!agency.stripeSubscriptionId || !agency.stripeCustomerId) {
       return res.status(400).json({ error: "No active subscription to change" });

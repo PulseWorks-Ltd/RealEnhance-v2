@@ -7,6 +7,8 @@ import { requestClearEnhancementState } from "@/lib/enhancement-state";
 type AuthUser = {
   id: string;
   email?: string | null;
+  emailVerified?: boolean;
+  hasSeenWelcome?: boolean;
   deviceId?: string | null;
   credits: number;
   name?: string | null;
@@ -25,11 +27,12 @@ type AuthState = {
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
   signInWithEmail: (email: string, password: string) => Promise<AuthUser>;
-  signUpWithEmail: (email: string, password: string, firstName: string, lastName: string) => Promise<AuthUser>;
+  signUpWithEmail: (agencyName: string, fullName: string, email: string, password: string, confirmPassword: string) => Promise<AuthUser>;
   requestPasswordReset: (email: string) => Promise<void>;
   confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   setPassword: (newPassword: string) => Promise<void>;
+  markWelcomeSeen: () => Promise<void>;
   updateProfile: (payload: { firstName: string; lastName: string }) => Promise<AuthUser>;
 };
 
@@ -233,12 +236,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const signUpWithEmail = useCallback(async (email: string, password: string, firstName: string, lastName: string): Promise<AuthUser> => {
+  const signUpWithEmail = useCallback(async (agencyName: string, fullName: string, email: string, password: string, confirmPassword: string): Promise<AuthUser> => {
     try {
       const response = await apiFetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, firstName, lastName }),
+        body: JSON.stringify({ agencyName, fullName, email, password, confirmPassword }),
       });
       const userData = await response.json();
       setUser(userData);
@@ -288,6 +291,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error || "Failed to set password");
       }
+      await refreshUser();
+    },
+    markWelcomeSeen: async () => {
+      await apiFetch("/api/auth/welcome-seen", {
+        method: "POST",
+      });
       await refreshUser();
     },
     updateProfile: async (payload: { firstName: string; lastName: string }) => {

@@ -203,6 +203,7 @@ function parseUserFromRedis(data: Record<string, string>): UserRecord {
   return {
     id: data.id,
     email: data.email,
+    emailVerified: data.emailVerified === "true",
     name: data.name,
     firstName: data.firstName || undefined,
     lastName: data.lastName || undefined,
@@ -214,6 +215,7 @@ function parseUserFromRedis(data: Record<string, string>): UserRecord {
     agencyId: data.agencyId || null,
     role: (data.role as "owner" | "admin" | "member") || "member",
     isActive: data.isActive !== "false", // Defaults to true
+    hasSeenWelcome: data.hasSeenWelcome === "true",
     plan: data.plan as any,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,

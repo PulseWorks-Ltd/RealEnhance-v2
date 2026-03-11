@@ -24,9 +24,11 @@ export function authUserRouter() {
       lastName: full.lastName ?? null,
       displayName,
       email: full.email,
+      emailVerified: full.emailVerified === true,
       credits: full.credits,
       agencyId: full.agencyId ?? null,
       role: (full.role as any) ?? "member",
+      hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
     };
 
     const includeImages = String((req.query as any)?.includeImages || "0") === "1";
@@ -37,9 +39,11 @@ export function authUserRouter() {
       lastName: full.lastName,
       displayName,
       email: full.email,
+      emailVerified: full.emailVerified === true,
       credits: full.credits,
       agencyId: full.agencyId,
       role: full.role,
+      hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
     };
 
     if (includeImages) {

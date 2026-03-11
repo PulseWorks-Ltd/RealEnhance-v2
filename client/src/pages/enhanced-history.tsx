@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useUsage } from '@/hooks/use-usage';
+import { useToast } from '@/hooks/use-toast';
 import type { EnhancedImageGalleryResponse, EnhancedImageListItem, PropertyFolder } from '@realenhance/shared/types';
 import { CompareSlider } from '@/components/CompareSlider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -27,6 +28,7 @@ export default function EnhancedHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { usage } = useUsage();
+  const { toast } = useToast();
 
   const [properties, setProperties] = useState<PropertyFolder[]>([]);
   const [unassignedImages, setUnassignedImages] = useState<EnhancedImageListItem[]>([]);
@@ -79,8 +81,16 @@ export default function EnhancedHistoryPage() {
   );
 
   const handleDownload = (image: EnhancedImageListItem) => {
+    if (user?.emailVerified !== true) {
+      toast({
+        title: 'Email Verification Required',
+        description: 'Please confirm your email address to download the images.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const link = document.createElement('a');
-    link.href = image.publicUrl;
+    link.href = `/api/enhanced-images/${encodeURIComponent(image.id)}/download`;
     link.download = `enhanced-${image.auditRef}.jpg`;
     link.target = '_blank';
     document.body.appendChild(link);

@@ -106,9 +106,11 @@ function initPassport() {
             lastName: (user as any).lastName ?? null,
             displayName,
             email: (user as any).email,
+            emailVerified: (user as any).emailVerified === true,
             credits: (user as any).credits,
             agencyId: (user as any).agencyId ?? null,
             role: (user as any).role ?? "member",
+            hasSeenWelcome: (user as any).hasSeenWelcome === false ? false : true,
           };
 
           return done(null, sessionUser as any);
@@ -213,9 +215,11 @@ export function attachGoogleAuth(app: Express) {
         lastName: authed.lastName ?? fullUser?.lastName ?? null,
         displayName,
         email: authed.email,
+        emailVerified: fullUser?.emailVerified === true,
         credits: authed.credits,
         agencyId: fullUser?.agencyId ?? authed.agencyId ?? null,
         role: (fullUser?.role as any) ?? authed.role ?? "member",
+        hasSeenWelcome: fullUser?.hasSeenWelcome === false ? false : true,
       };
 
       const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);

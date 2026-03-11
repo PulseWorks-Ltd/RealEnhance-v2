@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 
 interface BillingSectionProps {
   agency: {
@@ -97,6 +98,7 @@ const STATUS_CONFIG = {
 };
 
 export function BillingSection({ agency, canManage = true, onUpgradeComplete }: BillingSectionProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier);
@@ -118,6 +120,14 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
 
   const handleSubscribe = async () => {
     if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing a plan.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const response = await fetch(api("/api/billing/checkout-subscription"), {
@@ -157,6 +167,14 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
 
   const handleManageSubscription = async () => {
     if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing a plan.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     try {
       const response = await fetch(api("/api/billing/portal"), {
@@ -228,6 +246,14 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
 
   const handleUpgrade = async (priceId: string) => {
     if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing a plan.",
+        variant: "destructive",
+      });
+      return;
+    }
     setUpgradeLoading(true);
     try {
       const response = await fetch(api("/api/billing/upgrade"), {

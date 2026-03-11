@@ -1,9 +1,98 @@
 // client/src/pages/home.tsx
 import BatchProcessor from "@/components/batch-processor";
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useAuth } from "@/context/AuthContext";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Home() {
+  const { user, markWelcomeSeen } = useAuth();
+  const { toast } = useToast();
+  const [dismissingWelcome, setDismissingWelcome] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
+
+  const shouldShowWelcome = !!user && user.hasSeenWelcome === false;
+  const isUnverified = !!user && user.emailVerified !== true;
+
+  const dismissWelcome = async () => {
+    try {
+      setDismissingWelcome(true);
+      await markWelcomeSeen();
+    } finally {
+      setDismissingWelcome(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    try {
+      setResendingVerification(true);
+      const res = await apiFetch("/api/auth/resend-verification", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to resend verification email");
+      }
+      toast({
+        title: "Verification Email Sent",
+        description: "Please check your inbox for a new verification link.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Unable to Resend",
+        description: err?.message || "Could not resend verification email right now.",
+        variant: "destructive",
+      });
+    } finally {
+      setResendingVerification(false);
+    }
+  };
+
   return (
     <div className="w-full h-full overflow-hidden flex flex-col" data-testid="home-page">
+      {shouldShowWelcome && (
+        <Card className="mx-auto mb-3 w-full max-w-4xl border-emerald-200 bg-emerald-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg text-emerald-900">Welcome to RealEnhance</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-emerald-900">
+              Your account includes 20 free image enhancements.
+            </p>
+            <p className="text-sm text-emerald-800">Upload your first property photo to start.</p>
+            <div className="flex gap-2">
+              <Button onClick={dismissWelcome} disabled={dismissingWelcome}>
+                Upload Your First Image
+              </Button>
+              <Button variant="outline" onClick={dismissWelcome} disabled={dismissingWelcome}>
+                Skip
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isUnverified && (
+        <div className="mx-auto mb-2 w-full max-w-4xl px-4 sm:px-6 lg:px-8">
+          <Alert>
+            <AlertDescription>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div>Please verify your email to enable downloads and billing features.</div>
+                  <div className="text-xs text-slate-600 mt-1">
+                    Didn&apos;t receive the verification email?
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={resendVerification} disabled={resendingVerification}>
+                  {resendingVerification ? "Sending..." : "Resend verification email"}
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+
       <div className="mx-auto pt-2 pb-0 mb-2 max-w-4xl px-4 text-center sm:px-6 lg:px-8 shrink-0">
         <h1 className="bg-gradient-to-b from-slate-900 to-slate-700 bg-clip-text text-lg sm:text-xl font-extrabold tracking-tight text-transparent">
           Turn Every Listing into a Show-Home
