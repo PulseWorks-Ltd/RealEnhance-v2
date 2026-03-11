@@ -211,6 +211,60 @@ const forensicJobBatchIndex = new Map<string, string>();
 
 const DEFAULT_STAGING_STYLE = "standard_listing";
 
+const regionEditRolloutTelemetry = {
+  total: 0,
+  openingsPass: 0,
+  openingsFail: 0,
+  retries: 0,
+};
+
+async function computeOutsideMaskChangedPct(opts: {
+  baseImagePath: string;
+  editedImagePath: string;
+  mask: Buffer;
+}): Promise<number | null> {
+  try {
+    const baseRaw = await sharp(opts.baseImagePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const editedRaw = await sharp(opts.editedImagePath)
+      .resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const maskRaw = await sharp(opts.mask)
+      .resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" })
+      .ensureAlpha()
+      .extractChannel(0)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixels = baseRaw.info.width * baseRaw.info.height;
+    if (pixels === 0) return null;
+
+    let outsideCount = 0;
+    let outsideChanged = 0;
+    const changeThreshold = 14;
+    for (let i = 0; i < pixels; i += 1) {
+      const maskValue = maskRaw.data[i] ?? 0;
+      if (maskValue > 127) continue;
+      outsideCount += 1;
+
+      const idx = i * 3;
+      const dr = Math.abs((baseRaw.data[idx] ?? 0) - (editedRaw.data[idx] ?? 0));
+      const dg = Math.abs((baseRaw.data[idx + 1] ?? 0) - (editedRaw.data[idx + 1] ?? 0));
+      const db = Math.abs((baseRaw.data[idx + 2] ?? 0) - (editedRaw.data[idx + 2] ?? 0));
+      if (dr + dg + db >= changeThreshold) {
+        outsideChanged += 1;
+      }
+    }
+
+    if (outsideCount === 0) return 0;
+    return Number(((outsideChanged / outsideCount) * 100).toFixed(3));
+  } catch (err) {
+    nLog("[region-edit-telemetry] outside-mask delta calc failed:", (err as any)?.message || err);
+    return null;
+  }
+}
+
 function normalizeForensicStagingStyle(raw: unknown): string {
   const base = String(raw ?? "").trim().toLowerCase();
   if (!base) return DEFAULT_STAGING_STYLE;
@@ -3730,6 +3784,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return true;
   };
   const isManualRetry = (payload as any).retryType === "manual_retry";
+  const retryExecutionPlan = ((payload as any).executionPlan && typeof (payload as any).executionPlan === "object")
+    ? ((payload as any).executionPlan as {
+        runStage1A?: boolean;
+        runStage1B?: boolean;
+        runStage2?: boolean;
+        stage2Baseline?: "1A" | "1B" | "original_upload";
+        baselineUrl?: string;
+        sourceStage?: string;
+      })
+    : undefined;
   const retryStagesToRunRaw = Array.isArray((payload as any).retryStagesToRun)
     ? ((payload as any).retryStagesToRun as string[])
     : [];
@@ -3740,28 +3804,93 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         .filter((stage): stage is "1A" | "1B" | "2" => stage === "1A" || stage === "1B" || stage === "2")
     )
   );
-  const retryPlanIsStage2Only = retryStagesToRun.length
-    ? (retryStagesToRun.length === 1 && retryStagesToRun[0] === "2")
-    : true;
+  const retryPlanIsStage2Only = retryExecutionPlan
+    ? (!!retryExecutionPlan.runStage2 && !retryExecutionPlan.runStage1A && !retryExecutionPlan.runStage1B)
+    : (retryStagesToRun.length
+      ? (retryStagesToRun.length === 1 && retryStagesToRun[0] === "2")
+      : true);
+
+  if (isManualRetry && retryExecutionPlan?.runStage2) {
+    const hasBaselineUrl = !!retryExecutionPlan.baselineUrl;
+    const hasBaselineStage =
+      retryExecutionPlan.stage2Baseline === "1A"
+      || retryExecutionPlan.stage2Baseline === "1B"
+      || retryExecutionPlan.stage2Baseline === "original_upload";
+    if (!hasBaselineUrl || !hasBaselineStage) {
+      nLog("[STAGE2_EXECUTION_PLAN_INVALID]", {
+        jobId: payload.jobId,
+        retryType: (payload as any).retryType,
+        executionPlan: retryExecutionPlan,
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "stage2_retry_failed: invalid_execution_plan" },
+        "stage2_retry_failed_invalid_execution_plan"
+      );
+      return;
+    }
+  }
+
+  if (isManualRetry && retryExecutionPlan && retryPlanIsStage2Only && !payload.stage2OnlyMode?.enabled) {
+    const planBaseline = retryExecutionPlan.stage2Baseline;
+    const planBaselineUrl = retryExecutionPlan.baselineUrl;
+    if ((planBaseline === "1A" || planBaseline === "1B") && !!planBaselineUrl) {
+      const inferredStage1BMode: "light" | "stage-ready" = payload.options?.declutterMode === "light" ? "light" : "stage-ready";
+      (payload as any).stage2OnlyMode = {
+        enabled: true,
+        baseStage: planBaseline,
+        base1AUrl: planBaseline === "1A" ? planBaselineUrl : undefined,
+        base1BUrl: planBaseline === "1B" ? planBaselineUrl : undefined,
+        sourceStage: retryExecutionPlan.sourceStage || (planBaseline === "1A" ? "1A" : "1B-stage-ready"),
+        stage1BMode: inferredStage1BMode,
+      };
+
+      const derivedBaselineSourceCount = Number(planBaseline === "1A" && !!(payload as any).stage2OnlyMode.base1AUrl)
+        + Number(planBaseline === "1B" && !!(payload as any).stage2OnlyMode.base1BUrl);
+      if (derivedBaselineSourceCount !== 1) {
+        nLog("[STAGE2_ONLY_DERIVATION_INVALID]", {
+          jobId: payload.jobId,
+          executionPlan: retryExecutionPlan,
+          derivedStage2OnlyMode: (payload as any).stage2OnlyMode,
+          derivedBaselineSourceCount,
+        });
+        await safeWriteJobStatus(
+          payload.jobId,
+          { status: "failed", errorMessage: "stage2_retry_failed: invalid_derived_stage2_baseline" },
+          "stage2_retry_failed_invalid_derived_stage2_baseline"
+        );
+        return;
+      }
+    }
+  }
 
   if (isManualRetry && retryPlanIsStage2Only) {
-    const stage2OnlyBaseStage = ((payload.stage2OnlyMode as any)?.baseStage === "1A") ? "1A" : "1B";
+    const stage2OnlyBaseStage = retryExecutionPlan?.stage2Baseline === "1A"
+      ? "1A"
+      : ((payload.stage2OnlyMode as any)?.baseStage === "1A")
+        ? "1A"
+        : "1B";
     const hasValidRetryBaseline = stage2OnlyBaseStage === "1A"
-      ? (!!(payload.stage2OnlyMode as any)?.base1AUrl && !(payload as any).retryStage1BWasRequested)
-      : !!payload.stage2OnlyMode?.base1BUrl;
+      ? (
+        !!(retryExecutionPlan?.baselineUrl || (payload.stage2OnlyMode as any)?.base1AUrl)
+        && !(payload as any).retryStage1BWasRequested
+      )
+      : !!(retryExecutionPlan?.baselineUrl || payload.stage2OnlyMode?.base1BUrl);
     const hasDeterministicStage2OnlyPayload =
       stage2Requested &&
-      payload.stage2OnlyMode?.enabled &&
+      ((retryExecutionPlan && retryExecutionPlan.runStage2 === true) || payload.stage2OnlyMode?.enabled) &&
       hasValidRetryBaseline;
     if (!hasDeterministicStage2OnlyPayload) {
       nLog("[STAGE2_ONLY_PAYLOAD_INVALID]", {
         jobId: payload.jobId,
         retryType: (payload as any).retryType,
+        hasExecutionPlan: !!retryExecutionPlan,
+        executionPlan: retryExecutionPlan || null,
         stage2Requested,
         stage2OnlyEnabled: !!payload.stage2OnlyMode?.enabled,
         baseStage: stage2OnlyBaseStage,
-        hasBase1BUrl: !!payload.stage2OnlyMode?.base1BUrl,
-        hasBase1AUrl: !!(payload.stage2OnlyMode as any)?.base1AUrl,
+        hasBase1BUrl: !!(retryExecutionPlan?.baselineUrl || payload.stage2OnlyMode?.base1BUrl),
+        hasBase1AUrl: !!(retryExecutionPlan?.baselineUrl || (payload.stage2OnlyMode as any)?.base1AUrl),
         retryStage1BWasRequested: !!(payload as any).retryStage1BWasRequested,
       });
       await safeWriteJobStatus(
@@ -5805,9 +5934,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const retrySourceStageRaw = String((payload as any).retrySourceStage || "").toLowerCase();
   const retryStage1BWasRequested = Boolean((payload as any).retryStage1BWasRequested);
   const isStage2Retry = (payload as any).retryType === "manual_retry"
-    && (retrySourceStageRaw === "stage2" || retrySourceStageRaw === "2" || retrySourceStageRaw === "1b-stage-ready");
+    && (retryExecutionPlan
+      ? !!retryExecutionPlan.runStage2
+      : (retrySourceStageRaw === "stage2" || retrySourceStageRaw === "2" || retrySourceStageRaw === "1b-stage-ready"));
   const declutterRequested = !!payload.options.declutter;
-  const stage1BRequested = declutterRequested || !!payload.stage2OnlyMode?.enabled || isStage2Retry;
+  const stage1BRequested = declutterRequested
+    || !!payload.stage2OnlyMode?.enabled
+    || (isStage2Retry && (retryExecutionPlan ? (!!retryExecutionPlan.runStage1B || retryExecutionPlan.stage2Baseline === "1B") : true));
   const lineage1A = stageLineage.stage1A?.output;
   const lineage1B = stageLineage.stage1B?.output;
   const hasStage1BOutput = !!lineage1B;
@@ -9153,6 +9286,9 @@ const worker = new Worker(
 
           nLog("[worker-region-edit] Calling applyEdit with mode:", mode);
 
+          const openingProtectedPromptSuffix =
+            "Additional constraint:\nDo not modify windows, doors, or architectural openings.";
+
           // Download restore source if provided (for pixel-level restoration)
           let restoreFromPath: string | undefined;
           if (mode === "Restore" && regionAny.restoreFromUrl) {
@@ -9161,14 +9297,99 @@ const worker = new Worker(
             nLog("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
           }
 
-          // Call applyEdit
-          const outPath = await applyEdit({
-            baseImagePath: basePath,
-            mask: maskBuf,
-            mode: mode as any,
-            instruction: prompt,
-            restoreFromPath: restoreFromPath || basePath, // Use restore source or fallback to base
-          });
+          let outPath: string;
+          let openingsValidationSummary: any = null;
+
+          if (mode === "Restore") {
+            // Restore mode intentionally remains pixel restoration with no model retry loop.
+            outPath = await applyEdit({
+              baseImagePath: basePath,
+              mask: maskBuf,
+              mode: mode as any,
+              instruction: prompt,
+              restoreFromPath: restoreFromPath || basePath,
+            });
+          } else {
+            const baseline = await extractStructuralBaseline(basePath);
+            let attempt = 1;
+            const maxAttempts = 2;
+            let lastSummary: any = null;
+
+            while (true) {
+              const attemptInstruction =
+                attempt === 1
+                  ? prompt
+                  : `${prompt}\n\n${openingProtectedPromptSuffix}`;
+
+              outPath = await applyEdit({
+                baseImagePath: basePath,
+                mask: maskBuf,
+                mode: mode as any,
+                instruction: attemptInstruction,
+                restoreFromPath: restoreFromPath || basePath,
+              });
+
+              const outsideMaskChangedPct = await computeOutsideMaskChangedPct({
+                baseImagePath: basePath,
+                editedImagePath: outPath,
+                mask: maskBuf,
+              });
+
+              const openingValidation = await validateOpeningPreservation(baseline, outPath);
+              const openingFail = openingValidation.summary.openingRemoved === true;
+              lastSummary = openingValidation.summary;
+
+              regionEditRolloutTelemetry.total += 1;
+              if (openingFail) {
+                regionEditRolloutTelemetry.openingsFail += 1;
+              } else {
+                regionEditRolloutTelemetry.openingsPass += 1;
+              }
+
+              nLog("[region-edit-telemetry] sample", {
+                jobId: regionPayload.jobId,
+                attempt,
+                mode,
+                outsideMaskChangedPct,
+                openingsFail,
+                openingSummary: openingValidation.summary,
+                totals: {
+                  total: regionEditRolloutTelemetry.total,
+                  pass: regionEditRolloutTelemetry.openingsPass,
+                  fail: regionEditRolloutTelemetry.openingsFail,
+                  retryRate:
+                    regionEditRolloutTelemetry.total > 0
+                      ? Number(((regionEditRolloutTelemetry.retries / regionEditRolloutTelemetry.total) * 100).toFixed(2))
+                      : 0,
+                  passRate:
+                    regionEditRolloutTelemetry.total > 0
+                      ? Number(((regionEditRolloutTelemetry.openingsPass / regionEditRolloutTelemetry.total) * 100).toFixed(2))
+                      : 0,
+                },
+              });
+
+              if (!openingFail) {
+                openingsValidationSummary = openingValidation.summary;
+                break;
+              }
+
+              if (attempt >= maxAttempts) {
+                throw new Error(
+                  `region_edit_openings_validation_failed: openingRemoved=${openingValidation.summary.openingRemoved}`
+                );
+              }
+
+              regionEditRolloutTelemetry.retries += 1;
+              nLog("[worker-region-edit] Openings validation failed, retrying with reinforced prompt", {
+                jobId: regionPayload.jobId,
+                attempt,
+                nextAttempt: attempt + 1,
+              });
+              attempt += 1;
+            }
+
+            openingsValidationSummary = openingsValidationSummary || lastSummary;
+          }
 
           nLog("[worker-region-edit] Edit complete, publishing:", outPath);
 
@@ -9275,6 +9496,7 @@ const worker = new Worker(
                 type: "region-edit",
                 mode: mode, // Normalized mode (Add/Remove/Replace/Restore)
                 instruction: prompt,
+                openingsValidation: openingsValidationSummary,
                 // ✅ PATCH 3: Tag edit jobs explicitly to prevent billing/retry confusion
                 jobType: "region_edit",
                 retryEligible: false, // Edit outputs cannot be retry baselines

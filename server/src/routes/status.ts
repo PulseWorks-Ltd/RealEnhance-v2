@@ -19,11 +19,16 @@ type StatusItem = {
   id: string;
   state: NormalizedState;               // canonical pipeline status
   status: NormalizedState;              // alias for backward compatibility
+  isTerminal?: boolean;                 // authoritative terminal flag
+  terminalAt?: string | null;           // terminal write timestamp when available
+  terminalReason?: string | null;       // terminal reason (failed reason or completion reason)
+  statusSource?: "persisted" | "queue_fallback"; // where status was derived from
   uiStatus: UiStatus;                   // UI severity (ok/warning/error)
   queueStatus: QueueStatus;             // raw BullMQ state (legacy)
   success: boolean;
   imageId: string | null;
   finalOutputUrl: string | null;
+  stage2Url?: string | null;
   imageUrl: string | null;
   originalUrl: string | null;
   maskUrl: string | null;
@@ -64,6 +69,51 @@ type StatusItem = {
   mode?: string;
   error?: string | null;
 };
+
+function isTerminalState(state: NormalizedState): boolean {
+  return state === "completed" || state === "failed";
+}
+
+function pickAuthoritativeState(
+  localStatusRaw: string | null,
+  queueState: string | null
+): { state: NormalizedState; source: "persisted" | "queue_fallback" } {
+  const stateFromLocal = normalizePipelineState(localStatusRaw);
+  if (stateFromLocal !== "unknown") {
+    return { state: stateFromLocal, source: "persisted" };
+  }
+
+  // Queue state is only used as a non-terminal fallback when persisted status is absent.
+  const stateFromQueue = normalizeQueueState(queueState);
+  if (stateFromQueue === "queued") {
+    return { state: "queued", source: "queue_fallback" };
+  }
+  if (stateFromQueue === "awaiting_payment") {
+    return { state: "awaiting_payment", source: "queue_fallback" };
+  }
+  return { state: "processing", source: "queue_fallback" };
+}
+
+function resolveTerminalMetadata(
+  local: any,
+  status: NormalizedState,
+  failedReason?: string
+): { isTerminal: boolean; terminalAt: string | null; terminalReason: string | null } {
+  const terminal = isTerminalState(status);
+  if (!terminal) {
+    return { isTerminal: false, terminalAt: null, terminalReason: null };
+  }
+
+  const completedTs = local?.timestamps?.completed;
+  const completedIso = typeof completedTs === "number" ? new Date(completedTs).toISOString() : null;
+  const terminalAt = local?.updatedAt || local?.updated_at || completedIso || null;
+  const terminalReason =
+    status === "failed"
+      ? (local?.errorMessage || failedReason || "failed")
+      : (local?.completionReason || "final_complete");
+
+  return { isTerminal: true, terminalAt, terminalReason };
+}
 
 function normalizeStateToQueueStatus(state: string | null): QueueStatus {
   switch (state) {
@@ -264,68 +314,7 @@ export function statusRouter() {
           return stage1APresent; // Just need Stage 1A
         })();
 
-        const stateFromLocal = normalizePipelineState(localStatusRaw);
-        const stateFromQueue = normalizeQueueState(state);
-        
-        // FIX 3: Enhanced completion detection with timestamp-based stale detection
-        const timestamps = local?.timestamps || {};
-        const lastStageTimestamp = Math.max(
-          timestamps.stage1AEnd || 0,
-          timestamps.stage1BEnd || 0,
-          timestamps.stage2End || 0
-        );
-        const staleDurationMs = lastStageTimestamp ? (Date.now() - lastStageTimestamp) : 0;
-        const STAGE_STABLE_MS = 60000; // 60 seconds - if stages haven't changed in 60s, likely complete
-        const isStageOutputStable = allRequestedStagesPresent && lastStageTimestamp && staleDurationMs > STAGE_STABLE_MS;
-        
-        let pipelineStatus: NormalizedState;
-        // FIX 3: Multi-layered completion detection
-        if (stateFromLocal === "failed") {
-          console.log("[STATUS_SHORT_CIRCUIT_LOCAL_FAILED]", {
-            id,
-            localStatus: localStatusRaw,
-            queueStatus,
-          });
-          pipelineStatus = "failed";
-        } else if (queueFailed) {
-          pipelineStatus = "failed";
-        } else if (allRequestedStagesPresent && !queueFailed) {
-          // Layer 1: Explicit completion flags (most reliable)
-          if (queueCompleted || localCompleted) {
-            pipelineStatus = "completed";
-          }
-          // Layer 2: Stage outputs present + stable (worker likely completed but status not written)
-          else if (isStageOutputStable) {
-            pipelineStatus = "completed";
-            console.log('[status/batch] ✅ Implicit completion: stages stable for 60s', {
-              id,
-              requestedStage2,
-              stage2Expected,
-              allStagesPresent: allRequestedStagesPresent,
-              staleDurationMs,
-              lastStageTimestamp: new Date(lastStageTimestamp).toISOString()
-            });
-          }
-          // Layer 3: Stage outputs just arrived (race condition window)
-          else {
-            pipelineStatus = "completed";
-            console.log('[status/batch] ✅ Override: Marking complete based on stage presence', {
-              id,
-              requestedStage2,
-              stage2Expected,
-              allStagesPresent: allRequestedStagesPresent,
-              bullMQState: state,
-              localCompleted,
-              staleDurationMs
-            });
-          }
-        } else if (queueCompleted || localCompleted) {
-          pipelineStatus = "completed";
-        } else if (stateFromLocal !== "unknown") {
-          pipelineStatus = stateFromLocal;
-        } else {
-          pipelineStatus = stateFromQueue;
-        }
+        const { state: pipelineStatus, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -341,7 +330,7 @@ export function statusRouter() {
           console.log('[status/batch] Job with stages:', {
             id,
             pipelineStatus,
-            stateFromLocal,
+            stateFromLocal: normalizePipelineState(localStatusRaw),
             localStatusRaw,
             bullMQState: state,
             hasResultUrl: !!resultUrl,
@@ -355,7 +344,7 @@ export function statusRouter() {
           console.log('[status/batch] Processing despite resultUrl:', {
             id,
             pipelineStatus,
-            stateFromLocal,
+            stateFromLocal: normalizePipelineState(localStatusRaw),
             localStatusRaw,
             bullMQState: state,
             rvStatus: rv?.status,
@@ -408,21 +397,14 @@ export function statusRouter() {
         const isProcessingLike = pipelineStatus === "processing" || pipelineStatus === "queued" || pipelineStatus === "awaiting_payment";
         const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl || bestAvailableStage.url);
         if (requestedStage2 === true && !stage2Present && pipelineStatus === "completed" && !blockedStage && stage2Expected) {
-          if (!hasFallbackOutput) {
-            pipelineStatus = "failed";
-          }
           warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
         }
         if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
-          if (!hasFallbackOutput) {
-            pipelineStatus = "failed";
-          }
           warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
         }
         const isInformationalExteriorNote = requestedStage2 === true && isExteriorScene && !stage2Present;
         const isStuck = isProcessingLike && updatedAtMs && (Date.now() - updatedAtMs > STUCK_PROCESSING_MS);
         if (isStuck) {
-          pipelineStatus = "failed";
           warningSet.add("Processing took longer than expected. The best available result is shown.");
         }
         if (pipelineStatus === "failed" && hasOutputs) {
@@ -497,15 +479,21 @@ export function statusRouter() {
         const parentJobId = local.parentJobId || (rv && rv.parentJobId) || payloadRetryInfo?.parentJobId || null;
         const retryInfo = local.retryInfo || (rv && rv.retryInfo) || payloadRetryInfo || null;
 
+        const terminalMeta = resolveTerminalMetadata(local, pipelineStatus, failedReason);
         const item: StatusItem = {
           id,
           state: pipelineStatus,
           status: pipelineStatus,
+          isTerminal: terminalMeta.isTerminal,
+          terminalAt: terminalMeta.terminalAt,
+          terminalReason: terminalMeta.terminalReason,
+          statusSource,
           uiStatus,
           queueStatus,
           success,
           imageId,
           finalOutputUrl: resolvedResultUrl,
+          stage2Url: stageUrls.stage2 || stageUrls['2'] || null,
           imageUrl: resolvedResultUrl,
           originalUrl,
           maskUrl,
@@ -763,50 +751,13 @@ export function statusRouter() {
         return stage1APresent;
       })();
       
-      const localStateNormalized = normalizePipelineState(local?.status);
-      let stateOut = localStateNormalized !== "unknown"
-        ? localStateNormalized
-        : normalizeQueueState(state);
-      // ✅ FIX 2: Prioritize stage presence over queue state
-      const queueFailed = queueStatus === "failed";
-      if (localStateNormalized === "failed") {
-        console.log("[STATUS_SHORT_CIRCUIT_LOCAL_FAILED]", {
-          id: jobId,
-          localStatus: local?.status || null,
-          queueStatus,
-        });
-        stateOut = "failed";
-      } else if (queueFailed) {
-        stateOut = "failed";
-      } else if (allRequestedStagesPresent && !queueFailed) {
-        stateOut = "completed";
-        if (!localCompleted && (normalizeQueueState(state) === "processing" || normalizeQueueState(state) === "queued")) {
-          console.log('[status/:jobId] ✅ Override: Marking complete based on stage presence', {
-            jobId,
-            requestedStage2,
-            stage2Expected,
-            allStagesPresent: allRequestedStagesPresent
-          });
-        }
-      } else if (localCompleted || normalizeQueueState(state) === "completed") {
-        stateOut = "completed";
-      } else if (hardFail && !hasOutputs) {
-        stateOut = "failed";
-      } else if (hardFail && hasOutputs) {
-        stateOut = "completed";
-      }
+      const { state: stateOut, source: statusSource } = pickAuthoritativeState(local?.status || null, state);
 
       const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl);
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
-        if (!hasFallbackOutput) {
-          stateOut = "failed";
-        }
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
       }
       if (requestedStage2 === true && !stage2Present && stage2Expected && stage2Exhausted) {
-        if (!hasFallbackOutput) {
-          stateOut = "failed";
-        }
         warningSet.add("Stage 2 retries were exhausted. The best enhanced version is shown.");
       }
       if (requestedStage2 === true && isExteriorScene && !stage2Present) {
@@ -816,7 +767,6 @@ export function statusRouter() {
       const isProcessingLike = stateOut === "processing" || stateOut === "queued" || stateOut === "awaiting_payment";
       const isStuck = isProcessingLike && updatedAtMs && (Date.now() - updatedAtMs > STUCK_PROCESSING_MS);
       if (isStuck) {
-        stateOut = "failed";
         warningSet.add("Processing took longer than expected. The best available result is shown.");
       }
       if (stateOut === "failed" && hasOutputs) {
@@ -840,15 +790,21 @@ export function statusRouter() {
 
       const success =
         stateOut === "completed" && typeof resultUrl === "string";
+      const terminalMeta = resolveTerminalMetadata(local, stateOut, failedReason);
       const item: StatusItem = {
         id: jobId,
         state: stateOut,
         status: stateOut,
+        isTerminal: terminalMeta.isTerminal,
+        terminalAt: terminalMeta.terminalAt,
+        terminalReason: terminalMeta.terminalReason,
+        statusSource,
         uiStatus,
         queueStatus,
         success,
         imageId,
         finalOutputUrl,
+        stage2Url: stageUrls.stage2 || stageUrls['2'] || null,
         imageUrl: resultUrl,
         originalUrl,
         maskUrl,

@@ -63,6 +63,14 @@ export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete
 export type DeclutterMode = "light" | "stage-ready";
 export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "sunroom" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
+export interface RetryExecutionPlan {
+    runStage1A: boolean;
+    runStage1B: boolean;
+    runStage2: boolean;
+    stage2Baseline?: "1A" | "1B" | "original_upload";
+    baselineUrl?: string;
+    sourceStage?: string;
+}
 export interface EnhanceJobPayload {
     jobId: JobId;
     userId: UserId;
@@ -105,6 +113,7 @@ export interface EnhanceJobPayload {
         sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
         stage1BMode?: "light" | "stage-ready";
     };
+    executionPlan?: RetryExecutionPlan;
     remoteOriginalUrl?: string;
     remoteOriginalKey?: string;
     retryType?: string;

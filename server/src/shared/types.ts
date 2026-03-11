@@ -159,6 +159,15 @@ export type JobKind =
   | "credit-batch-transfer"
   | "credit-batch-purchase";
 
+export interface RetryExecutionPlan {
+  runStage1A: boolean;
+  runStage1B: boolean;
+  runStage2: boolean;
+  stage2Baseline?: "1A" | "1B" | "original_upload";
+  baselineUrl?: string;
+  sourceStage?: string;
+}
+
 /** Strongly-typed payloads you enqueue */
 export interface EnhanceJobPayload {
   jobId: JobId;
@@ -202,6 +211,7 @@ export interface EnhanceJobPayload {
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
+  executionPlan?: RetryExecutionPlan;
   remoteOriginalUrl?: string;        // S3 URL of original if uploaded
   remoteOriginalKey?: string;        // S3 key of original if uploaded
   createdAt: string;

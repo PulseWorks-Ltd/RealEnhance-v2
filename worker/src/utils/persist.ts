@@ -72,6 +72,92 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
   }
 }
 
+export async function updateJobIf(
+  jobId: JobId,
+  patch: Partial<JobRecord> & Record<string, any>,
+  predicate: (current: any) => boolean,
+  maxRetries: number = 5
+): Promise<{ updated: boolean; current: any }> {
+  const key = `jobs:${jobId}`;
+  let attempts = 0;
+
+  while (attempts < maxRetries) {
+    attempts += 1;
+    try {
+      await redisClient.watch(key);
+
+      const raw = await redisClient.get(key);
+      let current: any = {};
+      if (raw) {
+        try {
+          current = JSON.parse(raw);
+        } catch (parseErr) {
+          console.error(`[updateJobIf] Failed to parse existing job ${jobId}:`, parseErr);
+          current = {};
+        }
+      }
+
+      if (!predicate(current)) {
+        await redisClient.unwatch();
+        return { updated: false, current };
+      }
+
+      let mergedPatch: any = patch;
+      if (mergedPatch && typeof mergedPatch === "object" && mergedPatch.stageUrls) {
+        try {
+          const existing = current && current.stageUrls ? current.stageUrls : {};
+          mergedPatch = {
+            ...mergedPatch,
+            stageUrls: mergeStageUrls(existing, mergedPatch.stageUrls),
+          };
+        } catch (mergeErr) {
+          console.error(`[updateJobIf] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
+        }
+      }
+
+      if (mergedPatch && typeof mergedPatch === "object" && mergedPatch.validatorMeta) {
+        try {
+          const existingValidatorMeta = current && current.validatorMeta ? current.validatorMeta : {};
+          mergedPatch = {
+            ...mergedPatch,
+            validatorMeta: {
+              ...existingValidatorMeta,
+              ...mergedPatch.validatorMeta,
+            },
+          };
+        } catch (validatorMergeErr) {
+          console.error(`[updateJobIf] Failed to merge validatorMeta for job ${jobId}:`, validatorMergeErr);
+        }
+      }
+
+      const next = {
+        ...current,
+        ...mergedPatch,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const tx = redisClient.multi();
+      tx.set(key, JSON.stringify(next));
+      const execResult = await tx.exec();
+
+      if (execResult === null) {
+        // Key changed after WATCH; retry.
+        continue;
+      }
+
+      return { updated: true, current: next };
+    } catch (err) {
+      console.error(`[updateJobIf] Failed guarded update for job ${jobId}:`, err);
+      try {
+        await redisClient.unwatch();
+      } catch {}
+      throw err;
+    }
+  }
+
+  throw new Error(`updateJobIf failed for job ${jobId}: exceeded retry budget`);
+}
+
 // Get job record from Redis
 export async function getJob(jobId: JobId): Promise<JobRecord | undefined> {
   const key = `jobs:${jobId}`;

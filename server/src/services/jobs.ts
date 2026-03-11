@@ -256,6 +256,14 @@ function buildEnhanceArtifacts(params: {
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
+  executionPlan?: {
+    runStage1A: boolean;
+    runStage1B: boolean;
+    runStage2: boolean;
+    stage2Baseline?: "1A" | "1B" | "original_upload";
+    baselineUrl?: string;
+    sourceStage?: string;
+  };
 }, jobIdOverride?: JobId) {
   const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());
   const now = new Date().toISOString();
@@ -320,6 +328,7 @@ function buildEnhanceArtifacts(params: {
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,
     stage2OnlyMode: params.stage2OnlyMode as any,
+    executionPlan: params.executionPlan as any,
   } as any;
 
   return { jobId, now, jobMeta, payload };
@@ -382,6 +391,14 @@ export async function enqueueEnhanceJob(params: {
     base1AUrl?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
+  };
+  executionPlan?: {
+    runStage1A: boolean;
+    runStage1B: boolean;
+    runStage2: boolean;
+    stage2Baseline?: "1A" | "1B" | "original_upload";
+    baselineUrl?: string;
+    sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
@@ -464,6 +481,14 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     base1AUrl?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
+  };
+  executionPlan?: {
+    runStage1A: boolean;
+    runStage1B: boolean;
+    runStage2: boolean;
+    stage2Baseline?: "1A" | "1B" | "original_upload";
+    baselineUrl?: string;
+    sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);

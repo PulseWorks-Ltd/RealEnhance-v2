@@ -2913,12 +2913,16 @@ export default function BatchProcessor() {
           const jobParentJobId = it?.job?.parentJobId || it?.job?.parent_job_id || null;
           const parentJobId = it?.parentJobId || it?.parent_job_id || retryInfo?.parentJobId || retryInfo?.parent_job_id || metaParentJobId || jobParentJobId || null;
           const isRetryChildJob = !!(polledId && parentJobId && polledId !== parentJobId);
+          const incomingRawStatus = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
+          const incomingNormalizedStatus = normalizeJobStatus(incomingRawStatus);
+          const incomingTerminalFlag = incomingNormalizedStatus === "completed" || incomingNormalizedStatus === "failed" || incomingNormalizedStatus === "cancelled" || it?.isTerminal === true;
           const imageId = it?.imageId || it?.image_id || it?.meta?.imageId || it?.meta?.image_id || retryInfo?.imageId || retryInfo?.image_id || jobIdToImageIdRef.current[polledId || ''] || null;
           let idx = polledId ? jobIdToIndexRef.current[polledId] : undefined;
           let mappedViaParent = false;
           let mappedViaImage = false;
 
-          if (typeof idx === 'undefined' && parentJobId) {
+          // Job-scoped card policy: never map failed terminal retry-child events into a parent card.
+          if (typeof idx === 'undefined' && parentJobId && !(isRetryChildJob && incomingTerminalFlag && incomingNormalizedStatus === "failed")) {
             const parentIdx = jobIdToIndexRef.current[parentJobId];
             if (typeof parentIdx === 'number') {
               idx = parentIdx;
@@ -2926,7 +2930,7 @@ export default function BatchProcessor() {
             }
           }
 
-          if (typeof idx === 'undefined' && imageId) {
+          if (typeof idx === 'undefined' && imageId && !(isRetryChildJob && incomingTerminalFlag && incomingNormalizedStatus === "failed")) {
             const imageIdx = imageIdToIndexRef.current[imageId];
             if (typeof imageIdx === 'number') {
               idx = imageIdx;
@@ -3149,6 +3153,28 @@ export default function BatchProcessor() {
             setResults(prev => {
               const copy = prev ? [...prev] : [];
               const existing = copy[idx] || {};
+              const existingJobId = (existing.jobId || existing.result?.jobId || null) as string | null;
+
+              // Job-scoped card policy: ignore cross-job updates that are mapped via lineage.
+              if (
+                existingJobId &&
+                polledId &&
+                existingJobId !== polledId &&
+                (isRetryChildJob || mappedViaParent || mappedViaImage)
+              ) {
+                if (!retryChildMappingLoggedRef.current.has(`skip:${polledId}:${existingJobId}:${idx}`)) {
+                  retryChildMappingLoggedRef.current.add(`skip:${polledId}:${existingJobId}:${idx}`);
+                  console.log('[BATCH][job_scoped_skip_cross_job_update]', {
+                    index: idx,
+                    existingJobId,
+                    incomingJobId: polledId,
+                    parentJobId,
+                    imageId,
+                    status: incomingNormalizedStatus,
+                  });
+                }
+                return copy;
+              }
               
               // ✅ PATCH 5: Version timestamp race guard - only accept newer updates
               const incomingVersion = normalizeVersionToTimestamp(
@@ -3168,6 +3194,25 @@ export default function BatchProcessor() {
                   delta: existingVersion - incomingVersion
                 });
                 return copy; // Keep existing state
+              }
+
+              const existingStatusNorm = normalizeJobStatus(String(existing.status || existing.result?.status || ""));
+              const existingIsTerminal = existingStatusNorm === "completed" || existingStatusNorm === "failed" || existingStatusNorm === "cancelled";
+              const incomingStatusNorm = status;
+
+              // Terminal states are immutable: once terminal, ignore any status transition.
+              if (existingIsTerminal && existingStatusNorm !== incomingStatusNorm) {
+                if (!statusTargetNotReachedLoggedRef.current.has(`terminal-lock:${idx}:${existingStatusNorm}:${incomingStatusNorm}`)) {
+                  statusTargetNotReachedLoggedRef.current.add(`terminal-lock:${idx}:${existingStatusNorm}:${incomingStatusNorm}`);
+                  console.log('[BATCH][terminal_lock_ignored_update]', {
+                    index: idx,
+                    existingJobId,
+                    incomingJobId: polledId || null,
+                    existingStatus: existingStatusNorm,
+                    incomingStatus: incomingStatusNorm,
+                  });
+                }
+                return copy;
               }
               
               // Persist requestedStages and meta so target-stage completion logic works

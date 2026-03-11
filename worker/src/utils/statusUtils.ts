@@ -1,4 +1,4 @@
-import { getJob, updateJob } from "./persist";
+import { getJob, updateJobIf } from "./persist";
 import type { JobId } from "@realenhance/shared/types";
 import { getEvidenceGatingVariant } from "../validators/evidenceGating";
 
@@ -11,11 +11,26 @@ export async function safeWriteJobStatus(
   patch: Record<string, any>,
   reason: string
 ): Promise<boolean> {
-  const current = await getJob(jobId);
-  const currentStatus = current?.status as string | undefined;
+  const evidenceGatingVariant = getEvidenceGatingVariant(String(jobId));
+  const patchWithEvidence = {
+    ...patch,
+    validatorMeta: {
+      ...(patch?.validatorMeta || {}),
+      evidenceGatingVariant,
+    },
+  };
 
-  if (isTerminalStatus(currentStatus)) {
-    // Structured guard log per spec
+  const result = await updateJobIf(
+    jobId,
+    patchWithEvidence,
+    (current: any) => {
+      const currentStatus = current?.status as string | undefined;
+      return !isTerminalStatus(currentStatus);
+    }
+  );
+
+  if (!result.updated) {
+    const currentStatus = result.current?.status as string | undefined;
     console.log(`[status_guard] BLOCK overwrite terminal status jobId=${String(jobId)} current=${currentStatus} attempted=${patch?.status} reason=${reason}`);
     console.warn("[STATUS_LOCK_BLOCKED]", {
       jobId,
@@ -32,35 +47,6 @@ export async function safeWriteJobStatus(
     return false;
   }
 
-  const existingValidatorMeta = (current as any)?.validatorMeta || {};
-  const patchValidatorMeta = patch?.validatorMeta || {};
-  const evidenceGatingVariant = getEvidenceGatingVariant(String(jobId));
-  const mergedValidatorMeta = {
-    ...existingValidatorMeta,
-    ...patchValidatorMeta,
-    evidenceGatingVariant,
-  };
-  const existingStageUrls = (current as any)?.stageUrls;
-  const incomingStageUrls = patch?.stageUrls;
-  const shouldMergeStageUrls =
-    incomingStageUrls &&
-    typeof incomingStageUrls === "object" &&
-    !Array.isArray(incomingStageUrls);
-
-  const mergedPatch = {
-    ...patch,
-    ...(shouldMergeStageUrls
-      ? {
-          stageUrls: {
-            ...(existingStageUrls && typeof existingStageUrls === "object" ? existingStageUrls : {}),
-            ...incomingStageUrls,
-          },
-        }
-      : {}),
-    validatorMeta: mergedValidatorMeta,
-  };
-
-  await updateJob(jobId, mergedPatch);
   console.info("[STATUS_WRITE_OK]", { jobId, newStatus: patch?.status, reason });
   return true;
 }

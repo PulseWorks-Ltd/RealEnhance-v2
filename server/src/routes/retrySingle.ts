@@ -96,6 +96,23 @@ function highestStageFrom(stages: Array<"1A" | "1B" | "2">): "1A" | "1B" | "2" |
   return null;
 }
 
+function normalizeBaselineSourceStage(rawStage: string | undefined): "1A" | "1B" | "original_upload" {
+  const s = String(rawStage || "").trim().toLowerCase();
+  if (s.startsWith("1a")) return "1A";
+  if (
+    s === "1b" ||
+    s === "2" ||
+    s === "retry_latest" ||
+    s === "edit_latest" ||
+    s === "1b-light" ||
+    s === "1b-stage-ready" ||
+    s.startsWith("1b")
+  ) {
+    return "1B";
+  }
+  return "original_upload";
+}
+
 async function isRetrySourceReachable(url: string): Promise<boolean> {
   try {
     const head = await fetch(url, { method: "HEAD" });
@@ -415,6 +432,8 @@ export function retrySingleRouter() {
       let selectedSourceStage: string | undefined = undefined;
       let selectedSourceUrl: string | undefined = undefined;
       let originalUploadUrlCandidate: string | undefined = undefined;
+      let stage1AFromParent: string | undefined = undefined;
+      let stage1BFromParent: string | undefined = undefined;
       let stage2OnlyDisabled = false;
       let retryFromStage: string | undefined = undefined;
       let retryMode: "stage_resume" | "full_pipeline_restart" = "stage_resume";
@@ -468,6 +487,14 @@ export function retrySingleRouter() {
           originalUploadUrlCandidate = originalUploadUrl || undefined;
 
           const allStageUrls = mergeStageUrls(metaStageUrls as any, parentStageUrls as any);
+          stage1AFromParent =
+            (allStageUrls as any)?.["1A"] ||
+            (allStageUrls as any)?.["1a"] ||
+            stage1AFromParent;
+          stage1BFromParent =
+            (allStageUrls as any)?.["1B"] ||
+            (allStageUrls as any)?.["1b"] ||
+            stage1BFromParent;
           stage1BWasRequested = stage1BWasRequested
             || !!parentMeta?.requestedStages?.stage1b
             || !!(parentJob as any)?.metadata?.requestedStages?.stage1b
@@ -762,64 +789,21 @@ export function retrySingleRouter() {
         };
       }
 
-      // ✅ Smart Stage-2-only retry logic
-      // stage2OnlyMode activates ONLY for explicit Stage 2 retries (requestedStage='2')
-      // Stage 1B retries must regenerate 1B through the normal pipeline
+      // Server-authoritative execution plan for retry.
+      // Client request fields are advisory; worker executes this resolved plan only.
       const stage2OnlyStage1BMode: "light" | "stage-ready" = declutterMode === "light" ? "light" : "stage-ready";
-      const stage2OnlySourceStage: "1A" | "1B-light" | "1B-stage-ready" =
-        selectedSourceStage === "1A"
-          ? "1A"
-          : stage2OnlyStage1BMode === "light"
-            ? "1B-light"
-            : "1B-stage-ready";
-      const stage2OnlyBaseStage: "1A" | "1B" = stage2OnlySourceStage === "1A" ? "1A" : "1B";
-      const stage1AFromParent =
+      stage1AFromParent =
+        stage1AFromParent ||
         (parentMeta?.stageUrls && (parentMeta.stageUrls as any)["1A"]) ||
         ((parentJob as any)?.stageUrls && ((parentJob as any).stageUrls as any)["1A"]) ||
         ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1A"]) ||
         undefined;
-      const stage2OnlyMode =
-        stage2OnlyRequested && selectedSourceUrl && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart"
-          ? {
-              enabled: true,
-              baseStage: stage2OnlyBaseStage,
-              base1BUrl: stage2OnlyBaseStage === "1B" ? selectedSourceUrl : undefined,
-              base1AUrl: stage2OnlyBaseStage === "1A" ? selectedSourceUrl : stage1AFromParent,
-              sourceStage: stage2OnlySourceStage,
-              stage1BMode: stage2OnlyStage1BMode,
-            }
-          : undefined;
-
-      // Defensive fallback: if this is a Stage-2 retry with a valid selected baseline,
-      // infer Stage-2-only mode even when client flags are incomplete.
-      const normalizedSelectedSourceStage = String(selectedSourceStage || "").trim().toLowerCase();
-      const inferredBaseStage: "1A" | "1B" = normalizedSelectedSourceStage.startsWith("1a") ? "1A" : "1B";
-      const inferredSourceStage: "1A" | "1B-light" | "1B-stage-ready" =
-        inferredBaseStage === "1A"
-          ? "1A"
-          : (normalizedSelectedSourceStage === "1b-light" ? "1B-light" : "1B-stage-ready");
-
-      const effectiveStage2OnlyMode = stage2OnlyMode || (
-        requestedStage === "2" &&
-        !!selectedSourceUrl &&
-        !stage2OnlyDisabled &&
-        retryMode !== "full_pipeline_restart"
-          ? {
-              enabled: true,
-              baseStage: inferredBaseStage,
-              base1BUrl: inferredBaseStage === "1B" ? selectedSourceUrl : undefined,
-              base1AUrl: inferredBaseStage === "1A" ? selectedSourceUrl : stage1AFromParent,
-              sourceStage: inferredSourceStage,
-              stage1BMode: stage2OnlyStage1BMode,
-            }
-          : undefined
-      );
-
-      const hasValidStage2OnlyPayload = !!effectiveStage2OnlyMode?.enabled && (
-        effectiveStage2OnlyMode.baseStage === "1A"
-          ? (!!effectiveStage2OnlyMode.base1AUrl && !stage1BWasRequested)
-          : !!effectiveStage2OnlyMode.base1BUrl
-      );
+      stage1BFromParent =
+        stage1BFromParent ||
+        (parentMeta?.stageUrls && (parentMeta.stageUrls as any)["1B"]) ||
+        ((parentJob as any)?.stageUrls && ((parentJob as any).stageUrls as any)["1B"]) ||
+        ((parentJob as any)?.stageOutputs && ((parentJob as any).stageOutputs as any)["1B"]) ||
+        undefined;
 
       // Ensure worker receives an explicit execution plan.
       // Without this, manual retries can be interpreted as Stage-2-only by default.
@@ -838,13 +822,172 @@ export function retrySingleRouter() {
         stage1BWasRequested = true;
       }
 
-      if (stage2OnlyRequested && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !hasValidStage2OnlyPayload) {
+      const resolvedBaselineStage = normalizeBaselineSourceStage(selectedSourceStage);
+      const normalizedSelectedStage = String(selectedSourceStage || "").trim().toLowerCase();
+      const selectedLooksLike1A = normalizedSelectedStage.startsWith("1a");
+      const selectedLooksLike1B =
+        normalizedSelectedStage === "1b" ||
+        normalizedSelectedStage === "2" ||
+        normalizedSelectedStage === "retry_latest" ||
+        normalizedSelectedStage === "edit_latest" ||
+        normalizedSelectedStage === "1b-light" ||
+        normalizedSelectedStage === "1b-stage-ready" ||
+        normalizedSelectedStage.startsWith("1b");
+      const resolvedBaselineUrl =
+        resolvedBaselineStage === "1A"
+          ? (stage1AFromParent || (selectedLooksLike1A ? selectedSourceUrl : undefined))
+          : resolvedBaselineStage === "1B"
+            ? (stage1BFromParent || (selectedLooksLike1B ? selectedSourceUrl : undefined))
+            : (originalUploadUrlCandidate || (normalizedSelectedStage === "original_upload" ? selectedSourceUrl : undefined));
+      const resolvedExecutionPlan = {
+        runStage1A: effectiveStagesToRun.includes("1A"),
+        runStage1B: effectiveStagesToRun.includes("1B"),
+        runStage2: effectiveStagesToRun.includes("2"),
+        stage2Baseline: resolvedBaselineStage,
+        baselineUrl: resolvedBaselineUrl || undefined,
+        sourceStage: selectedSourceStage || undefined,
+      } as const;
+
+      // Invariant: when Stage 2 is planned, both baselineUrl and stage2Baseline must be present.
+      if (resolvedExecutionPlan.runStage2) {
+        const hasCanonicalBaselineArtifact =
+          resolvedExecutionPlan.stage2Baseline === "1A"
+            ? !!stage1AFromParent
+            : resolvedExecutionPlan.stage2Baseline === "1B"
+              ? !!stage1BFromParent
+              : !!originalUploadUrlCandidate;
+        const hasBaselineUrl = !!resolvedExecutionPlan.baselineUrl;
+        const hasBaselineStage =
+          resolvedExecutionPlan.stage2Baseline === "1A"
+          || resolvedExecutionPlan.stage2Baseline === "1B"
+          || resolvedExecutionPlan.stage2Baseline === "original_upload";
+        if (!hasBaselineUrl || !hasBaselineStage || !hasCanonicalBaselineArtifact) {
+          return res.status(409).json({
+            success: false,
+            error: "manual_retry_stage2only_payload_invalid",
+            message: "Manual retry requires a deterministic Stage 2 baseline with an existing canonical artifact",
+          });
+        }
+
+        const expectedCanonicalBaselineUrl =
+          resolvedExecutionPlan.stage2Baseline === "1A"
+            ? stage1AFromParent
+            : resolvedExecutionPlan.stage2Baseline === "1B"
+              ? stage1BFromParent
+              : originalUploadUrlCandidate;
+        if (
+          expectedCanonicalBaselineUrl &&
+          resolvedExecutionPlan.baselineUrl &&
+          expectedCanonicalBaselineUrl !== resolvedExecutionPlan.baselineUrl
+        ) {
+          return res.status(409).json({
+            success: false,
+            error: "manual_retry_stage2only_payload_invalid",
+            message: "Manual retry baseline source label does not match canonical baseline URL",
+          });
+        }
+      }
+
+      // Invariant: Stage 2 cannot execute without a resolved baseline.
+      if (resolvedExecutionPlan.runStage2 && !resolvedExecutionPlan.baselineUrl) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_stage2only_payload_invalid",
-          message: "Manual retry payload is missing required Stage2Only fields or violates declutter baseline policy",
+          message: "Manual retry requires a resolved baseline URL before Stage 2 can execute",
         });
       }
+
+      // Invariant: If Stage 1B was requested by pipeline policy, Stage 2 cannot run from 1A unless 1B is rebuilt.
+      if (
+        resolvedExecutionPlan.runStage2 &&
+        !resolvedExecutionPlan.runStage1B &&
+        stage1BWasRequested &&
+        resolvedExecutionPlan.stage2Baseline === "1A"
+      ) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_stage2only_payload_invalid",
+          message: "Manual retry requires Stage 1B baseline, or Stage 1B regeneration, before Stage 2",
+        });
+      }
+
+      const resolvedStage2OnlySourceStage: "1A" | "1B-light" | "1B-stage-ready" =
+        resolvedExecutionPlan.stage2Baseline === "1A"
+          ? "1A"
+          : stage2OnlyStage1BMode === "light"
+            ? "1B-light"
+            : "1B-stage-ready";
+      const effectiveStage2OnlyMode =
+        resolvedExecutionPlan.runStage2 &&
+        !resolvedExecutionPlan.runStage1A &&
+        !resolvedExecutionPlan.runStage1B &&
+        !stage2OnlyDisabled &&
+        retryMode !== "full_pipeline_restart" &&
+        (resolvedExecutionPlan.stage2Baseline === "1A" || resolvedExecutionPlan.stage2Baseline === "1B")
+          ? {
+              enabled: true,
+              baseStage: resolvedExecutionPlan.stage2Baseline,
+              base1BUrl: resolvedExecutionPlan.stage2Baseline === "1B" ? resolvedExecutionPlan.baselineUrl : undefined,
+              base1AUrl: resolvedExecutionPlan.stage2Baseline === "1A" ? resolvedExecutionPlan.baselineUrl : stage1AFromParent,
+              sourceStage: resolvedStage2OnlySourceStage,
+              stage1BMode: stage2OnlyStage1BMode,
+            }
+          : undefined;
+
+      const stage2OnlyBaselineSourceCount = effectiveStage2OnlyMode
+        ? Number(!!effectiveStage2OnlyMode.base1AUrl && effectiveStage2OnlyMode.baseStage === "1A")
+          + Number(!!effectiveStage2OnlyMode.base1BUrl && effectiveStage2OnlyMode.baseStage === "1B")
+        : 0;
+
+      if (effectiveStage2OnlyMode && stage2OnlyBaselineSourceCount !== 1) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_stage2only_payload_invalid",
+          message: "Manual retry requires exactly one Stage 2 baseline source",
+        });
+      }
+
+      if (stage2OnlyRequested && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !effectiveStage2OnlyMode) {
+        return res.status(409).json({
+          success: false,
+          error: "manual_retry_stage2only_payload_invalid",
+          message: "Manual retry plan is not deterministic for Stage 2-only execution",
+        });
+      }
+
+      // Generate job ID early so plan logging and billing records share the same identifier.
+      const jobId = "job_" + crypto.randomUUID();
+
+      console.log("[RETRY_EXECUTION_PLAN]", {
+        jobId,
+        retryIntent: {
+          retryType: "manual_retry",
+          requestedStage,
+          stagesToRun: effectiveStagesToRun,
+          requestedStages: effectiveRequestedStages,
+          selectedSourceStage,
+          selectedSourceUrl: selectedSourceUrl?.substring(0, 120),
+          stage2OnlyDisabled,
+          retryMode,
+        },
+        resolvedExecutionPlan: resolvedExecutionPlan,
+        derivedStage2OnlyMode: effectiveStage2OnlyMode
+          ? {
+              enabled: true,
+              baseStage: effectiveStage2OnlyMode.baseStage,
+              hasBase1AUrl: !!effectiveStage2OnlyMode.base1AUrl,
+              hasBase1BUrl: !!effectiveStage2OnlyMode.base1BUrl,
+              baselineSourceCount: stage2OnlyBaselineSourceCount,
+              sourceStage: effectiveStage2OnlyMode.sourceStage,
+            }
+          : null,
+        baselineSourceResolvedFrom:
+          resolvedExecutionPlan.stage2Baseline === "1A"
+            ? "stage1A"
+            : resolvedExecutionPlan.stage2Baseline === "1B"
+              ? "stage1B"
+              : "original_upload",
+      });
 
       if (retryFromStage) {
         console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!effectiveStage2OnlyMode} stagesToRun=${effectiveStagesToRun.join(",") || "none"}`);
@@ -914,9 +1057,6 @@ export function retrySingleRouter() {
         });
       }
 
-      // Generate job ID for reservation
-      const jobId = "job_" + crypto.randomUUID();
-
       // Free retry must not reserve additional credit.
       // Reserve a zero-credit row only so worker finalization remains idempotent/traceable.
       try {
@@ -954,6 +1094,7 @@ export function retrySingleRouter() {
         remoteOriginalKey,
         options,
         stage2OnlyMode: effectiveStage2OnlyMode,
+        executionPlan: resolvedExecutionPlan,
         retryInfo: {
           retryType: "manual_retry",
           sourceStage: retrySourceStage,
