@@ -462,6 +462,34 @@ export function retrySingleRouter() {
             getJobMetadata(parentJobId),
           ]);
 
+          if (!parentJob) {
+            return res.status(404).json({
+              success: false,
+              error: "parent_job_not_found",
+              message: "Parent job not found for retry.",
+            });
+          }
+
+          const parentStatusRaw = String(
+            (parentJob as any)?.status ||
+            (parentJob as any)?.state ||
+            (parentJob as any)?.jobState ||
+            (parentJob as any)?.queueStatus ||
+            ""
+          ).toLowerCase();
+          const parentStatus =
+            parentStatusRaw === "complete" ? "completed" :
+            parentStatusRaw === "error" || parentStatusRaw === "cancelled" ? "failed" :
+            parentStatusRaw;
+          if (!(parentStatus === "completed" || parentStatus === "failed")) {
+            return res.status(409).json({
+              success: false,
+              error: "retry_not_allowed_for_job_state",
+              message: "Retry is only allowed for completed or failed jobs.",
+              status: parentStatus || "unknown",
+            });
+          }
+
           const owningUser = (parentJob as any)?.userId || parentMeta?.userId;
           if (owningUser && owningUser !== sessUser.id) {
             return res.status(403).json({ success: false, error: "forbidden_source", message: "Source job does not belong to this user" });

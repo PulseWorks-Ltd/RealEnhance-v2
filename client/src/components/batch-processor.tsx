@@ -1177,6 +1177,7 @@ export default function BatchProcessor() {
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
+  const retryInFlightRef = useRef<Set<number>>(new Set());
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
@@ -1203,6 +1204,7 @@ export default function BatchProcessor() {
 
   // Helper to clear retry flags for a specific image index
   const clearRetryFlags = useCallback((index: number) => {
+    retryInFlightRef.current.delete(index);
     setRetryingImages(prev => {
       const next = new Set(prev);
       next.delete(index);
@@ -2466,6 +2468,7 @@ export default function BatchProcessor() {
       setProcessedImagesByIndex({});
       setRetryingImages(new Set());
       setRetryLoadingImages(new Set());
+      retryInFlightRef.current.clear();
       setEditingImages(new Set());
       setEditCompletedImages(new Set());
       setDisplayStageByIndex({});
@@ -4311,6 +4314,15 @@ export default function BatchProcessor() {
 
   // Retry dialog handlers
   const handleOpenRetryDialog = (imageIndex: number) => {
+    const status = String(results[imageIndex]?.status || "").toLowerCase();
+    if (!(status === "failed" || status === "completed")) {
+      toast({
+        title: "Retry unavailable",
+        description: "Retry is only allowed for completed or failed jobs.",
+        variant: "destructive",
+      });
+      return;
+    }
     setRetryDialog({ isOpen: true, imageIndex });
   };
 
@@ -4637,6 +4649,16 @@ export default function BatchProcessor() {
       return;
     }
 
+    const status = String(item?.status || item?.result?.status || "").toLowerCase();
+    if (!(status === "failed" || status === "completed")) {
+      toast({
+        title: "Edit unavailable",
+        description: "Edit is only allowed for completed or failed jobs.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
     const preservedStage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(item?.stage2Url) || toDisplayUrl(item?.result?.stage2Url) || null;
     const preservedStage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
@@ -4691,8 +4713,8 @@ export default function BatchProcessor() {
   };
 
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
-    // ✅ Prevent double retry on same image
-    if (!files || imageIndex >= files.length || retryingImages.has(imageIndex)) return;
+    // ✅ Prevent double retry on same image (sync ref avoids rapid double-click races)
+    if (!files || imageIndex >= files.length || retryInFlightRef.current.has(imageIndex) || retryingImages.has(imageIndex)) return;
 
     const fileToRetry = files[imageIndex];
     if (!fileToRetry) return;
@@ -4750,6 +4772,7 @@ export default function BatchProcessor() {
     }
 
     // ✅ Mark retry active and loading
+    retryInFlightRef.current.add(imageIndex);
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
 
@@ -4939,6 +4962,11 @@ export default function BatchProcessor() {
           return updated;
         });
 
+        toast({
+          title: "Retry queued",
+          description: "Retry queued. This image will restart processing shortly.",
+        });
+
         // ✅ DO NOT set global progress - retry is image-only operation
         // ❌ setProgressText("Retry submitted. Waiting for enhanced image...");
         // ❌ setRunState("running");
@@ -4958,6 +4986,7 @@ export default function BatchProcessor() {
             next.delete(imageIndex);
             return next;
           });
+          retryInFlightRef.current.delete(imageIndex);
 
           setResults(prev => prev.map((r, i) => i === imageIndex ? {
             ...r,
@@ -5221,6 +5250,7 @@ export default function BatchProcessor() {
       }
     } catch (e) {
       console.error("[handleRetryImage] Outer retry process error:", e);
+      retryInFlightRef.current.delete(imageIndex);
       // Do not clear spinner here; timeout/onLoad handlers manage UI state
     } finally {
       // Outer try-finally: intentionally leave spinner until onLoad/timeout
@@ -5414,6 +5444,7 @@ export default function BatchProcessor() {
     setDisplayStageByIndex({});
     setRetryingImages(new Set());
     setRetryLoadingImages(new Set());
+    retryInFlightRef.current.clear();
     setEditingImages(new Set());
     setEditCompletedImages(new Set());
     setStrictRetryingIndices(new Set());
@@ -6916,6 +6947,9 @@ export default function BatchProcessor() {
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isRetryActive = isRetrying || !!result?.retryInFlight;
+                        const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
+                        const isRetryStatusTerminal = status === "failed" || status === "completed";
+                        const canRetryThisImage = isRetryStatusTerminal;
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
@@ -7070,6 +7104,7 @@ export default function BatchProcessor() {
                             ? (enhancedUrl || previewUrls[i] || null)
                             : (previewUrls[i] || null);
                         const canEditFromDisplayedOutput = !!previewUrl;
+                        const canEditThisImage = isRetryStatusTerminal && canEditFromDisplayedOutput;
                         const hasFinalArtifactUrl = !!(
                           finalResultUrl ||
                           stage2Url ||
@@ -7182,7 +7217,7 @@ export default function BatchProcessor() {
                                           <StatusBadge status="failed" />
                                           <button
                                             onClick={() => handleOpenRetryDialog(i)}
-                                            disabled={retryingImages.has(i)}
+                                            disabled={!canRetryThisImage || isRetryStatusActive || retryingImages.has(i)}
                                             className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-md transition-colors shadow-sm"
                                             title="Retry this image"
                                           >
@@ -7262,7 +7297,7 @@ export default function BatchProcessor() {
                                   </button>
                                   <button 
                                     onClick={() => handleEditImage(i)}
-                                    disabled={result?.retryInFlight || editingImages.has(i) || !canEditFromDisplayedOutput}
+                                    disabled={!canEditThisImage || isRetryStatusActive || editingImages.has(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     Edit
@@ -7281,7 +7316,7 @@ export default function BatchProcessor() {
                                   )}
                                   <button
                                     onClick={() => handleOpenRetryDialog(i)}
-                                    disabled={result?.retryInFlight || retryingImages.has(i) || editingImages.has(i)}
+                                    disabled={!canRetryThisImage || isRetryStatusActive || retryingImages.has(i) || editingImages.has(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                     data-testid={`button-retry-${i}`}
                                   >
@@ -7362,7 +7397,7 @@ export default function BatchProcessor() {
                     setPreviewImage(null);
                     handleEditImage(index);
                   }}
-                  disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index) || !canEditFromPreview}
+                  disabled={!(["failed", "completed"].includes(String(results[previewImage.index]?.status || "").toLowerCase())) || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index) || !canEditFromPreview}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-edit-from-preview"
                 >
@@ -7374,7 +7409,7 @@ export default function BatchProcessor() {
                     setPreviewImage(null);
                     handleOpenRetryDialog(index);
                   }}
-                  disabled={retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  disabled={!(["failed", "completed"].includes(String(results[previewImage.index]?.status || "").toLowerCase())) || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
                   className="rounded-lg bg-action-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-action-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-retry-from-preview"
                 >
