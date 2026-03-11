@@ -9351,7 +9351,7 @@ const worker = new Worker(
                 attempt,
                 mode,
                 outsideMaskChangedPct,
-                openingsFail,
+                openingFail,
                 openingSummary: openingValidation.summary,
                 totals: {
                   total: regionEditRolloutTelemetry.total,
