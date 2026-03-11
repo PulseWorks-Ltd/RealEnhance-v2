@@ -52,7 +52,7 @@ async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): P
       `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = $2 LIMIT 1`,
       [agencyId, PROMO_SIGNUP_SOURCE]
     );
-    return existing.rowCount > 0;
+    return (existing.rowCount ?? 0) > 0;
   });
 
   if (existingPromo) return false;
@@ -77,7 +77,7 @@ async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): P
       `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = $2 LIMIT 1`,
       [agencyId, PROMO_SIGNUP_SOURCE]
     );
-    if (existing.rowCount) return false;
+    if ((existing.rowCount ?? 0) > 0) return false;
 
     await client.query(
       `INSERT INTO agency_accounts (agency_id, addon_images_balance)
