@@ -1,14 +1,28 @@
 import { getUserById } from "./users.js";
 import { getUsageSnapshot, reserveAllowance } from "./usageLedger.js";
 import { enqueueStoredEnhanceJob, listAwaitingPaymentEnhanceJobs } from "./jobs.js";
+import { getTrialSummary } from "./trials.js";
 
 export async function getAvailableCredits(userId: string): Promise<number> {
   const user = await getUserById(userId);
   const agencyId = user?.agencyId;
   if (!agencyId) return 0;
 
-  const usage = await getUsageSnapshot(agencyId);
-  return Math.max(0, Number(usage.remaining || 0));
+  const [usage, trial] = await Promise.all([
+    getUsageSnapshot(agencyId),
+    getTrialSummary(agencyId),
+  ]);
+
+  const now = Date.now();
+  const trialActive =
+    trial.status === "active" &&
+    (!trial.expiresAt || Number.isNaN(Date.parse(trial.expiresAt)) || Date.parse(trial.expiresAt) > now);
+
+  const usageRemaining = Math.max(0, Number(usage.remaining || 0));
+  const trialRemaining = trialActive ? Math.max(0, Number(trial.remaining || 0)) : 0;
+
+  // During promo trial, trial credits are additive to normal usage allowance.
+  return usageRemaining + trialRemaining;
 }
 
 export async function releaseAwaitingPaymentJobs(userId: string): Promise<{

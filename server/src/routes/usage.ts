@@ -8,6 +8,7 @@ import { planTierToPlanCode, PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import { getUsageSnapshot, getTopUsersByUsage } from "../services/usageLedger.js";
 import { getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
+import { getTrialSummary } from "../services/trials.js";
 
 export function usageRouter() {
   const r = Router();
@@ -38,18 +39,33 @@ export function usageRouter() {
       }
 
       const snapshot = await getUsageSnapshot(user.agencyId);
+      const trial = await getTrialSummary(user.agencyId);
       const topUsers = await getTopUsersByUsage(user.agencyId);
       const planTier = agency.planTier as PlanTier | null | undefined;
       const planCode = planTier ? planTierToPlanCode(planTier) : "TRIAL";
       const planLimits = planTier ? PLAN_LIMITS[planTier] : { price: 0 };
 
+      const now = Date.now();
+      const trialActive =
+        trial.status === "active" &&
+        (!trial.expiresAt || Number.isNaN(Date.parse(trial.expiresAt)) || Date.parse(trial.expiresAt) > now);
+      const trialRemaining = trialActive ? Math.max(0, Number(trial.remaining || 0)) : 0;
+      const trialIncluded = trialActive ? Math.max(0, Number(trial.creditsTotal || 0)) : 0;
+      const trialUsed = trialActive ? Math.max(0, Number(trial.creditsUsed || 0)) : 0;
+
+      const effectiveIncludedLimit = trialActive ? Math.max(snapshot.includedLimit, trialIncluded) : snapshot.includedLimit;
+      const effectiveIncludedUsed = trialActive ? Math.max(snapshot.includedUsed, trialUsed) : snapshot.includedUsed;
+      const effectiveRemaining = Math.max(0, Number(snapshot.remaining || 0)) + trialRemaining;
+
       // Calculate usage percentages for warnings
-      const mainUsagePercent = (snapshot.includedUsed / snapshot.includedLimit) * 100;
+      const mainUsagePercent = effectiveIncludedLimit > 0
+        ? (effectiveIncludedUsed / effectiveIncludedLimit) * 100
+        : 0;
       const stagingUsagePercent = 0; // staging allowance removed in new model
 
       // Determine warning levels
       let mainWarning: "none" | "approaching" | "critical" | "exhausted" = "none";
-      if (snapshot.remaining === 0) {
+      if (effectiveRemaining === 0) {
         mainWarning = "exhausted";
       } else if (mainUsagePercent >= 95) {
         mainWarning = "critical";
@@ -76,9 +92,9 @@ export function usageRouter() {
         planCode,
         planName: planTier ? (planCode.charAt(0) + planCode.slice(1).toLowerCase()) : "Trial / No Plan",
         price: planLimits.price,
-        mainAllowance: snapshot.includedLimit,
-        mainUsed: snapshot.includedUsed,
-        mainRemaining: snapshot.remaining,
+        mainAllowance: effectiveIncludedLimit,
+        mainUsed: effectiveIncludedUsed,
+        mainRemaining: effectiveRemaining,
         addonRemaining: snapshot.addonRemaining,
         mainUsagePercent: Math.round(mainUsagePercent),
         mainWarning,
