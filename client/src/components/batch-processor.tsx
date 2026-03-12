@@ -7158,6 +7158,7 @@ export default function BatchProcessor() {
                           : canUseRemotePreview
                             ? (enhancedUrl || previewUrls[i] || null)
                             : (previewUrls[i] || null);
+                        const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
                         const canEditFromDisplayedOutput = !!previewUrl;
                         const canEditThisImage = isRetryStatusTerminal && canEditFromDisplayedOutput;
                         const hasFinalArtifactUrl = !!(
@@ -7219,22 +7220,31 @@ export default function BatchProcessor() {
                                 openPreviewImage(i);
                               }}
                             >
-                              <img 
-                                src={previewUrl || ''} 
-                                alt={file.name} 
-                                className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
-                                onLoad={() => clearRetryFlags(i)}
-                                onError={(e) => {
-                                  clearRetryFlags(i);
-                                  const localFallback = previewUrls[i] || "";
-                                  if (localFallback && e.currentTarget.src !== localFallback) {
-                                    e.currentTarget.src = localFallback;
-                                  }
-                                }}
-                              />
+                              {previewUrl ? (
+                                <img 
+                                  src={previewUrl} 
+                                  alt={file.name} 
+                                  className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
+                                  onLoad={() => clearRetryFlags(i)}
+                                  onError={(e) => {
+                                    clearRetryFlags(i);
+                                    const localFallback = previewUrls[i] || "";
+                                    if (localFallback && e.currentTarget.src !== localFallback) {
+                                      e.currentTarget.src = localFallback;
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="absolute inset-0 bg-slate-100" />
+                              )}
                               {isProcessing && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm">
                                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent [background-size:200%_100%] animate-[shimmer_2s_infinite]" />
+                                </div>
+                              )}
+                              {isRetriedPreviewMissing && !isProcessing && (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/55 px-4 text-center">
+                                  <p className="text-sm font-semibold text-white">Retry result unavailable</p>
                                 </div>
                               )}
                               {!isProcessing && isUiComplete && (
