@@ -32,3 +32,8 @@ export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN
   : ["http://localhost:5173", "http://localhost:5000"];
 
 export const CREDITS_ENABLED = process.env.CREDITS_ENABLED === "1";
+
+// Launch trial gate (minimal deterministic rule)
+export const LAUNCH_TRIAL_MAX_AGENCIES = 20;
+export const LAUNCH_TRIAL_CREDITS = 75;
+export const LAUNCH_TRIAL_DAYS = 30;

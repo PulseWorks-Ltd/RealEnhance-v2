@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { pool, withTransaction } from "../db/index.js";
 import { getUserByEmail } from "./users.js";
 import type { PoolClient } from "pg";
+import {
+  LAUNCH_TRIAL_CREDITS,
+  LAUNCH_TRIAL_DAYS,
+  LAUNCH_TRIAL_MAX_AGENCIES,
+} from "../config.js";
 
 export type TrialStatus = "none" | "pending" | "active" | "expired" | "converted";
 
@@ -281,4 +286,63 @@ export async function markTrialConverted(agencyId: string): Promise<void> {
       WHERE agency_id = $1;`,
     [agencyId]
   );
+}
+
+export async function grantLaunchTrialIfEligible(agencyId: string): Promise<{
+  granted: boolean;
+  allocated: number;
+  max: number;
+}> {
+  const max = Math.max(0, Number(LAUNCH_TRIAL_MAX_AGENCIES || 0));
+  const credits = Math.max(0, Number(LAUNCH_TRIAL_CREDITS || 0));
+  const days = Math.max(0, Number(LAUNCH_TRIAL_DAYS || 0));
+
+  if (!agencyId || max <= 0 || credits <= 0 || days <= 0) {
+    return { granted: false, allocated: 0, max };
+  }
+
+  return withTransaction(async (client) => {
+    // Single-writer gate to avoid race conditions around the launch threshold.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, ["launch_trial_gate_v1"]);
+
+    const org = await ensureTrialRow(client, agencyId);
+    const alreadyLaunchGranted =
+      org.trial_promo_code_id === null
+      && Number(org.trial_credits_total || 0) === credits
+      && org.trial_expires_at !== null;
+
+    const countRes = await client.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count
+         FROM organisations
+        WHERE trial_promo_code_id IS NULL
+          AND trial_credits_total = $1
+          AND trial_expires_at IS NOT NULL`,
+      [credits]
+    );
+    const allocated = Number(countRes.rows[0]?.count || 0);
+
+    if (alreadyLaunchGranted) {
+      return { granted: false, allocated, max };
+    }
+
+    if (allocated >= max) {
+      return { granted: false, allocated, max };
+    }
+
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+    await client.query(
+      `UPDATE organisations
+          SET trial_status = 'active',
+              trial_expires_at = $2,
+              trial_credits_total = $3,
+              trial_credits_used = 0,
+              trial_promo_code_id = NULL,
+              updated_at = NOW()
+        WHERE agency_id = $1`,
+      [agencyId, expiresAt.toISOString(), credits]
+    );
+
+    return { granted: true, allocated: allocated + 1, max };
+  });
 }

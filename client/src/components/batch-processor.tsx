@@ -1244,7 +1244,6 @@ export default function BatchProcessor() {
 
   // Retry timeout safety (5 minutes max for full pipeline jobs)
   const RETRY_TIMEOUT_MS = 300_000;
-  const EDIT_COMPLETE_FALLBACK_MS = 15_000;
   const STUCK_UI_MS = 120_000;
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -7646,25 +7645,6 @@ export default function BatchProcessor() {
               }));
 
               clearEditFallbackTimer(activeEditIndex);
-              editFallbackTimersRef.current[activeEditIndex] = setTimeout(() => {
-                if (!editingImagesRef.current.has(activeEditIndex)) return;
-                console.warn('[edit-ui] fallback completion timer fired', { index: activeEditIndex, ms: EDIT_COMPLETE_FALLBACK_MS });
-                setEditingImages(prev => {
-                  const next = new Set(prev);
-                  next.delete(activeEditIndex);
-                  return next;
-                });
-                setEditCompletedImages(prev => new Set(prev).add(activeEditIndex));
-                setResults(prev => prev.map((r, i) => {
-                  if (i !== activeEditIndex) return r;
-                  return {
-                    ...r,
-                    status: (String(r?.status || '').toLowerCase() === 'failed') ? r.status : 'completed',
-                    completionSource: r?.completionSource || 'region-edit',
-                    uiStatus: r?.uiStatus === 'error' ? 'error' : 'ok',
-                  };
-                }));
-              }, EDIT_COMPLETE_FALLBACK_MS);
 
               // Prefer card-level spinner/status over popup dialog while processing
               setIsEditingInProgress(false);
