@@ -2868,6 +2868,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let stage2ValidationRisk = false;
   let stage2Blocked = false;
   let stage2BlockedReason: string | undefined;
+  let stage2Skipped = false;
+  let stage2SkipReason: string | undefined;
   let stage2FallbackStage: "1A" | "1B" | null = null;
   let fallbackUsed: string | null = null;
   let stage2NeedsConfirm = false;
@@ -5906,8 +5908,50 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     outdoorStagingEnabled: false // ALWAYS false for V1 - exterior staging blocked
   });
 
+  const exteriorNoStaging = sceneLabel === "exterior" && !allowStaging;
+  const imageSourceRaw = String(
+    (payload as any)?.image?.source
+    || (payload as any)?.imageSource
+    || (payload as any)?.source
+    || (payload as any)?.meta?.source
+    || (payload as any)?.options?.imageSource
+    || ""
+  ).trim().toLowerCase();
+  const isExternalImage = imageSourceRaw === "external";
+  const stage2Allowed = stagingGuardResult.allowed && !exteriorNoStaging && !isExternalImage;
+  const shouldSkipStage2ForExternal = isExternalImage && stage2Requested && !stage2Allowed;
+
+  if (shouldSkipStage2ForExternal) {
+    stage2Skipped = true;
+    stage2SkipReason = "external_images_not_supported_for_staging";
+    payload.options.virtualStage = false;
+    payload.options.declutter = false;
+    stage2Blocked = false;
+    stage2BlockedReason = undefined;
+    stage2FallbackStage = "1A";
+    nLog("[PIPELINE] Stage-2 skipped - external image", {
+      jobId: payload.jobId,
+      stage2Requested,
+      stage2Allowed,
+      reason: stage2SkipReason,
+      imageSource: imageSourceRaw || null,
+    });
+    updateJob(payload.jobId, {
+      warnings: ["Stage 2 skipped for external image; completed at Stage-1A."],
+      stageCompleted: "1A",
+      stage2Skipped: true,
+      stage2SkipReason,
+      meta: {
+        ...(sceneLabel ? { ...sceneMeta } : {}),
+        stageCompleted: "1A",
+        stage2Skipped: true,
+        stage2SkipReason,
+      },
+    });
+  }
+
   // If staging was requested but not allowed, log and skip
-  if (payload.options.virtualStage && !stagingGuardResult.allowed) {
+  if (!stage2Skipped && payload.options.virtualStage && !stagingGuardResult.allowed) {
     logStagingBlocked({
       orgId: (payload as any).agencyId,
       imageId: payload.imageId,
@@ -5918,7 +5962,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     // Don't error - just skip staging and return enhanced image
     payload.options.virtualStage = false;
   }
-  const exteriorNoStaging = sceneLabel === "exterior" && !allowStaging;
   const stage2Active = payload.options.virtualStage && !stage2Blocked && !exteriorNoStaging;
   if (stage2Active && payload.options.stage2Only === true) {
     const currentJob = await getJob(payload.jobId);
@@ -8529,6 +8572,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(stage1BDeclutterResult ? { stage1BDeclutterResult } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
+    ...(stage2Skipped ? { stage2Skipped: true, stage2SkipReason, stageCompleted: "1A" } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage, partial: true } : {}),
     ...(stage2AdvertisedButMissing ? { stage2AdvertisedButMissing: true } : {}),
   };
@@ -8619,6 +8663,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     status: "complete",
     success: true,
     completed: true,
+    stageCompleted: committedFinalStageLabel,
+    stage2Skipped: stage2Skipped || undefined,
+    stage2SkipReason: stage2Skipped ? stage2SkipReason : undefined,
+    completionReason: stage2Skipped && stage2SkipReason ? stage2SkipReason : undefined,
     currentStage: "finalizing",
     finalStage: committedFinalStageLabel,
     resultStage: committedFinalStageLabel,
@@ -8720,6 +8768,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage2: timestamps.stage2End && timestamps.stage2Start ? timestamps.stage2End - timestamps.stage2Start : null
     }
   });
+  if (stage2Skipped) {
+    nLog("[PIPELINE] Job completed at Stage-1A", {
+      jobId: payload.jobId,
+      stageCompleted: "1A",
+      stage2Skipped: true,
+      reason: stage2SkipReason,
+    });
+  }
 
   // ===== POST-COMPLETION OPERATIONS (BEST-EFFORT, NON-BLOCKING) =====
   // These run AFTER marking the job complete to ensure the user sees results even if these fail

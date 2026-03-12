@@ -23,6 +23,7 @@ STRUCTURAL RULES (STRICT):
 - You must treat all walls, ceilings, floors, windows, doors, openings, built-in joinery and fixed vents as UNCHANGEABLE structure.
 - You must NOT resize, move, add or remove any window, door, wall, opening, bulkhead, or ceiling vent.
 - You must NOT change the position, size or number of windows or doors.
+- Outside the mask region, the image must remain pixel-perfect identical.
 - If the user instruction would normally require structural changes (for example "remove the window"), interpret it in the least structural way possible (for example, cover the window completely with matching curtains or blinds) instead of changing the wall or opening.`
     : `
 STRUCTURAL RULES:
@@ -46,17 +47,25 @@ USER INSTRUCTION (the edit should originate from where IMAGE 2 shows WHITE pixel
 
 ⚠️ CRITICAL MASK INTERPRETATION RULES:
 - IMAGE 2 (the mask) uses this format: WHITE pixels = area to edit, BLACK pixels = area to keep unchanged
-- The WHITE mask region is the primary edit origin and intent anchor.
-- You may adjust nearby pixels outside the white region when necessary for coherent geometry, perspective, object extent, shadows, and realistic blending.
-- Do not treat the mask as a hard stencil boundary.
-- Keep non-target areas as stable as possible while preserving realism.
-- If the user says "paint this wall red" and IMAGE 2 shows white on the RIGHT side, edits should originate on the RIGHT side.
+- You MUST apply the edit ONLY where IMAGE 2 shows WHITE pixels
+- You MUST keep everything pixel-perfect identical where IMAGE 2 shows BLACK pixels
+- Think of the mask like a stencil: you can only paint through the white holes
+- If the user says "paint this wall red" and IMAGE 2 shows white on the RIGHT side, paint the RIGHT side red
+- If IMAGE 2 shows white on the LEFT side, paint the LEFT side
+- Do NOT apply the instruction to black-masked areas
+- Do NOT edit ANY area where IMAGE 2 is black, no matter what the instruction says
+- If you see multiple walls/surfaces in IMAGE 1, ONLY edit the specific wall/surface that has WHITE pixels in IMAGE 2
+
+STRUCTURAL SAFEGUARD:
+- Architectural elements such as walls, windows, doors, ceilings, floors, and built-in fixtures must remain unchanged.
+- Do not add, remove, cover, move, or resize any window, door, or structural opening.
+- If the requested edit would require modifying architectural structure, do not perform the edit.
 
 BLENDING / OUTSKIRTS RULES (IMPORTANT):
-- Blend naturally across the scene where required for realism, including soft shadows and perspective-consistent object extent.
-- Prefer local changes near the intended edit origin; avoid unnecessary global redesign.
-- Never change architectural openings or room structure.
-- If the requested change would require structural changes, refuse that structural part and preserve openings exactly.
+- You may perform minimal blending or anti-aliasing around the WHITE mask boundary to ensure seamless transitions, but this must be strictly limited to a very small margin (suggested: no more than a few pixels relative to the image resolution). Use the smallest feather that preserves visual continuity.
+- You MUST NOT use this allowance to modify distinct nearby surfaces, different walls, or objects that are clearly outside the masked area. For example, if the mask covers the RIGHT wall, do not change the LEFT wall or any other wall's color, texture, or content.
+- Do NOT expand edits to cover additional structural elements (windows, doors, mouldings) that are outside the white mask even partially; instead, if a feature crosses the mask boundary, prefer surface-level treatments (e.g., paint, curtain, patch) that preserve geometry and position.
+- If the required edit would necessarily change structure beyond this tiny blending margin (for example moving a window or altering wall shape), refuse and suggest an alternative that preserves structure (e.g., apply a surface treatment or decorative solution).
 
 GENERAL RULES:
 - Do NOT invent new angles or viewpoints. Keep the same camera position and perspective.
@@ -66,9 +75,8 @@ GENERAL RULES:
 ${structuralRules}
 
 QUALITY RULES:
-- Maintain the architectural structure of the room.
-- Do not modify windows, doors, walls, or other structural openings.
-- If the white mask covers a structural element (for example a window), you may only change surface-level treatment while preserving size and position.
+- Do NOT change the floor, walls, windows, doors, ceilings, or any structure outside the white mask area.
+- If the white mask covers a structural element (for example a window), you may only change its surface treatment (curtains, blinds, reflections) while keeping its size and position identical.
 
-Your output should look like the original photo with the requested edit naturally integrated, while preserving architectural openings and room structure.`;
+Your output should look like the original photo, but with the user instruction perfectly applied inside the mask region and no unintended changes anywhere else.`;
 }

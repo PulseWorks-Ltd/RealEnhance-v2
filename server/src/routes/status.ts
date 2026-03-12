@@ -48,6 +48,9 @@ type StatusItem = {
   currentStage?: string;
   finalStage?: string;
   resultStage?: string | null;
+  stageCompleted?: string | null;
+  stage2Skipped?: boolean;
+  stage2SkipReason?: string | null;
   resultUrl?: string | null;
   fallbackUsed?: string | null;
   retryReason?: string | null;
@@ -505,6 +508,9 @@ export function statusRouter() {
           currentStage: currentStage || undefined,
           finalStage: resolvedFinalStage || undefined,
           resultStage: resolvedFinalStage ?? null,
+          stageCompleted: local.stageCompleted || resolvedFinalStage || null,
+          stage2Skipped: local.stage2Skipped === true || local?.meta?.stage2Skipped === true,
+          stage2SkipReason: local.stage2SkipReason || local?.meta?.stage2SkipReason || null,
           resultUrl: resolvedResultUrl ?? null,
           fallbackUsed: fallbackUsed || null,
           retryReason: retryReason || null,

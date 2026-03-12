@@ -54,7 +54,7 @@
         "railway.json"
       ],
       "buildCommand": "pnpm install --no-frozen-lockfile --prefer-offline && pnpm run build",
-      "startCommand": "pnpm run start",
+      "startCommand": "node server.js",
       "deploy": {
         "healthcheckPath": "/health",
         "healthcheckTimeout": 300,

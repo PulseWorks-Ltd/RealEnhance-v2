@@ -8,4 +8,4 @@ cmd = "pnpm install --no-frozen-lockfile --prefer-offline"
 cmd = "pnpm run build"
 
 [start]
-cmd = "pnpm run start"
+cmd = "node server.js"
