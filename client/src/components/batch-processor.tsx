@@ -156,6 +156,24 @@ function getDisplayUrl(data: any): string | null {
   return resolved.url;
 }
 
+function resolveSelectedDisplayUrlLocal(
+  selectedStage: DisplayOutputKey | null | undefined,
+  urls: {
+    retryLatestUrl?: string | null;
+    editLatestUrl?: string | null;
+    stage2Url?: string | null;
+    stage1BUrl?: string | null;
+    stage1AUrl?: string | null;
+  }
+): string | null {
+  if (selectedStage === "retried") return urls.retryLatestUrl || null;
+  if (selectedStage === "edited") return urls.editLatestUrl || null;
+  if (selectedStage === "2") return urls.stage2Url || null;
+  if (selectedStage === "1B") return urls.stage1BUrl || null;
+  if (selectedStage === "1A") return urls.stage1AUrl || null;
+  return null;
+}
+
 function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
   if (!data) return { url: null, stage: null };
 
@@ -341,6 +359,7 @@ const TECHNICAL_WARNINGS = [
   'preprocessed',
   'canonical',
   'metadata_updated',
+  'enhanced copy of the original is available',
 ];
 
 const USER_FRIENDLY_MESSAGES: Record<string, string> = {
@@ -417,9 +436,13 @@ function getDisplayError(result: any): string | null {
   if (!shouldShowError(result)) return null;
   
   const rawError = result?.error || result?.errorMessage || result?.message || 'Processing failed';
+  const rawErrorLower = String(rawError).toLowerCase();
+  if (rawErrorLower.includes('enhanced copy of the original is available')) {
+    return null;
+  }
   
   // Translate technical errors to user-friendly messages
-  const errorLower = String(rawError).toLowerCase();
+  const errorLower = rawErrorLower;
   for (const [key, friendlyMsg] of Object.entries(USER_FRIENDLY_MESSAGES)) {
     if (errorLower.includes(key.toLowerCase())) {
       return friendlyMsg;
@@ -3213,9 +3236,7 @@ export default function BatchProcessor() {
             const hasOnlyStage1A = !!stage1aUrl && !stage1bUrl && !stage2Url && !resultUrlSafe;
             const isQueued = pipelineStatusRaw === "queued" || pipelineStatusRaw === "waiting";
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
-            if (uiOverrideFailed && !warningList.includes("Enhanced copy of the original is available.")) {
-              warningList.push("Enhanced copy of the original is available.");
-            }
+            // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
             const isTerminalNormalized = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled";
             if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
               nonTerminalIndices.push(idx);
@@ -3488,7 +3509,7 @@ export default function BatchProcessor() {
                 // FIX 3: Only show errors for terminal failure states
                 error: (status === "failed" || (it.errorCode && isTerminalFlag))
                   ? getDisplayError({ status, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
-                  : (uiOverrideFailed ? (existing.error || "Enhanced copy of the original is available.") : existing.error),
+                  : existing.error,
                 errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
                 blockedStage: blockedStage || existing.blockedStage,
                 fallbackStage: fallbackStage || existing.fallbackStage,
@@ -4520,6 +4541,7 @@ export default function BatchProcessor() {
       toDisplayUrl(result?.resultUrl) ||
       toDisplayUrl(result?.result?.resultUrl) ||
       null;
+    const retryLatestUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
     const editLatestUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
     const isRegionEdit =
       result?.completionSource === "region-edit" ||
@@ -4536,12 +4558,14 @@ export default function BatchProcessor() {
       if (finalResultUrl) return { stage: null, url: finalResultUrl };
     }
 
+    if (selectedStage === "retried") return { stage: null, url: retryLatestUrl || null };
     if (selectedStage === "edited" && editLatestUrl) return { stage: null, url: editLatestUrl };
 
     if (selectedStage === "2" && stage2Url) return { stage: "2", url: stage2Url };
     if (selectedStage === "1B" && stage1BUrl) return { stage: "1B", url: stage1BUrl };
     if (selectedStage === "1A" && stage1AUrl) return { stage: "1A", url: stage1AUrl };
 
+    if (retryLatestUrl) return { stage: null, url: retryLatestUrl };
     if (finalResultUrl) return { stage: null, url: finalResultUrl };
     if (stage2Url) return { stage: "2", url: stage2Url };
     if (stage1BUrl) return { stage: "1B", url: stage1BUrl };
@@ -6904,7 +6928,7 @@ export default function BatchProcessor() {
                           // Partial outputs arrived but final URL missing: treat as warning while still processing
                           derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
                         }
-                        const isError = (status === "failed") || derivedUiStatus === "error" || uiOverrideFailed;
+                        const isError = (status === "failed") || derivedUiStatus === "error";
                         // Determine target stage per image to avoid premature "Complete"
                         const targetStage: StageKey = (() => {
                           if (stage2Expected) return "2";
@@ -7041,6 +7065,8 @@ export default function BatchProcessor() {
                           ? "Editing image..."  // ✅ Show explicit editing message
                           : isRetrying
                           ? "Retrying enhancement..."  // ✅ Show explicit retry message
+                          : uiOverrideFailed && !isUiComplete
+                          ? "Processing is taking longer than expected"
                           : isIntermediateProcessing && intermediateStageMessage
                           ? intermediateStageMessage  // ✅ Show intermediate stage message
                           : isEditComplete
@@ -7088,11 +7114,18 @@ export default function BatchProcessor() {
                         const defaultUrl = isDone ? (resolvedFinalUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
                           if (!selectedStage) return defaultUrl;
-                          if (selectedStage === "retried") return retriedUrl || defaultUrl;
-                          if (selectedStage === "edited") return editedUrl || defaultUrl;
-                          if (selectedStage === "2") return stage2Url || defaultUrl;
-                          if (selectedStage === "1B") return stage1BUrl || defaultUrl;
-                          if (selectedStage === "1A") return stage1AUrl || defaultUrl;
+                          const selectedUrl = resolveSelectedDisplayUrlLocal(selectedStage, {
+                            retryLatestUrl: retriedUrl,
+                            editLatestUrl: editedUrl,
+                            stage2Url,
+                            stage1BUrl,
+                            stage1AUrl,
+                          });
+                          if (selectedStage === "retried") return selectedUrl;
+                          if (selectedStage === "edited") return selectedUrl || defaultUrl;
+                          if (selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A") {
+                            return selectedUrl || defaultUrl;
+                          }
                           return defaultUrl;
                         })();
                         const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null, {
@@ -7100,7 +7133,9 @@ export default function BatchProcessor() {
                           stage1B: preEditSnapshot?.stage1B || null,
                           stage1A: preEditSnapshot?.stage1A || null,
                         });
-                        const bestDisplayUrl = bestAvailable.url || displayedUrl || previewUrls[i] || null;
+                        const bestDisplayUrl = selectedStage === "retried"
+                          ? (bestAvailable.url || displayedUrl || null)
+                          : (bestAvailable.url || displayedUrl || previewUrls[i] || null);
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||

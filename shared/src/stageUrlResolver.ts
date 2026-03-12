@@ -1,4 +1,5 @@
 export type StageLabel = "1A" | "1B" | "2";
+export type DisplaySelectionLabel = StageLabel | "retried" | "edited";
 
 export type StageUrlMap = Record<string, unknown> | null | undefined;
 
@@ -16,10 +17,36 @@ export type StageUrlResolutionOptions = {
   logger?: (message: string, payload: StageUrlResolutionLog) => void;
 };
 
+export type DisplaySelectionUrls = {
+  retryLatestUrl?: string | null;
+  editLatestUrl?: string | null;
+  stage2Url?: string | null;
+  stage1BUrl?: string | null;
+  stage1AUrl?: string | null;
+};
+
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function resolveSelectedDisplayUrl(
+  selectedStage: DisplaySelectionLabel | null | undefined,
+  urls: DisplaySelectionUrls,
+): string | null {
+  const retryLatestUrl = asNonEmptyString(urls.retryLatestUrl);
+  const editLatestUrl = asNonEmptyString(urls.editLatestUrl);
+  const stage2Url = asNonEmptyString(urls.stage2Url);
+  const stage1BUrl = asNonEmptyString(urls.stage1BUrl);
+  const stage1AUrl = asNonEmptyString(urls.stage1AUrl);
+
+  if (selectedStage === "retried") return retryLatestUrl || null;
+  if (selectedStage === "edited") return editLatestUrl || null;
+  if (selectedStage === "2") return stage2Url || null;
+  if (selectedStage === "1B") return stage1BUrl || null;
+  if (selectedStage === "1A") return stage1AUrl || null;
+  return null;
 }
 
 export function getStageUrlKeys(stage: StageLabel): string[] {
