@@ -3524,6 +3524,7 @@ export default function BatchProcessor() {
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
+              setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
 
@@ -7751,11 +7752,7 @@ export default function BatchProcessor() {
                     filename: r?.filename
                   } : r
                 ));
-                setDisplayStageByIndex(prev => {
-                  const next = { ...prev };
-                  delete next[editingImageIndex];
-                  return next;
-                });
+                setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: "edited" }));
                 setProcessedImagesByIndex(prev => ({ ...prev, [String(editingImageIndex)]: result.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
