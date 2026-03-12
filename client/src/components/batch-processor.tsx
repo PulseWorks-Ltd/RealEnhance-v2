@@ -1913,7 +1913,7 @@ export default function BatchProcessor() {
       const res = await apiFetch("/api/agency/bundles/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bundleCode: "BUNDLE_50" }),
+        body: JSON.stringify({ bundleCode: "BUNDLE_20" }),
       });
       const data = await res.json().catch(() => ({}));
       const checkoutUrl = String(data?.checkoutUrl || data?.url || "").trim();
@@ -1966,9 +1966,7 @@ export default function BatchProcessor() {
         )
       );
     } finally {
-      clearPendingEnhancementJobs();
-      setPendingRestoreSession(null);
-      setShowPendingRestoreBanner(false);
+      resetBatchState("images");
       setCreditGateModal((prev) => ({ ...prev, open: false, pendingJobIds: [] }));
     }
   }, [creditGateModal.pendingJobIds]);
@@ -7857,7 +7855,7 @@ export default function BatchProcessor() {
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Add Standard Pack (50 Images) - $99 Continue Enhancement
+              Add Starter Pack (20 Images) - $50 Continue Enhancement
             </Button>
             <Button
               type="button"
@@ -7873,7 +7871,7 @@ export default function BatchProcessor() {
               variant="ghost"
               onClick={handleCancelPendingEnhancement}
             >
-              Not Now
+              Cancel & start over
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">Increase your monthly image allowance.</p>
