@@ -157,9 +157,8 @@ async function initializeAsyncServices(): Promise<void> {
   }
 
   try {
-    const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 10000, "PulseWorks Limited");
-    const seededB = await setCreditsForEmail("propertybrokershaun@gmail.com", 10000, "Shaun (Property Brokers)");
-    console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits }, { b: seededB.email, credits: seededB.credits });
+    const seededA = await setCreditsForEmail("pulseworkslimited@gmail.com", 250, "PulseWorks Limited");
+    console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits });
   } catch (e) {
     console.warn("[seed] failed to ensure credits:", e);
   }
