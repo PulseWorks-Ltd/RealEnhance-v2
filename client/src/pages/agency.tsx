@@ -99,6 +99,12 @@ const roleIcons = {
   member: User,
 };
 
+function toLabel(value: string | null | undefined, fallback: string): string {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) return fallback;
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
@@ -748,7 +754,7 @@ export default function AgencyPage() {
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Plan</span>
                   <Badge variant="secondary">
-                    {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)}
+                    {toLabel(agencyInfo.planTier, "Trial")}
                   </Badge>
                 </div>
                 {agencyInfo.billingCountry && (
@@ -768,7 +774,7 @@ export default function AgencyPage() {
                 <div className="flex items-center justify-between py-2">
                   <span className="text-sm text-muted-foreground">Your Role</span>
                   <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
-                    {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
+                    {toLabel(agencyInfo.userRole, "Member")}
                   </Badge>
                 </div>
               </div>
@@ -884,7 +890,7 @@ export default function AgencyPage() {
                         <div>
                           <p className="font-medium text-foreground">{invite.email}</p>
                           <p className="text-sm text-muted-foreground">
-                            {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                            {toLabel(invite.role, "Member")} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
                           </p>
                         </div>
                         <StatusBadge status="pending" label="Pending" />
@@ -928,7 +934,7 @@ export default function AgencyPage() {
                           </div>
                           <div className="flex items-center gap-2 ml-4">
                             <Badge variant={member.role === "owner" ? "default" : "secondary"}>
-                              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                              {toLabel(member.role, "Member")}
                             </Badge>
                             <StatusBadge
                               status={member.isActive ? "success" : "error"}
