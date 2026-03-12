@@ -39,8 +39,9 @@ export function usageRouter() {
 
       const snapshot = await getUsageSnapshot(user.agencyId);
       const topUsers = await getTopUsersByUsage(user.agencyId);
-      const planCode = planTierToPlanCode(agency.planTier as PlanTier);
-      const planLimits = PLAN_LIMITS[agency.planTier as PlanTier];
+      const planTier = agency.planTier as PlanTier | null | undefined;
+      const planCode = planTier ? planTierToPlanCode(planTier) : "TRIAL";
+      const planLimits = planTier ? PLAN_LIMITS[planTier] : { price: 0 };
 
       // Calculate usage percentages for warnings
       const mainUsagePercent = (snapshot.includedUsed / snapshot.includedLimit) * 100;
@@ -73,7 +74,7 @@ export function usageRouter() {
         hasAgency: true,
         monthKey: snapshot.monthKey,
         planCode,
-        planName: planCode.charAt(0) + planCode.slice(1).toLowerCase(), // "STARTER" -> "Starter"
+        planName: planTier ? (planCode.charAt(0) + planCode.slice(1).toLowerCase()) : "Trial / No Plan",
         price: planLimits.price,
         mainAllowance: snapshot.includedLimit,
         mainUsed: snapshot.includedUsed,

@@ -60,6 +60,7 @@ export async function grantSignupPromoCreditsOnce(agencyId: string, credits: num
   const promoIntentId = `${PROMO_SIGNUP_SOURCE}:${agencyId}`;
   const bundleResult = await createImageBundle({
     agencyId,
+    bundleType: "promo",
     bundleCode: PROMO_SIGNUP_BUNDLE_CODE,
     imagesPurchased: credits,
     stripePaymentIntentId: promoIntentId,
@@ -172,10 +173,15 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
       return res.status(409).json({ error: "User already belongs to an agency" });
     }
 
+    const normalizedPlanTier =
+      planTier === "starter" || planTier === "pro" || planTier === "agency"
+        ? (planTier as PlanTier)
+        : null;
+
     // Create agency
     const agency = await createAgency({
       name: name.trim(),
-      planTier: planTier || "starter",
+      planTier: normalizedPlanTier,
       ownerId: user.id,
     });
 
@@ -248,8 +254,9 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     const activeUsers = await countActiveAgencyUsers(user.agencyId);
     const trial = await getTrialSummary(user.agencyId);
     const usage = await getUsageSnapshot(user.agencyId);
-    const planTier = (agency.planTier as PlanTier) || "starter";
-    const plan = getStripePlan(planTier);
+    const planTier = agency.planTier ?? null;
+    const plan = planTier ? getStripePlan(planTier as PlanTier) : null;
+    const planName = plan ? plan.displayName : "Trial / No Plan";
 
     res.json({
       agency,
@@ -257,15 +264,16 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
       trial,
       subscription: {
         planTier,
-        planName: plan.displayName,
+        planName,
         status: agency.subscriptionStatus,
         currentPeriodEnd: agency.currentPeriodEnd,
         billingCurrency: agency.billingCurrency,
         billingCountry: agency.billingCountry,
         allowance: {
           monthlyIncluded: usage.includedLimit,
-          used: usage.includedUsed,
-          remaining: usage.remaining,
+          monthlyUsed: usage.includedUsed,
+          monthlyRemaining: usage.includedRemaining,
+          totalRemaining: usage.remaining,
           addonBalance: usage.addonBalance,
           monthKey: usage.monthKey,
         },
@@ -763,6 +771,28 @@ router.post("/bundles/checkout", requireAuth, requireAgencyAdmin, async (req: Re
 
     if (!agency) {
       return res.status(404).json({ error: "Agency not found" });
+    }
+
+    const hasActiveSubscription =
+      !!agency.stripeSubscriptionId &&
+      (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL");
+    const bundles = await getBundleHistory(user.agencyId!);
+    const now = new Date();
+    const paidBundleCredits = bundles.reduce((sum, b) => {
+      if (b.bundleType !== "paid") return sum;
+      if (!b.expiresAt || new Date(b.expiresAt) <= now) return sum;
+      return sum + Math.max(0, Number(b.imagesPurchased || 0) - Number(b.imagesUsed || 0));
+    }, 0);
+
+    if (!hasActiveSubscription && paidBundleCredits <= 0) {
+      console.log(
+        `[BUNDLES] Checkout blocked for agency ${user.agencyId}: no active subscription and no paid bundle credits`
+      );
+      return res.status(403).json({
+        code: "BUNDLE_PURCHASE_RESTRICTED",
+        error: "Bundle purchase restricted",
+        message: "Bundle purchases require an active subscription or existing paid bundle credits.",
+      });
     }
 
     const stripePriceId = getBundleStripePriceId(bundle.code, "nzd");

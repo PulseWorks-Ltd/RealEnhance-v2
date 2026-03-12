@@ -11,12 +11,12 @@ import { v4 as uuidv4 } from "uuid";
  */
 export async function createAgency(params: {
   name: string;
-  planTier?: PlanTier;
+  planTier?: PlanTier | null;
   ownerId: string;
   subscriptionStatus?: SubscriptionStatus;
   agencyId?: string;
 }): Promise<Agency> {
-  const planTier = params.planTier || "starter";
+  const planTier = params.planTier ?? null;
   const subscriptionStatus = params.subscriptionStatus || "TRIAL"; // New agencies start as TRIAL
 
   const agency: Agency = {
@@ -34,7 +34,7 @@ export async function createAgency(params: {
     await client.hSet(key, {
       agencyId: agency.agencyId,
       name: agency.name,
-      planTier: agency.planTier,
+      planTier: agency.planTier || "",
       subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
     });
@@ -63,7 +63,7 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
     return {
       agencyId: data.agencyId,
       name: data.name,
-      planTier: data.planTier as PlanTier,
+      planTier: data.planTier ? (data.planTier as PlanTier) : null,
       subscriptionStatus: (data.subscriptionStatus as SubscriptionStatus) || "ACTIVE", // Default to ACTIVE for backwards compatibility
       // Stripe billing fields
       stripeCustomerId: data.stripeCustomerId,
@@ -99,7 +99,7 @@ export async function updateAgency(agency: Agency): Promise<void> {
     const data: Record<string, string> = {
       agencyId: agency.agencyId,
       name: agency.name,
-      planTier: agency.planTier,
+      planTier: agency.planTier || "",
       subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
       updatedAt: new Date().toISOString(),

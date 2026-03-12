@@ -105,6 +105,14 @@ export async function consumeFreeEditCount(params: {
 
 async function getPlanLimitForAgency(agencyId: string): Promise<number> {
   const agency = await getAgency(agencyId);
+  const hasActiveStripeSubscription =
+    !!agency?.stripeSubscriptionId &&
+    (agency?.subscriptionStatus === "ACTIVE" || agency?.subscriptionStatus === "TRIAL");
+
+  if (!hasActiveStripeSubscription) {
+    return 0;
+  }
+
   const tier = (agency?.planTier as PlanTier) || "starter";
   const limits = PLAN_LIMITS[tier];
   return limits.mainAllowance;
@@ -197,7 +205,8 @@ export async function reserveAllowance(params: {
       throw err;
     }
 
-    // Allocate sequentially: Stage12 first (if requested), then Stage2
+    // Allocate sequentially: Stage12 first (if requested), then Stage2.
+    // Consume plan allowance first, then add-on bundles.
     const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number }[] = [];
     let remainingNeed = params.requiredImages;
     let remainingIncluded = includedRemaining;
@@ -210,12 +219,12 @@ export async function reserveAllowance(params: {
 
     for (const s of stages) {
       if (!s.requested || remainingNeed <= 0) continue;
-      const takeAddon = Math.min(remainingNeed, remainingAddon);
-      remainingAddon -= takeAddon;
-      remainingNeed -= takeAddon;
       const takeIncluded = Math.min(remainingNeed, remainingIncluded);
       remainingIncluded -= takeIncluded;
       remainingNeed -= takeIncluded;
+      const takeAddon = Math.min(remainingNeed, remainingAddon);
+      remainingAddon -= takeAddon;
+      remainingNeed -= takeAddon;
       allocations.push({ stage: s.key, fromIncluded: takeIncluded, fromAddon: takeAddon });
     }
 
@@ -384,7 +393,7 @@ export async function finalizeReservation(params: {
       );
     }
 
-    // Consume bundle allowance on success (extras-first alignment)
+    // Consume bundle allowance on success (after monthly allowance allocation)
     const addonToConsume = (consumeStage12 ? jr.stage12_from_addon : 0) + (consumeStage2 ? jr.stage2_from_addon : 0);
     if (addonToConsume > 0) {
       await consumeBundleImages(jr.agency_id, addonToConsume, jr.yyyymm);

@@ -14,7 +14,7 @@ type PlanTier = "starter" | "pro" | "agency";
 
 type SubscriptionData = {
   agencyId: string;
-  planTier: PlanTier;
+  planTier: PlanTier | null;
   planDisplayName: string;
   planCode: string;
   status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
@@ -59,6 +59,10 @@ const PLAN_LABELS: Record<PlanTier, string> = {
   pro: "Pro",
   agency: "Agency",
 };
+
+function getPlanLabel(planTier: PlanTier | null): string {
+  return planTier ? PLAN_LABELS[planTier] : "Trial / No Plan";
+}
 
 const STATUS_STYLES = {
   ACTIVE: { label: "Active", variant: "default" as const },
@@ -379,7 +383,7 @@ export default function ProfileSettings() {
                   <div>
                     <p className="text-sm text-muted-foreground">Current plan</p>
                     <p className="text-xl font-semibold">{subscription.planDisplayName}</p>
-                    <p className="text-xs text-muted-foreground">{PLAN_LABELS[subscription.planTier]} · {subscription.allowance.monthlyIncluded} images / month</p>
+                    <p className="text-xs text-muted-foreground">{getPlanLabel(subscription.planTier)} · {subscription.allowance.monthlyIncluded} images / month</p>
                     <p className="text-xs text-muted-foreground">Add-on balance: {subscription.addOns.balance} images</p>
                   </div>
                   {statusConfig && (

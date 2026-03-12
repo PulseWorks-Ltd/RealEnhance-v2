@@ -10,7 +10,7 @@ export type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "CANCELLED" | "TRIAL";
 export interface Agency {
   agencyId: string;
   name: string;
-  planTier: PlanTier;
+  planTier?: PlanTier | null;
 
   // Subscription status - automatically updated by Stripe webhooks
   subscriptionStatus: SubscriptionStatus;

@@ -57,7 +57,7 @@ interface AgencyInvite {
 interface AgencyInfo {
   agencyId: string;
   name: string;
-  planTier: "starter" | "pro" | "agency";
+  planTier: "starter" | "pro" | "agency" | null;
   subscriptionStatus: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -68,7 +68,7 @@ interface AgencyInfo {
   activeUsers?: number;
   userRole: "owner" | "admin" | "member";
   subscription?: {
-    planTier: "starter" | "pro" | "agency";
+    planTier: "starter" | "pro" | "agency" | null;
     planName: string;
     status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
     currentPeriodEnd?: string | null;
@@ -180,7 +180,7 @@ export default function AgencyPage() {
       const agencyInfo: AgencyInfo = {
         agencyId: infoData.agency.agencyId,
         name: infoData.agency.name,
-        planTier: infoData.agency.planTier,
+        planTier: infoData.agency.planTier ?? null,
         subscriptionStatus: infoData.agency.subscriptionStatus,
         stripeCustomerId: infoData.agency.stripeCustomerId,
         stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
@@ -411,7 +411,7 @@ export default function AgencyPage() {
       setCreating(true);
       const res = await apiFetch("/api/agency/create", {
         method: "POST",
-        body: JSON.stringify({ name: agencyName.trim(), planTier: "starter" }),
+        body: JSON.stringify({ name: agencyName.trim() }),
       });
 
       if (res.ok) {
@@ -431,7 +431,7 @@ export default function AgencyPage() {
           setAgencyInfo({
             agencyId: created.agency.agencyId,
             name: created.agency.name,
-            planTier: created.agency.planTier,
+            planTier: created.agency.planTier ?? null,
             subscriptionStatus: created.agency.subscriptionStatus,
             stripeCustomerId: created.agency.stripeCustomerId,
             stripeSubscriptionId: created.agency.stripeSubscriptionId,
@@ -593,21 +593,21 @@ export default function AgencyPage() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  {agencyInfo.subscription.planName} • {agencyInfo.subscription.allowance.monthKey}
+                  {(agencyInfo.subscription.planName || "Trial / No Plan")} • {agencyInfo.subscription.allowance.monthKey}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Monthly allowance</p>
-                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyUsed} / {agencyInfo.subscription.allowance.monthlyIncluded}</p>
+                  <p className="text-xs text-muted-foreground">Plan allowance</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyRemaining} remaining this month</p>
                   <p className="text-xs text-muted-foreground">
-                    {agencyInfo.subscription.allowance.monthlyRemaining} remaining this month
+                    {agencyInfo.subscription.allowance.monthlyUsed} / {agencyInfo.subscription.allowance.monthlyIncluded} used
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Add-on balance</p>
-                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
-                  <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
+                  <p className="text-xs text-muted-foreground">Add-on credits</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance} remaining</p>
+                  <p className="text-xs text-muted-foreground">Used after your monthly allowance is exhausted</p>
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Billing</p>
@@ -632,7 +632,7 @@ export default function AgencyPage() {
                   <span>Monthly Usage</span>
                 </CardTitle>
                 <CardDescription>
-                  Your plan includes {usage.mainAllowance} enhanced images per month
+                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} enhanced images per month
                 </CardDescription>
               </CardHeader>
               <CardContent>

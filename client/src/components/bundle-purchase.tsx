@@ -189,7 +189,7 @@ export function BundlePurchase() {
         </div>
 
         <div className="mt-4 p-3 bg-muted rounded-md text-sm text-muted-foreground">
-          <strong>Note:</strong> Bundle images are valid for 30 days from purchase and are consumed before your monthly allowance. Secure payment powered by Stripe.
+          <strong>Note:</strong> Bundle images are valid for 30 days from purchase and are used after your monthly allowance is exhausted. Secure payment powered by Stripe.
         </div>
       </CardContent>
     </Card>

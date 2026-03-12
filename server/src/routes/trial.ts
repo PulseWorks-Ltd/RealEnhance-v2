@@ -79,7 +79,6 @@ router.post("/start", rateLimit, async (req: Request, res: Response) => {
     const agency = await createAgency({
       agencyId,
       name: agencyName.trim(),
-      planTier: "starter",
       ownerId: "trial-owner",
       subscriptionStatus: "TRIAL",
     });

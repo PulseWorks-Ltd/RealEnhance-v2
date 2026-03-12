@@ -9,6 +9,7 @@ export interface AgencyImageBundle {
   id: string;
   agencyId: string;
   monthKey: string; // YYYY-MM when purchased
+  bundleType: "promo" | "paid";
   bundleCode: BundleCode;
   imagesPurchased: number;
   imagesUsed: number;
@@ -24,6 +25,7 @@ export interface AgencyImageBundle {
  */
 export async function createImageBundle(params: {
   agencyId: string;
+  bundleType?: "promo" | "paid";
   bundleCode: BundleCode;
   imagesPurchased: number;
   stripePaymentIntentId: string;
@@ -55,6 +57,7 @@ export async function createImageBundle(params: {
       id: `bundle_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
       agencyId: params.agencyId,
       monthKey,
+      bundleType: params.bundleType || "paid",
       bundleCode: params.bundleCode,
       imagesPurchased: params.imagesPurchased,
       imagesUsed: 0,
@@ -117,7 +120,9 @@ export async function getActiveBundles(
       const data = await redis.get(bundleKey);
 
       if (data) {
-        const bundle: AgencyImageBundle = JSON.parse(data);
+        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: "promo" | "paid" };
+        const bundleType = parsed.bundleType || inferLegacyBundleType(parsed);
+        const bundle: AgencyImageBundle = { ...parsed, bundleType };
 
         // Only include bundles that haven't expired (expiry is 30 days from purchase)
         if (new Date(bundle.expiresAt) > new Date()) {
@@ -213,7 +218,9 @@ export async function getBundleHistory(agencyId: string): Promise<AgencyImageBun
       const data = await redis.get(bundleKey);
 
       if (data) {
-        bundles.push(JSON.parse(data));
+        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: "promo" | "paid" };
+        const bundleType = parsed.bundleType || inferLegacyBundleType(parsed);
+        bundles.push({ ...parsed, bundleType });
       }
     }
 
@@ -223,4 +230,16 @@ export async function getBundleHistory(agencyId: string): Promise<AgencyImageBun
     console.error("[BUNDLES] Error getting bundle history:", err);
     return [];
   }
+}
+
+function inferLegacyBundleType(bundle: {
+  stripeSessionId?: string;
+  stripePaymentIntentId?: string;
+}): "promo" | "paid" {
+  const sessionId = String(bundle?.stripeSessionId || "");
+  const paymentIntentId = String(bundle?.stripePaymentIntentId || "");
+  if (sessionId === "promo_signup" || paymentIntentId.startsWith("promo_signup:")) {
+    return "promo";
+  }
+  return "paid";
 }

@@ -117,7 +117,6 @@ export function emailAuthRouter() {
       // Create agency and assign owner to it
       const agency = await createAgency({
         name: cleanedAgencyName,
-        planTier: "starter",
         ownerId: newUser.id,
       });
 

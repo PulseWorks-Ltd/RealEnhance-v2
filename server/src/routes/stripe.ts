@@ -220,6 +220,7 @@ router.post(
             // Create bundle record (idempotent via payment intent ID)
             const result = await createImageBundle({
               agencyId,
+              bundleType: "paid",
               bundleCode: bundleCode as BundleCode,
               imagesPurchased: parseInt(images, 10),
               stripePaymentIntentId: session.payment_intent as string,

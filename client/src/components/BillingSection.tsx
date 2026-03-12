@@ -16,7 +16,7 @@ interface BillingSectionProps {
   agency: {
     agencyId: string;
     name: string;
-    planTier: "starter" | "pro" | "agency";
+    planTier: "starter" | "pro" | "agency" | null;
     subscriptionStatus: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
@@ -47,7 +47,7 @@ interface PlanDisplayOption {
 }
 
 interface SubscriptionInfo {
-  planTier: "starter" | "pro" | "agency";
+  planTier: "starter" | "pro" | "agency" | null;
   planDisplayName: string;
   stripeSubscriptionId: string | null;
   status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
@@ -85,7 +85,8 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
   },
 ];
 
-function formatPlanDisplayName(planTier: "starter" | "pro" | "agency", planDisplayName?: string | null): string {
+function formatPlanDisplayName(planTier: "starter" | "pro" | "agency" | null, planDisplayName?: string | null): string {
+  if (!planTier) return "Trial / No Plan";
   if (planDisplayName === "Studio" || planDisplayName === "Agency Plus") return PLAN_NAMES.agency;
   return planDisplayName || PLAN_NAMES[planTier];
 }
@@ -101,7 +102,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier);
+  const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier || "starter");
   const [selectedCountry, setSelectedCountry] = useState<string>(agency.billingCountry || "NZ");
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);

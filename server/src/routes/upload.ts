@@ -234,11 +234,10 @@ export function uploadRouter() {
           : false;
 
         const trialExpired = trialSummary.status === "expired" || (trialSummary.expiresAt && new Date(trialSummary.expiresAt) < now);
-        const trialActive = trialSummary.status === "active" && !trialExpired && trialSummary.remaining > 0;
         const hasActiveStripeSubscription =
           hasStripeSubscription && ["ACTIVE", "TRIAL"].includes(String(agency.subscriptionStatus || "").toUpperCase());
         const hasRemainingCredits = availableCredits > 0;
-        const canProcess = hasActiveStripeSubscription || trialActive || hasRemainingCredits || isGrandfathered;
+        const canProcess = hasActiveStripeSubscription || hasRemainingCredits || isGrandfathered;
 
         if (!canProcess) {
           console.log(

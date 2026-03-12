@@ -395,15 +395,21 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
     const { user, agency } = await loadUserAndAgency(req);
 
     const usage = await getUsageSnapshot(agency.agencyId);
-    const tier = (agency.planTier as PlanTier) || "starter";
-    const plan = getStripePlan(tier);
+    const agencyPlanTier = agency.planTier ?? null;
+    const hasActiveStripeSubscription =
+      !!agency.stripeSubscriptionId &&
+      (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL");
+    const effectiveTier = hasActiveStripeSubscription
+      ? ((agencyPlanTier as PlanTier) || "starter")
+      : null;
+    const plan = effectiveTier ? getStripePlan(effectiveTier) : null;
     const billingCurrency: BillingCurrency = (agency.billingCurrency as BillingCurrency) || "nzd";
 
     const currentPricePlan = findPlanByPriceId(agency.stripePriceId);
-    const effectiveTier = currentPricePlan?.planTier || tier;
+    const pricedTier = currentPricePlan?.planTier || effectiveTier;
     const effectivePlan = currentPricePlan?.plan || plan;
 
-    const currentIndex = PLAN_ORDER.indexOf(effectiveTier);
+    const currentIndex = pricedTier ? PLAN_ORDER.indexOf(pricedTier) : -1;
     const upgradeOptions = PLAN_ORDER.filter((p) => PLAN_ORDER.indexOf(p) > currentIndex).map((p) => {
       const cfg = getStripePlan(p);
       const priceId = getStripePriceId(p, billingCurrency);
@@ -422,19 +428,19 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
 
     return res.json({
       agencyId: agency.agencyId,
-      planCode: planTierToPlanCode(effectiveTier),
-      planTier: effectiveTier,
-      planDisplayName: effectivePlan.displayName,
+      planCode: pricedTier ? planTierToPlanCode(pricedTier) : null,
+      planTier: pricedTier,
+      planDisplayName: effectivePlan?.displayName || "Trial / No Plan",
       stripePriceId: agency.stripePriceId || null,
       stripeSubscriptionId: agency.stripeSubscriptionId || null,
       status: agency.subscriptionStatus || "CANCELLED",
       currentPeriodEnd: agency.currentPeriodEnd || null,
       billingCountry: agency.billingCountry || null,
       billingCurrency,
-      seatLimit: effectivePlan.seatLimit,
-      allowInvites: effectivePlan.allowInvites,
+      seatLimit: effectivePlan?.seatLimit ?? null,
+      allowInvites: effectivePlan?.allowInvites ?? false,
       allowance: {
-        monthlyIncluded: effectivePlan.mainAllowance,
+        monthlyIncluded: usage.includedLimit,
         monthlyUsed: usage.includedUsed,
         monthlyRemaining: usage.includedRemaining,
         addonBalance: usage.addonRemaining,
