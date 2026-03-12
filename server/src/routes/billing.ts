@@ -19,6 +19,7 @@ import {
 } from "@realenhance/shared/billing/stripePlans.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
+import { getTrialSummary } from "../services/trials.js";
 
 const router = Router();
 
@@ -467,7 +468,10 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
   try {
     const { user, agency } = await loadUserAndAgency(req);
 
-    const usage = await getUsageSnapshot(agency.agencyId);
+    const [usage, trial] = await Promise.all([
+      getUsageSnapshot(agency.agencyId),
+      getTrialSummary(agency.agencyId),
+    ]);
     const agencyPlanTier = agency.planTier ?? null;
     const hasActiveStripeSubscription =
       !!agency.stripeSubscriptionId &&
@@ -481,6 +485,11 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
     const currentPricePlan = findPlanByPriceId(agency.stripePriceId);
     const pricedTier = currentPricePlan?.planTier || effectiveTier;
     const effectivePlan = currentPricePlan?.plan || plan;
+    const now = Date.now();
+    const trialActive =
+      trial.status === "active" &&
+      (!trial.expiresAt || Number.isNaN(Date.parse(trial.expiresAt)) || Date.parse(trial.expiresAt) > now);
+    const fallbackPlanDisplayName = trialActive ? "Starter (Trial)" : "No Plan";
 
     const currentIndex = pricedTier ? PLAN_ORDER.indexOf(pricedTier) : -1;
     const upgradeOptions = PLAN_ORDER.filter((p) => PLAN_ORDER.indexOf(p) > currentIndex).map((p) => {
@@ -503,7 +512,7 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       agencyId: agency.agencyId,
       planCode: pricedTier ? planTierToPlanCode(pricedTier) : null,
       planTier: pricedTier,
-      planDisplayName: effectivePlan?.displayName || "Trial / No Plan",
+      planDisplayName: effectivePlan?.displayName || fallbackPlanDisplayName,
       stripePriceId: agency.stripePriceId || null,
       stripeSubscriptionId: agency.stripeSubscriptionId || null,
       status: agency.subscriptionStatus || "CANCELLED",

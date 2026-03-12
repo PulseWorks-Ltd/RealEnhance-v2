@@ -91,6 +91,15 @@ async function recordSubscriptionInvoiceCredit(params: {
   });
 }
 
+async function markTrialConvertedSafe(agencyId: string, reason: string) {
+  try {
+    await markTrialConverted(agencyId);
+    console.log(`[STRIPE] Trial converted for agency ${agencyId} (${reason})`);
+  } catch (err) {
+    console.warn(`[STRIPE] Failed to mark trial converted for agency ${agencyId} (${reason})`, err);
+  }
+}
+
 /**
  * POST /api/stripe/webhook
  * Handle Stripe webhook events
@@ -195,7 +204,7 @@ router.post(
 
             await updateAgency(agency);
             await upsertAgencyAllowance(agency.agencyId, agency.planTier);
-            await markTrialConverted(agency.agencyId);
+            await markTrialConvertedSafe(agency.agencyId, "checkout.session.completed");
 
             console.log(`[STRIPE] ✅ Subscription activated for agency ${agencyId}: ${planTier} (${subscription.status})`);
           } else {
@@ -315,6 +324,9 @@ router.post(
           }
 
           await updateAgency(agency);
+          if (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL") {
+            await markTrialConvertedSafe(agency.agencyId, event.type);
+          }
 
           console.log(`[STRIPE] ✅ Subscription ${event.type} synced for agency ${agencyId}: ${subscription.status}`);
           break;
@@ -394,6 +406,9 @@ router.post(
               }
 
               await updateAgency(agency);
+              if (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL") {
+                await markTrialConvertedSafe(agency.agencyId, "invoice.payment_succeeded");
+              }
               console.log(`[STRIPE] ✅ Invoice paid for agency ${agencyId}: $${(invoice.amount_paid / 100).toFixed(2)}`);
             }
           } catch (agencyErr) {

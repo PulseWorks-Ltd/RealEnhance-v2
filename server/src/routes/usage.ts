@@ -57,6 +57,12 @@ export function usageRouter() {
       const effectiveIncludedUsed = trialActive ? Math.max(snapshot.includedUsed, trialUsed) : snapshot.includedUsed;
       const effectiveRemaining = Math.max(0, Number(snapshot.remaining || 0)) + trialRemaining;
 
+      const planName = planTier
+        ? (planCode.charAt(0) + planCode.slice(1).toLowerCase())
+        : trialActive
+        ? "Starter (Trial)"
+        : "No Plan";
+
       // Calculate usage percentages for warnings
       const mainUsagePercent = effectiveIncludedLimit > 0
         ? (effectiveIncludedUsed / effectiveIncludedLimit) * 100
@@ -90,7 +96,7 @@ export function usageRouter() {
         hasAgency: true,
         monthKey: snapshot.monthKey,
         planCode,
-        planName: planTier ? (planCode.charAt(0) + planCode.slice(1).toLowerCase()) : "Trial / No Plan",
+        planName,
         price: planLimits.price,
         mainAllowance: effectiveIncludedLimit,
         mainUsed: effectiveIncludedUsed,

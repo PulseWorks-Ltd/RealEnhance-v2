@@ -256,7 +256,23 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     const usage = await getUsageSnapshot(user.agencyId);
     const planTier = agency.planTier ?? null;
     const plan = planTier ? getStripePlan(planTier as PlanTier) : null;
-    const planName = plan ? plan.displayName : "Trial / No Plan";
+    const now = Date.now();
+    const trialActive =
+      trial.status === "active" &&
+      (!trial.expiresAt || Number.isNaN(Date.parse(trial.expiresAt)) || Date.parse(trial.expiresAt) > now);
+    const trialRemaining = trialActive ? Math.max(0, Number(trial.remaining || 0)) : 0;
+    const trialIncluded = trialActive ? Math.max(0, Number(trial.creditsTotal || 0)) : 0;
+    const trialUsed = trialActive ? Math.max(0, Number(trial.creditsUsed || 0)) : 0;
+
+    const effectiveIncluded = trialActive ? Math.max(Number(usage.includedLimit || 0), trialIncluded) : Number(usage.includedLimit || 0);
+    const effectiveUsed = trialActive ? Math.max(Number(usage.includedUsed || 0), trialUsed) : Number(usage.includedUsed || 0);
+    const effectiveRemaining = Math.max(0, Number(usage.remaining || 0)) + trialRemaining;
+
+    const planName = plan
+      ? plan.displayName
+      : trialActive
+      ? "Starter (Trial)"
+      : "No Plan";
 
     res.json({
       agency,
@@ -270,10 +286,10 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
         billingCurrency: agency.billingCurrency,
         billingCountry: agency.billingCountry,
         allowance: {
-          monthlyIncluded: usage.includedLimit,
-          monthlyUsed: usage.includedUsed,
-          monthlyRemaining: usage.includedRemaining,
-          totalRemaining: usage.remaining,
+          monthlyIncluded: effectiveIncluded,
+          monthlyUsed: effectiveUsed,
+          monthlyRemaining: effectiveRemaining,
+          totalRemaining: effectiveRemaining,
           addonBalance: usage.addonBalance,
           monthKey: usage.monthKey,
         },
