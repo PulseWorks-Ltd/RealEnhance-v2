@@ -52,9 +52,18 @@ export function useAuthGuard() {
         return refreshedUser || user;
       }
 
-      if (resp.status === 401 || resp.status === 403) {
+      if (resp.status === 401) {
         redirectToLogin();
         throw new Error("Please sign in to continue");
+      }
+
+      if (resp.status === 403) {
+        // Billing restrictions should not be treated as authentication failure.
+        // Server upload gate remains authoritative and will return actionable billing codes.
+        console.warn("[auth-guard] billing preflight returned 403; deferring to server upload gate", {
+          needCredits,
+        });
+        return refreshedUser || user;
       }
 
       if (!resp.ok) {

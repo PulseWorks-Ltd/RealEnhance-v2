@@ -203,39 +203,7 @@ export function uploadRouter() {
         }
 
         trialSummary = await getTrialSummary(fullUser.agencyId);
-        const hasStripeSubscription = !!agency.stripeSubscriptionId;
-        const isGrandfathered = agency.billingGrandfatheredUntil
-          ? new Date(agency.billingGrandfatheredUntil) > now
-          : false;
-
-        const trialExpired = trialSummary.status === "expired" || (trialSummary.expiresAt && new Date(trialSummary.expiresAt) < now);
-        const trialActive = trialSummary.status === "active" && !trialExpired && trialSummary.remaining > 0 && !hasStripeSubscription;
-
-        // New agencies without subscription can proceed on an active trial; otherwise require subscription
-        if (!hasStripeSubscription && !isGrandfathered && !trialActive && agency.subscriptionStatus !== "ACTIVE") {
-          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} requires Stripe subscription (no active trial)`);
-          return res.status(403).json({
-            code: trialExpired ? "TRIAL_ENDED" : "SUBSCRIPTION_REQUIRED",
-            error: trialExpired ? "Trial ended" : "Subscription required",
-            message: trialExpired
-              ? "Your promo trial has ended. Please upgrade to continue enhancing images."
-              : "Please activate your subscription to begin enhancing images.",
-            requiresSubscription: true,
-            trial: trialSummary,
-          });
-        }
-
-        // Allow both ACTIVE and TRIAL subscriptions, but do not double-charge if trial will be used
-        const allowedStatuses = ["ACTIVE", "TRIAL"];
-        if (!trialActive && !allowedStatuses.includes(agency.subscriptionStatus)) {
-          console.log(`[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} has inactive subscription: ${agency.subscriptionStatus}`);
-          return res.status(403).json({
-            code: "SUBSCRIPTION_INACTIVE",
-            error: "Subscription inactive",
-            message: "Your subscription is inactive. Please update your payment method or contact support.",
-            subscriptionStatus: agency.subscriptionStatus,
-          });
-        }
+        const availableCredits = await getAvailableCredits(sessUser.id);
 
         // Backwards compatibility: write back ACTIVE if subscriptionStatus was missing
         if (!agency.subscriptionStatus) {
@@ -246,6 +214,54 @@ export function uploadRouter() {
           grandfatherDate.setMonth(grandfatherDate.getMonth() + 6);
           agency.billingGrandfatheredUntil = grandfatherDate.toISOString();
           await updateAgency(agency);
+        }
+
+        const agencyPlan = String((agency as any).planTier || "unknown");
+        const agencyStatus = String((agency as any).status || "unknown");
+        const subscriptionStatus = String(agency.subscriptionStatus || "unknown");
+        console.log(
+          `[UPLOAD_BILLING_GATE] begin ` +
+          `agencyId=${fullUser.agencyId} ` +
+          `agency.plan=${agencyPlan} ` +
+          `agency.status=${agencyStatus} ` +
+          `subscription.status=${subscriptionStatus} ` +
+          `availableCredits=${availableCredits}`
+        );
+
+        const hasStripeSubscription = !!agency.stripeSubscriptionId;
+        const isGrandfathered = agency.billingGrandfatheredUntil
+          ? new Date(agency.billingGrandfatheredUntil) > now
+          : false;
+
+        const trialExpired = trialSummary.status === "expired" || (trialSummary.expiresAt && new Date(trialSummary.expiresAt) < now);
+        const trialActive = trialSummary.status === "active" && !trialExpired && trialSummary.remaining > 0;
+        const hasActiveStripeSubscription =
+          hasStripeSubscription && ["ACTIVE", "TRIAL"].includes(String(agency.subscriptionStatus || "").toUpperCase());
+        const hasRemainingCredits = availableCredits > 0;
+        const canProcess = hasActiveStripeSubscription || trialActive || hasRemainingCredits || isGrandfathered;
+
+        if (!canProcess) {
+          console.log(
+            `[SUBSCRIPTION GATE] Agency ${fullUser.agencyId} blocked ` +
+            `(subscriptionStatus=${agency.subscriptionStatus || "unknown"}, ` +
+            `trialStatus=${trialSummary.status}, trialRemaining=${trialSummary.remaining}, ` +
+            `availableCredits=${availableCredits}, hasStripeSubscription=${hasStripeSubscription})`
+          );
+          return res.status(403).json({
+            code: hasStripeSubscription ? "SUBSCRIPTION_INACTIVE" : (trialExpired ? "TRIAL_ENDED" : "SUBSCRIPTION_REQUIRED"),
+            error: hasStripeSubscription
+              ? "Subscription inactive"
+              : (trialExpired ? "Trial ended" : "Subscription required"),
+            message: hasStripeSubscription
+              ? "Your subscription is inactive. Please update your payment method or contact support."
+              : (trialExpired
+                ? "Your promo trial has ended. Please upgrade to continue enhancing images."
+                : "Please activate your subscription or add credits to begin enhancing images."),
+            requiresSubscription: true,
+            subscriptionStatus: agency.subscriptionStatus,
+            availableCredits,
+            trial: trialSummary,
+          });
         }
 
       } catch (subscriptionGateErr) {

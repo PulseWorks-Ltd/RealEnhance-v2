@@ -4047,12 +4047,24 @@ export default function BatchProcessor() {
       if (!uploadResp.ok) {
         setIsUploading(false);
         setRunState("idle");
-        if (uploadResp.status === 401 || uploadResp.status === 403) {
+        const err = await uploadResp.json().catch(() => ({}));
+        if (uploadResp.status === 401) {
           handleAuthFailure();
           toast({ title: "Login required", description: "Login and retry to start enhancement.", variant: "destructive" });
           return;
         }
-        const err = await uploadResp.json().catch(() => ({}));
+        if (uploadResp.status === 403) {
+          const description =
+            typeof err?.message === "string" && err.message.trim().length
+              ? err.message
+              : "Your account cannot process uploads yet. Please review billing/trial status.";
+          toast({
+            title: err?.code === "EMAIL_VERIFICATION_REQUIRED_EXPIRED" ? "Email verification required" : "Billing restriction",
+            description,
+            variant: "destructive",
+          });
+          return;
+        }
         if (uploadResp.status === 402 && err?.code === "QUOTA_EXCEEDED") {
           showQuotaExceededToast();
           return;
