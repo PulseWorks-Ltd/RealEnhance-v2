@@ -5162,17 +5162,27 @@ export default function BatchProcessor() {
                     toDisplayUrl(r?.stage2Url) ||
                     toDisplayUrl(r?.result?.stage2Url) ||
                     null;
+                  const fallbackCompletedOutputUrl = completedOutputUrl || r?.resultUrl || r?.result?.resultUrl || r?.imageUrl || r?.result?.imageUrl || null;
                   return {
                     ...r,
-                    status: preservedStage2 ? "completed" : (r?.status || "completed"),
+                    // Always move to a terminal state when backend reports completion.
+                    status: "completed",
                     uiStatus: preservedStage2 ? "ok" : (r?.uiStatus || "warning"),
                     retryInFlight: undefined,
                     retryStage: undefined,
                     currentStage: null,
                     error: preservedStage2 ? null : r?.error,
+                    resultUrl: fallbackCompletedOutputUrl,
+                    imageUrl: fallbackCompletedOutputUrl,
+                    retryLatestUrl: fallbackCompletedOutputUrl || r?.retryLatestUrl || null,
                     warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.warnings || []),
                   };
                 }));
+
+                // If Stage 2 is not available, display best available completed output.
+                if (completedOutputUrl) {
+                  setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
+                }
 
                 clearRetryFlags(imageIndex);
 
