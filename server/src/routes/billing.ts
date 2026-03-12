@@ -66,6 +66,59 @@ function blockIfEmailUnverified(user: any, res: Response) {
   return true;
 }
 
+function isStripeMissingCustomerError(error: any): boolean {
+  return (
+    error?.type === "StripeInvalidRequestError" &&
+    error?.code === "resource_missing" &&
+    error?.param === "customer"
+  );
+}
+
+async function ensureValidStripeCustomerId(params: {
+  stripe: Stripe;
+  agency: any;
+  user: any;
+}): Promise<string> {
+  const { stripe, agency, user } = params;
+
+  const createCustomer = async (reason: string): Promise<string> => {
+    const customer = await stripe.customers.create({
+      email: user.email || undefined,
+      metadata: {
+        agencyId: agency.agencyId,
+        userId: user.id,
+      },
+    });
+
+    agency.stripeCustomerId = customer.id;
+    await updateAgency(agency);
+
+    console.log(
+      `[BILLING] Created Stripe customer ${customer.id} for agency ${agency.agencyId} (${reason})`
+    );
+
+    return customer.id;
+  };
+
+  const existingId = typeof agency.stripeCustomerId === "string" ? agency.stripeCustomerId.trim() : "";
+  if (!existingId) {
+    return createCustomer("missing_local_customer_id");
+  }
+
+  try {
+    const customer = await stripe.customers.retrieve(existingId);
+    if ("deleted" in customer && customer.deleted) {
+      return createCustomer("stripe_customer_deleted");
+    }
+    return existingId;
+  } catch (err: any) {
+    if (isStripeMissingCustomerError(err)) {
+      return createCustomer("stripe_customer_missing");
+    }
+    throw err;
+  }
+}
+
 /**
  * POST /api/billing/checkout-subscription
  * Create a Stripe Checkout session for subscription
@@ -126,26 +179,8 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
       });
     }
 
-    // Create or get Stripe customer
-    let stripeCustomerId = agency.stripeCustomerId;
-
-    if (!stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        email: user.email || undefined,
-        metadata: {
-          agencyId: agency.agencyId,
-          userId: user.id,
-        },
-      });
-
-      stripeCustomerId = customer.id;
-
-      // Save customer ID to agency
-      agency.stripeCustomerId = stripeCustomerId;
-      await updateAgency(agency);
-
-      console.log(`[BILLING] Created Stripe customer ${stripeCustomerId} for agency ${agency.agencyId}`);
-    }
+    // Create or get Stripe customer, and self-heal stale customer IDs.
+    let stripeCustomerId = await ensureValidStripeCustomerId({ stripe, agency, user });
 
     // Get or create Stripe Price ID
     const stripePriceId = getStripePriceId(planTier, billingCurrency);
@@ -297,27 +332,65 @@ router.post("/checkout-subscription", requireAuth, async (req: Request, res: Res
       ];
     }
 
-    // Create Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeCustomerId,
-      client_reference_id: agency.agencyId,
-      mode: "subscription",
-      line_items: lineItems,
-      success_url: `${CLIENT_URL}/agency?subscription=success`,
-      cancel_url: `${CLIENT_URL}/agency`,
-      metadata: {
-        agencyId: agency.agencyId,
-        planTier,
-        currency: billingCurrency,
-        country: billingCountry,
-      },
-      subscription_data: {
+    // Create Checkout Session (retry once if Stripe says customer is missing).
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        client_reference_id: agency.agencyId,
+        mode: "subscription",
+        line_items: lineItems,
+        success_url: `${CLIENT_URL}/agency?subscription=success`,
+        cancel_url: `${CLIENT_URL}/agency`,
         metadata: {
           agencyId: agency.agencyId,
           planTier,
+          currency: billingCurrency,
+          country: billingCountry,
         },
-      },
-    });
+        subscription_data: {
+          metadata: {
+            agencyId: agency.agencyId,
+            planTier,
+          },
+        },
+      });
+    } catch (checkoutErr: any) {
+      if (!isStripeMissingCustomerError(checkoutErr)) {
+        throw checkoutErr;
+      }
+
+      console.warn(
+        `[BILLING] Stripe customer ${stripeCustomerId} missing at checkout for agency ${agency.agencyId}. Recreating and retrying once.`
+      );
+
+      stripeCustomerId = await ensureValidStripeCustomerId({
+        stripe,
+        agency: { ...agency, stripeCustomerId: "" },
+        user,
+      });
+
+      session = await stripe.checkout.sessions.create({
+        customer: stripeCustomerId,
+        client_reference_id: agency.agencyId,
+        mode: "subscription",
+        line_items: lineItems,
+        success_url: `${CLIENT_URL}/agency?subscription=success`,
+        cancel_url: `${CLIENT_URL}/agency`,
+        metadata: {
+          agencyId: agency.agencyId,
+          planTier,
+          currency: billingCurrency,
+          country: billingCountry,
+        },
+        subscription_data: {
+          metadata: {
+            agencyId: agency.agencyId,
+            planTier,
+          },
+        },
+      });
+    }
 
     console.log(`[BILLING] Created checkout session ${session.id} for agency ${agency.agencyId}`);
 

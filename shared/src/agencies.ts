@@ -105,24 +105,36 @@ export async function updateAgency(agency: Agency): Promise<void> {
       updatedAt: new Date().toISOString(),
     };
 
-    // Stripe billing fields
-    if (agency.stripeCustomerId) data.stripeCustomerId = agency.stripeCustomerId;
-    if (agency.stripeSubscriptionId) data.stripeSubscriptionId = agency.stripeSubscriptionId;
-    if (agency.stripePriceId) data.stripePriceId = agency.stripePriceId;
+    const optionalFields = [
+      "stripeCustomerId",
+      "stripeSubscriptionId",
+      "stripePriceId",
+      "billingCountry",
+      "billingCurrency",
+      "billingEmail",
+      "currentPeriodStart",
+      "currentPeriodEnd",
+      "billingGrandfatheredUntil",
+    ] as const;
 
-    // Billing region & currency
-    if (agency.billingCountry) data.billingCountry = agency.billingCountry;
-    if (agency.billingCurrency) data.billingCurrency = agency.billingCurrency;
-    if (agency.billingEmail) data.billingEmail = agency.billingEmail;
-
-    // Subscription period
-    if (agency.currentPeriodStart) data.currentPeriodStart = agency.currentPeriodStart;
-    if (agency.currentPeriodEnd) data.currentPeriodEnd = agency.currentPeriodEnd;
-
-    // Grandfather flag
-    if (agency.billingGrandfatheredUntil) data.billingGrandfatheredUntil = agency.billingGrandfatheredUntil;
+    // Persist optional fields when present.
+    for (const field of optionalFields) {
+      const value = agency[field];
+      if (typeof value === "string" && value.trim().length > 0) {
+        data[field] = value;
+      }
+    }
 
     await client.hSet(key, data);
+
+    // Remove optional fields that are intentionally absent so stale values do not linger.
+    const fieldsToDelete = optionalFields.filter((field) => {
+      const value = agency[field];
+      return !(typeof value === "string" && value.trim().length > 0);
+    });
+    if (fieldsToDelete.length > 0) {
+      await client.hDel(key, fieldsToDelete);
+    }
     console.log(`[AGENCY] Updated agency ${agency.agencyId} (status: ${agency.subscriptionStatus})`);
   } catch (err) {
     console.error("[AGENCY] Failed to update agency:", err);
