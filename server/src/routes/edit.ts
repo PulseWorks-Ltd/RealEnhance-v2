@@ -41,11 +41,11 @@ export function editRouter() {
       return res.status(400).json({ error: "invalid_base_version" });
     }
 
-    // Edit contract: two free edits per image across all edit endpoints.
+    // Edit contract: three free edits per image across all edit endpoints.
     const editCounterJobId = `edit_counter:${imageId}`;
     const parentMeta = await getJobMetadata(editCounterJobId);
     const currentEditCount = Math.max(0, Number(parentMeta?.editCount || 0));
-    if (currentEditCount >= 2) {
+    if (currentEditCount >= 3) {
       return res.status(429).json({
         error: "edit_limit_reached",
         code: "EDIT_LIMIT_REACHED",
