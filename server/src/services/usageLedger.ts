@@ -190,7 +190,7 @@ export async function reserveAllowance(params: {
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(params.agencyId);
     const agency = await getAgency(params.agencyId);
-    await upsertAgencyAccount(client, params.agencyId, includedLimit, agency?.planTier);
+    await upsertAgencyAccount(client, params.agencyId, includedLimit, agency?.planTier ?? undefined);
     const acct = await lockAgencyAccount(client, params.agencyId);
     const usage = await ensureMonthUsage(client, params.agencyId, monthKey, includedLimit);
 
@@ -483,7 +483,7 @@ export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot>
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(agencyId);
     const agency = await getAgency(agencyId);
-    await upsertAgencyAccount(client, agencyId, includedLimit, agency?.planTier);
+    await upsertAgencyAccount(client, agencyId, includedLimit, agency?.planTier ?? undefined);
     const usage = await ensureMonthUsage(client, agencyId, monthKey, includedLimit);
     const addonRemaining = await getTotalBundleRemaining(agencyId, monthKey);
     return buildSnapshot(usage, addonRemaining, monthKey);

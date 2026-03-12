@@ -805,7 +805,7 @@ export function uploadRouter() {
     if (agencyId) {
       const agency = await getAgency(agencyId);
       if (agency) {
-        enforceRetentionLimit(agencyId, agency.planTier).catch((err) => {
+        enforceRetentionLimit(agencyId, agency.planTier ?? "starter").catch((err) => {
           console.error(`[RETENTION] Failed to enforce retention for agency ${agencyId}:`, err);
           // Do not fail the upload, just log the error
         });
