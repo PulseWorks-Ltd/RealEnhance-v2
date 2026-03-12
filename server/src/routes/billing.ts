@@ -489,6 +489,18 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
     const trialActive =
       trial.status === "active" &&
       (!trial.expiresAt || Number.isNaN(Date.parse(trial.expiresAt)) || Date.parse(trial.expiresAt) > now);
+    const trialRemaining = trialActive ? Math.max(0, Number(trial.remaining || 0)) : 0;
+    const trialIncluded = trialActive ? Math.max(0, Number(trial.creditsTotal || 0)) : 0;
+    const trialUsed = trialActive ? Math.max(0, Number(trial.creditsUsed || 0)) : 0;
+
+    const effectiveMonthlyIncluded = trialActive
+      ? Math.max(Number(usage.includedLimit || 0), trialIncluded)
+      : Number(usage.includedLimit || 0);
+    const effectiveMonthlyUsed = trialActive
+      ? Math.max(Number(usage.includedUsed || 0), trialUsed)
+      : Number(usage.includedUsed || 0);
+    const effectiveMonthlyRemaining = Math.max(0, Number(usage.includedRemaining || 0)) + trialRemaining;
+    const effectiveTotalRemaining = effectiveMonthlyRemaining + Math.max(0, Number(usage.addonRemaining || 0));
     const fallbackPlanDisplayName = trialActive ? "Starter (Trial)" : "No Plan";
 
     const currentIndex = pricedTier ? PLAN_ORDER.indexOf(pricedTier) : -1;
@@ -522,11 +534,11 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       seatLimit: effectivePlan?.seatLimit ?? null,
       allowInvites: effectivePlan?.allowInvites ?? false,
       allowance: {
-        monthlyIncluded: usage.includedLimit,
-        monthlyUsed: usage.includedUsed,
-        monthlyRemaining: usage.includedRemaining,
+        monthlyIncluded: effectiveMonthlyIncluded,
+        monthlyUsed: effectiveMonthlyUsed,
+        monthlyRemaining: effectiveMonthlyRemaining,
         addonBalance: usage.addonRemaining,
-        totalRemaining: usage.remaining,
+        totalRemaining: effectiveTotalRemaining,
       },
       usage: {
         monthKey: usage.monthKey,
