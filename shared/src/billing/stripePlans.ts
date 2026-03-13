@@ -42,15 +42,15 @@ export interface StripePlanConfig {
 
 export const STRIPE_PRICES = {
   starter: {
-    nzd: process.env.STRIPE_PRICE_STARTER_NZD,
+    nzd: process.env.STRIPE_PRICE_STARTER,
     aud: process.env.STRIPE_PRICE_STARTER_AUD,
   },
   pro: {
-    nzd: process.env.STRIPE_PRICE_PRO_NZD,
+    nzd: process.env.STRIPE_PRICE_PRO,
     aud: process.env.STRIPE_PRICE_PRO_AUD,
   },
   agency: {
-    nzd: process.env.STRIPE_PRICE_AGENCY_NZD,
+    nzd: process.env.STRIPE_PRICE_AGENCY,
     aud: process.env.STRIPE_PRICE_AGENCY_AUD,
   },
 } as const;

@@ -17,15 +17,15 @@ export interface ImageBundle {
 
 export const STRIPE_ADDON_PRICES = {
   small: {
-    nzd: process.env.STRIPE_ADDON_SMALL_NZD,
+    nzd: process.env.STRIPE_ADDON_SMALL,
     aud: process.env.STRIPE_ADDON_SMALL_AUD,
   },
   standard: {
-    nzd: process.env.STRIPE_ADDON_STANDARD_NZD,
+    nzd: process.env.STRIPE_ADDON_STANDARD,
     aud: process.env.STRIPE_ADDON_STANDARD_AUD,
   },
   large: {
-    nzd: process.env.STRIPE_ADDON_LARGE_NZD,
+    nzd: process.env.STRIPE_ADDON_LARGE,
     aud: process.env.STRIPE_ADDON_LARGE_AUD,
   },
 } as const;
