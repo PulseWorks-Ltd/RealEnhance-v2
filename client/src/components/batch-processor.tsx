@@ -6847,8 +6847,8 @@ export default function BatchProcessor() {
                     </div>
                 </div>
 
-                  {/* 3. Gallery Grid */}
-                  <div className={runState === "done" ? "max-h-[calc(100vh-21rem)] overflow-y-auto pr-1" : ""}>
+                  {/* 3. Gallery Grid + bottom actions (inside same scroll pane) */}
+                  <div className={runState === "done" ? "max-h-[calc(100vh-21rem)] overflow-y-auto pr-1 pb-2" : ""}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {files.map((file, i) => {
                         const result = results[i];
@@ -7396,46 +7396,46 @@ export default function BatchProcessor() {
                         );
                     })}
                 </div>
-                </div>
-
-                {/* Final Actions */}
-                {runState === "done" && !hasInFlightResults && (
-                  <div className="mt-8 flex flex-col items-center gap-3">
+                
+                  {/* Final Actions */}
+                  {runState === "done" && !hasInFlightResults && (
+                  <div className="sticky bottom-0 mt-8 flex flex-col items-center gap-3 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
                     <p className="text-xs text-slate-500">Verify images before use in property marketing.</p>
                     <div className="flex justify-center gap-4">
-                         <button 
-                            onClick={downloadZip}
-                            disabled={isDownloadingZip}
-                            className="bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm flex items-center gap-2"
-                        >
-                            {isDownloadingZip && <Loader2 className="w-4 h-4 animate-spin"/>}
-                            Download All (ZIP)
-                        </button>
-                        <button 
-                            onClick={handleRestart}
-                            className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
-                        >
-                            Start New Batch
-                        </button>
+                       <button 
+                        onClick={downloadZip}
+                        disabled={isDownloadingZip}
+                        className="bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+                      >
+                        {isDownloadingZip && <Loader2 className="w-4 h-4 animate-spin"/>}
+                        Download All (ZIP)
+                      </button>
+                      <button 
+                        onClick={handleRestart}
+                        className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                      >
+                        Start New Batch
+                      </button>
                     </div>
                     </div>
-                )}
-                
-                {/* Fallback: Show restart button if marked done but buttons are hidden (stuck state recovery) */}
-                {runState === "done" && hasInFlightResults && (
-                    <div className="mt-8 flex flex-col items-center gap-4">
-                        <div className="text-center text-sm text-slate-600">
-                            <p>Some images may still be processing. You can wait or start fresh.</p>
-                        </div>
-                        <button 
-                            onClick={handleRestart}
-                            className="bg-slate-600 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition-colors font-medium"
-                        >
-                            Clear & Start New Batch
-                        </button>
+                  )}
+                  
+                  {/* Fallback: Show restart button if marked done but buttons are hidden (stuck state recovery) */}
+                  {runState === "done" && hasInFlightResults && (
+                    <div className="sticky bottom-0 mt-8 flex flex-col items-center gap-4 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
+                      <div className="text-center text-sm text-slate-600">
+                        <p>Some images may still be processing. You can wait or start fresh.</p>
+                      </div>
+                      <button 
+                        onClick={handleRestart}
+                        className="bg-slate-600 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition-colors font-medium"
+                      >
+                        Clear & Start New Batch
+                      </button>
                     </div>
-                )}
-                
+                  )}
+                </div>
+
              </div>
              </div>
             )}
