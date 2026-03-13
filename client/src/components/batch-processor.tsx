@@ -3366,6 +3366,35 @@ export default function BatchProcessor() {
 
               // Terminal states are immutable: once terminal, ignore any status transition.
               if (existingIsTerminal && existingStatusNorm !== incomingStatusNorm) {
+                const incomingHasTerminalArtifact = !!(
+                  resultUrlSafe ||
+                  displayUrl ||
+                  stage2Url ||
+                  stage1bUrl ||
+                  stage1aUrl ||
+                  it?.finalOutputUrl ||
+                  it?.resultUrl ||
+                  it?.imageUrl ||
+                  extraResult?.imageUrl ||
+                  extraResult?.url
+                );
+                const allowFailedToCompletedUpgrade =
+                  existingStatusNorm === "failed" &&
+                  incomingStatusNorm === "completed" &&
+                  incomingHasTerminalArtifact;
+                if (allowFailedToCompletedUpgrade) {
+                  if (!statusTargetNotReachedLoggedRef.current.has(`terminal-upgrade:${idx}`)) {
+                    statusTargetNotReachedLoggedRef.current.add(`terminal-upgrade:${idx}`);
+                    console.log('[BATCH][terminal_upgrade_failed_to_completed]', {
+                      index: idx,
+                      existingJobId,
+                      incomingJobId: polledId || null,
+                      existingStatus: existingStatusNorm,
+                      incomingStatus: incomingStatusNorm,
+                      hasArtifact: incomingHasTerminalArtifact,
+                    });
+                  }
+                } else {
                 if (!statusTargetNotReachedLoggedRef.current.has(`terminal-lock:${idx}:${existingStatusNorm}:${incomingStatusNorm}`)) {
                   statusTargetNotReachedLoggedRef.current.add(`terminal-lock:${idx}:${existingStatusNorm}:${incomingStatusNorm}`);
                   console.log('[BATCH][terminal_lock_ignored_update]', {
@@ -3377,6 +3406,7 @@ export default function BatchProcessor() {
                   });
                 }
                 return copy;
+                }
               }
               
               // Persist requestedStages and meta so target-stage completion logic works
