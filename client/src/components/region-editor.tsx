@@ -1270,161 +1270,174 @@ export function RegionEditor({
     (mode === "restore_original" && hasMask);
 
   return (
-    <div className="flex h-full min-h-[70vh] flex-col bg-white rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col gap-2 p-6 pb-4">
-        <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
-        <p className="text-sm text-slate-600">
-          Draw a mask and describe what you want to add, remove, or replace.
-        </p>
-      </div>
-
-      {/* Main Image Content */}
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 overflow-hidden">
-        {!initialImageUrl && (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 w-full max-w-md">
-            <Label htmlFor="image-upload" className="text-sm font-medium text-slate-700">Select Image</Label>
-            <Input
-              id="image-upload"
-              type="file"
-              accept="image/*"
-              onChange={onFileSelect}
-              data-testid="input-region-image"
-              className="mt-2"
-            />
+    <div className="flex h-full min-h-0 flex-col bg-white rounded-lg overflow-hidden">
+      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="border-b border-slate-200 bg-slate-50/70 p-5 lg:border-b-0 lg:border-r lg:overflow-y-auto">
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
+            <p className="text-sm text-slate-600">
+              Draw a mask and describe what you want to add, remove, or replace.
+            </p>
           </div>
-        )}
 
-        {previewUrl && (
-          <div className="w-full h-full min-h-[420px] flex flex-col">
-            <div className="relative flex-1 min-h-[360px] overflow-hidden w-full flex items-center justify-center bg-slate-50 rounded-lg shadow-sm border border-slate-200">
-              {/* Floating toolbar */}
-              <div className="absolute left-4 top-4 z-10 flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
-                  <Brush className="h-4 w-4 text-slate-700" />
-                  <div className="flex items-center gap-2 text-xs text-slate-700">
-                    <span className="font-medium">Brush</span>
-                    <input
-                      type="range"
-                      min="5"
-                      max="50"
-                      value={brushSize}
-                      onChange={(e) => setBrushSize(Number(e.target.value))}
-                      className="w-20"
-                      data-testid="slider-brush-size"
-                    />
-                    <span className="w-10 text-right">{brushSize}px</span>
+          {!initialImageUrl && (
+            <div className="mt-6 rounded-lg border border-dashed border-slate-300 bg-white p-4 w-full">
+              <Label htmlFor="image-upload" className="text-sm font-medium text-slate-700">Select Image</Label>
+              <Input
+                id="image-upload"
+                type="file"
+                accept="image/*"
+                onChange={onFileSelect}
+                data-testid="input-region-image"
+                className="mt-2"
+              />
+            </div>
+          )}
+
+          <div className="mt-6 min-h-[220px] rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Controls</p>
+            <p className="mt-2 text-sm text-slate-600">
+              Sidebar placeholder for advanced edit controls.
+            </p>
+          </div>
+        </aside>
+
+        <section className="flex min-h-0 flex-col bg-white">
+          <div className="flex-1 min-h-0 p-4 lg:p-6">
+            {previewUrl ? (
+              <div className="relative mx-auto flex h-full w-full max-w-[1200px] items-center justify-center rounded-xl border border-slate-200 bg-slate-100 shadow-sm overflow-hidden max-h-[calc(100vh-240px)]">
+                {/* Floating toolbar - anchored to canvas container */}
+                <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
+                    <Brush className="h-4 w-4 text-slate-700" />
+                    <div className="flex items-center gap-2 text-xs text-slate-700">
+                      <span className="font-medium">Brush</span>
+                      <input
+                        type="range"
+                        min="5"
+                        max="50"
+                        value={brushSize}
+                        onChange={(e) => setBrushSize(Number(e.target.value))}
+                        className="w-20"
+                        data-testid="slider-brush-size"
+                      />
+                      <span className="w-10 text-right">{brushSize}px</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
+                    <Move className="h-4 w-4 text-slate-700" />
+                    <span className="text-xs text-slate-700">Hold Alt/Ctrl + drag to pan</span>
+                  </div>
+
+                  <div className="flex items-center gap-1 rounded-full bg-white/95 px-2 py-2 shadow-sm border border-slate-200 text-slate-700">
+                    <button
+                      onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
+                      disabled={zoomLevel <= 0.5}
+                      className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
+                      data-testid="button-zoom-out"
+                    >
+                      <ZoomOut className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-[46px] text-center text-xs font-medium">{Math.round(zoomLevel * 100)}%</span>
+                    <button
+                      onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
+                      disabled={zoomLevel >= 3}
+                      className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
+                      data-testid="button-zoom-in"
+                    >
+                      <ZoomIn className="h-4 w-4" />
+                    </button>
+                    <div className="mx-1 h-4 w-px bg-slate-200" />
+                    <button
+                      onClick={() => {
+                        setZoomLevel(1);
+                        setPanOffset({ x: 0, y: 0 });
+                      }}
+                      className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100"
+                      data-testid="button-reset-view"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Reset
+                    </button>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-sm border border-slate-200">
-                  <Move className="h-4 w-4 text-slate-700" />
-                  <span className="text-xs text-slate-700">Hold Alt/Ctrl + drag to pan</span>
-                </div>
-
-                <div className="flex items-center gap-1 rounded-full bg-white/95 px-2 py-2 shadow-sm border border-slate-200 text-slate-700">
-                  <button
-                    onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
-                    disabled={zoomLevel <= 0.5}
-                    className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
-                    data-testid="button-zoom-out"
-                  >
-                    <ZoomOut className="h-4 w-4" />
-                  </button>
-                  <span className="min-w-[46px] text-center text-xs font-medium">{Math.round(zoomLevel * 100)}%</span>
-                  <button
-                    onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
-                    disabled={zoomLevel >= 3}
-                    className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
-                    data-testid="button-zoom-in"
-                  >
-                    <ZoomIn className="h-4 w-4" />
-                  </button>
-                  <div className="mx-1 h-4 w-px bg-slate-200" />
-                  <button
-                    onClick={() => {
-                      setZoomLevel(1);
-                      setPanOffset({ x: 0, y: 0 });
-                    }}
-                    className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100"
-                    data-testid="button-reset-view"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    Reset
-                  </button>
-                </div>
-              </div>
-
-              {imageLoading && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-                  <div className="text-center text-white">
-                    <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-2 border-white/30 border-b-white" />
-                    <p className="text-sm font-medium">Loading image...</p>
-                  </div>
-                </div>
-              )}
-              
-              {regionEditMutation.isPending && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-                  <div className="bg-white rounded-lg p-6 shadow-xl flex flex-col items-center gap-3">
-                    <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
-                    <p className="text-sm font-medium text-slate-700">Processing edit...</p>
-                    <p className="text-xs text-slate-500">This may take 10-30 seconds</p>
-                  </div>
-                </div>
-              )}
-
-              <div
-                className="relative w-full h-full flex justify-center items-center"
-                style={{
-                  transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-                  transformOrigin: "top left",
-                }}
-              >
-                {!previewUrl && !imageLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center text-slate-500">
-                    <p>No image loaded. Please select an image file above.</p>
+                {imageLoading && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+                    <div className="text-center text-white">
+                      <div className="mx-auto mb-3 h-12 w-12 animate-spin rounded-full border-2 border-white/30 border-b-white" />
+                      <p className="text-sm font-medium">Loading image...</p>
+                    </div>
                   </div>
                 )}
-                <canvas
-                  ref={previewCanvasRef}
-                  className="absolute inset-0 h-full w-full object-contain"
-                  style={{ display: previewUrl ? "block" : "none" }}
-                />
-                <canvas
-                  ref={canvasRef}
-                  className="absolute inset-0 h-full w-full object-contain opacity-60"
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
-                  onWheel={handleZoom}
-                  style={{
-                    cursor: isPanning
-                      ? "grabbing"
-                      : isDrawing
-                        ? "crosshair"
-                        : "crosshair",
-                    display: previewUrl ? "block" : "none",
-                  }}
-                  data-testid="canvas-mask-drawing"
-                />
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between text-xs text-slate-600">
-              <span>White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom.</span>
-              <Button
-                onClick={clearMask}
-                variant="outline"
-                size="sm"
-                data-testid="button-clear-mask"
-              >
-                Clear Mask
-              </Button>
-            </div>
+                {regionEditMutation.isPending && (
+                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-lg p-6 shadow-xl flex flex-col items-center gap-3">
+                      <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
+                      <p className="text-sm font-medium text-slate-700">Processing edit...</p>
+                      <p className="text-xs text-slate-500">This may take 10-30 seconds</p>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className="relative w-full h-full flex justify-center items-center"
+                  style={{
+                    transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+                    transformOrigin: "top left",
+                  }}
+                >
+                  {!previewUrl && !imageLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center text-slate-500">
+                      <p>No image loaded. Please select an image file above.</p>
+                    </div>
+                  )}
+                  <canvas
+                    ref={previewCanvasRef}
+                    className="absolute inset-0 h-full w-full object-contain"
+                    style={{ display: previewUrl ? "block" : "none" }}
+                  />
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 h-full w-full object-contain opacity-60"
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                    onWheel={handleZoom}
+                    style={{
+                      cursor: isPanning
+                        ? "grabbing"
+                        : isDrawing
+                          ? "crosshair"
+                          : "crosshair",
+                      display: previewUrl ? "block" : "none",
+                    }}
+                    data-testid="canvas-mask-drawing"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto flex h-full w-full max-w-[1200px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-500 max-h-[calc(100vh-240px)]">
+                <p className="text-sm">No image loaded. Please select an image file.</p>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs text-slate-600 lg:px-6">
+            <span>White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom.</span>
+            <Button
+              onClick={clearMask}
+              variant="outline"
+              size="sm"
+              data-testid="button-clear-mask"
+            >
+              Clear Mask
+            </Button>
+          </div>
+        </section>
       </div>
 
       {/* Hidden states (React forms requirements kept alive, removed from visual DOM inputs) 
@@ -1433,7 +1446,7 @@ export function RegionEditor({
       */}
 
       {/* Action Footer */}
-      <div className="flex flex-row items-center gap-4 border-t p-6 bg-white shrink-0">
+      <div className="flex flex-row items-center gap-4 border-t p-4 bg-white shrink-0 lg:p-6">
         <Input
           id="instructions"
           value={instructions}
