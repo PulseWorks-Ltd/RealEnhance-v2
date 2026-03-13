@@ -850,7 +850,7 @@ export function RegionEditor({
           description: result.error || "Could not start edit",
           variant: "destructive",
         });
-        onError?.();
+        onError?.(result.error || "Could not start edit");
         return;
       }
 
@@ -939,7 +939,7 @@ export function RegionEditor({
                 description: item.error || "Edit failed",
                 variant: "destructive",
               });
-              onError?.();
+              onError?.(item.error || "Edit failed");
               return;
             }
 
@@ -1012,7 +1012,11 @@ export function RegionEditor({
                 : "Network error while polling edit job",
             variant: "destructive",
           });
-          onError?.();
+          onError?.(
+            e instanceof Error
+              ? e.message
+              : "Network error while polling edit job"
+          );
           return;
         }
 
@@ -1044,7 +1048,7 @@ export function RegionEditor({
         description: errorMessage,
         variant: "destructive",
       });
-      onError?.();
+      onError?.(errorMessage);
     },
   });
 

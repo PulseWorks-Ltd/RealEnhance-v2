@@ -1205,6 +1205,8 @@ export default function BatchProcessor() {
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
   const editingImagesRef = useRef<Set<number>>(new Set());
+  const preEditResultSnapshotRef = useRef<Record<number, any>>({});
+  const preEditDisplayStageSnapshotRef = useRef<Record<number, DisplayOutputKey | undefined>>({});
   const preEditStageUrlsRef = useRef<Record<number, { stage2: string | null; stage1B: string | null; stage1A: string | null }>>({});
   const editFallbackTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const clearEditFallbackTimer = useCallback((index: number) => {
@@ -7629,6 +7631,9 @@ export default function BatchProcessor() {
               // Force inline processing state immediately for every edit submit.
               const activeEditIndex = editingImageIndex;
               if (activeEditIndex != null && Number.isInteger(activeEditIndex) && activeEditIndex >= 0) {
+                preEditResultSnapshotRef.current[activeEditIndex] = results[activeEditIndex];
+                preEditDisplayStageSnapshotRef.current[activeEditIndex] =
+                  displayStageByIndex[activeEditIndex] as DisplayOutputKey | undefined;
                 setEditingImages(prev => new Set(prev).add(activeEditIndex));
                 setEditCompletedImages(prev => {
                   const next = new Set(prev);
@@ -7808,6 +7813,8 @@ export default function BatchProcessor() {
                   title: 'Region edit complete',
                   description: `Image ${editingImageIndex + 1} edited successfully. You can do more edits or close the modal.`,
                 });
+                delete preEditResultSnapshotRef.current[editingImageIndex];
+                delete preEditDisplayStageSnapshotRef.current[editingImageIndex];
               }
               refreshUser();
               
@@ -7843,6 +7850,18 @@ export default function BatchProcessor() {
               setIsEditingInProgress(false);
               if (typeof editingImageIndex === 'number') {
                 clearEditFallbackTimer(editingImageIndex);
+                const previousResult = preEditResultSnapshotRef.current[editingImageIndex];
+                const previousDisplayStage = preEditDisplayStageSnapshotRef.current[editingImageIndex];
+
+                if (previousResult) {
+                  setResults(prev => prev.map((r, i) => (i === editingImageIndex ? previousResult : r)));
+                  if (previousDisplayStage) {
+                    setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: previousDisplayStage }));
+                  }
+                }
+
+                delete preEditResultSnapshotRef.current[editingImageIndex];
+                delete preEditDisplayStageSnapshotRef.current[editingImageIndex];
                 setEditingImages(prev => {
                   const next = new Set(prev);
                   next.delete(editingImageIndex);
