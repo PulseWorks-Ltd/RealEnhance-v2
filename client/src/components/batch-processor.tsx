@@ -2753,21 +2753,7 @@ export default function BatchProcessor() {
                 source: "server",
               });
             }
-            // Merge room type detection (user override precedence)
-            try {
-              const detected = item?.meta?.roomTypeDetected || item?.meta?.roomType;
-              if (detected && i < files.length) {
-                const imgIdForDetection = getFileId(files[i]);
-                setImageRoomTypesById(prev => {
-                  const current = prev[imgIdForDetection];
-                  if (!current || current === 'auto') {
-                    setRoomTypeDetectionTick(tick => tick + 1); // Force re-render
-                    return { ...prev, [imgIdForDetection]: detected };
-                  }
-                  return prev;
-                });
-              }
-            } catch {}
+            // Room type must be explicitly chosen by the user in Image Preparation.
           }
           
           schedule(); // Process queued updates
