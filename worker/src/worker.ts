@@ -9596,6 +9596,26 @@ const worker = new Worker(
       }
 
       nLog("[worker] job failed", err);
+
+      // Do not downgrade a job that already reached terminal completion.
+      // This protects successful Stage 1A/1B outcomes from late non-critical errors.
+      try {
+        const latest = jobId ? await getJob(jobId) : null;
+        const latestStatus = String((latest as any)?.status || "").toLowerCase();
+        if (latestStatus === "complete" || latestStatus === "completed") {
+          nLog("[worker] ignoring late error after completion", {
+            jobId,
+            status: latestStatus,
+            error: err?.message || String(err),
+          });
+          return;
+        }
+      } catch (statusErr) {
+        nLog("[worker] failed to read latest job status in catch (continuing fail path)", {
+          jobId,
+          error: (statusErr as any)?.message || String(statusErr),
+        });
+      }
       
       // ✅ CHECK 1: Release reservation on job failure to prevent credit leaks
       // If job fails before reaching finalization, refund the reserved credits
