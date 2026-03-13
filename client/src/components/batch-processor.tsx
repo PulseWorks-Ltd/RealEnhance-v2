@@ -4210,16 +4210,7 @@ export default function BatchProcessor() {
 
   const downloadZip = async () => {
     if (!requireVerifiedEmail("download")) return;
-    // Check if we have processed images from batch processing
-    if (processedImages.length === 0) {
-      toast({ 
-        title: "No Images Available", 
-        description: "No processed images available for download.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
+
     // Prevent double downloads
     if (isDownloadingZip) {
       return;
@@ -4232,13 +4223,12 @@ export default function BatchProcessor() {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
       
-      // Get current displayed images (includes edits) - use same logic as gallery display
+      // Build ZIP from exactly what each card is currently showing in the UI.
       const imagesToDownload: { url: string; filename: string }[] = [];
       
       for (let i = 0; i < results.length; i++) {
-        // Prefer safe (non-failed) stage URLs; fall back to stored processed URLs only if safe
-        const safe = resolveSafeStageUrl(results[i]);
-        const imageUrl = safe.url || processedImagesByIndex[i] || null;
+        const displayed = buildPreviewImage(i);
+        const imageUrl = toDisplayUrl(displayed?.url);
         
         if (imageUrl) {
           // Generate filename - use original file name if available, otherwise generate one
@@ -4264,7 +4254,7 @@ export default function BatchProcessor() {
       if (imagesToDownload.length === 0) {
         toast({ 
           title: "No Images Available", 
-          description: "No enhanced images found for download.",
+          description: "No currently viewed images found for download.",
           variant: "destructive"
         });
         return;
@@ -7431,7 +7421,8 @@ export default function BatchProcessor() {
                   {runState === "done" && !hasInFlightResults && (
                   <div className="sticky bottom-0 mt-8 flex flex-col items-center gap-3 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
                     <p className="text-xs text-slate-500">Verify images before use in property marketing.</p>
-                    <div className="flex justify-center gap-4">
+                    <div className="flex items-center justify-center gap-4">
+                      <p className="text-xs text-slate-500">Downloads all currently viewed images.</p>
                        <button 
                         onClick={downloadZip}
                         disabled={isDownloadingZip}
