@@ -1387,7 +1387,7 @@ export function RegionEditor({
                 className="relative h-full w-full overflow-hidden flex justify-center items-center"
                 style={{
                   transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
-                  transformOrigin: "top left",
+                  transformOrigin: "center",
                 }}
               >
                 {!previewUrl && !imageLoading && (

@@ -81,6 +81,17 @@ export async function updateJobIf(
   const key = `jobs:${jobId}`;
   let attempts = 0;
 
+  const isWatchError = (err: any): boolean => {
+    const name = String(err?.name || "").toLowerCase();
+    const message = String(err?.message || "").toLowerCase();
+    return name === "watcherror" || message.includes("watched keys has been changed");
+  };
+
+  const waitForRetryJitter = async () => {
+    const delayMs = 10 + Math.floor(Math.random() * 41); // 10-50ms jitter
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  };
+
   while (attempts < maxRetries) {
     attempts += 1;
     try {
@@ -151,6 +162,14 @@ export async function updateJobIf(
       try {
         await redisClient.unwatch();
       } catch {}
+
+      // WatchError means optimistic-lock contention, not processing failure.
+      // Retry until retry budget is exhausted.
+      if (isWatchError(err) && attempts < maxRetries) {
+        await waitForRetryJitter();
+        continue;
+      }
+
       throw err;
     }
   }
