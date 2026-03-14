@@ -1301,10 +1301,10 @@ export function RegionEditor({
         </div>
       </aside>
 
-      <section className="relative min-h-0 bg-[#f8fafc] overflow-hidden lg:col-start-2">
+      <section className="relative flex flex-1 items-center justify-center h-full w-full min-h-0 bg-[#f1f5f9] overflow-hidden lg:col-start-2">
         <div className="flex h-full w-full items-center justify-center p-0">
           {previewUrl ? (
-            <div className="relative flex h-full w-full items-center justify-center bg-slate-100 overflow-hidden">
+            <div className="relative flex flex-1 h-full w-full items-center justify-center overflow-hidden">
               {/* Unified toolbar row - anchored to center workspace only */}
               <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-xl backdrop-blur-md">
                 <div className="flex items-center gap-2 text-xs text-slate-700">
@@ -1397,12 +1397,12 @@ export function RegionEditor({
                 )}
                 <canvas
                   ref={previewCanvasRef}
-                  className="absolute inset-0 h-full w-full object-contain"
+                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 object-contain"
                   style={{ display: previewUrl ? "block" : "none" }}
                 />
                 <canvas
                   ref={canvasRef}
-                  className="absolute inset-0 h-full w-full object-contain opacity-60"
+                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 object-contain opacity-60"
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
