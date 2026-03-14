@@ -4082,8 +4082,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══ Phase H: Stage output consistency check ═══
       const stageOutputCheck = checkStageOutput(path2, "2", payload.jobId);
       if (!stageOutputCheck.readable) {
-        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
-        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
+        nLog(`[worker] Stage output missing/unreadable before validation — falling back to best available prior stage`, {
+          jobId: payload.jobId,
+          stage: "2",
+          path: path2,
+          fallbackStage: stage2OnlyBaseStage,
+        });
+        await completePartialJobWithSummary({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: stage2OnlyBaseStage,
+          finalPath: basePath,
+          pub1AUrl: (payload.stage2OnlyMode as any)?.base1AUrl || undefined,
+          pub1BUrl: payload.stage2OnlyMode?.base1BUrl || undefined,
+          sceneMeta: {
+            timings,
+            scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
+            stage2OnlyRetry: true,
+          },
+          userMessage: stage2OnlyBaseStage === "1B"
+            ? "We preserved your Stage 1B result because Stage 2 output was unavailable."
+            : "We preserved your Stage 1A result because Stage 2 output was unavailable.",
+          reason: "missing_stage_output",
+          stageOutputs: {
+            "1A": ((payload.stage2OnlyMode as any)?.base1APath || stageLineage.stage1A.output || basePath),
+            ...(stage2OnlyBaseStage === "1B" ? { "1B": basePath } : {}),
+          },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: !!(payload.options as any)?.declutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
+        });
         return;
       }
 
@@ -6979,8 +7010,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       const stage2OutputCheck = checkStageOutput(path2, "2", payload.jobId);
       if (!stage2OutputCheck.readable) {
-        nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "2", path: path2 });
-        await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: "missing_stage_output" }, "missing_stage_output");
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage: "1A" | "1B" = fallbackPath === path1A ? "1A" : "1B";
+        nLog(`[worker] Stage output missing/unreadable before validation — falling back to best available prior stage`, {
+          jobId: payload.jobId,
+          stage: "2",
+          path: path2,
+          fallbackStage,
+        });
+        await completePartialJobWithSummary({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: fallbackStage,
+          finalPath: fallbackPath,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta: { ...sceneMeta },
+          userMessage: fallbackStage === "1B"
+            ? "We decluttered your image but could not safely stage it."
+            : "We enhanced your image but could not safely stage it.",
+          reason: "missing_stage_output",
+          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
+        });
         return;
       }
 
@@ -8037,23 +8096,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[AUDIT FIX] Compliance evaluated in retry flow — proceeding to publish Stage 2 image or fallback`);
 
   if (payload.options.virtualStage && stage2Blocked && stage2BlockedReason === "composite_validation_exhausted") {
-    const statusWritten = await safeWriteJobStatus(
-      payload.jobId,
-      {
-        status: "failed",
-        blockedStage: "2",
-        reason: "composite_validation_exhausted",
-        validationNote: "composite_validation_exhausted",
-        errorMessage: "composite_validation_exhausted",
+    const fallbackStage: "1A" | "1B" = path1B ? "1B" : "1A";
+    const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
+    await completePartialJobWithSummary({
+      jobId: payload.jobId,
+      triggerStage: "2",
+      finalStage: fallbackStage,
+      finalPath: fallbackPath,
+      pub1AUrl,
+      pub1BUrl,
+      sceneMeta: { ...sceneMeta },
+      userMessage: fallbackStage === "1B"
+        ? "We decluttered your image but could not safely stage it."
+        : "We enhanced your image but could not safely stage it.",
+      reason: "composite_validation_exhausted",
+      stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+      billingContext: {
+        payload,
+        sceneType: sceneLabel || "interior",
+        stage1BUserSelected: originalUserDeclutter,
+        geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
       },
-      "stage2_composite_validation_exhausted"
-    );
-    if (!statusWritten) {
-      nLog("[STAGE2_TERMINAL_STATUS_WRITE_BLOCKED]", {
-        jobId: payload.jobId,
-        reason: "composite_validation_exhausted",
-      });
-    }
+    });
     return;
   }
 

@@ -4247,6 +4247,8 @@ export default function BatchProcessor() {
       }
       
       // Download each image and add to ZIP
+      let addedCount = 0;
+      let failedCount = 0;
       for (const item of imagesToDownload) {
         try {
           let imageBuffer: ArrayBuffer;
@@ -4261,16 +4263,28 @@ export default function BatchProcessor() {
             const response = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
             if (!response.ok) {
               console.warn(`Failed to fetch image: ${item.url}`, response.status);
+              failedCount += 1;
               continue;
             }
             imageBuffer = await response.arrayBuffer();
           }
           
           zip.file(item.filename, imageBuffer);
+          addedCount += 1;
         } catch (error) {
           console.warn(`Failed to process image ${item.filename}:`, error);
+          failedCount += 1;
           // Continue with other images even if one fails
         }
+      }
+
+      if (addedCount === 0) {
+        toast({
+          title: "Download Failed",
+          description: "No images could be downloaded. Please refresh and try again.",
+          variant: "destructive"
+        });
+        return;
       }
       
       // Generate ZIP file
@@ -4286,10 +4300,17 @@ export default function BatchProcessor() {
       a.remove();
       URL.revokeObjectURL(url);
       
-      toast({ 
-        title: "Download Complete", 
-        description: `ZIP file downloaded successfully with ${imagesToDownload.length} images.`
-      });
+      if (failedCount > 0) {
+        toast({
+          title: "Download Complete",
+          description: `Downloaded ${addedCount} images (${failedCount} failed).`
+        });
+      } else {
+        toast({
+          title: "Download Complete",
+          description: `ZIP file downloaded successfully with ${addedCount} images.`
+        });
+      }
     } catch (error) {
       console.error("Download error:", error);
       toast({ 
