@@ -93,7 +93,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent
-        className="w-[min(1200px,calc(100vw-2rem))] max-w-[1200px] h-[min(92vh,880px)] p-0 overflow-hidden border border-slate-200 bg-white rounded-sm shadow-2xl"
+        className="flex flex-col w-[min(1400px,calc(100vw-1.5rem))] max-w-[1400px] h-[min(96vh,960px)] p-0 overflow-hidden border border-slate-200 bg-white rounded-sm shadow-2xl"
         data-testid="retry-dialog"
       >
         <DialogHeader className="px-8 pt-7 pb-4 border-b border-action-200">
@@ -104,12 +104,12 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
           <div className="h-0.5 w-full bg-gradient-to-r from-action-600 via-emerald-500 to-transparent" />
         </DialogHeader>
 
-        <div className="h-[calc(100%-110px)] overflow-y-auto px-8 pt-6 pb-28 space-y-6 bg-slate-50/30">
+        <div className="flex-1 overflow-hidden px-8 pt-6 pb-6 space-y-6 bg-slate-50/30">
           {/* Before/After Preview Slider */}
           {originalImageUrl && enhancedImageUrl && (
             <section className="space-y-3">
               <Label className="text-sm font-semibold text-slate-800 block">Preview Comparison</Label>
-              <div className="relative w-full h-[420px] md:h-[520px] bg-slate-100 overflow-hidden border border-slate-200 shadow-sm">
+              <div className="relative w-full h-[min(44vh,560px)] bg-slate-100 overflow-hidden border border-slate-200 shadow-sm">
                 <div className="absolute inset-0">
                   <img
                     src={enhancedImageUrl}
@@ -244,7 +244,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
           </section>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-slate-200 bg-white/95 backdrop-blur-sm px-8 py-4 flex items-center justify-end gap-3">
+        <div className="border-t border-slate-200 bg-white/95 backdrop-blur-sm px-8 py-4 flex items-center justify-end gap-3">
           <Button
             variant="outline"
             onClick={handleClose}
