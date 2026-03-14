@@ -180,8 +180,9 @@ export function attachGoogleAuth(app: Express) {
         const cookieName = "realsess";
         const cookieOpts = {
           httpOnly: true,
-          sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
+          sameSite: "lax" as const,
           secure: process.env.NODE_ENV === "production",
+          domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
         };
 
         if (req.session) {
@@ -269,10 +270,11 @@ export function attachGoogleAuth(app: Express) {
     (req as any).logout?.((err: unknown) => {
       if (err) return next(err as Error);
       req.session.destroy(() => {
-        res.clearCookie("connect.sid", {
+        res.clearCookie("realsess", {
           httpOnly: true,
           sameSite: "lax",
           secure: process.env.NODE_ENV === "production",
+          domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
         });
         res.json({ ok: true });
       });

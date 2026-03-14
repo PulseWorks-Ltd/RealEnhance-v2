@@ -3135,7 +3135,7 @@ export default function BatchProcessor() {
               displayUrl;
             if (displayUrl) completionSource = "region-edit";
           }
-          if (!displayUrl) {
+          if (!displayUrl && !isRegionEdit) {
             if (stage2Url) {
               displayUrl = stage2Url;
               completionSource = "stage2";
@@ -4577,22 +4577,24 @@ export default function BatchProcessor() {
       result?.result?.completionSource === "region-edit" ||
       String(result?.meta?.type || "").toLowerCase() === "region-edit" ||
       String(result?.meta?.jobType || "").toLowerCase() === "region_edit";
+    const resolvedEditUrl = editLatestUrl || (isRegionEdit ? finalResultUrl : null);
     const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || toDisplayUrl(stageFallback?.stage2) || null;
     const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || toDisplayUrl(stageFallback?.stage1B) || null;
     const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || toDisplayUrl(stageFallback?.stage1A) || null;
     const originalUrl = toDisplayUrl(result?.originalImageUrl) || toDisplayUrl(result?.result?.originalImageUrl) || toDisplayUrl(result?.originalUrl) || toDisplayUrl(result?.result?.originalUrl) || toDisplayUrl(originalFallback) || null;
 
     if (isRegionEdit && !selectedStage) {
-      if (editLatestUrl) return { stage: null, url: editLatestUrl };
+      if (resolvedEditUrl) return { stage: null, url: resolvedEditUrl };
       if (finalResultUrl) return { stage: null, url: finalResultUrl };
     }
 
     if (selectedStage === "retried") return { stage: null, url: retryLatestUrl || null };
-    if (selectedStage === "edited" && editLatestUrl) return { stage: null, url: editLatestUrl };
+    if (selectedStage === "edited") return { stage: null, url: resolvedEditUrl || null };
 
-    if (selectedStage === "2" && stage2Url) return { stage: "2", url: stage2Url };
-    if (selectedStage === "1B" && stage1BUrl) return { stage: "1B", url: stage1BUrl };
-    if (selectedStage === "1A" && stage1AUrl) return { stage: "1A", url: stage1AUrl };
+    // Explicit stage selection should never silently downgrade to a different output.
+    if (selectedStage === "2") return { stage: "2", url: stage2Url || null };
+    if (selectedStage === "1B") return { stage: "1B", url: stage1BUrl || null };
+    if (selectedStage === "1A") return { stage: "1A", url: stage1AUrl || null };
 
     if (retryLatestUrl) return { stage: null, url: retryLatestUrl };
     if (finalResultUrl) return { stage: null, url: finalResultUrl };
@@ -7116,9 +7118,12 @@ export default function BatchProcessor() {
                         const disallowStage2 = !!blockedStage && !stage2Url;
                         const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
                         const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
-                        const editedUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
-                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
                         const isRegionEditOutput = result?.completionSource === "region-edit" || result?.result?.completionSource === "region-edit";
+                        const editedUrl =
+                          toDisplayUrl(result?.editLatestUrl) ||
+                          toDisplayUrl(result?.result?.editLatestUrl) ||
+                          (isRegionEditOutput ? finalResultUrl : null);
+                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
                           if (disallowStage2 && requested === "2") return defaultStage;
@@ -7150,10 +7155,10 @@ export default function BatchProcessor() {
                             stage1BUrl,
                             stage1AUrl,
                           });
-                          if (selectedStage === "retried") return selectedUrl;
-                          if (selectedStage === "edited") return selectedUrl || defaultUrl;
+                          if (selectedStage === "retried") return selectedUrl || null;
+                          if (selectedStage === "edited") return selectedUrl || null;
                           if (selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A") {
-                            return selectedUrl || defaultUrl;
+                            return selectedUrl || null;
                           }
                           return defaultUrl;
                         })();

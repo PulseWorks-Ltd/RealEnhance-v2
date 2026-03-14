@@ -4770,7 +4770,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   timings.sceneDetectMs = Date.now() - tScene;
 
-  const sceneMeta = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
+  const sceneMeta: Record<string, any> = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
 
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
@@ -5589,10 +5589,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BMaskedDriftPct >= 95 && stage1BSemanticWallDriftPct >= 95;
       const stage1BCatastrophicConsensusBackstop =
         stage1BConsensusClassification.mode === "CATASTROPHIC_BACKSTOP";
+
+      const stage1BLocalSignals: Stage2LocalSignals = {
+        structuralDegreeChange: Math.max(0, Math.min(1, Math.max(stage1BMaskedDriftPct, stage1BSemanticWallDriftPct) / 100)),
+        wallDrift: Math.max(0, Math.min(1, stage1BSemanticWallDriftPct / 100)),
+        maskedEdgeDrift: Math.max(0, Math.min(1, stage1BMaskedDriftPct / 100)),
+        edgeOpeningRisk: 0,
+        openingCountMismatch: openingCountDelta !== 0 ? 1 : 0,
+        floorPlaneShift: 0,
+        fixtureMismatch: 0,
+        islandDetectionDrift: 0,
+      };
+      
+      const stage1BLocalPrecheckResult = runUnifiedValidator(stage1BLocalSignals);
+      const stage1BIsCatastrophicLocalFail = stage1BLocalPrecheckResult.severity === "CATASTROPHIC";
+
       const stage1BExtremeHardFail =
         stage1BIsExtremeDeviation ||
         stage1BIsExtremeMaskCollapse ||
-        stage1BCatastrophicConsensusBackstop;
+        stage1BCatastrophicConsensusBackstop ||
+        stage1BIsCatastrophicLocalFail;
 
       nLog("[STAGE1B_EXTREME_GATE]", {
         jobId: payload.jobId,
@@ -5602,6 +5618,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         semanticWallDriftPct: stage1BSemanticWallDriftPct,
         isExtremeDeviation: stage1BIsExtremeDeviation,
         isExtremeMaskCollapse: stage1BIsExtremeMaskCollapse,
+        isCatastrophicLocalFail: stage1BIsCatastrophicLocalFail,
         consensusDerivedWarnings: stage1BConsensusClassification.derivedWarnings,
         consensusMode: stage1BConsensusClassification.mode,
         catastrophicConsensusBackstop: stage1BCatastrophicConsensusBackstop,
@@ -5610,12 +5627,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const originalHardFail =
         !stage1BMinorReconstructionSignal &&
         (structureResult.hardFail || stage1BCalibratedStructuralHardFail || openingRemovalHardFail);
-      const effectiveHardFail =
+      let effectiveHardFail =
         originalHardFail || stage1BExtremeHardFail;
-      const effectiveViolationType =
+      let effectiveViolationType =
         stage1BCatastrophicConsensusBackstop
           ? "structural_consensus"
-          : stage1BIsExtremeDeviation || stage1BIsExtremeMaskCollapse
+          : stage1BIsExtremeDeviation || stage1BIsExtremeMaskCollapse || stage1BIsCatastrophicLocalFail
             ? "extreme_structural_violation"
             : structureResult.violationType;
       const effectiveReasons = [
@@ -5659,6 +5676,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             ]
           : []),
       ];
+
+      // Final Stage 1B Gemini Review (acting as the ultimate gate)
+      if (!effectiveHardFail && ENABLE_FINAL_STRUCTURAL_REVIEW) {
+        if (stage1BSemanticWallDriftPct >= 60 || stage1BMaskedDriftPct >= 60) {
+          effectiveHardFail = true;
+          effectiveViolationType = "extreme_drift_pre_review";
+          effectiveReasons.push(`extreme_drift_pre_review:semantic=${stage1BSemanticWallDriftPct.toFixed(2)},masked=${stage1BMaskedDriftPct.toFixed(2)}`);
+          nLog("[STAGE1B_DRIFT_GATE_FAIL]", { 
+            jobId: payload.jobId, 
+            attempt: stage1BAttemptNo, 
+            semanticDrift: stage1BSemanticWallDriftPct,
+            maskedDrift: stage1BMaskedDriftPct
+          });
+        } else {
+          const structuralReview = await runGeminiStructuralReviewPro(path1A, candidate);
+          if (structuralReview.result === "FAIL") {
+            effectiveHardFail = true;
+            effectiveViolationType = "final_structural_review";
+            const reviewReason = structuralReview.explanation || "stage1b_structural_review_failed";
+            effectiveReasons.push(`final_review:${reviewReason}`);
+            nLog("[STAGE1B_FINAL_REVIEW_FAIL]", { 
+              jobId: payload.jobId, 
+              attempt: stage1BAttemptNo, 
+              reason: reviewReason 
+            });
+          }
+        }
+      }
 
       if (wallDelta.hardFail) {
         nLog(`[STAGE1B_STRUCTURE_RESULT] hardFail=true violationType=wall_plane_expansion`);
@@ -5747,6 +5792,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             return;
           }
 
+          // If we requested virtual stage, we gracefully break out and proceed to Stage 2 with path1A baseline
+          if (payload.options.virtualStage) {
+            nLog("[STAGE1B_FALLBACK] Exhausted retries. Proceeding to Stage 2 with Stage 1A baseline.");
+            sceneMeta.stage1BAttempts = attempt;
+            sceneMeta.structureHardFail = true;
+            sceneMeta.structureViolationType = effectiveViolationType;
+            sceneMeta.structureReasons = effectiveReasons;
+            break;
+          }
+
+          // Otherwise it's a declutter-only request and we must gracefully end the job
           await completePartialJobWithSummary({
             jobId: payload.jobId,
             triggerStage: "1B",

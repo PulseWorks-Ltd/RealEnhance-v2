@@ -52,6 +52,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const IS_PROD = NODE_ENV === "production";
+const PROD_ALLOWED_ORIGINS = [
+  "https://realenhance.co.nz",
+  "https://www.realenhance.co.nz",
+];
 
 const startupState: {
   schemaReady: boolean;
@@ -190,14 +194,26 @@ async function main() {
 
   app.set("trust proxy", 1);
 
-  app.use(
-    cors({
-      origin: PUBLIC_ORIGIN,
-      credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "X-Requested-With", "X-Device-Id"]
-    })
-  );
+  const allowedOrigins = new Set<string>([
+    ...PUBLIC_ORIGIN,
+    ...(IS_PROD ? PROD_ALLOWED_ORIGINS : []),
+  ]);
+
+  const corsOptions: cors.CorsOptions = {
+    origin(origin, callback) {
+      // Allow non-browser requests (no Origin header)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(origin)) return callback(null, true);
+      return callback(new Error(`CORS origin not allowed: ${origin}`));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Device-Id", "X-Requested-With", "Cache-Control"],
+    optionsSuccessStatus: 204,
+  };
+
+  app.use(cors(corsOptions));
+  app.options("*", cors(corsOptions));
   app.use(helmet());
   app.use(morgan("dev"));
   app.use(cookieParser());
@@ -219,8 +235,9 @@ async function main() {
     store,
     cookie: {
       httpOnly: true,
-      sameSite: IS_PROD ? "none" : "lax",
+      sameSite: "lax",
       secure: IS_PROD,
+      domain: IS_PROD ? ".realenhance.co.nz" : undefined,
       maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
     }
   };
@@ -231,6 +248,7 @@ async function main() {
     httpOnly: true,
     sameSite: sessionOptions.cookie?.sameSite,
     secure: sessionOptions.cookie?.secure === true,
+    domain: sessionOptions.cookie?.domain,
     path: sessionOptions.cookie?.path,
   } as const;
 

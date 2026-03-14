@@ -807,7 +807,8 @@ router.post("/bundles/checkout", requireAuth, requireAgencyAdmin, async (req: Re
       return res.status(403).json({
         code: "BUNDLE_PURCHASE_RESTRICTED",
         error: "Bundle purchase restricted",
-        message: "Bundle purchases require an active subscription or existing paid bundle credits.",
+        message:
+          "Purchase Not Available. Bundle Add-Ons require a subscription to purchase. Please sign up to one of our monthly subscriptions to start enhancing more images and gain access to bundle add-ons.",
       });
     }
 
