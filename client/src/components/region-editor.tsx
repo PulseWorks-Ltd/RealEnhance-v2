@@ -1270,8 +1270,8 @@ export function RegionEditor({
     (mode === "restore_original" && hasMask);
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-50 rounded-lg overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_320px]">
-      <aside className="border-b border-slate-200 bg-white p-5 lg:border-b-0 lg:border-r lg:overflow-y-auto">
+    <div className="grid h-screen w-screen grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-50 rounded-none overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_320px]">
+      <aside className="h-full border-b border-slate-200 bg-white p-6 lg:border-b-0 lg:border-r lg:overflow-y-auto flex flex-col">
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
           <p className="text-sm text-slate-600">
@@ -1302,9 +1302,9 @@ export function RegionEditor({
       </aside>
 
       <section className="relative min-h-0 bg-[#f8fafc] overflow-hidden lg:col-start-2">
-        <div className="h-full w-full p-4 lg:p-6">
+        <div className="flex h-full w-full items-center justify-center p-0">
           {previewUrl ? (
-            <div className="relative mx-auto flex h-full w-full max-w-[1200px] items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 shadow-sm overflow-hidden">
+            <div className="relative flex h-full w-full items-center justify-center bg-slate-100 overflow-hidden">
               {/* Unified toolbar row - anchored to center workspace only */}
               <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 shadow-xl backdrop-blur-md">
                 <div className="flex items-center gap-2 text-xs text-slate-700">
@@ -1421,15 +1421,15 @@ export function RegionEditor({
               </div>
             </div>
           ) : (
-            <div className="mx-auto flex h-full w-full max-w-[1200px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-slate-500">
+            <div className="flex h-full w-full items-center justify-center border-dashed border-slate-300 bg-slate-50 text-slate-500">
               <p className="text-sm">No image loaded. Please select an image file.</p>
             </div>
           )}
         </div>
       </section>
 
-      <aside className="border-t border-slate-200 bg-white p-5 lg:col-start-3 lg:border-t-0 lg:border-l lg:overflow-y-auto">
-        <div className="space-y-2">
+      <aside className="h-full border-t border-slate-200 bg-white p-6 lg:col-start-3 lg:border-t-0 lg:border-l lg:overflow-y-auto flex flex-col">
+        <div className="space-y-2 flex-1">
           <Label htmlFor="instructions" className="text-sm font-medium text-slate-800">
             Describe what you want to add, remove, or replace
           </Label>
@@ -1445,8 +1445,8 @@ export function RegionEditor({
         </div>
       </aside>
 
-      <div className="col-span-full grid grid-cols-1 border-t border-slate-200 bg-white/95 backdrop-blur-sm lg:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <div className="px-4 py-3 lg:px-5 lg:py-4">
+      <div className="col-span-full grid grid-cols-1 border-t border-slate-200 bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.02)] z-10 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <div className="px-4 py-2 flex items-center lg:px-6 lg:py-3">
           <Button
             onClick={clearMask}
             variant="outline"
@@ -1457,11 +1457,11 @@ export function RegionEditor({
           </Button>
         </div>
 
-        <div className="px-4 py-3 text-xs text-slate-600 lg:px-6 lg:py-4 flex items-center">
+        <div className="px-4 py-2 text-xs text-slate-500 lg:px-6 lg:py-3 flex items-center justify-center">
           <span>White areas will be edited. Alt/Ctrl + drag to pan, scroll to zoom.</span>
         </div>
 
-        <div className="px-4 py-3 lg:px-5 lg:py-4 flex items-center justify-end gap-2">
+        <div className="px-4 py-2 lg:px-6 lg:py-3 flex items-center justify-end gap-3">
           <Button
             type="button"
             variant="outline"

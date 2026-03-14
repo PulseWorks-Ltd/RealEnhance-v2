@@ -8627,16 +8627,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     || (!unifiedValidation && !stage2ValidationRisk);
 
   if (hasStage2 && !stage2ValidationPassed) {
-    await safeWriteJobStatus(
-      payload.jobId,
-      {
-        status: "failed",
-        blockedStage: "2",
-        errorMessage: "stage2_validation_exhausted",
-        validationNote: stage2BlockedReason || "stage2_validation_exhausted",
+    const fallbackStage: "1A" | "1B" = (payload.options.declutter && !!path1B) ? "1B" : "1A";
+    const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
+    await completePartialJobWithSummary({
+      jobId: payload.jobId,
+      triggerStage: "2",
+      finalStage: fallbackStage,
+      finalPath: fallbackPath,
+      pub1AUrl,
+      pub1BUrl,
+      sceneMeta: { ...sceneMeta },
+      userMessage: fallbackStage === "1B"
+        ? "We decluttered your image but could not safely stage it."
+        : "We enhanced your image but could not safely stage it.",
+      reason: "stage2_validation_exhausted",
+      stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+      billingContext: {
+        payload,
+        sceneType: sceneLabel || "interior",
+        stage1BUserSelected: originalUserDeclutter,
+        geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
       },
-      "stage2_validation_exhausted"
-    );
+    });
     return;
   }
 
