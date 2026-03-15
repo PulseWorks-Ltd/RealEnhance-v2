@@ -357,9 +357,9 @@ function buildNanoRoomProgramGuidance(opts: {
     case "living_room":
     case "living":
       anchorGuidance =
-        "Primary anchor (MANDATORY): the TV wall with a TV unit/media console. Build all living seating and secondary furniture around this TV/media anchor.";
+        "Primary anchor (MANDATORY): a freestanding, non-permanent media console/TV unit on the TV wall. It must sit in front of the wall and must not be integrated into the wall or built-in cabinetry. Build all living seating and secondary furniture around this TV/media anchor.";
       roomRules = [
-        "Include a realistic TV unit/media console as the focal anchor.",
+        "Include a realistic freestanding TV unit/media console as the focal anchor.",
         "Arrange sofa/chairs to support TV viewing and natural circulation.",
         "Do not stage this as a dining room or bedroom.",
       ];
@@ -426,19 +426,32 @@ function buildNanoRoomProgramGuidance(opts: {
       break;
   }
 
-  return `ROOM PROGRAM + ANCHOR RULES (NANO, FULL-STAGING ONLY)
-Selected room type: ${room || "unknown"}
-Selected staging style: ${style || "standard_listing"}
+  return `CRITICAL PRIORITY 1: ARCHITECTURAL LOCK
+The input image is an immutable architectural blueprint.
+You are strictly forbidden from modifying any permanent structure or built-in elements.
+Do not modify walls, ceilings, floors, windows, doors, openings, trims, fixed lighting, built-ins, or permanent fixtures.
+Do not repaint, re-floor, renovate, remodel, or add any built architectural elements.
+All openings must remain fully functional and unobstructed in realistic use.
 
+Style must be achieved through freestanding furniture and movable decor only.
+Do not add architectural features to achieve style, including coffered ceilings, wall moldings, built-in LED strips, recessed-lighting additions, wall panels, or integrated cabinetry.
+
+CRITICAL PRIORITY 2: PRIMARY ANCHOR
+Selected room type: ${room || "unknown"}
 ${anchorGuidance}
 
 Required room-program guidance:
 ${roomRules.map((rule) => `- ${rule}`).join("\n")}
 
-STAGING STYLE COMPLIANCE (MANDATORY)
+CRITICAL PRIORITY 3: STYLE OVERLAY
+Selected staging style: ${style || "standard_listing"}
 - Respect the selected staging style as the aesthetic layer (materials, palette, decor mood).
 - Room type and functional anchor rules are higher priority than style.
 - Never violate architecture, openings, or permanent fixtures to satisfy style.
+
+NEGATIVE CONSTRAINTS
+- Apply all strict prohibitions in this prompt exactly.
+- If any style request conflicts with architecture lock rules, architecture lock rules always win.
 `;
 }
 
