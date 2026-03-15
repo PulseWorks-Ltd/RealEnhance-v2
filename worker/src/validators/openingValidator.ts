@@ -300,6 +300,18 @@ Return ok=false if any of the following occur:
 
 All architectural openings must preserve their visible boundaries.
 
+VERTICAL EDGE INVARIANT (CRITICAL)
+
+For each doorway-like opening (door, closet door, sliding door, walkthrough),
+identify the left and right vertical boundary lines in BASELINE.
+
+If any required vertical boundary line terminates, fades into, or disappears
+into continuous flat wall surface in STAGED, treat this as infill/removal
+and return ok=false.
+
+If a doorway appears partially hidden but no vertical frame boundary remains
+visible on either side, this is NOT valid occlusion. It is structural removal.
+
 WINDOW GEOMETRY PRESERVATION (CRITICAL)
 
 If a window is visible in the baseline image,
@@ -340,6 +352,28 @@ STRICT OCCLUSION POLICY (MANDATORY)
 - Partial occlusion of doors, closet doors, sliding doors, or walkthrough openings by furniture = FAIL.
 - Even when partial window occlusion is present, the opening must remain clearly visible and fully functional.
 
+OCCLUSION VS REPLACEMENT (MANDATORY)
+
+Furniture or artwork may sit IN FRONT of an opening, but must never become
+the wall itself.
+
+If an object is flush against a region that was an opening in BASELINE,
+and the frame/boundary of that opening is no longer visible on any side
+of the object, this is replacement/infill, not occlusion.
+
+In that case return ok=false.
+
+SPATIAL ANCHOR VALIDATION (MANDATORY)
+
+Use stable structural openings as anchors (for example a sliding glass door,
+large exterior window, or fixed doorway).
+
+Compare relative spacing from those anchors to nearby openings.
+If anchor-to-opening spacing increases because an intermediate opening
+disappears or becomes wall, return ok=false.
+
+Do not excuse this as perspective drift when anchor geometry is preserved.
+
 Closet-door strictness:
 Closet doors/openings may not disappear or be replaced by wall surface.
 Any occlusion by artwork or decor is not allowed.
@@ -362,7 +396,24 @@ Ignore:
 * temporary occlusions caused by staging objects when opening geometry is still clearly preserved
 
 Return JSON only:
-{"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
+{
+  "ok": true|false,
+  "reason": "short explanation",
+  "confidence": 0.0-1.0,
+  "openingRemoved": true|false,
+  "openingRelocated": true|false,
+  "openingInfilled": true|false,
+  "openingResized": true|false,
+  "analysis": "short structural analysis",
+  "openingCount": { "before": number, "after": number },
+  "detectedOpenings": [
+    {
+      "type": "window|door|closet_door|walkthrough|unknown",
+      "position": "brief location text",
+      "status": "preserved|occluded|removed|infilled|relocated|resized"
+    }
+  ]
+}`;
 
   const runWithModel = async (model: string): Promise<OpeningValidatorResult> => {
     const response = await (ai as any).models.generateContent({
