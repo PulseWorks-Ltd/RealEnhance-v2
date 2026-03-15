@@ -176,11 +176,13 @@ Confidence must be between 0 and 1.`;
     const response = await (ai as any).models.generateContent({
       model: process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_MODEL || "gemini-2.5-flash",
       contents: [
-        { role: "user", parts: [{ text: prompt }] },
         {
           role: "user",
           parts: [
+            { text: prompt },
+            { text: "IMAGE_BEFORE:" },
             { inlineData: { mimeType: "image/webp", data: before } },
+            { text: "IMAGE_AFTER:" },
             { inlineData: { mimeType: "image/webp", data: after } },
           ],
         },

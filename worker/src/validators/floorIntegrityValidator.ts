@@ -140,11 +140,13 @@ Return JSON only:
     const response = await (ai as any).models.generateContent({
       model,
       contents: [
-        { role: "user", parts: [{ text: prompt }] },
         {
           role: "user",
           parts: [
+            { text: prompt },
+            { text: "IMAGE_BEFORE:" },
             { inlineData: { mimeType: "image/webp", data: before } },
+            { text: "IMAGE_AFTER:" },
             { inlineData: { mimeType: "image/webp", data: after } },
           ],
         },

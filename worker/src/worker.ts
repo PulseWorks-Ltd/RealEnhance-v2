@@ -667,11 +667,13 @@ plus one short explanation sentence.`;
   const response = await (ai as any).models.generateContent({
     model: opts.model,
     contents: [
-      { role: "user", parts: [{ text: prompt }] },
       {
         role: "user",
         parts: [
+          { text: prompt },
+          { text: "IMAGE_BEFORE:" },
           { inlineData: { mimeType: "image/webp", data: before } },
+          { text: "IMAGE_AFTER:" },
           { inlineData: { mimeType: "image/webp", data: after } },
         ],
       },
@@ -1673,6 +1675,10 @@ or temporary movable objects is NOT removal ONLY IF ALL of the following remain 
 - The depth void or light cavity of the opening remains visible,
 - The wall plane does NOT become continuous across the prior opening boundary.
 
+Translucent or sheer window treatments that allow light through and clearly
+maintain the silhouette of the opening should be treated as occlusion,
+not removal.
+
 If any of the above conditions are not satisfied, treat it as structural removal.
 
 Replacement of an opening with continuous wall surface IS removal.
@@ -1697,6 +1703,9 @@ IMPORTANT:
 If opening count decreases, you must assume removal UNLESS you can clearly
 verify preserved frame continuity AND preserved depth void.
 
+If an opening is partially obscured by a new object (e.g., a tall plant or a lamp),
+but the wall boundary behind it is logically intact, do NOT flag as removal.
+
 Do not speculate. If uncertain between occlusion and removal, prefer removal.
 
 Return STRICT JSON only. No prose outside JSON.
@@ -1708,6 +1717,7 @@ Required JSON format:
   "openingRelocated": boolean,
   "openingInfilled": boolean,
   "openingResized": boolean,
+  "analysis": string,
   "confidence": number
 }
 
@@ -1715,6 +1725,7 @@ Set openingRelocated=true if the opening appears moved to a different wall locat
 Set openingInfilled=true if a former opening area is now continuous wall.
 Set openingRemoved=true if an opening present in BEFORE is absent in AFTER.
 Set openingResized=true if the opening frame remains present but its width, height, or proportions differ noticeably from BEFORE.
+Set analysis to a short reason (<= 140 chars) naming the key opening decision.
 Set confidence to a number between 0 and 1.
 `;
 
@@ -1753,12 +1764,13 @@ async function runStructuralInvariantGeminiCheck(
           {
             text: prompt,
           },
-        ],
-      },
-      {
-        role: "user",
-        parts: [
+          {
+            text: "IMAGE_BEFORE:",
+          },
           { inlineData: { mimeType: "image/webp", data: before } },
+          {
+            text: "IMAGE_AFTER:",
+          },
           { inlineData: { mimeType: "image/webp", data: after } },
         ],
       },
@@ -1850,6 +1862,9 @@ async function runStructuralInvariantGeminiCheck(
     typeof parsed.confidence === "number" && Number.isFinite(parsed.confidence)
       ? Math.max(0, Math.min(1, parsed.confidence))
       : 0;
+  const analysis = typeof parsed.analysis === "string"
+    ? parsed.analysis.trim().slice(0, 140)
+    : "";
   const fail = openingRemoved || openingRelocated || openingInfilled || openingResized;
   const violationType: StructuralInvariantViolationType = openingRemoved
     ? "opening_removed"
@@ -1875,6 +1890,7 @@ async function runStructuralInvariantGeminiCheck(
     openingRelocated,
     openingInfilled,
     openingResized,
+    analysis,
     confidence,
     reason,
     violationType,

@@ -1217,11 +1217,13 @@ export async function validateStage1BStructure(
   const stage1BPrompt = STAGE1B_HARDENED_STRUCTURAL_PROMPT;
 
   const contents = [
-    { role: "user", parts: [{ text: stage1BPrompt }] },
     {
       role: "user",
       parts: [
+        { text: stage1BPrompt },
+        { text: "IMAGE_BEFORE:" },
         { inlineData: { mimeType: "image/webp", data: before } },
+        { text: "IMAGE_AFTER:" },
         { inlineData: { mimeType: "image/webp", data: after } },
       ],
     },
@@ -1236,11 +1238,13 @@ export async function validateStage1BStructure(
         maxOutputTokens: 256,
       },
       contents: [
-        { role: "user", parts: [{ text: stage1BPrompt }] },
         {
           role: "user",
           parts: [
+            { text: stage1BPrompt },
+            { text: "IMAGE_BEFORE:" },
             { inlineData: { mimeType: "image/webp", byteLength: before.length } },
+            { text: "IMAGE_AFTER:" },
             { inlineData: { mimeType: "image/webp", byteLength: after.length } },
           ],
         },
@@ -2696,11 +2700,13 @@ export async function runGeminiSemanticValidator(opts: {
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
 
   const contents = [
-    { role: "user", parts: [{ text: prompt }] },
     {
       role: "user",
       parts: [
+        { text: prompt },
+        { text: "IMAGE_BEFORE:" },
         { inlineData: { mimeType: "image/webp", data: before } },
+        { text: "IMAGE_AFTER:" },
         { inlineData: { mimeType: "image/webp", data: after } },
       ],
     },

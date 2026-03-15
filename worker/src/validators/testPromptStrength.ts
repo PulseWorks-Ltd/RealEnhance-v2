@@ -76,10 +76,11 @@ async function run() {
     const resp = await ai.models.generateContent({
       model: MODEL,
       contents: [
-        { role: "user", parts: [{ text: prompt }] },
         {
           role: "user",
           parts: [
+            { text: prompt },
+            { text: "IMAGE_BEFORE:" },
             { inlineData: { mimeType: "image/webp", data: b.toString("base64") } },
           ],
         },
