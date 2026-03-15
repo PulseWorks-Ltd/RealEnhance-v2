@@ -99,15 +99,7 @@ function highestStageFrom(stages: Array<"1A" | "1B" | "2">): "1A" | "1B" | "2" |
 function normalizeBaselineSourceStage(rawStage: string | undefined): "1A" | "1B" | "original_upload" {
   const s = String(rawStage || "").trim().toLowerCase();
   if (s.startsWith("1a")) return "1A";
-  if (
-    s === "1b" ||
-    s === "2" ||
-    s === "retry_latest" ||
-    s === "edit_latest" ||
-    s === "1b-light" ||
-    s === "1b-stage-ready" ||
-    s.startsWith("1b")
-  ) {
+  if (s === "1b" || s === "1b-light" || s === "1b-stage-ready" || s.startsWith("1b")) {
     return "1B";
   }
   return "original_upload";
@@ -283,12 +275,14 @@ function resolveRetryBaseline(params: {
   const stage1AUrl = resolve("1A");
 
   const orderedCandidates: Array<{ stage: string; url: string | null | undefined }> = [
-    { stage: normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "manual_source", url: sourceUrlRaw || null },
+    // Prefer canonical artifacts from parent lineage first.
     { stage: "retry_latest", url: retryLatestUrl || null },
     { stage: "edit_latest", url: editLatestUrl || null },
     { stage: "2", url: stage2Url },
     { stage: "1B-stage-ready", url: stage1BUrl },
     { stage: "1A", url: stage1ATainted ? null : stage1AUrl },
+    // Keep explicit client source as fallback to avoid stale UI payload poisoning.
+    { stage: normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "manual_source", url: sourceUrlRaw || null },
     { stage: "original_upload", url: originalUploadUrl || null },
   ];
 
@@ -850,8 +844,19 @@ export function retrySingleRouter() {
         stage1BWasRequested = true;
       }
 
-      const resolvedBaselineStage = normalizeBaselineSourceStage(selectedSourceStage);
       const normalizedSelectedStage = String(selectedSourceStage || "").trim().toLowerCase();
+      const stage2LikeSelection =
+        normalizedSelectedStage === "2" ||
+        normalizedSelectedStage === "retry_latest" ||
+        normalizedSelectedStage === "edit_latest";
+
+      const resolvedBaselineStage: "1A" | "1B" | "original_upload" = stage2LikeSelection
+        ? (stage1BFromParent
+            ? "1B"
+            : (stage1AFromParent
+                ? "1A"
+                : "original_upload"))
+        : normalizeBaselineSourceStage(selectedSourceStage);
       const selectedLooksLike1A = normalizedSelectedStage.startsWith("1a");
       const selectedLooksLike1B =
         normalizedSelectedStage === "1b" ||

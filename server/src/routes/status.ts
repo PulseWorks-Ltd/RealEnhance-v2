@@ -82,12 +82,22 @@ function pickAuthoritativeState(
   queueState: string | null
 ): { state: NormalizedState; source: "persisted" | "queue_fallback" } {
   const stateFromLocal = normalizePipelineState(localStatusRaw);
+  const stateFromQueue = normalizeQueueState(queueState);
+
+  // If persisted state is still processing-like but queue reached terminal,
+  // prefer queue terminal state to avoid indefinite processing in UI.
+  if (
+    (stateFromLocal === "processing" || stateFromLocal === "queued" || stateFromLocal === "awaiting_payment") &&
+    (stateFromQueue === "completed" || stateFromQueue === "failed")
+  ) {
+    return { state: stateFromQueue, source: "queue_fallback" };
+  }
+
   if (stateFromLocal !== "unknown") {
     return { state: stateFromLocal, source: "persisted" };
   }
 
   // Queue state is only used as a non-terminal fallback when persisted status is absent.
-  const stateFromQueue = normalizeQueueState(queueState);
   if (stateFromQueue === "queued") {
     return { state: "queued", source: "queue_fallback" };
   }

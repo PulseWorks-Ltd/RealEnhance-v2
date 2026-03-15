@@ -3573,6 +3573,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
   let stage2AttemptId: string | undefined;
+  const stage2SupersededActions = new Set<string>();
   const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const canonicalizeStage2RoomType = (rawRoomType: unknown) => {
@@ -3752,6 +3753,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         currentAttemptId,
         activeAttemptId: current.stage2AttemptId,
       });
+
+      if (!stage2SupersededActions.has(action)) {
+        stage2SupersededActions.add(action);
+        try {
+          await safeWriteJobStatus(
+            payload.jobId,
+            {
+              status: "processing",
+              message: "Stage 2 retry superseded by a newer attempt. Continuing latest attempt.",
+              retryPendingStage2: true,
+              stage2Superseded: {
+                action,
+                staleAttemptId: currentAttemptId,
+                activeAttemptId: current.stage2AttemptId,
+                at: new Date().toISOString(),
+              },
+            },
+            "stage2_attempt_superseded"
+          );
+        } catch (supersededWriteErr: any) {
+          nLog("[STAGE2_SUPERSEDED_STATUS_WRITE_FAILED]", {
+            jobId: payload.jobId,
+            action,
+            error: supersededWriteErr?.message || String(supersededWriteErr),
+          });
+        }
+      }
+
       return false;
     }
     return true;
@@ -3767,6 +3796,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         currentAttemptId,
         activeAttemptId: current.stage2AttemptId,
       });
+
+      if (!stage2SupersededActions.has(action)) {
+        stage2SupersededActions.add(action);
+        try {
+          await safeWriteJobStatus(
+            payload.jobId,
+            {
+              status: "processing",
+              message: "Stage 2 completion skipped because a newer retry attempt is active.",
+              retryPendingStage2: true,
+              stage2Superseded: {
+                action,
+                staleAttemptId: currentAttemptId,
+                activeAttemptId: current.stage2AttemptId,
+                at: new Date().toISOString(),
+              },
+            },
+            "stage2_completion_superseded"
+          );
+        } catch (supersededWriteErr: any) {
+          nLog("[STAGE2_SUPERSEDED_STATUS_WRITE_FAILED]", {
+            jobId: payload.jobId,
+            action,
+            error: supersededWriteErr?.message || String(supersededWriteErr),
+          });
+        }
+      }
+
       return false;
     }
     if (isTerminalStatus(current.status)) return false;
