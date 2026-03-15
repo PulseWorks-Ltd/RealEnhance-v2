@@ -51,12 +51,18 @@ export type OpeningValidationResult = {
   results: OpeningResult[];
   summary: {
     openingRemoved: boolean;
+    openingInfilled: boolean;
     openingSealed: boolean;
     openingRelocated: boolean;
     openingResized: boolean;
     openingClassMismatch: boolean;
     openingBandMismatch: boolean;
     outOfFrameOpenings: string[];
+    openingCount?: {
+      before: number;
+      after: number;
+    };
+    analysis?: string;
     semanticOpeningAreaDeltaPct?: number;
     semanticOpeningAspectRatioDelta?: number;
     confidence: number;
@@ -108,6 +114,14 @@ No comments.
 No extra text.
 
 If something is partially occluded but clearly a structural opening, include it.
+
+Vertical boundary invariant:
+For door-like openings, preserve left/right vertical frame boundaries when visible.
+If a frame boundary is not visible and surface is continuous flat wall, do not infer an opening.
+
+Occlusion vs replacement:
+Objects may sit in front of an opening, but if no opening boundary is visible on any side,
+classify as replacement/infill rather than occlusion.
 
 If you are uncertain whether something is a structural opening, include it.
 
@@ -632,6 +646,9 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   if (typeof input.summary.openingRemoved !== "boolean") {
     throw new Error("openingRemoved must be boolean in summary");
   }
+  if (input.summary.openingInfilled !== undefined && typeof input.summary.openingInfilled !== "boolean") {
+    throw new Error("openingInfilled must be boolean in summary when present");
+  }
   if (typeof input.summary.openingRelocated !== "boolean") {
     throw new Error("openingRelocated must be boolean in summary");
   }
@@ -653,12 +670,23 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
 
   const summary = {
     openingRemoved: input.summary.openingRemoved === true || results.some((item) => item.sealed === true && item.outOfFrame === false),
+    openingInfilled: input.summary.openingInfilled === true,
     openingSealed: results.some((item) => item.sealed === true),
     openingRelocated: input.summary.openingRelocated === true || results.some((item) => item.relocated === true),
     openingResized: input.summary.openingResized === true,
     openingClassMismatch: input.summary?.openingClassMismatch === true,
     openingBandMismatch: input.summary.openingBandMismatch === true,
     outOfFrameOpenings: input.summary.outOfFrameOpenings.filter((openingId: any) => typeof openingId === "string"),
+    openingCount:
+      input.summary.openingCount &&
+      Number.isFinite(Number(input.summary.openingCount.before)) &&
+      Number.isFinite(Number(input.summary.openingCount.after))
+        ? {
+            before: Number(input.summary.openingCount.before),
+            after: Number(input.summary.openingCount.after),
+          }
+        : undefined,
+    analysis: typeof input.summary.analysis === "string" ? input.summary.analysis : undefined,
     semanticOpeningAreaDeltaPct:
       typeof input.summary.semanticOpeningAreaDeltaPct === "number" && Number.isFinite(input.summary.semanticOpeningAreaDeltaPct)
         ? Math.abs(input.summary.semanticOpeningAreaDeltaPct)
@@ -724,26 +752,17 @@ export async function validateOpeningPreservation(
 ): Promise<OpeningValidationResult> {
   const detected = await extractStructuralBaseline(newImageUrl);
 
-  const allowedOccluders = new Set([
-    "bed",
-    "dresser",
-    "wardrobe",
-    "cabinet",
-    "sofa",
-    "bookshelf",
-    "desk",
-    "nightstand",
-  ]);
-
   const openingResults: OpeningResult[] = [];
   const outOfFrameOpenings: string[] = [];
   let openingRemoved = false;
+  let openingInfilled = false;
   let openingRelocated = false;
   let openingResized = false;
   let openingClassMismatch = false;
   let openingBandMismatch = false;
   let maxAreaDelta = 0;
   let maxAspectDelta = 0;
+  const analysisNotes: string[] = [];
 
   for (const baseOpening of baseline.openings) {
     const directMatch = detected.openings.find((candidate) => candidate.id === baseOpening.id);
@@ -758,16 +777,16 @@ export async function validateOpeningPreservation(
 
     if (!match) {
       openingRemoved = true;
-      const likelyFloorStandingOcclusion =
-        (baseOpening.verticalBand === "floor_zone" || baseOpening.verticalBand === "full_height") &&
-        allowedOccluders.size > 0;
+      const likelyInfilled = baseOpening.type !== "window";
+      if (likelyInfilled) openingInfilled = true;
 
-      const status = likelyFloorStandingOcclusion ? "OCCLUDED" : "MISSING";
-      const reason = likelyFloorStandingOcclusion
-        ? "missing_opening_no_floor_occluder_confirmation"
-        : "missing_opening";
+      const status = likelyInfilled ? "INFILLED" : "MISSING";
+      const reason = likelyInfilled ? "opening_replaced_by_wall_continuity" : "missing_opening";
 
       console.log(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
+      analysisNotes.push(
+        `Baseline opening ${baseOpening.id} (${baseOpening.type}) near wallIndex=${baseOpening.wallIndex}, band=${baseOpening.horizontalBand}/${baseOpening.verticalBand} is not detectable in AFTER; classified as ${status.toLowerCase()}.`
+      );
 
       openingResults.push({
         id: baseOpening.id,
@@ -785,6 +804,9 @@ export async function validateOpeningPreservation(
     if (match.wallIndex !== baseOpening.wallIndex) {
       openingRelocated = true;
       invariantReasons.push("wall_index_changed");
+      analysisNotes.push(
+        `Opening ${baseOpening.id} shifted walls (before=${baseOpening.wallIndex}, after=${match.wallIndex}).`
+      );
     }
 
     if (match.horizontalBand !== baseOpening.horizontalBand) {
@@ -824,6 +846,13 @@ export async function validateOpeningPreservation(
     const areaDelta = Math.abs((detectedArea - baseArea) / baseArea);
     maxAreaDelta = Math.max(maxAreaDelta, areaDelta);
 
+    if (baseOpening.type !== "window" && areaDelta >= 0.35) {
+      openingInfilled = true;
+      analysisNotes.push(
+        `Opening ${baseOpening.id} (${baseOpening.type}) lost substantial visible area (delta=${areaDelta.toFixed(3)}), indicating possible wall-flush infill rather than valid occlusion.`
+      );
+    }
+
     const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
     const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
     const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
@@ -848,12 +877,18 @@ export async function validateOpeningPreservation(
 
   const summary = {
     openingRemoved,
+    openingInfilled,
     openingSealed: openingRemoved || openingResized || openingBandMismatch || openingClassMismatch,
     openingRelocated,
     openingResized,
     openingClassMismatch,
     openingBandMismatch,
     outOfFrameOpenings,
+    openingCount: {
+      before: baseline.openings.length,
+      after: detected.openings.length,
+    },
+    analysis: analysisNotes.join(" "),
     semanticOpeningAreaDeltaPct: maxAreaDelta,
     semanticOpeningAspectRatioDelta: maxAspectDelta,
     confidence: openingResults.length
@@ -876,6 +911,7 @@ export function shouldHardFailOpening(
   }
 ): boolean {
   if (summary.openingRemoved) return true;
+  if (summary.openingInfilled) return true;
   if (summary.openingSealed) return true;
   if (summary.openingRelocated) return true;
   if (summary.openingClassMismatch) return true;
