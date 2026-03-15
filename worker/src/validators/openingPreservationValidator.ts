@@ -76,7 +76,7 @@ export type OpeningResult = {
 };
 
 const OPENING_VALIDATOR_MODEL = String(
-  process.env.OPENING_PRESERVATION_MODEL || process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash"
+  process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro"
 );
 
 const BASELINE_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine.
