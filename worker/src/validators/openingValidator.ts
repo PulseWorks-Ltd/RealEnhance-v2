@@ -49,6 +49,42 @@ export async function runOpeningValidator(
   if (baseline && Array.isArray(baseline.openings) && baseline.openings.length > 0) {
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
+    const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));
+    const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
+
+    let strictDoorOcclusionFail = false;
+    let strictWindowOcclusionFail = false;
+
+    for (const baseOpening of baseline.openings || []) {
+      const matchedOpening =
+        detectedById.get(String(baseOpening.id)) ||
+        (deterministic.detectedOpenings || []).find((candidate) =>
+          candidate.type === baseOpening.type &&
+          candidate.wallIndex === baseOpening.wallIndex &&
+          candidate.horizontalBand === baseOpening.horizontalBand
+        );
+
+      if (!matchedOpening) continue;
+
+      const baseArea = Math.max(0.01, Number(baseOpening.area_pct || 0));
+      const detectedArea = Math.max(0.01, Number(matchedOpening.area_pct || 0));
+      const retention = detectedArea / baseArea;
+
+      // Non-window openings (doors/closets/walkthroughs) must remain fully functional.
+      // Any notable apparent occlusion/size loss is treated as hard fail.
+      if (baseOpening.type !== "window") {
+        if (retention < 0.9) {
+          strictDoorOcclusionFail = true;
+        }
+      } else {
+        // Window partial occlusion can be tolerated only when clearly partial.
+        // Near-full occlusion is treated as structural failure.
+        if (retention < 0.55) {
+          strictWindowOcclusionFail = true;
+        }
+      }
+    }
+
     const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
       ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
       : 0;
@@ -61,7 +97,9 @@ export async function runOpeningValidator(
       deterministic.summary.openingClassMismatch ||
       deterministic.summary.openingBandMismatch ||
       relocationDetected ||
-      openingResizeHardFail;
+      openingResizeHardFail ||
+      strictDoorOcclusionFail ||
+      strictWindowOcclusionFail;
 
     const reasonParts: string[] = [];
     const advisorySignals: string[] = [];
@@ -78,6 +116,8 @@ export async function runOpeningValidator(
     }
     if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
+    if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_partial_occlusion_not_allowed");
+    if (strictWindowOcclusionFail) reasonParts.push("window_occlusion_exceeds_partial_threshold");
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
 
     return {
@@ -292,9 +332,18 @@ has been structurally modified.
 
 In this situation return ok=false.
 
+STRICT OCCLUSION POLICY (MANDATORY)
+
+- Full occlusion of any opening (window, door, closet door, walkthrough) = FAIL.
+- Occlusion by artwork, wall art, mirrors, decor objects, or decorative panels = FAIL.
+- Partial occlusion by large furniture is allowed ONLY for windows.
+- Partial occlusion of doors, closet doors, sliding doors, or walkthrough openings by furniture = FAIL.
+- Even when partial window occlusion is present, the opening must remain clearly visible and fully functional.
+
 Closet-door strictness:
 Closet doors/openings may not disappear or be replaced by wall surface.
-Temporary occlusion by small decor is possible, but large furniture covering the entire closet opening should be treated as suspicious and fail unless the closet opening is still clearly evidenced.
+Any occlusion by artwork or decor is not allowed.
+Large furniture covering any meaningful part of a closet opening should be treated as suspicious and fail unless the closet opening remains clearly and fully evidenced.
 
 Set ok=false if ANY opening or built-in invariant is violated:
 * window opening removed, added, resized, relocated, blocked, sealed, or infilled
