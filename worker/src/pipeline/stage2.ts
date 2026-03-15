@@ -948,37 +948,85 @@ export async function runStage2(
   }
 
   const outputPath = siblingOutPath(basePath, "-2", ".webp");
-  const generatedPath = await runStage2GenerationAttempt(basePath, {
-    roomType: opts.roomType,
-    sceneType: opts.sceneType,
-    profile: opts.profile,
-    referenceImagePath: opts.referenceImagePath,
-    stagingRegion: opts.stagingRegion,
-    stagingStyle: opts.stagingStyle,
-    sourceStage: opts.sourceStage,
-    promptMode: resolvedPromptMode,
-    curtainRailLikely: opts.curtainRailLikely,
-    jobId: opts.jobId,
-    outputPath,
-    attempt: 1,
-    layoutContext,
-    layoutPlan: opts.layoutPlan,
-    modelReason: "stage2_initial_generation",
-  });
+  const maxAttempts = resolveStage2MaxAttempts();
+  const localReasons: string[] = [];
 
-  if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {
-    throw new Stage2GenerationFailure(
-      "stage2_candidate_collapse: candidate_equals_validation_baseline",
-      "stage2_candidate_collapse"
-    );
-  }
+  const runAttempt = async (attempt: number, structuralRetryContext?: {
+    compositeFail: boolean;
+    failureType: StructuralFailureType | null;
+    attemptNumber: number;
+  }): Promise<string> => {
+    const generatedPath = await runStage2GenerationAttempt(basePath, {
+      roomType: opts.roomType,
+      sceneType: opts.sceneType,
+      profile: opts.profile,
+      referenceImagePath: opts.referenceImagePath,
+      stagingRegion: opts.stagingRegion,
+      stagingStyle: opts.stagingStyle,
+      sourceStage: opts.sourceStage,
+      promptMode: resolvedPromptMode,
+      curtainRailLikely: opts.curtainRailLikely,
+      jobId: opts.jobId,
+      outputPath,
+      attempt,
+      layoutContext,
+      layoutPlan: opts.layoutPlan,
+      modelReason: attempt === 1 ? "stage2_initial_generation" : `stage2_retry_generation_attempt_${attempt}`,
+      structuralRetryContext,
+    });
 
-  return {
-    outputPath: generatedPath,
-    attempts: 1,
-    maxAttempts: resolveStage2MaxAttempts(),
-    validationRisk: false,
-    fallbackUsed: false,
-    localReasons: [],
+    if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {
+      throw new Stage2GenerationFailure(
+        "stage2_candidate_collapse: candidate_equals_validation_baseline",
+        "stage2_candidate_collapse"
+      );
+    }
+
+    return generatedPath;
   };
+
+  try {
+    const generatedPath = await runAttempt(1);
+    return {
+      outputPath: generatedPath,
+      attempts: 1,
+      maxAttempts,
+      validationRisk: false,
+      fallbackUsed: false,
+      localReasons,
+    };
+  } catch (firstErr: any) {
+    if (maxAttempts < 2 || !isStage2RetryableGenerationError(firstErr)) {
+      throw firstErr;
+    }
+
+    localReasons.push(`attempt1_retryable_failure:${firstErr?.code || firstErr?.message || "unknown"}`);
+    opts.onStrictRetry?.({
+      reasons: [
+        "stage2_attempt1_retryable_failure",
+        String(firstErr?.code || firstErr?.message || "unknown"),
+      ],
+    });
+
+    const retryContext = {
+      compositeFail: true,
+      failureType: "other" as StructuralFailureType,
+      attemptNumber: 1,
+    };
+
+    try {
+      const generatedPath = await runAttempt(2, retryContext);
+      return {
+        outputPath: generatedPath,
+        attempts: 2,
+        maxAttempts,
+        validationRisk: false,
+        fallbackUsed: false,
+        localReasons,
+      };
+    } catch (secondErr: any) {
+      localReasons.push(`attempt2_failure:${secondErr?.code || secondErr?.message || "unknown"}`);
+      throw secondErr;
+    }
+  }
 }
