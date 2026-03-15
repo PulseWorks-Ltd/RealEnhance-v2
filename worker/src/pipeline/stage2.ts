@@ -343,6 +343,105 @@ function deriveRetryReasonFromSignals(signals: string[]): Stage2RetryReason {
   return "unknown";
 }
 
+function buildNanoRoomProgramGuidance(opts: {
+  roomType: string;
+  stagingStyle: string;
+}): string {
+  const room = String(opts.roomType || "").toLowerCase().trim();
+  const style = String(opts.stagingStyle || "standard_listing").toLowerCase().trim();
+
+  let anchorGuidance = "Primary anchor: choose one clear, room-appropriate anchor and build the rest of the layout around it.";
+  let roomRules: string[] = [];
+
+  switch (room) {
+    case "living_room":
+    case "living":
+      anchorGuidance =
+        "Primary anchor (MANDATORY): the TV wall with a TV unit/media console. Build all living seating and secondary furniture around this TV/media anchor.";
+      roomRules = [
+        "Include a realistic TV unit/media console as the focal anchor.",
+        "Arrange sofa/chairs to support TV viewing and natural circulation.",
+        "Do not stage this as a dining room or bedroom.",
+      ];
+      break;
+    case "bedroom":
+      anchorGuidance =
+        "Primary anchor (MANDATORY): bed placement as the dominant focal object.";
+      roomRules = [
+        "Include a realistic bed at correct scale.",
+        "Use supporting bedside furniture proportionally.",
+      ];
+      break;
+    case "dining":
+    case "dining_room":
+      anchorGuidance =
+        "Primary anchor (MANDATORY): dining table with chairs as the dominant focal object.";
+      roomRules = [
+        "Dining table and chairs must be present and to-scale.",
+        "Do not convert to a lounge-first layout.",
+      ];
+      break;
+    case "office":
+      anchorGuidance =
+        "Primary anchor (MANDATORY): desk and office chair as the dominant focal object.";
+      roomRules = [
+        "Keep layout functional for work use.",
+      ];
+      break;
+    case "kitchen":
+      anchorGuidance =
+        "Primary anchor: existing kitchen context (cabinets/counters) must remain visually dominant; add only compatible, minimal movable staging.";
+      roomRules = [
+        "Do NOT add a dining table when room type is kitchen.",
+        "Do NOT add chairs, stools, or benches to kitchen islands.",
+      ];
+      break;
+    case "kitchen_living":
+      anchorGuidance =
+        "Primary anchors (MANDATORY): preserve kitchen context and include a clear living-room seating anchor.";
+      roomRules = [
+        "Do NOT add chairs, stools, or benches to kitchen islands.",
+        "Do NOT introduce a third functional zone.",
+      ];
+      break;
+    case "kitchen_dining":
+      anchorGuidance =
+        "Primary anchors (MANDATORY): preserve kitchen context and include a clear dining-table anchor.";
+      roomRules = [
+        "Do NOT add chairs, stools, or benches to kitchen islands.",
+        "Do NOT introduce a third functional zone.",
+      ];
+      break;
+    case "living_dining":
+      anchorGuidance =
+        "Primary anchors (MANDATORY): one living anchor and one dining anchor, both clearly readable.";
+      roomRules = [
+        "Do NOT collapse both functions into a single furniture cluster.",
+      ];
+      break;
+    default:
+      roomRules = [
+        "Use room type as authoritative for furniture program and anchor choice.",
+      ];
+      break;
+  }
+
+  return `ROOM PROGRAM + ANCHOR RULES (NANO, FULL-STAGING ONLY)
+Selected room type: ${room || "unknown"}
+Selected staging style: ${style || "standard_listing"}
+
+${anchorGuidance}
+
+Required room-program guidance:
+${roomRules.map((rule) => `- ${rule}`).join("\n")}
+
+STAGING STYLE COMPLIANCE (MANDATORY)
+- Respect the selected staging style as the aesthetic layer (materials, palette, decor mood).
+- Room type and functional anchor rules are higher priority than style.
+- Never violate architecture, openings, or permanent fixtures to satisfy style.
+`;
+}
+
 // Stage 2: virtual staging (add furnitur)
 
 export type Stage2Result = {
@@ -564,13 +663,20 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
    `;
 
   const USE_NANO_BANANA_PROMPT =
-    process.env.STAGE2_PROMPT_VARIANT === "nano";
+    process.env.STAGE2_PROMPT_VARIANT === "nano" && resolvedPromptMode === "full";
+
+  const nanoRoomProgramGuidance = buildNanoRoomProgramGuidance({
+    roomType: canonicalRoomType,
+    stagingStyle: selectedStyleRaw,
+  });
 
   const stage2Prompt = USE_NANO_BANANA_PROMPT
-    ? STAGE2_PROMPT_NANO_BANANA
+    ? `${STAGE2_PROMPT_NANO_BANANA}\n\n${nanoRoomProgramGuidance}`
     : STAGE2_PROMPT_LEGACY;
 
   nLog("[STAGE2_PROMPT_VARIANT]", {
+    requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
+    mode: resolvedPromptMode,
     variant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"
   });
 
