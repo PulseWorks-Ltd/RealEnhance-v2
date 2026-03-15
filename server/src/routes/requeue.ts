@@ -1,6 +1,9 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import { readJsonFile } from "../services/jsonStore.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
+import { finalizeReservation, reserveAllowance } from "../services/usageLedger.js";
+import { getUserById } from "../services/users.js";
 
 type ImagesState = Record<string, any>;
 
@@ -44,13 +47,43 @@ export function requeueRouter() {
     const imageId = (img.imageId || img.id) as string | undefined;
     if (!imageId) return res.status(500).json({ error: "image_id_missing" });
 
-    const { jobId } = await enqueueEnhanceJob({
-      userId: sessUser.id,
-      imageId,
-      options,
-    });
+    const user = await getUserById(sessUser.id);
+    const agencyId = (img?.agencyId as string | undefined) || user?.agencyId;
+    if (!agencyId) {
+      return res.status(400).json({ error: "agency_required" });
+    }
 
-    return res.json({ ok: true, jobId });
+    const jobId = `job_${crypto.randomUUID()}`;
+
+    try {
+      await reserveAllowance({
+        jobId,
+        agencyId,
+        userId: sessUser.id,
+        requiredImages: 1,
+        requestedStage12: true,
+        requestedStage2: !!options.virtualStage,
+      });
+    } catch (err: any) {
+      if (err?.code === "QUOTA_EXCEEDED") {
+        return res.status(402).json({ error: "QUOTA_EXCEEDED", snapshot: err.snapshot });
+      }
+      return res.status(503).json({ error: "reservation_failed" });
+    }
+
+    try {
+      const enqueued = await enqueueEnhanceJob({
+        userId: sessUser.id,
+        imageId,
+        agencyId,
+        options,
+      }, jobId as any);
+
+      return res.json({ ok: true, jobId: enqueued.jobId });
+    } catch (enqueueErr) {
+      await finalizeReservation({ jobId, stage12Success: false, stage2Success: false }).catch(() => {});
+      throw enqueueErr;
+    }
   });
 
   // POST /api/requeue/:jobId { sceneType?, roomType?, declutter?, virtualStage? }
@@ -75,13 +108,46 @@ export function requeueRouter() {
     const prevImageId = (prev as any).imageId as string | undefined;
     if (!prevImageId) return res.status(500).json({ error: "image_id_missing" });
 
-    const { jobId } = await enqueueEnhanceJob({
-      userId: prev.userId,
-      imageId: prevImageId,
-      options,
-    });
+    const user = await getUserById(sessUser.id);
+    const agencyId =
+      ((prev as any)?.payload?.agencyId as string | undefined) ||
+      ((prev as any)?.agencyId as string | undefined) ||
+      user?.agencyId;
+    if (!agencyId) {
+      return res.status(400).json({ error: "agency_required" });
+    }
 
-    return res.json({ ok: true, jobId });
+    const jobId = `job_${crypto.randomUUID()}`;
+
+    try {
+      await reserveAllowance({
+        jobId,
+        agencyId,
+        userId: prev.userId,
+        requiredImages: 1,
+        requestedStage12: true,
+        requestedStage2: !!options.virtualStage,
+      });
+    } catch (err: any) {
+      if (err?.code === "QUOTA_EXCEEDED") {
+        return res.status(402).json({ error: "QUOTA_EXCEEDED", snapshot: err.snapshot });
+      }
+      return res.status(503).json({ error: "reservation_failed" });
+    }
+
+    try {
+      const enqueued = await enqueueEnhanceJob({
+        userId: prev.userId,
+        imageId: prevImageId,
+        agencyId,
+        options,
+      }, jobId as any);
+
+      return res.json({ ok: true, jobId: enqueued.jobId });
+    } catch (enqueueErr) {
+      await finalizeReservation({ jobId, stage12Success: false, stage2Success: false }).catch(() => {});
+      throw enqueueErr;
+    }
   });
 
   return r;
