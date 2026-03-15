@@ -277,15 +277,21 @@ export async function releaseTrialReservation(jobId: string): Promise<void> {
   });
 }
 
-export async function markTrialConverted(agencyId: string): Promise<void> {
-  await pool.query(
+export async function markTrialConverted(agencyId: string): Promise<number> {
+  const res = await pool.query<{ trial_credits_used: number; trial_credits_total: number }>(
     `UPDATE organisations
         SET trial_status = 'converted',
             trial_credits_used = trial_credits_total,
             updated_at = NOW()
-      WHERE agency_id = $1;`,
+      WHERE agency_id = $1
+      RETURNING trial_credits_used, trial_credits_total;`,
     [agencyId]
   );
+
+  if (!res.rowCount) return 0;
+  const row = res.rows[0];
+  // Credits consumed prior to conversion should never reduce paid monthly allowance.
+  return Math.max(0, Number(row.trial_credits_used || 0));
 }
 
 export async function grantLaunchTrialIfEligible(agencyId: string): Promise<{

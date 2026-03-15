@@ -504,3 +504,48 @@ export async function getTopUsersByUsage(agencyId: string): Promise<Array<{ user
   );
   return res.rows.map((r) => ({ userId: r.user_id as string, used: Number(r.used) || 0 }));
 }
+
+export async function detachTrialUsageFromIncludedAllowance(params: {
+  agencyId: string;
+  trialCreditsUsed: number;
+}): Promise<{ adjusted: boolean; monthKey?: string; includedUsed?: number }> {
+  const trialCreditsUsed = Math.max(0, Number(params.trialCreditsUsed || 0));
+  if (!params.agencyId || trialCreditsUsed <= 0) {
+    return { adjusted: false };
+  }
+
+  const currentMonthKey = getCurrentMonthKey();
+
+  return withTransaction(async (client) => {
+    const targetRes = await client.query<{ yyyymm: string }>(
+      `SELECT yyyymm
+         FROM agency_month_usage
+        WHERE agency_id = $1
+        ORDER BY CASE WHEN yyyymm = $2 THEN 0 ELSE 1 END, updated_at DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [params.agencyId, currentMonthKey]
+    );
+
+    if (!targetRes.rowCount) {
+      return { adjusted: false };
+    }
+
+    const monthKey = String(targetRes.rows[0].yyyymm);
+    const updateRes = await client.query<{ included_used: number }>(
+      `UPDATE agency_month_usage
+          SET included_used = GREATEST(0, included_used - $3),
+              updated_at = NOW()
+        WHERE agency_id = $1
+          AND yyyymm = $2
+      RETURNING included_used`,
+      [params.agencyId, monthKey, trialCreditsUsed]
+    );
+
+    return {
+      adjusted: (updateRes.rowCount ?? 0) > 0,
+      monthKey,
+      includedUsed: Number(updateRes.rows[0]?.included_used ?? 0),
+    };
+  });
+}

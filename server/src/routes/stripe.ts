@@ -12,6 +12,7 @@ import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/st
 import { pool, withTransaction } from "../db/index.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import { markTrialConverted } from "../services/trials.js";
+import { detachTrialUsageFromIncludedAllowance } from "../services/usageLedger.js";
 
 const router = Router();
 
@@ -93,8 +94,18 @@ async function recordSubscriptionInvoiceCredit(params: {
 
 async function markTrialConvertedSafe(agencyId: string, reason: string) {
   try {
-    await markTrialConverted(agencyId);
-    console.log(`[STRIPE] Trial converted for agency ${agencyId} (${reason})`);
+    const trialCreditsUsed = await markTrialConverted(agencyId);
+    const detachResult = await detachTrialUsageFromIncludedAllowance({
+      agencyId,
+      trialCreditsUsed,
+    });
+    if (detachResult.adjusted) {
+      console.log(
+        `[STRIPE] Trial converted for agency ${agencyId} (${reason}); detached ${trialCreditsUsed} trial credits from monthly allowance (month=${detachResult.monthKey}, includedUsed=${detachResult.includedUsed})`
+      );
+    } else {
+      console.log(`[STRIPE] Trial converted for agency ${agencyId} (${reason})`);
+    }
   } catch (err) {
     console.warn(`[STRIPE] Failed to mark trial converted for agency ${agencyId} (${reason})`, err);
   }
