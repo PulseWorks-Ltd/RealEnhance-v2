@@ -17,6 +17,7 @@ import { getJob, updateJob } from "../utils/persist";
 import { buildTightenedPrompt, getTightenLevelFromAttempt, logTighteningInfo, TightenLevel } from "../ai/promptTightening";
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
+import { nLog } from "../logger";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
@@ -510,14 +511,70 @@ export async function runStage2GenerationAttempt(
     ? "nz_standard"
     : selectedStyleRaw;
 
-  let textPrompt = useTest
+  const STAGE2_PROMPT_LEGACY = `${useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
     : buildStage2PromptNZStyle(normalizedRoomType, scene, {
         stagingStyle: selectedStyle,
         sourceStage: opts.sourceStage,
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
-      });
+      })}`;
+
+  const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
+
+As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
+
+I. Allowed Items:
+You are allowed to add, but are not limited to, the following categories of items:
+
+Furniture: Sofas, armchairs, coffee tables, dining tables, chairs, beds, dressers, nightstands, desks, office chairs, bookcases.
+
+Decor: Area rugs, floor lamps, table lamps, framed artwork (placed on open wall space, not windows/doors), decorative objects (vases, books, bowls), pillows, and throws.
+
+All added items must be rendered with realistic lighting and shadows that match the room, and must be in the correct perspective for the photo. All items must be to-scale.
+
+II. Strict Prohibitions (Negative Constraints):
+You are explicitly and completely prohibited from making ANY changes, of any kind, to the core structure, appearance, or built-in elements of the room itself. You must not add, remove, resize, extend, re-color, or alter in ANY way, the following:
+
+Walls: No changes to their location, dimension, surface texture, or existing finish. (Do not repaint or apply wallpaper, as that is not virtual staging). No adding or removing walls.
+
+Openings: Do not alter the existence, size, or shape of any windows, doors, doorways, archways, or skylights. Do not paint or change frames, glass, or hardware. Do not cover them.
+
+Floors & Ceilings: Do not alter the floor material (e.g., hardwood, carpet, tile) or the ceiling (e.g., paint, texture, tray ceilings). Only place rugs and furniture on top of the existing floor.
+
+Built-Ins: Do not change any permanent built-in features, including but not limited to:
+Kitchen islands, cabinetry, and countertops.
+Built-in shelves, entertainment centers, or window seats.
+Fireplaces, mantels, and hearths.
+Closets and their doors.
+
+Fixtures & Features: Do not change, remove, or alter existing:
+Faucets, sinks, tubs, and showers.
+Pendant lights, chandeliers, recessed lighting, or ceiling fans.
+HVAC vents, thermostats, switches, or outlets.
+Baseboards, crown molding, and railings.
+
+View: Do not change the existing view through windows or doors.
+
+III. Core Principle:
+The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
+
+Camera & Perspective Constraint:
+The camera viewpoint, lens perspective, and framing of the image must remain exactly the same as in the original photo. Do not zoom, crop, rotate, widen, narrow, or otherwise shift the camera position or perspective. The final staged image must appear as though the exact same photo was taken from the same camera position, with furniture simply placed into the scene.
+   `;
+
+  const USE_NANO_BANANA_PROMPT =
+    process.env.STAGE2_PROMPT_VARIANT === "nano";
+
+  const stage2Prompt = USE_NANO_BANANA_PROMPT
+    ? STAGE2_PROMPT_NANO_BANANA
+    : STAGE2_PROMPT_LEGACY;
+
+  nLog("[STAGE2_PROMPT_VARIANT]", {
+    variant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"
+  });
+
+  let textPrompt = stage2Prompt;
 
   // If we have a staging region, strongly insist edits are limited to the provided mask.
   if (opts.stagingRegion) {
