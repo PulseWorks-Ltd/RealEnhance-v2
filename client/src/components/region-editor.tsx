@@ -94,6 +94,13 @@ function stripTransientQueryParams(urlValue?: string | null): string {
   }
 }
 
+function inferEditIntentFromInstruction(instruction: string): "add" | "remove" | "replace" {
+  const text = String(instruction || "").toLowerCase();
+  if (text.includes("remove") || text.includes("delete") || text.includes("take out")) return "remove";
+  if (text.includes("add") || text.includes("place") || text.includes("insert")) return "add";
+  return "replace";
+}
+
 interface RegionEditorProps {
   onComplete?: (result: {
     imageUrl: string;
@@ -1188,6 +1195,7 @@ export function RegionEditor({
       formData.append("mode", mode);
       if (mode === "edit") {
         formData.append("goal", instructions);
+        formData.append("editIntent", inferEditIntentFromInstruction(instructions));
       }
       formData.append("industry", industry);
       formData.append("sceneType", sceneType);

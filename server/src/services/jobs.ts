@@ -762,15 +762,18 @@ export async function enqueueRegionEditJob(params: {
   userId: UserId;
   agencyId?: string;
   propertyId?: string;
+  sourceJobId?: string;
   sourceImageId?: string;
   imageId?: ImageId;
   mode: "add" | "remove" | "restore" | "replace";
+  editIntent?: "add" | "remove" | "replace";
   prompt?: string;
   currentImageUrl: string;
   baseImageUrl?: string;
   mask: string;
   imageIndex?: number;
   restoreFromUrl?: string;
+  stage1AReferenceUrl?: string;
 }) {
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
@@ -780,16 +783,19 @@ export async function enqueueRegionEditJob(params: {
     userId: params.userId,
     agencyId: params.agencyId,
     imageId: params.imageId,
+    sourceJobId: params.sourceJobId,
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
     type: "region-edit",
     mode: params.mode,
+    editIntent: params.editIntent,
     prompt: params.prompt,
     currentImageUrl: params.currentImageUrl,
     baseImageUrl: params.baseImageUrl,
     mask: params.mask,
     imageIndex: params.imageIndex,
     restoreFromUrl: params.restoreFromUrl,
+    stage1AReferenceUrl: params.stage1AReferenceUrl,
     createdAt: now,
   } as any;
 

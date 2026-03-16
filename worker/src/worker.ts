@@ -99,6 +99,9 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
     ? "block"
     : "log";
+const EDIT_SIMPLE_OPENINGS_VALIDATOR = String(process.env.EDIT_SIMPLE_OPENINGS_VALIDATOR || "0") === "1";
+const EDIT_REMOVE_STAGE1A_REFERENCE = String(process.env.EDIT_REMOVE_STAGE1A_REFERENCE || "0") === "1";
+const EDIT_REMOVE_VALIDATE_ON_OPENING_MASK_OVERLAP = String(process.env.EDIT_REMOVE_VALIDATE_ON_OPENING_MASK_OVERLAP || "0") === "1";
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
@@ -111,6 +114,7 @@ import {
   validateOpeningPreservation,
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
+import { runEditSimpleOpeningsValidator } from "./validators/editSimpleOpeningsValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
@@ -267,6 +271,71 @@ async function computeOutsideMaskChangedPct(opts: {
   }
 }
 
+async function maskOverlapsKnownOpening(mask: Buffer, baseline: StructuralBaseline | null | undefined): Promise<boolean> {
+  try {
+    if (!baseline?.openings?.length) return false;
+
+    const maskRaw = await sharp(mask)
+      .ensureAlpha()
+      .extractChannel(0)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const width = maskRaw.info.width || 0;
+    const height = maskRaw.info.height || 0;
+    if (width <= 0 || height <= 0) return false;
+
+    const toNormalizedBbox = (bbox: [number, number, number, number]) => {
+      const maxVal = Math.max(...bbox.map((v) => Number(v) || 0));
+      // If model ever returns pixel-space coords, normalize them against current mask dims.
+      if (maxVal > 1.001) {
+        return [
+          (bbox[0] || 0) / width,
+          (bbox[1] || 0) / height,
+          (bbox[2] || 0) / width,
+          (bbox[3] || 0) / height,
+        ] as [number, number, number, number];
+      }
+      return bbox;
+    };
+
+    for (const opening of baseline.openings) {
+      const bbox = (opening as any)?.bbox as [number, number, number, number] | undefined;
+      if (!bbox || bbox.length !== 4) continue;
+
+      const normalizedBbox = toNormalizedBbox(bbox);
+
+      const x1 = Math.max(0, Math.min(width - 1, Math.floor((normalizedBbox[0] || 0) * width)));
+      const y1 = Math.max(0, Math.min(height - 1, Math.floor((normalizedBbox[1] || 0) * height)));
+      const x2 = Math.max(x1 + 1, Math.min(width, Math.ceil((normalizedBbox[2] || 0) * width)));
+      const y2 = Math.max(y1 + 1, Math.min(height, Math.ceil((normalizedBbox[3] || 0) * height)));
+
+      let whitePixels = 0;
+      let totalPixels = 0;
+      for (let y = y1; y < y2; y += 1) {
+        for (let x = x1; x < x2; x += 1) {
+          const i = y * width + x;
+          const v = maskRaw.data[i] ?? 0;
+          if (v > 127) whitePixels += 1;
+          totalPixels += 1;
+        }
+      }
+
+      if (totalPixels > 0) {
+        const overlapRatio = whitePixels / totalPixels;
+        if (overlapRatio >= 0.02) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch (err) {
+    nLog("[worker-region-edit] opening overlap mask check failed (fail-safe true):", (err as any)?.message || err);
+    return true;
+  }
+}
+
 function normalizeForensicStagingStyle(raw: unknown): string {
   const base = String(raw ?? "").trim().toLowerCase();
   if (!base) return DEFAULT_STAGING_STYLE;
@@ -291,6 +360,26 @@ function normalizeForensicStagingStyle(raw: unknown): string {
   };
 
   return aliases[base] || DEFAULT_STAGING_STYLE;
+}
+
+function normalizeWorkerUrl(urlValue?: string | null): string {
+  if (!urlValue) return "";
+  try {
+    const parsed = new URL(urlValue);
+    ["v", "t", "ts", "cb", "cacheBust"].forEach((key) => parsed.searchParams.delete(key));
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return String(urlValue);
+  }
+}
+
+function resolveStage1AFromWorkerJob(jobRec: any): string | undefined {
+  const stageUrls = (jobRec?.stageUrls || {}) as Record<string, string | null | undefined>;
+  const candidates = [stageUrls.stage1A, stageUrls["1A"], stageUrls["1"]]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  if (candidates.length > 0) return candidates[0];
+  return undefined;
 }
 
 function inferForensicBatchId(payload: any): string {
@@ -9775,6 +9864,53 @@ const worker = new Worker(
             nLog("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
           }
 
+          let stage1AReferencePath: string | undefined;
+          if (mode === "Remove" && EDIT_REMOVE_STAGE1A_REFERENCE && regionAny.stage1AReferenceUrl) {
+            try {
+              const sourceJobId = String(regionAny.sourceJobId || "").trim();
+              const requestedRef = normalizeWorkerUrl(String(regionAny.stage1AReferenceUrl || ""));
+              let lineageVerified = false;
+
+              if (sourceJobId) {
+                const sourceJob = await getJob(sourceJobId);
+                const sourceImageId = String((sourceJob as any)?.imageId || "").trim();
+                const currentImageId = String(regionPayload.imageId || "").trim();
+                const resolvedStage1A = normalizeWorkerUrl(resolveStage1AFromWorkerJob(sourceJob as any) || "");
+
+                lineageVerified =
+                  !!sourceJob &&
+                  !!sourceImageId &&
+                  !!currentImageId &&
+                  sourceImageId === currentImageId &&
+                  !!resolvedStage1A &&
+                  resolvedStage1A === requestedRef;
+
+                if (!lineageVerified) {
+                  nLog("[worker-region-edit] Stage-1A lineage verification failed; ignoring reference", {
+                    jobId: regionPayload.jobId,
+                    sourceJobId,
+                    sourceImageId,
+                    currentImageId,
+                    requestedRef,
+                    resolvedStage1A,
+                  });
+                }
+              } else {
+                nLog("[worker-region-edit] Missing sourceJobId; ignoring Stage-1A reference for lineage safety", {
+                  jobId: regionPayload.jobId,
+                });
+              }
+
+              if (lineageVerified) {
+                nLog("[worker-region-edit] Downloading Stage-1A reference from:", regionAny.stage1AReferenceUrl);
+                stage1AReferencePath = await downloadToTemp(regionAny.stage1AReferenceUrl, regionPayload.jobId + "-stage1a-ref");
+                nLog("[worker-region-edit] Stage-1A reference downloaded to:", stage1AReferencePath);
+              }
+            } catch (stage1AErr) {
+              nLog("[worker-region-edit] Failed to download Stage-1A reference (non-blocking):", (stage1AErr as any)?.message || stage1AErr);
+            }
+          }
+
           let outPath: string;
           let openingsValidationSummary: any = null;
 
@@ -9786,114 +9922,148 @@ const worker = new Worker(
               mode: mode as any,
               instruction: prompt,
               restoreFromPath: restoreFromPath || basePath,
+              stage1AReferencePath,
             });
           } else {
+            const lowerMode = String(rawMode || "").toLowerCase();
+            const isAddMode = lowerMode === "add";
+            const isReplaceMode = lowerMode === "replace";
+            const isRemoveMode = lowerMode === "remove";
+            const isKnownMode = isAddMode || isReplaceMode || isRemoveMode || lowerMode === "restore";
+
             const baseline = await extractStructuralBaseline(basePath);
-            let attempt = 1;
-            const maxAttempts = 2;
-            let lastSummary: any = null;
+            const mustCheckRemoveOverlap = EDIT_SIMPLE_OPENINGS_VALIDATOR && isRemoveMode && EDIT_REMOVE_VALIDATE_ON_OPENING_MASK_OVERLAP;
+            const removeMaskOverlapsOpening = mustCheckRemoveOverlap
+              ? await maskOverlapsKnownOpening(maskBuf, baseline)
+              : false;
 
-            while (true) {
-              const attemptInstruction =
-                attempt === 1
-                  ? prompt
-                  : `${prompt}\n\n${openingProtectedPromptSuffix}`;
+            const runSimpleValidator = EDIT_SIMPLE_OPENINGS_VALIDATOR
+              && (isAddMode || isReplaceMode || (!isKnownMode) || (isRemoveMode && removeMaskOverlapsOpening));
 
-              outPath = await applyEdit({
-                baseImagePath: basePath,
-                mask: maskBuf,
-                mode: mode as any,
-                instruction: attemptInstruction,
-                restoreFromPath: restoreFromPath || basePath,
-              });
+            const runLegacyValidator = !EDIT_SIMPLE_OPENINGS_VALIDATOR;
 
-              const outsideMaskChangedPct = await computeOutsideMaskChangedPct({
-                baseImagePath: basePath,
-                editedImagePath: outPath,
-                mask: maskBuf,
-              });
+            const instructionWithOpeningsGuard =
+              (runSimpleValidator || runLegacyValidator)
+                ? `${prompt}\n\n${openingProtectedPromptSuffix}`
+                : prompt;
 
-              const openingValidation = await validateOpeningPreservation(baseline, outPath, { mode: "edit" });
-              const openingFail = shouldHardFailOpening(openingValidation.summary);
-              lastSummary = openingValidation.summary;
+            outPath = await applyEdit({
+              baseImagePath: basePath,
+              mask: maskBuf,
+              mode: mode as any,
+              instruction: instructionWithOpeningsGuard,
+              restoreFromPath: restoreFromPath || basePath,
+              stage1AReferencePath,
+            });
 
-              regionEditRolloutTelemetry.total += 1;
-              if (openingFail) {
-                regionEditRolloutTelemetry.openingsFail += 1;
-              } else {
-                regionEditRolloutTelemetry.openingsPass += 1;
-              }
+            const outsideMaskChangedPct = await computeOutsideMaskChangedPct({
+              baseImagePath: basePath,
+              editedImagePath: outPath,
+              mask: maskBuf,
+            });
 
-              nLog("[region-edit-telemetry] sample", {
-                jobId: regionPayload.jobId,
-                attempt,
+            let openingFail = false;
+
+            if (runSimpleValidator) {
+              const simple = await runEditSimpleOpeningsValidator(basePath, outPath);
+              openingsValidationSummary = {
+                validator: "edit_simple_openings",
+                openingWalledOver: simple.openingWalledOver,
+                openingReplacedByDecor: simple.openingReplacedByDecor,
+                confidence: simple.confidence,
+                reason: simple.reason,
+                passed: simple.passed,
                 mode,
-                outsideMaskChangedPct,
-                openingFail,
-                openingSummary: openingValidation.summary,
-                totals: {
-                  total: regionEditRolloutTelemetry.total,
-                  pass: regionEditRolloutTelemetry.openingsPass,
-                  fail: regionEditRolloutTelemetry.openingsFail,
-                  retryRate:
-                    regionEditRolloutTelemetry.total > 0
-                      ? Number(((regionEditRolloutTelemetry.retries / regionEditRolloutTelemetry.total) * 100).toFixed(2))
-                      : 0,
-                  passRate:
-                    regionEditRolloutTelemetry.total > 0
-                      ? Number(((regionEditRolloutTelemetry.openingsPass / regionEditRolloutTelemetry.total) * 100).toFixed(2))
-                      : 0,
-                },
-              });
+                removeMaskOverlapsOpening,
+              };
+              openingFail = !simple.passed;
 
-              if (!openingFail) {
-                openingsValidationSummary = openingValidation.summary;
-                break;
-              }
-
-              if (attempt >= maxAttempts) {
-                let failedReviewUrl: string | null = null;
-                let failedMaskUrl: string | null = null;
-                try {
-                  const failedPub = await publishImage(outPath);
-                  failedReviewUrl = failedPub.url || null;
-                } catch (publishErr) {
-                  nLog("[worker-region-edit] Failed to publish failed attempt image (non-blocking):", (publishErr as any)?.message || publishErr);
-                }
-                try {
-                  const failedMaskPath = `/tmp/${regionPayload.jobId}-mask-failed.png`;
-                  await sharp(maskBuf).toFile(failedMaskPath);
-                  const failedMaskPub = await publishImage(failedMaskPath);
-                  failedMaskUrl = failedMaskPub.url || null;
-                } catch (maskPublishErr) {
-                  nLog("[worker-region-edit] Failed to publish failed attempt mask (non-blocking):", (maskPublishErr as any)?.message || maskPublishErr);
-                }
-
-                const regionEditErr: any = new Error(
-                  `region_edit_openings_validation_failed: openingRemoved=${openingValidation.summary.openingRemoved}`
-                );
-                regionEditErr.regionEditReview = {
-                  resultUrl: failedReviewUrl,
-                  imageUrl: failedReviewUrl,
-                  finalOutputUrl: failedReviewUrl,
-                  reviewUrl: failedReviewUrl,
-                  maskUrl: failedMaskUrl,
-                  openingSummary: openingValidation.summary,
-                  attempt,
-                };
-                throw regionEditErr;
-              }
-
-              regionEditRolloutTelemetry.retries += 1;
-              nLog("[worker-region-edit] Openings validation failed, retrying with reinforced prompt", {
+              nLog("[edit-simple-validator]", {
                 jobId: regionPayload.jobId,
-                attempt,
-                nextAttempt: attempt + 1,
+                mode,
+                runSimpleValidator,
+                removeMaskOverlapsOpening,
+                openingWalledOver: simple.openingWalledOver,
+                openingReplacedByDecor: simple.openingReplacedByDecor,
+                confidence: simple.confidence,
+                reason: simple.reason,
+                passed: simple.passed,
               });
-              attempt += 1;
+            } else if (runLegacyValidator) {
+              const openingValidation = await validateOpeningPreservation(baseline, outPath, { mode: "edit" });
+              openingFail = shouldHardFailOpening(openingValidation.summary);
+              openingsValidationSummary = openingValidation.summary;
+            } else {
+              openingsValidationSummary = {
+                validator: "skipped",
+                mode,
+                reason: isRemoveMode ? "remove_mode_skip" : "mode_not_applicable",
+                removeMaskOverlapsOpening,
+                passed: true,
+              };
             }
 
-            openingsValidationSummary = openingsValidationSummary || lastSummary;
+            regionEditRolloutTelemetry.total += 1;
+            if (openingFail) {
+              regionEditRolloutTelemetry.openingsFail += 1;
+            } else {
+              regionEditRolloutTelemetry.openingsPass += 1;
+            }
+
+            nLog("[region-edit-telemetry] sample", {
+              jobId: regionPayload.jobId,
+              attempt: 1,
+              mode,
+              outsideMaskChangedPct,
+              openingFail,
+              openingSummary: openingsValidationSummary,
+              totals: {
+                total: regionEditRolloutTelemetry.total,
+                pass: regionEditRolloutTelemetry.openingsPass,
+                fail: regionEditRolloutTelemetry.openingsFail,
+                retryRate:
+                  regionEditRolloutTelemetry.total > 0
+                    ? Number(((regionEditRolloutTelemetry.retries / regionEditRolloutTelemetry.total) * 100).toFixed(2))
+                    : 0,
+                passRate:
+                  regionEditRolloutTelemetry.total > 0
+                    ? Number(((regionEditRolloutTelemetry.openingsPass / regionEditRolloutTelemetry.total) * 100).toFixed(2))
+                    : 0,
+              },
+            });
+
+            if (openingFail) {
+              let failedReviewUrl: string | null = null;
+              let failedMaskUrl: string | null = null;
+              try {
+                const failedPub = await publishImage(outPath);
+                failedReviewUrl = failedPub.url || null;
+              } catch (publishErr) {
+                nLog("[worker-region-edit] Failed to publish failed attempt image (non-blocking):", (publishErr as any)?.message || publishErr);
+              }
+              try {
+                const failedMaskPath = `/tmp/${regionPayload.jobId}-mask-failed.png`;
+                await sharp(maskBuf).toFile(failedMaskPath);
+                const failedMaskPub = await publishImage(failedMaskPath);
+                failedMaskUrl = failedMaskPub.url || null;
+              } catch (maskPublishErr) {
+                nLog("[worker-region-edit] Failed to publish failed attempt mask (non-blocking):", (maskPublishErr as any)?.message || maskPublishErr);
+              }
+
+              const regionEditErr: any = new Error(
+                `region_edit_openings_validation_failed: openingRemoved=${openingsValidationSummary?.openingRemoved === true} openingWalledOver=${openingsValidationSummary?.openingWalledOver === true} openingReplacedByDecor=${openingsValidationSummary?.openingReplacedByDecor === true}`
+              );
+              regionEditErr.regionEditReview = {
+                resultUrl: failedReviewUrl,
+                imageUrl: failedReviewUrl,
+                finalOutputUrl: failedReviewUrl,
+                reviewUrl: failedReviewUrl,
+                maskUrl: failedMaskUrl,
+                openingSummary: openingsValidationSummary,
+                attempt: 1,
+              };
+              throw regionEditErr;
+            }
           }
 
           nLog("[worker-region-edit] Edit complete, publishing:", outPath);

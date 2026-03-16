@@ -239,13 +239,16 @@ export interface RegionEditJobPayload {
   jobId: JobId;
   userId: UserId;
   imageId: ImageId;
+  sourceJobId?: string;
   sourceImageId?: ImageId;
   propertyId?: string;
   type: "region-edit";
   baseVersionId: string;
-  mode: "Add" | "Remove" | "Restore";
+  mode: "Add" | "Remove" | "Replace" | "Restore";
+  editIntent?: "add" | "remove" | "replace";
   instruction?: string;
   mask: unknown;
+  stage1AReferenceUrl?: string;
   createdAt: string; // ISO
   allowStaging?: boolean;
   stagingStyle?: string;

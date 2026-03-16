@@ -3,11 +3,14 @@ export interface RegionEditJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "region-edit";
+  sourceJobId?: string;
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   baseVersionId: string;
-  mode: "Add" | "Remove" | "Restore";
+  mode: "Add" | "Remove" | "Replace" | "Restore";
+  editIntent?: "add" | "remove" | "replace";
   instruction?: string;
   mask: unknown;
+  stage1AReferenceUrl?: string;
   createdAt: string;
 }
 export type UserId = string;

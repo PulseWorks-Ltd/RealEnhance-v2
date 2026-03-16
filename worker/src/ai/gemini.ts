@@ -1,6 +1,7 @@
 export interface RegionEditArgs {
   prompt: string;
   baseImageBuffer: Buffer;
+  referenceImageBuffer?: Buffer;
   maskPngBuffer?: Buffer;
   roomType?: string;
   sceneType?: string;
@@ -11,6 +12,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   const {
     prompt,
     baseImageBuffer,
+    referenceImageBuffer,
     maskPngBuffer,
     roomType,
     sceneType,
@@ -20,6 +22,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
+    hasReferenceImage: !!referenceImageBuffer,
     baseSize: baseImageBuffer.length,
     roomType,
     sceneType,
@@ -27,7 +30,6 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   });
 
   const parts: any[] = [
-    { text: prompt },
     {
       inlineData: {
         mimeType: "image/webp",
@@ -35,6 +37,14 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     },
   ];
+  if (referenceImageBuffer) {
+    parts.push({
+      inlineData: {
+        mimeType: "image/webp",
+        data: referenceImageBuffer.toString("base64"),
+      },
+    });
+  }
   if (maskPngBuffer) {
     parts.push({
       inlineData: {
@@ -43,6 +53,8 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     });
   }
+  // Keep prompt text last for deterministic image/mask ordering in multimodal region-edit requests.
+  parts.push({ text: prompt });
   const contents = [
     {
       role: "user",

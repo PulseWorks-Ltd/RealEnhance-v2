@@ -3,7 +3,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { findByPublicUrlRedis } from "@realenhance/shared";
-import { enqueueEditJob, enqueueRegionEditJob } from "../services/jobs.js";
+import { enqueueEditJob, enqueueRegionEditJob, getJob } from "../services/jobs.js";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
@@ -49,6 +49,29 @@ function normalizeLookupUrl(urlValue?: string): string {
   } catch {
     return urlValue;
   }
+}
+
+function resolveStage1AUrlFromJob(jobRecord: any): string | undefined {
+  if (!jobRecord || typeof jobRecord !== "object") return undefined;
+
+  const stageUrls = (jobRecord.stageUrls || {}) as Record<string, string | null | undefined>;
+  const candidates = [
+    stageUrls.stage1A,
+    stageUrls["1A"],
+    stageUrls["1"],
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+
+  const byStageUrl = candidates.find((u) => /^https?:\/\//i.test(u));
+  if (byStageUrl) return byStageUrl;
+
+  // Some older jobs may store URL-like values in stageOutputs; prefer stage1A keys only.
+  const stageOutputs = (jobRecord.stageOutputs || {}) as Record<string, string | null | undefined>;
+  const stageOutputCandidates = [
+    stageOutputs["1A"],
+    stageOutputs.stage1A as any,
+  ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+
+  return stageOutputCandidates.find((u) => /^https?:\/\//i.test(u));
 }
 
 export const regionEditRouter = Router();
@@ -99,6 +122,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const rawClientBaseImageUrl = body.baseImageUrl as string | undefined;
     const clientBaseImageUrl = normalizeLookupUrl(rawClientBaseImageUrl);
     const mode = body.mode as "edit" | "restore_original" | undefined;
+    const explicitEditIntent = typeof body.editIntent === "string" ? body.editIntent.trim().toLowerCase() : undefined;
+    const editIntent = explicitEditIntent === "add" || explicitEditIntent === "remove" || explicitEditIntent === "replace"
+      ? (explicitEditIntent as "add" | "remove" | "replace")
+      : undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";
     const sceneType = body.sceneType;
     const roomType = body.roomType;
@@ -265,21 +292,29 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       ? goal 
       : "Restore original pixels for the masked region.";
 
-    // ===== DETERMINE WORKER MODE (robust intent parsing) =====
+    // ===== DETERMINE WORKER MODE (explicit intent first, parser fallback) =====
     let workerMode: "Add" | "Remove" | "Replace" | "Restore";
     if (mode === "restore_original") {
       // User wants to restore original pixels - no Gemini needed
       workerMode = "Restore";
     } else if (mode === "edit") {
-      // User wants to edit - parse their instruction
-      const goalLower = goal.toLowerCase();
-      if (goalLower.includes("add") || goalLower.includes("place") || goalLower.includes("insert")) {
+      // Prefer explicit client intent; fall back to goal parsing for backward compatibility.
+      if (editIntent === "add") {
         workerMode = "Add";
-      } else if (goalLower.includes("remove") || goalLower.includes("delete") || goalLower.includes("take out")) {
+      } else if (editIntent === "remove") {
         workerMode = "Remove";
-      } else {
-        // Default to Replace for other edits (change, modify, etc.)
+      } else if (editIntent === "replace") {
         workerMode = "Replace";
+      } else {
+        const goalLower = goal.toLowerCase();
+        if (goalLower.includes("add") || goalLower.includes("place") || goalLower.includes("insert")) {
+          workerMode = "Add";
+        } else if (goalLower.includes("remove") || goalLower.includes("delete") || goalLower.includes("take out")) {
+          workerMode = "Remove";
+        } else {
+          // Default to Replace for other edits (change, modify, etc.)
+          workerMode = "Replace";
+        }
       }
     } else {
       // Fallback
@@ -288,6 +323,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     console.log("[region-edit] User goal:", goal);
     console.log("[region-edit] Selected mode:", mode);
+    console.log("[region-edit] Explicit editIntent:", editIntent || "none");
     console.log("[region-edit] Worker mode:", workerMode);
 
     // ===== CREATE JOB PAYLOAD =====
@@ -300,6 +336,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     if (workerMode === "Restore") {
       // Edit contract: restoration source must remain the currently visible committed output.
       restoreFromUrl = baseImageUrl;
+    }
+
+    let stage1AReferenceUrl: string | undefined = undefined;
+    if (workerMode === "Remove" && sourceJobId) {
+      try {
+        const sourceJob = await getJob(sourceJobId);
+        stage1AReferenceUrl = resolveStage1AUrlFromJob(sourceJob);
+        if (!stage1AReferenceUrl) {
+          console.warn("[region-edit] No Stage-1A reference URL resolved from source job", { sourceJobId });
+        }
+      } catch (stage1AErr) {
+        console.warn("[region-edit] Failed to resolve Stage-1A reference URL (non-blocking)", {
+          sourceJobId,
+          error: (stage1AErr as any)?.message || stage1AErr,
+        });
+      }
     }
 
     // Map workerMode to API mode for enqueueRegionEditJob
@@ -327,15 +379,18 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const jobPayload = {
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
+      sourceJobId,
       sourceImageId: sourceEnhanced?.id,
       propertyId: sourceEnhanced?.propertyId || undefined,
       imageId: record.imageId || record.id,
       mode: apiMode,
+      editIntent,
       prompt: instruction,
       currentImageUrl: baseImageUrl,
       baseImageUrl,
       mask: maskBase64,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
+      ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
     };
 
     console.log("[region-edit] Enqueuing job:", {
@@ -367,7 +422,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       mask: maskBase64 || null,
       options: {
         mode: apiMode,
+        editIntent,
         restoreFromUrl,
+        stage1AReferenceUrl,
         sourceJobId,
         editSourceUrl: editSourceUrl || sourceLookupUrl,
         editSourceStage,

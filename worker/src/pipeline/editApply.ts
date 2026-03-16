@@ -13,6 +13,7 @@ export interface ApplyEditArgs {
   mode: EditMode;             // "Add" | "Remove" | "Restore"
   instruction: string;        // user’s natural-language instruction
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
+  stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
 }
 
 /**
@@ -25,6 +26,7 @@ export async function applyEdit({
   mode,
   instruction,
   restoreFromPath,
+  stage1AReferencePath,
 }: ApplyEditArgs): Promise<string> {
     console.log("[editApply] Starting edit", {
       baseImagePath,
@@ -33,6 +35,7 @@ export async function applyEdit({
       hasMask: !!mask,
       maskSize: mask?.length ?? 0,
       hasRestoreFrom: !!restoreFromPath,
+      hasStage1AReference: !!stage1AReferencePath,
     });
 
     const baseImage = sharp(baseImagePath);
@@ -164,12 +167,27 @@ export async function applyEdit({
       userInstruction: instruction,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
-    console.log("[editApply] Prompt built, length:", prompt.length);
+    const removeReferenceGuidance = mode === "Remove" && stage1AReferencePath
+      ? `\n\nREMOVE MODE STRUCTURAL REFERENCE:\nA second image is provided as Stage-1A structural reference.\nUse it only to preserve architecture and opening continuity in the masked region.\nDo not copy textures directly from the reference image.`
+      : "";
+    const finalPrompt = `${prompt}${removeReferenceGuidance}`;
+    console.log("[editApply] Prompt built, length:", finalPrompt.length);
+
+    let referenceImageBuffer: Buffer | undefined;
+    if (mode === "Remove" && stage1AReferencePath) {
+      try {
+        referenceImageBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
+        console.log("[editApply] Stage-1A reference loaded");
+      } catch (refErr) {
+        console.warn("[editApply] Failed to load Stage-1A reference (non-blocking):", (refErr as any)?.message || refErr);
+      }
+    }
 
     // 🚀 Call shared Gemini helper
     const editedBuffer = await regionEditWithGemini({
-      prompt,
+      prompt: finalPrompt,
       baseImageBuffer,
+      referenceImageBuffer,
       maskPngBuffer,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
