@@ -9813,8 +9813,8 @@ const worker = new Worker(
                 mask: maskBuf,
               });
 
-              const openingValidation = await validateOpeningPreservation(baseline, outPath);
-              const openingFail = openingValidation.summary.openingRemoved === true;
+              const openingValidation = await validateOpeningPreservation(baseline, outPath, { mode: "edit" });
+              const openingFail = shouldHardFailOpening(openingValidation.summary);
               lastSummary = openingValidation.summary;
 
               regionEditRolloutTelemetry.total += 1;
@@ -9852,9 +9852,36 @@ const worker = new Worker(
               }
 
               if (attempt >= maxAttempts) {
-                throw new Error(
+                let failedReviewUrl: string | null = null;
+                let failedMaskUrl: string | null = null;
+                try {
+                  const failedPub = await publishImage(outPath);
+                  failedReviewUrl = failedPub.url || null;
+                } catch (publishErr) {
+                  nLog("[worker-region-edit] Failed to publish failed attempt image (non-blocking):", (publishErr as any)?.message || publishErr);
+                }
+                try {
+                  const failedMaskPath = `/tmp/${regionPayload.jobId}-mask-failed.png`;
+                  await sharp(maskBuf).toFile(failedMaskPath);
+                  const failedMaskPub = await publishImage(failedMaskPath);
+                  failedMaskUrl = failedMaskPub.url || null;
+                } catch (maskPublishErr) {
+                  nLog("[worker-region-edit] Failed to publish failed attempt mask (non-blocking):", (maskPublishErr as any)?.message || maskPublishErr);
+                }
+
+                const regionEditErr: any = new Error(
                   `region_edit_openings_validation_failed: openingRemoved=${openingValidation.summary.openingRemoved}`
                 );
+                regionEditErr.regionEditReview = {
+                  resultUrl: failedReviewUrl,
+                  imageUrl: failedReviewUrl,
+                  finalOutputUrl: failedReviewUrl,
+                  reviewUrl: failedReviewUrl,
+                  maskUrl: failedMaskUrl,
+                  openingSummary: openingValidation.summary,
+                  attempt,
+                };
+                throw regionEditErr;
               }
 
               regionEditRolloutTelemetry.retries += 1;
@@ -10052,7 +10079,42 @@ const worker = new Worker(
         nLog("[BILLING] Failed to release reservation on job failure (non-blocking):", (billingErr as any)?.message || billingErr);
       }
       
-      await safeWriteJobStatus(jobId, { status: "failed", errorMessage: err?.message || "unhandled worker error" }, "worker_error");
+      const regionEditReview = (err as any)?.regionEditReview as
+        | {
+            resultUrl?: string | null;
+            imageUrl?: string | null;
+            finalOutputUrl?: string | null;
+            reviewUrl?: string | null;
+            maskUrl?: string | null;
+            openingSummary?: any;
+            attempt?: number;
+          }
+        | undefined;
+
+      const failedStatusPayload: any = {
+        status: "failed",
+        errorMessage: err?.message || "unhandled worker error",
+      };
+
+      if (regionEditReview) {
+        if (regionEditReview.resultUrl) {
+          failedStatusPayload.resultUrl = regionEditReview.resultUrl;
+          failedStatusPayload.imageUrl = regionEditReview.imageUrl || regionEditReview.resultUrl;
+          failedStatusPayload.finalOutputUrl = regionEditReview.finalOutputUrl || regionEditReview.resultUrl;
+          failedStatusPayload.reviewUrl = regionEditReview.reviewUrl || regionEditReview.resultUrl;
+        }
+        if (regionEditReview.maskUrl) {
+          failedStatusPayload.maskUrl = regionEditReview.maskUrl;
+        }
+        failedStatusPayload.meta = {
+          type: "region-edit",
+          failedReview: true,
+          attempt: regionEditReview.attempt,
+          openingsValidation: regionEditReview.openingSummary,
+        };
+      }
+
+      await safeWriteJobStatus(jobId, failedStatusPayload, "worker_error");
       throw err;
     } finally {
       if (fairSlotAcquired && userId) {

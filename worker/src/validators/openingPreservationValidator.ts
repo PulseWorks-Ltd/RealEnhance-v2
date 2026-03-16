@@ -928,9 +928,13 @@ export async function extractStructuralBaseline(imageUrl: string): Promise<Struc
 
 export async function validateOpeningPreservation(
   baseline: StructuralBaseline,
-  newImageUrl: string
+  newImageUrl: string,
+  options?: {
+    mode?: "default" | "edit";
+  }
 ): Promise<OpeningValidationResult> {
   const detected = await extractStructuralBaseline(newImageUrl);
+  const isEditMode = options?.mode === "edit";
 
   const openingResults: OpeningResult[] = [];
   const outOfFrameOpenings: string[] = [];
@@ -1085,6 +1089,19 @@ export async function validateOpeningPreservation(
     if (!orderedSignatureMismatch) continue;
 
     const anchorReferenced = hasStableAnchorReference(baseline.anchorFixtures, detected.anchorFixtures, wallIndex);
+
+    // Region-edit mode is more tolerant to sequence-order noise when no stable anchor exists.
+    // Only promote to hard structural removal when opening count dropped or anchor-referenced mismatch exists.
+    if (isEditMode && !anchorReferenced && !openingCountDropped) {
+      analysisNotes.push(
+        `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=absent.`
+      );
+      console.log(
+        `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=false`
+      );
+      continue;
+    }
+
     openingRemoved = true;
     openingBandMismatch = true;
     if (anchorReferenced || openingCountDropped) {
