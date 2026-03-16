@@ -21,6 +21,17 @@ export type AnchorConstraints = {
   rules?: string[];
 };
 
+export type DecorRestriction = {
+  target: "anchor_wall" | "window_zone" | "door_zone" | "closet_zone";
+  rule: string;
+};
+
+export type FurnitureVisibilityRules = {
+  allow_crop?: boolean;
+  assume_wall_continuation?: boolean;
+  rules?: string[];
+};
+
 export type Stage2LayoutPlan = {
   room_type: string;
   layout: Array<{
@@ -34,6 +45,8 @@ export type Stage2LayoutPlan = {
   anchorConstraints?: AnchorConstraints;
   anchorRegion?: AnchorRegion;
   anchorConfidence?: number;
+  decorRestrictions?: DecorRestriction[];
+  furnitureVisibilityRules?: FurnitureVisibilityRules;
 };
 
 const LAYOUT_PLANNER_PROMPT = `Analyze this empty room and produce a structured furniture layout plan suitable for real estate staging.
@@ -157,6 +170,259 @@ function wallHasWindow(baseline: StructuralBaseline | undefined, wallIndex: Wall
   return (baseline.openings || []).some((opening) => opening.wallIndex === wallIndex && opening.type === "window");
 }
 
+type WallSuitabilityClass = "ideal" | "conditional_window" | "disallowed";
+
+type WallSuitability = {
+  wallIndex: WallIndex;
+  label: string;
+  classification: WallSuitabilityClass;
+  score: number;
+  hasDoor: boolean;
+  hasClosetDoor: boolean;
+  windowCount: number;
+  nonWindowOpenings: number;
+  totalOpeningCoverage: number;
+  hasMultipleInterferingOpenings: boolean;
+};
+
+function toNormalizedWallLabel(wallIndex: WallIndex): string {
+  if (wallIndex === 0) return "front_wall";
+  if (wallIndex === 1) return "right_wall";
+  if (wallIndex === 2) return "back_wall";
+  return "left_wall";
+}
+
+function normalizeRoomTypeKey(roomType: string): string {
+  return normalizeText(roomType).toLowerCase().replace(/-/g, "_");
+}
+
+function resolveAnchorItemForRoom(roomType: string): AnchorItem {
+  const normalized = normalizeRoomTypeKey(roomType);
+  if (normalized.includes("bed")) return "bed";
+  if (normalized.includes("living")) return "tv_unit";
+  if (normalized.includes("dining")) return "dining_table";
+  return "sofa_group";
+}
+
+function bboxCoverage(bbox: [number, number, number, number] | undefined): number {
+  if (!bbox || bbox.length !== 4) return 0;
+  const x1 = Math.max(0, Math.min(1, Number(bbox[0])));
+  const x2 = Math.max(0, Math.min(1, Number(bbox[2])));
+  if (!Number.isFinite(x1) || !Number.isFinite(x2) || x2 <= x1) return 0;
+  return x2 - x1;
+}
+
+function buildWallSuitability(baseline: StructuralBaseline): WallSuitability[] {
+  const byWall = new Map<WallIndex, StructuralBaseline["openings"]>();
+  (baseline.openings || []).forEach((opening) => {
+    const wall = opening.wallIndex;
+    const existing = byWall.get(wall) || [];
+    existing.push(opening);
+    byWall.set(wall, existing);
+  });
+
+  const allWalls: WallIndex[] = [0, 1, 2, 3];
+  return allWalls.map((wallIndex) => {
+    const openings = byWall.get(wallIndex) || [];
+    const hasDoor = openings.some((opening) => opening.type === "door" || opening.type === "walkthrough");
+    const hasClosetDoor = openings.some((opening) => opening.type === "closet_door");
+    const windowCount = openings.filter((opening) => opening.type === "window").length;
+    const nonWindowOpenings = openings.filter((opening) => opening.type !== "window").length;
+    const totalOpeningCoverage = openings.reduce((acc, opening) => acc + bboxCoverage(opening.bbox), 0);
+    const hasMultipleInterferingOpenings = openings.length >= 2 && totalOpeningCoverage >= 0.55;
+
+    let classification: WallSuitabilityClass = "ideal";
+    if (hasDoor || hasClosetDoor || hasMultipleInterferingOpenings) {
+      classification = "disallowed";
+    } else if (windowCount > 0) {
+      classification = "conditional_window";
+    }
+
+    let score = 100;
+    if (classification === "disallowed") score = -1000;
+    else if (classification === "conditional_window") score = 70;
+
+    score -= Math.round(totalOpeningCoverage * 30);
+    score -= openings.length * 5;
+
+    return {
+      wallIndex,
+      label: toNormalizedWallLabel(wallIndex),
+      classification,
+      score,
+      hasDoor,
+      hasClosetDoor,
+      windowCount,
+      nonWindowOpenings,
+      totalOpeningCoverage,
+      hasMultipleInterferingOpenings,
+    };
+  });
+}
+
+function buildAnchorRegionForWall(anchorWall: WallIndex, opts?: { preferLowerHalf?: boolean }): AnchorRegion {
+  const preferLowerHalf = opts?.preferLowerHalf === true;
+  if (anchorWall === 0 || anchorWall === 2) {
+    return {
+      x: 0.2,
+      y: preferLowerHalf ? 0.55 : 0.5,
+      width: 0.6,
+      height: 0.38,
+    };
+  }
+
+  if (anchorWall === 1) {
+    return {
+      x: 0.56,
+      y: preferLowerHalf ? 0.56 : 0.5,
+      width: 0.4,
+      height: 0.38,
+    };
+  }
+
+  return {
+    x: 0.04,
+    y: preferLowerHalf ? 0.56 : 0.5,
+    width: 0.4,
+    height: 0.38,
+  };
+}
+
+function openingToAvoidZone(opening: StructuralBaseline["openings"][number]): string {
+  const [x1, y1, x2, y2] = opening.bbox || [0, 0, 0, 0];
+  const kind = opening.type === "closet_door" ? "closet" : opening.type;
+  return `${kind}:${opening.id}:bbox(${x1.toFixed(3)},${y1.toFixed(3)},${x2.toFixed(3)},${y2.toFixed(3)})`;
+}
+
+function buildBaseLayoutItems(anchorItem: AnchorItem, roomType: string): Stage2LayoutPlan["layout"] {
+  const normalized = normalizeRoomTypeKey(roomType);
+
+  if (anchorItem === "bed") {
+    return [
+      { item: "bed", placement: "Place the bed with headboard aligned to anchor wall and keep opening paths clear." },
+      { item: "nightstand", placement: "Add up to one compact bedside table where circulation remains clear." },
+    ];
+  }
+
+  if (anchorItem === "tv_unit") {
+    return [
+      { item: "tv_unit", placement: "Place a freestanding media console centered on anchor wall." },
+      { item: "sofa", placement: "Orient sofa seating toward the TV anchor while preserving door and opening clearance." },
+    ];
+  }
+
+  if (anchorItem === "dining_table") {
+    return [
+      { item: "dining_table", placement: "Center dining table in usable floor area with clear access around doors/openings." },
+      { item: "dining_chairs", placement: "Add chairs only where pullback clearance does not overlap openings." },
+    ];
+  }
+
+  if (normalized.includes("living")) {
+    return [
+      { item: "sofa", placement: "Anchor main sofa to selected wall while keeping structural openings accessible." },
+      { item: "coffee_table", placement: "Center compact coffee table within seating area and clear circulation." },
+    ];
+  }
+
+  return [
+    { item: "sofa", placement: "Place primary seating at anchor wall with clear opening circulation." },
+  ];
+}
+
+function buildDeterministicLayoutPlan(opts: {
+  roomType?: string;
+  structuralBaseline: StructuralBaseline;
+}): Stage2LayoutPlan {
+  const roomType = normalizeText(opts.roomType || "unknown") || "unknown";
+  const anchorItem = resolveAnchorItemForRoom(roomType);
+  const suitability = buildWallSuitability(opts.structuralBaseline);
+
+  const idealWalls = suitability.filter((wall) => wall.classification === "ideal").sort((a, b) => b.score - a.score);
+  const conditionalWalls = suitability.filter((wall) => wall.classification === "conditional_window").sort((a, b) => b.score - a.score);
+  const fallbackWalls = [...suitability].sort((a, b) => b.score - a.score);
+
+  const selected = idealWalls[0] || conditionalWalls[0] || fallbackWalls[0];
+  const anchorWall = selected?.label || "front_wall";
+  const selectedWallIndex = (anchorWallToIndex(anchorWall) ?? 0) as WallIndex;
+
+  const usingFallback = !idealWalls[0] && !conditionalWalls[0];
+  const usingWindowWall = selected?.classification === "conditional_window";
+  const anchorConstraints: AnchorConstraints = {
+    mountMode: anchorItem === "tv_unit" && usingWindowWall ? "console_only" : "freestanding",
+    allowWallMount: !(anchorItem === "tv_unit" && usingWindowWall),
+    avoidCoveringWindows: usingWindowWall || anchorItem === "tv_unit",
+    avoidAboveWindow: anchorItem === "bed" && usingWindowWall,
+    rules: [],
+  };
+
+  const decorRestrictions: DecorRestriction[] = [
+    {
+      target: "door_zone",
+      rule: "Do not place furniture or decor that blocks any door/walkthrough opening.",
+    },
+    {
+      target: "closet_zone",
+      rule: "Do not block closet doors and do not place wall art/decor above closet-door regions.",
+    },
+  ];
+
+  if (usingWindowWall) {
+    decorRestrictions.push({
+      target: "window_zone",
+      rule: "Preserve full window visibility and avoid decor above the anchor where it would overlap window area.",
+    });
+  }
+
+  if (anchorItem === "bed") {
+    anchorConstraints.rules?.push("Headboard must align to anchor wall plane.");
+    if (usingWindowWall) {
+      anchorConstraints.rules?.push("Use low-profile headboard and keep visible window frame/sill unchanged.");
+      anchorConstraints.rules?.push("No artwork above headboard when anchored on a window wall.");
+    }
+  }
+
+  if (anchorItem === "tv_unit") {
+    anchorConstraints.rules?.push("Seating must face the TV/media anchor.");
+    if (usingWindowWall) {
+      anchorConstraints.rules?.push("TV must remain console-based only; no wall-mounted TV on window wall.");
+    }
+  }
+
+  if (usingFallback) {
+    anchorConstraints.rules?.push("Fallback wall mode: assume wall continuation beyond frame edges when needed.");
+  }
+
+  const furnitureVisibilityRules: FurnitureVisibilityRules = {
+    allow_crop: true,
+    assume_wall_continuation: usingFallback || selectedWallIndex === 1 || selectedWallIndex === 3,
+    rules: [
+      "Furniture may extend beyond frame boundaries when composition is natural.",
+      "Do not force the full anchor furniture item to be visible.",
+    ],
+  };
+
+  const anchorRegion = buildAnchorRegionForWall(selectedWallIndex, {
+    preferLowerHalf: anchorItem === "bed" && usingWindowWall,
+  });
+
+  const avoidZones = (opts.structuralBaseline.openings || []).map(openingToAvoidZone);
+
+  return {
+    room_type: roomType,
+    layout: buildBaseLayoutItems(anchorItem, roomType),
+    avoid_zones: avoidZones,
+    anchorItem,
+    anchorWall,
+    anchorOrientation: "facing_anchor_wall",
+    anchorConstraints,
+    anchorRegion,
+    anchorConfidence: 0.98,
+    decorRestrictions,
+    furnitureVisibilityRules,
+  };
+}
+
 function applyAnchorDeterministicGuards(plan: Stage2LayoutPlan, opts?: {
   roomType?: string;
   structuralBaseline?: StructuralBaseline | null;
@@ -233,6 +499,31 @@ function normalizeLayoutPlan(input: any): Stage2LayoutPlan | null {
 
   if (!roomType || layout.length === 0) return null;
 
+  const decorRestrictions = Array.isArray(input.decorRestrictions)
+    ? input.decorRestrictions
+      .map((entry: any) => ({
+        target: normalizeText(entry?.target) as DecorRestriction["target"],
+        rule: normalizeText(entry?.rule),
+      }))
+      .filter((entry: DecorRestriction) => entry.target.length > 0 && entry.rule.length > 0)
+    : undefined;
+
+  const furnitureVisibilityRules = input.furnitureVisibilityRules && typeof input.furnitureVisibilityRules === "object"
+    ? {
+      allow_crop: typeof input.furnitureVisibilityRules.allow_crop === "boolean"
+        ? input.furnitureVisibilityRules.allow_crop
+        : undefined,
+      assume_wall_continuation: typeof input.furnitureVisibilityRules.assume_wall_continuation === "boolean"
+        ? input.furnitureVisibilityRules.assume_wall_continuation
+        : undefined,
+      rules: Array.isArray(input.furnitureVisibilityRules.rules)
+        ? input.furnitureVisibilityRules.rules
+          .map((entry: any) => normalizeText(entry))
+          .filter((entry: string) => entry.length > 0)
+        : undefined,
+    }
+    : undefined;
+
   return {
     room_type: roomType,
     layout,
@@ -245,6 +536,8 @@ function normalizeLayoutPlan(input: any): Stage2LayoutPlan | null {
     anchorConfidence: Number.isFinite(Number(input.anchorConfidence))
       ? Math.max(0, Math.min(1, Number(input.anchorConfidence)))
       : undefined,
+    decorRestrictions,
+    furnitureVisibilityRules,
   };
 }
 
@@ -256,9 +549,68 @@ export async function planStage2Layout(
     anchorPlannerEnabled?: boolean;
     structuralBaseline?: StructuralBaseline | null;
     anchorConfidenceThreshold?: number;
+    useGeminiFallback?: boolean;
   }
 ): Promise<Stage2LayoutPlan | null> {
   const startedAt = Date.now();
+
+  const deterministicEnabled = opts?.anchorPlannerEnabled === true;
+  const useGeminiFallback = opts?.useGeminiFallback !== false;
+
+  if (deterministicEnabled && opts?.structuralBaseline?.openings?.length) {
+    const wallSuitability = buildWallSuitability(opts.structuralBaseline);
+    const deterministicPlan = buildDeterministicLayoutPlan({
+      roomType: opts?.roomType,
+      structuralBaseline: opts.structuralBaseline,
+    });
+    const selectedWallIndex = anchorWallToIndex(deterministicPlan.anchorWall);
+
+    focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] deterministic plan ready", {
+      jobId: opts?.jobId,
+      elapsedMs: Date.now() - startedAt,
+      roomType: deterministicPlan.room_type,
+      layoutItems: deterministicPlan.layout.length,
+      avoidZones: deterministicPlan.avoid_zones.length,
+      anchorItem: deterministicPlan.anchorItem || null,
+      anchorWall: deterministicPlan.anchorWall || null,
+      anchorOrientation: deterministicPlan.anchorOrientation || null,
+    });
+
+    focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] deterministic wall suitability", {
+      jobId: opts?.jobId,
+      roomType: deterministicPlan.room_type,
+      anchorItem: deterministicPlan.anchorItem || null,
+      selectedAnchorWall: deterministicPlan.anchorWall || null,
+      selectedWallIndex,
+      fallbackMode: wallSuitability.every((wall) => wall.classification === "disallowed"),
+      hasWindowWallFallback: wallSuitability.some((wall) => wall.classification === "conditional_window") &&
+        !wallSuitability.some((wall) => wall.classification === "ideal"),
+      walls: wallSuitability.map((wall) => ({
+        wallIndex: wall.wallIndex,
+        wall: wall.label,
+        classification: wall.classification,
+        score: wall.score,
+        hasDoor: wall.hasDoor,
+        hasClosetDoor: wall.hasClosetDoor,
+        windowCount: wall.windowCount,
+        nonWindowOpenings: wall.nonWindowOpenings,
+        openingCoverage: Number(wall.totalOpeningCoverage.toFixed(3)),
+        multiOpeningInterference: wall.hasMultipleInterferingOpenings,
+      })),
+    });
+
+    return deterministicPlan;
+  }
+
+  if (!useGeminiFallback) {
+    focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] deterministic planner unavailable and Gemini fallback disabled", {
+      jobId: opts?.jobId,
+      elapsedMs: Date.now() - startedAt,
+      hasBaseline: Boolean(opts?.structuralBaseline),
+      openings: opts?.structuralBaseline?.openings?.length || 0,
+    });
+    return null;
+  }
 
   try {
     const ai = getGeminiClient();
@@ -355,6 +707,8 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
         plan.anchorConstraints?.mountMode ? `- Placement mode: ${plan.anchorConstraints.mountMode}` : null,
         plan.anchorConstraints?.avoidCoveringWindows === true ? "- Do not cover windows on or near anchor wall." : null,
         plan.anchorConstraints?.avoidAboveWindow === true ? "- Do not place this anchor over any window." : null,
+        plan.furnitureVisibilityRules?.allow_crop === true ? "- Anchor furniture may be partially cropped by frame edges when composition is natural." : null,
+        plan.furnitureVisibilityRules?.assume_wall_continuation === true ? "- Assume anchor wall continues beyond visible frame edges." : null,
       ].filter((line): line is string => Boolean(line)).join("\n")
     : "";
 
@@ -373,6 +727,8 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
             confidence: plan.anchorConfidence,
           }
         : undefined,
+      decorRestrictions: plan.decorRestrictions,
+      furnitureVisibilityRules: plan.furnitureVisibilityRules,
     },
     null,
     2

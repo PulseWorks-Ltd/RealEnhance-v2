@@ -92,7 +92,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
-const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "0") === "1";
+const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
@@ -3863,6 +3863,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         anchorPlannerEnabled: anchorPlannerEligible,
         structuralBaseline: anchorBaseline,
         anchorConfidenceThreshold: STAGE2_ANCHOR_MIN_CONFIDENCE,
+        useGeminiFallback: true,
       });
 
       if (plan) {
