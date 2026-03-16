@@ -3,11 +3,11 @@
   "typescript.disableAutomaticTypeAcquisition": true,
   "typescript.tsserver.experimental.enableProjectDiagnostics": false,
   "files.exclude": {
-    "**/worker": true,
+    "**/worker": false,
     "**/opencv-validator": true
   },
   "search.exclude": {
-    "**/worker": true,
+    "**/worker": false,
     "**/opencv-validator": true
   }
 }

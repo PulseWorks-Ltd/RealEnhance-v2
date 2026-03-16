@@ -352,6 +352,7 @@ function buildNanoRoomProgramGuidance(opts: {
 
   let anchorGuidance = "Primary anchor: choose one clear, room-appropriate anchor and build the rest of the layout around it.";
   let roomRules: string[] = [];
+  let itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 3 small decor accents total.";
 
   switch (room) {
     case "living_room":
@@ -363,6 +364,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Arrange sofa/chairs to support TV viewing and natural circulation.",
         "Do not stage this as a dining room or bedroom.",
       ];
+      itemBudget = "Furniture budget: max 4 major furniture pieces. Decor budget: max 3 small decor accents total.";
       break;
     case "bedroom":
       anchorGuidance =
@@ -371,6 +373,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Include a realistic bed at correct scale.",
         "Use supporting bedside furniture proportionally.",
       ];
+      itemBudget = "Furniture budget: max 3 major furniture pieces (bed + up to 2 supporting pieces). Decor budget: max 2 small decor accents total.";
       break;
     case "dining":
     case "dining_room":
@@ -380,6 +383,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Dining table and chairs must be present and to-scale.",
         "Do not convert to a lounge-first layout.",
       ];
+      itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 2 small decor accents total.";
       break;
     case "office":
       anchorGuidance =
@@ -387,6 +391,7 @@ function buildNanoRoomProgramGuidance(opts: {
       roomRules = [
         "Keep layout functional for work use.",
       ];
+      itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 2 small decor accents total.";
       break;
     case "kitchen":
       anchorGuidance =
@@ -395,6 +400,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Do NOT add a dining table when room type is kitchen.",
         "Do NOT add chairs, stools, or benches to kitchen islands.",
       ];
+      itemBudget = "Furniture budget: max 1 minor movable furniture piece. Decor budget: max 2 small decor accents total.";
       break;
     case "kitchen_living":
       anchorGuidance =
@@ -403,6 +409,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Do NOT add chairs, stools, or benches to kitchen islands.",
         "Do NOT introduce a third functional zone.",
       ];
+      itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
     case "kitchen_dining":
       anchorGuidance =
@@ -411,6 +418,7 @@ function buildNanoRoomProgramGuidance(opts: {
         "Do NOT add chairs, stools, or benches to kitchen islands.",
         "Do NOT introduce a third functional zone.",
       ];
+      itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
     case "living_dining":
       anchorGuidance =
@@ -418,6 +426,7 @@ function buildNanoRoomProgramGuidance(opts: {
       roomRules = [
         "Do NOT collapse both functions into a single furniture cluster.",
       ];
+      itemBudget = "Furniture budget: max 5 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
     default:
       roomRules = [
@@ -448,6 +457,19 @@ Selected staging style: ${style || "standard_listing"}
 - Respect the selected staging style as the aesthetic layer (materials, palette, decor mood).
 - Room type and functional anchor rules are higher priority than style.
 - Never violate architecture, openings, or permanent fixtures to satisfy style.
+
+CRITICAL PRIORITY 4: FIT-FIRST DENSITY CONTROL
+- ${itemBudget}
+- Stage only what comfortably fits in the visible room volume and circulation paths.
+- If an item would feel crowded, reduce walkway clearance, or risk covering architecture, omit it.
+- Prefer fewer, correctly scaled items over adding extra furniture/decor.
+- Keep at least one clear path from entry to the main window/opening.
+
+OPENING SAFETY (MANDATORY)
+- Never place art, mirrors, shelving, cabinets, or decor on top of windows, glazed doors, or door openings.
+- Only place wall art on uninterrupted wall segments with no opening behind or directly adjacent.
+- If wall availability is uncertain, omit wall art entirely.
+- If a bed or headboard must be placed in front of a window due to room size, keep the full window frame, sill height, and visible glass unchanged behind and around the furniture. Never raise the sill or shorten the window to fit furniture.
 
 NEGATIVE CONSTRAINTS
 - Apply all strict prohibitions in this prompt exactly.
