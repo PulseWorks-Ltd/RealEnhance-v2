@@ -63,6 +63,19 @@ const FURNITURE_ADDITION_CONSTRAINTS_FULL = `
 FURNITURE ADDITION CONSTRAINTS
 
 Do NOT add any seating of any type (bar stools, chairs, benches) to or around kitchen islands.
+
+KITCHEN MICRO-STAGING POLICY (APPLIES TO ANY VISIBLE KITCHEN ZONE)
+- No new floor furniture in kitchen areas.
+- Do NOT add dining tables, chairs, stools, benches, islands, carts, or freestanding cabinets in kitchen areas.
+- Kitchen additions are limited to countertop / window-sill / open-shelf styling only.
+- Maximum kitchen additions per image:
+  * Small appliances: up to 2 total (e.g., kettle, toaster, coffee machine, blender)
+  * Decor/accessories: up to 3 total (e.g., vase, fruit bowl, cookbooks, utensil holder, knife block, oven gloves, dish towel)
+- Keep all kitchen additions physically grounded, realistic, and modest in scale.
+
+ROOM-TYPE CONDITIONING
+- If selected room type is kitchen only: apply only the kitchen micro-staging policy in kitchen areas; do NOT add any other furniture in kitchen areas.
+- If selected room type includes kitchen + living or kitchen + dining: stage the non-kitchen zone normally, but kitchen zone remains micro-staging only with the limits above.
 `.trim();
 
 const STAGE2_FULL_ARCHITECTURAL_IMMUTABILITY_BLOCK =

@@ -399,8 +399,11 @@ function buildNanoRoomProgramGuidance(opts: {
       roomRules = [
         "Do NOT add a dining table when room type is kitchen.",
         "Do NOT add chairs, stools, or benches to kitchen islands.",
+        "Kitchen staging is countertop/window-sill/open-shelf only; no added floor furniture in kitchen areas.",
+        "Allow up to 2 small appliances total (kettle, toaster, coffee machine, blender).",
+        "Allow up to 3 decor/accessory items total (vase, fruit bowl, cookbooks, utensil holder, knife block, oven gloves, dish towel).",
       ];
-      itemBudget = "Furniture budget: max 1 minor movable furniture piece. Decor budget: max 2 small decor accents total.";
+      itemBudget = "Kitchen budget: no new floor furniture. Add up to 2 small appliances and up to 3 decor/accessory items on countertop/window-sill/open-shelf only.";
       break;
     case "kitchen_living":
       anchorGuidance =
@@ -408,6 +411,8 @@ function buildNanoRoomProgramGuidance(opts: {
       roomRules = [
         "Do NOT add chairs, stools, or benches to kitchen islands.",
         "Do NOT introduce a third functional zone.",
+        "Kitchen zone allows micro-staging only: countertop/window-sill/open-shelf items; no added floor furniture in kitchen area.",
+        "Kitchen micro-staging cap: up to 2 small appliances and up to 3 decor/accessory items total.",
       ];
       itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
@@ -417,6 +422,8 @@ function buildNanoRoomProgramGuidance(opts: {
       roomRules = [
         "Do NOT add chairs, stools, or benches to kitchen islands.",
         "Do NOT introduce a third functional zone.",
+        "Kitchen zone allows micro-staging only: countertop/window-sill/open-shelf items; no added floor furniture in kitchen area.",
+        "Kitchen micro-staging cap: up to 2 small appliances and up to 3 decor/accessory items total.",
       ];
       itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
