@@ -494,6 +494,14 @@ export function uploadRouter() {
               opts.roomType = normalizeRoomType(opts.roomType);
             }
 
+      // Sky replacement is only valid for exterior scenes.
+      // This prevents stale per-item options from keeping replaceSky=true
+      // after sceneType has been changed to interior/auto.
+      const normalizedSceneType = String(opts.sceneType || "auto").toLowerCase();
+      if (normalizedSceneType !== "exterior") {
+        opts.replaceSky = false;
+      }
+
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
         opts.manualSceneOverride = true;

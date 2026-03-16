@@ -5177,6 +5177,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return explicitBool === undefined ? defaultExterior : explicitBool;
   })();
 
+  // Hard lock: only exterior scenes can use sky replacement.
+  if (stage1ASceneLabel !== "exterior") {
+    safeReplaceSky = false;
+  }
+
+  // Additional safety: if detector is confidently interior, never allow sky replacement,
+  // even if an upstream flag attempted to force it on.
+  const detectorConfidentInterior =
+    scenePrimary?.label === "interior" &&
+    typeof scenePrimary?.confidence === "number" &&
+    scenePrimary.confidence >= SCENE_CONF_THRESHOLD;
+  if (detectorConfidentInterior && safeReplaceSky) {
+    safeReplaceSky = false;
+    nLog(`[WORKER] Sky Safeguard: confident interior detection (${scenePrimary.confidence.toFixed(3)}) -> disable sky replacement`);
+  }
+
   // Force-safe when user was involved (uncertain scene or manual override)
   const effectiveSceneForSafe = stage1ASceneLabel !== "auto" ? stage1ASceneLabel : (scenePrimary?.label || "interior");
   const forceSkySafeForReplace = effectiveSceneForSafe === "exterior" && (requiresSceneConfirm || hasManualSceneOverride);
