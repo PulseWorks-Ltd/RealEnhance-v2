@@ -133,7 +133,7 @@ async function enhanceWithGeminiStage1A(
     // Priority 2: Scene-adaptive real estate prompts (dark/bright/exterior)
     enhancementPrompt = await selectStage1APrompt(sceneType, sharpPath, skyMode);
     // Use conservative sampling for strict content preservation
-    nzTemp = 0.3;  // Low temperature = more deterministic
+    nzTemp = 0.0;  // Fully deterministic for Stage 1A
     nzTopP = 0.9;
     nzTopK = 40;
   }

@@ -152,26 +152,30 @@ export const STAGE1A_PROMPT_EXTERIOR_SKY_STRONG = `You are enhancing a real esta
 This is a QUALITY ENHANCEMENT ONLY task.
 
 PRIMARY GOAL:
-Refine clarity, sharpness, and tonal balance while keeping the image fully realistic and structurally identical to the original.
+Produce a high-end NZ hero-shot exterior while keeping the image fully realistic and structurally identical to the original.
 
 YOU MUST:
-• Improve global sharpness and edge clarity gently
-• Improve tonal separation between sky, building, and landscaping
-• Recover minor highlight clipping in bright sky areas if present
-• Improve shadow detail under eaves and shaded zones naturally
-• Reduce compression artefacts
-• Maintain true-to-life exterior colour balance (no artificial saturation)
+• If the sky is overcast, flat, or grey, replace it cleanly with a vibrant NZ blue sky with soft natural clouds
+• Lift global exposure to simulate a bright clear day while keeping facade detail
+• Recover window detail with realistic non-blown-out reflections
+• Increase grass saturation and warmth by about +10% while preserving original texture
+• Neutralize blue/grey casts on driveway and roof areas
+• Increase local contrast on brick, timber, and stone textures
 
 YOU MUST NOT:
 • Add, remove, replace, or move ANY objects
 • Change buildings, fencing, decking, paving, or outdoor furniture
 • Change plants, trees, grass, or landscaping layout
-• Change sky content, cloud shapes, sun position, or weather
 • Change reflections in windows or doors
 • Modify perspective, camera angle, or lens distortion
 • Add artificial lighting, lens flares, or sun rays
 • Stylise, dramatise, or apply HDR effects
 • Make the image look staged, fake, or AI-generated
+
+SKY MASK SAFETY (MANDATORY):
+• Preserve antennas, chimneys, gutters, roof edges, trees, and fine branches exactly
+• No haloing, clipping, edge erosion, or bleed at sky boundaries
+• If sky masking confidence is low, keep the original sky
 
 The result must feel:
 • Naturally lit
@@ -190,7 +194,6 @@ The final result MUST be:
 • Layout-for-layout identical
 • But cleaner, sharper, and more professional.
 
-DO NOT generate new sky content.
 DO NOT reinterpret landscaping.
 DO NOT replace any visible items.
 
@@ -216,8 +219,8 @@ export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = STAGE1A_PROMPT_EXTERIOR_SKY_STRO
 export const SKY_LOCK_BLOCK = `
 
 SKY PRESERVATION (REQUIRED):
-• Do NOT replace, regenerate, repaint, inpaint, or generatively fill the sky.
-• Do NOT introduce blue sky where it does not exist.
+• If sky is flat/grey, you may replace it with realistic NZ blue sky and soft clouds.
+• Preserve all structure edges and foliage boundaries exactly.
 • Preserve roofs, pergolas, patio covers, awnings, and all overhead structures exactly (never remove or open them to sky).
 • If unsure whether a region is sky or structure, treat it as STRUCTURE and leave it unchanged.
 `;

@@ -5061,17 +5061,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // - Final output: validated against stageLineage (line 3009)
   // ═══════════════════════════════════════════════════════════════════════════════
   let path1A: string = origPath;
+  const autoSceneRequested = !payload.options.sceneType || payload.options.sceneType === "auto";
+  const stage1AProbableExterior = (() => {
+    if (!autoSceneRequested || sceneLabel === "exterior") return false;
+    const p: any = scenePrimary || {};
+    const conf = typeof p.confidence === "number" ? p.confidence : 0;
+    const skyTop40 = typeof p.skyTop40 === "number" ? p.skyTop40 : 0;
+    const blueOverall = typeof p.blueOverall === "number" ? p.blueOverall : 0;
+    const grassPct = typeof p.grassPct === "number" ? p.grassPct : 0;
+    const woodDeckPct = typeof p.woodDeckPct === "number" ? p.woodDeckPct : 0;
+    const clientSuggestsExterior = clientScenePrediction?.scene === "exterior";
+    const visualExteriorSignals = skyTop40 >= 0.10 || blueOverall >= 0.06 || grassPct >= 0.08 || woodDeckPct >= 0.12;
+    return clientSuggestsExterior || (conf < SCENE_CONF_THRESHOLD && visualExteriorSignals);
+  })();
+  const stage1ASceneLabel = stage1AProbableExterior ? "exterior" : sceneLabel;
+  if (stage1AProbableExterior) {
+    nLog(`[WORKER] Stage1A probable exterior fallback: resolvedScene=${sceneLabel} -> stage1AScene=exterior`);
+  }
+
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
   // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection
   let safeReplaceSky: boolean = ((): boolean => {
     const explicit = (payload.options.replaceSky as any);
     const explicitBool = typeof explicit === 'boolean' ? explicit : undefined;
-    const defaultExterior = sceneLabel === "exterior";
+    const defaultExterior = stage1ASceneLabel === "exterior";
     return explicitBool === undefined ? defaultExterior : explicitBool;
   })();
 
   // Force-safe when user was involved (uncertain scene or manual override)
-  const effectiveSceneForSafe = sceneLabel !== "auto" ? sceneLabel : (scenePrimary?.label || "interior");
+  const effectiveSceneForSafe = stage1ASceneLabel !== "auto" ? stage1ASceneLabel : (scenePrimary?.label || "interior");
   const forceSkySafeForReplace = effectiveSceneForSafe === "exterior" && (requiresSceneConfirm || hasManualSceneOverride);
   if (forceSkySafeForReplace) {
     safeReplaceSky = false;
@@ -5082,7 +5100,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     safeReplaceSky = false;
     nLog(`[WORKER] Sky Safeguard: manualSceneOverride=1 → disable sky replacement`);
   }
-  if (sceneLabel === "exterior") {
+  if (stage1ASceneLabel === "exterior") {
     try {
       const { detectRoofOrPergola } = await import("./validators/pergolaGuard.js");
       const hasRoof = await detectRoofOrPergola(origPath);
@@ -5096,12 +5114,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Determine sky mode from scene detection results (already force-safe applied in detection block)
-  const skyModeForStage1A = (scenePrimary as any)?.skyModeResult?.mode || "safe";
-  logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
+  const stage1ASkyModeResult = stage1ASceneLabel === "exterior"
+    ? ((scenePrimary as any)?.skyModeResult || (scenePrimary ? determineSkyMode(scenePrimary as any) : null))
+    : null;
+  const skyModeForStage1A = stage1ASkyModeResult?.mode || "safe";
+  logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-    sceneType: sceneLabel,
+    sceneType: stage1ASceneLabel,
     interiorProfile: ((): any => {
       const p = (payload.options as any)?.interiorProfile;
       if (p === 'nz_high_end' || p === 'nz_standard') return p;

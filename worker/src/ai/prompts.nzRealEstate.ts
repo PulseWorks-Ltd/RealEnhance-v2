@@ -676,134 +676,34 @@ Return ONLY the enhanced image.`.trim();
 }
 
 function buildStage1AExteriorPromptNZStyle(): string {
-  return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ REAL ESTATE)
+  return `As a professional real estate photography editor, enhance this exterior to meet high-end New Zealand Hero Shot standards.
 
-You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
-of exterior real estate imagery.
+I. SKY & LIGHTING (PRECISION REPLACEMENT)
+- SKY: If the sky is overcast, flat, or grey, perform a clean replacement with a vibrant, high-end NZ blue sky with soft, natural clouds.
+- LIGHTING: Lift global exposure to simulate a bright, clear day. Ensure the facade is well-illuminated and free of muddy shadows.
+- WINDOW PULL: Recover detail in windows to show a clean interior or realistic, non-blown-out reflections.
 
-You are NOT a renovator, cleaner, landscaper, or generator.
+II. LANDSCAPE & COLOR (VIBRANCY)
+- LAWN: Increase saturation and warmth of grass by about +10% so it looks lush and well-maintained, but do not replace texture or add new lawn.
+- COLOR BALANCE: Neutralize blue or grey casts on driveway and roof areas. Ensure whites (trims, eaves) are clean and crisp.
+- SHARPNESS: Increase local contrast on textures like brick, timber, and stone for high-definition clarity.
 
-TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Apply GLOBAL lighting, color, tonal, and sky adjustments ONLY.
+III. STRUCTURAL LOCK (MANDATORY)
+- GEOMETRY: Maintain 100% architectural accuracy. Do not rotate, straighten, crop, reframe, or warp perspective.
+- PERMANENT FEATURES: Do not add, remove, or modify rooflines, walls, windows, doors, fixtures, fences, or landscaping elements.
+- NO OBJECT CHANGES: Do not add, remove, or move site objects, furniture, vehicles, plants, or decor.
 
-Your goal is to improve photographic quality (exposure, dynamic range,
-white balance, sky realism) while preserving 100% of the original
-building geometry, materials, textures, and site layout.
+IV. SKY MASK SAFETY (MANDATORY)
+- Preserve roof edges, gutters, antennas, chimneys, trees, and fine branches exactly.
+- No haloing, edge erosion, clipping, or bleeding around structures.
+- If mask confidence is low, keep the original sky.
 
-This is PARAMETER ADJUSTMENT, not scene generation.
+V. FINAL OUTPUT QUALITY
+- Keep the result realistic and geographically plausible for NZ listings.
+- Avoid flat or grey highlight compression.
+- Final output must look like a professional tripod-mounted exterior photo taken on a perfect NZ summer day.
 
-Model: Gemini 2.5 Flash Image  
-Default Sampling: temp=0.60, topP=0.90, topK=50
-
-────────────────────────────────
-STRICT GEOMETRIC & SITE LOCK (NON-NEGOTIABLE)
-────────────────────────────────
-
-PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
-
-1. Fixed Architecture
-  Rooflines, eaves, gutters, fascias, chimneys, cladding
-  (brick, render, weatherboard), windows, doors, decks,
-  balconies, antennas, satellite dishes, railings, steps,
-  paths, and retaining walls MUST remain IDENTICAL in:
-  • Shape
-  • Position
-  • Scale
-  • Material appearance
-  • Texture detail
-
-2. Site & Landscaping
-  Trees, hedges, lawns, gardens, fences, driveways, footpaths,
-  bins, hoses, vehicles, outdoor furniture, and all site objects
-  MUST remain present and unchanged.
-
-3. Texture Integrity (Critical)
-  • Do NOT remove dirt, moss, stains, weathering, or patina
-  • Do NOT smooth brickwork, concrete, render, asphalt, or timber
-  • Do NOT repaint or resurface any exterior material
-
-This is an enhancement task — NOT cleaning, renovation, or landscaping.
-
-────────────────────────────────
-PROHIBITED ACTIONS (ZERO TOLERANCE)
-────────────────────────────────
-
-• NO decluttering or object removal
-• NO surface cleaning or “tidying”
-• NO geometry warping or perspective correction
-• NO inpainting or regeneration of building/site content
-• NO material substitution or texture resynthesis
-
-If something looks worn, stained, or weathered, it MUST remain so.
-Fix the light — NOT the property.
-
-────────────────────────────────
-PRIMARY OBJECTIVE
-────────────────────────────────
-
-Produce a bright, welcoming exterior photograph with
-natural New Zealand lighting characteristics.
-
-The result must look:
-• Realistic and geographically plausible
-• Bright but not washed out
-• Neutral daylight balanced
-• Sharp and detailed WITHOUT texture loss
-
-────────────────────────────────
-SKY ENHANCEMENT (CONDITIONAL & GUARDED)
-────────────────────────────────
-
-If the existing sky is flat grey or overcast:
-• You MAY replace it with a soft, realistic blue sky
-  consistent with NZ conditions.
-
-CRITICAL SKY RULES:
-• The sky mask MUST fully preserve antennas, chimneys,
-  gutters, roof edges, trees, and fine branches.
-• NO edge erosion, clipping, or haloing.
-• If masking confidence is low, KEEP THE ORIGINAL SKY.
-
-Sky enhancement must NEVER damage rooflines or structures.
-
-────────────────────────────────
-WET SURFACE HANDLING (CONDITIONAL)
-────────────────────────────────
-
-If driveways, decks, or paths appear wet or highly reflective:
-• Reduce glare and specular highlights ONLY.
-• Preserve material texture, roughness, and colour.
-• Do NOT flatten surfaces or make them look matte or painted.
-
-Goal: Reduce distraction — NOT alter reality.
-
-────────────────────────────────
-ALLOWED ADJUSTMENTS (GLOBAL ONLY)
-────────────────────────────────
-
-• Global exposure correction
-• Neutral daylight white balance
-• Global contrast and tone balancing
-• Shadow lift under eaves/porches (global)
-• Highlight recovery
-• Subtle global clarity (edge-preserving)
-
-NO local edits. NO masking beyond sky replacement.
-NO object-aware edits.
-
-────────────────────────────────
-FINAL CONSTRAINT
-────────────────────────────────
-
-Do NOT interpret “Enhancement” as “Improvement of the property”.
-It is an improvement of the PHOTO ONLY.
-
-────────────────────────────────
-OUTPUT
-────────────────────────────────
-
-Return ONLY the enhanced image.`.trim();
+Your only task is to optimize lighting, color, sky realism, and clarity of the existing photo while preserving structure and layout exactly.`.trim();
 }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)

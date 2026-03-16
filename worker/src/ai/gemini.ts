@@ -361,15 +361,27 @@ export async function enhanceWithGemini(
             topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
             topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
           };
+    const stage1ATempLocked = stage === "1A";
+    const effectiveSampling = stage1ATempLocked
+      ? {
+          ...sampling,
+          temperature: 0.0,
+        }
+      : sampling;
+
     const sourceNotes: string[] = [];
     if (isStage1BFullDeclutter) {
-      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} (${isStage1BRetryAttempt ? 'stage1b_full_retry_locked' : 'stage1b_full_locked'})`);
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${effectiveSampling.temperature}, topP=${effectiveSampling.topP}, topK=${effectiveSampling.topK} (${isStage1BRetryAttempt ? 'stage1b_full_retry_locked' : 'stage1b_full_locked'})`);
     } else if (!usingTest) {
       if (typeof temperature !== 'number' && (cfgTemp || cfgTopP || cfgTopK)) sourceNotes.push('config');
       if (typeof temperature !== 'number' && (envTemp || envTopP || envTopK)) sourceNotes.push('env');
-      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${sampling.temperature}, topP=${sampling.topP}, topK=${sampling.topK} ${sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : ''}`);
+      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${effectiveSampling.temperature}, topP=${effectiveSampling.topP}, topK=${effectiveSampling.topK} ${stage1ATempLocked ? '(stage1A_temp_locked)' : (sourceNotes.length ? `(${sourceNotes.join('+')} overrides applied)` : '')}`);
     } else {
-      focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
+      if (stage1ATempLocked) {
+        focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: temp=${effectiveSampling.temperature}, topP=${effectiveSampling.topP}, topK=${effectiveSampling.topK} (stage1A_temp_locked)`);
+      } else {
+        focusLog("GEMINI_SAMPLING", `[Gemini] 🎛️ Sampling: Using prompt-embedded temperature (API sampling left default)`);
+      }
     }
 
     if (stage === "1B") {
@@ -386,9 +398,9 @@ export async function enhanceWithGemini(
         declutterMode: modeFromReason,
         promptHash,
         sampling: {
-          temperature: sampling.temperature,
-          topP: sampling.topP,
-          topK: sampling.topK,
+          temperature: effectiveSampling.temperature,
+          topP: effectiveSampling.topP,
+          topK: effectiveSampling.topK,
         },
         model: MODEL_CONFIG.stage1B.primary,
         retryType,
@@ -401,10 +413,10 @@ export async function enhanceWithGemini(
 
     const baseRequest = {
       contents: requestParts,
-      generationConfig: usingTest ? undefined : {
-        temperature: sampling.temperature,
-        topP: sampling.topP,
-        topK: sampling.topK,
+      generationConfig: (usingTest && !stage1ATempLocked) ? undefined : {
+        temperature: effectiveSampling.temperature,
+        topP: effectiveSampling.topP,
+        topK: effectiveSampling.topK,
       }
     } as any;
 
