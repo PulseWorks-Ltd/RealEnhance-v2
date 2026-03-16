@@ -147,12 +147,11 @@ async function enhanceWithGeminiStage1A(
     roomType,
     modelReason: sceneType ? `${sceneType} enhance` : "enhance",
     promptOverride: enhancementPrompt,
-    temperature: nzTemp,
-    topP: nzTopP,
-    topK: nzTopK,
+    temperature: jobSampling?.temperature ?? nzTemp,
+    topP: jobSampling?.topP ?? nzTopP,
+    topK: jobSampling?.topK ?? nzTopK,
     floorClean: false,
     hardscapeClean: sceneType === "exterior",
-    ...(jobSampling || {}),
   });
 
   await logImageAttemptUrl({

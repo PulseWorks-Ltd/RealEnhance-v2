@@ -1,7 +1,40 @@
 export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
-  return `\nEnhance this ${roomType || "interior"} image in the style of modern New Zealand \nreal estate photography as seen on professional Trade Me listings.\n\nPrimary goals:\n• Brighten the room so it feels like a sunny open-home day while preserving opening detail.\n• Lift midtones and shadows, especially on the back wall, ceiling, and corners.\n• Make the carpet and walls appear lighter, cleaner, and more inviting while\n  keeping their true colour family.\n• Ensure the overall exposure is brighter than the original image, but\n  still realistic for a well-photographed listing.\n\nTonal and colour guidance:\n• Increase global brightness and midtones so the room feels airy and open.\n• Gently lift shadows to remove dull, dark areas at the far end of the room.\n• Apply soft tonal balancing to reduce harsh contrast while preserving opening detail.\n• Add +3–4% global warmth for a welcoming NZ real-estate look.\n• Increase clarity and local contrast slightly for crisp edges and texture.\n\nSTRICT STRUCTURAL RULES:\n• Use the image EXACTLY as provided: do NOT rotate, straighten, crop, reframe,\n  zoom, warp, or change the camera angle or perspective.\n• Do NOT change ANY architecture: walls, ceilings, floors, doors, windows,\n  trims, cabinetry, or fixtures.\n• Do NOT add, remove, move, or modify any furniture, decor, or objects.\n• Do NOT alter window size, position, or what is visible through the windows.\n• Do NOT change room proportions, distances, or layout.\n\nWINDOW / OPENING PRESERVATION RULE:\n• Do NOT overexpose exterior sky visible through windows.\n• Preserve visible window frame edges and contrast.\n• Maintain clear boundary between wall surface and window opening.\n• Do not flatten bright exterior areas into pure white.\n• Avoid highlight clipping inside openings.\n• Preserve all visible architectural edge definition.\n\nTONAL STABILIZATION REQUIREMENTS:\n• Reduce exposure lift slightly when highlights are already bright.\n• Avoid aggressive highlight compression.\n• Preserve local contrast around window edges.\n• Do NOT alter structural geometry.\n• This is tonal stabilization only.\n\nYour only job is to enhance lighting, exposure, colour, and clarity in\na professional NZ real-estate style, while keeping the room’s structure,\ngeometry, and contents exactly the same.`.trim();
+  return `As a professional real estate photography editor, enhance this ${roomType || "room"} to meet high-end New Zealand listing standards. Your goal is to replicate a professional full-frame camera look using multi-exposure bracketed (HDR) techniques.
+
+I. LIGHTING & EXPOSURE (PRO-CAMERA SIMULATION)
+- BRIGHTNESS: Lift midtones and shadows to create an airy, open-home feel. Ensure corners and back walls are well-illuminated without muddy noise.
+- WINDOW PULL: Recover detail in all window/door apertures. The exterior view must be clearly visible, properly saturated, and NOT blown out or clipped to white.
+- DYNAMIC RANGE: Balance exposure so interior details and exterior views coexist realistically, mimicking a professional flambient (flash + ambient) shot.
+- CONTRAST: Increase local contrast (clarity) on architectural junctions (baseboards, window frames, door trims) to create crisp, high-definition edges.
+
+II. COLOR & SATURATION (NEUTRALIZATION)
+- WHITE BALANCE: Neutralize all color casts. Identify white surfaces (ceilings, window trims, baseboards) and ensure they render as clean, neutral whites, removing yellow tungsten or blue daylight tints.
+- SATURATION: Apply +5% selective saturation to natural textures (wood flooring, carpets, exterior greenery) while maintaining neutral tones for walls and ceilings.
+- VIBRANCY: Enhance the sunny-day feel by lifting global vibrancy slightly without altering the original color family of the room.
+
+III. STRUCTURAL INTEGRITY (ARCHITECTURAL LOCK)
+- GEOMETRY: Maintain 100% architectural accuracy. Do not rotate, straighten, crop, reframe, or warp perspective.
+- PERMANENT FEATURES: Do not add, remove, or modify walls, floors, ceilings, windows, doors, or built-in fixtures.
+- NO STAGING: Do not add, remove, or move any furniture or decor.
+- DEPTH VOIDS: Do not fill in dark openings. Doorways to other rooms must remain visible as dark penetrative voids to preserve floor-plan logic.
+
+IV. FINAL OUTPUT QUALITY
+- Ensure the image is sharp, clear, and noise-free.
+- Avoid aggressive highlight compression that makes the image look flat or grey.
+- Final output must look like a professional, high-end photograph taken with a tripod-mounted DSLR.
+
+WINDOW / OPENING PRESERVATION RULE:
+- Do NOT overexpose exterior sky visible through windows.
+- Preserve visible window frame edges and contrast.
+- Maintain clear boundary between wall surface and window opening.
+- Do not flatten bright exterior areas into pure white.
+- Avoid highlight clipping inside openings.
+- Preserve all visible architectural edge definition.
+
+Your only task is to optimize lighting, color, and clarity of the existing room. Do not alter structure, geometry, layout, or contents.`.trim();
 }
 
 export function buildStage1AInteriorPromptNZHighEnd(roomType: string): string {
-  return `\nEnhance this ${roomType || "interior"} image in a high-end New Zealand real\nestate style, similar to premium agency photography.\n\nPrimary goals:\n• Make the room bright, open, and luxurious, as if shot by a top-tier\n  NZ real estate photographer on a clear sunny day.\n• Lift midtones and shadows across the whole room so there are no\n  dull or flat areas, especially in the distance.\n• Make ceilings, walls, and carpet appear clean, light, and softly glowing,\n  while staying within realistic material colours.\n\nTonal and colour guidance:\n• Apply a strong but natural brightness increase and midtone lift.\n• Brighten the back of the room and corners so they feel open.\n• Use soft tonal balancing to keep detail in bright areas while avoiding a\n  flat or washed-out look.\n• Add +4–6% warmth for a premium inviting ambience.\n• Boost clarity and local contrast moderately for a sharp, high-end finish.\n\nSTRICT STRUCTURAL RULES (ABSOLUTE):\n• Do NOT rotate, crop, straighten, reframe, zoom, warp, or modify perspective.\n• Do NOT change any architectural element (walls, doors, windows, ceilings,\n  floors, trims, cabinetry, fixtures).\n• Do NOT add or remove furniture, decor, or objects.\n• Do NOT modify window sizes, shapes, or outside views.\n• Do NOT change room proportions, distances, or layout.\n\nWINDOW / OPENING PRESERVATION RULE:\n• Do NOT overexpose exterior sky visible through windows.\n• Preserve visible window frame edges and contrast.\n• Maintain clear boundary between wall surface and window opening.\n• Do not flatten bright exterior areas into pure white.\n• Avoid highlight clipping inside openings.\n• Preserve all visible architectural edge definition.\n\nTONAL STABILIZATION REQUIREMENTS:\n• Reduce exposure lift slightly when highlights are already bright.\n• Avoid aggressive highlight compression.\n• Preserve local contrast around window edges.\n• Do NOT alter structural geometry.\n• This is tonal stabilization only.\n\nOnly change lighting, exposure, colour, and clarity, in a dramatic but\nstill realistic NZ high-end listing style.`.trim();
+  // Keep high-end mode on the same structural-safe Pro-Camera directive for consistency.
+  return buildStage1AInteriorPromptNZStandard(roomType);
 }

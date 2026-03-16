@@ -8,8 +8,8 @@ export type StagePresetConfig = {
 export const NZ_REAL_ESTATE_PRESETS = {
   stage1AInterior: <StagePresetConfig>{
     temperature: 0.10,
-    topP: 0.25,
-    topK: 40,
+    topP: 1.0,
+    topK: 1,
     styleName: "nz-real-estate-interior",
   },
   stage1AExterior: <StagePresetConfig>{

@@ -14,7 +14,7 @@ export const INTERIOR_PROFILE_CONFIG = {
     localContrast: 0.10,
     clarity: 0.08,
     saturation: 0.05,
-    geminiTemperature: 0.16,
+    geminiTemperature: 0.0,
   },
   nz_high_end: {
     label: "NZ High-End Real Estate",
@@ -27,7 +27,7 @@ export const INTERIOR_PROFILE_CONFIG = {
     localContrast: 0.13,
     clarity: 0.11,
     saturation: 0.07,
-    geminiTemperature: 0.18,
+    geminiTemperature: 0.0,
   },
 } as const;
 
