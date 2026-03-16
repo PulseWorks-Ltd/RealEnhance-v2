@@ -84,6 +84,7 @@ export type OpeningValidationResult = {
     analysis?: string;
     semanticOpeningAreaDeltaPct?: number;
     semanticOpeningAspectRatioDelta?: number;
+    windowSillDeltaPct?: number;
     confidence: number;
   };
   detectedOpenings: StructuralOpening[];
@@ -103,6 +104,7 @@ export type OpeningResult = {
 const OPENING_VALIDATOR_MODEL = String(
   process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro"
 );
+const WINDOW_SILL_MAX_SHIFT = Number(process.env.OPENING_WINDOW_SILL_MAX_SHIFT || 0.1);
 
 const BASELINE_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine.
 
@@ -862,6 +864,10 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
       typeof input.summary.semanticOpeningAspectRatioDelta === "number" && Number.isFinite(input.summary.semanticOpeningAspectRatioDelta)
         ? Math.abs(input.summary.semanticOpeningAspectRatioDelta)
         : undefined,
+    windowSillDeltaPct:
+      typeof input.summary.windowSillDeltaPct === "number" && Number.isFinite(input.summary.windowSillDeltaPct)
+        ? Math.abs(input.summary.windowSillDeltaPct)
+        : undefined,
     confidence: Math.max(0, Math.min(1, input.summary.confidence)),
   };
 
@@ -936,6 +942,7 @@ export async function validateOpeningPreservation(
   let openingBandMismatch = false;
   let maxAreaDelta = 0;
   let maxAspectDelta = 0;
+  let maxWindowSillShift = 0;
   const analysisNotes: string[] = [];
 
   for (const baseOpening of baseline.openings) {
@@ -1020,6 +1027,23 @@ export async function validateOpeningPreservation(
     const areaDelta = Math.abs((detectedArea - baseArea) / baseArea);
     maxAreaDelta = Math.max(maxAreaDelta, areaDelta);
 
+    if (baseOpening.type === "window") {
+      const baseBottomY = Number(baseOpening.bbox?.[3] ?? NaN);
+      const detectedBottomY = Number(match.bbox?.[3] ?? NaN);
+      if (Number.isFinite(baseBottomY) && Number.isFinite(detectedBottomY)) {
+        const sillShift = Math.abs(detectedBottomY - baseBottomY);
+        maxWindowSillShift = Math.max(maxWindowSillShift, sillShift);
+        if (sillShift > WINDOW_SILL_MAX_SHIFT) {
+          openingResized = true;
+          openingBandMismatch = true;
+          invariantReasons.push(`window_sill_shift_gt_${WINDOW_SILL_MAX_SHIFT.toFixed(2)}`);
+          analysisNotes.push(
+            `Window ${baseOpening.id} sill moved vertically by ${sillShift.toFixed(3)} (max=${WINDOW_SILL_MAX_SHIFT.toFixed(3)}).`
+          );
+        }
+      }
+    }
+
     if (baseOpening.type !== "window" && areaDelta >= 0.35) {
       openingInfilled = true;
       analysisNotes.push(
@@ -1093,6 +1117,7 @@ export async function validateOpeningPreservation(
     analysis: analysisNotes.join(" "),
     semanticOpeningAreaDeltaPct: maxAreaDelta,
     semanticOpeningAspectRatioDelta: maxAspectDelta,
+    windowSillDeltaPct: maxWindowSillShift,
     confidence: openingResults.length
       ? Number((openingResults.reduce((sum, row) => sum + row.confidence, 0) / openingResults.length).toFixed(3))
       : 1,

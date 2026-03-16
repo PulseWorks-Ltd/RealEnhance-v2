@@ -13,6 +13,7 @@ const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gem
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const OPENING_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 const OPENING_LIGHT_ANCHOR_MODEL = process.env.GEMINI_OPENING_LIGHT_ANCHOR_MODEL || OPENING_MODEL_PRIMARY;
+const OPENING_WINDOW_MIN_RETENTION = Number(process.env.OPENING_WINDOW_MIN_RETENTION || 0.8);
 
 function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
@@ -173,7 +174,7 @@ export async function runOpeningValidator(
       } else {
         // Window partial occlusion can be tolerated only when clearly partial.
         // Near-full occlusion is treated as structural failure.
-        if (retention < 0.55) {
+        if (retention < OPENING_WINDOW_MIN_RETENTION) {
           strictWindowOcclusionFail = true;
         }
       }

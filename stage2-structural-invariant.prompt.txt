@@ -39,6 +39,16 @@ Large architectural openings such as sliding glass doors or wide windows
 are structural anchors and must remain identical in perceptual size
 and position relative to the wall.
 
+WINDOW SILL INTEGRITY (CRITICAL)
+
+For each preserved window, the bottom edge (sill) must remain at the same
+vertical position relative to the floor and surrounding wall geometry.
+
+If a window appears shortened from the bottom (raised sill) or from the top
+(dropped header) to accommodate furniture/decor, this is a structural alteration.
+
+When this occurs, set openingResized=true with confidence=1.0.
+
 Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters),
 or temporary movable objects is NOT removal ONLY IF ALL of the following remain true:
 
