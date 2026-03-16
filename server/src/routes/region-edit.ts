@@ -339,7 +339,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     let stage1AReferenceUrl: string | undefined = undefined;
-    if (workerMode === "Remove" && sourceJobId) {
+    if ((workerMode === "Add" || workerMode === "Remove") && sourceJobId) {
       try {
         const sourceJob = await getJob(sourceJobId);
         stage1AReferenceUrl = resolveStage1AUrlFromJob(sourceJob);

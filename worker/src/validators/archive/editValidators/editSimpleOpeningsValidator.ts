@@ -1,5 +1,9 @@
-import { getGeminiClient } from "../ai/gemini";
-import { toBase64 } from "../utils/images";
+// Archived on 2026-03-16.
+// This validator was previously used in the region-edit pipeline.
+// It is intentionally preserved for potential future reuse and is not executed by the current edit flow.
+
+import { getGeminiClient } from "../../../ai/gemini";
+import { toBase64 } from "../../../utils/images";
 
 const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
