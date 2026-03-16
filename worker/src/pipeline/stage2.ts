@@ -737,6 +737,22 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
   }
 
   if (opts.layoutPlan) {
+    const anchorRegion = opts.layoutPlan.anchorRegion;
+    if (anchorRegion) {
+      textPrompt += `
+
+ANCHOR REGION GUIDANCE (SOFT, NOT A HARD MASK)
+Prefer placing the primary anchor furniture within this normalized region when structurally valid:
+- x=${anchorRegion.x.toFixed(3)}
+- y=${anchorRegion.y.toFixed(3)}
+- width=${anchorRegion.width.toFixed(3)}
+- height=${anchorRegion.height.toFixed(3)}
+
+This region is guidance only. You may adjust slightly for realism and circulation.
+Do NOT modify architecture, openings, or permanent fixtures to satisfy this guidance.
+`;
+    }
+
     textPrompt += `
 
 Use the following furniture placement plan exactly.

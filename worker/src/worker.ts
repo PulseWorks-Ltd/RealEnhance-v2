@@ -3024,6 +3024,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     fallbackUsed: null as string | null,
   };
 
+  const stage2LayoutPlanCache = new Map<string, Stage2LayoutPlan>();
+  const isPersistableLayoutPlan = (value: any): value is Stage2LayoutPlan => {
+    return !!(
+      value &&
+      typeof value === "object" &&
+      typeof value.room_type === "string" &&
+      Array.isArray(value.layout) &&
+      Array.isArray(value.avoid_zones)
+    );
+  };
+
   let structuralBaseline: StructuralBaseline | null = null;
   let structuralBaselinePromise: Promise<StructuralBaseline | null> | null = null;
   try {
@@ -3034,6 +3045,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       jobContext.structuralBaseline = structuralBaseline;
       structuralBaselinePromise = Promise.resolve(structuralBaseline);
       nLog(`[STRUCTURAL_BASELINE_HYDRATED] jobId=${payload.jobId} openings=${structuralBaseline.openings.length}`);
+    }
+
+    const persistedLayoutPlans =
+      existingJobState?.meta?.stage2LayoutPlans ||
+      existingJobState?.metadata?.stage2LayoutPlans;
+    if (persistedLayoutPlans && typeof persistedLayoutPlans === "object") {
+      for (const [cacheKey, maybePlan] of Object.entries(persistedLayoutPlans as Record<string, any>)) {
+        if (!isPersistableLayoutPlan(maybePlan)) continue;
+        stage2LayoutPlanCache.set(cacheKey, maybePlan as Stage2LayoutPlan);
+      }
+      if (stage2LayoutPlanCache.size > 0) {
+        nLog("[STAGE2_LAYOUT_PLAN_HYDRATED]", {
+          jobId: payload.jobId,
+          entries: stage2LayoutPlanCache.size,
+        });
+      }
     }
   } catch (hydrateErr: any) {
     nLog(`[STRUCTURAL_BASELINE_HYDRATE_ERROR] jobId=${payload.jobId} reason=${hydrateErr?.message || hydrateErr}`);
@@ -3686,6 +3713,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
 
+    const layoutPlanCacheKey = `${ctx.path}|${ctx.promptMode}|${ctx.sourceStage}|${ctx.basePath}`;
+    const cachedLayoutPlan = stage2LayoutPlanCache.get(layoutPlanCacheKey);
+    if (cachedLayoutPlan) {
+      nLog("[STAGE2_LAYOUT_PLANNER_CACHE_HIT]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        promptMode: ctx.promptMode,
+        sourceStage: ctx.sourceStage,
+      });
+      return cachedLayoutPlan;
+    }
+
     const anchorPlannerEligible =
       STAGE2_ANCHOR_PLANNER_ENABLED &&
       ctx.promptMode === "full";
@@ -3736,6 +3775,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         structuralBaseline: anchorBaseline,
         anchorConfidenceThreshold: STAGE2_ANCHOR_MIN_CONFIDENCE,
       });
+
+      if (plan) {
+        stage2LayoutPlanCache.set(layoutPlanCacheKey, plan);
+        try {
+          const existingDurableMeta = await getJobMetadata(payload.jobId);
+          const persistedLayoutPlans = {
+            ...((existingDurableMeta as any)?.stage2LayoutPlans || {}),
+            [layoutPlanCacheKey]: plan,
+          };
+          const durableMetaWithPlans = {
+            ...(existingDurableMeta || {}),
+            stage2LayoutPlans: persistedLayoutPlans,
+          } as JobOwnershipMetadata & { stage2LayoutPlans: Record<string, Stage2LayoutPlan> };
+
+          await Promise.all([
+            updateJob(payload.jobId, {
+              metadata: durableMetaWithPlans,
+              meta: {
+                ...(sceneLabel ? { ...sceneMeta } : {}),
+                stage2LayoutPlans: persistedLayoutPlans,
+              },
+            }),
+            saveJobMetadata(durableMetaWithPlans, JOB_META_TTL_PROCESSING_SECONDS),
+          ]);
+        } catch (persistErr: any) {
+          nLog("[STAGE2_LAYOUT_PLAN_PERSIST_ERROR]", {
+            jobId: payload.jobId,
+            path: ctx.path,
+            error: persistErr?.message || String(persistErr),
+          });
+        }
+      }
+
       nLog("[STAGE2_LAYOUT_PLANNER]", {
         jobId: payload.jobId,
         path: ctx.path,
