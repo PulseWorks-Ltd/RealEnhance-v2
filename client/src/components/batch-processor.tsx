@@ -649,11 +649,12 @@ function computeRetryBaseline(
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
 const JOB_EXPIRY_HOURS = 24;
 
-function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' {
+function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' | 'awaiting_payment' {
   const val = (raw || "").toLowerCase();
   if (["completed", "complete", "done", "success", "succeeded", "finished", "ok"].includes(val)) return "completed";
   if (["failed", "error", "errored", "blocked", "rejected"].includes(val)) return "failed";
   if (["cancelled", "canceled", "aborted", "terminated"].includes(val)) return "cancelled";
+  if (val === "awaiting_payment") return "awaiting_payment";
   return "processing";
 }
 
@@ -2918,6 +2919,46 @@ export default function BatchProcessor() {
         const data = await resp.json();
         const items = Array.isArray(data.items) ? data.items : [];
 
+        // Payment-gated jobs should not look like a stuck processing/preflight state.
+        // Surface them as actionable credit-gate flow and stop active polling.
+        const awaitingPaymentItems = items.filter((it: any) => {
+          const raw = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
+          return raw === "awaiting_payment";
+        });
+        if (awaitingPaymentItems.length > 0) {
+          const pendingJobIds = Array.from(new Set(awaitingPaymentItems
+            .map((it: any) => String(it?.jobId || it?.id || it?.job_id || "").trim())
+            .filter(Boolean)));
+          const pendingImageIds = Array.from(new Set(awaitingPaymentItems
+            .map((it: any) => String(it?.imageId || it?.image_id || "").trim())
+            .filter(Boolean)));
+
+          const latestSummary = await refreshCreditSummary();
+          const latestAvailable = latestSummary?.availableCredits ?? Math.max(0, Number(availableCredits ?? 0));
+          const required = Math.max(requiredBatchCredits || pendingJobIds.length, pendingJobIds.length);
+          const missing = Math.max(0, required - latestAvailable);
+
+          const persistentPreviewUrls = await buildPersistentPreviewUrls().catch(() => [] as string[]);
+          persistPendingEnhancementSession(pendingJobIds, {
+            imageIds: pendingImageIds,
+            previewUrls: persistentPreviewUrls,
+            resumeStatus: "pending",
+            requiredCredits: required,
+            availableCredits: latestAvailable,
+            missingCredits: missing,
+          });
+          setPendingRestoreSession(getPendingEnhancementSession());
+          setShowPendingRestoreBanner(false);
+
+          setRunState("idle");
+          setAbortController(null);
+          setJobIds([]);
+          setCancelIds([]);
+          clearBatchJobState(currentUserId);
+          openCreditGateModal(required, latestAvailable, pendingJobIds);
+          return;
+        }
+
         if (!items.length && !data.done) {
           // Empty payload → treat as queued and keep polling
           await new Promise(r => setTimeout(r, Math.max(BACKOFF_START_MS, delay)));
@@ -3046,7 +3087,15 @@ export default function BatchProcessor() {
             statusUnknownLoggedRef.current.add(pipelineStatusRaw);
             console.log('[BATCH][status_unknown]', { raw: pipelineStatusRaw });
           }
-          const status = normalizedStatus === "cancelled" ? "failed" : normalizedStatus === "failed" ? "failed" : normalizedStatus === "completed" ? "completed" : "processing";
+          const status = normalizedStatus === "cancelled"
+            ? "failed"
+            : normalizedStatus === "failed"
+              ? "failed"
+              : normalizedStatus === "completed"
+                ? "completed"
+                : normalizedStatus === "awaiting_payment"
+                  ? "awaiting_payment"
+                  : "processing";
           const isTerminalFlag = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled" || TERMINAL_STATUSES.has(status) || it?.isTerminal === true;
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
@@ -5534,6 +5583,13 @@ export default function BatchProcessor() {
     setEditingImage(null);
     setIsEditingInProgress(false);
     setRetryDialog({ isOpen: false, imageIndex: null });
+    setCreditGateModal({
+      open: false,
+      requiredCredits: 0,
+      availableCredits: 0,
+      missingCredits: 0,
+      pendingJobIds: [],
+    });
 
     setIsBatchRefining(false);
     setHasRefinedImages(false);

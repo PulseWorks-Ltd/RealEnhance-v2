@@ -412,11 +412,30 @@ export function uploadRouter() {
       });
     }
 
-    // Deduplicate pending jobs: if user already has awaiting_payment jobs, reuse them.
+    // Deduplicate pending jobs only for the same logical batch.
+    // This prevents Start New Batch from being hijacked by older pending jobs.
     if (requiresPayment) {
       const existingAwaiting = await listAwaitingPaymentEnhanceJobs(sessUser.id);
-      if (existingAwaiting.length > 0) {
-        const existingJobs = existingAwaiting.map((pending) => ({
+      const normalizedClientBatchId = String(clientBatchId || "").trim();
+      const nowMs = Date.now();
+      const REUSE_WINDOW_MS = 2 * 60 * 1000;
+
+      const reusableAwaiting = existingAwaiting.filter((pending) => {
+        const pendingBatchId = String((pending as any)?.payload?.clientBatchId || "").trim();
+
+        // Preferred path: explicit client batch id must match.
+        if (normalizedClientBatchId) {
+          return pendingBatchId === normalizedClientBatchId;
+        }
+
+        // Fallback path for legacy clients that do not send clientBatchId:
+        // only reuse very recent pending jobs to cover accidental double-submit.
+        const createdAtMs = Date.parse(String(pending?.createdAt || ""));
+        return Number.isFinite(createdAtMs) && (nowMs - createdAtMs) <= REUSE_WINDOW_MS;
+      });
+
+      if (reusableAwaiting.length > 0) {
+        const existingJobs = reusableAwaiting.map((pending) => ({
           jobId: pending.jobId,
           imageId: String((pending as any)?.payload?.imageId || ""),
         }));
