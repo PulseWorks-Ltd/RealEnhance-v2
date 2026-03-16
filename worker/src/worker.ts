@@ -92,6 +92,8 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
+const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "0") === "1";
+const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
@@ -3684,8 +3686,56 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
 
+    const anchorPlannerEligible =
+      STAGE2_ANCHOR_PLANNER_ENABLED &&
+      ctx.promptMode === "full";
+
+    let anchorBaseline: StructuralBaseline | null = null;
+    if (anchorPlannerEligible) {
+      if (structuralBaseline) {
+        anchorBaseline = structuralBaseline;
+      } else if (structuralBaselinePromise) {
+        const waitStart = Date.now();
+        nLog("[ANCHOR_BASELINE_SYNC_WAIT_START]", {
+          jobId: payload.jobId,
+          path: ctx.path,
+        });
+        try {
+          anchorBaseline = await structuralBaselinePromise;
+          if (anchorBaseline) {
+            structuralBaseline = anchorBaseline;
+            jobContext.structuralBaseline = anchorBaseline;
+          }
+          nLog("[ANCHOR_BASELINE_SYNC_WAIT_DONE]", {
+            jobId: payload.jobId,
+            path: ctx.path,
+            elapsedMs: Date.now() - waitStart,
+            openings: anchorBaseline?.openings?.length || 0,
+          });
+        } catch (baselineSyncErr: any) {
+          nLog("[ANCHOR_BASELINE_SYNC_WAIT_FAILED]", {
+            jobId: payload.jobId,
+            path: ctx.path,
+            elapsedMs: Date.now() - waitStart,
+            error: baselineSyncErr?.message || String(baselineSyncErr),
+          });
+        }
+      } else {
+        nLog("[ANCHOR_BASELINE_SYNC_UNAVAILABLE]", {
+          jobId: payload.jobId,
+          path: ctx.path,
+        });
+      }
+    }
+
     try {
-      const plan = await planStage2Layout(ctx.basePath, { jobId: payload.jobId });
+      const plan = await planStage2Layout(ctx.basePath, {
+        jobId: payload.jobId,
+        roomType: String(payload.options.roomType || ""),
+        anchorPlannerEnabled: anchorPlannerEligible,
+        structuralBaseline: anchorBaseline,
+        anchorConfidenceThreshold: STAGE2_ANCHOR_MIN_CONFIDENCE,
+      });
       nLog("[STAGE2_LAYOUT_PLANNER]", {
         jobId: payload.jobId,
         path: ctx.path,
@@ -3694,7 +3744,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: plan ? "ready" : "fallback",
         roomType: plan?.room_type || null,
         layoutItems: plan?.layout?.length || 0,
+        anchorPlannerEnabled: anchorPlannerEligible,
+        anchorItem: plan?.anchorItem || null,
+        anchorWall: plan?.anchorWall || null,
+        anchorOrientation: plan?.anchorOrientation || null,
       });
+      if (anchorPlannerEligible && !plan?.anchorItem) {
+        nLog("[ANCHOR_PLAN_FALLBACK]", {
+          jobId: payload.jobId,
+          path: ctx.path,
+          reason: "anchor_unavailable_or_low_confidence",
+        });
+      }
       return plan;
     } catch (plannerError: any) {
       nLog("[STAGE2_LAYOUT_PLANNER]", {
