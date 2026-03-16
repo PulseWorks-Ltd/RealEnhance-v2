@@ -1668,6 +1668,18 @@ Large architectural openings such as sliding glass doors or wide windows
 are structural anchors and must remain identical in perceptual size
 and position relative to the wall.
 
+GLOBAL LIGHT ANCHOR (MANDATORY)
+
+Identify the primary external light-source opening in BEFORE
+(for example: a large sliding door or dominant exterior-facing window).
+
+If that light-source opening in AFTER is no longer a penetrative opening
+and appears replaced by continuous wall surface, decor, or an artificial
+light source (such as a lamp), classify this as infill/removal.
+
+Do NOT classify as valid occlusion when the wall plane behind furniture
+becomes continuous and opaque across the previous opening region.
+
 Occlusion by furniture, window treatments (curtains, blinds, drapes, shutters),
 or temporary movable objects is NOT removal ONLY IF ALL of the following remain true:
 

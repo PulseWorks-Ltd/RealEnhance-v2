@@ -12,6 +12,7 @@ export type OpeningValidatorResult = ValidatorOutcome;
 const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const OPENING_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
+const OPENING_LIGHT_ANCHOR_MODEL = process.env.GEMINI_OPENING_LIGHT_ANCHOR_MODEL || OPENING_MODEL_PRIMARY;
 
 function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
@@ -39,6 +40,99 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     hardFail: parsed.ok ? false : confidence >= 0.85,
     advisorySignals: parsed.ok ? [] : [reason],
   };
+}
+
+type OpeningLightAnchorVerdict = {
+  openingInfilled: boolean;
+  openingRemoved: boolean;
+  openingRelocated: boolean;
+  confidence: number;
+  analysis: string;
+};
+
+function parseOpeningLightAnchorVerdict(rawText: string): OpeningLightAnchorVerdict {
+  const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
+  const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
+  const parsed = JSON.parse(jsonCandidate || "{}");
+
+  const confidenceRaw = Number(parsed?.confidence);
+  const confidence = Number.isFinite(confidenceRaw)
+    ? Math.max(0, Math.min(1, confidenceRaw))
+    : 0;
+
+  return {
+    openingInfilled: parsed?.openingInfilled === true,
+    openingRemoved: parsed?.openingRemoved === true,
+    openingRelocated: parsed?.openingRelocated === true,
+    confidence,
+    analysis: typeof parsed?.analysis === "string" ? parsed.analysis.trim().slice(0, 160) : "",
+  };
+}
+
+async function runOpeningLightAnchorMicroCheck(
+  beforeImageUrl: string,
+  afterImageUrl: string
+): Promise<OpeningLightAnchorVerdict | null> {
+  const ai = getGeminiClient();
+  const before = toBase64(beforeImageUrl).data;
+  const after = toBase64(afterImageUrl).data;
+
+  const prompt = `You are a fast structural opening spot-check validator.
+
+Compare BEFORE vs AFTER for architectural opening infill.
+
+GLOBAL LIGHT ANCHOR RULE:
+Identify the primary exterior light-source opening in BEFORE
+(large window/sliding door/glazed opening).
+
+If in AFTER that region is no longer penetrative and appears as continuous wall,
+or is replaced by decor/artwork/artificial light (lamp), set openingInfilled=true.
+
+Do NOT treat as valid occlusion when the wall plane behind foreground objects
+becomes continuous and opaque where an opening existed.
+
+LEFT-TO-RIGHT WALL SEQUENCE RULE:
+Compare opening sequence across each visible wall from left to right.
+If an opening token disappears and the sequence becomes wall-continuous,
+set openingRemoved=true (and openingInfilled=true when appropriate).
+
+Return JSON only:
+{
+  "openingInfilled": boolean,
+  "openingRemoved": boolean,
+  "openingRelocated": boolean,
+  "confidence": number,
+  "analysis": "short reason"
+}`;
+
+  const response = await (ai as any).models.generateContent({
+    model: OPENING_LIGHT_ANCHOR_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          { text: "IMAGE_BEFORE:" },
+          { inlineData: { mimeType: "image/webp", data: before } },
+          { text: "IMAGE_AFTER:" },
+          { inlineData: { mimeType: "image/webp", data: after } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      topP: 0,
+      maxOutputTokens: 180,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  try {
+    return parseOpeningLightAnchorVerdict(rawText);
+  } catch {
+    return null;
+  }
 }
 
 export async function runOpeningValidator(
@@ -90,7 +184,7 @@ export async function runOpeningValidator(
       : 0;
     const openingResizeHardFail = areaDelta >= 0.3;
     const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
-    const hardFail =
+    let hardFail =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingRelocated ||
@@ -118,6 +212,33 @@ export async function runOpeningValidator(
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
     if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_partial_occlusion_not_allowed");
     if (strictWindowOcclusionFail) reasonParts.push("window_occlusion_exceeds_partial_threshold");
+
+    const microCheckRisk =
+      !hardFail && (
+        deterministic.summary.openingResized ||
+        areaDelta >= 0.2 ||
+        strictWindowOcclusionFail ||
+        strictDoorOcclusionFail
+      );
+
+    if (microCheckRisk) {
+      const micro = await runOpeningLightAnchorMicroCheck(beforeImageUrl, afterImageUrl);
+      if (micro && micro.confidence >= 0.8 && (micro.openingInfilled || micro.openingRemoved || micro.openingRelocated)) {
+        hardFail = true;
+        reasonParts.push(
+          micro.openingInfilled
+            ? "light_anchor_opening_infilled"
+            : micro.openingRemoved
+              ? "light_anchor_opening_removed"
+              : "light_anchor_opening_relocated"
+        );
+        advisorySignals.push(`light_anchor_microcheck_confidence:${micro.confidence.toFixed(3)}`);
+        if (micro.analysis) {
+          advisorySignals.push(`light_anchor_microcheck_analysis:${micro.analysis.replace(/\|/g, "/")}`);
+        }
+      }
+    }
+
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
 
     return {
@@ -373,6 +494,30 @@ If anchor-to-opening spacing increases because an intermediate opening
 disappears or becomes wall, return ok=false.
 
 Do not excuse this as perspective drift when anchor geometry is preserved.
+
+GLOBAL LIGHT ANCHOR (MANDATORY)
+
+Identify the primary external light-source opening in BASELINE
+(for example a sliding glass door or dominant exterior window).
+
+If that region in STAGED is no longer a penetrative opening and appears as:
+- continuous wall,
+- wall-mounted decor/artwork,
+- or an artificial light source substitute (lamp/sconce),
+then this is opening infill/removal and must FAIL.
+
+An opening is not validly occluded when the wall plane behind foreground
+objects becomes continuous and opaque across the previous opening boundary.
+
+LEFT-TO-RIGHT OPENING SEQUENCE (MANDATORY)
+
+For each visible wall, compare architectural token order from left to right.
+Example tokenization:
+BEFORE: [Sliding Door] -> [Wall + AC] -> [Internal Doorway] -> [Corner]
+AFTER:  [Solid Wall]   -> [Wall + AC] -> [Internal Doorway] -> [Corner]
+
+If the ordered sequence changes because an opening token is replaced by
+continuous wall, return ok=false.
 
 Closet-door strictness:
 Closet doors/openings may not disappear or be replaced by wall surface.

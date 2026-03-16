@@ -61,6 +61,13 @@ All windows, doors, closet doors, and walkthrough openings are ABSOLUTELY LOCKED
 Do NOT block, seal, shrink, move, or replace any opening with decor, furniture, or wall-like surfaces.
 All openings must remain visibly present and functionally usable.
 
+CRITICAL ARCHITECTURAL REQUIREMENT:
+Sliding glass doors, internal doorways/openings, windows, and wall arches are ARCHITECTURAL ANCHORS.
+- You are FORBIDDEN from placing headboards, tall casegoods, artwork, mirrors, or decor that requires a solid wall where an opening exists.
+- If placing a bed, the bed/headboard MUST be against an existing solid wall plane, never over a window/door/opening zone.
+- Architectural anchors must remain clear, penetrative openings to the exterior/interior circulation path.
+- If a placement conflicts with an opening anchor, remove or reposition the furniture item.
+
 If furniture placement conflicts with opening visibility/function, remove or simplify furniture near openings.
 `;
 
@@ -91,10 +98,17 @@ export function buildStructuralRetryInjection(opts: {
     };
   }
 
-  if (failureType === "STRUCTURAL_DISTORTION" || failureType === "STRUCTURAL_INVARIANT") {
+  if (failureType === "STRUCTURAL_DISTORTION") {
     return {
       retryTier,
       retryInjection: STRUCTURAL_DISTORTION_BLOCK,
+    };
+  }
+
+  if (failureType === "STRUCTURAL_INVARIANT") {
+    return {
+      retryTier,
+      retryInjection: `${STRUCTURAL_DISTORTION_BLOCK}\n${OPENING_PRESERVATION_BLOCK}`,
     };
   }
 
