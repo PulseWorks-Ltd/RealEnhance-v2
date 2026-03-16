@@ -14,6 +14,23 @@ export type OpeningOrientation = "portrait" | "landscape" | "square";
 export type PaneStructure = "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown";
 export type HeightClass = "standard" | "floor_to_ceiling" | "transom";
 
+export type AnchorFixtureType =
+  | "ac_unit"
+  | "fireplace"
+  | "built_in_cabinet"
+  | "kitchen_island"
+  | "staircase"
+  | "other";
+
+export type AnchorFixture = {
+  id: string;
+  type: AnchorFixtureType;
+  wallIndex: WallIndex;
+  horizontalBand: HorizontalBand;
+  bbox: [number, number, number, number];
+  confidence: number;
+};
+
 export type StructuralOpening = {
   id: string;
   type: StructuralOpeningType;
@@ -44,6 +61,7 @@ export type StructuralOpening = {
 export type StructuralBaseline = {
   cameraOrientation?: string;
   openings: StructuralOpening[];
+  anchorFixtures?: AnchorFixture[];
   wallCount: number;
 };
 
@@ -57,6 +75,7 @@ export type OpeningValidationResult = {
     openingResized: boolean;
     openingClassMismatch: boolean;
     openingBandMismatch: boolean;
+    openingSignatureMismatch?: boolean;
     outOfFrameOpenings: string[];
     openingCount?: {
       before: number;
@@ -152,6 +171,16 @@ Return JSON in this exact schema:
       "confidence": number
     }
   ],
+  "anchorFixtures": [
+    {
+      "id": string,
+      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "other",
+      "wallIndex": 0 | 1 | 2 | 3,
+      "horizontalBand": "left_third" | "center_third" | "right_third",
+      "bbox": [x1, y1, x2, y2],
+      "confidence": number
+    }
+  ],
   "wallCount": number
 }
 
@@ -170,7 +199,34 @@ Rules:
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
 
+Anchor fixture rules:
+- Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
+- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges.
+- Exclude movable furniture/decor.
+- If no stable fixture is visible, return an empty array.
+
 Return only valid JSON.`;
+
+function isAnchorFixtureType(value: string): value is AnchorFixtureType {
+  return (
+    value === "ac_unit" ||
+    value === "fireplace" ||
+    value === "built_in_cabinet" ||
+    value === "kitchen_island" ||
+    value === "staircase" ||
+    value === "other"
+  );
+}
+
+function normalizeAnchorFixtureType(value: unknown): AnchorFixtureType {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "ac_unit" || raw === "aircon" || raw === "air_conditioner") return "ac_unit";
+  if (raw === "fireplace") return "fireplace";
+  if (raw === "built_in_cabinet" || raw === "built_in" || raw === "cabinetry") return "built_in_cabinet";
+  if (raw === "kitchen_island" || raw === "island") return "kitchen_island";
+  if (raw === "staircase" || raw === "stairs") return "staircase";
+  return "other";
+}
 
 function extractJsonCandidate(text: string): string {
   if (!text) return "";
@@ -575,6 +631,41 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
   });
 
   const uniqueWalls = new Set<number>(openings.map((o) => o.wallIndex));
+  const anchorFixtures: AnchorFixture[] = Array.isArray(input.anchorFixtures)
+    ? input.anchorFixtures
+        .map((fixture: any, index: number) => {
+          if (!fixture || typeof fixture !== "object") return null;
+          const fixtureType = isAnchorFixtureType(String(fixture.type || ""))
+            ? (fixture.type as AnchorFixtureType)
+            : normalizeAnchorFixtureType(fixture.type);
+
+          const wallIndexCandidate = typeof fixture.wallIndex === "number" && isWallIndex(fixture.wallIndex)
+            ? fixture.wallIndex
+            : null;
+          if (wallIndexCandidate === null) return null;
+
+          const horizontalBandCandidate = typeof fixture.horizontalBand === "string" && isHorizontalBand(fixture.horizontalBand)
+            ? fixture.horizontalBand
+            : "center_third";
+          const bboxCandidate = normalizeBbox(fixture, horizontalBandCandidate, "mid_zone");
+          const confidenceCandidate =
+            typeof fixture.confidence === "number" && Number.isFinite(fixture.confidence)
+              ? Math.max(0, Math.min(1, fixture.confidence))
+              : 0.75;
+
+          return {
+            id: typeof fixture.id === "string" && fixture.id.trim().length > 0
+              ? fixture.id.trim()
+              : `F${index + 1}`,
+            type: fixtureType,
+            wallIndex: wallIndexCandidate,
+            horizontalBand: horizontalBandCandidate,
+            bbox: bboxCandidate,
+            confidence: confidenceCandidate,
+          } as AnchorFixture;
+        })
+        .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)
+    : [];
   const wallCountFromInput = typeof input.wallCount === "number" && Number.isFinite(input.wallCount)
     ? Math.max(1, Math.min(4, Math.round(input.wallCount)))
     : uniqueWalls.size;
@@ -582,8 +673,84 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
   return {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
+    anchorFixtures,
     wallCount: wallCountFromInput,
   };
+}
+
+function bboxCenterX(bbox: [number, number, number, number]): number {
+  return (bbox[0] + bbox[2]) / 2;
+}
+
+type WallSequenceContext = {
+  openingTokens: string[];
+  fixtureTokens: string[];
+  allTokens: string[];
+};
+
+function buildWallSequenceContext(
+  openings: StructuralOpening[],
+  fixtures: AnchorFixture[] | undefined,
+  wallIndex: WallIndex
+): WallSequenceContext {
+  const openingItems = openings
+    .filter((opening) => opening.wallIndex === wallIndex)
+    .map((opening) => ({
+      kind: "opening" as const,
+      token: `O:${opening.type}`,
+      x: bboxCenterX(opening.bbox),
+    }));
+
+  const fixtureItems = (fixtures || [])
+    .filter((fixture) => fixture.wallIndex === wallIndex && fixture.confidence >= 0.65)
+    .map((fixture) => ({
+      kind: "fixture" as const,
+      token: `F:${fixture.type}`,
+      x: bboxCenterX(fixture.bbox),
+    }));
+
+  const all = [...openingItems, ...fixtureItems]
+    .sort((a, b) => {
+      if (Math.abs(a.x - b.x) > 1e-4) return a.x - b.x;
+      if (a.kind === b.kind) return 0;
+      return a.kind === "fixture" ? -1 : 1;
+    })
+    .map((item) => item.token);
+
+  return {
+    openingTokens: openingItems.sort((a, b) => a.x - b.x).map((item) => item.token),
+    fixtureTokens: fixtureItems.sort((a, b) => a.x - b.x).map((item) => item.token),
+    allTokens: all,
+  };
+}
+
+function isTokenSubsequence(source: string[], target: string[]): boolean {
+  if (source.length === 0) return true;
+  let sourceIdx = 0;
+  for (const token of target) {
+    if (token === source[sourceIdx]) {
+      sourceIdx += 1;
+      if (sourceIdx >= source.length) return true;
+    }
+  }
+  return false;
+}
+
+function hasStableAnchorReference(
+  baselineFixtures: AnchorFixture[] | undefined,
+  detectedFixtures: AnchorFixture[] | undefined,
+  wallIndex: WallIndex
+): boolean {
+  const base = (baselineFixtures || []).filter((fixture) => fixture.wallIndex === wallIndex && fixture.confidence >= 0.65);
+  const det = (detectedFixtures || []).filter((fixture) => fixture.wallIndex === wallIndex && fixture.confidence >= 0.65);
+  if (base.length === 0 || det.length === 0) return false;
+
+  return base.some((fixture) =>
+    det.some((candidate) =>
+      candidate.type === fixture.type &&
+      candidate.horizontalBand === fixture.horizontalBand
+    )
+  );
 }
 
 function validateOpeningValidationResult(input: any, baseline: StructuralBaseline): OpeningValidationResult {
@@ -741,6 +908,13 @@ export async function extractStructuralBaseline(imageUrl: string): Promise<Struc
       heightClass: opening.heightClass,
       confidence: opening.confidence,
     })),
+    anchorFixtures: (baseline.anchorFixtures || []).map((fixture) => ({
+      id: fixture.id,
+      type: fixture.type,
+      wallIndex: fixture.wallIndex,
+      horizontalBand: fixture.horizontalBand,
+      confidence: fixture.confidence,
+    })),
     wallCount: baseline.wallCount,
   }));
   return baseline;
@@ -875,6 +1049,33 @@ export async function validateOpeningPreservation(
     });
   }
 
+  for (const wallIndex of [0, 1, 2, 3] as WallIndex[]) {
+    const baselineSeq = buildWallSequenceContext(baseline.openings, baseline.anchorFixtures, wallIndex);
+    const detectedSeq = buildWallSequenceContext(detected.openings, detected.anchorFixtures, wallIndex);
+
+    if (baselineSeq.openingTokens.length === 0) continue;
+
+    const openingSubsequenceOk = isTokenSubsequence(baselineSeq.openingTokens, detectedSeq.openingTokens);
+    const openingCountDropped = detectedSeq.openingTokens.length < baselineSeq.openingTokens.length;
+    const orderedSignatureMismatch = !openingSubsequenceOk || openingCountDropped;
+    if (!orderedSignatureMismatch) continue;
+
+    const anchorReferenced = hasStableAnchorReference(baseline.anchorFixtures, detected.anchorFixtures, wallIndex);
+    openingRemoved = true;
+    openingBandMismatch = true;
+    if (anchorReferenced || openingCountDropped) {
+      openingInfilled = true;
+    }
+
+    analysisNotes.push(
+      `Wall ${wallIndex} opening signature mismatch (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=${anchorReferenced ? "present" : "absent"}.`
+    );
+
+    console.log(
+      `[OPENING_SIGNATURE_MISMATCH] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=${anchorReferenced}`
+    );
+  }
+
   const summary = {
     openingRemoved,
     openingInfilled,
@@ -883,6 +1084,7 @@ export async function validateOpeningPreservation(
     openingResized,
     openingClassMismatch,
     openingBandMismatch,
+    openingSignatureMismatch: analysisNotes.some((note) => note.includes("opening signature mismatch (L->R)")),
     outOfFrameOpenings,
     openingCount: {
       before: baseline.openings.length,

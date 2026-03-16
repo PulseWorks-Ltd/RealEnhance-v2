@@ -7413,6 +7413,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let fixturePass = true;
       let floorPass = true;
       const stage2AdvisorySignals: string[] = [];
+      let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
       let openingStructuralSignalDetected = false;
 
@@ -7443,6 +7444,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         currentValidator = "openings";
         const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
         appendAdvisories("openings", opRes.advisorySignals || []);
+        openingSignatureSignalDetected = (opRes.advisorySignals || [])
+          .map((signal) => normalizeValidatorReason(String(signal || "")))
+          .some((signal) => signal === "opening_signature_mismatch");
         openingPass = true;
         const openingSignals = extractOpeningSignals(opRes);
         const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
@@ -7512,6 +7516,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
 
         nLog("[STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)");
+        nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          signalDetected: openingSignatureSignalDetected,
+          decision: "proceed",
+          decisionPath: "post_opening_validator",
+          stage2Blocked,
+        });
         logValidatorResult({
           jobId: payload.jobId,
           imageId: payload.imageId,
@@ -7682,6 +7695,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
+          nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            signalDetected: openingSignatureSignalDetected,
+            decision: "retry",
+            decisionPath: "stage2_gate_failure",
+            validator: stage2GateFailure.validator,
+            reason: normalizeValidatorReason(stage2GateFailure.reason),
+          });
           logValidateFinal(attempt, "retry", attempt);
           logStage2Retry(attempt, gateRetryReason);
           logEvent("STAGE_RETRY", {
@@ -7704,6 +7727,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallbackPath;
         stage2CandidatePath = fallbackPath;
+        nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          signalDetected: openingSignatureSignalDetected,
+          decision: "reject",
+          decisionPath: "stage2_gate_failure_exhausted",
+          validator: stage2GateFailure.validator,
+          reason: normalizeValidatorReason(stage2GateFailure.reason),
+        });
         logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }
@@ -7762,6 +7795,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
+          nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            signalDetected: openingSignatureSignalDetected,
+            decision: "retry",
+            decisionPath: "unified_validator",
+            reason: normalizeValidatorReason(unifiedLocalResult.severity.toLowerCase()),
+          });
           logValidateFinal(attempt, "retry", attempt);
           logStage2Retry(attempt, retryReason);
           logEvent("STAGE_RETRY", {
@@ -7784,6 +7826,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallbackPath;
         stage2CandidatePath = fallbackPath;
+        nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          signalDetected: openingSignatureSignalDetected,
+          decision: "reject",
+          decisionPath: "unified_validator_exhausted",
+          reason: normalizeValidatorReason(unifiedLocalResult.severity.toLowerCase()),
+        });
         logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }

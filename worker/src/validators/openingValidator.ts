@@ -210,6 +210,9 @@ export async function runOpeningValidator(
     }
     if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
+    if ((deterministic.summary as any).openingSignatureMismatch === true) {
+      advisorySignals.push("opening_signature_mismatch");
+    }
     if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_partial_occlusion_not_allowed");
     if (strictWindowOcclusionFail) reasonParts.push("window_occlusion_exceeds_partial_threshold");
 
