@@ -622,6 +622,17 @@ PRESERVE ALL PIXELS THAT REPRESENT PHYSICAL OBJECTS.
   • Remain in the same position
   • Remain visually unchanged
 
+4. Exterior View Preservation (Interior Images Only)
+  When processing an interior room, the view through all windows, doors, and
+  glass openings is a FIXED ARCHITECTURAL ELEMENT.
+  • NO SKY ENHANCEMENT: Do not change sky color, add clouds, or replace
+    blown-out windows with blue-sky composites.
+  • NO LANDSCAPING ALTERATIONS: Do not add, saturate, or modify foliage,
+    trees, or gardens visible outside.
+  • NO COLOR SHIFTS OUTSIDE: Interior lighting/white-balance adjustments must
+    not bleed into the exterior view. Exterior content and color must remain
+    pixel-identical to the input.
+
 3. Texture Integrity (Critical)
   • Do NOT smooth, regenerate, or repaint surfaces
   • Carpet pile, wood grain, tile texture, wall texture must remain visible

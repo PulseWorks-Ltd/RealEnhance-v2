@@ -4,14 +4,20 @@ export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
 I. ILLUMINATION & HIGH-KEY EXPOSURE
 - GLOBAL BRIGHTNESS: Aggressively lift midtones and shadows to achieve a high-key, luminous look. The room should feel filled with natural light.
 - WALL & CEILING TARGET: Target a clean, bright white-point for all white surfaces. Remove any dull grey or muddy tones from corners and back walls.
-- DIGITAL HDR BALANCE: Simulate an over-exposed interior look that is balanced by a perfectly exposed 'Window Pull.' Recover exterior garden/sky detail so it is crisp and saturated, never blown out.
+- DIGITAL HDR BALANCE: Simulate an over-exposed interior look while preserving the original exterior view exactly as captured through windows and doors.
 - LUMINANCE: Ensure the overall image is significantly brighter than the original, prioritizing a 'sunny day' feel over literal shadow accuracy.
 
 II. COLOR & CHROMATIC PURITY
 - WHITE BALANCE: Aggressively neutralize yellow (tungsten) or blue (daylight) casts. All trims, ceilings, and doors must render as pure, crisp, neutral whites.
-- VIBRANCY: Apply +8% saturation to natural elements (wood floors, carpets, and outdoor greenery) to make the space feel inviting and vibrant.
+- VIBRANCY: Apply subtle saturation improvements only to interior elements (e.g. wood floors and carpets).
 
-III. STRUCTURAL & DEPTH LOCK
+III. EXTERIOR VIEW PRESERVATION (INTERIOR IMAGES ONLY)
+- Treat all views through windows, doors, and glass openings as fixed architectural elements.
+- NO SKY ENHANCEMENT: Do not change sky color, add clouds, or replace blown-out window regions with synthetic sky.
+- NO LANDSCAPING ALTERATIONS: Do not add, saturate, or modify exterior foliage, trees, lawns, or gardens.
+- NO OUTDOOR COLOR SHIFTS: Interior white-balance and exposure corrections must not alter outdoor content or color.
+
+IV. STRUCTURAL & DEPTH LOCK
 - ARCHITECTURAL INTEGRITY: Maintain 100% accuracy. Do not warp, rotate, or change perspective.
 - OPENING PRESERVATION: Preserve the 'void' of doorways and halls. Do not paint over dark openings; they must remain clear architectural penetrations.
 - NO STAGING: Do not add or move any objects or furniture.
