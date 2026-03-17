@@ -100,6 +100,10 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
     ? "block"
     : "log";
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
+const STAGE1B_LOW_DETAIL_STDDEV_MIN = Math.max(
+  0.1,
+  Number(process.env.STAGE1B_LOW_DETAIL_STDDEV_MIN || 3.0)
+);
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { runUnifiedValidator, type Stage2LocalSignals } from "./validators/unifiedValidator";
@@ -1207,6 +1211,14 @@ async function evaluateStage1BFullPolicy(input: {
   stage1BConsensusClassification: { mode: string; derivedWarnings: number };
   outputCorrupt: boolean;
 }): Promise<Stage1BPolicyDecision> {
+  nLog("[STAGE1B_POLICY]", {
+    mode: "FULL_FURNITURE_REMOVAL",
+    localValidators: "LOG_ONLY",
+    decisionSource: "GEMINI_ONLY",
+    attempt: input.attemptNo,
+    jobId: input.jobId,
+  });
+
   const stage1BIsExtremeDeviation =
     Number.isFinite(input.stage1BStructuralDeviationDeg) && input.stage1BStructuralDeviationDeg >= 90;
   const stage1BIsExtremeMaskCollapse =
@@ -1226,7 +1238,10 @@ async function evaluateStage1BFullPolicy(input: {
   };
 
   const stage1BLocalPrecheckResult = runUnifiedValidator(stage1BLocalSignals);
-  const stage1BIsCatastrophicLocalFail = stage1BLocalPrecheckResult.severity === "CATASTROPHIC";
+  const stage1BIsCatastrophicLocalFail =
+    input.outputCorrupt === true ||
+    !Number.isFinite(input.stage1BMaskedDriftPct) ||
+    !Number.isFinite(input.stage1BSemanticWallDriftPct);
 
   nLog("[STAGE1B_EXTREME_GATE]", {
     jobId: input.jobId,
@@ -1244,6 +1259,14 @@ async function evaluateStage1BFullPolicy(input: {
   });
 
   if (input.outputCorrupt) {
+    nLog("[STAGE1B_FULL_GEMINI_DECISION]", {
+      passed: false,
+      failReasons: ["invalid_output_corrupt"],
+      confidence: 0,
+      source: "LOCAL_CATASTROPHIC",
+      jobId: input.jobId,
+      attempt: input.attemptNo,
+    });
     return {
       effectiveHardFail: true,
       effectiveViolationType: "invalid_output_corrupt",
@@ -1251,13 +1274,20 @@ async function evaluateStage1BFullPolicy(input: {
     };
   }
 
-  if (stage1BIsExtremeMaskCollapse || stage1BIsCatastrophicLocalFail) {
+  if (stage1BIsExtremeMaskCollapse) {
+    nLog("[STAGE1B_FULL_GEMINI_DECISION]", {
+      passed: false,
+      failReasons: ["extreme_mask_collapse"],
+      confidence: 0,
+      source: "LOCAL_CATASTROPHIC",
+      jobId: input.jobId,
+      attempt: input.attemptNo,
+    });
     return {
       effectiveHardFail: true,
       effectiveViolationType: "extreme_structural_violation",
       effectiveReasons: [
         ...(stage1BIsExtremeMaskCollapse ? ["extreme_mask_collapse"] : []),
-        ...(stage1BIsCatastrophicLocalFail ? ["catastrophic_local_fail"] : []),
       ],
     };
   }
@@ -1275,6 +1305,15 @@ async function evaluateStage1BFullPolicy(input: {
     failReasons: geminiResult.failReasons,
     confidence: geminiResult.confidence,
     notes: geminiResult.notes,
+  });
+
+  nLog("[STAGE1B_FULL_GEMINI_DECISION]", {
+    passed: geminiResult.passed,
+    failReasons: geminiResult.failReasons,
+    confidence: geminiResult.confidence,
+    source: "GEMINI",
+    jobId: input.jobId,
+    attempt: input.attemptNo,
   });
 
   if (geminiResult.passed) {
@@ -6027,6 +6066,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       const stage1BAttemptNo = attempt + 1;
       const stage1BSigned = await captureSignedStageOutput("1B", stage1BAttemptNo, candidate);
+      let stage1BOutputCorrupt = false;
+      let stage1BOutputAvgStdDev: number | null = null;
+      let stage1BOutputLowDetail = false;
+      try {
+        const outputStats = fs.statSync(candidate);
+        const outputSharp = sharp(candidate);
+        const outputMeta = await outputSharp.metadata();
+        const outputSignalStats = await outputSharp.stats();
+        const hasValidDims =
+          Number.isFinite(outputMeta?.width) && Number.isFinite(outputMeta?.height) &&
+          Number(outputMeta.width) > 0 && Number(outputMeta.height) > 0;
+        const channelStdDevs = (outputSignalStats?.channels || [])
+          .map((c: any) => Number(c?.stdev))
+          .filter((v: number) => Number.isFinite(v));
+        stage1BOutputAvgStdDev = channelStdDevs.length > 0
+          ? channelStdDevs.reduce((acc: number, v: number) => acc + v, 0) / channelStdDevs.length
+          : null;
+        stage1BOutputLowDetail =
+          Number.isFinite(stage1BOutputAvgStdDev) &&
+          Number(stage1BOutputAvgStdDev) < STAGE1B_LOW_DETAIL_STDDEV_MIN;
+
+        stage1BOutputCorrupt = !(outputStats.size > 0 && hasValidDims) || stage1BOutputLowDetail;
+      } catch {
+        stage1BOutputCorrupt = true;
+      }
+      nLog("[STAGE1B_OUTPUT_INTEGRITY]", {
+        jobId: payload.jobId,
+        attempt: stage1BAttemptNo,
+        corrupt: stage1BOutputCorrupt,
+        lowDetail: stage1BOutputLowDetail,
+        avgStdDev: stage1BOutputAvgStdDev,
+        lowDetailStdDevMin: STAGE1B_LOW_DETAIL_STDDEV_MIN,
+      });
 
       const wallDelta = await detectWallPlaneExpansion(path1A, candidate);
       nLog(
@@ -6247,7 +6319,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage1BSemanticWallDriftPct,
           stage1BMaskedDriftPct,
           stage1BConsensusClassification,
-          outputCorrupt: false,
+          outputCorrupt: stage1BOutputCorrupt,
         });
         effectiveHardFail = fullPolicyDecision.effectiveHardFail;
         effectiveViolationType = fullPolicyDecision.effectiveViolationType;
