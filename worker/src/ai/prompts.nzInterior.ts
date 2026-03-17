@@ -1,37 +1,22 @@
 export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
-  return `As a professional real estate photography editor, enhance this ${roomType || "room"} to meet high-end New Zealand listing standards. Your goal is to replicate a professional full-frame camera look using multi-exposure bracketed (HDR) techniques.
+  return `As a professional real estate photography editor, enhance this room to meet high-end New Zealand 'High-Key' listing standards. Your goal is to create a bright, sunny, and airy 'Open-Home' atmosphere.
 
-I. LIGHTING & EXPOSURE (PRO-CAMERA SIMULATION)
-- BRIGHTNESS: Lift midtones and shadows to create an airy, open-home feel. Ensure corners and back walls are well-illuminated without muddy noise.
-- WINDOW PULL: Recover detail in all window/door apertures. The exterior view must be clearly visible, properly saturated, and NOT blown out or clipped to white.
-- DYNAMIC RANGE: Balance exposure so interior details and exterior views coexist realistically, mimicking a professional flambient (flash + ambient) shot.
-- CONTRAST: Increase local contrast (clarity) on architectural junctions (baseboards, window frames, door trims) to create crisp, high-definition edges.
+I. ILLUMINATION & HIGH-KEY EXPOSURE
+- GLOBAL BRIGHTNESS: Aggressively lift midtones and shadows to achieve a high-key, luminous look. The room should feel filled with natural light.
+- WALL & CEILING TARGET: Target a clean, bright white-point for all white surfaces. Remove any dull grey or muddy tones from corners and back walls.
+- DIGITAL HDR BALANCE: Simulate an over-exposed interior look that is balanced by a perfectly exposed 'Window Pull.' Recover exterior garden/sky detail so it is crisp and saturated, never blown out.
+- LUMINANCE: Ensure the overall image is significantly brighter than the original, prioritizing a 'sunny day' feel over literal shadow accuracy.
 
-II. COLOR & SATURATION (NEUTRALIZATION)
-- WHITE BALANCE: Neutralize all color casts. Identify white surfaces (ceilings, window trims, baseboards) and ensure they render as clean, neutral whites, removing yellow tungsten or blue daylight tints.
-- SATURATION: Apply +5% selective saturation to natural textures (wood flooring, carpets, exterior greenery) while maintaining neutral tones for walls and ceilings.
-- VIBRANCY: Enhance the sunny-day feel by lifting global vibrancy slightly without altering the original color family of the room.
+II. COLOR & CHROMATIC PURITY
+- WHITE BALANCE: Aggressively neutralize yellow (tungsten) or blue (daylight) casts. All trims, ceilings, and doors must render as pure, crisp, neutral whites.
+- VIBRANCY: Apply +8% saturation to natural elements (wood floors, carpets, and outdoor greenery) to make the space feel inviting and vibrant.
 
-III. STRUCTURAL INTEGRITY (ARCHITECTURAL LOCK)
-- GEOMETRY: Maintain 100% architectural accuracy. Do not rotate, straighten, crop, reframe, or warp perspective.
-- PERMANENT FEATURES: Do not add, remove, or modify walls, floors, ceilings, windows, doors, or built-in fixtures.
-- NO STAGING: Do not add, remove, or move any furniture or decor.
-- DEPTH VOIDS: Do not fill in dark openings. Doorways to other rooms must remain visible as dark penetrative voids to preserve floor-plan logic.
+III. STRUCTURAL & DEPTH LOCK
+- ARCHITECTURAL INTEGRITY: Maintain 100% accuracy. Do not warp, rotate, or change perspective.
+- OPENING PRESERVATION: Preserve the 'void' of doorways and halls. Do not paint over dark openings; they must remain clear architectural penetrations.
+- NO STAGING: Do not add or move any objects or furniture.
 
-IV. FINAL OUTPUT QUALITY
-- Ensure the image is sharp, clear, and noise-free.
-- Avoid aggressive highlight compression that makes the image look flat or grey.
-- Final output must look like a professional, high-end photograph taken with a tripod-mounted DSLR.
-
-WINDOW / OPENING PRESERVATION RULE:
-- Do NOT overexpose exterior sky visible through windows.
-- Preserve visible window frame edges and contrast.
-- Maintain clear boundary between wall surface and window opening.
-- Do not flatten bright exterior areas into pure white.
-- Avoid highlight clipping inside openings.
-- Preserve all visible architectural edge definition.
-
-Your only task is to optimize lighting, color, and clarity of the existing room. Do not alter structure, geometry, layout, or contents.`.trim();
+The final result must look like a high-end, professionally edited photograph from a top-tier NZ real estate agency.`.trim();
 }
 
 export function buildStage1AInteriorPromptNZHighEnd(roomType: string): string {
