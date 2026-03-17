@@ -167,10 +167,13 @@ export async function applyEdit({
       userInstruction: instruction,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
+    const removeModeTargetedGuidance = mode === "Remove"
+      ? `\n\nREMOVE MODE TARGETING RULES:\n- Remove only the object(s) inside the WHITE mask region that correspond to the user instruction.\n- Do NOT perform full-room decluttering.\n- Do NOT remove unrelated furniture outside the WHITE mask region.\n- Keep all BLACK-mask regions unchanged except minimal edge blending.`
+      : "";
     const removeReferenceGuidance = mode === "Remove" && stage1AReferencePath
       ? `\n\nREMOVE MODE STRUCTURAL REFERENCE:\nA second image is provided as Stage-1A structural reference.\nUse it only to preserve architecture and opening continuity in the masked region.\nDo not copy textures directly from the reference image.`
       : "";
-    const finalPrompt = `${prompt}${removeReferenceGuidance}`;
+    const finalPrompt = `${prompt}${removeModeTargetedGuidance}${removeReferenceGuidance}`;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
 
     let referenceImageBuffer: Buffer | undefined;

@@ -30,6 +30,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   });
 
   const parts: any[] = [
+    { text: "BASE_IMAGE_TO_EDIT:" },
     {
       inlineData: {
         mimeType: "image/webp",
@@ -38,6 +39,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     },
   ];
   if (referenceImageBuffer) {
+    parts.push({ text: "OPTIONAL_REFERENCE_IMAGE (ARCHITECTURE ONLY, NOT EDIT TARGET):" });
     parts.push({
       inlineData: {
         mimeType: "image/webp",
@@ -46,6 +48,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     });
   }
   if (maskPngBuffer) {
+    parts.push({ text: "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):" });
     parts.push({
       inlineData: {
         mimeType: "image/png",
