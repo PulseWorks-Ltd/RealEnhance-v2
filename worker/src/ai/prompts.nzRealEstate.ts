@@ -958,8 +958,10 @@ Preserve surface textures and shadows.`.trim();
   Surface reconstruction is permitted ONLY behind removed furniture
   and must exactly match surrounding visible structure.
 
-  If reconstruction would require uncertain inference of openings,
-  preserve the furniture instead.
+  If reconstruction involves uncertainty, prioritize removal and use surrounding
+  textures to infer simple flat wall/floor continuations even if the exact seam
+  is obscured. Preserve furniture only when removal would likely create or
+  alter a real opening or known structural boundary.
 
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 Do not introduce any new physical structures or furniture components.
@@ -1152,7 +1154,10 @@ If removal would require uncertain inference of:
 • Wall corner continuation
 • Door frame seams
 
-→ Preserve the furniture item.
+→ Prioritize removal; use surrounding textures to infer simple flat wall/floor
+  continuations even if the exact seam is obscured. Preserve the furniture item
+  only when removal would likely create or alter a real opening or known
+  structural boundary.
 
 When this rule conflicts with the goal of making the room empty,
 preserving architecture takes precedence.
