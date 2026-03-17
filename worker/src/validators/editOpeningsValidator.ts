@@ -1,218 +1,332 @@
+import sharp from "sharp";
+import { getGeminiClient } from "../ai/gemini";
+import { nLog } from "../logger";
 import {
   extractStructuralBaseline,
   type StructuralOpening,
 } from "./openingPreservationValidator";
 
-type OpeningKind = "window" | "door";
-
-type MatchedOpening = {
-  kind: OpeningKind;
-  baselineId: string;
-  editedId: string;
-  iou: number;
-  centerDelta: number;
-  areaDeltaRatio: number;
-  aspectDelta: number;
-};
-
 export type EditOpeningsComparedAgainst = "stage1a" | "edit_input";
+
+type NormalizedBox = [number, number, number, number];
+
+type GeminiVerdict = {
+  passed: boolean;
+  reason: string;
+  details?: string;
+};
 
 export type EditOpeningsValidationSummary = {
   validator: "edit_openings";
   passed: boolean;
   comparedAgainst: EditOpeningsComparedAgainst;
   reason: string;
-  windowsBefore: number;
-  windowsAfter: number;
-  doorsBefore: number;
-  doorsAfter: number;
-  countMismatch: boolean;
-  displacementViolation: boolean;
-  sizeOrShapeViolation: boolean;
-  unmatchedBaselineOpenings: string[];
-  unmatchedEditedOpenings: string[];
-  tolerance: {
-    minIoU: number;
-    maxCenterDelta: number;
-    maxAreaDeltaRatio: number;
-    maxAspectDelta: number;
+  details?: string;
+  evaluatedOpeningsCount: number;
+  evaluatedOpenings: Array<{
+    id: string;
+    type: string;
+    bbox: NormalizedBox;
+  }>;
+  maskRegion: {
+    bbox: NormalizedBox;
+    expandedBbox: NormalizedBox;
   };
-  matches: MatchedOpening[];
+  roi: {
+    bbox: NormalizedBox;
+    width: number;
+    height: number;
+  };
+  gemini: {
+    model: string;
+    rawResponse: string;
+  };
 };
 
-const MIN_IOU = Number(process.env.EDIT_OPENINGS_MIN_IOU || 0.2);
-const MAX_CENTER_DELTA = Number(process.env.EDIT_OPENINGS_MAX_CENTER_DELTA || 0.11);
-const MAX_AREA_DELTA_RATIO = Number(process.env.EDIT_OPENINGS_MAX_AREA_DELTA_RATIO || 0.42);
-const MAX_ASPECT_DELTA = Number(process.env.EDIT_OPENINGS_MAX_ASPECT_DELTA || 0.45);
+const EDIT_OPENINGS_GEMINI_MODEL = String(process.env.EDIT_OPENINGS_GEMINI_MODEL || "gemini-2.5-flash");
+const MASK_MARGIN = Number(process.env.EDIT_OPENINGS_MASK_MARGIN || 0.06);
+const ROI_PADDING = Number(process.env.EDIT_OPENINGS_ROI_PADDING || 0.04);
 
-function area(bbox: [number, number, number, number]): number {
-  const w = Math.max(0, bbox[2] - bbox[0]);
-  const h = Math.max(0, bbox[3] - bbox[1]);
-  return w * h;
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
 }
 
-function iou(a: [number, number, number, number], b: [number, number, number, number]): number {
-  const x1 = Math.max(a[0], b[0]);
-  const y1 = Math.max(a[1], b[1]);
-  const x2 = Math.min(a[2], b[2]);
-  const y2 = Math.min(a[3], b[3]);
-  const inter = area([x1, y1, x2, y2]);
-  if (inter <= 0) return 0;
-  const union = area(a) + area(b) - inter;
-  if (union <= 0) return 0;
-  return inter / union;
+function toNormBbox(b: NormalizedBox): NormalizedBox {
+  return [clamp01(b[0]), clamp01(b[1]), clamp01(b[2]), clamp01(b[3])];
 }
 
-function centerDistance(a: [number, number, number, number], b: [number, number, number, number]): number {
-  const ax = (a[0] + a[2]) / 2;
-  const ay = (a[1] + a[3]) / 2;
-  const bx = (b[0] + b[2]) / 2;
-  const by = (b[1] + b[3]) / 2;
-  const dx = ax - bx;
-  const dy = ay - by;
-  return Math.sqrt(dx * dx + dy * dy);
+function intersects(a: NormalizedBox, b: NormalizedBox): boolean {
+  return !(a[2] <= b[0] || a[0] >= b[2] || a[3] <= b[1] || a[1] >= b[3]);
 }
 
-function normalizeKind(opening: StructuralOpening): OpeningKind | null {
+function expand(b: NormalizedBox, margin: number): NormalizedBox {
+  return toNormBbox([b[0] - margin, b[1] - margin, b[2] + margin, b[3] + margin]);
+}
+
+function union(bboxes: NormalizedBox[]): NormalizedBox {
+  if (bboxes.length === 0) return [0, 0, 1, 1];
+  let x1 = 1;
+  let y1 = 1;
+  let x2 = 0;
+  let y2 = 0;
+  for (const b of bboxes) {
+    x1 = Math.min(x1, b[0]);
+    y1 = Math.min(y1, b[1]);
+    x2 = Math.max(x2, b[2]);
+    y2 = Math.max(y2, b[3]);
+  }
+  return toNormBbox([x1, y1, x2, y2]);
+}
+
+function extractJson(text: string): GeminiVerdict {
+  const cleaned = String(text || "").replace(/```json|```/gi, "").trim();
+  const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
+  const parsed = JSON.parse(jsonCandidate || "{}");
+  const passed = parsed?.passed === true;
+  const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
+    ? parsed.reason.trim().slice(0, 120)
+    : passed
+      ? "openings_preserved"
+      : "opening_walled_over";
+  const details = typeof parsed?.details === "string" && parsed.details.trim().length > 0
+    ? parsed.details.trim().slice(0, 240)
+    : undefined;
+  return { passed, reason, details };
+}
+
+async function maskToBbox(mask: Buffer, width: number, height: number): Promise<NormalizedBox | null> {
+  const maskRaw = await sharp(mask)
+    .resize(width, height, { fit: "fill" })
+    .ensureAlpha()
+    .extractChannel(0)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const v = maskRaw.data[y * width + x] ?? 0;
+      if (v <= 127) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0 || maxY < 0) return null;
+
+  return toNormBbox([
+    minX / width,
+    minY / height,
+    (maxX + 1) / width,
+    (maxY + 1) / height,
+  ]);
+}
+
+function openingKind(opening: StructuralOpening): "window" | "door" | null {
   if (opening.type === "window") return "window";
   if (opening.type === "door") return "door";
   return null;
 }
 
-function keyCount(openings: StructuralOpening[], key: OpeningKind): number {
-  return openings.reduce((sum, opening) => sum + (normalizeKind(opening) === key ? 1 : 0), 0);
-}
-
-function openingAspect(opening: StructuralOpening): number {
-  if (Number.isFinite(opening.approxAspectRatio) && opening.approxAspectRatio > 0) {
-    return opening.approxAspectRatio;
-  }
-  if (Number.isFinite(opening.aspect_ratio) && opening.aspect_ratio > 0) {
-    return opening.aspect_ratio;
-  }
-  const w = Math.max(0.0001, opening.bbox[2] - opening.bbox[0]);
-  const h = Math.max(0.0001, opening.bbox[3] - opening.bbox[1]);
-  return w / h;
+function toPixels(bbox: NormalizedBox, width: number, height: number): { left: number; top: number; width: number; height: number } {
+  const left = Math.max(0, Math.floor(bbox[0] * width));
+  const top = Math.max(0, Math.floor(bbox[1] * height));
+  const right = Math.min(width, Math.ceil(bbox[2] * width));
+  const bottom = Math.min(height, Math.ceil(bbox[3] * height));
+  return {
+    left,
+    top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
 }
 
 export async function runEditOpeningsValidator(
   baselineImagePath: string,
   editedImagePath: string,
+  mask: Buffer,
   comparedAgainst: EditOpeningsComparedAgainst = "stage1a",
 ): Promise<EditOpeningsValidationSummary> {
-  const baseline = await extractStructuralBaseline(baselineImagePath);
-  const edited = await extractStructuralBaseline(editedImagePath);
-
-  const baselineOpenings = baseline.openings.filter((opening) => normalizeKind(opening) !== null);
-  const editedOpenings = edited.openings.filter((opening) => normalizeKind(opening) !== null);
-
-  const unmatchedBaseline = [...baselineOpenings];
-  const unmatchedEdited = [...editedOpenings];
-  const matches: MatchedOpening[] = [];
-
-  const kinds: OpeningKind[] = ["window", "door"];
-  for (const kind of kinds) {
-    const baselineKind = unmatchedBaseline.filter((opening) => normalizeKind(opening) === kind);
-    const editedKind = unmatchedEdited.filter((opening) => normalizeKind(opening) === kind);
-
-    for (const baselineOpening of baselineKind) {
-      let bestIndex = -1;
-      let bestScore = -1;
-      let bestIou = 0;
-      let bestCenter = 999;
-
-      for (let i = 0; i < editedKind.length; i += 1) {
-        const candidate = editedKind[i];
-        const overlap = iou(baselineOpening.bbox, candidate.bbox);
-        const center = centerDistance(baselineOpening.bbox, candidate.bbox);
-        const score = overlap - center;
-        if (score > bestScore) {
-          bestScore = score;
-          bestIndex = i;
-          bestIou = overlap;
-          bestCenter = center;
-        }
-      }
-
-      if (bestIndex < 0) continue;
-
-      const matchedEdited = editedKind.splice(bestIndex, 1)[0];
-      const baselineIdx = unmatchedBaseline.findIndex((entry) => entry.id === baselineOpening.id);
-      if (baselineIdx >= 0) unmatchedBaseline.splice(baselineIdx, 1);
-      const editedIdx = unmatchedEdited.findIndex((entry) => entry.id === matchedEdited.id);
-      if (editedIdx >= 0) unmatchedEdited.splice(editedIdx, 1);
-
-      const baseArea = Math.max(0.000001, area(baselineOpening.bbox));
-      const editedArea = Math.max(0.000001, area(matchedEdited.bbox));
-      const areaDeltaRatio = Math.abs(editedArea - baseArea) / baseArea;
-      const aspectDelta = Math.abs(openingAspect(matchedEdited) - openingAspect(baselineOpening));
-
-      matches.push({
-        kind,
-        baselineId: baselineOpening.id,
-        editedId: matchedEdited.id,
-        iou: Number(bestIou.toFixed(4)),
-        centerDelta: Number(bestCenter.toFixed(4)),
-        areaDeltaRatio: Number(areaDeltaRatio.toFixed(4)),
-        aspectDelta: Number(aspectDelta.toFixed(4)),
-      });
-    }
+  const baselineMeta = await sharp(baselineImagePath).metadata();
+  const width = baselineMeta.width || 0;
+  const height = baselineMeta.height || 0;
+  if (width <= 0 || height <= 0) {
+    throw new Error("edit_openings_validator_failed: invalid_baseline_dimensions");
   }
 
-  const countMismatch =
-    keyCount(baselineOpenings, "window") !== keyCount(editedOpenings, "window")
-    || keyCount(baselineOpenings, "door") !== keyCount(editedOpenings, "door");
+  const maskBbox = await maskToBbox(mask, width, height);
+  if (!maskBbox) {
+    return {
+      validator: "edit_openings",
+      passed: true,
+      comparedAgainst,
+      reason: "mask_empty",
+      evaluatedOpeningsCount: 0,
+      evaluatedOpenings: [],
+      maskRegion: {
+        bbox: [0, 0, 0, 0],
+        expandedBbox: [0, 0, 0, 0],
+      },
+      roi: {
+        bbox: [0, 0, 1, 1],
+        width,
+        height,
+      },
+      gemini: {
+        model: EDIT_OPENINGS_GEMINI_MODEL,
+        rawResponse: "{\"passed\":true,\"reason\":\"mask_empty\"}",
+      },
+    };
+  }
 
-  const displacementViolation = matches.some((m) => m.iou < MIN_IOU || m.centerDelta > MAX_CENTER_DELTA);
-  const sizeOrShapeViolation = matches.some(
-    (m) => m.areaDeltaRatio > MAX_AREA_DELTA_RATIO || m.aspectDelta > MAX_ASPECT_DELTA,
+  const expandedMaskBbox = expand(maskBbox, MASK_MARGIN);
+  const structural = await extractStructuralBaseline(baselineImagePath);
+  const relevantOpenings = structural.openings.filter((opening) => {
+    const kind = openingKind(opening);
+    if (!kind) return false;
+    const bbox = toNormBbox(opening.bbox as NormalizedBox);
+    return intersects(bbox, expandedMaskBbox);
+  });
+
+  nLog("[edit-openings-validator] openings_near_mask", {
+    count: relevantOpenings.length,
+    maskBbox,
+    expandedMaskBbox,
+    openings: relevantOpenings.map((o) => ({ id: o.id, type: o.type, bbox: o.bbox })),
+  });
+
+  if (relevantOpenings.length === 0) {
+    return {
+      validator: "edit_openings",
+      passed: true,
+      comparedAgainst,
+      reason: "no_openings_near_mask",
+      evaluatedOpeningsCount: 0,
+      evaluatedOpenings: [],
+      maskRegion: {
+        bbox: maskBbox,
+        expandedBbox: expandedMaskBbox,
+      },
+      roi: {
+        bbox: expandedMaskBbox,
+        width,
+        height,
+      },
+      gemini: {
+        model: EDIT_OPENINGS_GEMINI_MODEL,
+        rawResponse: "{\"passed\":true,\"reason\":\"no_openings_near_mask\"}",
+      },
+    };
+  }
+
+  const openingBoxes = relevantOpenings.map((o) => toNormBbox(o.bbox as NormalizedBox));
+  const roiBbox = expand(union([expandedMaskBbox, ...openingBoxes]), ROI_PADDING);
+  const roiPx = toPixels(roiBbox, width, height);
+
+  const beforeCrop = await sharp(baselineImagePath)
+    .extract(roiPx)
+    .webp()
+    .toBuffer();
+
+  const afterCrop = await sharp(editedImagePath)
+    .resize(width, height, { fit: "fill" })
+    .extract(roiPx)
+    .webp()
+    .toBuffer();
+
+  const ai = getGeminiClient();
+  const openingsJson = JSON.stringify(
+    relevantOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
   );
+  const prompt = `You are validating architectural opening preservation for a real-estate image edit.
 
-  const unmatchedBaselineOpenings = unmatchedBaseline.map((opening) => opening.id);
-  const unmatchedEditedOpenings = unmatchedEdited.map((opening) => opening.id);
+Compare BEFORE vs AFTER in the provided ROI crop only.
 
-  const passed =
-    !countMismatch
-    && !displacementViolation
-    && !sizeOrShapeViolation
-    && unmatchedBaselineOpenings.length === 0
-    && unmatchedEditedOpenings.length === 0;
+Scope rules:
+- Focus ONLY on openings near the mask area.
+- Openings to evaluate are listed in BASELINE_OPENINGS_JSON.
+- Treat furniture/object occlusion as allowed.
+- Partial visibility is allowed.
+- FAIL only if an opening that existed before is now walled over or replaced by continuous wall surface.
 
-  const windowsBefore = keyCount(baselineOpenings, "window");
-  const windowsAfter = keyCount(editedOpenings, "window");
-  const doorsBefore = keyCount(baselineOpenings, "door");
-  const doorsAfter = keyCount(editedOpenings, "door");
+Return strict JSON only:
+{
+  "passed": boolean,
+  "reason": "openings_preserved" | "opening_walled_over",
+  "details": string
+}
 
-  const reason = passed
-    ? "openings_preserved"
-    : countMismatch
-      ? "opening_count_changed"
-      : unmatchedBaselineOpenings.length > 0 || unmatchedEditedOpenings.length > 0
-        ? "opening_set_changed"
-        : displacementViolation
-          ? "opening_displacement_detected"
-          : "opening_size_or_shape_changed";
+BASELINE_OPENINGS_JSON:
+${openingsJson}`;
 
-  return {
-    validator: "edit_openings",
-    passed,
-    comparedAgainst,
-    reason,
-    windowsBefore,
-    windowsAfter,
-    doorsBefore,
-    doorsAfter,
-    countMismatch,
-    displacementViolation,
-    sizeOrShapeViolation,
-    unmatchedBaselineOpenings,
-    unmatchedEditedOpenings,
-    tolerance: {
-      minIoU: MIN_IOU,
-      maxCenterDelta: MAX_CENTER_DELTA,
-      maxAreaDeltaRatio: MAX_AREA_DELTA_RATIO,
-      maxAspectDelta: MAX_ASPECT_DELTA,
+  const response = await (ai as any).models.generateContent({
+    model: EDIT_OPENINGS_GEMINI_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          { text: "BEFORE_ROI:" },
+          { inlineData: { mimeType: "image/webp", data: beforeCrop.toString("base64") } },
+          { text: "AFTER_ROI:" },
+          { inlineData: { mimeType: "image/webp", data: afterCrop.toString("base64") } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      topP: 0.2,
+      maxOutputTokens: 200,
+      responseMimeType: "application/json",
     },
-    matches,
+  });
+
+  const rawResponse = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const verdict = extractJson(rawResponse);
+
+  nLog("[edit-openings-validator] gemini_response", {
+    model: EDIT_OPENINGS_GEMINI_MODEL,
+    rawResponse,
+    verdict,
+  });
+
+  const summary: EditOpeningsValidationSummary = {
+    validator: "edit_openings",
+    passed: verdict.passed,
+    comparedAgainst,
+    reason: verdict.reason,
+    details: verdict.details,
+    evaluatedOpeningsCount: relevantOpenings.length,
+    evaluatedOpenings: relevantOpenings.map((o) => ({
+      id: o.id,
+      type: o.type,
+      bbox: toNormBbox(o.bbox as NormalizedBox),
+    })),
+    maskRegion: {
+      bbox: maskBbox,
+      expandedBbox: expandedMaskBbox,
+    },
+    roi: {
+      bbox: roiBbox,
+      width: roiPx.width,
+      height: roiPx.height,
+    },
+    gemini: {
+      model: EDIT_OPENINGS_GEMINI_MODEL,
+      rawResponse,
+    },
   };
+
+  nLog("[edit-openings-validator] final_decision", {
+    passed: summary.passed,
+    reason: summary.reason,
+    evaluatedOpeningsCount: summary.evaluatedOpeningsCount,
+  });
+
+  return summary;
 }

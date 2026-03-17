@@ -9860,6 +9860,8 @@ const worker = new Worker(
 
           let outPath: string;
           let openingsValidationSummary: any = null;
+          let openingsValidationRequiredForPublish = false;
+          let openingsValidationPassedForPublish = mode === "Restore";
 
           if (mode === "Restore") {
             // Restore mode intentionally remains pixel restoration with no model retry loop.
@@ -9877,6 +9879,7 @@ const worker = new Worker(
             const isReplaceMode = lowerMode === "replace";
             const isRemoveMode = lowerMode === "remove";
             const runEditOpeningsValidation = isAddMode || isReplaceMode || isRemoveMode;
+            openingsValidationRequiredForPublish = isAddMode || isReplaceMode;
             let attempt = 1;
             const maxAttempts = 2;
             let lastSummary: any = null;
@@ -9914,6 +9917,7 @@ const worker = new Worker(
                 const openingsValidation = await runEditOpeningsValidator(
                   validationBaselinePath,
                   outPath,
+                  maskBuf,
                   comparedAgainst,
                 );
                 openingsValidationSummary = {
@@ -9921,6 +9925,9 @@ const worker = new Worker(
                   mode,
                 };
                 openingFail = openingsValidation.passed !== true;
+                if (!openingFail && openingsValidationRequiredForPublish) {
+                  openingsValidationPassedForPublish = true;
+                }
               } else {
                 openingsValidationSummary = {
                   validator: "edit_openings",
@@ -10009,6 +10016,13 @@ const worker = new Worker(
             }
 
             openingsValidationSummary = openingsValidationSummary || lastSummary;
+            if (openingsValidationRequiredForPublish) {
+              openingsValidationPassedForPublish = openingsValidationSummary?.passed === true;
+            }
+          }
+
+          if (openingsValidationRequiredForPublish && !openingsValidationPassedForPublish) {
+            throw new Error("region_edit_publish_blocked: openings_validation_not_passed");
           }
 
           nLog("[worker-region-edit] Edit complete, publishing:", outPath);
