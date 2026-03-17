@@ -1143,7 +1143,7 @@ shape, scale, position, and structure exactly.
 Stage 1B is strictly subtractive, but structural preservation takes precedence over maximal removal.
 
 TASK:
-Remove all movable furniture that can be removed WITHOUT risking architectural or opening alteration, while preserving the single most functionally dominant furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
+Remove all movable furniture that can be removed WITHOUT risking architectural or opening alteration, while preserving the primary anchor furniture piece per clearly defined room zone. The room structure, fixtures, and finishes must remain intact.
 
 If removal would require uncertain inference of:
 • Window frame geometry
@@ -1161,7 +1161,7 @@ TARGETS FOR REMOVAL (ERASE ALL NON-DOMINANT MOVABLE ITEMS)
 
 Remove movable furniture, decor, rugs, plants, clutter, and personal items only where structural boundaries remain unambiguous:
 
-• Preserve exactly ONE functionally dominant furniture piece per clearly defined room zone.
+• Preserve the primary anchor furniture piece per clearly defined room zone.
 
 PARTIAL ANCHOR PRESERVATION — CRITICAL
 
@@ -1181,7 +1181,10 @@ Do NOT invent substitute anchor furniture.
 Do NOT recompose the room by deleting the dominant anchor.
 Anchor removal for aesthetic improvement is prohibited.
 
-If multiple anchor pieces are visible, retain the most visually dominant anchor
+If multiple anchor pieces are visible, retain the primary room-type anchor first
+(Bed/Sofa/Dining Table/Desk where applicable).
+Secondary items, regardless of size or visual mass, must be removed if a room-type primary anchor is present.
+If no room-type primary anchor is visible, retain the most visually dominant anchor
 based on size, floor contact area, and visual weight.
 
 Structured-retain declutter removes clutter — not anchor furniture.
@@ -1227,7 +1230,7 @@ Preserved boundary-adjacent items must:
 • Be minimal
 • Not introduce new structural geometry
 • Not alter opening shapes
-• Not exceed one dominant anchor per zone
+• Keep the primary anchor as the clear focal point
 
 Architectural integrity takes precedence over decluttering completeness.
 
@@ -1258,13 +1261,12 @@ If uncertain which item is dominant:
 → Keep the item most central to the room’s primary function.
 → Remove all other movable items.
 
-FUNCTIONAL ANCHOR LIMIT — STRICT
+PRIMARY ANCHOR FOCUS
 
-Only ONE movable anchor item per zone may remain.
+Ensure one clear primary anchor per zone.
 
-Do NOT preserve multiple similar furniture pieces.
-Do NOT preserve secondary seating.
-Do NOT preserve decorative or auxiliary furniture.
+Removal of secondary furniture is preferred, but not required when removal risks structural corruption.
+Do NOT preserve decorative or auxiliary furniture unless needed for structural safety.
 
 Boundary-adjacent preserved items that remain for structural safety
 do NOT count as additional anchors,
