@@ -100,9 +100,13 @@ const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
     ? "block"
     : "log";
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
-const STAGE1B_LOW_DETAIL_STDDEV_MIN = Math.max(
-  0.1,
-  Number(process.env.STAGE1B_LOW_DETAIL_STDDEV_MIN || 3.0)
+const STAGE1B_BLANK_STDDEV_MAX = Math.max(
+  0.01,
+  Number(process.env.STAGE1B_BLANK_STDDEV_MAX || 0.35)
+);
+const STAGE1B_BLANK_RANGE_MAX = Math.max(
+  0,
+  Number(process.env.STAGE1B_BLANK_RANGE_MAX || 4)
 );
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
@@ -1237,11 +1241,8 @@ async function evaluateStage1BFullPolicy(input: {
     islandDetectionDrift: 0,
   };
 
-  const stage1BLocalPrecheckResult = runUnifiedValidator(stage1BLocalSignals);
   const stage1BIsCatastrophicLocalFail =
-    input.outputCorrupt === true ||
-    !Number.isFinite(input.stage1BMaskedDriftPct) ||
-    !Number.isFinite(input.stage1BSemanticWallDriftPct);
+    input.outputCorrupt === true;
 
   nLog("[STAGE1B_EXTREME_GATE]", {
     jobId: input.jobId,
@@ -1271,24 +1272,6 @@ async function evaluateStage1BFullPolicy(input: {
       effectiveHardFail: true,
       effectiveViolationType: "invalid_output_corrupt",
       effectiveReasons: ["invalid_output_corrupt"],
-    };
-  }
-
-  if (stage1BIsExtremeMaskCollapse) {
-    nLog("[STAGE1B_FULL_GEMINI_DECISION]", {
-      passed: false,
-      failReasons: ["extreme_mask_collapse"],
-      confidence: 0,
-      source: "LOCAL_CATASTROPHIC",
-      jobId: input.jobId,
-      attempt: input.attemptNo,
-    });
-    return {
-      effectiveHardFail: true,
-      effectiveViolationType: "extreme_structural_violation",
-      effectiveReasons: [
-        ...(stage1BIsExtremeMaskCollapse ? ["extreme_mask_collapse"] : []),
-      ],
     };
   }
 
@@ -6068,7 +6051,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage1BSigned = await captureSignedStageOutput("1B", stage1BAttemptNo, candidate);
       let stage1BOutputCorrupt = false;
       let stage1BOutputAvgStdDev: number | null = null;
-      let stage1BOutputLowDetail = false;
+      let stage1BOutputBlankLike = false;
+      let stage1BOutputMaxRange: number | null = null;
       try {
         const outputStats = fs.statSync(candidate);
         const outputSharp = sharp(candidate);
@@ -6080,14 +6064,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const channelStdDevs = (outputSignalStats?.channels || [])
           .map((c: any) => Number(c?.stdev))
           .filter((v: number) => Number.isFinite(v));
+        const channelRanges = (outputSignalStats?.channels || [])
+          .map((c: any) => Number(c?.max) - Number(c?.min))
+          .filter((v: number) => Number.isFinite(v));
         stage1BOutputAvgStdDev = channelStdDevs.length > 0
           ? channelStdDevs.reduce((acc: number, v: number) => acc + v, 0) / channelStdDevs.length
           : null;
-        stage1BOutputLowDetail =
+        stage1BOutputMaxRange = channelRanges.length > 0
+          ? Math.max(...channelRanges)
+          : null;
+        stage1BOutputBlankLike =
           Number.isFinite(stage1BOutputAvgStdDev) &&
-          Number(stage1BOutputAvgStdDev) < STAGE1B_LOW_DETAIL_STDDEV_MIN;
+          Number.isFinite(stage1BOutputMaxRange) &&
+          Number(stage1BOutputAvgStdDev) <= STAGE1B_BLANK_STDDEV_MAX &&
+          Number(stage1BOutputMaxRange) <= STAGE1B_BLANK_RANGE_MAX;
 
-        stage1BOutputCorrupt = !(outputStats.size > 0 && hasValidDims) || stage1BOutputLowDetail;
+        stage1BOutputCorrupt = !(outputStats.size > 0 && hasValidDims) || stage1BOutputBlankLike;
       } catch {
         stage1BOutputCorrupt = true;
       }
@@ -6095,9 +6087,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         attempt: stage1BAttemptNo,
         corrupt: stage1BOutputCorrupt,
-        lowDetail: stage1BOutputLowDetail,
+        blankLike: stage1BOutputBlankLike,
         avgStdDev: stage1BOutputAvgStdDev,
-        lowDetailStdDevMin: STAGE1B_LOW_DETAIL_STDDEV_MIN,
+        maxRange: stage1BOutputMaxRange,
+        blankStdDevMax: STAGE1B_BLANK_STDDEV_MAX,
+        blankRangeMax: STAGE1B_BLANK_RANGE_MAX,
       });
 
       const wallDelta = await detectWallPlaneExpansion(path1A, candidate);
