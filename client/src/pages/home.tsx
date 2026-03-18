@@ -13,6 +13,7 @@ export default function Home() {
   const { toast } = useToast();
   const [dismissingWelcome, setDismissingWelcome] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
+  const [hasSelectedImages, setHasSelectedImages] = useState(false);
 
   const shouldShowWelcome = !!user && user.hasSeenWelcome === false;
   const isUnverified = !!user && user.emailVerified !== true;
@@ -93,6 +94,7 @@ export default function Home() {
         </div>
       )}
 
+      {!hasSelectedImages && (
       <div className="mx-auto pt-2 pb-0 mb-2 max-w-4xl px-4 text-center sm:px-6 lg:px-8 shrink-0">
         <h1 className="bg-gradient-to-b from-slate-900 to-slate-700 bg-clip-text text-lg sm:text-xl font-extrabold tracking-tight text-transparent">
           Turn Every Listing into a Show-Home
@@ -101,10 +103,11 @@ export default function Home() {
           Transform your full property gallery into market-ready assets in under 2 minutes
         </p>
       </div>
+      )}
       
       {/* Batch Processor - Main Interface */}
       <div className="flex-1 min-h-0 relative">
-        <BatchProcessor />
+        <BatchProcessor onFilesSelectedChange={setHasSelectedImages} />
       </div>
     </div>
   );

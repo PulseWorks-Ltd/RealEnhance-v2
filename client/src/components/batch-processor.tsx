@@ -918,7 +918,11 @@ const BATCH_PHASE_LABELS: Record<BatchPhaseState, string> = {
   PROCESSING: "Phase 3 — Active Processing",
 };
 
-export default function BatchProcessor() {
+export default function BatchProcessor({
+  onFilesSelectedChange,
+}: {
+  onFilesSelectedChange?: (hasFiles: boolean) => void;
+} = {}) {
   // Staging style preset for the batch - default preserves legacy NZ Standard behavior
   const [stagingStyle, setStagingStyle] = useState<StagingStyle>("standard_listing");
   
@@ -2306,6 +2310,11 @@ export default function BatchProcessor() {
   useEffect(() => {
     setProgressText("");
   }, [files]);
+
+  // Notify parent page when user has selected files so page-level chrome can adapt.
+  useEffect(() => {
+    onFilesSelectedChange?.(files.length > 0);
+  }, [files.length, onFilesSelectedChange]);
 
   // Restore batch job state on component mount
   useEffect(() => {
@@ -6383,8 +6392,8 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
-            <div className="w-full border-b border-slate-200 bg-white h-10 shrink-0 mb-0">
+          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100 pt-2">
+            <div className="w-full border-b border-slate-200 bg-white h-11 shrink-0 mb-0">
               <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
                 <div className="h-0.5 w-8 bg-slate-200 mx-2" />
