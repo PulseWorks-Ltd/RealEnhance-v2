@@ -108,20 +108,32 @@ Avoid:
 - minimal or incomplete staging
 - half-finished compositions that look sparsely edited
 
-ANCHOR STABILITY GUIDANCE (SOFT)
+ANCHOR STABILITY GUIDANCE (HARD CONSTRAINT)
 
-- Prefer to keep the position of major existing furniture when it already fits the room well.
-- Use existing furniture as a guide for scale, orientation, and layout.
-- Only reposition large furniture when there is a clear improvement in layout, function, or realism.
+The primary anchor furniture item MUST remain exactly where it is in the input image.
+
+- Keep the anchor in the same position relative to walls, floor plane, and visible openings.
+- Keep the same footprint, scale, and overall proportions as the input image.
+- Keep alignment, orientation, and floor/wall contact points visually consistent with the original placement.
 
 Do NOT:
 
+- move or relocate the anchor item
+- scale the anchor item larger or smaller
+- replace the anchor with a different furniture piece
+- remove the anchor and restage the room without it
 - introduce layout changes that create architectural conflicts (e.g. blocking windows, misaligned placement against walls)
 
-Note:
+Allowed transformation (paint-over only):
 
-- Furniture may still be replaced, resized, or restyled as needed.
-- This guidance is about layout stability, not preserving furniture identity.
+- You may restyle the anchor by painting over the existing piece.
+- You may change fabric, color, material, finish, and detailing.
+- You may make subtle geometry refinements for realism, but must preserve original footprint, placement, and scale.
+
+Composition rule:
+
+- Arrange all additional staging around the fixed anchor item.
+- The anchor defines the layout; other furniture must adapt to it.
 
 ROOM-TYPE TARGET
 Stage as: ${room}
