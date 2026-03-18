@@ -6393,16 +6393,6 @@ export default function BatchProcessor({
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
           <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100 pt-2">
-            <div className="w-full border-b border-slate-200 bg-white h-11 shrink-0 mb-0">
-              <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
-                <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
-                <div className="h-0.5 w-8 bg-slate-200 mx-2" />
-                <div className="text-indigo-700 flex items-center gap-1 font-bold"><span className="w-4 h-4 rounded-full bg-indigo-100 flex items-center justify-center text-[10px]">2</span> Image Preparation</div>
-                <div className="h-0.5 w-8 bg-slate-200 mx-2" />
-                <div className="text-slate-500 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">3</span> Enhance</div>
-              </div>
-            </div>
-
             {files.length === 0 ? (
               <div className="flex-1 min-h-0 overflow-y-auto p-8">
                 <EmptyStateLaunchpad
@@ -6512,18 +6502,18 @@ export default function BatchProcessor({
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[auto_minmax(0,1fr)_auto_auto]">
-                  <div className="flex items-center justify-between gap-3 py-1.5 z-10">
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-                      Image {currentImageIndex + 1} of {files.length}
-                    </div>
-                    <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
-                      {configuredImagesCount} / {files.length} configured
-                    </div>
-                  </div>
-
+                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_auto_minmax(112px,auto)]">
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col py-2">
                     <div className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
+                        <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                          Image {currentImageIndex + 1} of {files.length}
+                        </div>
+                        <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                          {configuredImagesCount} / {files.length} configured
+                        </div>
+                      </div>
+
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -6592,7 +6582,7 @@ export default function BatchProcessor({
                     })()}
                   </div>
 
-                  <div className="w-full max-w-full overflow-x-auto py-2 snap-x scroll-smooth shrink-0">
+                  <div className="w-full max-w-full min-h-[112px] overflow-x-auto py-2 snap-x scroll-smooth shrink-0">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
