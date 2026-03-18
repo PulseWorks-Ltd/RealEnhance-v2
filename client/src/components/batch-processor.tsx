@@ -6174,7 +6174,7 @@ export default function BatchProcessor() {
   }, [runState, hasInFlightResults, results]);
 
   return (
-  <div className="w-full">
+  <div className="w-full flex flex-col min-h-0">
       {/* Hidden global file input for launchpad and other UI surfaces */}
       <input
         ref={fileInputRef}
@@ -6189,7 +6189,7 @@ export default function BatchProcessor() {
 
       {/* Tab Content */}
   <div
-    className={`relative w-full h-full overflow-hidden bg-white flex flex-col font-sans text-slate-900 ${activeTab === 'upload' ? 'px-8 py-6' : ''}`}
+    className={`relative w-full flex-1 min-h-0 bg-white flex flex-col font-sans text-slate-900 ${activeTab === 'upload' ? 'px-8 py-6' : ''}`}
     style={{
       backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.05) 1px, transparent 1px)",
       backgroundSize: "24px 24px",
@@ -6234,7 +6234,7 @@ export default function BatchProcessor() {
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
-          <div className="text-center relative z-10">
+          <div className="flex-1 min-h-0 overflow-y-auto text-center relative z-10">
             <h2 className="text-2xl font-semibold text-slate-900 mb-4">Upload Your Images</h2>
             <p className="text-slate-600 mb-8">
               {files.length === 0 
@@ -6367,7 +6367,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full h-full overflow-hidden flex flex-col bg-slate-100">
+          <div className="w-full flex-1 min-h-0 flex flex-col bg-slate-100">
             <div className="w-full border-b border-slate-200 bg-white h-10 shrink-0 mb-0">
               <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
@@ -6379,7 +6379,7 @@ export default function BatchProcessor() {
             </div>
 
             {files.length === 0 ? (
-              <div className="flex-1 overflow-auto p-8">
+              <div className="flex-1 min-h-0 overflow-y-auto p-8">
                 <EmptyStateLaunchpad
                   onFileSelect={triggerFileSelector}
                   onFileDrop={handleFileDrop}
@@ -6393,9 +6393,10 @@ export default function BatchProcessor() {
                 />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 w-full flex overflow-hidden">
-                <aside className="w-80 h-full flex flex-col overflow-hidden bg-white border-r border-slate-200 p-3 pt-0">
-                  <div className="space-y-3 flex-1 overflow-y-auto pr-1 pb-2">
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="w-full min-h-full flex">
+                <aside className="w-80 min-h-0 flex flex-col bg-white border-r border-slate-200 p-3 pt-0">
+                  <div className="space-y-3 pr-1 pb-2">
                     <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-2 z-10">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
@@ -6502,7 +6503,7 @@ export default function BatchProcessor() {
                   </div>
                 </aside>
 
-                <div className="flex-1 h-full min-h-0 px-5 flex flex-col overflow-hidden bg-slate-50">
+                <div className="flex-1 min-h-0 px-5 flex flex-col bg-slate-50">
                   <div className="flex items-center justify-between gap-3 shrink-0 py-1.5 z-10">
                     <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                       Image {currentImageIndex + 1} of {files.length}
@@ -6512,8 +6513,8 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full mb-0">
-                    <div className="flex-1 min-h-0 max-h-[65vh] w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full mb-0 py-2">
+                    <div className="flex-1 min-h-[320px] w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
@@ -6687,11 +6688,12 @@ export default function BatchProcessor() {
                     </div>
                   </div>
                 </div>
+                </div>
               </div>
             )}
 
             {files.length > 0 && (
-              <footer className="sticky bottom-0 mt-auto py-4 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 z-50 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
+              <footer className="mt-auto py-4 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
                 <button
                   onClick={handleStartEnhance}
                   disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index))}
@@ -6709,7 +6711,7 @@ export default function BatchProcessor() {
 
         {/* Enhance Tab - Premium Command Center */}
         {activeTab === "enhance" && (
-          <div className="h-full bg-slate-50 relative pointer-events-auto overflow-x-hidden flex flex-col min-h-0">
+          <div className="bg-slate-50 relative pointer-events-auto overflow-x-hidden flex flex-col flex-1 min-h-0">
             <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
             <div
               className="absolute inset-0 opacity-40"
@@ -6721,7 +6723,8 @@ export default function BatchProcessor() {
             
             {(runState === "idle") ? (
               /* Idle State - "Ready to Start" similar to before but cleaner */
-              <div className="bg-white rounded-xl shadow-lg p-8 max-w-4xl mx-auto mt-8">
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="bg-white rounded-xl shadow-lg p-8 max-w-4xl mx-auto mt-8">
                   <div className="text-center py-8">
                     <div className="text-6xl mb-4">✨</div>
                     <h3 className="text-xl font-medium text-gray-900 mb-2">
@@ -6765,6 +6768,7 @@ export default function BatchProcessor() {
                       </button>
                     </div>
                   </div>
+                </div>
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
@@ -6932,8 +6936,8 @@ export default function BatchProcessor() {
                     </div>
                 </div>
 
-                  {/* 3. Gallery Grid + bottom actions (inside same scroll pane) */}
-                  <div className={runState === "done" ? "max-h-[calc(100vh-21rem)] overflow-y-auto pr-1 pb-2" : ""}>
+                  {/* 3. Gallery Grid */}
+                  <div className="pb-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {files.map((file, i) => {
                         const result = results[i];
@@ -7485,48 +7489,47 @@ export default function BatchProcessor() {
                     })}
                 </div>
                 
-                  {/* Final Actions */}
-                  {runState === "done" && !hasInFlightResults && (
-                  <div className="sticky bottom-0 mt-8 flex flex-col items-center gap-3 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
-                    <p className="text-xs text-slate-500">Verify images before use in property marketing.</p>
-                    <div className="flex items-center justify-center gap-4">
-                      <p className="text-xs text-slate-500">Downloads all currently viewed images.</p>
-                       <button 
-                        onClick={downloadZip}
-                        disabled={isDownloadingZip}
-                        className="bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm flex items-center gap-2"
-                      >
-                        {isDownloadingZip && <Loader2 className="w-4 h-4 animate-spin"/>}
-                        Download All (ZIP)
-                      </button>
-                      <button 
-                        onClick={handleRestart}
-                        className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
-                      >
-                        Start New Batch
-                      </button>
-                    </div>
-                    </div>
-                  )}
-                  
-                  {/* Fallback: Show restart button if marked done but buttons are hidden (stuck state recovery) */}
-                  {runState === "done" && hasInFlightResults && (
-                    <div className="sticky bottom-0 mt-8 flex flex-col items-center gap-4 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
-                      <div className="text-center text-sm text-slate-600">
-                        <p>Some images may still be processing. You can wait or start fresh.</p>
-                      </div>
-                      <button 
-                        onClick={handleRestart}
-                        className="bg-slate-600 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition-colors font-medium"
-                      >
-                        Clear & Start New Batch
-                      </button>
-                    </div>
-                  )}
                 </div>
 
              </div>
              </div>
+            )}
+
+            {runState === "done" && !hasInFlightResults && (
+              <div className="mt-auto flex flex-col items-center gap-3 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm shrink-0">
+                <p className="text-xs text-slate-500">Verify images before use in property marketing.</p>
+                <div className="flex items-center justify-center gap-4">
+                  <p className="text-xs text-slate-500">Downloads all currently viewed images.</p>
+                   <button 
+                    onClick={downloadZip}
+                    disabled={isDownloadingZip}
+                    className="bg-emerald-600 text-white px-6 py-3 rounded-lg hover:bg-emerald-700 transition-colors font-medium shadow-sm flex items-center gap-2"
+                  >
+                    {isDownloadingZip && <Loader2 className="w-4 h-4 animate-spin"/>}
+                    Download All (ZIP)
+                  </button>
+                  <button 
+                    onClick={handleRestart}
+                    className="bg-white border border-slate-300 text-slate-700 px-6 py-3 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                  >
+                    Start New Batch
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {runState === "done" && hasInFlightResults && (
+              <div className="mt-auto flex flex-col items-center gap-4 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm shrink-0">
+                <div className="text-center text-sm text-slate-600">
+                  <p>Some images may still be processing. You can wait or start fresh.</p>
+                </div>
+                <button 
+                  onClick={handleRestart}
+                  className="bg-slate-600 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition-colors font-medium"
+                >
+                  Clear & Start New Batch
+                </button>
+              </div>
             )}
           </div>
         )}
