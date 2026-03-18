@@ -6410,12 +6410,12 @@ export default function BatchProcessor() {
               </div>
             ) : (
               <div className="w-full flex-1 min-h-0 flex overflow-hidden">
-                <aside className="w-80 min-h-0 shrink-0 flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-white p-3 pt-0">
+                <aside className="w-80 min-h-0 shrink-0 flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-white p-3 pt-2">
                   <div className="space-y-3 pr-1 pb-2">
-                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-2 z-10">
+                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white pt-3 pb-2 z-10">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
-                        <p className="text-xs text-slate-600">Global settings for this batch.</p>
+                        <p className="text-sm text-slate-600 leading-5">Global settings for this batch.</p>
                       </div>
                       <button
                         onClick={() => setActiveTab("upload")}
@@ -6687,7 +6687,7 @@ export default function BatchProcessor() {
 
                     return (
                       <>
-                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1 pt-2">
                           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-xs uppercase tracking-wide text-slate-500">Image Progress</p>
                             <p className="text-sm font-semibold text-slate-900">Image {currentImageIndex + 1} of {files.length}</p>
@@ -6807,7 +6807,7 @@ export default function BatchProcessor() {
           <div className="bg-slate-50 relative pointer-events-auto overflow-x-hidden flex flex-col flex-1 min-h-0">
             <style>{`@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
             <div
-              className="absolute inset-0 opacity-40"
+              className="absolute inset-0 opacity-40 pointer-events-none"
               style={{
                 backgroundImage: `radial-gradient(circle, rgb(148 163 184) 1px, transparent 1px)`,
                 backgroundSize: '24px 24px',
@@ -6816,7 +6816,7 @@ export default function BatchProcessor() {
             
             {(runState === "idle") ? (
               /* Idle State - "Ready to Start" similar to before but cleaner */
-              <div className="flex-1 min-h-0 overflow-y-auto">
+              <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
                 <div className="bg-white rounded-xl shadow-lg p-8 max-w-4xl mx-auto mt-8">
                   <div className="text-center py-8">
                     <div className="text-6xl mb-4">✨</div>
@@ -6853,6 +6853,7 @@ export default function BatchProcessor() {
                     </p>
                     <div className="flex justify-center mt-4">
                       <button
+                        type="button"
                         onClick={() => setActiveTab("images")}
                         className="text-gray-500 hover:text-gray-700 text-sm"
                         data-testid="button-back-workspace"
@@ -8084,7 +8085,14 @@ export default function BatchProcessor() {
 
       <Dialog
         open={creditGateModal.open}
-        onOpenChange={(open) => setCreditGateModal((prev) => ({ ...prev, open }))}
+        onOpenChange={(open) => {
+          setCreditGateModal((prev) => ({ ...prev, open }));
+          // Surgical fallback: if user dismisses credit gate while idle on Enhance,
+          // return to Image Preparation so they are not stranded on the idle card.
+          if (!open && runState === "idle" && activeTab === "enhance") {
+            setActiveTab("images");
+          }
+        }}
       >
         <DialogContent>
           <DialogHeader>
