@@ -7894,49 +7894,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (localPrecheckResult.decision === "RETRY") {
         const localPrecheckReason = localPrecheckResult.warnings[0] || "local_precheck_severe";
         nLog("[STAGE2_VALIDATION_FAIL] local_precheck");
-        nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
         stage2LocalReasons.push("local_precheck_severe");
-        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
-        pendingStage2RetryStrategy = "NORMAL";
-        pendingStage2RetryReason = "local_precheck_severe";
-
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "local_precheck",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "NORMAL",
-            reason: localPrecheckReason,
-          },
+        nLog("[STAGE2_VALIDATION_ADVISORY] local_precheck mode=log-only action=proceed_to_gemini", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          reason: localPrecheckReason,
+          score: localPrecheckResult.score,
+          severity: localPrecheckResult.severity,
+          warnings: localPrecheckResult.warnings,
         });
-
-        if (attempt < MAX_STAGE2_RETRIES) {
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, "local_precheck_severe");
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: "local_precheck_severe",
-          });
-          continue;
-        }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = "local_precheck_exhausted";
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
       }
 
       let envelopePass = true;
@@ -8298,8 +8265,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       unifiedValidation = {
-        passed: unifiedLocalResult.decision === "PROCEED_TO_GEMINI",
-        hardFail: unifiedLocalResult.decision === "RETRY",
+        passed: true,
+        hardFail: false,
         score: unifiedLocalResult.score,
         reasons: unifiedLocalResult.warnings,
         warnings: unifiedLocalResult.warnings,
@@ -8307,67 +8274,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } as any;
 
       if (unifiedLocalResult.decision === "RETRY") {
-        const retryReason = "unified_validator";
-        stage2LocalReasons.push(retryReason);
-        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
-        pendingStage2RetryStrategy = "NORMAL";
-        pendingStage2RetryReason = retryReason;
-
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "unified_validator",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "NORMAL",
-            reason: unifiedLocalResult.severity.toLowerCase(),
-          },
-        });
-
-        if (attempt < MAX_STAGE2_RETRIES) {
-          nLog("[OPENING_SIGNATURE_TELEMETRY]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            signalDetected: openingSignatureSignalDetected,
-            decision: "retry",
-            decisionPath: "unified_validator",
-            reason: normalizeValidatorReason(unifiedLocalResult.severity.toLowerCase()),
-          });
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, retryReason);
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: retryReason,
-          });
-          continue;
-        }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = "unified_validator_exhausted";
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
         nLog("[OPENING_SIGNATURE_TELEMETRY]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
           signalDetected: openingSignatureSignalDetected,
-          decision: "reject",
-          decisionPath: "unified_validator_exhausted",
+          decision: "proceed",
+          decisionPath: "unified_validator_log_only",
           reason: normalizeValidatorReason(unifiedLocalResult.severity.toLowerCase()),
         });
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
+        nLog("[STAGE2_VALIDATION_ADVISORY] unified_validator mode=log-only action=proceed_to_gemini", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          severity: unifiedLocalResult.severity,
+          score: unifiedLocalResult.score,
+          warnings: unifiedLocalResult.warnings,
+        });
       }
 
       let compositeDecision = "pass";
