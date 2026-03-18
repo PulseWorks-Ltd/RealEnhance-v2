@@ -8,6 +8,11 @@ type DebugSignedUrlResult = {
   key: string | null;
 };
 
+const DEBUG_SIGNED_URL_TTL_SECONDS = Math.max(
+  1,
+  Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
+);
+
 function sanitizeRegion(input?: string | null): string {
   const raw = (input || "").trim();
   if (!raw) return "us-east-1";
@@ -70,7 +75,7 @@ export async function createDebugSignedUrl(localPath: string, jobId: string): Pr
   const signedUrl = await getSignedUrl(
     s3,
     new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { expiresIn: 3600 }
+    { expiresIn: DEBUG_SIGNED_URL_TTL_SECONDS }
   );
 
   return { signedUrl, key };
