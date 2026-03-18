@@ -1753,16 +1753,21 @@ export default function BatchProcessor() {
   const roomTypeRequiresInput = useCallback((index: number) => {
     const imageId = getImageIdForIndex(index);
     if (!imageId) return true;
+    const scene = finalSceneForIndex(index);
+    if (scene === "exterior") return false;
     return !(imageRoomTypesById[imageId]);
-  }, [getImageIdForIndex, imageRoomTypesById]);
+  }, [finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
 
   const validationMap = useMemo(() => {
     const map: Record<string, { hasRoomType: boolean; hasStagingStyle: boolean; isValid: boolean }> = {};
     const hasStagingStyle = Boolean(String(stagingStyle || "").trim());
 
-    files.forEach((file) => {
+    files.forEach((file, index) => {
       const imageId = getFileId(file);
-      const hasRoomType = Boolean(String(imageRoomTypesById[imageId] || "").trim());
+      const scene = finalSceneForIndex(index);
+      const hasRoomType = scene === "exterior"
+        ? true
+        : Boolean(String(imageRoomTypesById[imageId] || "").trim());
       map[imageId] = {
         hasRoomType,
         hasStagingStyle,
@@ -1771,7 +1776,7 @@ export default function BatchProcessor() {
     });
 
     return map;
-  }, [files, imageRoomTypesById, stagingStyle]);
+  }, [files, finalSceneForIndex, imageRoomTypesById, stagingStyle]);
 
   const imageValidationStatus = useCallback((index: number): "needs_input" | "ok" | "unknown" => {
     const hasScene = !!finalSceneForIndex(index);
@@ -2946,10 +2951,10 @@ export default function BatchProcessor() {
           return raw === "awaiting_payment";
         });
         if (awaitingPaymentItems.length > 0) {
-          const pendingJobIds = Array.from(new Set(awaitingPaymentItems
+          const pendingJobIds: string[] = Array.from(new Set(awaitingPaymentItems
             .map((it: any) => String(it?.jobId || it?.id || it?.job_id || "").trim())
             .filter(Boolean)));
-          const pendingImageIds = Array.from(new Set(awaitingPaymentItems
+          const pendingImageIds: string[] = Array.from(new Set(awaitingPaymentItems
             .map((it: any) => String(it?.imageId || it?.image_id || "").trim())
             .filter(Boolean)));
 
@@ -6101,23 +6106,15 @@ export default function BatchProcessor() {
     };
   }, []);
 
-  const quickAssignRoomType = useCallback((preset: "living_room" | "bedroom" | "kitchen" | "bathroom-1" | "exterior") => {
+  const quickAssignRoomType = useCallback((preset: "living_room" | "bedroom" | "kitchen" | "bathroom-1") => {
     if (!currentImageId) return;
     const assignedIndex = currentImageIndex;
 
-    if (preset === "exterior") {
-      setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
-      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "exterior" }));
-      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
-      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: true }));
-      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: "" }));
-    } else {
-      setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
-      setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
-      setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
-      setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
-      setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: preset }));
-    }
+    setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+    setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
+    setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
+    setImageSkyReplacementById(prev => ({ ...prev, [currentImageId]: false }));
+    setImageRoomTypesById(prev => ({ ...prev, [currentImageId]: preset }));
 
     flashAssignedThumbnail(assignedIndex);
     setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
@@ -6386,7 +6383,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="w-full flex-1 min-h-0 flex flex-col bg-slate-100">
+          <div className="h-screen w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
             <div className="w-full border-b border-slate-200 bg-white h-10 shrink-0 mb-0">
               <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>
@@ -6412,8 +6409,8 @@ export default function BatchProcessor() {
                 />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 flex overflow-hidden">
-                <aside className="w-80 min-h-0 shrink-0 flex flex-col bg-white border-r border-slate-200 p-3 pt-0 overflow-y-auto">
+              <div className="w-full flex-1 min-h-0 flex overflow-hidden">
+                <aside className="w-80 min-h-0 shrink-0 flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-white p-3 pt-0">
                   <div className="space-y-3 pr-1 pb-2">
                     <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-2 z-10">
                       <div>
@@ -6467,11 +6464,46 @@ export default function BatchProcessor() {
                           data-testid="input-property-address"
                         />
                       </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select-left">
+                          Staging Style
+                        </label>
+                        <select
+                          id="staging-style-select-left"
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                          value={stagingStyle}
+                          onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
+                          data-testid="select-staging-style"
+                        >
+                          <option value="standard_listing">Standard Listing</option>
+                          <option value="family_home">Family Home</option>
+                          <option value="urban_apartment">Urban Apartment</option>
+                          <option value="high_end_luxury">High-End Luxury</option>
+                          <option value="country_lifestyle">Country / Lifestyle</option>
+                          <option value="lived_in_rental">Lived-In / Rental</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="specific-requirements-input-left">
+                          Special Requirements
+                        </label>
+                        <textarea
+                          id="specific-requirements-input-left"
+                          className="w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
+                          rows={5}
+                          placeholder="e.g., brighten interior, realistic daylight, preserve existing style"
+                          value={globalGoal}
+                          onChange={(e) => setGlobalGoal(e.target.value)}
+                          data-testid="textarea-global-goal"
+                        />
+                      </div>
                     </div>
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 px-5 bg-slate-50 grid grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden">
+                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[auto_minmax(0,1fr)_auto_auto]">
                   <div className="flex items-center justify-between gap-3 py-1.5 z-10">
                     <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                       Image {currentImageIndex + 1} of {files.length}
@@ -6481,12 +6513,12 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="min-h-0 min-w-0 w-full py-2 flex items-center justify-center">
-                    <div className="h-full w-full min-h-0 relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col py-2">
+                    <div className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="max-h-full max-w-full h-auto w-auto object-contain rounded-2xl p-0.5"
+                        className="h-full w-full object-contain rounded-2xl p-0.5"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
@@ -6545,7 +6577,7 @@ export default function BatchProcessor() {
                       }
                       return (
                         <p className="text-sm text-indigo-700 font-semibold">
-                          {sceneType === "exterior" ? "Select a room type label to continue" : "Select room type to continue"}
+                          {sceneType === "exterior" ? "Exterior scenes do not require a room type" : "Select room type to continue"}
                         </p>
                       );
                     })()}
@@ -6615,7 +6647,7 @@ export default function BatchProcessor() {
                   </div>
                 </div>
 
-                <section className="w-[360px] min-h-0 shrink-0 border-l border-slate-200 bg-white p-4 flex flex-col">
+                <section className="w-[360px] min-h-0 shrink-0 h-full overflow-hidden border-l border-slate-200 bg-white p-4 flex flex-col">
                   {(() => {
                     const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                     const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
@@ -6686,7 +6718,7 @@ export default function BatchProcessor() {
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                   setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
-                                  setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                  setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "" }));
                                 }}
                                 className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                               >
@@ -6695,6 +6727,7 @@ export default function BatchProcessor() {
                             </div>
                           </div>
 
+                          {sceneType !== "exterior" && (
                           <div>
                             <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="right-pane-room-type-select">
                               Room Type
@@ -6706,12 +6739,7 @@ export default function BatchProcessor() {
                                 if (!currentImageId) return;
                                 const value = e.target.value;
                                 setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: value }));
-                                if (value === "exterior") {
-                                  setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                  setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                  setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
-                                  setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
-                                } else if (value) {
+                                if (value) {
                                   setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
@@ -6722,7 +6750,6 @@ export default function BatchProcessor() {
                               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                             >
                               <option value="">Select room type...</option>
-                              <option value="exterior">Exterior</option>
                               {INTERIOR_ROOM_TYPES.map((room) => (
                                 <option key={room.value} value={room.value}>
                                   {room.label}
@@ -6730,44 +6757,11 @@ export default function BatchProcessor() {
                               ))}
                             </select>
                           </div>
+                          )}
 
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select-right">
-                              Staging Style
-                            </label>
-                            <select
-                              id="staging-style-select-right"
-                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
-                              value={stagingStyle}
-                              onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
-                              data-testid="select-staging-style"
-                            >
-                              <option value="standard_listing">Standard Listing</option>
-                              <option value="family_home">Family Home</option>
-                              <option value="urban_apartment">Urban Apartment</option>
-                              <option value="high_end_luxury">High-End Luxury</option>
-                              <option value="country_lifestyle">Country / Lifestyle</option>
-                              <option value="lived_in_rental">Lived-In / Rental</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="specific-requirements-input-right">
-                              Special Requirements
-                            </label>
-                            <textarea
-                              id="specific-requirements-input-right"
-                              className="w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
-                              rows={5}
-                              placeholder="e.g., brighten interior, realistic daylight, preserve existing style"
-                              value={globalGoal}
-                              onChange={(e) => setGlobalGoal(e.target.value)}
-                              data-testid="textarea-global-goal"
-                            />
-                          </div>
                         </div>
 
-                        <div className="mt-4 border-t border-slate-200 pt-4">
+                        <footer className="mt-auto shrink-0 border-t border-slate-200 bg-white p-4">
                           <div className="transition-all duration-200">
                             {allImagesConfigured ? (
                               <button
@@ -6798,7 +6792,7 @@ export default function BatchProcessor() {
                           {allImagesConfigured && isLastImage && (
                             <p className="mt-2 text-xs font-medium text-emerald-700">All images configured. Ready to start.</p>
                           )}
-                        </div>
+                        </footer>
                       </>
                     );
                   })()}

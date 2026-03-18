@@ -133,7 +133,6 @@ export type RoomType =
   | "closet"
   | "pantry"
   | "outdoor"
-  | "exterior"
   | "other"
   | "unknown"
   | "auto";
