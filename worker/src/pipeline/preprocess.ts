@@ -728,15 +728,6 @@ export async function preprocessToCanonical(
 
   img = img.removeAlpha();
 
-  // For interiors, normalize brightness/saturation if too dark
-  if (sceneType === "interior") {
-    const stats = await img.stats();
-    const meanLum = stats.channels[0].mean / 255;
-    if (meanLum < 0.35) {
-      img = img.modulate({ brightness: 1.12, saturation: 1.05 });
-    }
-  }
-
   let stage0ResultBuffer = await img.toBuffer();
   console.log(`[STRAIGHTEN_ATTEMPT] jobId=${options.jobId || 'unknown'}`);
   if (await detectBlackBorders(stage0ResultBuffer)) {

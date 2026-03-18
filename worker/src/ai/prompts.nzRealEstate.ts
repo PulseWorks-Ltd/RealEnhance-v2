@@ -663,14 +663,22 @@ high-dynamic-range interior photograph suitable for real estate marketing.
 ALLOWED ADJUSTMENTS (GLOBAL ONLY)
 ────────────────────────────────
 
-• Global exposure correction
+• Exposure and tonal balancing may be spatially adaptive (e.g. interior vs openings),
+  but must remain physically plausible and consistent with the original lighting.
 • Neutral daylight white balance
 • Global contrast and tone balancing
-• Shadow lift (global) while preserving depth
+• Lift shadows and midtones to improve visibility while preserving depth and contrast.
 • Highlight recovery
 • Subtle global clarity (edge-preserving)
 
-NO local edits. NO masking. NO object-aware edits.
+• Preserve material contrast and depth.
+• White surfaces (walls, ceilings) must remain bright but retain subtle shading and form.
+• Do NOT clip highlights or produce flat, overexposed, or 'milky' results.
+
+Do NOT perform explicit object-level edits, masking, or content changes.
+You MAY apply spatially-aware tonal adjustments inferred from scene understanding
+(e.g. balancing interior vs window exposure), provided no structure, texture,
+or content is altered.
 
 ────────────────────────────────
 FINAL CONSTRAINT
