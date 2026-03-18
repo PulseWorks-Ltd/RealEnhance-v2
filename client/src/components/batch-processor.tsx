@@ -6393,9 +6393,8 @@ export default function BatchProcessor() {
                 />
               </div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="w-full min-h-full flex">
-                <aside className="w-80 min-h-0 flex flex-col bg-white border-r border-slate-200 p-3 pt-0">
+              <div className="flex-1 min-h-0 flex overflow-hidden">
+                <aside className="w-80 min-h-0 shrink-0 flex flex-col bg-white border-r border-slate-200 p-3 pt-0 overflow-y-auto">
                   <div className="space-y-3 pr-1 pb-2">
                     <div className="flex items-start justify-between gap-2 sticky top-0 bg-white py-2 z-10">
                       <div>
@@ -6503,8 +6502,8 @@ export default function BatchProcessor() {
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 px-5 flex flex-col bg-slate-50">
-                  <div className="flex items-center justify-between gap-3 shrink-0 py-1.5 z-10">
+                <div className="flex-1 min-h-0 px-5 bg-slate-50 grid grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden">
+                  <div className="flex items-center justify-between gap-3 py-1.5 z-10">
                     <div className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                       Image {currentImageIndex + 1} of {files.length}
                     </div>
@@ -6513,12 +6512,12 @@ export default function BatchProcessor() {
                     </div>
                   </div>
 
-                  <div className="flex-1 flex flex-col justify-center items-center min-h-0 min-w-0 w-full mb-0 py-2">
-                    <div className="flex-1 min-h-[320px] w-full relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
+                  <div className="min-h-0 min-w-0 w-full py-2 flex items-center justify-center">
+                    <div className="h-full w-full min-h-0 relative flex items-center justify-center rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm">
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="h-full w-auto object-contain rounded-2xl p-0.5"
+                        className="max-h-full max-w-full h-auto w-auto object-contain rounded-2xl p-0.5"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
@@ -6565,7 +6564,9 @@ export default function BatchProcessor() {
                       )}
                     </div>
 
-                    <div className="flex flex-col items-center space-y-2 mt-2 shrink-0">
+                  </div>
+
+                  <div className="flex flex-col items-center space-y-2 py-2 shrink-0">
                       {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                       const sceneSelected = Boolean(sceneType);
@@ -6634,10 +6635,9 @@ export default function BatchProcessor() {
                         </>
                       );
                     })()}
-                    </div>
                   </div>
 
-                  <div className="w-full max-w-full overflow-x-auto mt-auto mt-1 pb-4 snap-x scroll-smooth shrink-0">
+                  <div className="w-full max-w-full overflow-x-auto py-2 snap-x scroll-smooth shrink-0">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
@@ -6688,12 +6688,11 @@ export default function BatchProcessor() {
                     </div>
                   </div>
                 </div>
-                </div>
               </div>
             )}
 
             {files.length > 0 && (
-              <footer className="mt-auto py-4 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
+              <footer className="py-3 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
                 <button
                   onClick={handleStartEnhance}
                   disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index))}
