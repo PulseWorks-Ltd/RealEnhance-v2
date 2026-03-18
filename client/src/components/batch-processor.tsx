@@ -1181,9 +1181,6 @@ export default function BatchProcessor() {
   const clientBatchIdRef = useRef<string | null>(null);
   const previousFileCountRef = useRef<number>(0);
   
-  // Collapsible specific requirements
-  const [showSpecificRequirements, setShowSpecificRequirements] = useState(false);
-  
   // ZIP download loading state
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
   const lastActivityByIndexRef = useRef<Record<number, { ts: number; key: string }>>({});
@@ -1754,21 +1751,37 @@ export default function BatchProcessor() {
   }, [getImageIdForIndex, imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
 
   const roomTypeRequiresInput = useCallback((index: number) => {
-    if (!allowStaging) return false;
-    const scene = finalSceneForIndex(index);
-    if (scene !== "interior") return false;
     const imageId = getImageIdForIndex(index);
     if (!imageId) return true;
     return !(imageRoomTypesById[imageId]);
-  }, [allowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
+  }, [getImageIdForIndex, imageRoomTypesById]);
+
+  const validationMap = useMemo(() => {
+    const map: Record<string, { hasRoomType: boolean; hasStagingStyle: boolean; isValid: boolean }> = {};
+    const hasStagingStyle = Boolean(String(stagingStyle || "").trim());
+
+    files.forEach((file) => {
+      const imageId = getFileId(file);
+      const hasRoomType = Boolean(String(imageRoomTypesById[imageId] || "").trim());
+      map[imageId] = {
+        hasRoomType,
+        hasStagingStyle,
+        isValid: hasRoomType && hasStagingStyle,
+      };
+    });
+
+    return map;
+  }, [files, imageRoomTypesById, stagingStyle]);
 
   const imageValidationStatus = useCallback((index: number): "needs_input" | "ok" | "unknown" => {
-    if (sceneRequiresInput(index) || roomTypeRequiresInput(index)) return "needs_input";
     const hasScene = !!finalSceneForIndex(index);
     const imageId = getImageIdForIndex(index);
-    const hasRoom = imageId ? !!imageRoomTypesById[imageId] : false;
-    return hasScene || hasRoom ? "ok" : "unknown";
-  }, [finalSceneForIndex, getImageIdForIndex, imageRoomTypesById, roomTypeRequiresInput, sceneRequiresInput]);
+    if (!imageId) return "unknown";
+    const row = validationMap[imageId];
+    if (!row) return "unknown";
+    if (!row.isValid) return "needs_input";
+    return hasScene || row.hasRoomType ? "ok" : "unknown";
+  }, [finalSceneForIndex, getImageIdForIndex, validationMap]);
 
   const blockingIndices = useMemo(() => {
     const blockers: number[] = [];
@@ -1804,6 +1817,14 @@ export default function BatchProcessor() {
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
   const currentFinalScene = finalSceneForIndex(currentImageIndex);
+  const firstIncompleteIndex = useMemo(() => {
+    for (let idx = 0; idx < files.length; idx += 1) {
+      const imageId = getImageIdForIndex(idx);
+      if (!imageId) continue;
+      if (!validationMap[imageId]?.isValid) return idx;
+    }
+    return -1;
+  }, [files.length, getImageIdForIndex, validationMap]);
 
   const batchCreditEstimateInputs = useMemo(
     () => files.map((_, index) => {
@@ -2516,7 +2537,6 @@ export default function BatchProcessor() {
       setLinkImages(false);
       setSelectedImageId(null);
       setCurrentImageIndex(0);
-      setShowSpecificRequirements(false);
       setPreviewImage(null);
       setEditingImageIndex(null);
       setActiveEditSource(null);
@@ -5604,7 +5624,6 @@ export default function BatchProcessor() {
     setLinkImages(false);
     setScenePredictionsById({});
     setSelectedImageId(null);
-    setShowSpecificRequirements(false);
     setActiveTab(nextTab);
 
     clearBatchJobState(currentUserId);
@@ -6448,56 +6467,6 @@ export default function BatchProcessor() {
                           data-testid="input-property-address"
                         />
                       </div>
-
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select">
-                          Staging Style
-                        </label>
-                        <select
-                          id="staging-style-select"
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:bg-slate-100"
-                          value={stagingStyle}
-                          onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
-                          data-testid="select-staging-style"
-                          disabled={!allowStaging}
-                        >
-                          <option value="standard_listing">Standard Listing</option>
-                          <option value="family_home">Family Home</option>
-                          <option value="urban_apartment">Urban Apartment</option>
-                          <option value="high_end_luxury">High-End Luxury</option>
-                          <option value="country_lifestyle">Country / Lifestyle</option>
-                          <option value="lived_in_rental">Lived-In / Rental</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => setStagingStyle("standard_listing")}
-                          className="mt-1 text-xs text-action-600 underline hover:text-action-700"
-                        >
-                          Reset to Standard Listing
-                        </button>
-                      </div>
-
-                      <div>
-                        <button
-                          onClick={() => setShowSpecificRequirements(!showSpecificRequirements)}
-                          className="flex w-full items-center justify-between rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
-                          data-testid="button-toggle-specific-requirements"
-                          type="button"
-                        >
-                          <span>Specific Requirements</span>
-                          <span className={`text-slate-400 transition-transform ${showSpecificRequirements ? "rotate-180" : ""}`}>▼</span>
-                        </button>
-                        {showSpecificRequirements && (
-                          <textarea
-                            className="mt-2 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
-                            rows={3}
-                            placeholder="e.g., Stage interiors, brighten rooms, greener lawn, blue sky without clouds..."
-                            value={globalGoal}
-                            onChange={(e) => setGlobalGoal(e.target.value)}
-                            data-testid="textarea-global-goal"
-                          />
-                        )}
-                      </div>
                     </div>
                   </div>
                 </aside>
@@ -6566,73 +6535,18 @@ export default function BatchProcessor() {
 
                   </div>
 
-                  <div className="flex flex-col items-center space-y-2 py-2 shrink-0">
-                      {(() => {
+                  <div className="flex items-center justify-center py-2 shrink-0">
+                    {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
-                      const sceneSelected = Boolean(sceneType);
-                      const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
-
+                      const imageId = currentImageId;
+                      const isValid = imageId ? !!validationMap[imageId]?.isValid : false;
+                      if (isValid) {
+                        return <p className="text-sm text-emerald-700 font-semibold">Configured and ready for enhancement</p>;
+                      }
                       return (
-                        <>
-                          <div className="flex gap-3 justify-center">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!currentImageId) return;
-                                setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
-                                setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
-                                setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
-                              }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[180px] transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
-                            >
-                              Exterior
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!currentImageId) return;
-                                setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
-                                setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
-                                setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
-                                setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
-                              }}
-                              className={`px-12 py-1.5 rounded-lg border text-sm font-medium min-w-[180px] transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
-                            >
-                              Interior
-                            </button>
-                          </div>
-
-                          {!sceneSelected ? (
-                            <p className="text-sm text-indigo-600 font-bold">Select interior or exterior for this image</p>
-                          ) : sceneType === "exterior" ? (
-                            <p className="text-sm text-emerald-600 font-bold">Ready. Move onto next image.</p>
-                          ) : (
-                            <div className="flex flex-col items-center gap-2">
-                              <select
-                                value={currentRoomType}
-                                onChange={(e) => {
-                                  if (!currentImageId) return;
-                                  setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: e.target.value }));
-                                  flashAssignedThumbnail(currentImageIndex);
-                                }}
-                                className="w-[320px] rounded-lg border px-4 py-1.5 text-sm bg-slate-800 text-white"
-                              >
-                                <option value="">Select room type...</option>
-                                {INTERIOR_ROOM_TYPES.map((room) => (
-                                  <option key={room.value} value={room.value}>
-                                    {room.label}
-                                  </option>
-                                ))}
-                              </select>
-                              {!currentRoomType ? (
-                                <p className="text-sm text-indigo-600 font-bold">*Select room type to continue</p>
-                              ) : (
-                                <p className="text-sm text-emerald-600 font-bold">Ready. Move onto next image.</p>
-                              )}
-                            </div>
-                          )}
-                        </>
+                        <p className="text-sm text-indigo-700 font-semibold">
+                          {sceneType === "exterior" ? "Select a room type label to continue" : "Select room type to continue"}
+                        </p>
                       );
                     })()}
                   </div>
@@ -6645,6 +6559,7 @@ export default function BatchProcessor() {
                         const fileId = getFileId(file);
                         const sceneType = imageSceneTypesById[fileId];
                         const roomType = imageRoomTypesById[fileId];
+                        const isValid = !!validationMap[fileId]?.isValid;
 
                         let label = "";
                         if (needsRoomType) {
@@ -6664,7 +6579,7 @@ export default function BatchProcessor() {
                             id={`thumbnail-btn-${idx}`}
                             type="button"
                             onClick={() => setCurrentImageIndex(idx)}
-                            className={`relative shrink-0 rounded-lg border overflow-hidden ${isCurrent ? "ring-2 ring-indigo-500 border-transparent" : "border-slate-300"} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300 border-transparent" : ""}`}
+                            className={`relative shrink-0 rounded-lg border overflow-hidden transition-all ${isCurrent ? "ring-2 ring-indigo-500 border-transparent" : "border-slate-300"} ${flashAssignedThumbnailIndex === idx ? "ring-2 ring-emerald-300 border-transparent" : ""} ${isValid ? "" : "opacity-90"}`}
                           >
                             <img
                               src={previewUrls[idx]}
@@ -6672,6 +6587,17 @@ export default function BatchProcessor() {
                               className="h-28 w-40 object-cover"
                               loading="lazy"
                             />
+                            <div className="absolute left-2 top-2 pointer-events-none">
+                              {isValid ? (
+                                <span className="inline-flex items-center rounded-full bg-emerald-600/95 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                                  ✓ Ready
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center rounded-full bg-amber-500/95 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                                  ⚠ Action Required
+                                </span>
+                              )}
+                            </div>
                             <div className="absolute inset-0 flex items-end pointer-events-none">
                               <div className="w-full bg-gradient-to-t from-black/95 via-black/60 to-transparent px-2 py-2 text-left leading-tight">
                                 <span className={`block text-[12px] font-semibold tracking-wide drop-shadow-md ${needsRoomType ? "text-indigo-300" : "text-slate-50"}`}>
@@ -6688,22 +6614,196 @@ export default function BatchProcessor() {
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {files.length > 0 && (
-              <footer className="py-3 border-t border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-end px-8 gap-3 w-full shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0">
-                <button
-                  onClick={handleStartEnhance}
-                  disabled={!files.length || files.some((_file, index) => roomTypeRequiresInput(index))}
-                  title={files.some((_file, index) => roomTypeRequiresInput(index)) ? "Assign all room types to proceed" : undefined}
-                  className="rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-8 py-2 font-semibold text-white shadow-md transition-all hover:from-action-700 hover:to-indigo-700 hover:shadow-lg focus:ring-2 focus:ring-action-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 text-base flex items-center border border-transparent"
-                  data-testid="button-proceed-enhance"
-                  type="button"
-                >
-                  Start Enhancement
-                </button>
-              </footer>
+                <section className="w-[360px] min-h-0 shrink-0 border-l border-slate-200 bg-white p-4 flex flex-col">
+                  {(() => {
+                    const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
+                    const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
+                    const currentValidation = currentImageId ? validationMap[currentImageId] : undefined;
+                    const currentImageValid = !!currentValidation?.isValid;
+                    const allImagesConfigured = files.length > 0 && files.every((file) => {
+                      const imageId = getFileId(file);
+                      return !!validationMap[imageId]?.isValid;
+                    });
+                    const isLastImage = currentImageIndex === files.length - 1;
+                    const hasMoreImages = currentImageIndex < files.length - 1;
+                    const shouldReviewMissing = firstIncompleteIndex !== -1 && firstIncompleteIndex < currentImageIndex;
+                    const nextUnconfiguredIndex = files.findIndex((file, idx) => {
+                      if (idx <= currentImageIndex) return false;
+                      const imageId = getFileId(file);
+                      return !validationMap[imageId]?.isValid;
+                    });
+
+                    const handleGuidedNext = () => {
+                      if (shouldReviewMissing && firstIncompleteIndex >= 0) {
+                        setCurrentImageIndex(firstIncompleteIndex);
+                        return;
+                      }
+                      if (nextUnconfiguredIndex >= 0) {
+                        setCurrentImageIndex(nextUnconfiguredIndex);
+                        return;
+                      }
+                      if (hasMoreImages) {
+                        setCurrentImageIndex(currentImageIndex + 1);
+                      }
+                    };
+
+                    const nextButtonLabel = shouldReviewMissing
+                      ? "Review Missing Info"
+                      : "Next Image →";
+                    const nextButtonDisabled = shouldReviewMissing ? false : (!currentImageValid || !hasMoreImages);
+
+                    return (
+                      <>
+                        <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Image Progress</p>
+                            <p className="text-sm font-semibold text-slate-900">Image {currentImageIndex + 1} of {files.length}</p>
+                            <p className="text-xs text-slate-600 mt-0.5">{configuredImagesCount}/{files.length} configured</p>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">Scene Type</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!currentImageId) return;
+                                  setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                  setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                  setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
+                                }}
+                                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                              >
+                                Interior
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!currentImageId) return;
+                                  setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                  setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                  setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                }}
+                                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                              >
+                                Exterior
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="right-pane-room-type-select">
+                              Room Type
+                            </label>
+                            <select
+                              id="right-pane-room-type-select"
+                              value={currentRoomType}
+                              onChange={(e) => {
+                                if (!currentImageId) return;
+                                const value = e.target.value;
+                                setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: value }));
+                                if (value === "exterior") {
+                                  setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                  setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
+                                  setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
+                                } else if (value) {
+                                  setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                  setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
+                                  setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
+                                  setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
+                                }
+                                flashAssignedThumbnail(currentImageIndex);
+                              }}
+                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            >
+                              <option value="">Select room type...</option>
+                              <option value="exterior">Exterior</option>
+                              {INTERIOR_ROOM_TYPES.map((room) => (
+                                <option key={room.value} value={room.value}>
+                                  {room.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="staging-style-select-right">
+                              Staging Style
+                            </label>
+                            <select
+                              id="staging-style-select-right"
+                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                              value={stagingStyle}
+                              onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
+                              data-testid="select-staging-style"
+                            >
+                              <option value="standard_listing">Standard Listing</option>
+                              <option value="family_home">Family Home</option>
+                              <option value="urban_apartment">Urban Apartment</option>
+                              <option value="high_end_luxury">High-End Luxury</option>
+                              <option value="country_lifestyle">Country / Lifestyle</option>
+                              <option value="lived_in_rental">Lived-In / Rental</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="specific-requirements-input-right">
+                              Special Requirements
+                            </label>
+                            <textarea
+                              id="specific-requirements-input-right"
+                              className="w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
+                              rows={5}
+                              placeholder="e.g., brighten interior, realistic daylight, preserve existing style"
+                              value={globalGoal}
+                              onChange={(e) => setGlobalGoal(e.target.value)}
+                              data-testid="textarea-global-goal"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="mt-4 border-t border-slate-200 pt-4">
+                          <div className="transition-all duration-200">
+                            {allImagesConfigured ? (
+                              <button
+                                onClick={handleStartEnhance}
+                                className="w-full rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:from-action-700 hover:to-indigo-700"
+                                data-testid="button-proceed-enhance"
+                                type="button"
+                              >
+                                Start Enhancement
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleGuidedNext}
+                                disabled={nextButtonDisabled}
+                                className="w-full rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:from-action-700 hover:to-indigo-700 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500"
+                              >
+                                {nextButtonLabel}
+                              </button>
+                            )}
+                          </div>
+                          {!allImagesConfigured && !currentImageValid && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">Fill room type to unlock Next Image</p>
+                          )}
+                          {!allImagesConfigured && shouldReviewMissing && firstIncompleteIndex >= 0 && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">Image {firstIncompleteIndex + 1} still needs required info.</p>
+                          )}
+                          {allImagesConfigured && isLastImage && (
+                            <p className="mt-2 text-xs font-medium text-emerald-700">All images configured. Ready to start.</p>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </section>
+              </div>
             )}
           </div>
         )}
