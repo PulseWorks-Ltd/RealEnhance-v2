@@ -9,10 +9,22 @@ This is a refinement stage from furnished/decluttered baseline.
 DECISION RULES
 1) Architecture immutable: walls/openings/doors/windows/ceiling/floor/built-ins must be unchanged.
 2) Camera immutable: no viewpoint/fov/crop/perspective shift.
-3) Anchor spatial lock in refresh: retained anchors may change color, material, upholstery, bedding, paint finish, and surface texture without penalty.
-4) Anchor violations are spatial, not stylistic: only fail if a retained anchor appears moved, re-anchored, rotated, resized, or if its overall silhouette/footprint changes by more than about 10%.
-5) Refresh additions allowed: new complementary furniture/decor is allowed where structure and circulation remain valid.
-6) Distinguish structural vs furnishing: freestanding furniture edits and anchor re-skinning are non-structural.
+3) Furniture is flexible in refresh: furniture may be replaced, removed, resized, repositioned, or restyled if the same room architecture is preserved.
+4) Judge realism by physical coherence, not by similarity to the input furniture.
+5) Distinguish room identity vs staging content: changes to freestanding furniture/layout are allowed; changes to architecture and fixed elements are not.
+
+REFRESH VALIDATION PHILOSOPHY
+- Your task is to decide whether the AFTER image is a believable staged version of the same room.
+- Do NOT require the same furniture, same object identity, same furniture footprint, same centroid, same silhouette, or visual similarity to the input.
+- Do NOT use pixel similarity, SSIM-style reasoning, or furniture matching as a reason to fail.
+- Prefer allowing strong, realistic staging transformations over blocking creative improvements.
+
+REALISM CHECKS — TREAT THESE AS IMPORTANT
+- Physical placement coherence: furniture must sit correctly on the floor, with believable contact points and no floating or sinking.
+- Occlusion consistency: overlaps and depth ordering must look natural, with no pasted or cut-out appearance.
+- Lighting and shadow consistency: shading, highlights, and shadows must match object placement and scene lighting.
+- Perspective and scale plausibility: objects must align with room perspective and appear believable for the room size.
+- Visual integrity: no melting, duplication, warped geometry, broken edges, or torn materials.
 
 CEILING & PLUMBING FIXTURE ENFORCEMENT — AUTOMATIC HARD FAILS
 
@@ -31,15 +43,29 @@ INTERIOR PLUMBING FIXTURES:
 EXCEPTIONS — these are NOT structural failures:
 - Curtain removal or replacement
 - Functional zone expansion
-- Anchor furniture recolor, re-texture, re-upholstery, bedding swap, or surface-material update
-- Style-driven visual modernization of retained furniture when footprint and silhouette stay spatially consistent
+- Furniture replacement
+- Furniture resizing
+- Furniture repositioning
+- Layout improvement for the selected room type
+- Style, material, color, or decor changes
+- Removal of original freestanding furniture
 
 HARD FAIL CONDITIONS
 - opening added/removed/sealed/moved
 - wall/room-boundary shift or new structural plane
 - built-in footprint/position/silhouette changed
 - structural camera shift
-- retained anchor footprint, orientation, or overall silhouette changed beyond ~10%
+- floating or physically unsupported furniture
+- furniture clipping through walls, built-ins, or other objects
+- broken depth ordering or pasted/cut-out object appearance
+- implausible scale or perspective distortion
+- severe lighting/shadow mismatch that breaks realism
+- melted, duplicated, torn, or visibly warped furniture/object geometry
+
+OUTPUT MAPPING GUIDANCE
+- Structural room identity failures should use category="structure" or category="opening_blocked" as appropriate.
+- Non-structural realism failures should use category="unknown" or category="furniture_change" with violationType="layout_only" or "other".
+- Realistic layout or furniture changes by themselves should not fail.
 
 OUTPUT JSON ONLY
 {

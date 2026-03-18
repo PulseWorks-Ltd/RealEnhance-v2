@@ -53,25 +53,20 @@ ROOM-TYPE CONDITIONING
 - If selected room type includes kitchen + living or kitchen + dining: stage the non-kitchen zone normally, but kitchen zone remains micro-staging only with the limits above.
 `.trim();
 
-const SPATIAL_ANCHOR_TRANSFORMATION_BLOCK = `
-ANCHOR TRANSFORMATION RULE — SPATIAL ANCHOR MODE
+const REFRESH_TRANSFORMATION_FREEDOM_BLOCK = `
+REFRESH TRANSFORMATION FREEDOM
 
-Treat retained anchor furniture as a locked 3D volume, not a preserved style reference.
+Refresh mode is judged by the quality and realism of the final staged image, not by similarity to the input furniture.
 
-SPATIAL LOCK
-- Primary anchor pieces (bed, sofa, dining table, main seating) must keep the same floor-contact position, scale, orientation, apparent height/width/depth, and wall anchoring relationship.
-- Preserve circulation, walkway clearance, and relative spacing around retained anchors.
+ALLOWED STAGING TRANSFORMATIONS
+- Furniture may be replaced, removed, resized, or repositioned to produce the best realistic staged result for the selected room type.
+- Layout may improve when needed for better function, circulation, composition, or buyer appeal.
+- Original furniture does NOT need to be preserved, matched, re-skinned, or treated as a style guide.
 
-AESTHETIC LIBERTY
-- You are explicitly allowed to re-texture, re-upholster, repaint, and visually over-paint retained anchor furniture.
-- Replace dated fabrics, worn finishes, clashing colors, bedding, and visible surface materials with a cohesive NZ Contemporary / Scandi Minimalist finish.
-- Treat the retained anchor as a high-quality 3D volume that can be re-skinned to match the final composition.
-
-GEOMETRY CONSTRAINT
-- Do NOT change the furniture category or primary silhouette.
-- Do NOT materially change the shape of headboards, sofa arms, sofa backs, table tops, or casegood bodies.
-- Do NOT move, rotate, resize, re-anchor, or swap the anchor footprint.
-- If a styling change requires geometry change, keep the original geometry and update only the surface treatment.
+NON-NEGOTIABLE LIMITS
+- The room itself must remain the same room.
+- Architecture, built-ins, fixed fixtures, openings, and camera geometry must remain unchanged.
+- All staging must remain physically coherent, correctly grounded, and believable in perspective.
 `.trim();
 
 export function buildStage2RefreshPromptNZ(roomType: string): string {
@@ -81,7 +76,7 @@ export function buildStage2RefreshPromptNZ(roomType: string): string {
 
 TASK:
 This is a REFRESH problem (from furnished/decluttered baseline), not an empty-room synthesis.
-Refresh furniture and styling while preserving all architectural and anchor geometry.
+Refresh furniture and styling while preserving the same room architecture and camera geometry.
 
 ${STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK}
 
@@ -89,15 +84,14 @@ ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_IDENTITY_LOCK_REFRESH}
 
-${SPATIAL_ANCHOR_TRANSFORMATION_BLOCK}
+${REFRESH_TRANSFORMATION_FREEDOM_BLOCK}
 
-REFRESH LOGIC — SPATIAL ANCHOR MODE
-- Preserve anchor volume, anchor scale, and anchor floor position.
-- Restyle retained anchors through surface transformation, not replacement geometry.
+REFRESH LOGIC — FLEXIBLE STAGING MODE
+- Optimize the room for the requested room type, realism, and listing quality.
+- Improve layout, scale, and composition when needed, while preserving the same room architecture.
 - Preserve room density balance and circulation.
-- Replace furnishings only where necessary to improve cohesion.
-- Never reposition structural relationships.
-- No layout redesign, no room-function reinterpretation.
+- Keep staging physically coherent: grounded on the floor, aligned to perspective, and believable in scale.
+- Never modify structural relationships, openings, built-ins, or fixed fixtures.
 
 ROOM-TYPE TARGET
 Stage as: ${room}
