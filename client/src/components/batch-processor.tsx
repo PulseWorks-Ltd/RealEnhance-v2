@@ -6383,7 +6383,7 @@ export default function BatchProcessor() {
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="h-screen w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
+          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
             <div className="w-full border-b border-slate-200 bg-white h-10 shrink-0 mb-0">
               <div className="flex items-center justify-center h-full gap-2 text-xs font-medium max-w-lg mx-auto">
                 <div className="text-emerald-700 flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">1</span> Upload</div>

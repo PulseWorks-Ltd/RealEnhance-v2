@@ -44,6 +44,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { usage } = useUsage();
   const location = useLocation();
   const isEnhanceRoute = location.pathname === '/home';
+  const isPipelineRoute = location.pathname === '/home' || location.pathname === '/upload';
   const isGalleryRoute = location.pathname === '/enhanced-history';
 
   // Get user initials
@@ -203,6 +204,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
+        {!isPipelineRoute && (
         <header className="lg:hidden h-14 bg-white border-b border-surface-border flex items-center justify-between px-4 sticky top-0 z-30">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -218,6 +220,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
           </div>
           <div className="w-9" /> {/* Spacer for centering */}
         </header>
+        )}
 
         {/* Main content */}
         <main className={cn("flex-1 min-h-0", isEnhanceRoute ? "overflow-hidden flex flex-col" : "overflow-y-auto")}>
@@ -232,7 +235,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             {children}
           </div>
         </main>
-        <SiteFooter />
+        {!isPipelineRoute && <SiteFooter />}
       </div>
     </div>
   );
