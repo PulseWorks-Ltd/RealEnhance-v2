@@ -584,14 +584,15 @@ export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior
 }
 
 function buildStage1AInteriorPromptNZStyle(roomType: string): string {
-  return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ REAL ESTATE)
+  return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ HIGH-END)
 
 You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT.
 You are NOT an editor, stylist, or generator.
 
 TASK:
 Treat the input image as a READ-ONLY GEOMETRIC MAP of this ${roomType || "room"}.
-Apply GLOBAL lighting, color, and tonal adjustments ONLY.
+Perform a professional 'Flambient' style RAW development.
+Treat this as a light-balancing exercise, NOT a repainting exercise.
 
 Your goal is to improve photographic quality (exposure, dynamic range, white balance)
 while preserving 100% of the original scene content, geometry, materials, and object placement.
@@ -638,6 +639,11 @@ PRESERVE ALL PIXELS THAT REPRESENT PHYSICAL OBJECTS.
   • Carpet pile, wood grain, tile texture, wall texture must remain visible
   • Noise reduction must NOT create plastic, waxy, or painted surfaces
 
+4. Texture & Micro-Contrast Lock (Critical)
+  • PRESERVE SURFACE DEPTH: Do NOT 'white-over' or flatten horizontal surfaces.
+  • SPECIFIC ANCHORS: The grain of timber tables, the mottled texture of stone countertops, and the weave of sofa fabrics must remain visible and detailed.
+  • BLACK POINT: Maintain deep, rich blacks in shadows (under furniture, in corners) to provide architectural depth. If a surface loses its texture, the exposure is too high.
+
 ────────────────────────────────
 PROHIBITED ACTIONS (ZERO TOLERANCE)
 ────────────────────────────────
@@ -656,7 +662,7 @@ Fix the light — NOT the room.
 PRIMARY OBJECTIVE
 ────────────────────────────────
 
-Optimize global exposure and color balance for a natural,
+Optimize high-dynamic-range balancing for a natural,
 high-dynamic-range interior photograph suitable for real estate marketing.
 
 ────────────────────────────────
@@ -670,6 +676,12 @@ ALLOWED ADJUSTMENTS (GLOBAL ONLY)
 • Lift shadows and midtones to improve visibility while preserving depth and contrast.
 • Highlight recovery
 • Subtle global clarity (edge-preserving)
+
+• EXTERIOR VISIBILITY: The view through windows must be clearly visible and exposure-matched to the interior.
+• NO BLEEDING: Highlights from windows must not bleed onto window sills or surrounding walls. Architectural boundaries must remain tack-sharp.
+• LUMINOUS AIRY FEEL: Lift midtones, but anchor the highlights.
+• WHITE BALANCE: Target 'Gallery White' (Neutral 5500K). Remove muddy yellow or blue-grey casts without making the room look sterile or blue.
+• DEPTH PRESERVATION: Maintain natural light fall-off in the furthest corners of the room to ensure 3D volume.
 
 • Preserve material contrast and depth.
 • White surfaces (walls, ceilings) must remain bright but retain subtle shading and form.
@@ -695,7 +707,7 @@ Return ONLY the enhanced image.`.trim();
 }
 
 function buildStage1AExteriorPromptNZStyle(): string {
-  return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ REAL ESTATE)
+  return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
 
 You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
 of exterior real estate imagery.
@@ -704,7 +716,7 @@ You are NOT a renovator, cleaner, landscaper, or generator.
 
 TASK:
 Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Apply GLOBAL lighting, color, tonal, and sky adjustments ONLY.
+Produce a 'Clear Day' professional real estate exterior.
 
 Your goal is to improve photographic quality (exposure, dynamic range,
 white balance, sky realism) while preserving 100% of the original
@@ -742,6 +754,10 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
   • Do NOT smooth brickwork, concrete, render, asphalt, or timber
   • Do NOT repaint or resurface any exterior material
 
+4. Material Fidelity
+  • CLADDING DETAIL: Do not flatten the texture of brick, weatherboard, or render. Highlights must not clip; preserve the grit and form of all materials.
+  • SHADOW DEPTH: Lift shadows under eaves and porches only enough to see detail. Shadows are required for the building to look grounded and 3D.
+
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
 
 ────────────────────────────────
@@ -775,14 +791,15 @@ SKY ENHANCEMENT (CONDITIONAL & GUARDED)
 ────────────────────────────────
 
 If the existing sky is flat grey or overcast:
-• You MAY replace it with a soft, realistic blue sky
-  consistent with NZ conditions.
+• You MAY replace it with a 'New Zealand Summer Blue' sky
+  that is saturated but natural.
 
 CRITICAL SKY RULES:
 • The sky mask MUST fully preserve antennas, chimneys,
   gutters, roof edges, trees, and fine branches.
 • NO edge erosion, clipping, or haloing.
 • If masking confidence is low, KEEP THE ORIGINAL SKY.
+• LIGHT WRAP: The sky and exterior lighting must integrate naturally with the house. The house may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
 
 Sky enhancement must NEVER damage rooflines or structures.
 
@@ -796,6 +813,12 @@ If driveways, decks, or paths appear wet or highly reflective:
 • Do NOT flatten surfaces or make them look matte or painted.
 
 Goal: Reduce distraction — NOT alter reality.
+
+────────────────────────────────
+LANDSCAPE VIBRANCY
+────────────────────────────────
+
+• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
 
 ────────────────────────────────
 ALLOWED ADJUSTMENTS (GLOBAL ONLY)
