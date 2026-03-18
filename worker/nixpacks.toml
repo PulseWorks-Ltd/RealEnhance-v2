@@ -3,7 +3,7 @@
 nixPkgs = ["nodejs_20", "pnpm", "nodePackages.typescript"]
 
 [phases.install]
-cmd = "NODE_ENV=development pnpm install --filter @realenhance/worker... --no-frozen-lockfile --prefer-offline"
+cmd = "CI=true NODE_ENV=development pnpm install --filter @realenhance/worker... --no-frozen-lockfile --prefer-offline"
 
 [phases.build]
 cmd = "NODE_ENV=development pnpm --filter @realenhance/worker build"
