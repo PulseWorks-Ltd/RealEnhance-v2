@@ -9,9 +9,10 @@ This is a refinement stage from furnished/decluttered baseline.
 DECISION RULES
 1) Architecture immutable: walls/openings/doors/windows/ceiling/floor/built-ins must be unchanged.
 2) Camera immutable: no viewpoint/fov/crop/perspective shift.
-3) Anchor geometry immutable in refresh: retained anchors may restyle, but must not move/resize/re-shape.
-4) Refresh additions allowed: new complementary furniture/decor is allowed where structure and circulation remain valid.
-5) Distinguish structural vs furnishing: freestanding furniture edits are non-structural.
+3) Anchor spatial lock in refresh: retained anchors may change color, material, upholstery, bedding, paint finish, and surface texture without penalty.
+4) Anchor violations are spatial, not stylistic: only fail if a retained anchor appears moved, re-anchored, rotated, resized, or if its overall silhouette/footprint changes by more than about 10%.
+5) Refresh additions allowed: new complementary furniture/decor is allowed where structure and circulation remain valid.
+6) Distinguish structural vs furnishing: freestanding furniture edits and anchor re-skinning are non-structural.
 
 CEILING & PLUMBING FIXTURE ENFORCEMENT — AUTOMATIC HARD FAILS
 
@@ -30,12 +31,15 @@ INTERIOR PLUMBING FIXTURES:
 EXCEPTIONS — these are NOT structural failures:
 - Curtain removal or replacement
 - Functional zone expansion
+- Anchor furniture recolor, re-texture, re-upholstery, bedding swap, or surface-material update
+- Style-driven visual modernization of retained furniture when footprint and silhouette stay spatially consistent
 
 HARD FAIL CONDITIONS
 - opening added/removed/sealed/moved
 - wall/room-boundary shift or new structural plane
 - built-in footprint/position/silhouette changed
 - structural camera shift
+- retained anchor footprint, orientation, or overall silhouette changed beyond ~10%
 
 OUTPUT JSON ONLY
 {
