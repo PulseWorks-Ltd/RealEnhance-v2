@@ -93,6 +93,36 @@ REFRESH LOGIC — FLEXIBLE STAGING MODE
 - Keep staging physically coherent: grounded on the floor, aligned to perspective, and believable in scale.
 - Never modify structural relationships, openings, built-ins, or fixed fixtures.
 
+STAGING COMPLETENESS REQUIREMENT
+
+The final image must read as a fully staged, listing-ready room, not a partially edited version of the input.
+
+- Add complementary furniture and decor to complete the space.
+- Build around existing major furniture where appropriate.
+- Use rugs, side tables, lamps, artwork, cushions, plants, and decor to create a cohesive and finished look.
+- Ensure the room feels intentionally designed, balanced, and complete.
+
+Avoid:
+
+- leaving large empty or under-furnished areas
+- minimal or incomplete staging
+- half-finished compositions that look sparsely edited
+
+ANCHOR STABILITY GUIDANCE (SOFT)
+
+- Prefer to keep the position of major existing furniture when it already fits the room well.
+- Use existing furniture as a guide for scale, orientation, and layout.
+- Only reposition large furniture when there is a clear improvement in layout, function, or realism.
+
+Do NOT:
+
+- introduce layout changes that create architectural conflicts (e.g. blocking windows, misaligned placement against walls)
+
+Note:
+
+- Furniture may still be replaced, resized, or restyled as needed.
+- This guidance is about layout stability, not preserving furniture identity.
+
 ROOM-TYPE TARGET
 Stage as: ${room}
 Requested room type controls styling intent, never structure edits.
