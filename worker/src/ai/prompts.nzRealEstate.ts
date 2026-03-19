@@ -586,49 +586,167 @@ export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior
 export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
   return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ HIGH-END)
 
-TASK:
-Perform a professional 'Flambient' style development.
-Treat this as a light-balancing exercise, NOT a repainting exercise.
+TASK
+Perform a professional real estate photometric enhancement inspired by flambient techniques.
+This is a light-balancing operation only.
 
-MENTAL MODEL:
-Treat the input as a finished photograph.
-You are allowed to relight and recolor it, but not to change what exists in the scene.
+Treat the input image as a fixed visual record of the scene.
+Do NOT generate, reconstruct, or reinterpret any part of the image.
 
-PRIMARY GOAL:
-Improve photographic quality only (exposure, tone, color),
-without altering scene content, structure, or visibility.
+---
 
-I. TEXTURE & MICRO-CONTRAST LOCK (CRITICAL)
-- PRESERVE SURFACE DEPTH: Do NOT 'white-over' or flatten horizontal surfaces.
-- SPECIFIC ANCHORS: The grain of timber tables, the mottled texture of stone countertops, and the weave of fabric must remain visible and detailed.
-- BLACK POINT: Maintain deep, rich blacks in shadows (under furniture, in corners) to provide architectural depth. If a surface loses its texture, the exposure is too high.
+I. PIXEL IDENTITY & NON-GENERATION LOCK (ABSOLUTE)
 
-II. EXTERIOR VIEW LOCK (STRICT)
-- EXTERIOR VIEW LOCK (STRICT): You may adjust exposure ONLY where pixel detail already exists. Do NOT reconstruct, 'complete,' or invent any new detail through windows or openings. If an area is blown-out or hidden in the input, it must remain obscured. NO synthetic sky or foliage.
-- NO BLEEDING: Highlights from windows must not bleed onto sills or walls. Architectural boundaries must remain tack-sharp.
+FIXED IMAGE PRINCIPLE
+Treat the input as a fixed pixel-based representation of reality.
+You must not reinterpret, re-segment, or re-estimate the scene.
 
-III. PHOTOMETRIC ADJUSTMENTS
-- LUMINOUS AIRY FEEL: Lift midtones, but anchor the highlights.
-- WHITE BALANCE: Target 'Gallery White' (Neutral 5500K). Remove muddy yellow or blue-grey casts without making the room look sterile or blue.
-- DEPTH PRESERVATION: Maintain natural light fall-off in corners to ensure 3D volume.
-- Global or softly graduated exposure adjustments applied to existing pixel regions only. No object-level or structure-aware targeting.
-- NO OCCLUSION REVEAL: Shadow lifting must not reveal new structures, spaces, or objects that were obscured or blocked in the input. If a region is non-informative in the input, it must remain so in the output.
-- PIXEL-ONLY ADJUSTMENTS: Tonal adjustments must operate strictly on existing visible pixels. You are FORBIDDEN from using scene understanding to infer, reconstruct, or modify any structure, opening, or object.
+NO NEW INFORMATION
+All visible detail in the output must come directly from the input image.
+Do NOT introduce, reconstruct, or infer any new visual information.
 
-IV. EXTERIOR VIEW PRESERVATION (INTERIOR IMAGES ONLY)
-- Treat all views through windows, doors, and glass openings as fixed architectural elements.
-- NO SKY ENHANCEMENT: Do not change sky color, add clouds, or replace blown-out window regions with synthetic sky.
-- NO LANDSCAPING ALTERATIONS: Do not add, saturate, or modify exterior foliage, trees, lawns, or gardens.
-- NO OUTDOOR COLOR SHIFTS: Interior white-balance and exposure corrections must not alter outdoor content or color.
+NO RESYNTHESIS
+Do NOT:
 
-V. STRUCTURAL & DEPTH LOCK
-- ARCHITECTURAL INTEGRITY: Maintain 100% accuracy. Do not warp, rotate, or change perspective.
-- OPENING PRESERVATION: Preserve the 'void' of doorways and halls. Do not paint over dark openings; they must remain clear architectural penetrations.
-- OPENING STATE LOCK (ABSOLUTE): Every door, sliding panel, and window must retain its exact current state. CLOSED doors must remain CLOSED. OPEN doors must remain OPEN. Do NOT use scene understanding to add depth, perspective, or voids to flat door surfaces.
-- Do not refine, extend, or complete edges of openings or objects. All boundaries must remain exactly as observed in the input pixels.
-- NO STAGING: Do not add or move any objects or furniture.
+* inpaint or fill missing regions
+* reconstruct blown or dark areas
+* generate detail where none exists
+* replace regions with synthetic content
 
-The final result must look like a high-end, professionally edited photograph from a top-tier NZ real estate agency.`.trim();
+EDGE & STRUCTURE PRESERVATION
+All edges, boundaries, and silhouettes must remain in the exact same positions.
+Do NOT:
+
+* shift edges
+* soften or blur boundaries
+* reshape transitions to simulate lighting
+
+---
+
+II. OPENING STATE & GEOMETRY LOCK (ABSOLUTE)
+
+STATE PRESERVATION
+All doors, windows, and openings must remain exactly as they appear.
+
+* Closed doors remain closed
+* Open doors remain open
+* Ambiguous openings must remain unchanged
+
+NO STATE INTERPRETATION
+Do not reinterpret unclear geometry or “improve” visibility of openings.
+
+APERTURE FIXITY
+Do NOT alter:
+
+* size
+* shape
+* visible area
+* depth or perceived depth
+
+Do not convert flat surfaces into openings or add voids.
+
+---
+
+III. EXTERIOR & OCCLUSION LOCK (STRICT)
+
+NO EXTERIOR RECONSTRUCTION
+Enhance visibility ONLY where real pixel detail exists.
+
+If an exterior view is:
+
+* blown out
+* overexposed
+* obscured
+
+It must remain visually consistent with the input.
+
+Do NOT:
+
+* add sky, clouds, or foliage
+* reconstruct outdoor scenes
+* change exterior content or color
+
+NO OCCLUSION REVEAL
+Do not reveal anything hidden in shadows or blocked regions.
+
+If an area is non-informative in the input, it must remain non-informative.
+
+NO LIGHT BLEED
+Window highlights must not bleed into surrounding surfaces.
+Architectural boundaries must remain crisp.
+
+---
+
+IV. PHOTOMETRIC ADJUSTMENTS ONLY
+
+PERMITTED OPERATIONS
+You may adjust:
+
+* exposure
+* brightness
+* contrast
+* white balance
+* tonal distribution
+
+These adjustments must act on existing visible pixels only.
+
+WHITE BALANCE
+Target neutral daylight (“Gallery White” ~5500K).
+Remove color casts without making the image sterile or altering exterior tones.
+
+DEPTH PRESERVATION
+Maintain natural light fall-off and shadow structure to preserve 3D depth.
+
+BLACK POINT
+Maintain deep, rich blacks in shadow areas.
+Avoid lifting shadows to the point where depth or realism is lost.
+
+TEXTURE PRESERVATION
+Preserve all material detail, including:
+
+* timber grain
+* stone texture
+* fabric weave
+
+Do NOT flatten, smooth, or “white-over” surfaces.
+
+---
+
+V. STRUCTURAL INTEGRITY (NON-NEGOTIABLE)
+
+NO GEOMETRIC CHANGE
+Do NOT:
+
+* warp
+* rotate
+* straighten
+* reframe
+* alter perspective
+
+Camera position and composition must remain identical.
+
+NO CONTENT CHANGE
+Do NOT:
+
+* add, remove, or move objects
+* declutter or tidy
+* perform staging or styling
+
+Everything must remain exactly as it is.
+
+---
+
+FINAL PRINCIPLE
+
+This is a photometric correction, not an image transformation.
+
+If a detail is not clearly present in the input image,
+it must not appear in the output.
+
+---
+
+OUTPUT
+Return only the enhanced image.`.trim();
 }
 
 export function buildStage1AInteriorPromptNZHighEnd(roomType: string): string {
