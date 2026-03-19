@@ -1291,7 +1291,10 @@ A zone is a visually distinct functional area (e.g., lounge area, dining area) s
 Dominant functional anchors by room type:
 
 Living room:
-→ Keep the primary sofa OR the main seating anchor (the piece that defines the seating area).
+→ Default: keep one primary seating anchor (the piece that defines the seating area).
+→ Exception: keep TWO anchors only when BOTH are clearly visible in the uploaded image:
+  (1) the main sofa and (2) a TV (wall-mounted or freestanding).
+→ If only one of those two is visible, keep only one anchor.
 → Remove all secondary seating (armchairs, recliners, ottomans, side chairs).
 
 Bedroom:
@@ -1316,6 +1319,10 @@ If uncertain which item is dominant:
 PRIMARY ANCHOR FOCUS
 
 Ensure one clear primary anchor per zone.
+
+Living-room exception:
+Two anchors are acceptable only if BOTH the main sofa and TV are visible in the uploaded image.
+If both are not visible, keep one anchor only.
 
 Removal of secondary furniture is preferred, but not required when removal risks structural corruption.
 Do NOT preserve decorative or auxiliary furniture unless needed for structural safety.

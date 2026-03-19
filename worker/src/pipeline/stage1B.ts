@@ -141,6 +141,12 @@ CRITICAL CAMERA AND STRUCTURE RULES:
 - You must NOT enlarge or reshape anchor furniture.
 - You may ONLY remove clutter or small movable objects.
 
+### NEGATIVE CONSTRAINTS — FORBIDDEN ACTIONS
+1. NEVER change the state of a door. A closed door is a SOLID WALL for this task.
+2. NEVER reveal the interior of a cupboard, wardrobe, or adjacent room.
+3. NEVER add "depth" or "perspective" to a flat door surface.
+4. If you see a handle on a flat panel, that panel must remain a flat, closed surface.
+
 If there is any ambiguity, leave the area unchanged.
 `;
 
