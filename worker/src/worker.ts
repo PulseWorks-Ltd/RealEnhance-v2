@@ -5774,6 +5774,68 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
   const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
 
+  const snapshotImpliesResolvedFurnishedGate = (snapshot: any): boolean => {
+    if (!snapshot || typeof snapshot !== "object") return false;
+    const policyMode = String(snapshot?.policyMode || "");
+    const mode = String(snapshot?.mode || snapshot?.gateDecision || "");
+    const stageReady = snapshot?.stageReady === true;
+    const declutterMode = String(snapshot?.declutterMode || "");
+    const stage1BRequired = snapshot?.stage1BRequired === true;
+
+    return (
+      policyMode === "FULL_FURNITURE_REMOVAL" ||
+      mode === "furnished_refresh" ||
+      stageReady ||
+      declutterMode === "stage-ready" ||
+      stage1BRequired
+    );
+  };
+
+  const reassertFurnishedGateResolvedFromSnapshot = async (
+    snapshot: any,
+    source: string
+  ): Promise<boolean> => {
+    if (!snapshotImpliesResolvedFurnishedGate(snapshot)) return false;
+
+    const currentJob = await getJob(payload.jobId);
+    const currentMeta = ((currentJob as any)?.meta && typeof (currentJob as any).meta === "object")
+      ? (currentJob as any).meta
+      : {};
+    if (currentMeta?.furnishedGateResolved === true) return true;
+
+    const inferredGateDecision = snapshot?.declutterMode === "stage-ready"
+      ? "furnished_refresh"
+      : snapshot?.declutterMode === "light"
+        ? "needs_declutter_light"
+        : "empty_full_stage";
+
+    await updateJob(payload.jobId, {
+      meta: {
+        ...currentMeta,
+        furnishedGateResolved: true,
+        routingSnapshot: currentMeta?.routingSnapshot || snapshot,
+        furnishedGate: {
+          ...(currentMeta?.furnishedGate || {}),
+          enabled: true,
+          source: currentMeta?.furnishedGate?.source || snapshot?.authority || "snapshot_reassert",
+          gateDecision: currentMeta?.furnishedGate?.gateDecision || inferredGateDecision,
+        },
+      },
+    });
+
+    nLog("[FURNISHED_GATE_REASSERTED]", {
+      jobId: payload.jobId,
+      source,
+      policyMode: snapshot?.policyMode || null,
+      mode: snapshot?.mode || snapshot?.gateDecision || null,
+      stageReady: snapshot?.stageReady === true,
+      declutterMode: snapshot?.declutterMode || null,
+      stage1BRequired: snapshot?.stage1BRequired === true,
+    });
+
+    return true;
+  };
+
   // Furnished gate routing after Stage 1A
   // For stage2Only + interior, this gate must run regardless of declutter flag.
   // Order: local empty prefilter -> (if not empty) Gemini furnished confirmation.
@@ -5789,6 +5851,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
       });
       nLog("[ROUTING] Reusing frozen routing snapshot");
+      await reassertFurnishedGateResolvedFromSnapshot(routingSnapshot, "frozen_routing_snapshot");
     } else {
       const latestBeforeDetect = await getJob(payload.jobId);
       const latestFrozenSnapshot = ((latestBeforeDetect as any)?.meta?.routingSnapshot
@@ -5800,6 +5863,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
         });
         nLog("[ROUTING] Reusing frozen routing snapshot");
+        await reassertFurnishedGateResolvedFromSnapshot(routingSnapshot, "job_meta_routing_snapshot");
       } else {
         const stage1ABuffer = await fs.promises.readFile(path1A);
         const localEmpty = await isRoomEmpty(stage1ABuffer);
@@ -6712,11 +6776,48 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   const stage2Active = payload.options.virtualStage && !stage2Blocked && !exteriorNoStaging;
   if (stage2Active && payload.options.stage2Only === true) {
-    const currentJob = await getJob(payload.jobId);
-    const furnishedGateResolved = !!(currentJob as any)?.meta?.furnishedGateResolved;
+    let currentJob = await getJob(payload.jobId);
+    let furnishedGateResolved = !!(currentJob as any)?.meta?.furnishedGateResolved;
+    const routingSnapshot = (currentJob as any)?.meta?.routingSnapshot || (currentJob as any)?.metadata?.routingSnapshot;
+    let gateResolutionPath: "direct" | "reconstructed" | "failed" = furnishedGateResolved ? "direct" : "failed";
+
+    nLog("[STAGE2_GATE_CHECK]", {
+      jobId: payload.jobId,
+      furnishedGateResolved,
+      hasRoutingSnapshot: !!routingSnapshot,
+      policyMode: routingSnapshot?.policyMode ?? null,
+      mode: routingSnapshot?.mode ?? routingSnapshot?.gateDecision ?? null,
+      stageReady: routingSnapshot?.stageReady ?? (routingSnapshot?.declutterMode === "stage-ready"),
+      declutterMode: routingSnapshot?.declutterMode ?? null,
+      stage1BRequired: routingSnapshot?.stage1BRequired ?? null,
+    });
+
     if (!furnishedGateResolved) {
-      throw new Error("Stage 2 invoked without furnished gate resolution");
+      const reconstructed = await reassertFurnishedGateResolvedFromSnapshot(routingSnapshot, "stage2_guard_reconstruction");
+      if (reconstructed) {
+        currentJob = await getJob(payload.jobId);
+        furnishedGateResolved = !!(currentJob as any)?.meta?.furnishedGateResolved;
+        if (furnishedGateResolved) {
+          gateResolutionPath = "reconstructed";
+        }
+      }
+      if (!furnishedGateResolved) {
+        nLog("[STAGE2_GATE_METRIC]", {
+          jobId: payload.jobId,
+          result: "failed",
+          gateResolutionPath,
+          hasRoutingSnapshot: !!routingSnapshot,
+        });
+        throw new Error("Stage 2 invoked without furnished gate resolution");
+      }
     }
+
+    nLog("[STAGE2_GATE_METRIC]", {
+      jobId: payload.jobId,
+      result: "ok",
+      gateResolutionPath,
+      hasRoutingSnapshot: !!routingSnapshot,
+    });
   }
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
