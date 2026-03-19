@@ -20,6 +20,9 @@ import {
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary } from "../services/trials.js";
+import { pool } from "../db/index.js";
+import { markTrialConverted } from "../services/trials.js";
+import { detachTrialUsageFromIncludedAllowance } from "../services/usageLedger.js";
 
 const router = Router();
 
@@ -31,6 +34,31 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+
+async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
+  const plan = getStripePlan(planTier);
+  await pool.query(
+    `INSERT INTO agency_accounts (agency_id, monthly_included_images, plan_tier, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (agency_id) DO UPDATE
+       SET monthly_included_images = EXCLUDED.monthly_included_images,
+           plan_tier = EXCLUDED.plan_tier,
+           updated_at = NOW();`,
+    [agencyId, plan.mainAllowance, planTier]
+  );
+}
+
+async function markTrialConvertedSafe(agencyId: string, reason: string) {
+  try {
+    const trialCreditsUsed = await markTrialConverted(agencyId);
+    await detachTrialUsageFromIncludedAllowance({
+      agencyId,
+      trialCreditsUsed,
+    });
+  } catch (err) {
+    console.warn(`[BILLING] Failed to convert trial during ${reason} for agency ${agencyId}`, err);
+  }
+}
 
 /**
  * Middleware to require authentication
@@ -557,6 +585,102 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
     const message = error?.message || "Failed to load subscription";
     console.error("[BILLING] subscription error", error);
     return res.status(status).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/billing/reconcile-subscription
+ * Safety-net sync for checkout return when webhook delivery is delayed/missed.
+ */
+router.post("/reconcile-subscription", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({ error: "Stripe not configured" });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+
+    if (!requireAgencyAdmin(user)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const requestedAgencyId = typeof req.body?.agencyId === "string" ? req.body.agencyId : undefined;
+    if (requestedAgencyId && requestedAgencyId !== agency.agencyId) {
+      return res.status(403).json({ error: "Agency mismatch" });
+    }
+
+    const customerId = agency.stripeCustomerId;
+    if (!customerId) {
+      return res.status(400).json({
+        reconciled: false,
+        reason: "missing_customer",
+        message: "No Stripe customer linked to this agency",
+      });
+    }
+
+    const [activeList, trialingList] = await Promise.all([
+      stripe.subscriptions.list({ customer: customerId, status: "active", limit: 20 }),
+      stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 20 }),
+    ]);
+
+    const candidates = [...activeList.data, ...trialingList.data];
+    if (!candidates.length) {
+      return res.json({
+        reconciled: false,
+        reason: "no_active_subscription",
+      });
+    }
+
+    const latest = candidates.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    const latestPriceId = latest.items.data[0]?.price?.id || null;
+    const mapped = findPlanByPriceId(latestPriceId);
+    const planTier: PlanTier = mapped?.planTier || "starter";
+
+    if (!mapped) {
+      console.warn(
+        `[BILLING] Unknown Stripe price ID ${latestPriceId || "null"} during reconciliation for agency ${agency.agencyId}; defaulting to starter`
+      );
+    }
+
+    agency.stripeCustomerId = customerId;
+    agency.stripeSubscriptionId = latest.id;
+    if (latestPriceId) {
+      agency.stripePriceId = latestPriceId;
+    }
+    agency.planTier = planTier;
+    agency.subscriptionStatus = "ACTIVE";
+
+    const periodStart = (latest as any).current_period_start;
+    const periodEnd = (latest as any).current_period_end;
+    if (periodStart) {
+      agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
+    }
+    if (periodEnd) {
+      agency.currentPeriodEnd = new Date(periodEnd * 1000).toISOString();
+    }
+
+    await updateAgency(agency);
+    await upsertAgencyAllowance(agency.agencyId, planTier);
+    await markTrialConvertedSafe(agency.agencyId, "billing.reconcile-subscription");
+
+    const usage = await getUsageSnapshot(agency.agencyId);
+
+    return res.json({
+      reconciled: true,
+      agencyId: agency.agencyId,
+      planTier,
+      stripeSubscriptionId: latest.id,
+      stripePriceId: latestPriceId,
+      allowance: {
+        monthlyIncluded: usage.includedLimit,
+        monthlyUsed: usage.includedUsed,
+        monthlyRemaining: usage.includedRemaining,
+      },
+    });
+  } catch (error: any) {
+    console.error("[BILLING] reconcile-subscription error", error);
+    const status = error?.status || 500;
+    return res.status(status).json({ error: error?.message || "Reconciliation failed" });
   }
 });
 

@@ -119,6 +119,16 @@ export function usePostCheckoutSync() {
         refetchUsage(),
       ]);
 
+      // Step 1.5: Reconcile subscription state from Stripe as a safety net when webhook delivery is delayed or missed.
+      try {
+        await apiFetch("/api/billing/reconcile-subscription", {
+          method: "POST",
+          body: JSON.stringify({ agencyId: user?.agencyId }),
+        });
+      } catch (reconcileErr) {
+        console.warn("[PostCheckoutSync] reconcile-subscription failed, continuing with polling", reconcileErr);
+      }
+
       // Step 2: Poll for activation
       const activated = await pollForSubscriptionActivation();
       let resumed = 0;
@@ -198,6 +208,7 @@ export function usePostCheckoutSync() {
     navigate,
     searchParams,
     setSearchParams,
+    user?.agencyId,
   ]);
 
   const handleBundleSuccess = useCallback(async () => {

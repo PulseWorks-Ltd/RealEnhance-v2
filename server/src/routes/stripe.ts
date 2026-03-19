@@ -25,6 +25,18 @@ const stripe = process.env.STRIPE_SECRET_KEY
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
+function resolvePlanTierWithFallback(priceId: string | null | undefined, context: string): PlanTier {
+  const mapped = findPlanByPriceId(priceId);
+  if (mapped) {
+    return mapped.planTier;
+  }
+
+  console.warn(
+    `[STRIPE] Unknown price ID ${priceId || "null"} in ${context}; defaulting to starter`
+  );
+  return "starter";
+}
+
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
   const plan = getStripePlan(planTier);
   const allowance = plan.mainAllowance;
@@ -180,12 +192,10 @@ router.post(
 
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
             const stripePriceId = subscription.items.data[0]?.price.id;
-            const mapped = findPlanByPriceId(stripePriceId);
-            if (!mapped) {
-              console.error(`[STRIPE] Unknown price ID ${stripePriceId} for subscription ${subscriptionId}`);
-              return res.status(400).json({ error: "Unknown Stripe price ID" });
-            }
-            const planTierFromPrice = mapped.planTier;
+            const planTierFromPrice = resolvePlanTierWithFallback(
+              stripePriceId,
+              `checkout.session.completed subscription=${subscriptionId}`
+            );
 
             // Update agency with subscription details
             const agency = await getAgency(agencyId);
@@ -325,13 +335,12 @@ router.post(
           const newPriceId = subscription.items.data[0]?.price.id;
           if (newPriceId) {
             agency.stripePriceId = newPriceId;
-            const mapped = findPlanByPriceId(newPriceId);
-            if (mapped) {
-              agency.planTier = mapped.planTier;
-              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
-            } else {
-              console.error(`[STRIPE] Unknown price ID ${newPriceId} on subscription.update for agency ${agencyId}`);
-            }
+            const resolvedTier = resolvePlanTierWithFallback(
+              newPriceId,
+              `${event.type} agency=${agencyId}`
+            );
+            agency.planTier = resolvedTier;
+            await upsertAgencyAllowance(agency.agencyId, resolvedTier);
           }
 
           await updateAgency(agency);
@@ -363,7 +372,9 @@ router.post(
 
           const priceId = ((invoice.lines.data[0] as any)?.price?.id) || (subscription.items.data[0] as any)?.price?.id || null;
           const mapped = priceId ? findPlanByPriceId(priceId) : null;
-          const planTier = (mapped?.planTier as PlanTier) || ((subscription.metadata as any)?.planTier as PlanTier) || "starter";
+          const planTier = mapped?.planTier
+            || ((subscription.metadata as any)?.planTier as PlanTier)
+            || resolvePlanTierWithFallback(priceId, `invoice.payment_succeeded agency=${agencyId}`);
 
           await upsertAgencyAllowance(agencyId, planTier);
 
@@ -411,9 +422,7 @@ router.post(
 
               if (priceId) {
                 agency.stripePriceId = priceId;
-                if (mapped) {
-                  agency.planTier = mapped.planTier;
-                }
+                agency.planTier = mapped?.planTier || resolvePlanTierWithFallback(priceId, `invoice.payment_succeeded agency=${agencyId}`);
               }
 
               await updateAgency(agency);
@@ -481,13 +490,12 @@ router.post(
           const priceId = subscription.items.data[0]?.price.id;
           if (priceId) {
             agency.stripePriceId = priceId;
-            const mapped = findPlanByPriceId(priceId);
-            if (mapped) {
-              agency.planTier = mapped.planTier;
-              await upsertAgencyAllowance(agency.agencyId, mapped.planTier);
-            } else {
-              console.error(`[STRIPE] Unknown price ID ${priceId} on invoice.payment_failed for agency ${agencyId}`);
-            }
+            const resolvedTier = resolvePlanTierWithFallback(
+              priceId,
+              `invoice.payment_failed agency=${agencyId}`
+            );
+            agency.planTier = resolvedTier;
+            await upsertAgencyAllowance(agency.agencyId, resolvedTier);
           }
 
           await updateAgency(agency);
