@@ -80,12 +80,21 @@ If any rule conflicts:
 `.trim();
 
 const REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK = `
-REFRESH COMPLETENESS ENFORCEMENT
+REFRESH COMPLETENESS — REQUIRED
 
-All visible soft furnishings and decor (bedding, pillows, artwork, rugs, small decor)
-must be restyled or replaced to match the target style.
+All visible soft furnishings and decor must be updated to match the target style.
 
-Do NOT leave original soft items unchanged unless they already match the target style.
+This includes:
+- bedding, pillows, throws
+- artwork and wall decor
+- rugs
+- small decor items (vases, lamps, accessories)
+
+Do NOT leave original soft furnishings or decor unchanged if they do not match the target style.
+
+Do NOT partially update a scene.
+
+The final image must appear as a fully restyled space, not a mix of old and new elements.
 `.trim();
 
 const FURNITURE_ADDITION_CONSTRAINTS_REFRESH = `
@@ -156,6 +165,12 @@ REFRESH LOGIC — FLEXIBLE STAGING MODE
 - Never modify structural relationships, openings, built-ins, or fixed fixtures.
 
 STAGING COMPLETENESS REQUIREMENT
+
+CONSISTENCY RULE
+
+All visible elements must belong to the same design language and finish level.
+
+Mixed styling (old + new, mismatched decor, inconsistent bedding/artwork) is not allowed.
 
 The final image must read as a fully staged, listing-ready room, not a partially edited version of the input.
 
