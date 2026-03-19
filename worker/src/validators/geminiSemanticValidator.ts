@@ -39,6 +39,32 @@ const MIN_CONFIDENCE = 0.75;
 // BUILTIN_HARDFAIL_CONFIDENCE: Built-in violation requires this + ≥2 structural anchors to hard-fail
 const BUILTIN_HARDFAIL_CONFIDENCE = 0.85;
 
+const STAGE1A_VALIDATION_CRITERIA = `
+### CRITICAL FAILURE CRITERIA (IMMEDIATE REJECT)
+
+1. **OPENING STATE CHANGE:**
+- Compare every door, window, and cabinet.
+- If a door was CLOSED in BEFORE and is OPEN/AJAR in AFTER, return passed=false.
+
+2. **OPENING CONTENT HALLUCINATION:**
+- If a window or opening reveals NEW scene content not clearly present in BEFORE, return passed=false.
+- Do not penalize legitimate exposure/contrast recovery of already-visible detail.
+
+3. **REVEALED ARCHITECTURE:**
+- If any previously occluded or non-visible space (e.g. behind objects or blocked areas) becomes newly visible with identifiable structure, return passed=false.
+
+4. **NEW OR ALTERED OPENINGS:**
+- Do NOT rely only on counts.
+- If any new opening appears where a continuous wall existed, return passed=false.
+- If an existing opening changes shape, size, or boundary materially, return passed=false.
+
+5. **OPENING APERTURE CHANGE:**
+- If an existing door, window, or opening appears significantly more open or exposes more space than in BEFORE, return passed=false.
+
+6. **PERSPECTIVE DRIFT:**
+- If wall verticals or floor horizontals no longer align (warping, rotation), return passed=false.
+`;
+
 /**
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
  */
@@ -2179,6 +2205,38 @@ function buildPrompt(
       : validateStage2Refresh();
 
     return `${contextHeader}\n\n${validatorPrompt}`;
+  }
+
+  if (stage === "1A") {
+    const sceneLabel = scene === "exterior" ? "EXTERIOR" : "INTERIOR";
+    return `You are a Structural Integrity Auditor for New Zealand real estate imagery.
+
+You will receive two images:
+- BEFORE (original image)
+- AFTER (processed image)
+
+Your task is to reject any structural leakage, opening-state drift, or hidden-geometry revelation.
+
+${STAGE1A_VALIDATION_CRITERIA}
+
+OUTPUT DECISION RULE:
+- If any critical failure criterion is met: category="structure", hardFail=true.
+- If none are met: category="style_only", hardFail=false.
+- If confidence < ${MIN_CONFIDENCE}: hardFail=false.
+
+Return JSON only:
+{
+  "hardFail": boolean,
+  "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
+  "reasons": [string],
+  "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
+}
+
+Stage: Stage 1A (color/cleanup)
+Scene: ${sceneLabel}`;
   }
 
   const stageLabel = stage === "1A" ? "Stage 1A (color/cleanup)" : stage;

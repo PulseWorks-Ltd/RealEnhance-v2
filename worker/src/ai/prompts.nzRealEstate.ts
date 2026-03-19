@@ -590,19 +590,30 @@ TASK:
 Perform a professional 'Flambient' style development.
 Treat this as a light-balancing exercise, NOT a repainting exercise.
 
+MENTAL MODEL:
+Treat the input as a finished photograph.
+You are allowed to relight and recolor it, but not to change what exists in the scene.
+
+PRIMARY GOAL:
+Improve photographic quality only (exposure, tone, color),
+without altering scene content, structure, or visibility.
+
 I. TEXTURE & MICRO-CONTRAST LOCK (CRITICAL)
 - PRESERVE SURFACE DEPTH: Do NOT 'white-over' or flatten horizontal surfaces.
 - SPECIFIC ANCHORS: The grain of timber tables, the mottled texture of stone countertops, and the weave of fabric must remain visible and detailed.
 - BLACK POINT: Maintain deep, rich blacks in shadows (under furniture, in corners) to provide architectural depth. If a surface loses its texture, the exposure is too high.
 
-II. WINDOW RECOVERY (THE 'WINDOW PULL')
-- EXTERIOR VISIBILITY: The view through windows must be clearly visible and exposure-matched to the interior.
+II. EXTERIOR VIEW LOCK (STRICT)
+- EXTERIOR VIEW LOCK (STRICT): You may adjust exposure ONLY where pixel detail already exists. Do NOT reconstruct, 'complete,' or invent any new detail through windows or openings. If an area is blown-out or hidden in the input, it must remain obscured. NO synthetic sky or foliage.
 - NO BLEEDING: Highlights from windows must not bleed onto sills or walls. Architectural boundaries must remain tack-sharp.
 
 III. PHOTOMETRIC ADJUSTMENTS
 - LUMINOUS AIRY FEEL: Lift midtones, but anchor the highlights.
 - WHITE BALANCE: Target 'Gallery White' (Neutral 5500K). Remove muddy yellow or blue-grey casts without making the room look sterile or blue.
 - DEPTH PRESERVATION: Maintain natural light fall-off in corners to ensure 3D volume.
+- Global or softly graduated exposure adjustments applied to existing pixel regions only. No object-level or structure-aware targeting.
+- NO OCCLUSION REVEAL: Shadow lifting must not reveal new structures, spaces, or objects that were obscured or blocked in the input. If a region is non-informative in the input, it must remain so in the output.
+- PIXEL-ONLY ADJUSTMENTS: Tonal adjustments must operate strictly on existing visible pixels. You are FORBIDDEN from using scene understanding to infer, reconstruct, or modify any structure, opening, or object.
 
 IV. EXTERIOR VIEW PRESERVATION (INTERIOR IMAGES ONLY)
 - Treat all views through windows, doors, and glass openings as fixed architectural elements.
@@ -613,6 +624,8 @@ IV. EXTERIOR VIEW PRESERVATION (INTERIOR IMAGES ONLY)
 V. STRUCTURAL & DEPTH LOCK
 - ARCHITECTURAL INTEGRITY: Maintain 100% accuracy. Do not warp, rotate, or change perspective.
 - OPENING PRESERVATION: Preserve the 'void' of doorways and halls. Do not paint over dark openings; they must remain clear architectural penetrations.
+- OPENING STATE LOCK (ABSOLUTE): Every door, sliding panel, and window must retain its exact current state. CLOSED doors must remain CLOSED. OPEN doors must remain OPEN. Do NOT use scene understanding to add depth, perspective, or voids to flat door surfaces.
+- Do not refine, extend, or complete edges of openings or objects. All boundaries must remain exactly as observed in the input pixels.
 - NO STAGING: Do not add or move any objects or furniture.
 
 The final result must look like a high-end, professionally edited photograph from a top-tier NZ real estate agency.`.trim();
@@ -783,6 +796,8 @@ CRITICAL STRUCTURAL RULES:
 - You must NOT change camera position, perspective, or field of view.
 - You must NOT add furniture or enlarge anchor furniture.
 - You may only REMOVE clutter or small movable items.
+- PIXEL-ONLY ADJUSTMENTS: Operate strictly on visible pixels. Do NOT infer, reconstruct, or invent hidden structures, openings, or objects.
+- OPENING STATE LOCK (ABSOLUTE): Every door, sliding panel, and window must retain its exact current state. CLOSED doors must remain CLOSED. OPEN doors must remain OPEN.
 - If unsure, leave the area unchanged.
 
 GEOMETRIC ZERO-TOLERANCE RULE:
@@ -920,6 +935,10 @@ Preserve surface textures and shadows.`.trim();
 
   Surface reconstruction is permitted ONLY behind removed furniture
   and must exactly match surrounding visible structure.
+
+  NO OCCLUSION REVEAL:
+  Do not reveal new structures, spaces, or objects that were obscured or blocked in the input.
+  If a region is non-informative in the input, it must remain non-informative in the output.
 
   In the event of boundary uncertainty, default to preserving the existing
   object rather than reconstructing a hidden opening area.
@@ -1122,10 +1141,9 @@ If removal would require uncertain inference of:
 • Wall corner continuation
 • Door frame seams
 
-→ Prioritize removal; use surrounding textures to infer simple flat wall/floor
-  continuations even if the exact seam is obscured. Preserve the furniture item
-  only when removal would likely create or alter a real opening or known
-  structural boundary.
+→ Preserve the furniture item. Do NOT infer hidden geometry or reconstruct
+  uncertain boundaries. Removal is allowed only when boundaries are already
+  explicit in visible pixels and can be preserved exactly.
 
 When this rule conflicts with the goal of making the room empty,
 preserving architecture takes precedence.
