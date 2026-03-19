@@ -6266,134 +6266,138 @@ export default function BatchProcessor({
         
         {/* Upload Tab */}
         {activeTab === "upload" && (
-          <div className="flex-1 min-h-0 overflow-y-auto text-center relative z-10">
-            <h2 className="text-2xl font-semibold text-slate-900 mb-4">Upload Your Images</h2>
-            <p className="text-slate-600 mb-8">
-              {files.length === 0 
-                ? "Select multiple images to enhance in batch"
-                : `${files.length} image${files.length === 1 ? '' : 's'} selected • Click below to add more from other folders`
-              }
-            </p>
-            
-            <Dropzone 
-              onFilesSelected={(newFiles) => {
-                setFiles(prev => [...prev, ...newFiles]);
-                if (newFiles.length > 0) setActiveTab("images");
-              }}
-              maxFiles={50}
-              maxSizeMB={15}
-              className="bg-brand-800/20"
-            />
+          <div className="flex-1 min-h-0 overflow-y-auto relative z-10 px-4 py-6 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full max-w-6xl text-center">
+              <h2 className="text-2xl font-semibold text-slate-900 mb-3">Upload Your Images</h2>
+              <p className="text-slate-600 mb-6">
+                {files.length === 0
+                  ? "Select multiple images to enhance in batch"
+                  : `${files.length} image${files.length === 1 ? '' : 's'} selected • Click below to add more from other folders`
+                }
+              </p>
 
-            {files.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-lg font-medium text-slate-900 mb-4">
-                  Selected Images ({files.length})
-                </h3>
-                
-                {/* Room Linking Controls */}
-                <div className="flex gap-2 mb-4 justify-center flex-wrap">
-                  <button 
-                    className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50" 
-                    onClick={assignRoomKey} 
-                    disabled={selection.size === 0}
-                    data-testid="button-assign-room"
-                  >
-                    📋 Link as same room…
-                  </button>
-                  <button 
-                    className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50" 
-                    onClick={setAngleOrder} 
-                    disabled={selection.size === 0}
-                    data-testid="button-set-angle-order"
-                  >
-                    🔢 Set angle order…
-                  </button>
-                  <button 
-                    className="rounded-md border border-slate-600 px-3 py-1 text-sm text-white bg-slate-800 hover:bg-slate-700 transition" 
-                    onClick={clearAllFiles}
-                    data-testid="button-clear-all"
-                  >
-                    🗑️ Clear All
-                  </button>
-                  {selection.size > 0 && (
-                    <span className="text-xs text-gray-400 flex items-center">
-                      {selection.size} selected
-                    </span>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {previewUrls.map((url, i) => (
-                    <div 
-                      key={i} 
-                      className={`relative group cursor-pointer rounded-lg border-2 transition-all ${
-                        selection.has(i) ? "border-brand-500 ring-2 ring-brand-500/30" : "border-gray-600"
-                      }`}
-                      onClick={() => toggleSelect(i)}
-                      data-testid={`thumbnail-${i}`}
-                    >
-                      <img 
-                        src={url} 
-                        alt={`upload-${i}`} 
-                        className="w-full h-24 object-cover rounded-lg"
-                      />
-                      
-                      {/* Remove button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeFile(i);
-                        }}
-                        className="absolute top-1 right-1 w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-700 z-10"
-                        data-testid={`button-remove-${i}`}
-                        title="Remove image"
-                      >
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                      
-                      {/* Selection indicator */}
-                      {selection.has(i) && (
-                        <div className="absolute top-1 left-1 w-5 h-5 bg-brand-light0 rounded-full flex items-center justify-center">
-                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        </div>
-                      )}
-                      
-                      {/* Room and angle badges */}
-                      <div className="absolute bottom-1 left-1 flex flex-col gap-1">
-                        {metaByIndex[i]?.roomKey && (
-                          <span className="inline-block rounded-full bg-brand-accent text-white px-2 py-0.5 text-[10px] font-medium">
-                            Room: {metaByIndex[i]?.roomKey}
-                          </span>
-                        )}
-                        {metaByIndex[i]?.angleOrder && (
-                          <span className="inline-block rounded-full bg-slate-600 text-white px-2 py-0.5 text-[10px] font-medium">
-                            Angle {metaByIndex[i]?.angleOrder}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-end">
-                        <div className="w-full p-2 text-white text-xs bg-gradient-to-t from-black to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                          {files[i].name}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  onClick={() => setActiveTab("images")}
-                  className="mt-6 bg-action-600 text-white px-6 py-3 rounded-lg hover:bg-action-700 transition-colors font-medium"
-                  data-testid="button-proceed-workspace"
-                >
-                  Next: Configure and Review
-                </button>
+              <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-sm sm:p-4">
+                <Dropzone
+                  onFilesSelected={(newFiles) => {
+                    setFiles(prev => [...prev, ...newFiles]);
+                    if (newFiles.length > 0) setActiveTab("images");
+                  }}
+                  maxFiles={50}
+                  maxSizeMB={15}
+                  className="bg-brand-800/20"
+                />
               </div>
-            )}
+
+              {files.length > 0 && (
+                <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="text-lg font-medium text-slate-900 mb-4">
+                    Selected Images ({files.length})
+                  </h3>
+
+                  {/* Room Linking Controls */}
+                  <div className="flex gap-2 mb-4 justify-center flex-wrap">
+                    <button
+                      className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+                      onClick={assignRoomKey}
+                      disabled={selection.size === 0}
+                      data-testid="button-assign-room"
+                    >
+                      📋 Link as same room…
+                    </button>
+                    <button
+                      className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+                      onClick={setAngleOrder}
+                      disabled={selection.size === 0}
+                      data-testid="button-set-angle-order"
+                    >
+                      🔢 Set angle order…
+                    </button>
+                    <button
+                      className="rounded-md border border-slate-600 px-3 py-1 text-sm text-white bg-slate-800 hover:bg-slate-700 transition"
+                      onClick={clearAllFiles}
+                      data-testid="button-clear-all"
+                    >
+                      🗑️ Clear All
+                    </button>
+                    {selection.size > 0 && (
+                      <span className="text-xs text-gray-400 flex items-center">
+                        {selection.size} selected
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
+                    {previewUrls.map((url, i) => (
+                      <div
+                        key={i}
+                        className={`relative group cursor-pointer rounded-lg border-2 transition-all ${
+                          selection.has(i) ? "border-brand-500 ring-2 ring-brand-500/30" : "border-gray-600"
+                        }`}
+                        onClick={() => toggleSelect(i)}
+                        data-testid={`thumbnail-${i}`}
+                      >
+                        <img
+                          src={url}
+                          alt={`upload-${i}`}
+                          className="w-full h-24 object-cover rounded-lg"
+                        />
+
+                        {/* Remove button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeFile(i);
+                          }}
+                          className="absolute top-1 right-1 w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-700 z-10"
+                          data-testid={`button-remove-${i}`}
+                          title="Remove image"
+                        >
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+
+                        {/* Selection indicator */}
+                        {selection.has(i) && (
+                          <div className="absolute top-1 left-1 w-5 h-5 bg-brand-light0 rounded-full flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                        )}
+
+                        {/* Room and angle badges */}
+                        <div className="absolute bottom-1 left-1 flex flex-col gap-1">
+                          {metaByIndex[i]?.roomKey && (
+                            <span className="inline-block rounded-full bg-brand-accent text-white px-2 py-0.5 text-[10px] font-medium">
+                              Room: {metaByIndex[i]?.roomKey}
+                            </span>
+                          )}
+                          {metaByIndex[i]?.angleOrder && (
+                            <span className="inline-block rounded-full bg-slate-600 text-white px-2 py-0.5 text-[10px] font-medium">
+                              Angle {metaByIndex[i]?.angleOrder}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-end">
+                          <div className="w-full p-2 text-white text-xs bg-gradient-to-t from-black to-transparent rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                            {files[i].name}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("images")}
+                    className="mt-6 bg-action-600 text-white px-6 py-3 rounded-lg hover:bg-action-700 transition-colors font-medium"
+                    data-testid="button-proceed-workspace"
+                  >
+                    Next: Configure and Review
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
