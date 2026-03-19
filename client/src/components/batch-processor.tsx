@@ -6013,12 +6013,19 @@ export default function BatchProcessor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, files, currentImageIndex, handleRemoveImage, setCurrentImageIndex]);
 
-  // Scroll sync for carousel - Auto-scroll active thumbnail into view
+  // Scroll sync for carousel - horizontal only to avoid vertical viewport jumps.
   useEffect(() => {
     if (activeTab === "images") {
       const element = document.getElementById(`thumbnail-btn-${currentImageIndex}`);
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      const strip = document.getElementById("images-thumbnail-strip");
+      if (element && strip) {
+        const targetLeft =
+          element.offsetLeft - (strip.clientWidth - element.clientWidth) / 2;
+        const maxLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
+        strip.scrollTo({
+          left: Math.max(0, Math.min(targetLeft, maxLeft)),
+          behavior: "smooth",
+        });
       }
     }
   }, [currentImageIndex, activeTab]);
@@ -6502,7 +6509,7 @@ export default function BatchProcessor({
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_auto_minmax(112px,auto)]">
+                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_auto_140px]">
                   <div className="flex min-h-0 min-w-0 flex-1 flex-col py-2">
                     <div className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
@@ -6582,7 +6589,7 @@ export default function BatchProcessor({
                     })()}
                   </div>
 
-                  <div className="w-full max-w-full min-h-[112px] overflow-x-auto py-2 snap-x scroll-smooth shrink-0">
+                  <div id="images-thumbnail-strip" className="w-full max-w-full h-[140px] overflow-x-auto overflow-y-hidden py-2 snap-x scroll-smooth shrink-0">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
