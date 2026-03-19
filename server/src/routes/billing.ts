@@ -17,6 +17,7 @@ import {
   PLAN_ORDER,
   formatPrice,
 } from "@realenhance/shared/billing/stripePlans.js";
+import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary } from "../services/trials.js";
@@ -58,6 +59,41 @@ async function markTrialConvertedSafe(agencyId: string, reason: string) {
   } catch (err) {
     console.warn(`[BILLING] Failed to convert trial during ${reason} for agency ${agencyId}`, err);
   }
+}
+
+function subscriptionStatusPriority(status: string | undefined): number {
+  switch ((status || "").toLowerCase()) {
+    case "active":
+      return 5;
+    case "trialing":
+      return 4;
+    case "incomplete":
+      return 3;
+    case "past_due":
+      return 2;
+    case "unpaid":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+function selectBestSubscription(subscriptions: Stripe.Subscription[]): Stripe.Subscription | null {
+  if (!subscriptions.length) return null;
+
+  const eligible = subscriptions.filter((s) => subscriptionStatusPriority(s.status) > 0);
+  if (!eligible.length) return null;
+
+  return eligible.sort((a, b) => {
+    const rankDiff = subscriptionStatusPriority(b.status) - subscriptionStatusPriority(a.status);
+    if (rankDiff !== 0) return rankDiff;
+
+    const aPeriodStart = Number((a as any).current_period_start || 0);
+    const bPeriodStart = Number((b as any).current_period_start || 0);
+    if (bPeriodStart !== aPeriodStart) return bPeriodStart - aPeriodStart;
+
+    return Number(b.created || 0) - Number(a.created || 0);
+  })[0];
 }
 
 /**
@@ -618,40 +654,40 @@ router.post("/reconcile-subscription", requireAuth, async (req: Request, res: Re
       });
     }
 
-    const [activeList, trialingList] = await Promise.all([
-      stripe.subscriptions.list({ customer: customerId, status: "active", limit: 20 }),
-      stripe.subscriptions.list({ customer: customerId, status: "trialing", limit: 20 }),
-    ]);
+    const allSubscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 50,
+    });
 
-    const candidates = [...activeList.data, ...trialingList.data];
-    if (!candidates.length) {
+    const best = selectBestSubscription(allSubscriptions.data);
+    if (!best) {
       return res.json({
         reconciled: false,
         reason: "no_active_subscription",
       });
     }
 
-    const latest = candidates.sort((a, b) => (b.created || 0) - (a.created || 0))[0];
-    const latestPriceId = latest.items.data[0]?.price?.id || null;
+    const latestPriceId = best.items.data[0]?.price?.id || null;
     const mapped = findPlanByPriceId(latestPriceId);
     const planTier: PlanTier = mapped?.planTier || "starter";
 
     if (!mapped) {
-      console.warn(
+      console.error(
         `[BILLING] Unknown Stripe price ID ${latestPriceId || "null"} during reconciliation for agency ${agency.agencyId}; defaulting to starter`
       );
     }
 
     agency.stripeCustomerId = customerId;
-    agency.stripeSubscriptionId = latest.id;
+    agency.stripeSubscriptionId = best.id;
     if (latestPriceId) {
       agency.stripePriceId = latestPriceId;
     }
     agency.planTier = planTier;
-    agency.subscriptionStatus = "ACTIVE";
+    agency.subscriptionStatus = mapStripeStatusToInternal(best.status as StripeSubscriptionStatus);
 
-    const periodStart = (latest as any).current_period_start;
-    const periodEnd = (latest as any).current_period_end;
+    const periodStart = (best as any).current_period_start;
+    const periodEnd = (best as any).current_period_end;
     if (periodStart) {
       agency.currentPeriodStart = new Date(periodStart * 1000).toISOString();
     }
@@ -669,7 +705,7 @@ router.post("/reconcile-subscription", requireAuth, async (req: Request, res: Re
       reconciled: true,
       agencyId: agency.agencyId,
       planTier,
-      stripeSubscriptionId: latest.id,
+      stripeSubscriptionId: best.id,
       stripePriceId: latestPriceId,
       allowance: {
         monthlyIncluded: usage.includedLimit,

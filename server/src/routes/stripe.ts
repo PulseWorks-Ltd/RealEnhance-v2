@@ -31,7 +31,7 @@ function resolvePlanTierWithFallback(priceId: string | null | undefined, context
     return mapped.planTier;
   }
 
-  console.warn(
+  console.error(
     `[STRIPE] Unknown price ID ${priceId || "null"} in ${context}; defaulting to starter`
   );
   return "starter";

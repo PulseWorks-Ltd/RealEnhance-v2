@@ -284,6 +284,7 @@ export async function markTrialConverted(agencyId: string): Promise<number> {
             trial_credits_used = trial_credits_total,
             updated_at = NOW()
       WHERE agency_id = $1
+        AND trial_status <> 'converted'
       RETURNING trial_credits_used, trial_credits_total;`,
     [agencyId]
   );
