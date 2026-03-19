@@ -13,6 +13,7 @@ export type WallCoverageBand = "5-10" | "10-20" | "20-40" | "40-60" | "60+";
 export type OpeningOrientation = "portrait" | "landscape" | "square";
 export type PaneStructure = "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown";
 export type HeightClass = "standard" | "floor_to_ceiling" | "transom";
+export type DoorLeafState = "closed" | "open" | "ajar" | "unknown";
 
 export type AnchorFixtureType =
   | "ac_unit"
@@ -46,6 +47,7 @@ export type StructuralOpening = {
   orientation: OpeningOrientation;
   paneStructure: PaneStructure;
   heightClass: HeightClass;
+  doorLeafState: DoorLeafState;
   approxAspectRatio: number;
   confidence: number;
 
@@ -75,6 +77,8 @@ export type OpeningValidationResult = {
     openingResized: boolean;
     openingClassMismatch: boolean;
     openingBandMismatch: boolean;
+    openingStateChanged?: boolean;
+    openingApertureExpanded?: boolean;
     openingSignatureMismatch?: boolean;
     outOfFrameOpenings: string[];
     openingCount?: {
@@ -105,6 +109,9 @@ const OPENING_VALIDATOR_MODEL = String(
   process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro"
 );
 const WINDOW_SILL_MAX_SHIFT = Number(process.env.OPENING_WINDOW_SILL_MAX_SHIFT || 0.1);
+const OPENING_APERTURE_EXPANSION_MAX = Number(process.env.OPENING_APERTURE_EXPANSION_MAX || 0.45);
+const OPENING_STATE_CONFIDENCE_MIN = Number(process.env.OPENING_STATE_CONFIDENCE_MIN || 0.9);
+const OPENING_APERTURE_CONFIDENCE_MIN = Number(process.env.OPENING_APERTURE_CONFIDENCE_MIN || 0.9);
 
 const BASELINE_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine.
 
@@ -126,7 +133,7 @@ Ignore:
 - Temporary objects
 - Wall art
 - Mirrors
-- Open door leaf positions (door open vs closed does not matter)
+- Door leaf state must be captured when visible (closed/open/ajar); use unknown if not clearly visible
 
 You must output strict JSON only.
 No explanations.
@@ -169,6 +176,7 @@ Return JSON in this exact schema:
       "orientation": "portrait" | "landscape" | "square",
       "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
       "heightClass": "standard" | "floor_to_ceiling" | "transom",
+      "doorLeafState": "closed" | "open" | "ajar" | "unknown",
       "approxAspectRatio": number,
       "confidence": number
     }
@@ -198,6 +206,7 @@ Rules:
 - orientation should be derived from opening shape (portrait, landscape, square).
 - paneStructure should describe visible pane layout; if uncertain return "unknown".
 - heightClass should describe vertical extent as standard, floor_to_ceiling, or transom.
+- doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
 
@@ -317,6 +326,20 @@ function isPaneStructure(value: string): value is PaneStructure {
 
 function isHeightClass(value: string): value is HeightClass {
   return value === "standard" || value === "floor_to_ceiling" || value === "transom";
+}
+
+function isDoorLeafState(value: string): value is DoorLeafState {
+  return value === "closed" || value === "open" || value === "ajar" || value === "unknown";
+}
+
+function normalizeDoorLeafState(value: unknown, openingType: StructuralOpeningType): DoorLeafState {
+  if (openingType !== "door" && openingType !== "closet_door") return "unknown";
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "unknown";
+  if (raw === "closed" || raw === "shut" || raw === "sealed") return "closed";
+  if (raw === "open" || raw === "opened" || raw === "fully_open") return "open";
+  if (raw === "ajar" || raw === "partially_open" || raw === "part-open") return "ajar";
+  return "unknown";
 }
 
 function normalizePaneStructure(value: unknown): PaneStructure {
@@ -605,6 +628,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? opening.heightClass
         : deriveHeightClass(verticalBandCandidate);
 
+    const doorLeafStateCandidate =
+      typeof opening.doorLeafState === "string" && isDoorLeafState(opening.doorLeafState)
+        ? opening.doorLeafState
+        : normalizeDoorLeafState(opening.doorLeafState, normalizedType);
+
     return {
       id: opening.id,
       type: normalizedType,
@@ -620,6 +648,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       orientation: orientationCandidate,
       paneStructure: paneStructureCandidate,
       heightClass: heightClassCandidate,
+      doorLeafState: doorLeafStateCandidate,
       approxAspectRatio: aspectRatioCandidate,
       confidence: confidenceCandidate,
 
@@ -830,6 +859,12 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   if (typeof input.summary.openingBandMismatch !== "boolean") {
     throw new Error("openingBandMismatch must be boolean in summary");
   }
+  if (input.summary.openingStateChanged !== undefined && typeof input.summary.openingStateChanged !== "boolean") {
+    throw new Error("openingStateChanged must be boolean in summary when present");
+  }
+  if (input.summary.openingApertureExpanded !== undefined && typeof input.summary.openingApertureExpanded !== "boolean") {
+    throw new Error("openingApertureExpanded must be boolean in summary when present");
+  }
   if (!Array.isArray(input.summary.outOfFrameOpenings)) {
     throw new Error("outOfFrameOpenings must be an array in summary");
   }
@@ -845,6 +880,8 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     openingResized: input.summary.openingResized === true,
     openingClassMismatch: input.summary?.openingClassMismatch === true,
     openingBandMismatch: input.summary.openingBandMismatch === true,
+    openingStateChanged: input.summary.openingStateChanged === true,
+    openingApertureExpanded: input.summary.openingApertureExpanded === true,
     outOfFrameOpenings: input.summary.outOfFrameOpenings.filter((openingId: any) => typeof openingId === "string"),
     openingCount:
       input.summary.openingCount &&
@@ -912,6 +949,7 @@ export async function extractStructuralBaseline(imageUrl: string): Promise<Struc
       orientation: opening.orientation,
       paneStructure: opening.paneStructure,
       heightClass: opening.heightClass,
+      doorLeafState: opening.doorLeafState,
       confidence: opening.confidence,
     })),
     anchorFixtures: (baseline.anchorFixtures || []).map((fixture) => ({
@@ -944,6 +982,8 @@ export async function validateOpeningPreservation(
   let openingResized = false;
   let openingClassMismatch = false;
   let openingBandMismatch = false;
+  let openingStateChanged = false;
+  let openingApertureExpanded = false;
   let maxAreaDelta = 0;
   let maxAspectDelta = 0;
   let maxWindowSillShift = 0;
@@ -1029,7 +1069,41 @@ export async function validateOpeningPreservation(
     const baseArea = Math.max(0.01, Number(baseOpening.area_pct || 0));
     const detectedArea = Math.max(0.01, Number(match.area_pct || 0));
     const areaDelta = Math.abs((detectedArea - baseArea) / baseArea);
+    const areaGrowthRatio = (detectedArea - baseArea) / baseArea;
     maxAreaDelta = Math.max(maxAreaDelta, areaDelta);
+
+    if (
+      areaGrowthRatio >= OPENING_APERTURE_EXPANSION_MAX &&
+      baseOpening.confidence >= OPENING_APERTURE_CONFIDENCE_MIN &&
+      match.confidence >= OPENING_APERTURE_CONFIDENCE_MIN &&
+      matchCoverageIdx > baseCoverageIdx
+    ) {
+      openingApertureExpanded = true;
+      openingResized = true;
+      invariantReasons.push(`aperture_expanded_gt_${OPENING_APERTURE_EXPANSION_MAX.toFixed(2)}`);
+      analysisNotes.push(
+        `Opening ${baseOpening.id} visible aperture expanded materially (growth=${areaGrowthRatio.toFixed(3)}, max=${OPENING_APERTURE_EXPANSION_MAX.toFixed(3)}).`
+      );
+    }
+
+    if (
+      (baseOpening.type === "door" || baseOpening.type === "closet_door") &&
+      (baseOpening.doorLeafState === "closed" || baseOpening.doorLeafState === "open") &&
+      baseOpening.confidence >= OPENING_STATE_CONFIDENCE_MIN &&
+      match.confidence >= OPENING_STATE_CONFIDENCE_MIN
+    ) {
+      const detectedDoorState = match.doorLeafState;
+      if (
+        (detectedDoorState === "closed" || detectedDoorState === "open") &&
+        detectedDoorState !== baseOpening.doorLeafState
+      ) {
+        openingStateChanged = true;
+        invariantReasons.push("door_leaf_state_changed");
+        analysisNotes.push(
+          `Door state changed for ${baseOpening.id} (before=${baseOpening.doorLeafState}, after=${detectedDoorState}).`
+        );
+      }
+    }
 
     if (baseOpening.type === "window") {
       const baseBottomY = Number(baseOpening.bbox?.[3] ?? NaN);
@@ -1125,6 +1199,8 @@ export async function validateOpeningPreservation(
     openingResized,
     openingClassMismatch,
     openingBandMismatch,
+    openingStateChanged,
+    openingApertureExpanded,
     openingSignatureMismatch: analysisNotes.some((note) => note.includes("opening signature mismatch (L->R)")),
     outOfFrameOpenings,
     openingCount: {
@@ -1159,6 +1235,8 @@ export function shouldHardFailOpening(
   if (summary.openingSealed) return true;
   if (summary.openingRelocated) return true;
   if (summary.openingClassMismatch) return true;
+  if (summary.openingStateChanged) return true;
+  if (summary.openingApertureExpanded) return true;
   if (opts?.relocationDetected === true) return true;
 
   const highConfidence = summary.confidence >= 0.9;

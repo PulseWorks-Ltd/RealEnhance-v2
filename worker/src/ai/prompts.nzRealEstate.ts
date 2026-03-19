@@ -1000,10 +1000,15 @@ Preserve surface textures and shadows.`.trim();
   Surface reconstruction is permitted ONLY behind removed furniture
   and must exactly match surrounding visible structure.
 
-  If reconstruction involves uncertainty, prioritize removal and use surrounding
-  textures to infer simple flat wall/floor continuations even if the exact seam
-  is obscured. Preserve furniture only when removal would likely create or
-  alter a real opening or known structural boundary.
+  In the event of boundary uncertainty, default to preserving the existing
+  object rather than reconstructing a hidden opening area.
+  Do NOT infer hidden windows, doors, walkthroughs, arches, or recess openings.
+  There is no opening discovery in Stage 1B.
+
+  DOOR STATE LOCK:
+  Closed doors must remain closed.
+  Open doors must remain open.
+  Do not change door leaf state.
 
 YOUR ONLY JOB: Remove furniture and reconstruct the matching surfaces that were behind it. NOTHING MORE.
 Do not introduce any new physical structures or furniture components.

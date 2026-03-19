@@ -115,6 +115,7 @@ import { detectCurtainRail } from "./validators/curtainRailDetector";
 import {
   detectRelocation,
   extractStructuralBaseline,
+  validateOpeningPreservation,
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
 import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
@@ -938,7 +939,10 @@ CRITICAL VALIDATION CRITERION: Would a buyer who has physically walked through t
 2) Openings integrity
 - Openings must still exist (windows, doors, walk-throughs)
 - Ignore occlusion by generated content
-- Ignore newly revealed openings that were likely hidden by removed furniture
+- Fail if an opening appears or expands beyond the confidently visible boundary in the input
+- Any opening not 100% identifiable in the input is hallucination in this stage
+- Closed doors must remain closed; open doors must remain open
+- If an existing opening's visible aperture increases materially, return FAIL
 
 3) Fixture preservation
 - Fixed fixtures/built-ins should remain (lights, vents, fixed joinery)
@@ -957,7 +961,8 @@ Return JSON only with exactly:
 Guidance:
 - Use confidence from 0 to 1.
 - Keep failReasons concise machine-friendly tokens.
-- If uncertain, prefer passed=true unless there is clear structural contradiction.`;
+- If opening-boundary evidence is ambiguous, return passed=false with failReasons including "ambiguous_opening_change".
+- Recommended failReasons when applicable: "opening_hallucination", "opening_aperture_expanded", "door_state_changed", "ambiguous_opening_change".`;
 
 async function runStage1BFullFurnitureGeminiValidation(opts: {
   stage1APath: string;
@@ -1208,6 +1213,7 @@ async function evaluateStage1BFullPolicy(input: {
   attemptNo: number;
   path1A: string;
   candidate: string;
+  structuralBaseline?: StructuralBaseline | null;
   stage1BStructuralDeviationDeg: number;
   openingCountDelta: number;
   stage1BSemanticWallDriftPct: number;
@@ -1273,6 +1279,44 @@ async function evaluateStage1BFullPolicy(input: {
       effectiveViolationType: "invalid_output_corrupt",
       effectiveReasons: ["invalid_output_corrupt"],
     };
+  }
+
+  if (input.structuralBaseline && input.structuralBaseline.openings.length > 0) {
+    try {
+      const openingValidation = await validateOpeningPreservation(input.structuralBaseline, input.candidate, {
+        mode: "default",
+      });
+
+      const openingStateChanged = openingValidation.summary.openingStateChanged === true;
+      const openingApertureExpanded = openingValidation.summary.openingApertureExpanded === true;
+
+      if (openingStateChanged || openingApertureExpanded) {
+        const deterministicReasons: string[] = [];
+        if (openingStateChanged) deterministicReasons.push("door_state_changed");
+        if (openingApertureExpanded) deterministicReasons.push("opening_aperture_expanded");
+
+        nLog("[STAGE1B_FULL_OPENING_VETO]", {
+          jobId: input.jobId,
+          attempt: input.attemptNo,
+          openingStateChanged,
+          openingApertureExpanded,
+          confidence: openingValidation.summary.confidence,
+          openingCount: openingValidation.summary.openingCount,
+        });
+
+        return {
+          effectiveHardFail: true,
+          effectiveViolationType: openingStateChanged ? "door_state_changed" : "opening_aperture_expanded",
+          effectiveReasons: deterministicReasons.map((reason) => `opening_veto:${reason}`),
+        };
+      }
+    } catch (openingErr: any) {
+      nLog("[STAGE1B_FULL_OPENING_VETO_ERROR]", {
+        jobId: input.jobId,
+        attempt: input.attemptNo,
+        error: openingErr?.message || String(openingErr),
+      });
+    }
   }
 
   const geminiResult = await runStage1BFullFurnitureGeminiValidation({
@@ -6308,6 +6352,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           attemptNo: stage1BAttemptNo,
           path1A,
           candidate,
+          structuralBaseline,
           stage1BStructuralDeviationDeg,
           openingCountDelta,
           stage1BSemanticWallDriftPct,
