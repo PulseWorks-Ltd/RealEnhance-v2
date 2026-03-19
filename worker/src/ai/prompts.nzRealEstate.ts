@@ -583,127 +583,48 @@ export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior
   return buildStage1AInteriorPromptNZStyle(roomType);
 }
 
-function buildStage1AInteriorPromptNZStyle(roomType: string): string {
+export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
   return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ HIGH-END)
 
-You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT.
-You are NOT an editor, stylist, or generator.
-
 TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP of this ${roomType || "room"}.
-Perform a professional 'Flambient' style RAW development.
+Perform a professional 'Flambient' style development.
 Treat this as a light-balancing exercise, NOT a repainting exercise.
 
-Your goal is to improve photographic quality (exposure, dynamic range, white balance)
-while preserving 100% of the original scene content, geometry, materials, and object placement.
+I. TEXTURE & MICRO-CONTRAST LOCK (CRITICAL)
+- PRESERVE SURFACE DEPTH: Do NOT 'white-over' or flatten horizontal surfaces.
+- SPECIFIC ANCHORS: The grain of timber tables, the mottled texture of stone countertops, and the weave of fabric must remain visible and detailed.
+- BLACK POINT: Maintain deep, rich blacks in shadows (under furniture, in corners) to provide architectural depth. If a surface loses its texture, the exposure is too high.
 
-This is PARAMETER ADJUSTMENT, not image generation.
+II. WINDOW RECOVERY (THE 'WINDOW PULL')
+- EXTERIOR VISIBILITY: The view through windows must be clearly visible and exposure-matched to the interior.
+- NO BLEEDING: Highlights from windows must not bleed onto sills or walls. Architectural boundaries must remain tack-sharp.
 
-Model: Gemini 2.5 Flash Image
-Default Sampling: temp=0.55, topP=0.85, topK=40
+III. PHOTOMETRIC ADJUSTMENTS
+- LUMINOUS AIRY FEEL: Lift midtones, but anchor the highlights.
+- WHITE BALANCE: Target 'Gallery White' (Neutral 5500K). Remove muddy yellow or blue-grey casts without making the room look sterile or blue.
+- DEPTH PRESERVATION: Maintain natural light fall-off in corners to ensure 3D volume.
 
-────────────────────────────────
-STRICT GEOMETRIC & CONTENT LOCK (NON-NEGOTIABLE)
-────────────────────────────────
+IV. EXTERIOR VIEW PRESERVATION (INTERIOR IMAGES ONLY)
+- Treat all views through windows, doors, and glass openings as fixed architectural elements.
+- NO SKY ENHANCEMENT: Do not change sky color, add clouds, or replace blown-out window regions with synthetic sky.
+- NO LANDSCAPING ALTERATIONS: Do not add, saturate, or modify exterior foliage, trees, lawns, or gardens.
+- NO OUTDOOR COLOR SHIFTS: Interior white-balance and exposure corrections must not alter outdoor content or color.
 
-PRESERVE ALL PIXELS THAT REPRESENT PHYSICAL OBJECTS.
+V. STRUCTURAL & DEPTH LOCK
+- ARCHITECTURAL INTEGRITY: Maintain 100% accuracy. Do not warp, rotate, or change perspective.
+- OPENING PRESERVATION: Preserve the 'void' of doorways and halls. Do not paint over dark openings; they must remain clear architectural penetrations.
+- NO STAGING: Do not add or move any objects or furniture.
 
-1. Architecture & Fixtures
-  All walls, ceilings, floors, windows, doors, built-ins, appliances, fixtures,
-  fittings, vents, lighting, and services MUST remain IDENTICAL in:
-  • Shape
-  • Position
-  • Scale
-  • Material appearance
-  • Texture detail
+The final result must look like a high-end, professionally edited photograph from a top-tier NZ real estate agency.`.trim();
+}
 
-2. Movable Objects
-  Furniture, décor, clutter, cords, personal items, curtains, and blinds MUST:
-  • Remain present
-  • Remain in the same position
-  • Remain visually unchanged
+export function buildStage1AInteriorPromptNZHighEnd(roomType: string): string {
+  // Keep high-end mode on the same structural-safe Pro-Camera directive for consistency.
+  return buildStage1AInteriorPromptNZStandard(roomType);
+}
 
-4. Exterior View Preservation (Interior Images Only)
-  When processing an interior room, the view through all windows, doors, and
-  glass openings is a FIXED ARCHITECTURAL ELEMENT.
-  • NO SKY ENHANCEMENT: Do not change sky color, add clouds, or replace
-    blown-out windows with blue-sky composites.
-  • NO LANDSCAPING ALTERATIONS: Do not add, saturate, or modify foliage,
-    trees, or gardens visible outside.
-  • NO COLOR SHIFTS OUTSIDE: Interior lighting/white-balance adjustments must
-    not bleed into the exterior view. Exterior content and color must remain
-    pixel-identical to the input.
-
-3. Texture Integrity (Critical)
-  • Do NOT smooth, regenerate, or repaint surfaces
-  • Carpet pile, wood grain, tile texture, wall texture must remain visible
-  • Noise reduction must NOT create plastic, waxy, or painted surfaces
-
-4. Texture & Micro-Contrast Lock (Critical)
-  • PRESERVE SURFACE DEPTH: Do NOT 'white-over' or flatten horizontal surfaces.
-  • SPECIFIC ANCHORS: The grain of timber tables, the mottled texture of stone countertops, and the weave of sofa fabrics must remain visible and detailed.
-  • BLACK POINT: Maintain deep, rich blacks in shadows (under furniture, in corners) to provide architectural depth. If a surface loses its texture, the exposure is too high.
-
-────────────────────────────────
-PROHIBITED ACTIONS (ZERO TOLERANCE)
-────────────────────────────────
-
-• NO decluttering or tidying
-• NO object removal or addition
-• NO virtual staging
-• NO inpainting or content regeneration
-• NO geometry warping or perspective correction
-• NO straightening that requires pixel resynthesis
-
-If the room is messy, it MUST remain messy.
-Fix the light — NOT the room.
-
-────────────────────────────────
-PRIMARY OBJECTIVE
-────────────────────────────────
-
-Optimize high-dynamic-range balancing for a natural,
-high-dynamic-range interior photograph suitable for real estate marketing.
-
-────────────────────────────────
-ALLOWED ADJUSTMENTS (GLOBAL ONLY)
-────────────────────────────────
-
-• Exposure and tonal balancing may be spatially adaptive (e.g. interior vs openings),
-  but must remain physically plausible and consistent with the original lighting.
-• Neutral daylight white balance
-• Global contrast and tone balancing
-• Lift shadows and midtones to improve visibility while preserving depth and contrast.
-• Highlight recovery
-• Subtle global clarity (edge-preserving)
-
-• EXTERIOR VISIBILITY: The view through windows must be clearly visible and exposure-matched to the interior.
-• NO BLEEDING: Highlights from windows must not bleed onto window sills or surrounding walls. Architectural boundaries must remain tack-sharp.
-• LUMINOUS AIRY FEEL: Lift midtones, but anchor the highlights.
-• WHITE BALANCE: Target 'Gallery White' (Neutral 5500K). Remove muddy yellow or blue-grey casts without making the room look sterile or blue.
-• DEPTH PRESERVATION: Maintain natural light fall-off in the furthest corners of the room to ensure 3D volume.
-
-• Preserve material contrast and depth.
-• White surfaces (walls, ceilings) must remain bright but retain subtle shading and form.
-• Do NOT clip highlights or produce flat, overexposed, or 'milky' results.
-
-Do NOT perform explicit object-level edits, masking, or content changes.
-You MAY apply spatially-aware tonal adjustments inferred from scene understanding
-(e.g. balancing interior vs window exposure), provided no structure, texture,
-or content is altered.
-
-────────────────────────────────
-FINAL CONSTRAINT
-────────────────────────────────
-
-Do NOT interpret “Enhancement” as “Improvement of the property”.
-It is an improvement of the PHOTO ONLY.
-
-────────────────────────────────
-OUTPUT
-────────────────────────────────
-
-Return ONLY the enhanced image.`.trim();
+function buildStage1AInteriorPromptNZStyle(roomType: string): string {
+  return buildStage1AInteriorPromptNZHighEnd(roomType);
 }
 
 function buildStage1AExteriorPromptNZStyle(): string {
