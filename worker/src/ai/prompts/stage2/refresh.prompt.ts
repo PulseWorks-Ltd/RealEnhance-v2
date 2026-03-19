@@ -32,6 +32,62 @@ Exterior taps may remain unchanged, but do NOT reconstruct removed hoses or loos
 Any violation of these rules is a structural error.
 `.trim();
 
+const VISIBLE_EXTENT_LOCK_BLOCK = `
+VISIBLE EXTENT LOCK (ABSOLUTE)
+
+The visible size, proportion, and pixel footprint of all architectural elements must remain unchanged.
+
+This includes:
+- wall lengths and visible boundaries
+- window and door width/height
+- glass area and opening proportions
+
+Do NOT:
+- extend wall surfaces to cover openings
+- shrink, crop, or partially occlude windows to fit furniture
+- alter the ratio between wall and opening areas
+
+If furniture does not fit, adjust or remove the furniture — never modify architecture.
+`.trim();
+
+const BUILT_IN_MATERIAL_IDENTITY_LOCK_BLOCK = `
+BUILT-IN MATERIAL IDENTITY LOCK (ABSOLUTE)
+
+All built-in elements must retain their exact material and finish, including:
+- kitchen countertops / benchtops
+- cabinetry finishes
+- vanities and fixed surfaces
+
+Do NOT:
+- change stone type, color, veining, or texture
+- repaint or resurface built-ins
+- replace or restyle fixed materials
+
+Only lighting and color balance may affect their appearance.
+`.trim();
+
+const CONSTRAINT_PRIORITY_ORDER_BLOCK = `
+CONSTRAINT PRIORITY ORDER
+
+1. Architecture & openings (highest priority)
+2. Built-ins & fixed fixtures
+3. Anchor furniture
+4. Layout optimization (lowest priority)
+
+If any rule conflicts:
+- Lower priority rules must yield
+- Never modify architecture or built-ins to satisfy layout or anchor placement
+`.trim();
+
+const REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK = `
+REFRESH COMPLETENESS ENFORCEMENT
+
+All visible soft furnishings and decor (bedding, pillows, artwork, rugs, small decor)
+must be restyled or replaced to match the target style.
+
+Do NOT leave original soft items unchanged unless they already match the target style.
+`.trim();
+
 const FURNITURE_ADDITION_CONSTRAINTS_REFRESH = `
 FURNITURE ADDITION CONSTRAINTS
 
@@ -84,6 +140,12 @@ ${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
 
 ${STRUCTURAL_IDENTITY_LOCK_REFRESH}
 
+${VISIBLE_EXTENT_LOCK_BLOCK}
+
+${BUILT_IN_MATERIAL_IDENTITY_LOCK_BLOCK}
+
+${CONSTRAINT_PRIORITY_ORDER_BLOCK}
+
 ${REFRESH_TRANSFORMATION_FREEDOM_BLOCK}
 
 REFRESH LOGIC — FLEXIBLE STAGING MODE
@@ -101,6 +163,8 @@ The final image must read as a fully staged, listing-ready room, not a partially
 - Build around existing major furniture where appropriate.
 - Use rugs, side tables, lamps, artwork, cushions, plants, and decor to create a cohesive and finished look.
 - Ensure the room feels intentionally designed, balanced, and complete.
+
+${REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK}
 
 Avoid:
 
