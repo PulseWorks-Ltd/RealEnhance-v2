@@ -5,6 +5,7 @@ import {
   type StructuralBaseline,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
+import { computeOpeningGeometrySignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type OpeningValidatorResult = ValidatorOutcome;
@@ -258,7 +259,13 @@ export async function runOpeningValidator(
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
-  const prompt = `You are validating whether two images represent the exact same physical room architecture.
+  const openingSignal = await computeOpeningGeometrySignal(before, after).catch(() => ({
+    openingAreaDelta: 0,
+    aspectRatioDelta: 0,
+    suspiciousOpeningGeometry: false,
+  }));
+
+  let prompt = `You are validating whether two images represent the exact same physical room architecture.
 
 Compare the BASELINE image and the STAGED image.
 
@@ -564,6 +571,22 @@ Return JSON only:
   ]
 }`;
 
+  if (openingSignal.suspiciousOpeningGeometry) {
+    prompt += `
+
+STRUCTURAL ATTENTION SIGNAL:
+
+Local analysis detected a potential change in opening geometry.
+
+Focus specifically on:
+- window and door size, proportions, and visible area
+- whether wall surfaces have expanded into former openings
+
+If any opening appears reduced, expanded, or reshaped:
+→ return passed=false
+→ failReasons=["opening_geometry_changed"]`;
+  }
+
   const runWithModel = async (model: string): Promise<OpeningValidatorResult> => {
     const response = await (ai as any).models.generateContent({
       model,
@@ -592,6 +615,10 @@ Return JSON only:
   };
 
   try {
+    if (openingSignal.suspiciousOpeningGeometry) {
+      return await runWithModel(OPENING_MODEL_ESCALATION);
+    }
+
     const flashResult = await runWithModel(OPENING_MODEL_PRIMARY);
     /*
     Flash FAIL is trusted immediately because it normally

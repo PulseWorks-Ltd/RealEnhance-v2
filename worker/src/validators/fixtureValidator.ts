@@ -1,5 +1,6 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import { computeMaterialSignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type FixtureValidatorResult = ValidatorOutcome;
@@ -40,7 +41,13 @@ export async function runFixtureValidator(
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
-  const prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
+  const materialSignal = await computeMaterialSignal(before, after).catch(() => ({
+    colorShift: 0,
+    textureShift: 0,
+    suspiciousMaterialChange: false,
+  }));
+
+  let prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
 
 Compare the BASELINE image and the STAGED image.
 
@@ -70,9 +77,34 @@ Examples that should NOT fail when architecture/fixtures are otherwise preserved
 Return JSON only:
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
 
+  if (materialSignal.suspiciousMaterialChange) {
+    prompt += `
+
+MATERIAL IDENTITY ATTENTION SIGNAL:
+
+Local analysis detected a potential material change in built-in elements.
+
+Focus on:
+- kitchen countertops / benchtops
+- cabinetry finishes
+- vanities and fixed surfaces
+
+Check whether material identity has changed:
+- stone type, veining, or pattern
+- color or finish changes beyond lighting adjustment
+
+If any built-in surface appears replaced or materially altered:
+→ return passed=false
+→ failReasons=["built_in_material_changed"]`;
+  }
+
+  const selectedModel = materialSignal.suspiciousMaterialChange
+    ? "gemini-2.5-pro"
+    : "gemini-2.5-flash";
+
   try {
     const response = await (ai as any).models.generateContent({
-      model: "gemini-2.5-flash",
+      model: selectedModel,
       contents: [
         {
           role: "user",
