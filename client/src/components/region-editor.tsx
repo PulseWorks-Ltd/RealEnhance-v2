@@ -186,10 +186,13 @@ export function RegionEditor({
   const [smartReinstate, setSmartReinstate] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(20);
-  const [zoomLevel, setZoomLevel] = useState(0.5);
+  const [baseFitScale, setBaseFitScale] = useState(1);
+  const [userZoom, setUserZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState({ x: 0, y: 0 });
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [workspaceSize, setWorkspaceSize] = useState({ width: 0, height: 0 });
   // 🔒 Auto-close control: signals parent that edit completed successfully
   const [shouldAutoClose, setShouldAutoClose] = useState(false);
   // Staging style is now batch-level only; removed from region editor
@@ -200,58 +203,160 @@ export function RegionEditor({
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const pollingAbortRef = useRef<{ abort: boolean }>({ abort: false });
+  const workspaceRef = useRef<HTMLElement>(null);
 
   const { toast } = useToast();
+  const effectiveScale = baseFitScale * userZoom;
+
+  const applyCanvasDisplaySize = useCallback(
+    (imageWidth: number, imageHeight: number, scale: number) => {
+      const canvas = canvasRef.current;
+      const previewCanvas = previewCanvasRef.current;
+      if (!canvas || !previewCanvas) return;
+
+      const displayWidth = Math.max(1, Math.round(imageWidth * scale));
+      const displayHeight = Math.max(1, Math.round(imageHeight * scale));
+
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+      previewCanvas.style.width = `${displayWidth}px`;
+      previewCanvas.style.height = `${displayHeight}px`;
+    },
+    [],
+  );
+
+  const initializeCanvasesForImage = useCallback(
+    (img: HTMLImageElement) => {
+      const canvas = canvasRef.current;
+      const previewCanvas = previewCanvasRef.current;
+      if (!canvas || !previewCanvas) return;
+
+      const imageWidth = img.naturalWidth || img.width;
+      const imageHeight = img.naturalHeight || img.height;
+      const dpr = window.devicePixelRatio || 1;
+
+      setImageSize({ width: imageWidth, height: imageHeight });
+
+      canvas.width = Math.max(1, Math.round(imageWidth * dpr));
+      canvas.height = Math.max(1, Math.round(imageHeight * dpr));
+      previewCanvas.width = Math.max(1, Math.round(imageWidth * dpr));
+      previewCanvas.height = Math.max(1, Math.round(imageHeight * dpr));
+
+      applyCanvasDisplaySize(imageWidth, imageHeight, effectiveScale);
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, imageWidth, imageHeight);
+      }
+
+      const previewCtx = previewCanvas.getContext("2d");
+      if (previewCtx) {
+        previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+        previewCtx.scale(dpr, dpr);
+        previewCtx.drawImage(img, 0, 0, imageWidth, imageHeight);
+      }
+
+      imageRef.current = img;
+    },
+    [applyCanvasDisplaySize, effectiveScale],
+  );
+
+  useEffect(() => {
+    const updateWorkspaceSize = () => {
+      const workspaceEl = workspaceRef.current;
+      if (!workspaceEl) return;
+      const rect = workspaceEl.getBoundingClientRect();
+      setWorkspaceSize({
+        width: Math.max(0, Math.round(rect.width)),
+        height: Math.max(0, Math.round(rect.height)),
+      });
+    };
+
+    updateWorkspaceSize();
+
+    let observer: ResizeObserver | null = null;
+    if (workspaceRef.current && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(updateWorkspaceSize);
+      observer.observe(workspaceRef.current);
+    }
+
+    window.addEventListener("resize", updateWorkspaceSize);
+    return () => {
+      window.removeEventListener("resize", updateWorkspaceSize);
+      observer?.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      imageSize.width <= 0 ||
+      imageSize.height <= 0 ||
+      workspaceSize.width <= 0 ||
+      workspaceSize.height <= 0
+    ) {
+      return;
+    }
+
+    const fitScale = Math.min(
+      workspaceSize.width / imageSize.width,
+      workspaceSize.height / imageSize.height,
+      1,
+    );
+    setBaseFitScale(Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1);
+  }, [imageSize.height, imageSize.width, workspaceSize.height, workspaceSize.width]);
+
+  useEffect(() => {
+    if (imageSize.width <= 0 || imageSize.height <= 0) return;
+    applyCanvasDisplaySize(imageSize.width, imageSize.height, effectiveScale);
+  }, [applyCanvasDisplaySize, effectiveScale, imageSize.height, imageSize.width]);
+
+  useEffect(() => {
+    if (userZoom <= 1) {
+      setIsPanning(false);
+      setPanOffset((prev) =>
+        prev.x === 0 && prev.y === 0 ? prev : { x: 0, y: 0 },
+      );
+    }
+  }, [userZoom]);
 
   // Redraw preview and mask canvases whenever previewUrl changes
   useEffect(() => {
     if (!previewUrl) return;
     setImageLoading(true);
-    const img = new window.Image();
-    img.onload = () => {
-      setImageLoading(false);
-      const canvas = canvasRef.current;
-      const previewCanvas = previewCanvasRef.current;
-      if (canvas && previewCanvas) {
-        const displayScale = 1.75;
-        const displayWidth = img.width * displayScale;
-        const displayHeight = img.height * displayScale;
-        const dpr = window.devicePixelRatio || 1;
+    let cancelled = false;
+    let retryCount = 0;
+    const maxRetries = 3;
 
-        // Mask canvas
-        canvas.width = img.width * dpr;
-        canvas.height = img.height * dpr;
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.scale(dpr, dpr);
-          ctx.fillStyle = "black";
-          ctx.fillRect(0, 0, img.width, img.height);
+    const loadImage = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        if (cancelled) return;
+        setImageLoading(false);
+        initializeCanvasesForImage(img);
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        retryCount += 1;
+        if (retryCount < maxRetries) {
+          const retryDelay = 500 * Math.pow(2, retryCount - 1);
+          setTimeout(loadImage, retryDelay);
+          return;
         }
-
-        // Preview canvas
-        previewCanvas.width = img.width * dpr;
-        previewCanvas.height = img.height * dpr;
-        previewCanvas.style.width = `${displayWidth}px`;
-        previewCanvas.style.height = `${displayHeight}px`;
-        const previewCtx = previewCanvas.getContext("2d");
-        if (previewCtx) {
-          previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-          previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-          previewCtx.scale(dpr, dpr);
-          previewCtx.drawImage(img, 0, 0, img.width, img.height);
-        }
-      }
-      if (imageRef.current) {
-        imageRef.current.src = previewUrl;
-      }
+        setImageLoading(false);
+      };
+      img.src = previewUrl;
     };
-    img.onerror = () => setImageLoading(false);
-    img.src = previewUrl;
-  }, [previewUrl]);
+
+    loadImage();
+    return () => {
+      cancelled = true;
+    };
+  }, [initializeCanvasesForImage, previewUrl]);
 
   // Cleanup: Do not toggle abort on unmount; allow in-flight polling to finish
   useEffect(() => {
@@ -283,156 +388,50 @@ export function RegionEditor({
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
       setMaskData(null);
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = canvasRef.current;
-        const previewCanvas = previewCanvasRef.current;
-        if (canvas && previewCanvas) {
-          const displayScale = 1.75;
-          const displayWidth = img.width * displayScale;
-          const displayHeight = img.height * displayScale;
-          const dpr = window.devicePixelRatio || 1;
-
-          canvas.width = img.width * dpr;
-          canvas.height = img.height * dpr;
-          canvas.style.width = `${displayWidth}px`;
-          canvas.style.height = `${displayHeight}px`;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.scale(dpr, dpr);
-            ctx.fillStyle = "black";
-            ctx.fillRect(0, 0, img.width, img.height);
-          }
-
-          previewCanvas.width = img.width * dpr;
-          previewCanvas.height = img.height * dpr;
-          previewCanvas.style.width = `${displayWidth}px`;
-          previewCanvas.style.height = `${displayHeight}px`;
-          const previewCtx = previewCanvas.getContext("2d");
-          if (previewCtx) {
-            previewCtx.scale(dpr, dpr);
-            previewCtx.drawImage(img, 0, 0, img.width, img.height);
-          }
-        }
-      };
-      img.src = url;
-      if (imageRef.current) {
-        imageRef.current.src = url;
-      }
     },
     [toast],
   );
 
-  // Load initial image URL if provided (first open) – drawing canvas setup
-  useEffect(() => {
-    if (initialImageUrl && !selectedFile) {
-      console.log("Loading initial image URL:", initialImageUrl);
-      setImageLoading(true);
-
-      let retryCount = 0;
-      const maxRetries = 3;
-
-      const loadImage = () => {
-        const img = new Image();
-
-        img.onload = () => {
-          console.log(
-            "Image loaded successfully:",
-            img.width,
-            "x",
-            img.height,
-          );
-          setImageLoading(false);
-          const canvas = canvasRef.current;
-          const previewCanvas = previewCanvasRef.current;
-          if (canvas && previewCanvas) {
-            const displayScale = 1.75;
-            const displayWidth = img.width * displayScale;
-            const displayHeight = img.height * displayScale;
-            const dpr = window.devicePixelRatio || 1;
-
-            canvas.width = img.width * dpr;
-            canvas.height = img.height * dpr;
-            canvas.style.width = `${displayWidth}px`;
-            canvas.style.height = `${displayHeight}px`;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-              ctx.scale(dpr, dpr);
-              ctx.fillStyle = "black";
-              ctx.fillRect(0, 0, img.width, img.height);
-            }
-
-            previewCanvas.width = img.width * dpr;
-            previewCanvas.height = img.height * dpr;
-            previewCanvas.style.width = `${displayWidth}px`;
-            previewCanvas.style.height = `${displayHeight}px`;
-            const previewCtx = previewCanvas.getContext("2d");
-            if (previewCtx) {
-              previewCtx.scale(dpr, dpr);
-              previewCtx.drawImage(img, 0, 0, img.width, img.height);
-            }
-          }
-          if (imageRef.current) {
-            imageRef.current.src = initialImageUrl;
-          }
-        };
-
-        img.onerror = (error) => {
-          retryCount++;
-          console.error(
-            `Failed to load initial image (attempt ${retryCount}/${maxRetries}):`,
-            initialImageUrl,
-            error,
-          );
-
-          if (retryCount < maxRetries) {
-            const retryDelay = 500 * Math.pow(2, retryCount - 1);
-            console.log(`Retrying in ${retryDelay}ms...`);
-            setTimeout(loadImage, retryDelay);
-          } else {
-            setImageLoading(false);
-            toast({
-              title: "Image Load Error",
-              description:
-                "Failed to load the image after multiple attempts. Please close and try again.",
-              variant: "destructive",
-            });
-          }
-        };
-
-        img.src = initialImageUrl;
-      };
-
-      loadImage();
-    }
-  }, [initialImageUrl, selectedFile, toast]);
-
-  // Helper: map mouse screen coords to canvas coords
-  const screenToCanvas = useCallback(
+  // Map pointer position into image-space coordinates.
+  const getImageCoords = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
       if (!canvas) return { x: 0, y: 0 };
-
-      const displayScale = 1.75;
       const rect = canvas.getBoundingClientRect();
 
-      const cssX = e.clientX - rect.left;
-      const cssY = e.clientY - rect.top;
+      if (
+        rect.width <= 0 ||
+        rect.height <= 0 ||
+        imageSize.width <= 0 ||
+        imageSize.height <= 0
+      ) {
+        return { x: 0, y: 0 };
+      }
 
-      const x = (cssX / displayScale) / zoomLevel;
-      const y = (cssY / displayScale) / zoomLevel;
+      const normalizedX = (e.clientX - rect.left) / rect.width;
+      const normalizedY = (e.clientY - rect.top) / rect.height;
+      const clampedX = Math.min(1, Math.max(0, normalizedX));
+      const clampedY = Math.min(1, Math.max(0, normalizedY));
+
+      const x = Math.min(
+        imageSize.width - 1,
+        Math.max(0, Math.round(clampedX * imageSize.width)),
+      );
+      const y = Math.min(
+        imageSize.height - 1,
+        Math.max(0, Math.round(clampedY * imageSize.height)),
+      );
 
       return { x, y };
     },
-    [zoomLevel],
+    [imageSize.height, imageSize.width],
   );
 
   // Drawing functions for mask creation
   const startDrawing = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       setIsDrawing(true);
-      const { x, y } = screenToCanvas(e);
+      const { x, y } = getImageCoords(e);
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (ctx) {
@@ -440,16 +439,17 @@ export function RegionEditor({
         ctx.moveTo(x, y);
       }
     },
-    [screenToCanvas],
+    [getImageCoords],
   );
 
   const draw = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (!isDrawing) return;
-      const { x, y } = screenToCanvas(e);
+      const { x, y } = getImageCoords(e);
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d");
       if (ctx) {
+        // Keep brush radius stable in image space across zoom levels.
         ctx.lineWidth = brushSize;
         ctx.lineCap = "round";
         ctx.strokeStyle = "white";
@@ -459,17 +459,17 @@ export function RegionEditor({
         ctx.moveTo(x, y);
       }
     },
-    [isDrawing, brushSize, screenToCanvas],
+    [brushSize, getImageCoords, isDrawing],
   );
 
   // Panning
   const startPanning = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.altKey || e.ctrlKey) {
+    if ((e.altKey || e.ctrlKey) && userZoom > 1) {
       setIsPanning(true);
       setLastPanPoint({ x: e.clientX, y: e.clientY });
       e.preventDefault();
     }
-  }, []);
+  }, [userZoom]);
 
   const panCanvas = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -497,10 +497,10 @@ export function RegionEditor({
     (e: React.WheelEvent<HTMLCanvasElement>) => {
       e.preventDefault();
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.5, Math.min(3, zoomLevel * zoomFactor));
-      setZoomLevel(newZoom);
+      const newZoom = Math.max(0.5, Math.min(3, userZoom * zoomFactor));
+      setUserZoom(newZoom);
     },
-    [zoomLevel],
+    [userZoom],
   );
 
   // --- autoFillEnclosedAreas and stopDrawing (unchanged, just kept as-is) ---
@@ -704,12 +704,14 @@ export function RegionEditor({
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (e.altKey || e.ctrlKey) {
-        startPanning(e);
-      } else {
-        startDrawing(e);
+        if (userZoom > 1) {
+          startPanning(e);
+        }
+        return;
       }
+      startDrawing(e);
     },
-    [startPanning, startDrawing],
+    [startDrawing, startPanning, userZoom],
   );
 
   const handleMouseMove = useCallback(
@@ -973,7 +975,7 @@ export function RegionEditor({
               setPreviewUrl(previewUrlWithVersion);
               setSelectedFile(null);
               setMaskData(null);
-              setZoomLevel(1);
+              setUserZoom(1);
               setPanOffset({ x: 0, y: 0 });
 
               if (regionEditMutation.reset) {
@@ -1309,7 +1311,7 @@ export function RegionEditor({
         </div>
       </aside>
 
-      <section className="relative flex flex-1 items-center justify-center h-full w-full min-h-0 bg-[#f1f5f9] overflow-hidden lg:col-start-2">
+      <section ref={workspaceRef} className="relative flex flex-1 items-center justify-center h-full w-full min-h-0 bg-[#f1f5f9] overflow-hidden lg:col-start-2">
         <div className="flex h-full w-full items-center justify-center p-0">
           {previewUrl ? (
             <div className="relative flex flex-1 h-full w-full items-center justify-center overflow-hidden">
@@ -1341,17 +1343,17 @@ export function RegionEditor({
 
                 <div className="flex items-center gap-1 text-slate-700">
                   <button
-                    onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
-                    disabled={zoomLevel <= 0.5}
+                    onClick={() => setUserZoom(Math.max(0.5, userZoom - 0.25))}
+                    disabled={userZoom <= 0.5}
                     className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                     data-testid="button-zoom-out"
                   >
                     <ZoomOut className="h-4 w-4" />
                   </button>
-                  <span className="min-w-[46px] text-center text-xs font-medium">{Math.round(zoomLevel * 100)}%</span>
+                  <span className="min-w-[46px] text-center text-xs font-medium">{Math.round(userZoom * 100)}%</span>
                   <button
-                    onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
-                    disabled={zoomLevel >= 3}
+                    onClick={() => setUserZoom(Math.min(3, userZoom + 0.25))}
+                    disabled={userZoom >= 3}
                     className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                     data-testid="button-zoom-in"
                   >
@@ -1360,7 +1362,7 @@ export function RegionEditor({
                   <div className="mx-1 h-4 w-px bg-slate-200" />
                   <button
                     onClick={() => {
-                      setZoomLevel(1);
+                      setUserZoom(1);
                       setPanOffset({ x: 0, y: 0 });
                     }}
                     className="flex items-center gap-1 rounded-full px-2 py-1 text-xs hover:bg-slate-100"
@@ -1394,7 +1396,7 @@ export function RegionEditor({
               <div
                 className="relative h-full w-full overflow-hidden flex justify-center items-center"
                 style={{
-                  transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+                  transform: `translate(${userZoom > 1 ? panOffset.x : 0}px, ${userZoom > 1 ? panOffset.y : 0}px)`,
                   transformOrigin: "center",
                 }}
               >
