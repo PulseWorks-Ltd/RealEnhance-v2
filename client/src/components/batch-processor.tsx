@@ -7351,11 +7351,12 @@ export default function BatchProcessor({
                           status === "completed" ||
                           shouldPreferPreservedStage2 ||
                           (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
+                        const progressivePreviewUrl = stagePreviewUrl || previewUrls[i] || null;
                         const previewUrl = (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2)
-                          ? (previewUrls[i] || null)
+                          ? progressivePreviewUrl
                           : canUseRemotePreview
-                            ? (enhancedUrl || previewUrls[i] || null)
-                            : (previewUrls[i] || null);
+                            ? (enhancedUrl || progressivePreviewUrl)
+                            : progressivePreviewUrl;
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
                         const canEditFromDisplayedOutput = !!previewUrl;
                         const canEditThisImage = isRetryStatusTerminal && canEditFromDisplayedOutput;
@@ -7420,9 +7421,10 @@ export default function BatchProcessor({
                             >
                               {previewUrl ? (
                                 <img 
+                                  key={previewUrl}
                                   src={previewUrl} 
                                   alt={file.name} 
-                                  className={`h-full w-full object-cover transition-opacity duration-500 ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
+                                  className={`h-full w-full object-cover transition-opacity duration-300 ease-in-out animate-in fade-in ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                   onLoad={() => clearRetryFlags(i)}
                                   onError={(e) => {
                                     clearRetryFlags(i);
