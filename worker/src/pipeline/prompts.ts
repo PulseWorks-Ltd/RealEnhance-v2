@@ -67,11 +67,11 @@ STRUCTURAL SAFEGUARD:
 - Do not add, remove, cover, move, or resize any window, door, or structural opening.
 - If the requested edit would require modifying architectural structure, do not perform the edit.
 
-BLENDING / OUTSKIRTS RULES (IMPORTANT):
-- You may perform minimal blending or anti-aliasing around the WHITE mask boundary to ensure seamless transitions, but this must be strictly limited to a very small margin (suggested: no more than a few pixels relative to the image resolution). Use the smallest feather that preserves visual continuity.
-- You MUST NOT use this allowance to modify distinct nearby surfaces, different walls, or objects that are clearly outside the masked area. For example, if the mask covers the RIGHT wall, do not change the LEFT wall or any other wall's color, texture, or content.
-- Do NOT expand edits to cover additional structural elements (windows, doors, mouldings) that are outside the white mask even partially; instead, if a feature crosses the mask boundary, prefer surface-level treatments (e.g., paint, curtain, patch) that preserve geometry and position.
-- If the required edit would necessarily change structure beyond this tiny blending margin (for example moving a window or altering wall shape), refuse and suggest an alternative that preserves structure (e.g., apply a surface treatment or decorative solution).
+MASK BOUNDARY RULES (HARD):
+- Treat the mask boundary as a hard edit boundary.
+- Do NOT blend, feather, or modify pixels outside the WHITE mask region unless a later explicit ADD MODE geometry rule permits strictly necessary object depth extension.
+- Do NOT modify nearby surfaces, other walls, or unrelated objects outside the WHITE mask.
+- Do NOT expand edits to structural elements (windows, doors, openings, mouldings) outside the WHITE mask.
 
 GENERAL RULES:
 - Do NOT invent new angles or viewpoints. Keep the same camera position and perspective.

@@ -22,7 +22,8 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
-    hasReferenceImage: !!referenceImageBuffer,
+    hasReferenceImage: false,
+    referenceImageProvidedButIgnored: !!referenceImageBuffer,
     baseSize: baseImageBuffer.length,
     roomType,
     sceneType,
@@ -38,15 +39,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     },
   ];
-  if (referenceImageBuffer) {
-    parts.push({ text: "OPTIONAL_REFERENCE_IMAGE (ARCHITECTURE ONLY, NOT EDIT TARGET):" });
-    parts.push({
-      inlineData: {
-        mimeType: "image/webp",
-        data: referenceImageBuffer.toString("base64"),
-      },
-    });
-  }
+  // Reference image intentionally not sent for region edit generation.
   if (maskPngBuffer) {
     parts.push({ text: "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):" });
     parts.push({

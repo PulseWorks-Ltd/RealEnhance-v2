@@ -45,11 +45,18 @@ export async function applyEdit({
       height: meta.height,
     });
 
+    if (!meta.width || !meta.height) {
+      throw new Error("Base image is missing width/height metadata for mask alignment");
+    }
+
     // Resize mask to match and encode as PNG
     let maskPngBuffer: Buffer | undefined;
     if (mask) {
       maskPngBuffer = await sharp(mask)
-        .resize(meta.width!, meta.height!, { fit: "fill" })
+        .resize(meta.width, meta.height, { fit: "fill", kernel: sharp.kernel.nearest })
+        .removeAlpha()
+        .grayscale()
+        .threshold(127, { grayscale: true })
         .png()
         .toBuffer();
       console.log("[editApply] Mask resized to match image");
@@ -170,27 +177,16 @@ export async function applyEdit({
     const removeModeTargetedGuidance = mode === "Remove"
       ? `\n\nREMOVE MODE TARGETING RULES:\n- Remove only the object(s) inside the WHITE mask region that correspond to the user instruction.\n- Do NOT perform full-room decluttering.\n- Do NOT remove unrelated furniture outside the WHITE mask region.\n- Keep all BLACK-mask regions unchanged except minimal edge blending.`
       : "";
-    const removeReferenceGuidance = mode === "Remove" && stage1AReferencePath
-      ? `\n\nREMOVE MODE STRUCTURAL REFERENCE:\nA second image is provided as Stage-1A structural reference.\nUse it only to preserve architecture and opening continuity in the masked region.\nDo not copy textures directly from the reference image.`
+    const addModeSpatialGuidance = mode === "Add"
+      ? `\n\nADD MODE SPATIAL CONTRACT:\n- Interpret the WHITE mask as placement intent and anchor zone, not necessarily the full visible 3D object bounds.\n- Floor masks: treat WHITE mask as contact footprint / plan area. The object may extend upward and slightly beyond the mask due to perspective and physical depth, but every ground contact point must lie within WHITE mask pixels.\n- Wall masks: treat WHITE mask as anchor plane region. The object may project outward in depth, but all mounting/attachment points must lie within WHITE mask pixels.\n- Outside-mask edits are allowed only for strictly necessary visible geometry of the same added object.\n- Do NOT blend, feather, or leak edits into unrelated outside-mask regions.\n- Align object perspective, scale, and orientation to room geometry, camera angle, and vanishing lines.`
       : "";
-    const finalPrompt = `${prompt}${removeModeTargetedGuidance}${removeReferenceGuidance}`;
+    const finalPrompt = `${prompt}${removeModeTargetedGuidance}${addModeSpatialGuidance}`;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
-
-    let referenceImageBuffer: Buffer | undefined;
-    if (mode === "Remove" && stage1AReferencePath) {
-      try {
-        referenceImageBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
-        console.log("[editApply] Stage-1A reference loaded");
-      } catch (refErr) {
-        console.warn("[editApply] Failed to load Stage-1A reference (non-blocking):", (refErr as any)?.message || refErr);
-      }
-    }
 
     // 🚀 Call shared Gemini helper
     const editedBuffer = await regionEditWithGemini({
       prompt: finalPrompt,
       baseImageBuffer,
-      referenceImageBuffer,
       maskPngBuffer,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
