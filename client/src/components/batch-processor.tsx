@@ -6399,7 +6399,7 @@ export default function BatchProcessor({
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100 pt-2">
+          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {files.length === 0 ? (
               <div className="flex-1 min-h-0 overflow-y-auto p-8">
                 <EmptyStateLaunchpad
@@ -6509,8 +6509,8 @@ export default function BatchProcessor({
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_auto_140px]">
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col py-2">
+                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_36px_128px]">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col py-1">
                     <div className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
                         <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
@@ -6573,7 +6573,7 @@ export default function BatchProcessor({
 
                   </div>
 
-                  <div className="flex items-center justify-center py-2 shrink-0">
+                  <div className="flex h-9 items-center justify-center shrink-0">
                     {(() => {
                       const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                       const imageId = currentImageId;
@@ -6589,7 +6589,7 @@ export default function BatchProcessor({
                     })()}
                   </div>
 
-                  <div id="images-thumbnail-strip" className="w-full max-w-full h-[140px] overflow-x-auto overflow-y-hidden py-2 snap-x scroll-smooth shrink-0">
+                  <div id="images-thumbnail-strip" className="w-full max-w-full h-full overflow-x-auto overflow-y-hidden py-1 snap-x scroll-smooth shrink-0">
                     <div className="flex w-max min-w-full gap-3 px-1">
                       {files.map((file, idx) => {
                         const isCurrent = idx === currentImageIndex;
