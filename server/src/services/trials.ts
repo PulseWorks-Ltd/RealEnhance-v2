@@ -7,6 +7,7 @@ import {
   LAUNCH_TRIAL_DAYS,
   LAUNCH_TRIAL_MAX_AGENCIES,
 } from "../config.js";
+import { detachTrialUsageFromIncludedAllowanceInTransaction } from "./usageLedger.js";
 
 export type TrialStatus = "none" | "pending" | "active" | "expired" | "converted";
 
@@ -278,7 +279,17 @@ export async function releaseTrialReservation(jobId: string): Promise<void> {
 }
 
 export async function markTrialConverted(agencyId: string): Promise<number> {
-  const res = await pool.query<{ trial_credits_used: number; trial_credits_total: number }>(
+  return withTransaction(async (client) => {
+    const result = await markTrialConvertedInTransaction(client, agencyId);
+    return result.trialCreditsUsed;
+  });
+}
+
+export async function markTrialConvertedInTransaction(
+  client: PoolClient,
+  agencyId: string
+): Promise<{ converted: boolean; trialCreditsUsed: number }> {
+  const res = await client.query<{ trial_credits_used: number; trial_credits_total: number }>(
     `UPDATE organisations
         SET trial_status = 'converted',
             trial_credits_used = trial_credits_total,
@@ -289,10 +300,61 @@ export async function markTrialConverted(agencyId: string): Promise<number> {
     [agencyId]
   );
 
-  if (!res.rowCount) return 0;
+  if (!res.rowCount) {
+    return {
+      converted: false,
+      trialCreditsUsed: 0,
+    };
+  }
+
   const row = res.rows[0];
-  // Credits consumed prior to conversion should never reduce paid monthly allowance.
-  return Math.max(0, Number(row.trial_credits_used || 0));
+  return {
+    converted: true,
+    // Credits consumed prior to conversion should never reduce paid monthly allowance.
+    trialCreditsUsed: Math.max(0, Number(row.trial_credits_used || 0)),
+  };
+}
+
+export async function convertTrialAndDetachUsageIfNeeded(
+  agencyId: string
+): Promise<{
+  converted: boolean;
+  detachedAmount: number;
+  trialCreditsUsed: number;
+  monthKey?: string;
+  includedUsed?: number;
+}> {
+  return withTransaction(async (client) => {
+    const conversion = await markTrialConvertedInTransaction(client, agencyId);
+    if (!conversion.converted) {
+      return {
+        converted: false,
+        detachedAmount: 0,
+        trialCreditsUsed: 0,
+      };
+    }
+
+    if (conversion.trialCreditsUsed <= 0) {
+      return {
+        converted: true,
+        detachedAmount: 0,
+        trialCreditsUsed: 0,
+      };
+    }
+
+    const detach = await detachTrialUsageFromIncludedAllowanceInTransaction(client, {
+      agencyId,
+      trialCreditsUsed: conversion.trialCreditsUsed,
+    });
+
+    return {
+      converted: true,
+      detachedAmount: Math.max(0, Number(detach.detachedAmount || 0)),
+      trialCreditsUsed: conversion.trialCreditsUsed,
+      monthKey: detach.monthKey,
+      includedUsed: detach.includedUsed,
+    };
+  });
 }
 
 export async function grantLaunchTrialIfEligible(agencyId: string): Promise<{

@@ -11,8 +11,7 @@ import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@reale
 import { findPlanByPriceId, getStripePlan } from "@realenhance/shared/billing/stripePlans.js";
 import { pool, withTransaction } from "../db/index.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
-import { markTrialConverted } from "../services/trials.js";
-import { detachTrialUsageFromIncludedAllowance } from "../services/usageLedger.js";
+import { convertTrialAndDetachUsageIfNeeded } from "../services/trials.js";
 
 const router = Router();
 
@@ -106,17 +105,11 @@ async function recordSubscriptionInvoiceCredit(params: {
 
 async function markTrialConvertedSafe(agencyId: string, reason: string) {
   try {
-    const trialCreditsUsed = await markTrialConverted(agencyId);
-    const detachResult = await detachTrialUsageFromIncludedAllowance({
-      agencyId,
-      trialCreditsUsed,
-    });
-    if (detachResult.adjusted) {
+    const conversion = await convertTrialAndDetachUsageIfNeeded(agencyId);
+    if (conversion.converted) {
       console.log(
-        `[STRIPE] Trial converted for agency ${agencyId} (${reason}); detached ${trialCreditsUsed} trial credits from monthly allowance (month=${detachResult.monthKey}, includedUsed=${detachResult.includedUsed})`
+        `[STRIPE] Trial converted for agency ${agencyId} (${reason}); detached ${conversion.detachedAmount} trial credits from monthly allowance (month=${conversion.monthKey || "n/a"}, includedUsed=${conversion.includedUsed ?? "n/a"})`
       );
-    } else {
-      console.log(`[STRIPE] Trial converted for agency ${agencyId} (${reason})`);
     }
   } catch (err) {
     console.warn(`[STRIPE] Failed to mark trial converted for agency ${agencyId} (${reason})`, err);

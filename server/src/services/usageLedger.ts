@@ -508,7 +508,19 @@ export async function getTopUsersByUsage(agencyId: string): Promise<Array<{ user
 export async function detachTrialUsageFromIncludedAllowance(params: {
   agencyId: string;
   trialCreditsUsed: number;
-}): Promise<{ adjusted: boolean; monthKey?: string; includedUsed?: number }> {
+}): Promise<{ adjusted: boolean; monthKey?: string; includedUsed?: number; detachedAmount?: number }> {
+  return withTransaction(async (client) => {
+    return detachTrialUsageFromIncludedAllowanceInTransaction(client, params);
+  });
+}
+
+export async function detachTrialUsageFromIncludedAllowanceInTransaction(
+  client: PoolClient,
+  params: {
+    agencyId: string;
+    trialCreditsUsed: number;
+  }
+): Promise<{ adjusted: boolean; monthKey?: string; includedUsed?: number; detachedAmount?: number }> {
   const trialCreditsUsed = Math.max(0, Number(params.trialCreditsUsed || 0));
   if (!params.agencyId || trialCreditsUsed <= 0) {
     return { adjusted: false };
@@ -516,23 +528,26 @@ export async function detachTrialUsageFromIncludedAllowance(params: {
 
   const currentMonthKey = getCurrentMonthKey();
 
-  return withTransaction(async (client) => {
-    const targetRes = await client.query<{ yyyymm: string }>(
+  const targetRes = await client.query<{ yyyymm: string; included_used: number }>(
       `SELECT yyyymm
+             , included_used
          FROM agency_month_usage
         WHERE agency_id = $1
         ORDER BY CASE WHEN yyyymm = $2 THEN 0 ELSE 1 END, updated_at DESC
         LIMIT 1
         FOR UPDATE`,
       [params.agencyId, currentMonthKey]
-    );
+  );
 
-    if (!targetRes.rowCount) {
-      return { adjusted: false };
-    }
+  if (!targetRes.rowCount) {
+    return { adjusted: false };
+  }
 
-    const monthKey = String(targetRes.rows[0].yyyymm);
-    const updateRes = await client.query<{ included_used: number }>(
+  const monthKey = String(targetRes.rows[0].yyyymm);
+  const includedUsedBefore = Math.max(0, Number(targetRes.rows[0].included_used || 0));
+  const detachedAmount = Math.max(0, Math.min(includedUsedBefore, trialCreditsUsed));
+
+  const updateRes = await client.query<{ included_used: number }>(
       `UPDATE agency_month_usage
           SET included_used = GREATEST(0, included_used - $3),
               updated_at = NOW()
@@ -540,12 +555,12 @@ export async function detachTrialUsageFromIncludedAllowance(params: {
           AND yyyymm = $2
       RETURNING included_used`,
       [params.agencyId, monthKey, trialCreditsUsed]
-    );
+  );
 
-    return {
-      adjusted: (updateRes.rowCount ?? 0) > 0,
-      monthKey,
-      includedUsed: Number(updateRes.rows[0]?.included_used ?? 0),
-    };
-  });
+  return {
+    adjusted: (updateRes.rowCount ?? 0) > 0,
+    monthKey,
+    includedUsed: Number(updateRes.rows[0]?.included_used ?? 0),
+    detachedAmount,
+  };
 }

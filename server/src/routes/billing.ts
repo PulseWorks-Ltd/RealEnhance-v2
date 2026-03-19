@@ -20,10 +20,8 @@ import {
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
-import { getTrialSummary } from "../services/trials.js";
+import { convertTrialAndDetachUsageIfNeeded, getTrialSummary } from "../services/trials.js";
 import { pool } from "../db/index.js";
-import { markTrialConverted } from "../services/trials.js";
-import { detachTrialUsageFromIncludedAllowance } from "../services/usageLedger.js";
 
 const router = Router();
 
@@ -51,11 +49,12 @@ async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
 
 async function markTrialConvertedSafe(agencyId: string, reason: string) {
   try {
-    const trialCreditsUsed = await markTrialConverted(agencyId);
-    await detachTrialUsageFromIncludedAllowance({
-      agencyId,
-      trialCreditsUsed,
-    });
+    const conversion = await convertTrialAndDetachUsageIfNeeded(agencyId);
+    if (conversion.converted) {
+      console.log(
+        `[BILLING] Trial converted during ${reason} for agency ${agencyId}; detached=${conversion.detachedAmount} trialCreditsUsed=${conversion.trialCreditsUsed}`
+      );
+    }
   } catch (err) {
     console.warn(`[BILLING] Failed to convert trial during ${reason} for agency ${agencyId}`, err);
   }
