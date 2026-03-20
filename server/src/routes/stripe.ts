@@ -1,7 +1,7 @@
 // server/src/routes/stripe.ts
 // Stripe webhook handler for bundles and subscriptions
 
-import { Router, type Request, type Response } from "express";
+import { Router, raw, type Request, type Response } from "express";
 import Stripe from "stripe";
 import { createImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { IMAGE_BUNDLES, type BundleCode } from "@realenhance/shared/bundles.js";
@@ -123,10 +123,11 @@ async function markTrialConvertedSafe(agencyId: string, reason: string) {
  */
 router.post(
   "/webhook",
-  // Express.raw() middleware for webhook signature verification
-  // Note: This needs to be configured in the main app to use raw body for this route
+  raw({ type: "application/json" }),
   async (req: Request, res: Response) => {
     try {
+      console.log("[STRIPE] Webhook received");
+
       if (!stripe) {
         console.error("[STRIPE] Stripe not configured");
         return res.status(503).json({ error: "Stripe not configured" });
@@ -145,6 +146,11 @@ router.post(
         return res.status(400).json({ error: "No signature" });
       }
 
+      if (!Buffer.isBuffer(req.body)) {
+        console.error("[STRIPE] Webhook body is not raw buffer");
+        return res.status(400).json({ error: "Invalid webhook body" });
+      }
+
       let event: Stripe.Event;
 
       try {
@@ -157,9 +163,34 @@ router.post(
       }
 
       console.log(`[STRIPE] Received event: ${event.type} (${event.id})`);
+      res.sendStatus(200);
 
-      // Handle the event
-      switch (event.type) {
+      // Handle the event asynchronously after acknowledging Stripe.
+      void (async () => {
+        try {
+          let claimResult;
+          try {
+            claimResult = await pool.query(
+              `INSERT INTO stripe_events (id, type) VALUES ($1, $2)
+               ON CONFLICT (id) DO NOTHING
+               RETURNING id`,
+              [event.id, event.type]
+            );
+          } catch (err) {
+            console.error("[STRIPE] Ledger insert failed; skipping event processing", {
+              eventId: event.id,
+              eventType: event.type,
+              error: err,
+            });
+            return;
+          }
+
+          if (claimResult.rowCount === 0) {
+            console.log(`[STRIPE] Duplicate event skipped: ${event.id} (${event.type})`);
+            return;
+          }
+
+          switch (event.type) {
         case "checkout.session.completed": {
           const session = event.data.object as Stripe.Checkout.Session;
 
@@ -173,14 +204,14 @@ router.post(
 
             if (!agencyId || !planTier) {
               console.error("[STRIPE] Missing subscription metadata:", session.metadata);
-              return res.status(400).json({ error: "Missing subscription metadata" });
+              break;
             }
 
             // Get subscription details from Stripe
             const subscriptionId = session.subscription as string;
             if (!subscriptionId) {
               console.error("[STRIPE] No subscription ID in session");
-              return res.status(400).json({ error: "No subscription ID" });
+              break;
             }
 
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -194,7 +225,7 @@ router.post(
             const agency = await getAgency(agencyId);
             if (!agency) {
               console.error(`[STRIPE] Agency not found: ${agencyId}`);
-              return res.status(404).json({ error: "Agency not found" });
+              break;
             }
 
             agency.stripeCustomerId = session.customer as string;
@@ -227,17 +258,17 @@ router.post(
 
             if (!agencyId || !bundleCode || !images) {
               console.error("[STRIPE] Missing bundle metadata:", session.metadata);
-              return res.status(400).json({ error: "Missing bundle metadata" });
+              break;
             }
 
             if (!(bundleCode in IMAGE_BUNDLES)) {
               console.error("[STRIPE] Invalid bundle code:", bundleCode);
-              return res.status(400).json({ error: "Invalid bundle code" });
+              break;
             }
 
             if (!session.payment_intent) {
               console.error("[STRIPE] No payment intent in checkout session");
-              return res.status(400).json({ error: "No payment intent" });
+              break;
             }
 
             // Create bundle record (idempotent via payment intent ID)
@@ -499,13 +530,16 @@ router.post(
 
         default:
           console.log(`[STRIPE] Unhandled event type: ${event.type}`);
-      }
-
-      // Return 200 to acknowledge receipt
-      res.json({ received: true, eventType: event.type });
+          }
+        } catch (err) {
+          console.error("[STRIPE] Webhook async processing error:", err);
+        }
+      })();
     } catch (err) {
       console.error("[STRIPE] Webhook handler error:", err);
-      res.status(500).json({ error: "Webhook handler failed" });
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Webhook handler failed" });
+      }
     }
   }
 );

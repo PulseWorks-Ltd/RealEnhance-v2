@@ -218,12 +218,16 @@ async function main() {
   app.use(morgan("dev"));
   app.use(cookieParser());
 
-  // Stripe webhook needs raw body for signature verification
-  // Apply express.raw() only to the webhook endpoint
-  app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+  // Standard JSON parsing for all routes except Stripe webhook.
+  // Stripe requires the raw request body for signature verification.
+  const jsonParser = express.json({ limit: '10mb' }); // Increased for data URLs from worker
+  app.use((req, res, next) => {
+    if (req.originalUrl.startsWith("/api/stripe/webhook")) {
+      return next();
+    }
+    return jsonParser(req, res, next);
+  });
 
-  // Standard JSON parsing for all other routes
-  app.use(express.json({ limit: '10mb' })); // Increased for data URLs from worker
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // Sessions
