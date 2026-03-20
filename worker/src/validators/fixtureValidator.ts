@@ -1,7 +1,9 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
-import { computeMaterialSignal } from "./signalMetrics";
+import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
+
+const logger = console;
 
 export type FixtureValidatorResult = ValidatorOutcome;
 
@@ -35,17 +37,68 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
 
 export async function runFixtureValidator(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  options?: {
+    jobId?: string;
+    localSignals?: {
+      maskedEdgeDrift?: number;
+      edgeOpeningRisk?: number;
+      structuralDegreeChange?: number;
+    };
+  }
 ): Promise<FixtureValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
+  const jobId = options?.jobId;
 
   const materialSignal = await computeMaterialSignal(before, after).catch(() => ({
     colorShift: 0,
     textureShift: 0,
     suspiciousMaterialChange: false,
   }));
+
+  const openingSignal = await computeOpeningGeometrySignal(before, after).catch(() => ({
+    openingAreaDelta: 0,
+    aspectRatioDelta: 0,
+    suspiciousOpeningGeometry: false,
+  }));
+
+  const localSignals = options?.localSignals ?? {
+    maskedEdgeDrift: openingSignal.openingAreaDelta,
+    edgeOpeningRisk: openingSignal.openingAreaDelta,
+    structuralDegreeChange: Math.max(openingSignal.openingAreaDelta, openingSignal.aspectRatioDelta),
+  };
+
+  let occlusionScore = 0;
+
+  if ((localSignals?.maskedEdgeDrift ?? 0) > 0.10) occlusionScore++;
+  if ((localSignals?.edgeOpeningRisk ?? 0) > 0.08) occlusionScore++;
+  if ((localSignals?.structuralDegreeChange ?? 0) > 0.12) occlusionScore++;
+  if (materialSignal?.suspiciousMaterialChange) occlusionScore += 2;
+
+  const occlusionRisk = occlusionScore >= 2;
+  const hasStructuralSignal =
+    (localSignals?.maskedEdgeDrift ?? 0) > 0.10 ||
+    (localSignals?.edgeOpeningRisk ?? 0) > 0.08 ||
+    (localSignals?.structuralDegreeChange ?? 0) > 0.12;
+  const occlusionRiskFinal =
+    occlusionScore >= 2 &&
+    (
+      hasStructuralSignal ||
+      occlusionScore >= 3
+    );
+  const occlusionSevere = occlusionScore >= 3;
+
+  logger.info("STAGE2_OCCLUSION_SIGNAL", {
+    jobId,
+    occlusionRisk: occlusionRiskFinal,
+    occlusionScore,
+    maskedEdgeDrift: localSignals?.maskedEdgeDrift,
+    edgeOpeningRisk: localSignals?.edgeOpeningRisk,
+    structuralDegreeChange: localSignals?.structuralDegreeChange,
+    materialSignal: materialSignal?.suspiciousMaterialChange === true,
+  });
 
   let prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
 
@@ -98,7 +151,28 @@ If any built-in surface appears replaced or materially altered:
 → failReasons=["built_in_material_changed"]`;
   }
 
-  const selectedModel = materialSignal.suspiciousMaterialChange
+  if (occlusionRiskFinal) {
+    prompt += `
+
+${occlusionSevere ? "HIGH CONFIDENCE STRUCTURAL DRIFT DETECTED.\n\n" : ""}OCCLUSION INTEGRITY CHECK (CRITICAL)
+
+Determine whether any previously occluded areas (e.g., behind curtains, blinds, furniture, or shadowed regions) have been revealed, modified, or replaced.
+
+FAIL if ANY of the following occurred:
+
+* Curtains, blinds, or coverings have been moved or removed to expose new wall/window space
+* Previously hidden regions now contain visible surfaces that were not clearly present in the input
+* New walls, artwork, or surfaces appear in areas that were previously occluded
+* Occluded regions have been "filled in" with plausible but unverified structure
+
+IMPORTANT:
+You must NOT assume hidden structure exists.
+If the model has revealed or invented space behind an occlusion → hardFail = true
+
+This is NOT a stylistic check. It is a structural integrity check.`;
+  }
+
+  const selectedModel = (occlusionRiskFinal || materialSignal.suspiciousMaterialChange)
     ? "gemini-2.5-pro"
     : "gemini-2.5-flash";
 

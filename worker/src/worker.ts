@@ -82,6 +82,7 @@ import {
   hasStage1BStructuralSignal,
   isStage1BMinorReconstructionSignal,
 } from "./validators/stageAwareConfig";
+import { computeOpeningGeometrySignal } from "./validators/signalMetrics";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
@@ -941,6 +942,7 @@ type Stage1BPolicyDecision = {
   effectiveViolationType?: string;
   effectiveReasons: string[];
   openingSignal?: boolean;
+  layoutRisk?: boolean;
   openingViolationType?: "door_state_changed" | "opening_aperture_expanded" | null;
 };
 
@@ -1285,6 +1287,7 @@ async function evaluateStage1BFullPolicy(input: {
   const stage1BIsCatastrophicLocalFail =
     input.outputCorrupt === true;
   let openingSignal = false;
+  let openingAreaDelta = 0;
   let openingStateChanged = false;
   let openingApertureExpanded = false;
   let openingViolationType: "door_state_changed" | "opening_aperture_expanded" | null = null;
@@ -1363,6 +1366,40 @@ async function evaluateStage1BFullPolicy(input: {
     }
   }
 
+  try {
+    const stage1ABase64 = toBase64(input.path1A).data;
+    const stage1BCandidateBase64 = toBase64(input.candidate).data;
+    const openingGeometrySignal = await computeOpeningGeometrySignal(stage1ABase64, stage1BCandidateBase64);
+    openingAreaDelta = Math.max(0, Math.min(1, Number(openingGeometrySignal?.openingAreaDelta ?? 0)));
+  } catch {
+    openingAreaDelta = 0;
+  }
+
+  const localSignals: Stage2LocalSignals & { openingAreaDelta?: number } = {
+    ...stage1BLocalSignals,
+    openingAreaDelta,
+  };
+
+  let layoutScore = 0;
+
+  if ((localSignals?.structuralDegreeChange ?? 0) > 0.12) layoutScore++;
+  if ((localSignals?.wallDrift ?? 0) > 0.10) layoutScore++;
+  if ((localSignals?.maskedEdgeDrift ?? 0) > 0.10) layoutScore++;
+  if ((localSignals?.openingAreaDelta ?? 0) > 0.15) layoutScore++;
+
+  const layoutRisk = layoutScore >= 2;
+  const layoutSevere = layoutScore >= 3;
+
+  logger.info("STAGE1B_LAYOUT_SIGNAL", {
+    jobId: input.jobId,
+    layoutRisk,
+    layoutScore,
+    structuralDegreeChange: localSignals?.structuralDegreeChange,
+    wallDrift: localSignals?.wallDrift,
+    maskedEdgeDrift: localSignals?.maskedEdgeDrift,
+    openingAreaDelta: localSignals?.openingAreaDelta,
+  });
+
   const openingSignalPromptAppend = openingSignal
     ? `STRUCTURAL ATTENTION SIGNAL:
 
@@ -1378,14 +1415,41 @@ If any such change is present:
 → failReasons=["opening_state_or_geometry_changed"]`
     : undefined;
 
-  const modelToUse = openingSignal
+  const layoutRiskPromptAppend = layoutRisk
+    ? `${layoutSevere ? "HIGH CONFIDENCE STRUCTURAL DRIFT DETECTED.\n\n" : ""}LAYOUT PRESERVATION CHECK (CRITICAL)
+
+You are NOT evaluating general similarity.
+
+You must determine whether the spatial layout and camera framing are IDENTICAL to the input image.
+
+FAIL if ANY of the following occurred:
+
+* The apparent size, depth, or proportions of the room have changed
+* Large empty regions appear where structure or furniture previously defined space
+* The camera viewpoint appears shifted, widened, or reinterpreted
+* Walls, floors, or open space appear expanded, reconstructed, or repositioned
+
+IMPORTANT:
+A room that "looks similar" is NOT sufficient.
+
+The question is:
+Does this appear to be the EXACT SAME photograph with objects removed?
+
+If layout has changed in any way → hardFail = true`
+    : undefined;
+
+  const promptAppend = [openingSignalPromptAppend, layoutRiskPromptAppend]
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n") || undefined;
+
+  const modelToUse = layoutRisk
     ? "gemini-2.5-pro"
     : undefined;
 
   const geminiResult = await runStage1BFullFurnitureGeminiValidation({
     stage1APath: input.path1A,
     stage1BPath: input.candidate,
-    promptAppend: openingSignalPromptAppend,
+    promptAppend,
     modelOverride: modelToUse,
   });
 
@@ -1414,6 +1478,7 @@ If any such change is present:
       effectiveViolationType: "accept",
       effectiveReasons: [],
       openingSignal,
+      layoutRisk,
       openingViolationType,
     };
   }
@@ -1425,6 +1490,7 @@ If any such change is present:
       ? geminiResult.failReasons.map((reason) => `full_gemini:${reason}`)
       : ["full_gemini:failed_without_reason"],
     openingSignal,
+    layoutRisk,
     openingViolationType,
   };
 }
