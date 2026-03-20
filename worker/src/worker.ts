@@ -142,6 +142,33 @@ const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS
 const FAIR_SCHEDULER_ENABLED = false;
 const logger = console;
 
+function jobLogContext(job: any, extra: Record<string, any> = {}) {
+  const source = (job && typeof job === "object" && "data" in job ? (job as any).data : job) || {};
+  const fallbackImageName =
+    source?.fileName ||
+    source?.name ||
+    source?.label ||
+    source?.originalFilename ||
+    source?.imageId ||
+    "unknown";
+
+  return {
+    jobId: String(source?.jobId || (job as any)?.id || "unknown"),
+    imageName: source?.input?.fileName || source?.input?.name || fallbackImageName,
+    stage: source?.stage || source?.currentStage || "unknown",
+    ...extra,
+  };
+}
+
+function logJobErrorAndThrow(job: any, reason: string, extra: Record<string, any> = {}): never {
+  logger.error("JOB_ERROR", jobLogContext(job, {
+    event: "JOB_ERROR",
+    reason,
+    ...extra,
+  }));
+  throw new Error(reason);
+}
+
 function shouldLog(eventType?: string): boolean {
   if (!VALIDATOR_LOGS_FOCUS) return true;
 
@@ -913,6 +940,8 @@ type Stage1BPolicyDecision = {
   effectiveHardFail: boolean;
   effectiveViolationType?: string;
   effectiveReasons: string[];
+  openingSignal?: boolean;
+  openingViolationType?: "door_state_changed" | "opening_aperture_expanded" | null;
 };
 
 type Stage1BFullGeminiValidationResult = {
@@ -967,14 +996,20 @@ Guidance:
 async function runStage1BFullFurnitureGeminiValidation(opts: {
   stage1APath: string;
   stage1BPath: string;
+  promptAppend?: string;
+  modelOverride?: string;
 }): Promise<Stage1BFullGeminiValidationResult> {
   const ai = getGeminiClient();
-  const model =
+  const existingModelSelection =
     process.env.GEMINI_STAGE1B_FULL_VALIDATOR_MODEL ||
     process.env.GEMINI_VALIDATOR_MODEL_STRONG ||
     "gemini-2.5-pro";
+  const model = opts.modelOverride || existingModelSelection;
   const stage1A = toBase64(opts.stage1APath).data;
   const stage1B = toBase64(opts.stage1BPath).data;
+  const validationPrompt = opts.promptAppend
+    ? `${STAGE1B_FULL_FURNITURE_VALIDATOR_PROMPT}\n\n${opts.promptAppend}`
+    : STAGE1B_FULL_FURNITURE_VALIDATOR_PROMPT;
 
   try {
     const response = await (ai as any).models.generateContent({
@@ -983,7 +1018,7 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
         {
           role: "user",
           parts: [
-            { text: STAGE1B_FULL_FURNITURE_VALIDATOR_PROMPT },
+            { text: validationPrompt },
             { text: "IMAGE_STAGE1A_BASELINE:" },
             { inlineData: { mimeType: "image/webp", data: stage1A } },
             { text: "IMAGE_STAGE1B_RESULT:" },
@@ -1249,6 +1284,10 @@ async function evaluateStage1BFullPolicy(input: {
 
   const stage1BIsCatastrophicLocalFail =
     input.outputCorrupt === true;
+  let openingSignal = false;
+  let openingStateChanged = false;
+  let openingApertureExpanded = false;
+  let openingViolationType: "door_state_changed" | "opening_aperture_expanded" | null = null;
 
   nLog("[STAGE1B_EXTREME_GATE]", {
     jobId: input.jobId,
@@ -1278,6 +1317,8 @@ async function evaluateStage1BFullPolicy(input: {
       effectiveHardFail: true,
       effectiveViolationType: "invalid_output_corrupt",
       effectiveReasons: ["invalid_output_corrupt"],
+      openingSignal,
+      openingViolationType,
     };
   }
 
@@ -1287,14 +1328,23 @@ async function evaluateStage1BFullPolicy(input: {
         mode: "default",
       });
 
-      const openingStateChanged = openingValidation.summary.openingStateChanged === true;
-      const openingApertureExpanded = openingValidation.summary.openingApertureExpanded === true;
+      openingStateChanged = openingValidation.summary.openingStateChanged === true;
+      openingApertureExpanded = openingValidation.summary.openingApertureExpanded === true;
+      openingSignal = openingStateChanged || openingApertureExpanded;
+      openingViolationType = openingStateChanged
+        ? "door_state_changed"
+        : openingApertureExpanded
+          ? "opening_aperture_expanded"
+          : null;
 
-      if (openingStateChanged || openingApertureExpanded) {
-        const deterministicReasons: string[] = [];
-        if (openingStateChanged) deterministicReasons.push("door_state_changed");
-        if (openingApertureExpanded) deterministicReasons.push("opening_aperture_expanded");
+      logger.info("STAGE1B_OPENING_SIGNAL", {
+        jobId: input.jobId,
+        openingSignal,
+        openingStateChanged,
+        openingApertureExpanded,
+      });
 
+      if (openingSignal) {
         nLog("[STAGE1B_FULL_OPENING_VETO]", {
           jobId: input.jobId,
           attempt: input.attemptNo,
@@ -1303,12 +1353,6 @@ async function evaluateStage1BFullPolicy(input: {
           confidence: openingValidation.summary.confidence,
           openingCount: openingValidation.summary.openingCount,
         });
-
-        return {
-          effectiveHardFail: true,
-          effectiveViolationType: openingStateChanged ? "door_state_changed" : "opening_aperture_expanded",
-          effectiveReasons: deterministicReasons.map((reason) => `opening_veto:${reason}`),
-        };
       }
     } catch (openingErr: any) {
       nLog("[STAGE1B_FULL_OPENING_VETO_ERROR]", {
@@ -1319,9 +1363,30 @@ async function evaluateStage1BFullPolicy(input: {
     }
   }
 
+  const openingSignalPromptAppend = openingSignal
+    ? `STRUCTURAL ATTENTION SIGNAL:
+
+Local analysis detected a potential change in opening state or geometry.
+
+Focus specifically on:
+- whether any doors have changed open/closed state
+- whether any openings (windows, sliding doors) have changed size, shape, or visible area
+- whether wall surfaces have expanded into former openings
+
+If any such change is present:
+→ return passed=false
+→ failReasons=["opening_state_or_geometry_changed"]`
+    : undefined;
+
+  const modelToUse = openingSignal
+    ? "gemini-2.5-pro"
+    : undefined;
+
   const geminiResult = await runStage1BFullFurnitureGeminiValidation({
     stage1APath: input.path1A,
     stage1BPath: input.candidate,
+    promptAppend: openingSignalPromptAppend,
+    modelOverride: modelToUse,
   });
 
   nLog("[STAGE1B_FULL_GEMINI_RESULT]", {
@@ -1348,6 +1413,8 @@ async function evaluateStage1BFullPolicy(input: {
       effectiveHardFail: false,
       effectiveViolationType: "accept",
       effectiveReasons: [],
+      openingSignal,
+      openingViolationType,
     };
   }
 
@@ -1357,6 +1424,8 @@ async function evaluateStage1BFullPolicy(input: {
     effectiveReasons: geminiResult.failReasons.length > 0
       ? geminiResult.failReasons.map((reason) => `full_gemini:${reason}`)
       : ["full_gemini:failed_without_reason"],
+    openingSignal,
+    openingViolationType,
   };
 }
 
@@ -3223,6 +3292,11 @@ process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
   startMemoryTracking(payload.jobId);
+
+  logger.info("JOB_START", jobLogContext(payload, {
+    event: "JOB_START",
+    stage: "enhance",
+  }));
 
   if (isValidationFocusMode()) {
     if (!VALIDATOR_LOGS_FOCUS) {
@@ -5507,6 +5581,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1A
   const t1A = Date.now();
+  logger.info("STAGE_ENTER", jobLogContext(payload, {
+    event: "STAGE_ENTER",
+    stage: "Stage1A",
+  }));
   timestamps.stage1AStart = t1A; // FIX 6: Track Stage 1A start
   try {
     const stage1AInputMeta = await sharp(canonicalPath).metadata();
@@ -5684,6 +5762,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
   timings.stage1AMs = Date.now() - t1A;
   timestamps.stage1AEnd = Date.now(); // FIX 6: Track Stage 1A completion
+  logger.info("STAGE_COMPLETE", jobLogContext(payload, {
+    event: "STAGE_COMPLETE",
+    stage: "Stage1A",
+  }));
   
   // Record 1A version (optional in multi-service mode where images.json is not shared)
   let v1A: any = null;
@@ -5742,6 +5824,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   const t1B = Date.now();
+  logger.info("STAGE_ENTER", jobLogContext(payload, {
+    event: "STAGE_ENTER",
+    stage: "Stage1B",
+  }));
   timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
   let path1B: string | undefined = undefined;
   let stage1BValidatedForCommit = false;
@@ -5756,7 +5842,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       reason: "stage1A_not_committed",
       stage1AOutput: stageLineage.stage1A.output,
     });
-    throw new Error("Stage 1A output not committed before Stage 1B start");
+    logJobErrorAndThrow(payload, "Stage 1A output not committed before Stage 1B start", {
+      stage: "Stage1B",
+    });
   }
   stageLineage.stage1B.input = stageLineage.stage1A.output;
   logStageInput("1B", "1A", stageLineage.stage1A.output!);
@@ -6068,7 +6156,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
         "invalid_declutter_mode"
       );
-      throw new Error(errMsg);
+      logJobErrorAndThrow(payload, errMsg, {
+        stage: "Stage1B",
+      });
     }
 
     nLog(`[WORKER] ✅ Stage 1B ENABLED - mode: ${declutterMode}`);
@@ -6152,7 +6242,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage1BOutputCheck = checkStageOutput(candidate, "1B", payload.jobId);
       if (!stage1BOutputCheck.readable) {
         nLog(`[worker] Stage output missing/unreadable before validation — marking failed`, { jobId: payload.jobId, stage: "1B", path: candidate });
-        throw new Error("missing_stage_output");
+        logJobErrorAndThrow(payload, "missing_stage_output", {
+          stage: "Stage1B",
+        });
       }
 
       const stage1BAttemptNo = attempt + 1;
@@ -6487,6 +6579,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       if (effectiveHardFail) {
+        logger.error("VALIDATION_FAIL", jobLogContext(payload, {
+          event: "VALIDATION_FAIL",
+          stage: "Stage1B",
+          validator: "gemini_semantic",
+          reason: effectiveViolationType || "hard_fail",
+          details: effectiveReasons,
+        }));
         mergeAttemptValidation("1B", stage1BAttemptNo, {
           final: {
             result: "FAILED",
@@ -6621,6 +6720,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     timings.stage1BMs = Date.now() - t1B;
     timestamps.stage1BEnd = Date.now(); // FIX 6: Track Stage 1B completion
+    logger.info("STAGE_COMPLETE", jobLogContext(payload, {
+      event: "STAGE_COMPLETE",
+      stage: "Stage1B",
+    }));
     
     // Track memory after Stage 1B
     updatePeakMemory(payload.jobId);
@@ -6696,6 +6799,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 2 (optional virtual staging via Gemini)
   const t2 = Date.now();
+  logger.info("STAGE_ENTER", jobLogContext(payload, {
+    event: "STAGE_ENTER",
+    stage: "Stage2",
+  }));
   const profileId = (payload as any)?.options?.stagingProfileId as string | undefined;
   const profile = profileId ? getStagingProfile(profileId) : undefined;
   const angleHint = (payload as any)?.options?.angleHint as any; // "primary" | "secondary" | "other"
@@ -6808,7 +6915,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           gateResolutionPath,
           hasRoutingSnapshot: !!routingSnapshot,
         });
-        throw new Error("Stage 2 invoked without furnished gate resolution");
+        logJobErrorAndThrow(payload, "Stage 2 invoked without furnished gate resolution", {
+          stage: "Stage2",
+        });
       }
     }
 
@@ -6859,7 +6968,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
         return ctx.stage1AOutputPath;
       }
-      throw new Error("Stage 2 blocked: Stage 1B requested but no Stage 1B output available");
+      logJobErrorAndThrow(payload, "Stage 2 blocked: Stage 1B requested but no Stage 1B output available", {
+        stage: "Stage2",
+      });
     }
     return ctx.stage1AOutputPath;
   };
@@ -6984,7 +7095,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage1BCommitted: stageLineage.stage1B.committed,
         expectedInput,
       });
-      throw new Error(`Stage ${stage2BaseStage} output not available for Stage 2 input`);
+      logJobErrorAndThrow(payload, `Stage ${stage2BaseStage} output not available for Stage 2 input`, {
+        stage: "Stage2",
+      });
     }
     if (stage2InputPath !== expectedInput) {
       nLog("[STAGE2_INPUT_MISMATCH_CORRECTED]", {
@@ -7191,6 +7304,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } catch (e: any) {
     const errMsg = e?.message || String(e);
     nLog(`[worker] Stage 2 failed: ${errMsg}`);
+    logger.error("JOB_ERROR", jobLogContext(payload, {
+      event: "JOB_ERROR",
+      stage: "Stage2",
+      reason: errMsg,
+    }));
     // FIX 6: Track failure timestamp
     timestamps.stage2End = Date.now();
     const fallbackStage = path1B ? "1B" : "1A";
@@ -7231,6 +7349,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     });
     return;
   }
+
+  logger.info("STAGE_COMPLETE", jobLogContext(payload, {
+    event: "STAGE_COMPLETE",
+    stage: "Stage2",
+  }));
 
   // Fallback: if structured-retain (stage-ready token) exhausted retries with validation risk, try light declutter then rerun Stage 2
   const declutterModeFallback = (payload.options as any).declutterMode;
@@ -7559,9 +7682,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
+      logger.info("VALIDATOR_RESULT", jobLogContext(payload, {
+        event: "VALIDATOR_RESULT",
+        stage: "Stage2",
+        validator,
+        passed: result === "PASS",
+        attempt,
+      }));
+
       nLog(
         `[VALIDATOR_RESULT]\njob_id=${jobId}\nimage_id=${imageId}\nattempt=${attempt}\nvalidator=${validator}\nresult=${result}\nreason=${reason && reason.trim().length > 0 ? reason : "none"}`
       );
+
+      if (result === "FAIL") {
+        logger.error("VALIDATION_FAIL", jobLogContext(payload, {
+          event: "VALIDATION_FAIL",
+          stage: "Stage2",
+          validator,
+          reason: reason && reason.trim().length > 0 ? reason : "validator_fail",
+        }));
+      }
     };
 
     const logStage2AttemptAnchor = (attempt: number): void => {
@@ -9045,7 +9185,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // pub1BUrl already declared above; removed duplicate
   if (payload.options.declutter) {
     if (!path1B) {
-      throw new Error("Stage 1B path is undefined");
+      logJobErrorAndThrow(payload, "Stage 1B path is undefined", {
+        stage: "Stage1B",
+      });
     }
 
     // ═══ FINAL STATUS GUARD ═══
@@ -9210,7 +9352,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       publishedFinal = await publishWithOptionalBlackEdgeGuard(finalBasePath, "final");
       pubFinalUrl = publishedFinal?.url;
       if (!pubFinalUrl) {
-        throw new Error('publishImage returned no URL');
+        logJobErrorAndThrow(payload, "publishImage returned no URL", {
+          stage: "publish",
+        });
       }
       if (finalPathVersion) {
         try {
@@ -10106,6 +10250,11 @@ const worker = new Worker(
     const userId = String((payload as any)?.userId || "").trim();
     let fairSlotAcquired = false;
 
+    logger.info("JOB_START", jobLogContext(job, {
+      event: "JOB_START",
+      stage: "worker_dispatch",
+    }));
+
     const existingJob = await getJob(jobId);
     const existingStatus = String((existingJob as any)?.status || "").toLowerCase();
     if (existingStatus === "awaiting_payment") {
@@ -10131,7 +10280,9 @@ const worker = new Worker(
         );
 
         if (!fairDecision.canStart) {
-          throw new Error("fair-share-limit");
+          logJobErrorAndThrow(payload, "fair-share-limit", {
+            stage: "worker_dispatch",
+          });
         }
 
         await markJobStarted(userId);
@@ -10183,7 +10334,9 @@ const worker = new Worker(
               jobId: regionPayload.jobId,
               payloadKeys: Object.keys(regionAny),
             });
-            throw new Error("Missing base image URL for region-edit job");
+            logJobErrorAndThrow(regionPayload, "Missing base image URL for region-edit job", {
+              stage: "region-edit",
+            });
           }
 
           nLog("[worker-region-edit] Downloading base from:", baseImageUrl);
@@ -10194,7 +10347,9 @@ const worker = new Worker(
           const maskBase64 = regionAny.mask;
           if (!maskBase64) {
             nLog("[worker-region-edit] No mask data in payload");
-            throw new Error("Missing mask data for region-edit job");
+            logJobErrorAndThrow(regionPayload, "Missing mask data for region-edit job", {
+              stage: "region-edit",
+            });
           }
 
           // Convert mask base64 to Buffer
@@ -10321,7 +10476,9 @@ const worker = new Worker(
                 const validationBaselinePath = isRemoveMode ? stage1AReferencePath : basePath;
 
                 if (!validationBaselinePath) {
-                  throw new Error("region_edit_openings_validation_failed: stage1a_reference_missing_for_remove_mode");
+                  logJobErrorAndThrow(regionPayload, "region_edit_openings_validation_failed: stage1a_reference_missing_for_remove_mode", {
+                    stage: "region-edit",
+                  });
                 }
 
                 const openingsValidation = await runEditOpeningsValidator(
@@ -10432,7 +10589,9 @@ const worker = new Worker(
           }
 
           if (openingsValidationRequiredForPublish && !openingsValidationPassedForPublish) {
-            throw new Error("region_edit_publish_blocked: openings_validation_not_passed");
+            logJobErrorAndThrow(regionPayload, "region_edit_publish_blocked: openings_validation_not_passed", {
+              stage: "region-edit",
+            });
           }
 
           nLog("[worker-region-edit] Edit complete, publishing:", outPath);
@@ -10570,7 +10729,9 @@ const worker = new Worker(
           await safeWriteJobStatus((payload as any).jobId, { status: "failed", errorMessage: "unknown job type" }, "unknown_job_type");
         }
       } else {
-        throw new Error("Job payload missing 'type' property or is not an object");
+        logJobErrorAndThrow(payload, "Job payload missing 'type' property or is not an object", {
+          stage: "worker_dispatch",
+        });
       }
     } catch (err: any) {
       if (FAIR_SCHEDULER_ENABLED && (err as any)?.message === "fair-share-limit") {
@@ -10584,6 +10745,11 @@ const worker = new Worker(
       }
 
       nLog("[worker] job failed", err);
+      logger.error("JOB_ERROR", jobLogContext(payload, {
+        event: "JOB_ERROR",
+        stage: "worker_dispatch",
+        reason: err?.message || "unhandled worker error",
+      }));
 
       // Do not downgrade a job that already reached terminal completion.
       // This protects successful Stage 1A/1B outcomes from late non-critical errors.
