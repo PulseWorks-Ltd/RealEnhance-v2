@@ -7881,9 +7881,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (attempt > 1) {
+        const retryAttempt = attempt - 1;
         const retryFailureType = pendingStage2StructuralFailureType;
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
         let structuralConstraintBlock = "";
+        const openingAuthoritativeRetry =
+          retryAttempt === 1 && pendingStage2RetryReason === "opening_authoritative_fail";
+
+        if (openingAuthoritativeRetry) {
+          const openingProtectionConstraint = `CRITICAL: Do NOT remove, resize, relocate, or occlude ANY windows or doors.
+All openings must remain identical in position and size to the original image.`;
+          structuralConstraintBlock = [structuralConstraintBlock, openingProtectionConstraint]
+            .filter((part) => typeof part === "string" && part.trim().length > 0)
+            .join("\n\n");
+          nLog("[STAGE2_RETRY_CONSTRAINT_INJECTED] reason=opening_protection");
+        }
+
         if (pendingStage2RetryReason && structuralBaseline && attempt >= 3) {
           const mode: "soft" | "hard" = attempt === 3 ? "soft" : "hard";
           const openingConstraintBlock = buildStructuralConstraintBlock(structuralBaseline, mode);
@@ -7917,7 +7930,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         // IMPORTANT:
-        // Retry-1 must remain identical to initial Stage-2 generation.
+        // Retry-1 remains near-identical to initial Stage-2 generation except targeted
+        // corrective constraints when an authoritative opening violation was detected.
         // It exists purely as a stochastic second attempt.
         // Do not introduce modified structural or eligibility behavior here.
         nLog("[STAGE2_PROMPT_SOURCE]", {
