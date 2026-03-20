@@ -16,6 +16,32 @@ const OPENING_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MI
 const OPENING_LIGHT_ANCHOR_MODEL = process.env.GEMINI_OPENING_LIGHT_ANCHOR_MODEL || OPENING_MODEL_PRIMARY;
 const OPENING_WINDOW_MIN_RETENTION = Number(process.env.OPENING_WINDOW_MIN_RETENTION || 0.8);
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function evaluateDoorFunctionalBlockage(
+  baselineOpening: StructuralBaseline["openings"][number],
+  detectedOpening: StructuralBaseline["openings"][number],
+  retention: number
+): boolean {
+  // Approximate overlap from retained visible doorway area.
+  const overlapRatio = clamp01(1 - retention);
+
+  const baselineHeight = Math.max(0.01, baselineOpening.bbox[3] - baselineOpening.bbox[1]);
+  const detectedHeight = Math.max(0.01, detectedOpening.bbox[3] - detectedOpening.bbox[1]);
+  const verticalRetention = clamp01(detectedHeight / baselineHeight);
+
+  const baselineTouchesFloor = baselineOpening.touchesFloor === true || baselineOpening.verticalBand === "floor_zone" || baselineOpening.verticalBand === "full_height";
+  const detectedTouchesFloor = detectedOpening.touchesFloor === true || detectedOpening.verticalBand === "floor_zone" || detectedOpening.verticalBand === "full_height";
+
+  const preservesVerticalOpening = verticalRetention >= 0.7;
+  const preservesFloorVisibility = !baselineTouchesFloor || detectedTouchesFloor;
+
+  return overlapRatio > 0.5 && !preservesVerticalOpening && !preservesFloorVisibility;
+}
+
 function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -166,11 +192,14 @@ export async function runOpeningValidator(
       const detectedArea = Math.max(0.01, Number(matchedOpening.area_pct || 0));
       const retention = detectedArea / baseArea;
 
-      // Non-window openings (doors/closets/walkthroughs) must remain fully functional.
-      // Any notable apparent occlusion/size loss is treated as hard fail.
+      // Non-window openings (doors/closets/walkthroughs) must remain functionally usable.
+      // Minor perspective overlap can be tolerated when usability is preserved.
       if (baseOpening.type !== "window") {
         if (retention < 0.9) {
-          strictDoorOcclusionFail = true;
+          const isFunctionallyBlocked = evaluateDoorFunctionalBlockage(baseOpening, matchedOpening, retention);
+          if (isFunctionallyBlocked) {
+            strictDoorOcclusionFail = true;
+          }
         }
       } else {
         // Window partial occlusion can be tolerated only when clearly partial.
@@ -215,7 +244,7 @@ export async function runOpeningValidator(
     if ((deterministic.summary as any).openingSignatureMismatch === true) {
       advisorySignals.push("opening_signature_mismatch");
     }
-    if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_partial_occlusion_not_allowed");
+    if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_blocked");
     if (strictWindowOcclusionFail) reasonParts.push("window_occlusion_exceeds_partial_threshold");
 
     const microCheckRisk =

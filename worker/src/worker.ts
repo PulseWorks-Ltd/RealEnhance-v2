@@ -8147,6 +8147,7 @@ All openings must remain identical in position and size to the original image.`;
           "opening_infilled",
           "opening_sealed",
           "door_or_closet_partial_occlusion_not_allowed",
+          "door_or_closet_blocked",
           "window_occlusion_exceeds_partial_threshold",
           "light_anchor_opening_infilled",
           "light_anchor_opening_removed",
