@@ -6514,8 +6514,8 @@ export default function BatchProcessor({
                 </aside>
 
                 <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_36px_128px]">
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col py-1">
-                    <div className="relative flex h-full min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-1">
+                    <div className="relative flex h-full max-h-[70vh] min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
                         <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                           Image {currentImageIndex + 1} of {files.length}
@@ -6528,7 +6528,7 @@ export default function BatchProcessor({
                       <img
                         src={previewUrls[currentImageIndex]}
                         alt={files[currentImageIndex]?.name || `Image ${currentImageIndex + 1}`}
-                        className="h-full w-full object-contain rounded-2xl p-0.5"
+                        className="block max-h-full max-w-full h-auto w-auto object-contain rounded-2xl"
                       />
 
                       <div className="absolute right-4 top-4 z-20">
