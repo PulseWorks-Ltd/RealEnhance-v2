@@ -23,7 +23,7 @@ STRUCTURAL RULES (STRICT):
 - You must treat all walls, ceilings, floors, windows, doors, openings, built-in joinery and fixed vents as UNCHANGEABLE structure.
 - You must NOT resize, move, add or remove any window, door, wall, opening, bulkhead, or ceiling vent.
 - You must NOT change the position, size or number of windows or doors.
-- Outside the mask region, the image must remain pixel-perfect identical.
+- Outside the mask region, the image must remain visually identical except for minimal boundary adjustments required for realism.
 - If the user instruction would normally require structural changes (for example "remove the window"), interpret it in the least structural way possible (for example, cover the window completely with matching curtains or blinds) instead of changing the wall or opening.`
     : `
 STRUCTURAL RULES:
@@ -46,16 +46,12 @@ Your job is to apply the user's instruction with the edit ORIGINATING from WHITE
 USER INSTRUCTION (the edit should originate from where EDIT_MASK_IMAGE shows WHITE pixels):
 """${userInstruction}"""
 
-⚠️ CRITICAL MASK INTERPRETATION RULES:
-- EDIT_MASK_IMAGE uses this format: WHITE pixels = area to edit, BLACK pixels = area to keep unchanged
-- You MUST apply the edit ONLY where EDIT_MASK_IMAGE shows WHITE pixels
-- You MUST keep everything pixel-perfect identical where EDIT_MASK_IMAGE shows BLACK pixels
-- Think of the mask like a stencil: you can only paint through the white holes
-- If the user says "paint this wall red" and EDIT_MASK_IMAGE shows white on the RIGHT side, paint the RIGHT side red
-- If EDIT_MASK_IMAGE shows white on the LEFT side, paint the LEFT side
-- Do NOT apply the instruction to black-masked areas
-- Do NOT edit ANY area where EDIT_MASK_IMAGE is black, no matter what the instruction says
-- If you see multiple walls/surfaces in BASE_IMAGE_TO_EDIT, ONLY edit the specific wall/surface that has WHITE pixels in EDIT_MASK_IMAGE
+MASK SPATIAL INTERPRETATION (IMPORTANT):
+- The WHITE mask defines the origin and anchor region of the edit.
+- All edits must originate from within this region.
+- The edit may extend slightly beyond the white region ONLY where required for natural depth, perspective, or shadow continuity.
+- Any such extension must be minimal and directly connected to the masked region.
+- You must NOT modify unrelated areas or distant surfaces outside the mask.
 
 REFERENCE IMAGE RULES (IF OPTIONAL_REFERENCE_IMAGE IS PROVIDED):
 - Use OPTIONAL_REFERENCE_IMAGE only to preserve structure/openings continuity.

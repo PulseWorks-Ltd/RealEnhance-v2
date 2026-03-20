@@ -136,6 +136,7 @@ import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker, startBillingFinalizationRetryLoop } from "./utils/billingFinalization.js";
 import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact } from "./utils/finalBlackEdgeGuard";
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
+import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
@@ -256,22 +257,53 @@ const regionEditRolloutTelemetry = {
   retries: 0,
 };
 
+function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "real_leak" | "unknown" {
+  if (!Number.isFinite(pct as number)) return "unknown";
+  const value = Number(pct);
+  if (value <= 0.2) return "none";
+  if (value <= 1) return "soft_anomaly";
+  return "real_leak";
+}
+
 async function computeOutsideMaskChangedPct(opts: {
   baseImagePath: string;
   editedImagePath: string;
   mask: Buffer;
 }): Promise<number | null> {
   try {
+    const projectionDilatePx = (width: number, height: number): number => {
+      const scaled = Math.round(Math.max(width, height) * 0.006);
+      return Math.max(3, Math.min(12, scaled || 5));
+    };
+
     const baseRaw = await sharp(opts.baseImagePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
     const editedRaw = await sharp(opts.editedImagePath)
       .resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" })
       .removeAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    const maskRaw = await sharp(opts.mask)
-      .resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" })
-      .ensureAlpha()
-      .extractChannel(0)
+    const allowedMaskArtifactPath = `${opts.editedImagePath}.allowed-mask.png`;
+    const hasAllowedMaskArtifact = fs.existsSync(allowedMaskArtifactPath);
+    const allowedMaskSource = hasAllowedMaskArtifact
+      ? await fs.promises.readFile(allowedMaskArtifactPath)
+      : opts.mask;
+
+    let allowedMaskPipeline = sharp(allowedMaskSource)
+      .removeAlpha()
+      .grayscale()
+      .resize(baseRaw.info.width, baseRaw.info.height, {
+        fit: "contain",
+        position: "top-left",
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+        kernel: sharp.kernel.nearest,
+      })
+      .threshold(127, { grayscale: true });
+
+    if (!hasAllowedMaskArtifact) {
+      allowedMaskPipeline = allowedMaskPipeline.dilate(projectionDilatePx(baseRaw.info.width, baseRaw.info.height));
+    }
+
+    const allowedMaskRaw = await allowedMaskPipeline
       .raw()
       .toBuffer({ resolveWithObject: true });
 
@@ -282,8 +314,8 @@ async function computeOutsideMaskChangedPct(opts: {
     let outsideChanged = 0;
     const changeThreshold = 14;
     for (let i = 0; i < pixels; i += 1) {
-      const maskValue = maskRaw.data[i] ?? 0;
-      if (maskValue > 127) continue;
+      const allowedValue = allowedMaskRaw.data[i] ?? 0;
+      if (allowedValue > 127) continue;
       outsideCount += 1;
 
       const idx = i * 3;
@@ -10102,12 +10134,13 @@ async function handleEditJob(payload: any) {
   // 2) Decode maskBase64 to Buffer
   let mask: Buffer | undefined = undefined;
   if (maskBase64) {
-    if (maskBase64.startsWith("data:image/")) {
-      const comma = maskBase64.indexOf(",");
-      const b64 = maskBase64.slice(comma + 1);
-      mask = Buffer.from(b64, "base64");
-    } else {
-      mask = Buffer.from(maskBase64, "base64");
+    try {
+      const normalizedMask = normalizeMaskBase64(maskBase64);
+      mask = await normalizeMaskBufferToPng(normalizedMask);
+    } catch (maskErr: any) {
+      nLog("[worker-edit] Mask decode failed:", maskErr?.message || String(maskErr));
+      await safeWriteJobStatus(jobId, { status: "failed", errorMessage: "Invalid mask provided for edit" }, "edit_invalid_mask");
+      return;
     }
   }
   if (!mask) {
@@ -10419,7 +10452,16 @@ const worker = new Worker(
           }
 
           // Convert mask base64 to Buffer
-          const maskBuf = Buffer.from(maskBase64, "base64");
+          let maskBuf: Buffer;
+          try {
+            const normalizedMask = normalizeMaskBase64(maskBase64);
+            maskBuf = await normalizeMaskBufferToPng(normalizedMask);
+          } catch (maskErr: any) {
+            nLog("[worker-region-edit] Mask decode failed:", maskErr?.message || String(maskErr));
+            logJobErrorAndThrow(regionPayload, "Invalid mask data for region-edit job", {
+              stage: "region-edit",
+            });
+          }
           nLog("[worker-region-edit] Mask buffer size:", maskBuf.length);
 
           // Get the instruction/prompt
@@ -10535,6 +10577,7 @@ const worker = new Worker(
                 editedImagePath: outPath,
                 mask: maskBuf,
               });
+              const outsideMaskLeakSeverity = classifyOutsideLeakPct(outsideMaskChangedPct);
 
               let openingFail = false;
               if (runEditOpeningsValidation) {
@@ -10585,6 +10628,7 @@ const worker = new Worker(
                 attempt,
                 mode,
                 outsideMaskChangedPct,
+                outsideMaskLeakSeverity,
                 openingFail,
                 openingSummary: openingsValidationSummary,
                 totals: {

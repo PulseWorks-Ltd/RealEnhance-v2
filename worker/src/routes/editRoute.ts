@@ -1,11 +1,23 @@
 
 import { applyEdit } from '../edit/editApply';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { normalizeMaskBase64, normalizeMaskBufferToPng } from '../utils/mask';
 
 // This function can be used in your actual HTTP server/router integration
 // Example usage: await handleEdit({ baseImagePath, maskPath })
 export async function handleEdit({ baseImagePath, maskPath }: { baseImagePath: string, maskPath: string }) {
   try {
-    const editedPath = await applyEdit(baseImagePath, maskPath);
+    let resolvedMaskPath = maskPath;
+    if (typeof maskPath === 'string' && (maskPath.startsWith('data:image/') || !maskPath.includes('/'))) {
+      const normalizedMask = normalizeMaskBase64(maskPath);
+      const maskPng = await normalizeMaskBufferToPng(normalizedMask);
+      resolvedMaskPath = path.join(os.tmpdir(), `edit-route-mask-${Date.now()}.png`);
+      await fs.writeFile(resolvedMaskPath, maskPng);
+    }
+
+    const editedPath = await applyEdit(baseImagePath, resolvedMaskPath);
     if (!editedPath) {
       return {
         status: 422,

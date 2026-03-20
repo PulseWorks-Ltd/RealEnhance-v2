@@ -5,6 +5,158 @@ import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 
+const MIN_PROJECTION_DILATE_PX = 3;
+const MAX_PROJECTION_DILATE_PX = 12;
+
+function allowedMaskArtifactPathForOutput(outPath: string): string {
+  return `${outPath}.allowed-mask.png`;
+}
+
+function projectionDilatePx(width: number, height: number): number {
+  const scaled = Math.round(Math.max(width, height) * 0.006);
+  return Math.max(MIN_PROJECTION_DILATE_PX, Math.min(MAX_PROJECTION_DILATE_PX, scaled || 5));
+}
+
+async function normalizeMaskToImageSpace(mask: Buffer, width: number, height: number): Promise<Buffer> {
+  const maskImage = sharp(mask, { failOn: "error" });
+  const maskMeta = await maskImage.metadata();
+  const needsResize = maskMeta.width !== width || maskMeta.height !== height;
+
+  let pipeline = sharp(mask, { failOn: "error" })
+    .removeAlpha()
+    .grayscale();
+
+  if (needsResize) {
+    pipeline = pipeline.resize(width, height, {
+      fit: "contain",
+      position: "top-left",
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+      kernel: sharp.kernel.nearest,
+    });
+    console.log("[editApply] Mask normalized with contain/top-left (no geometric distortion)");
+  } else {
+    console.log("[editApply] Mask dimensions already match base image");
+  }
+
+  return await pipeline
+    .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+}
+
+async function buildMaskRegions(maskPngBuffer: Buffer, width: number, height: number): Promise<{
+  innerMask: Buffer;
+  projectionMask: Buffer;
+  dilatedMask: Buffer;
+  outsideMask: Buffer;
+}> {
+  const innerMask = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+
+  const dilatePx = projectionDilatePx(width, height);
+  const dilatedMask = await sharp(innerMask)
+    .dilate(dilatePx)
+    .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+
+  const innerRaw = await sharp(innerMask)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const dilatedRaw = await sharp(dilatedMask)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const projectionRaw = Buffer.alloc(innerRaw.data.length, 0);
+  const outsideRaw = Buffer.alloc(innerRaw.data.length, 0);
+
+  for (let i = 0; i < innerRaw.data.length; i += 1) {
+    const inner = (innerRaw.data[i] ?? 0) > 127;
+    const dilated = (dilatedRaw.data[i] ?? 0) > 127;
+    projectionRaw[i] = dilated && !inner ? 255 : 0;
+    outsideRaw[i] = dilated ? 0 : 255;
+  }
+
+  const projectionMask = await sharp(projectionRaw, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+
+  const outsideMask = await sharp(outsideRaw, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+
+  return {
+    innerMask,
+    projectionMask,
+    dilatedMask,
+    outsideMask,
+  };
+}
+
+async function computeOutsideAllowedChangedPct(
+  baseImagePath: string,
+  editedImagePath: string,
+  allowedMask: Buffer
+): Promise<number | null> {
+  try {
+    const baseRaw = await sharp(baseImagePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const editedRaw = await sharp(editedImagePath)
+      .resize(baseRaw.info.width, baseRaw.info.height, { fit: "fill" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const allowedRaw = await sharp(allowedMask)
+      .removeAlpha()
+      .grayscale()
+      .resize(baseRaw.info.width, baseRaw.info.height, {
+        fit: "contain",
+        position: "top-left",
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+        kernel: sharp.kernel.nearest,
+      })
+      .threshold(127, { grayscale: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const pixels = baseRaw.info.width * baseRaw.info.height;
+    if (pixels === 0) return null;
+
+    let outsideCount = 0;
+    let outsideChanged = 0;
+    const changeThreshold = 14;
+    for (let i = 0; i < pixels; i += 1) {
+      const allowed = allowedRaw.data[i] ?? 0;
+      if (allowed > 127) continue;
+      outsideCount += 1;
+
+      const idx = i * 3;
+      const dr = Math.abs((baseRaw.data[idx] ?? 0) - (editedRaw.data[idx] ?? 0));
+      const dg = Math.abs((baseRaw.data[idx + 1] ?? 0) - (editedRaw.data[idx + 1] ?? 0));
+      const db = Math.abs((baseRaw.data[idx + 2] ?? 0) - (editedRaw.data[idx + 2] ?? 0));
+      if (dr + dg + db >= changeThreshold) {
+        outsideChanged += 1;
+      }
+    }
+
+    if (outsideCount === 0) return 0;
+    return Number(((outsideChanged / outsideCount) * 100).toFixed(4));
+  } catch {
+    return null;
+  }
+}
+
+function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "real_leak" | "unknown" {
+  if (!Number.isFinite(pct as number)) return "unknown";
+  const value = Number(pct);
+  if (value <= 0.2) return "none";
+  if (value <= 1) return "soft_anomaly";
+  return "real_leak";
+}
+
 export type EditMode = "Add" | "Remove" | "Replace" | "Restore";
 
 export interface ApplyEditArgs {
@@ -49,17 +201,11 @@ export async function applyEdit({
       throw new Error("Base image is missing width/height metadata for mask alignment");
     }
 
-    // Resize mask to match and encode as PNG
+    // Normalize mask to image coordinates and encode as PNG
     let maskPngBuffer: Buffer | undefined;
     if (mask) {
-      maskPngBuffer = await sharp(mask)
-        .resize(meta.width, meta.height, { fit: "fill", kernel: sharp.kernel.nearest })
-        .removeAlpha()
-        .grayscale()
-        .threshold(127, { grayscale: true })
-        .png()
-        .toBuffer();
-      console.log("[editApply] Mask resized to match image");
+      maskPngBuffer = await normalizeMaskToImageSpace(mask, meta.width, meta.height);
+      console.log("[editApply] Mask normalized to image coordinate space");
       // Save debug PNG
       const debugMaskPath = require("path").join(require("path").dirname(baseImagePath), "debug-mask.png");
       await sharp(maskPngBuffer).toFile(debugMaskPath);
@@ -175,7 +321,7 @@ export async function applyEdit({
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
     const removeModeTargetedGuidance = mode === "Remove"
-      ? `\n\nREMOVE MODE TARGETING RULES:\n- Remove only the object(s) inside the WHITE mask region that correspond to the user instruction.\n- Do NOT perform full-room decluttering.\n- Do NOT remove unrelated furniture outside the WHITE mask region.\n- Keep all BLACK-mask regions unchanged except minimal edge blending.`
+      ? `\n\nREMOVE MODE TARGETING RULES:\n- Remove only the object(s) inside the WHITE mask region that correspond to the user instruction.\n- Do NOT perform full-room decluttering.\n- Do NOT remove unrelated furniture outside the WHITE mask region.\n- Any changes outside the WHITE mask must be limited strictly to immediate boundary pixels required for seamless blending.\n- No independent edits may occur outside the WHITE mask.`
       : "";
     const addModeSpatialGuidance = mode === "Add"
       ? `\n\nADD MODE SPATIAL CONTRACT:\n- Interpret the WHITE mask as placement intent and anchor zone, not necessarily the full visible 3D object bounds.\n- Floor masks: treat WHITE mask as contact footprint / plan area. The object may extend upward and slightly beyond the mask due to perspective and physical depth, but every ground contact point must lie within WHITE mask pixels.\n- Wall masks: treat WHITE mask as anchor plane region. The object may project outward in depth, but all mounting/attachment points must lie within WHITE mask pixels.\n- Outside-mask edits are allowed only for strictly necessary visible geometry of the same added object.\n- Do NOT blend, feather, or leak edits into unrelated outside-mask regions.\n- Align object perspective, scale, and orientation to room geometry, camera angle, and vanishing lines.`
@@ -191,7 +337,63 @@ export async function applyEdit({
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
 
-    await sharp(editedBuffer).toFile(outPath);
-    console.log("[editApply] Saved edited image to", outPath);
+    // Enforce 3-zone compositing:
+    // 1) inner mask (strict) + 2) projection ring (soft allowance) => Gemini output
+    // 3) outside region => original base image (hard clamp)
+    const { innerMask, projectionMask, dilatedMask, outsideMask } = await buildMaskRegions(maskPngBuffer!, meta.width, meta.height);
+    const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
+    await sharp(dilatedMask).png().toFile(allowedMaskArtifactPath);
+    const alignedEdited = await sharp(editedBuffer)
+      .resize(meta.width, meta.height, { fit: "fill" })
+      .png()
+      .toBuffer();
+    const allowedEdited = await sharp(alignedEdited)
+      .composite([
+        {
+          input: dilatedMask,
+          blend: "dest-in",
+        },
+      ])
+      .png()
+      .toBuffer();
+    await sharp(baseImagePath)
+      .composite([
+        {
+          input: allowedEdited,
+          blend: "over",
+        },
+      ])
+      .webp()
+      .toFile(outPath);
+
+    const regionStats = await Promise.all([
+      sharp(innerMask).stats(),
+      sharp(projectionMask).stats(),
+      sharp(outsideMask).stats(),
+    ]);
+    const outsideAllowedChangedPct = await computeOutsideAllowedChangedPct(baseImagePath, outPath, dilatedMask);
+    const outsideLeakSeverity = classifyOutsideLeakPct(outsideAllowedChangedPct);
+    console.log("[editApply] Enforced mask zones", {
+      innerMaskPixels: regionStats[0].channels[0]?.sum ?? 0,
+      projectionMaskPixels: regionStats[1].channels[0]?.sum ?? 0,
+      outsideMaskPixels: regionStats[2].channels[0]?.sum ?? 0,
+      projectionDilatePx: projectionDilatePx(meta.width, meta.height),
+      outsideAllowedChangedPct,
+      outsideLeakSeverity,
+      allowedMaskArtifactPath,
+    });
+    if (outsideLeakSeverity === "soft_anomaly") {
+      console.warn("[editApply] mask_enforcement_soft_anomaly", {
+        outsideAllowedChangedPct,
+        tolerance: "0.2-1.0%",
+      });
+    }
+    if (outsideLeakSeverity === "real_leak") {
+      console.warn("[editApply] mask_enforcement_leak_detected", {
+        outsideAllowedChangedPct,
+        tolerance: ">1.0%",
+      });
+    }
+    console.log("[editApply] Saved enforced region edit image to", outPath);
     return outPath;
   }
