@@ -6876,7 +6876,7 @@ export default function BatchProcessor({
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
-             <div className="flex-1 min-h-0 overflow-y-scroll pr-1">
+             <div className="flex-1 h-full min-h-0 overflow-y-auto pr-1">
              <div className="max-w-[1600px] mx-auto px-6 lg:px-8 py-8 relative z-10">
                 
                 {/* 1. Header Section */}
