@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob, enqueueRegionEditJob, getJob } from "../services/jobs.js";
-import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
+import { computeFallbackVersionKey, getJobMetadata, recordEnhancedImageRedis, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js"; // AUDIT FIX: idempotency guard
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { consumeFreeEditCount } from "../services/usageLedger.js";
@@ -94,6 +94,47 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     const body = (req.body || {}) as any;
+
+    const tryRehydrateRedisFromDb = async (dbRecord: { id: string; userId: string }, lookupUrl: string): Promise<void> => {
+      try {
+        const noQuery = lookupUrl.split("?")[0];
+        const baseKey = noQuery.split("/").pop() || "";
+        const pathKey = (() => {
+          try {
+            const u = new URL(lookupUrl);
+            return u.pathname.replace(/^\/+/, "");
+          } catch {
+            return baseKey;
+          }
+        })();
+        const fallbackVersionKey = pathKey ? computeFallbackVersionKey(pathKey) : "";
+
+        await recordEnhancedImageRedis({
+          userId: dbRecord.userId,
+          imageId: dbRecord.id,
+          publicUrl: lookupUrl,
+          baseKey,
+          versionId: fallbackVersionKey,
+          fallbackVersionKey,
+          stage: "2",
+        });
+
+        console.log("[region-edit] Redis rehydration after DB fallback success", {
+          redisMiss: true,
+          dbFallbackSuccess: true,
+          redisRehydrated: true,
+          lookupUrl,
+        });
+      } catch (rehydrateErr) {
+        console.warn("[region-edit] Redis rehydration failed (non-blocking)", {
+          redisMiss: true,
+          dbFallbackSuccess: true,
+          redisRehydrated: false,
+          lookupUrl,
+          error: (rehydrateErr as any)?.message || rehydrateErr,
+        });
+      }
+    };
     
     // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
     const rawImageUrl = body.imageUrl as string | undefined;
@@ -195,16 +236,70 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // ===== IMAGE LOOKUP =====
     console.log("[region-edit] Looking up image for user:", sessUser.id);
+    let sourceEnhancedFromLookup: { id: string; propertyId: string | null; userId: string; agencyId: string } | null = null;
+    let foundViaDbFallback = false;
+    let resolvedLookupUrl = sourceLookupUrl;
+
+    const findByDb = async (url: string) => {
+      if (!sessUser.agencyId) return null;
+      return await findScopedEnhancedImageByUrl({
+        agencyId: sessUser.agencyId,
+        userId: sessUser.role === 'admin' || sessUser.role === 'owner' ? undefined : sessUser.id,
+        publicUrl: url,
+      });
+    };
+
+    const dbRecordToFound = (dbRecord: { id: string; userId: string }) => {
+      return {
+        record: {
+          imageId: dbRecord.id,
+          id: dbRecord.id,
+          ownerUserId: dbRecord.userId,
+        },
+        versionId: "",
+      };
+    };
+
     let found = await findByPublicUrl(sessUser.id, sourceLookupUrl);
-    
+    if (!found) {
+      const dbFallback = await findByDb(sourceLookupUrl);
+      if (dbFallback) {
+        found = dbRecordToFound(dbFallback);
+        sourceEnhancedFromLookup = dbFallback;
+        foundViaDbFallback = true;
+        resolvedLookupUrl = sourceLookupUrl;
+        console.log("[region-edit] Redis miss + DB fallback success", {
+          redisMiss: true,
+          dbFallbackSuccess: true,
+          lookupUrl: sourceLookupUrl,
+        });
+        await tryRehydrateRedisFromDb(dbFallback, sourceLookupUrl);
+      }
+    }
+
     // Fix A: If primary URL not found, try baseImageUrl (client sends both)
     // This handles the case where stageUrls["2"] differs from resultUrl
     // (double S3 upload gives different keys) or Redis data loss
     if (!found && clientBaseImageUrl && clientBaseImageUrl !== sourceLookupUrl) {
       console.warn("[region-edit] Primary URL not found, trying baseImageUrl fallback:", clientBaseImageUrl.substring(0, 80) + "...");
+      resolvedLookupUrl = clientBaseImageUrl;
       found = await findByPublicUrl(sessUser.id, clientBaseImageUrl);
       if (found) {
         console.log("[region-edit] Found image via baseImageUrl fallback");
+      } else {
+        const dbFallback = await findByDb(clientBaseImageUrl);
+        if (dbFallback) {
+          found = dbRecordToFound(dbFallback);
+          sourceEnhancedFromLookup = dbFallback;
+          foundViaDbFallback = true;
+          console.log("[region-edit] Redis miss + DB fallback success", {
+            redisMiss: true,
+            dbFallbackSuccess: true,
+            lookupUrl: clientBaseImageUrl,
+            usedBaseImageUrlFallback: true,
+          });
+          await tryRehydrateRedisFromDb(dbFallback, clientBaseImageUrl);
+        }
       }
     }
 
@@ -368,13 +463,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       apiMode = "replace";
     }
 
-    const sourceEnhanced = sessUser.agencyId
+    const sourceEnhanced = sourceEnhancedFromLookup || (sessUser.agencyId
       ? await findScopedEnhancedImageByUrl({
           agencyId: sessUser.agencyId,
           userId: sessUser.role === 'admin' || sessUser.role === 'owner' ? undefined : sessUser.id,
-          publicUrl: sourceLookupUrl,
+          publicUrl: resolvedLookupUrl,
         })
-      : null;
+      : null);
+
+    if (foundViaDbFallback) {
+      console.log("[region-edit] Proceeding with DB-backed image lookup", {
+        redisMiss: true,
+        dbFallbackSuccess: true,
+        resolvedLookupUrl,
+        sourceImageId: sourceEnhanced?.id || record.imageId || record.id,
+      });
+    }
 
     const jobPayload = {
       userId: sessUser.id,
