@@ -96,6 +96,11 @@ function hasStage1AOpeningSuspicion(evidence?: ValidationEvidence): boolean {
     evidence.openings.doorsBefore !== evidence.openings.doorsAfter;
 
   const localFlagsText = (evidence.localFlags || []).join(" ").toLowerCase();
+  const semanticAnomalyHint = (evidence.localFlags || []).some((flag) => {
+    const normalized = String(flag || "").toLowerCase();
+    return normalized.includes("wall_uniform_brightness_change") ||
+      normalized.includes("possible_opening_like_region");
+  });
   const explicitStructuralSignal =
     localFlagsText.includes("masked_edge") ||
     localFlagsText.includes("maskededgedrift") ||
@@ -112,7 +117,8 @@ function hasStage1AOpeningSuspicion(evidence?: ValidationEvidence): boolean {
     maskedEdgeDrift >= 20 ||
     structuralDegreeChange >= 3 ||
     explicitStructuralSignal ||
-    brightnessWallSpike
+    brightnessWallSpike ||
+    semanticAnomalyHint
   );
 }
 
